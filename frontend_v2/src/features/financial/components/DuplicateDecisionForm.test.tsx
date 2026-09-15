@@ -154,3 +154,53 @@ it("restoration sends no primary and explains the effect on totals", async () =>
   expect(body.action).toBe("restore")
   expect(body).not.toHaveProperty("primary_id")
 })
+
+it("refreshes previously opened payment sources and analysis lists after a duplicate decision", async () => {
+  const client = new QueryClient({
+    defaultOptions: { queries: { staleTime: 120000 } },
+  })
+  const prefixes = [
+    "ledger-source",
+    "financial-linked-payments",
+    "financial-proof-standing",
+    "statement-import-status",
+  ]
+  for (const prefix of prefixes) {
+    client.setQueryData([prefix, selection.caseId, "prior-view"], {
+      status: "admitted",
+    })
+    client.setQueryData([prefix, "another-case", "prior-view"], {
+      status: "admitted",
+    })
+  }
+  vi.spyOn(globalThis, "fetch").mockImplementation(
+    async () =>
+      new Response(
+        JSON.stringify({
+          case_id: selection.caseId,
+          document_id: "copy",
+          action: "exclude",
+          applied: true,
+          changed_rows: 2,
+          adjudication_id: "event",
+        })
+      )
+  )
+  render(
+    <QueryClientProvider client={client}>
+      <DuplicateDecisionForm selection={selection} onClose={vi.fn()} />
+    </QueryClientProvider>
+  )
+  submit()
+  await screen.findByRole("status")
+  for (const prefix of prefixes) {
+    expect(
+      client.getQueryState([prefix, selection.caseId, "prior-view"])
+        ?.isInvalidated
+    ).toBe(true)
+    expect(
+      client.getQueryState([prefix, "another-case", "prior-view"])
+        ?.isInvalidated
+    ).toBe(false)
+  }
+})

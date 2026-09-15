@@ -22,7 +22,7 @@ it("opens candidate and coverage details in Chromium without making a write requ
   fireEvent.click(screen.getByRole("button", { name: "Compare documents" }))
   fireEvent.click(await screen.findByText(/Candidate group 1/))
   expect(screen.getByText("copy.ofx")).toBeVisible()
-  expect(screen.getByText("Document status: superseded")).toBeVisible()
+  expect(screen.getByText("Excluded from Transactions")).toBeVisible()
   fireEvent.click(screen.getByText("Documents not compared (1)"))
   expect(screen.getByText(/empty.pdf:/)).toBeVisible()
 })

@@ -688,6 +688,14 @@ For a case-wide review, expand **Checks across all accounts** at the bottom of *
 
 You can exclude a duplicate after confirming its PDF import. This does not change the recorded verification status. If the system says to keep the verified copy instead, close the decision and retain that copy. If the retained file has payments already corrected or set aside, review those differences before deciding which document to keep.
 
+The comparison labels each copy **Included in Transactions** or **Excluded from Transactions** and names the retained file. Expand **Document identifiers** only if you need its internal reference for support. After a decision, previously opened payment details and related lists refresh to show the changed inclusion.
+
+If your case is read-only, you can compare files and open both originals. Exclusion and restore buttons are available only to members with permission to edit the case.
+
+![Duplicate comparison with one included file, one excluded copy and source buttons available to a read-only member](images/26-duplicate-copy-review.png)
+
+*This synthetic example shows the same six payments in a native PDF and a scanned copy. The scanned copy is excluded from Transactions, but its original remains available through View source.*
+
 For a bulk exclusion, inspect every selected document before confirming. Keep at least the intended retained evidence and read the affected counts. Do not exclude candidates solely because their amounts match.
 
 For an individual duplicate decision, an unfinished reason stays in this browser tab. Reopen the same comparison to continue. The draft belongs to the versions of both documents you compared. A different document version starts with an empty reason so an earlier explanation is not applied to changed evidence.

@@ -77,12 +77,18 @@ function DuplicateDecisionFormForm({
       return data
     },
     onSettled: (_data, _error, variables) => {
-      void client.invalidateQueries({
-        queryKey: ["financial-ledger", variables.selected.caseId],
-      })
-      void client.invalidateQueries({
-        queryKey: ["financial-decisions", variables.selected.caseId],
-      })
+      for (const prefix of [
+        "financial-ledger",
+        "financial-decisions",
+        "ledger-source",
+        "financial-linked-payments",
+        "financial-proof-standing",
+        "statement-import-status",
+      ]) {
+        void client.invalidateQueries({
+          queryKey: [prefix, variables.selected.caseId],
+        })
+      }
     },
     onSuccess: () => clearReason(),
   })

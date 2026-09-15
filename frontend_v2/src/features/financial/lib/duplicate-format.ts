@@ -100,11 +100,15 @@ export function readDuplicateCandidates(
 
 export function duplicateMatchLabel(match: string): string {
   const labels: Record<string, string> = {
-    comparison_document: "Compared against this document",
-    identical_bytes: "Same file bytes and stored reading",
-    identical_reading: "Same stored reading; different files",
-    same_file_different_reading: "Same file bytes; conflicting stored readings",
-    shared_coverage: "Shared account or period coverage; different readings",
+    comparison_document:
+      "The other files in this group are compared with this file",
+    identical_bytes: "Same original file and transaction values",
+    identical_reading:
+      "Same transaction values and statement balances; different files",
+    same_file_different_reading:
+      "Same original file, but the saved transaction values differ",
+    shared_coverage:
+      "Same account or dates, but the saved transaction values differ",
   }
   return labels[match] ?? `Unrecognised match (${match})`
 }

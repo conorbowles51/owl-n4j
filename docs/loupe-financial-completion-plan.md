@@ -93,6 +93,8 @@ Release evidence: [15 September release record](releases/2026-09-15-financial.md
 
 ## Continuing user workflow checks
 
+- [x] Refresh previously opened payment sources and related analysis immediately after duplicate exclusion or restoration, within the affected case. Show clear included/excluded labels and retained filenames. Verify that a real read-only member can open both originals without seeing unavailable exclusion/restore actions.
+
 - [x] Complete native/scanned duplicate import, exclusion and restoration against the actual local PostgreSQL service. Fix the confirmed-PDF verification mismatch and missing stored group key; retain both original PDFs, exact verification status and all three decisions in the exported package. Add View source to both candidate cards. Final synthetic totals contain six payments once, with twelve readings retained in history.
 
 The prior checked items stay as evidence. The user instructed continuous work after the local checkpoint; keep the schedule active until tonight or an explicit stop.

@@ -3,6 +3,7 @@ import { useState } from "react"
 import { CrossCaseDuplicatePanel } from "./CrossCaseDuplicatePanel"
 import { Button } from "@/components/ui/button"
 import { useDuplicateCandidates } from "../hooks/use-duplicate-candidates"
+import { useFinancialAccess } from "../hooks/use-financial-access"
 import {
   DuplicateDecisionForm,
   type DuplicateSelection,
@@ -14,6 +15,7 @@ export function DuplicateCandidatesPanel({
 }: {
   caseId: string | undefined
 }) {
+  const { canEdit, ready } = useFinancialAccess()
   const [sourceId, setSourceId] = useState<string | null>(null)
   const [groupPage, setGroupPage] = useState(0)
   const [hashPage, setHashPage] = useState(0)
@@ -40,6 +42,12 @@ export function DuplicateCandidatesPanel({
         then choose which copy to keep. This comparison does not exclude
         documents or change totals.
       </p>
+      {ready && !canEdit && (
+        <p className="text-xs text-muted-foreground">
+          You can compare statements and open their originals. Changing which
+          copies count in Transactions requires permission to edit this case.
+        </p>
+      )}
       <p className="text-xs text-muted-foreground">
         Statements are grouped when their recorded accounts and dates match.
         Files with the same contents but different recorded accounts or dates
@@ -212,23 +220,49 @@ export function DuplicateCandidatesPanel({
                               </Button>
                             )}
                             <p>{duplicateMatchLabel(row.match)}</p>
-                            <p>Document status: {row.status}</p>
-                            <p className="text-xs break-all">
-                              Document: {row.document_id}
+                            <p>
+                              {row.status === "admitted"
+                                ? "Included in Transactions"
+                                : "Excluded from Transactions"}
                             </p>
                             {row.superseded_by_id && (
-                              <p className="text-xs break-all">
-                                Superseded by: {row.superseded_by_id}
+                              <p className="break-words">
+                                Retained copy:{" "}
+                                {group.members.find(
+                                  (member) =>
+                                    member.document_id === row.superseded_by_id
+                                )?.filename ?? "See document identifiers"}
                               </p>
                             )}
                             <p>
                               {Object.entries(row.rows_by_status)
                                 .map(
-                                  ([status, count]) => `${count} ${status} rows`
+                                  ([status, count]) =>
+                                    `${count} ${
+                                      (
+                                        {
+                                          admitted: "included rows",
+                                          superseded:
+                                            "excluded or corrected rows",
+                                          quarantined: "rows needing review",
+                                          rejected: "rejected rows",
+                                        } as Record<string, string>
+                                      )[status] ?? `${status} rows`
+                                    }`
                                 )
                                 .join(" · ") || "No stored rows"}
                             </p>
-                            {row.status === "admitted" &&
+                            <details className="text-xs break-all">
+                              <summary className="cursor-pointer">
+                                Document identifiers
+                              </summary>
+                              <p>Document: {row.document_id}</p>
+                              {row.superseded_by_id && (
+                                <p>Retained document: {row.superseded_by_id}</p>
+                              )}
+                            </details>
+                            {canEdit &&
+                              row.status === "admitted" &&
                               group.members
                                 .filter(
                                   (other) =>
@@ -293,16 +327,18 @@ export function DuplicateCandidatesPanel({
                         className="flex items-center justify-between gap-2 text-sm"
                       >
                         <span>{row.filename}</span>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={!!selection || isFetching}
-                          onClick={() =>
-                            setSelection({ caseId, document: row })
-                          }
-                        >
-                          Restore {row.filename}
-                        </Button>
+                        {canEdit && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={!!selection || isFetching}
+                            onClick={() =>
+                              setSelection({ caseId, document: row })
+                            }
+                          >
+                            Restore {row.filename}
+                          </Button>
+                        )}
                       </li>
                     ))}
                   </ul>

@@ -10,7 +10,7 @@ The local build is ready for UI acceptance and an explicitly requested push. It 
 4. Use People and businesses, Transfers, Patterns and Trends to investigate payments. More financial tools contains Payment graph, Trace funds and Payments and case events. Open the payments behind a result to check their sources.
 5. Save notes, payment selections, transfer comparisons and tracing calculations in Findings. Reopen them later or select them for a report. Another authorised case member can reopen the same saved work and supporting documents.
 6. Build a report with selected findings and original PDFs. The separate transaction export retains original/corrected versions and recorded history. The tracing review package retains selected calculation inputs, methods, results and verification records.
-7. Open the Financial guide when needed. It contains step-by-step instructions and 26 synthetic screenshots and closes without resetting the current form.
+7. Open the Financial guide when needed. It contains step-by-step instructions and 27 synthetic screenshots and closes without resetting the current form.
 
 Supported wire-detail reports and deposit receipts open a separate review. Their checked details can be saved in Findings and linked to an existing payment. They do not create a second payment merely because a statement records the same deposit or transfer.
 
@@ -206,3 +206,7 @@ Review this row opens the corresponding import checkbox and correction fields be
 Duplicate review now accepts a confirmed PDF import as the retained copy without upgrading its verification status. An exclusion still cannot remove the last verified occurrence of a payment or retain a copy with payments already set aside or corrected. Fresh duplicate references are saved with the confirmed decision, fixing a database refusal for newly imported statements. Comparison itself remains read-only.
 
 Each candidate has View source, including previously excluded copies. The guide explains how to inspect both PDFs, select the retained file, record the reason and restore an exclusion. The actual native/scanned test moved from twelve payments to six, back to twelve and finally six. The downloaded package retained all twelve readings, the three decisions and both byte-identical source PDFs; only the six current payments appear in its table. Thirty-seven focused backend checks, nineteen frontend checks, scoped lint, TypeScript and the production build passed. No broad suite was repeated and nothing was pushed.
+
+## Duplicate review continuation
+
+Previously opened payment details, related analysis and statement status now refresh after a duplicate decision. The change is limited to the affected case. Candidate cards name the retained file and say whether each copy is included in Transactions; internal identifiers are available on expansion. Read-only members can compare and open both originals without being shown unavailable exclusion or restore buttons. Twelve focused checks and a real temporary member verified this behaviour, with no financial writes. The guide includes a matching synthetic screenshot. TypeScript, scoped lint and the production build passed.

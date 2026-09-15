@@ -3,9 +3,10 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, expect, it, vi } from "vitest"
 import { duplicateCandidates } from "@/test/duplicate-fixture"
 import { DuplicateCandidatesPanel } from "./DuplicateCandidatesPanel"
+import { FinancialAccessContext } from "../hooks/use-financial-access"
 
 afterEach(() => vi.restoreAllMocks())
-function mount() {
+function mount(canEdit = false) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
@@ -13,7 +14,11 @@ function mount() {
     client,
     ...render(
       <QueryClientProvider client={client}>
-        <DuplicateCandidatesPanel caseId="case-1" />
+        <FinancialAccessContext.Provider
+          value={{ canEdit, canUpload: false, ready: true, error: false }}
+        >
+          <DuplicateCandidatesPanel caseId="case-1" />
+        </FinancialAccessContext.Provider>
       </QueryClientProvider>
     ),
   }
@@ -35,8 +40,8 @@ it("compares on request, shows actual disposition and refreshes on ledger invali
     )
   ).toBeInTheDocument()
   fireEvent.click(screen.getByText(/Candidate group 1/))
-  expect(screen.getByText("Document status: superseded")).toBeInTheDocument()
-  expect(screen.getByText("2 superseded rows")).toBeInTheDocument()
+  expect(screen.getByText("Excluded from Transactions")).toBeInTheDocument()
+  expect(screen.getByText("2 excluded or corrected rows")).toBeInTheDocument()
   expect(
     screen.getByText(/does not exclude documents or change totals/)
   ).toBeInTheDocument()
@@ -104,6 +109,7 @@ it("opens the original for each matching copy without making a duplicate decisio
   const data = duplicateCandidates()
   data.groups[0].members[0].source_transaction_id = "first-payment"
   data.groups[0].members[1].source_transaction_id = "excluded-payment"
+  data.excluded_documents = [data.groups[0].members[1]]
   const fetch = vi
     .spyOn(globalThis, "fetch")
     .mockImplementation(async (url) =>
@@ -114,6 +120,12 @@ it("opens the original for each matching copy without making a duplicate decisio
   mount()
   fireEvent.click(screen.getByRole("button", { name: "Compare documents" }))
   fireEvent.click(await screen.findByText(/Candidate group 1/))
+  expect(
+    screen.queryByRole("button", { name: /Exclude this copy|Restore copy/ })
+  ).not.toBeInTheDocument()
+  expect(
+    screen.getByText(/requires permission to edit this case/)
+  ).toBeInTheDocument()
   for (const [filename, payment] of [
     ["original.ofx", "first-payment"],
     ["copy.ofx", "excluded-payment"],
@@ -136,4 +148,34 @@ it("opens the original for each matching copy without making a duplicate decisio
       ([, options]) => !options?.method || options.method === "GET"
     )
   ).toBe(true)
+})
+
+it("offers duplicate exclusion and restoration to members who can edit the case", async () => {
+  const data = duplicateCandidates()
+  const priorCopy = {
+    ...data.groups[0].members[1],
+    document_id: "older-copy",
+    filename: "older.pdf",
+  }
+  data.groups[0].members[1] = {
+    ...data.groups[0].members[1],
+    status: "admitted",
+    superseded_by_id: null,
+  }
+  data.excluded_documents = [priorCopy]
+  vi.spyOn(globalThis, "fetch").mockImplementation(
+    async () => new Response(JSON.stringify(data))
+  )
+  mount(true)
+  fireEvent.click(screen.getByRole("button", { name: "Compare documents" }))
+  fireEvent.click(await screen.findByText(/Candidate group 1/))
+  expect(
+    screen.getByRole("button", {
+      name: "Exclude this copy; retain original.ofx",
+    })
+  ).toBeInTheDocument()
+  fireEvent.click(screen.getByText("Excluded documents (1)"))
+  expect(
+    screen.getByRole("button", { name: "Restore older.pdf" })
+  ).toBeInTheDocument()
 })
