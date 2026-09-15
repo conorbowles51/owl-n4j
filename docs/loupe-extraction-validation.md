@@ -197,7 +197,7 @@ The review pin is the reconciliation record's `review_record_sha256`; the baseli
 pin is SHA-256 of the exact baseline file bytes. Retain pins separately during
 release review, rather than deriving them automatically from whatever input is
 being tested. The command recomputes reconciliation, binds both runs to the same
-truth, refuses synthetic labels or sources without reviewed transaction rows and
+truth, refuses synthetic labels or a wholly empty reference corpus and
 returns exit2 with a report on a measured regression. Invalid or mismatched inputs
 fail without a success report. Output is a new file; no database or provider call.
 
@@ -226,3 +226,29 @@ Blank drafts for the two supplied PDFs are available locally in
 `data/local-runtime/reference-review-drafts-20260910`. Their hashes match the
 previously retained originals. This ignored directory is private local test data;
 its existence is not independent review or representative corpus acceptance.
+
+## Capture the current statement reader for a measured run
+
+Use `scripts/capture_financial_statement_predictions.py` to capture the same automatic statement proposals used by the application from already prepared PDFs. This is a local administrator command. It uses a read-only, repeatable database transaction and does not run OCR, call a provider, import payments or create reference labels.
+
+Create a private JSON inventory containing `corpus_id`, `corpus_version` and `sources`. Each source contains `case_id`, `evidence_file_id`, the previously retained `source_sha256`, and its explicit `currency` context. Select each unique original PDF once. The sources must already be prepared in that database. Keep account identifiers and all capture outputs in authorised private storage.
+
+Set `LOUPE_VALIDATION_DATABASE_URL` through your normal local environment configuration, then run:
+
+```sh
+data/local-runtime/backend-venv/bin/python scripts/capture_financial_statement_predictions.py \
+  private-inventory.json --output private-capture-directory
+```
+
+The new output directory contains:
+
+- `input-inventory.json`: the selected sources and currency context.
+- `captured-proposals.json`: complete automatic proposals and their digests, including excluded headings, balances, unresolved information and supporting-document reviews.
+- `predictions.json`: the exact non-excluded statement row proposals in the existing evaluation input format. Original date, amount, direction and printed account reference are used where available. Missing values remain missing. Receipts and wire reviews do not become statement transactions. All proposals remain `admitted: false`.
+- `capture-manifest.json`: the statement reader version and the size/hash of each retained file. Reference review status is explicitly `not_supplied`. Original file digests are checked against retained database records; this command does not reread original PDF bytes or certify their authenticity.
+
+To reproduce a frozen run, put each captured `proposals_sha256` into that source's `expected_proposals_sha256` inventory field and use a new output directory. Changed prepared readings or reader output then fail the check. Table/row addresses identify positions within that exact preparation. If a new preparation changes geometry, independently reviewed row alignment is required before comparing runs. Do not silently match different row numbers or copy predicted values into reviewer labels.
+
+Give independent readers the original documents and their blank review forms, not this prediction file. Once their reviews have been reconciled, pass `predictions.json` to the existing evaluation and pinned release commands. A completely reviewed source containing no transactions is permitted alongside sources with transactions, so invented payments on terms, notices or other non-transaction documents can reduce precision. A wholly empty reference corpus cannot pass the release check.
+
+No approved real-source reader record or baseline pin is currently available. The application can capture and evaluate the inputs, but this release must record independent extraction accuracy as unavailable until the actual reviews exist. Software tests and automatic counts do not replace that work.

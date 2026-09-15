@@ -11,17 +11,24 @@ from services.financial.reference_reviews import reconcile_reference_reviews
 
 
 class ExtractionReleaseTests(unittest.TestCase):
-    def run_check(self, *, synthetic=False, wrong_pin=False, regression=False, tampered=False):
+    def run_check(self, *, synthetic=False, wrong_pin=False, regression=False, tampered=False, negative_example=False, invented=False):
         first, second = review_fixtures.ReferenceReviewTests().reviews()
         if not synthetic:
             first['label_status'] = second['label_status'] = 'independent_reader'
+        if negative_example:
+            for reader in (first, second):
+                reader['documents'].append(dict(source_sha256='b'*64, complete_source_reviewed=True, rows=[]))
         record = reconcile_reference_reviews(first, second)
         document = corpus_fixtures.ExtractionEvaluationTests().corpus()['documents'][0]
         document.pop('truth')
         document['predictions'] = [{**first['documents'][0]['rows'][0], 'admitted':True}]
         baseline = dict(schema_version='loupe.extraction_predictions/1', corpus_id=record['corpus_id'],
             corpus_version=record['corpus_version'], documents=[document])
+        if negative_example:
+            baseline['documents'].append({**document, 'source_sha256':'b'*64, 'predictions':[]})
         current = json.loads(json.dumps(baseline))
+        if invented:
+            current['documents'][-1]['predictions'] = [{'source_id':'page-1/row-2','fields':{'amount_minor':'999','direction':'credit'},'admitted':False}]
         if regression:
             current['documents'][0]['predictions'][0]['fields']['direction'] = 'debit'
         if tampered:
@@ -58,3 +65,10 @@ class ExtractionReleaseTests(unittest.TestCase):
                 result, report = self.run_check(**{option:True})
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIsNone(report)
+
+    def test_completely_reviewed_empty_documents_catch_invented_transactions(self):
+        result, report = self.run_check(negative_example=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        result, report = self.run_check(negative_example=True, invented=True)
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertTrue(any(item['metric'] == 'row_precision' for item in report['comparison']['regressions']))

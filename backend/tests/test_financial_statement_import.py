@@ -437,11 +437,11 @@ class StatementImportTests(TransactionPersistenceTestCase):
         from copy import deepcopy
         from postgres.models.financial import FinancialStatementPeriod
         first=self.db.scalar(select(EvidenceTableGeometry).where(EvidenceTableGeometry.evidence_file_id==self.file.id))
-        def payload(grid):
+        def payload(grid, page_number=1):
             return [dict(table_source='drawn_geometry',geometry_source='cell_rectangles',
-                table=dict(page=1,table=rectangle(0,x=0,width=600,height=600),unlocated_values=0,
+                table=dict(page=page_number,table=dict(rectangle(0,x=0,width=600,height=600), page=page_number),unlocated_values=0,
                     values=[dict(row=r['row_index'],column=c['column_index'],text=c['expected_text'],
-                        locator=rectangle(20+r['row_index']*20,x=20+c['column_index']*100,width=90,height=15))
+                        locator=dict(rectangle(20+r['row_index']*20,x=20+c['column_index']*100,width=90,height=15), page=page_number))
                         for r in grid['rows'] for c in r['cells']]))]
         grid=card_source()
         first.payload=payload(grid)
@@ -450,8 +450,21 @@ class StatementImportTests(TransactionPersistenceTestCase):
             for cell in row['cells']:
                 cell['expected_text']=cell['expected_text'].replace('Jun.','Jul.').replace('May','Jun.')
                 cell['expected_text']=cell['expected_text'].replace('31 days','30 days')
-        # A second table on the same source page is enough to exercise period scope.
+        # Conflicting headers occupying the same page cannot establish page-wide context.
         first.payload=payload(grid)+payload(second)
+        self.db.commit()
+        self.assertEqual(self.preview()['statement_choices'], [])
+        # Two physical statement pages provide an unambiguous period for each.
+        first.payload=payload(grid)
+        self.db.add(EvidenceTableGeometry(evidence_file_id=self.file.id, page_number=2,
+            engine_job_id=first.engine_job_id, payload=payload(second, 2)))
+        text=self.db.get(EvidenceDocumentText, self.file.id)
+        contents=['\n'.join(c['expected_text'] for r in value['rows'] for c in r['cells']) for value in (grid,second)]
+        text.content='\n'.join(contents)
+        text.content_sha256=hashlib.sha256(text.content.encode()).hexdigest()
+        text.character_count=len(text.content)
+        text.source_locations=[dict(kind='page',page_number=1,start_char=0,end_char=len(contents[0]),text_origin='digital_text_layer'),
+            dict(kind='page',page_number=2,start_char=len(contents[0])+1,end_char=len(text.content),text_origin='digital_text_layer')]
         self.db.commit()
         choices=self.preview()['statement_choices']
         self.assertEqual(len(choices),2)

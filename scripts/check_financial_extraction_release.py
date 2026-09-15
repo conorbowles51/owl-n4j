@@ -47,8 +47,8 @@ def main():
     if after['label_status'] != 'independently_reviewed':
         parser.error('Synthetic labels cannot satisfy this release check.')
     for corpus in (before, after):
-        if not all(document['truth'] for document in corpus['documents']):
-            parser.error('Release evaluation requires reviewed transaction rows for every selected source.')
+        if not any(document['truth'] for document in corpus['documents']):
+            parser.error('Release evaluation requires at least one reviewed transaction in the corpus. Completely reviewed sources with no transactions are permitted as negative examples.')
     report = evaluate_extraction(after)
     comparison = compare_extraction_evaluations(before, after)
     result = dict(schema_version='loupe.extraction_release_check/1',
