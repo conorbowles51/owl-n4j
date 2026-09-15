@@ -9,15 +9,16 @@ restored by this path.
 import hashlib
 import json
 import uuid
+from collections import Counter
 
 from sqlalchemy import select, func
 
 from postgres.models.enums import AdjudicationDecision, AdjudicationSubject, ProofClass
 from postgres.models.financial import (
-    AdjudicationEvent, FinancialSourceDocument, FinancialStatementPeriod,
+    AdjudicationEvent, FinancialAccount, FinancialSourceDocument, FinancialStatementPeriod,
     FinancialTransaction,
 )
-from services.financial.proof_class import counts_toward_totals
+from services.financial.proof_class import counts_toward_totals, may_produce_ledger_rows
 from services.financial.decisions import Actor, record
 from services.financial.duplicates import fingerprint_document
 
@@ -130,6 +131,8 @@ def _decide(session, *, case_id, document_id, action, expected_revision,
     before = {"status": document.status,
               "superseded_by_id": str(document.superseded_by_id) if document.superseded_by_id else None,
               "duplicate_match_rung": document.duplicate_match_rung,
+              "duplicate_group_key": document.duplicate_group_key,
+              "content_fingerprint": document.content_fingerprint,
               "duplicate_review_required": document.duplicate_review_required,
               "duplicate_review_version": 1, "rows": {},
               "reviewed_revision": expected_revision,
@@ -152,18 +155,38 @@ def _decide(session, *, case_id, document_id, action, expected_revision,
         retained = fingerprint_document(session, primary)
         if not source.content_fingerprint or source != retained:
             raise DuplicateDecisionError("The stored readings do not match; exclusion was refused.")
-        # A retained copy with held/corrected rows is not equivalent for totals,
-        # even when its full historical reading matches the excluded document.
+        # Confirmed PDF imports participate in working totals at P3. Keeping
+        # one such copy does not require promoting either copy to verified.
         primary_rows = [r for r in rows if r.source_document_id == primary_id]
-        if (not counts_toward_totals(ProofClass(primary.proof_class)) or
-            any(not counts_toward_totals(ProofClass(r.proof_class)) for r in primary_rows)):
+        if (any(not may_produce_ledger_rows(ProofClass(d.proof_class)) for d in (document, primary)) or
+            any(not may_produce_ledger_rows(ProofClass(r.proof_class)) for r in primary_rows)):
             raise DuplicateDecisionError("The retained copy is not eligible for ledger totals.")
         if any(r.ledger_status != "admitted" or r.superseded_by_id for r in primary_rows):
             raise DuplicateDecisionError("The retained copy has rows set aside or corrected; review them first.")
         changed = [r for r in own_rows if r.ledger_status == "admitted"]
         if any(r.superseded_by_id for r in changed):
             raise DuplicateDecisionError("A corrected row cannot be excluded as an admitted row.")
+        # A matching historical reading is insufficient if retaining it would
+        # remove the last verified occurrence of a payment. Compare counts,
+        # not sets, because identical payments can occur more than once.
+        account_keys = dict(session.execute(select(FinancialAccount.id, FinancialAccount.identity_key)
+            .where(FinancialAccount.case_id == case_id,
+                   FinancialAccount.id.in_({r.account_id for r in rows}))).all())
+
+        def verified_readings(source_document, source_rows):
+            if not counts_toward_totals(ProofClass(source_document.proof_class)):
+                return Counter()
+            return Counter((account_keys[r.account_id], r.currency, r.content_hash) for r in source_rows
+                           if counts_toward_totals(ProofClass(r.proof_class)))
+
+        if verified_readings(document, changed) - verified_readings(primary, primary_rows):
+            raise DuplicateDecisionError(
+                "The retained copy would remove verified payments from the verified totals. "
+                "Keep the verified copy instead."
+            )
         after.update(status="superseded", superseded_by_id=str(primary_id),
+                     duplicate_group_key=source.group_key,
+                     content_fingerprint=source.content_fingerprint,
                      duplicate_match_rung=0 if document.sha256_at_ingestion == primary.sha256_at_ingestion else 1,
                      duplicate_review_required=False)
         target_status = "superseded"
@@ -202,6 +225,8 @@ def _decide(session, *, case_id, document_id, action, expected_revision,
     document.status = after["status"]
     document.superseded_by_id = uuid.UUID(after["superseded_by_id"]) if after["superseded_by_id"] else None
     document.duplicate_match_rung = after["duplicate_match_rung"]
+    document.duplicate_group_key = after["duplicate_group_key"]
+    document.content_fingerprint = after["content_fingerprint"]
     document.duplicate_review_required = after["duplicate_review_required"]
     for row in changed:
         row.ledger_status = target_status

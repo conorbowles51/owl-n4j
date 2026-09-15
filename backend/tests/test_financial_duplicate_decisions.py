@@ -4,7 +4,10 @@ from unittest.mock import patch
 from sqlalchemy import select
 from postgres.models.financial import AdjudicationEvent, FinancialTransaction, FinancialSourceDocument
 from services.financial.duplicate_decisions import DuplicateDecisionError, decide_duplicate, duplicate_revision
+from services.financial.duplicate_query import list_duplicate_candidates
 from services.financial.quarantine_row import release_case_row
+from services.financial.ledger_summary import ledger_summary
+from services.financial.working_totals import working_ledger_summary
 from tests.test_financial_duplicates import DuplicateTestCase
 
 
@@ -101,6 +104,84 @@ class DuplicateDecisionTests(DuplicateTestCase):
             self.db.commit()
             with self.assertRaises(DuplicateDecisionError):
                 self.decide(copy, primary)
+
+    def test_confirmed_pdf_copies_can_be_excluded_and_restored_without_promoting_proof(self):
+        copy, primary = self.make_copy(fingerprint=False), self.make_copy(fingerprint=False)
+        self.assertNotEqual(copy.sha256_at_ingestion, primary.sha256_at_ingestion)
+        for document in (copy, primary):
+            document.proof_class = "p3"
+            for row in self.rows(document):
+                row.proof_class = "p3"
+        self.db.commit()
+        comparison = list_duplicate_candidates(self.db, self.case.id)
+        self.assertEqual(len(comparison["groups"]), 1)
+        self.assertIsNone(copy.duplicate_group_key)
+        self.assertFalse(self.db.dirty)
+        before = working_ledger_summary(self.db, case_id=self.case.id)
+        self.assertEqual(before["included_rows"], 4)
+        self.assertEqual(self.decide(copy, primary)["changed_rows"], 2)
+        self.assertEqual(self.reload(copy).duplicate_group_key, comparison["groups"][0]["group_key"])
+        exclusion = self.db.scalar(select(AdjudicationEvent).where(AdjudicationEvent.subject_id == copy.id))
+        self.assertIsNone(exclusion.before["duplicate_group_key"])
+        self.assertEqual(exclusion.after["duplicate_group_key"], copy.duplicate_group_key)
+        remaining = working_ledger_summary(self.db, case_id=self.case.id)
+        self.assertEqual(remaining["included_rows"], 2)
+        self.assertEqual(remaining["outside_verified_rows"], 2)
+        self.assertEqual(ledger_summary(self.db, case_id=self.case.id)["included_rows"], 0)
+        for key in ("credits_minor", "debits_minor", "net_minor"):
+            self.assertEqual(int(before["currencies"][0][key]), 2 * int(remaining["currencies"][0][key]))
+        self.decide(copy)
+        self.assertEqual(working_ledger_summary(self.db, case_id=self.case.id)["included_rows"], 4)
+        for document in (copy, primary):
+            self.assertEqual(self.reload(document).proof_class, "p3")
+            self.assertTrue(all(r.proof_class == "p3" for r in self.rows(document)))
+
+    def test_cannot_replace_verified_source_with_an_unverified_copy(self):
+        copy, primary = self.pair()
+        primary.proof_class = "p3"
+        self.db.commit()
+        with self.assertRaisesRegex(DuplicateDecisionError, "Keep the verified copy"):
+            self.decide(copy, primary)
+        self.assertEqual(self.reload(copy).status, "admitted")
+        self.assertEqual(list(self.db.scalars(select(AdjudicationEvent))), [])
+
+    def test_mixed_verification_must_preserve_the_same_payments(self):
+        copy, primary = self.pair()
+        copy_rows = sorted(self.rows(copy), key=lambda r: r.content_hash)
+        primary_rows = sorted(self.rows(primary), key=lambda r: r.content_hash)
+        copy_rows[0].proof_class = "p3"
+        primary_rows[1].proof_class = "p3"
+        self.db.commit()
+        with self.assertRaisesRegex(DuplicateDecisionError, "Keep the verified copy"):
+            self.decide(copy, primary)
+        primary_rows = sorted(self.rows(primary), key=lambda r: r.content_hash)
+        primary_rows[0].proof_class, primary_rows[1].proof_class = "p3", "p2"
+        self.db.commit()
+        self.assertEqual(self.decide(copy, primary)["changed_rows"], 2)
+        self.assertEqual(ledger_summary(self.db, case_id=self.case.id)["included_rows"], 1)
+
+    def test_unverified_retained_copy_still_cannot_have_rows_set_aside(self):
+        copy, primary = self.pair()
+        copy.proof_class = primary.proof_class = "p3"
+        held = self.rows(primary)[0]
+        held.ledger_status, held.quarantine_reason = "quarantined", "unreadable_row"
+        self.db.commit()
+        with self.assertRaisesRegex(DuplicateDecisionError, "rows set aside"):
+            self.decide(copy, primary)
+
+    def test_same_amount_payments_keep_each_verified_occurrence(self):
+        # Separate printed occurrences retain separate content hashes even
+        # when their date, description and amount happen to be equal.
+        readings = ((10000, "aa"), (10000, "bb"))
+        copy, primary = self.make_copy(rows=readings), self.make_copy(rows=readings)
+        for document in (copy, primary):
+            for row in self.rows(document):
+                row.description = "Repeated payment"
+        self.rows(primary)[0].proof_class = "p3"
+        self.db.commit()
+        with self.assertRaisesRegex(DuplicateDecisionError, "Keep the verified copy"):
+            self.decide(copy, primary)
+        self.assertEqual(self.reload(copy).status, "admitted")
 
     def test_primary_with_dependents_cannot_be_hidden(self):
         copy, primary = self.pair()

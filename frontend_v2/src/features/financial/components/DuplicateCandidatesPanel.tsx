@@ -36,14 +36,14 @@ export function DuplicateCandidatesPanel({
     >
       <h2 className="text-sm font-semibold">Duplicate candidates</h2>
       <p className="text-xs text-muted-foreground">
-        Compare financial documents already recorded in this case. Matching
-        readings are candidates for review; this comparison does not exclude
+        Find statements that may have been imported twice. Open each source,
+        then choose which copy to keep. This comparison does not exclude
         documents or change totals.
       </p>
       <p className="text-xs text-muted-foreground">
-        Reading groups require matching account and period coverage. Matching
-        ingestion hashes with different or missing coverage are shown separately
-        for source review.
+        Statements are grouped when their recorded accounts and dates match.
+        Files with the same contents but different recorded accounts or dates
+        are listed separately.
       </p>
       {!caseId ? (
         <p>Choose a case to compare documents.</p>
@@ -97,19 +97,18 @@ export function DuplicateCandidatesPanel({
                 {data.compared} of {data.documents} financial documents
                 compared. {data.skipped.length} not compared.
               </p>
-              <p className="text-xs text-muted-foreground">
-                Admitted and superseded documents are compared using all stored
-                rows, including held-out rows, and balance observations. A
-                matching reading is not proof that two exhibits are
-                interchangeable. Row counts below describe stored statuses, not
-                verified totals.
-              </p>
-              {data.stored_rows_in_case !== undefined && (
-                <p>
-                  {data.stored_rows_in_case} stored readings in this case were
-                  counted for the comparison limit.
+              <details className="text-xs text-muted-foreground">
+                <summary className="cursor-pointer">What was compared</summary>
+                <p className="mt-2">
+                  The comparison includes original transaction values, balances
+                  and rows previously excluded or corrected. Open the PDFs to
+                  check whether either file contains additional information
+                  before excluding a copy.
                 </p>
-              )}
+                {data.stored_rows_in_case !== undefined && (
+                  <p>{data.stored_rows_in_case} saved rows in this case.</p>
+                )}
+              </details>
               {data.source_hash_groups.length > 0 && (
                 <section aria-label="Matching source hashes across coverage">
                   <h3 className="font-medium">
@@ -200,6 +199,18 @@ export function DuplicateCandidatesPanel({
                             <p className="font-medium break-all">
                               {row.filename}
                             </p>
+                            {row.source_transaction_id && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                aria-label={`View source for ${row.filename}`}
+                                onClick={() =>
+                                  setSourceId(row.source_transaction_id!)
+                                }
+                              >
+                                View source
+                              </Button>
+                            )}
                             <p>{duplicateMatchLabel(row.match)}</p>
                             <p>Document status: {row.status}</p>
                             <p className="text-xs break-all">

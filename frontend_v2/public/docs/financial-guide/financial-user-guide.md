@@ -680,11 +680,13 @@ For a case-wide review, expand **Checks across all accounts** at the bottom of *
 ### Compare documents in this case
 
 1. On **Import review**, find **Duplicate candidates** and select **Compare documents**.
-2. Inspect the compared account and period coverage, source hashes and stored readings.
-3. Open both original sources. Check whether the documents represent the same evidence and whether one has information the other lacks.
-4. Read matching source hashes across different or missing coverage separately. Identical bytes do not make two differently reviewed scopes interchangeable.
-5. If excluding a duplicate is justified, use the available exclusion action and give a reason identifying the copy you are retaining.
-6. Check the decision confirmation, current ledger totals and **Change history**.
+2. Open a **Candidate group**. Read the filenames and the explanation beneath each file. Matching accounts and dates identify possible copies; they do not automatically remove a statement.
+3. Select **View source** on the first file, then **Open source file**. Check the account, statement dates, transactions and balances. Close the document and its details, then repeat for the other file. These controls also open a copy that was previously excluded.
+4. Check whether either original contains extra information. A native PDF and a scanned copy can show the same transactions even though their files differ. Files with matching contents but different recorded accounts or dates are shown separately; those matches alone do not offer an exclusion.
+5. If both files contain the same payments, select **Exclude this copy; retain [filename]** on the copy you want to remove from totals. Check the retained filename, enter your reason in **Reason for this decision**, then select **Record decision**.
+6. Read the confirmation and its number of excluded rows. Return to **Transactions** and check the totals. The original files and decision history remain available.
+
+You can exclude a duplicate after confirming its PDF import. This does not change the recorded verification status. If the system says to keep the verified copy instead, close the decision and retain that copy. If the retained file has payments already corrected or set aside, review those differences before deciding which document to keep.
 
 For a bulk exclusion, inspect every selected document before confirming. Keep at least the intended retained evidence and read the affected counts. Do not exclude candidates solely because their amounts match.
 

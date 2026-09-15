@@ -200,3 +200,9 @@ Scanned statement proposals now compare the positions of amounts across each pri
 ## Resolve flagged rows directly
 
 Review this row opens the corresponding import checkbox and correction fields beside the original PDF. A user can correct the reading or exclude non-payment text with a reason. The actual synthetic footer exclusion and explanation survived refresh, leaving exactly six payments ready to confirm. Existing imported statements retain their transaction correction route.
+
+## Confirmed statement duplicates
+
+Duplicate review now accepts a confirmed PDF import as the retained copy without upgrading its verification status. An exclusion still cannot remove the last verified occurrence of a payment or retain a copy with payments already set aside or corrected. Fresh duplicate references are saved with the confirmed decision, fixing a database refusal for newly imported statements. Comparison itself remains read-only.
+
+Each candidate has View source, including previously excluded copies. The guide explains how to inspect both PDFs, select the retained file, record the reason and restore an exclusion. The actual native/scanned test moved from twelve payments to six, back to twelve and finally six. The downloaded package retained all twelve readings, the three decisions and both byte-identical source PDFs; only the six current payments appear in its table. Thirty-seven focused backend checks, nineteen frontend checks, scoped lint, TypeScript and the production build passed. No broad suite was repeated and nothing was pushed.

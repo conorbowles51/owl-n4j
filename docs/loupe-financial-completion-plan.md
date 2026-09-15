@@ -93,6 +93,8 @@ Release evidence: [15 September release record](releases/2026-09-15-financial.md
 
 ## Continuing user workflow checks
 
+- [x] Complete native/scanned duplicate import, exclusion and restoration against the actual local PostgreSQL service. Fix the confirmed-PDF verification mismatch and missing stored group key; retain both original PDFs, exact verification status and all three decisions in the exported package. Add View source to both candidate cards. Final synthetic totals contain six payments once, with twelve readings retained in history.
+
 The prior checked items stay as evidence. The user instructed continuous work after the local checkpoint; keep the schedule active until tonight or an explicit stop.
 
 - [x] Make read-only financial controls match the server's exact case edit/upload permissions while preserving inspection, analysis and downloads.

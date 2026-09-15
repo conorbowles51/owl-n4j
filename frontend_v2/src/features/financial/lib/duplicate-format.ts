@@ -38,6 +38,7 @@ const schema = z.object({
       members: z
         .array(
           reviewedDocument.extend({
+            source_transaction_id: z.string().min(1).nullable().optional(),
             reading_fingerprint: z.string().regex(/^[a-f0-9]{64}$/),
             match: z.string().min(1),
             rows_by_status: z.record(z.string(), count),

@@ -99,3 +99,41 @@ it("shows hash-only matches separately without offering exclusions for those mat
     screen.queryByRole("button", { name: /Exclude this copy/ })
   ).not.toBeInTheDocument()
 })
+
+it("opens the original for each matching copy without making a duplicate decision", async () => {
+  const data = duplicateCandidates()
+  data.groups[0].members[0].source_transaction_id = "first-payment"
+  data.groups[0].members[1].source_transaction_id = "excluded-payment"
+  const fetch = vi
+    .spyOn(globalThis, "fetch")
+    .mockImplementation(async (url) =>
+      String(url).includes("/duplicates?")
+        ? new Response(JSON.stringify(data))
+        : new Response("Source temporarily unavailable", { status: 503 })
+    )
+  mount()
+  fireEvent.click(screen.getByRole("button", { name: "Compare documents" }))
+  fireEvent.click(await screen.findByText(/Candidate group 1/))
+  for (const [filename, payment] of [
+    ["original.ofx", "first-payment"],
+    ["copy.ofx", "excluded-payment"],
+  ]) {
+    fireEvent.click(
+      screen.getByRole("button", { name: `View source for ${filename}` })
+    )
+    await screen.findByText(/Transaction details could not be loaded/)
+    expect(
+      fetch.mock.calls.some(
+        ([url]) =>
+          String(url) ===
+          `/api/financial/ledger/${payment}/source?case_id=case-1`
+      )
+    ).toBe(true)
+    fireEvent.click(screen.getByRole("button", { name: "Close" }))
+  }
+  expect(
+    fetch.mock.calls.every(
+      ([, options]) => !options?.method || options.method === "GET"
+    )
+  ).toBe(true)
+})
