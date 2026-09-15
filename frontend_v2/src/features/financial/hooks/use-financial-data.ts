@@ -58,7 +58,7 @@ export function useCategorize(caseId: string) {
   return useMutation({
     mutationFn: ({ nodeKey, category }: { nodeKey: string; category: string }) =>
       financialAPI.categorize(nodeKey, category, caseId),
-    onSuccess: () => {
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["financial", caseId] })
       queryClient.invalidateQueries({ queryKey: ["financial", "summary", caseId] })
     },
@@ -82,7 +82,7 @@ export function useCreateCategory(caseId: string) {
   return useMutation({
     mutationFn: ({ name, color }: { name: string; color: string }) =>
       financialAPI.createCategory(name, color, caseId),
-    onSuccess: () => {
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["financial", "categories", caseId] })
     },
   })

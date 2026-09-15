@@ -1,5 +1,5 @@
 import { useFinancialAccess } from "../hooks/use-financial-access"
-import { useCallback } from "react"
+import { useCallback, useRef, useState } from "react"
 import {
   ChevronDown,
   ChevronRight,
@@ -57,7 +57,7 @@ interface TransactionTableProps {
   allTransactions: Transaction[]
   categories: FinancialCategory[]
   sortColumns: SortColumn[]
-  onCategorize: (nodeKey: string, category: string) => void
+  onCategorize: (nodeKey: string, category: string) => Promise<unknown>
   onAmountClick: (transaction: Transaction) => void
   onEntityEdit: (transaction: Transaction, field: "from" | "to") => void
   onGroupSubTransactions: (transaction: Transaction) => void
@@ -274,7 +274,7 @@ export function TransactionTable({
                   key={tx.key}
                   tx={tx}
                   editable={editable}
-                  canCorrectAmount={canEdit}
+                  canEditRecord={canEdit}
                   indent={indent}
                   isChecked={isChecked}
                   isExpanded={isExpanded}
@@ -301,7 +301,7 @@ export function TransactionTable({
 interface TransactionRowProps {
   tx: Transaction
   editable: boolean
-  canCorrectAmount: boolean
+  canEditRecord: boolean
   indent: boolean
   isChecked: boolean
   isExpanded: boolean
@@ -309,7 +309,7 @@ interface TransactionRowProps {
   categories: FinancialCategory[]
   onCheckbox: (key: string, e: React.MouseEvent) => void
   onToggleExpand: () => void
-  onCategorize: (nodeKey: string, category: string) => void
+  onCategorize: (nodeKey: string, category: string) => Promise<unknown>
   onAmountClick: (tx: Transaction) => void
   onEntityEdit: (tx: Transaction, field: "from" | "to") => void
   onGroupSubTransactions: (tx: Transaction) => void
@@ -323,7 +323,7 @@ interface TransactionRowProps {
 function TransactionRow({
   tx,
   editable,
-  canCorrectAmount,
+  canEditRecord,
   indent,
   isChecked,
   isExpanded,
@@ -338,6 +338,25 @@ function TransactionRow({
   onRemoveFromGroup,
   onSaveDetails,
 }: TransactionRowProps) {
+  const [categorySaving, setCategorySaving] = useState(false)
+  const [categoryError, setCategoryError] = useState("")
+  const categoryLock = useRef(false)
+  const changeCategory = async (category: string) => {
+    if (!canEditRecord || categoryLock.current) return
+    categoryLock.current = true
+    setCategorySaving(true)
+    setCategoryError("")
+    try {
+      await onCategorize(tx.key, category)
+    } catch (cause) {
+      setCategoryError(
+        `Category "${category}" could not be confirmed: ${cause instanceof Error ? cause.message : "Try again."}`
+      )
+    } finally {
+      categoryLock.current = false
+      setCategorySaving(false)
+    }
+  }
   const provenanceLabel = tx.evidence_source_type
     ? `${tx.evidence_source_type.replaceAll("_", " ")}${tx.source_page ? ` p.${tx.source_page}` : ""}`
     : tx.source_filename || "Legacy"
@@ -467,7 +486,7 @@ function TransactionRow({
         <TableCell className="py-1.5 text-right">
           <button
             className="inline-flex items-center gap-1 hover:underline"
-            disabled={!canCorrectAmount}
+            disabled={!canEditRecord}
             aria-label={`Correct amount for ${tx.name || tx.key}`}
             onClick={() => onAmountClick(tx)}
           >
@@ -522,10 +541,13 @@ function TransactionRow({
         <TableCell className="py-1.5">
           <Select
             value={tx.category || ""}
-            disabled={!editable}
-            onValueChange={(val) => onCategorize(tx.key, val)}
+            disabled={!canEditRecord || categorySaving}
+            onValueChange={(val) => void changeCategory(val)}
           >
-            <SelectTrigger className="h-6 w-28 text-[10px] border-none bg-transparent hover:bg-muted">
+            <SelectTrigger
+              aria-label={`Category for ${tx.name || tx.key}`}
+              className="h-6 w-28 text-[10px] border-none bg-transparent hover:bg-muted"
+            >
               <div className="flex items-center gap-1.5">
                 {categoryColor && (
                   <div
@@ -550,6 +572,16 @@ function TransactionRow({
               ))}
             </SelectContent>
           </Select>
+          {categorySaving && (
+            <p role="status" className="text-xs">
+              Saving category...
+            </p>
+          )}
+          {categoryError && (
+            <p role="alert" className="text-xs text-destructive">
+              {categoryError}
+            </p>
+          )}
         </TableCell>
 
         <TableCell className="py-1.5">

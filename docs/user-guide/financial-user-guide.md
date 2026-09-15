@@ -124,6 +124,27 @@ This tool changes amounts in **Other financial records**. It does not upload ban
 If a record's amount changes after your preview, Loupe refuses that correction. Reload the list before preparing another preview. The original amount and latest correction explanation remain with each record.
 
 
+### Organise other financial records with categories
+
+1. Open **Transactions**, then **Other financial records**.
+2. Select **Categories**. Enter **Category name**, choose a colour and select **Add Category**. For example, create a category named **Payments to check**.
+3. Wait for the saved message, then select **Close**. Creating a category does not assign records to it.
+4. In the record table, choose your category from the record's **Category** menu. Wait for the save to finish. A failed change displays an error beside the record; the menu returns to its saved category so you can retry.
+5. Open **Filters** and select the category to show those records. Select **Download report** to download the filtered list.
+
+An unfinished category name and colour stay in this browser tab after closing the dialog or refreshing. A failed creation keeps both fields. Reopen **Categories** to continue. If a category already exists, use it instead of creating another with the same name. Creating or assigning categories requires permission to edit the case.
+
+### Compare amounts in other financial records
+
+The summary above the list groups the displayed records by their recorded currency. Read **Positive amounts**, **Negative amounts** and **Sum of amounts** together. For example, USD 500 and USD -150 give a sum of USD 350. EUR amounts stay in a separate row. **Not totalled** means a currency or amount cannot be used for an exact total; inspect the individual records and their sources.
+
+1. Open **Trends**, then **Other financial records**.
+2. Use **Chart currency** to choose the currency you want to examine.
+3. Choose **Daily**, **Weekly** or **Monthly** to compare dates. **Auto** chooses an interval based on the dates in the records.
+4. Point to a bar to see its amount and category. The chart compares amount sizes: both 150 and -150 contribute 150. Its title gives the currency. It is not a running account balance or a money-in/money-out calculation.
+5. Read **Records by category** below it to compare the number of records in each category.
+6. Return to **Transactions** to open an individual record. Records with missing currency or amounts that cannot be plotted exactly remain in this list. Records without usable dates cannot appear in the date chart.
+
 ### Download other financial records
 
 1. Open **Transactions**, then **Other financial records**.

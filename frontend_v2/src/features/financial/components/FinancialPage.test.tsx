@@ -417,7 +417,7 @@ describe("FinancialPage", () => {
       screen.getByRole("button", { name: "Other financial records" })
     )
     expect(
-      screen.getByPlaceholderText("Search financial intelligence...")
+      screen.getByPlaceholderText("Search other financial records...")
     ).toBeInTheDocument()
   })
 
@@ -470,7 +470,7 @@ describe("FinancialPage", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "Other financial records" })
     )
-    expect(screen.getByText("No financial intelligence")).toBeInTheDocument()
+    expect(screen.getByText("No other financial records")).toBeInTheDocument()
     expect(screen.queryByPlaceholderText(GRAPH_SEARCH)).not.toBeInTheDocument()
   })
 })

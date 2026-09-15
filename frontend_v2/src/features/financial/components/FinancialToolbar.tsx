@@ -15,7 +15,6 @@ interface FinancialToolbarProps {
   onOpenCategoryManagement: () => void
   onExportPdf: () => void
   isExporting?: boolean
-  onModeChange: (mode: FinancialDatasetMode) => void
 }
 
 export function FinancialToolbar({
@@ -26,7 +25,6 @@ export function FinancialToolbar({
   onOpenCategoryManagement,
   onExportPdf,
   isExporting,
-  onModeChange,
 }: FinancialToolbarProps) {
   const {
     searchQuery,
@@ -73,31 +71,12 @@ export function FinancialToolbar({
           placeholder={
             mode === "transactions"
               ? "Search transactions..."
-              : "Search financial intelligence..."
+              : "Search other financial records..."
           }
           value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
           className="h-8 w-64 pl-8 text-xs"
         />
-      </div>
-
-      <div className="flex items-center rounded-md border border-border p-0.5">
-        <Button
-          variant={mode === "transactions" ? "secondary" : "ghost"}
-          size="sm"
-          className="h-7 px-2 text-xs"
-          onClick={() => onModeChange("transactions")}
-        >
-          Transactions
-        </Button>
-        <Button
-          variant={mode === "intelligence" ? "secondary" : "ghost"}
-          size="sm"
-          className="h-7 px-2 text-xs"
-          onClick={() => onModeChange("intelligence")}
-        >
-          Financial Intelligence
-        </Button>
       </div>
 
       <Button

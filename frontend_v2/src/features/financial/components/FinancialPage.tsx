@@ -214,7 +214,7 @@ function FinancialPageContent() {
 
   const handleCategorize = useCallback(
     (nodeKey: string, category: string) => {
-      categorize.mutate({ nodeKey, category })
+      return categorize.mutateAsync({ nodeKey, category })
     },
     [categorize]
   )
@@ -327,7 +327,7 @@ function FinancialPageContent() {
 
   const handleCreateCategory = useCallback(
     (name: string, color: string) => {
-      createCategory.mutate({ name, color })
+      return createCategory.mutateAsync({ name, color })
     },
     [createCategory]
   )
@@ -454,7 +454,6 @@ function FinancialPageContent() {
         onOpenCategoryManagement={() => setCategoryMgmtOpen(true)}
         onExportPdf={handleExportPdf}
         isExporting={evidenceReportBusy}
-        onModeChange={handleModeChange}
       />
 
       {evidenceReportError && (
@@ -464,9 +463,8 @@ function FinancialPageContent() {
       )}
       {usesLegacyFinancialModel && (
         <div className="border-b border-yellow-500/25 bg-yellow-500/10 px-4 py-2 text-xs text-yellow-800 dark:text-yellow-200">
-          This case is using the legacy financial dataset. Reprocess the case to
-          get strict evidence-backed transactions and provenance-aware financial
-          intelligence.
+          Some older financial records may lack original file or page details.
+          Open Evidence to check the source document.
         </div>
       )}
 
@@ -513,12 +511,12 @@ function FinancialPageContent() {
             title={
               isTransactionsMode
                 ? "No documentary transactions"
-                : "No financial intelligence"
+                : "No other financial records"
             }
             description={
               isTransactionsMode
                 ? "Process evidence with documentary financial records to populate this view"
-                : "Process evidence with financial signals, valuations, or alleged totals to populate this view"
+                : "Amounts read from other evidence appear here after processing in Evidence. Use Statements to upload bank statements."
             }
           />
         </div>
@@ -977,7 +975,7 @@ function FinancialPageContent() {
                     <EmptyState
                       icon={Users}
                       title="Counterparty analysis is only available for transactions"
-                      description="Switch to documentary transactions mode to explore sender and beneficiary relationships."
+                      description="Select Imported statement payments above to examine who paid or received money."
                     />
                   </div>
                 ) : baseFilteredTransactions.length === 0 ? (
@@ -1074,8 +1072,8 @@ function FinancialPageContent() {
                     <div>
                       <h2 className="text-sm font-semibold">Trends</h2>
                       <p className="text-xs text-muted-foreground">
-                        Full-width volume and category views for the current
-                        filtered set.
+                        Compare recorded amounts by date and category. Choose a
+                        currency below and a time interval on the right.
                       </p>
                     </div>
                     <div className="flex items-center rounded-md border border-border p-0.5">
@@ -1136,6 +1134,7 @@ function FinancialPageContent() {
       />
 
       <CategoryManagementDialog
+        caseId={caseId!}
         open={categoryMgmtOpen}
         onOpenChange={setCategoryMgmtOpen}
         categories={categories}

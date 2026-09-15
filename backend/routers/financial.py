@@ -183,8 +183,15 @@ def _collect_entity_notes(case_id: str, transactions: list[dict]) -> list[dict]:
 
 
 class CategorizeRequest(BaseModel):
-    category: str
+    category: str = Field(min_length=1, max_length=120)
     case_id: str
+
+    @field_validator('category')
+    @classmethod
+    def nonblank_category(cls, value):
+        if not value.strip():
+            raise ValueError('Choose a category name.')
+        return value.strip()
 
 
 class FromToRequest(BaseModel):
@@ -218,8 +225,8 @@ class BatchFromToRequest(BaseModel):
 
 
 class CreateCategoryRequest(BaseModel):
-    name: str
-    color: str
+    name: str = Field(min_length=1, max_length=120)
+    color: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
     case_id: str
 
 

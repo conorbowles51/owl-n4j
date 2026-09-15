@@ -1194,11 +1194,25 @@ export const financialAPI = {
       `/api/financial/volume?case_id=${caseId}&mode=${mode}`
     ),
 
-  categorize: (nodeKey: string, category: string, caseId: string) =>
-    fetchAPI<void>(`/api/financial/categorize/${encodeURIComponent(nodeKey)}`, {
+  categorize: async (nodeKey: string, category: string, caseId: string) => {
+    const result = await fetchAPI<{
+      success: boolean
+      key: string
+      category: string
+    }>(`/api/financial/categorize/${encodeURIComponent(nodeKey)}`, {
       method: "PUT",
       body: { category, case_id: caseId },
-    }),
+    })
+    if (
+      !result.success ||
+      result.key !== nodeKey ||
+      result.category !== category
+    )
+      throw Error(
+        "The saved category was not confirmed. Reload the record before trying again."
+      )
+    return result
+  },
 
   batchCategorize: (nodeKeys: string[], category: string, caseId: string) =>
     fetchAPI<void>("/api/financial/batch-categorize", {
@@ -1276,11 +1290,24 @@ export const financialAPI = {
       `/api/financial/categories?case_id=${caseId}&mode=${mode}`
     ).then((res) => res.categories),
 
-  createCategory: (name: string, color: string, caseId: string) =>
-    fetchAPI<FinancialCategory>("/api/financial/categories", {
-      method: "POST",
-      body: { name, color, case_id: caseId },
-    }),
+  createCategory: async (name: string, color: string, caseId: string) => {
+    const result = await fetchAPI<FinancialCategory & { success: boolean }>(
+      "/api/financial/categories",
+      {
+        method: "POST",
+        body: { name, color, case_id: caseId },
+      }
+    )
+    if (
+      !result.success ||
+      result.name !== name.trim() ||
+      result.color !== color
+    )
+      throw Error(
+        "The saved category was not confirmed. Reopen Categories before trying again."
+      )
+    return result
+  },
 
   updateAmount: (
     nodeKey: string,
