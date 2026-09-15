@@ -3,6 +3,7 @@ import {
   useFinancialOrderDraft,
 } from "../stores/financial-drafts"
 import { SaveTraceFinding } from "./SavedTraceFinding"
+import { useAnalysisFreshness } from "../hooks/use-analysis-freshness"
 import { traceMethods } from "../lib/trace-methods"
 import { RetainedFinancialTool } from "./FinancialNavigation"
 import { TraceReportDownload } from "./TraceReportDownload"
@@ -130,9 +131,11 @@ function ScopedTracing({
   population: "working" | "verified"
 }) {
   const [inputs, setInputs] = useState<TraceInputs | null>(null)
+  const freshness = useAnalysisFreshness(caseId)
   const [busy, setBusy] = useState(false),
     [error, setError] = useState("")
   const load = async () => {
+    const assertCurrent = freshness.beginRead()
     setBusy(true)
     setError("")
     setInputs(null)
@@ -157,6 +160,7 @@ function ScopedTracing({
         value.end_date !== params.endDate
       )
         throw new Error("Tracing inputs belong to different filters.")
+      assertCurrent()
       setInputs(value)
     } catch (e) {
       setError(
@@ -182,7 +186,16 @@ function ScopedTracing({
         {busy ? "Loading…" : "Load tracing inputs"}
       </Button>
       {error && <p role="alert">{error}</p>}
-      {inputs && <ScenarioForm key={inputs.snapshot_sha256} inputs={inputs} />}
+      {freshness.stale && (
+        <p role="status">
+          Payments may have changed. Select Load tracing inputs again, review
+          your assumptions and recalculate before saving. Saved findings are
+          kept.
+        </p>
+      )}
+      {inputs && !freshness.stale && (
+        <ScenarioForm key={inputs.snapshot_sha256} inputs={inputs} />
+      )}
     </div>
   )
 }

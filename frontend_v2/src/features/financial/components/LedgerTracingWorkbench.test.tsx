@@ -1,8 +1,21 @@
 import { useFinancialDraftStore } from "../stores/financial-drafts"
-import { render, screen, fireEvent, waitFor } from "@testing-library/react"
+import {
+  render as renderUI,
+  screen,
+  fireEvent,
+  waitFor,
+  act,
+} from "@testing-library/react"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import type { ReactNode } from "react"
 import { beforeEach, describe, it, expect, vi } from "vitest"
 import { LedgerTracingWorkbench } from "./LedgerTracingWorkbench"
 import { fetchAPI } from "@/lib/api-client"
+function render(ui: ReactNode, client = new QueryClient()) {
+  return renderUI(
+    <QueryClientProvider client={client}>{ui}</QueryClientProvider>
+  )
+}
 vi.mock("@/lib/api-client", () => ({ fetchAPI: vi.fn() }))
 vi.mock("./RequestedCoveragePanel", () => ({
   RequestedCoveragePanel: () => null,
@@ -51,6 +64,30 @@ const inputs = {
   ],
 }
 describe("conditional tracing workbench", () => {
+  it("requires a reload after case payments refresh without deleting opening assumptions", async () => {
+    vi.mocked(fetchAPI).mockResolvedValue(inputs)
+    const client = new QueryClient()
+    render(<LedgerTracingWorkbench caseId="case" />, client)
+    fireEvent.click(screen.getByRole("button", { name: "Apply scope" }))
+    fireEvent.click(screen.getByRole("button", { name: "Load tracing inputs" }))
+    await screen.findByText("Record your scenario assumptions")
+    fireEvent.change(screen.getByLabelText("Opening balance (GBP)"), {
+      target: { value: "25.00" },
+    })
+    await act(async () => {
+      await client.invalidateQueries({ queryKey: ["financial-ledger", "case"] })
+    })
+    expect(screen.getByText(/Payments may have changed/)).toBeVisible()
+    expect(
+      screen.queryByRole("button", { name: "Calculate conditional scenario" })
+    ).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Load tracing inputs" }))
+    await screen.findByText("Record your scenario assumptions")
+    expect(screen.getByLabelText("Opening balance (GBP)")).toHaveValue("25.00")
+    expect(
+      screen.queryByText(/Payments may have changed/)
+    ).not.toBeInTheDocument()
+  })
   it("requires scope and explicit assumptions, with no selected method", async () => {
     vi.mocked(fetchAPI).mockResolvedValue(inputs)
     render(<LedgerTracingWorkbench caseId="case" />)

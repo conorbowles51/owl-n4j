@@ -809,13 +809,15 @@ Nearby dates do not prove a connection. Events with unusable dates may be absent
 ### Find and inspect possible pairs
 
 1. Open **Transfers**.
-2. Enter **From ordering date** and **To ordering date**.
-3. Choose working or verified readings.
-4. Set **Date tolerance** to the number of days appropriate for the comparison you want to test.
+2. Enter **From date** and **To date**.
+3. In **Payments to compare**, choose **All imported payments** or **Verified payments only**.
+4. Set **Maximum days between payments** to the number of days appropriate for the comparison you want to test.
 5. Select **Find possible transfers**.
 6. Inspect each proposed outgoing and incoming pair. Open both source readings.
 7. Compare the amount, currency, account, actual date basis and any payment-reference evidence.
-8. Inspect competing partners for a posting before selecting a pair.
+8. Check whether the same outgoing payment could match more than one incoming payment before selecting a pair.
+
+If **Payments may have changed** appears after another action in the case, select **Find possible transfers** again. The earlier result is hidden until you reload. Your explanation remains, and selected pairs return if the refreshed payment list matches. Check the selection and calculate again before saving. Existing saved findings are unchanged.
 
 ![Transfer comparison controls](images/04-transfers.png)
 
@@ -854,13 +856,15 @@ The working or verified selection follows you between Trends, People and busines
 
 1. Open **Patterns**, then **Review patterns** if the claim comparison is showing.
 2. Choose the population and apply the account/date scope.
-3. Set **Screening window days**.
+3. Set **Days between related payments**.
 4. For a split-payment check, enter **Threshold amount** and **Threshold currency**. Leave the amount blank to omit this check.
 5. Enable **Screen paths between accounts** if you want to inspect the supported short transfer paths.
 6. Select **Find patterns**.
 7. Inspect every relevant candidate's source readings, timing and alternative explanations.
 8. To retain a theory, enter **Theory title** and **Reasoning and alternative explanations**, then select **Save explanation and supporting payments**.
 9. Select **Open Workspace** to confirm the theory and supporting attachments were saved.
+
+If **Payments may have changed** appears, select **Find patterns** again before saving a result. This reruns the checks against the current payments; previously saved findings are kept.
 
 ![Pattern review controls](images/06-patterns.png)
 
@@ -894,12 +898,14 @@ Tracing asks how selected calculation rules allocate money under assumptions you
 
 Your account, dates, opening amount, explanations, selected deposits and calculation choices stay in this browser tab after a refresh. Reopen **Trace funds**, then select **Load tracing inputs** for the same account and dates. Calculate again before saving. If a transaction has changed, check the new readings and enter fresh assumptions for that set of payments.
 
+If **Payments may have changed** appears while this tool is open, select **Load tracing inputs** again. Your assumptions return when the loaded payment set is unchanged. Review them and calculate again before saving. This does not change an earlier finding or report.
+
 ### Load the account
 
 1. Open **More financial tools**, then **Trace funds**.
 2. Select **Trace one account**.
 3. Find and select one account.
-4. Enter both ordering-date bounds and select **Apply account and dates**.
+4. Enter **From date** and **To date**, then select **Apply account and dates**.
 5. Choose **Tracing population**.
 6. Select **Load tracing inputs**.
 7. Inspect the loaded currency, rows, excluded records and missing-evidence notices.
@@ -939,6 +945,8 @@ Editing an assumption clears a stale result. Calculate again and save a new scen
 ## Trace funds between accounts
 
 Unfinished dates, account opening amounts, deposit choices and selected transfers stay in this browser tab after refresh. Select **Load cross-account inputs** to continue with the same dates and currency, then calculate again. Changed payments require fresh review before saving another result.
+
+If **Payments may have changed** appears after another case action, select **Load cross-account inputs** again. Check the restored inputs and recalculate. Until then, the earlier calculation is hidden so it cannot be saved as a result based on the latest payments. Existing saved findings are unchanged.
 
 1. Open **More financial tools**, then **Trace funds** and **Trace between accounts**.
 2. Enter **Trace from date**, **Trace through date**, population and transfer date tolerance.

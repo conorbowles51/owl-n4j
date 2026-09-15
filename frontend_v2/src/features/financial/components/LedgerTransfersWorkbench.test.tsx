@@ -16,7 +16,7 @@ beforeEach(() => {
   useFinancialDraftStore.setState({ drafts: {} })
 })
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { render, screen, fireEvent } from "@testing-library/react"
+import { render, screen, fireEvent, act } from "@testing-library/react"
 import { afterEach, expect, it, vi } from "vitest"
 import { LedgerTransfersWorkbench } from "./LedgerTransfersWorkbench"
 vi.mock("./LedgerSourceDialog", () => ({
@@ -104,6 +104,46 @@ function mount(data: unknown = input) {
   )
   return fetch
 }
+it("requires fresh transfer inputs after a case change and retains the explanation", async () => {
+  vi.spyOn(globalThis, "fetch").mockImplementation(
+    async () => new Response(JSON.stringify(input))
+  )
+  const client = new QueryClient()
+  render(
+    <QueryClientProvider client={client}>
+      <LedgerTransfersWorkbench caseId="case" />
+    </QueryClientProvider>
+  )
+  fireEvent.click(
+    screen.getByRole("button", { name: "Find possible transfers" })
+  )
+  fireEvent.click(await screen.findByLabelText("Pair transfer 1"))
+  fireEvent.change(screen.getByLabelText("Basis for transfer pairings"), {
+    target: { value: "Compared both original statements" },
+  })
+  await act(async () => {
+    await client.invalidateQueries({
+      queryKey: ["financial-ledger", "other-case"],
+    })
+  })
+  expect(screen.getByLabelText("Pair transfer 1")).toBeChecked()
+  await act(async () => {
+    await client.invalidateQueries({ queryKey: ["financial-ledger", "case"] })
+  })
+  expect(screen.getByText(/Payments may have changed/)).toBeVisible()
+  expect(
+    screen.queryByRole("button", {
+      name: "Compare totals using these transfers",
+    })
+  ).not.toBeInTheDocument()
+  fireEvent.click(
+    screen.getByRole("button", { name: "Find possible transfers" })
+  )
+  expect(await screen.findByLabelText("Pair transfer 1")).toBeChecked()
+  expect(screen.getByLabelText("Basis for transfer pairings")).toHaveValue(
+    "Compared both original statements"
+  )
+})
 it("shows exact ambiguous pairs and prevents reusing either source", async () => {
   const fetch = mount()
   expect(fetch).not.toHaveBeenCalled()

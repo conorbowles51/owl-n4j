@@ -3,6 +3,7 @@ import {
   useFinancialOrderDraft,
 } from "../stores/financial-drafts"
 import { SaveTraceFinding } from "./SavedTraceFinding"
+import { useAnalysisFreshness } from "../hooks/use-analysis-freshness"
 import { traceMethods } from "../lib/trace-methods"
 import { TraceReportDownload } from "./TraceReportDownload"
 import { TraceAssetFields, TraceAssetResultsPanel } from "./TraceAssetFields"
@@ -26,6 +27,7 @@ import {
 import { RequestedCoveragePanel } from "./RequestedCoveragePanel"
 import { LedgerSourceDialog } from "./LedgerSourceDialog"
 export function NetworkTracingWorkbench({ caseId }: { caseId: string }) {
+  const freshness = useAnalysisFreshness(caseId)
   const [start, setStart] = useFinancialDraft(caseId, "network-start", ""),
     [end, setEnd] = useFinancialDraft(caseId, "network-end", ""),
     [population, setPopulation] = useFinancialDraft(
@@ -41,6 +43,7 @@ export function NetworkTracingWorkbench({ caseId }: { caseId: string }) {
   const load = useMutation({
     retry: false,
     mutationFn: async () => {
+      const assertCurrent = freshness.beginRead()
       const data = networkInputs.parse(
         await fetchAPI(
           `${candidateUrl("network-trace-inputs", caseId)}&${new URLSearchParams({ start_date: start, end_date: end, population, tolerance_days: tolerance })}`,
@@ -55,6 +58,7 @@ export function NetworkTracingWorkbench({ caseId }: { caseId: string }) {
         data.tolerance_days !== Number(tolerance)
       )
         throw Error("Cross-account inputs returned for a different scope.")
+      assertCurrent()
       return data
     },
   })
@@ -139,7 +143,14 @@ export function NetworkTracingWorkbench({ caseId }: { caseId: string }) {
         </fieldset>
       </form>
       {load.isError && <p role="alert">{load.error.message}</p>}
-      {load.data && (
+      {freshness.stale && (
+        <p role="status">
+          Payments may have changed. Select Load cross-account inputs again,
+          review your assumptions and recalculate before saving. Saved findings
+          are kept.
+        </p>
+      )}
+      {load.data && !load.isPending && !freshness.stale && (
         <NetworkCurrency
           key={
             load.data.snapshot_sha256 +

@@ -4,6 +4,7 @@ import { useFinancialDraft } from "../stores/financial-drafts"
 import { PaymentClaimComparison } from "./PaymentClaimComparison"
 import { useState } from "react"
 import { useMutation } from "@tanstack/react-query"
+import { useAnalysisFreshness } from "../hooks/use-analysis-freshness"
 import { Button } from "@/components/ui/button"
 import { fetchAPI } from "@/lib/api-client"
 import { useCreateCaseworkEntry } from "@/features/workspace/hooks/use-casework"
@@ -165,9 +166,11 @@ function PatternScope({
 }) {
   const [source, setSource] = useState<string | null>(null),
     [page, setPage] = useState(0)
+  const freshness = useAnalysisFreshness(caseId)
   const load = useMutation({
     retry: false,
     mutationFn: async () => {
+      const assertCurrent = freshness.beginRead()
       const thresholdMinor = threshold.trim()
         ? correctionMinor(threshold, currency)
         : null
@@ -204,6 +207,7 @@ function PatternScope({
         value.threshold_currency !== (thresholdMinor ? currency : null)
       )
         throw Error("Pattern review returned a different scope.")
+      assertCurrent()
       return value
     },
   })
@@ -220,7 +224,13 @@ function PatternScope({
         {load.isPending ? "Checking payments…" : "Find patterns"}
       </Button>
       {load.isError && <p role="alert">{load.error.message}</p>}
-      {load.data && (
+      {freshness.stale && (
+        <p role="status">
+          Payments may have changed. Select Find patterns again before saving a
+          result. Saved findings are kept.
+        </p>
+      )}
+      {load.data && !load.isPending && !freshness.stale && (
         <>
           <details className="text-sm">
             <summary className="cursor-pointer">

@@ -1,4 +1,5 @@
 import { SavePaymentSelection } from "./SavePaymentSelection"
+import { useAnalysisFreshness } from "../hooks/use-analysis-freshness"
 import { useFinancialDraft } from "../stores/financial-drafts"
 import {
   useInvestigationScope,
@@ -75,7 +76,7 @@ export function LedgerTransfersWorkbench({
           />
         </label>
         <label>
-          Readings
+          Payments to compare
           <select
             aria-label="Transfer population"
             className="block rounded border bg-background p-2"
@@ -129,6 +130,7 @@ function TransferScope({
   tolerance: number
 }) {
   const draftKey = `transfer:${start}:${end}:${population}:${tolerance}`
+  const freshness = useAnalysisFreshness(caseId)
   const [pairDraft, setPairDraft] = useFinancialDraft(
     caseId,
     `${draftKey}:pairs`,
@@ -143,6 +145,7 @@ function TransferScope({
   const load = useMutation({
     retry: false,
     mutationFn: async () => {
+      const assertCurrent = freshness.beginRead()
       const params = new URLSearchParams({
         population,
         tolerance_days: String(tolerance),
@@ -162,6 +165,7 @@ function TransferScope({
         data.tolerance_days !== tolerance
       )
         throw Error("Transfer candidates returned for different filters.")
+      assertCurrent()
       return data
     },
     onSuccess: () => {
@@ -259,7 +263,14 @@ function TransferScope({
         refresh, find possible transfers again to restore them. Save the
         comparison in Findings to share it with the case.
       </p>
+      {freshness.stale && (
+        <p role="status">
+          Payments may have changed. Select Find possible transfers again before
+          calculating or saving. Your explanation and saved findings are kept.
+        </p>
+      )}
       {load.data &&
+        !freshness.stale &&
         !load.isPending &&
         pairDraft.pairs.length > 0 &&
         selected.length !== pairDraft.pairs.length && (
@@ -274,7 +285,7 @@ function TransferScope({
           Transfer comparison unavailable. {load.error.message}
         </p>
       )}
-      {load.data && !load.isPending && (
+      {load.data && !load.isPending && !freshness.stale && (
         <>
           <p>
             {load.data.rows.length} payments · {load.data.excluded_rows}{" "}
@@ -463,7 +474,7 @@ function TransferScope({
       {scenario.isError && (
         <p role="alert">Scenario unavailable. {scenario.error.message}</p>
       )}
-      {scenario.data && (
+      {scenario.data && !freshness.stale && (
         <section
           aria-label="Paired transfer scenario"
           className="space-y-2 rounded border p-3"
@@ -517,7 +528,7 @@ function TransferScope({
           </Button>
         </section>
       )}
-      {load.data && !load.isPending && (
+      {load.data && !load.isPending && !freshness.stale && (
         <AccountFlowPerspective
           key={load.data.snapshot_sha256}
           scope={load.data}
