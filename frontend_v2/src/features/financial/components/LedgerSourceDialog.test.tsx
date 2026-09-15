@@ -241,3 +241,23 @@ it("keeps original file access when extracted text is unavailable", async () => 
   expect(screen.getByRole("button", { name: "Open source file" })).toBeEnabled()
   expect(screen.queryByLabelText("Source text")).toBeNull()
 })
+
+it("retries a temporary details failure for the same payment without closing its source dialog", async () => {
+  const fetch = mount({ detail: "Temporary failure" }, 503)
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "Transaction details could not be loaded"
+  )
+  fetch.mockResolvedValueOnce(
+    new Response(JSON.stringify(citation), { status: 200 })
+  )
+  fireEvent.click(
+    screen.getByRole("button", { name: "Try loading this transaction again" })
+  )
+  await screen.findByText("TX-OLD · source.pdf")
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument()
+  expect(
+    screen.getByRole("button", { name: "Open source file" })
+  ).toBeInTheDocument()
+  expect(fetch).toHaveBeenCalledTimes(2)
+  expect(fetch.mock.calls[1][0]).toContain("/ledger/row/source?case_id=case")
+})

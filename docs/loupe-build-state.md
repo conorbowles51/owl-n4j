@@ -1,3 +1,11 @@
+## Transaction details retry verified, 15 September 2026
+
+Account scope and chooser recovery are committed as de051929. The shared transaction source dialog now offers Try loading this transaction again after a failed request, retaining its payment ID and case. Its query forwards cancellation when the dialog closes. Existing mismatched case/ID/locator/digest refusals remain in place, and no source fields display after a failed check.
+
+Thirteen focused source-dialog checks passed, including the new temporary-failure retry, with scoped lint and npm run build (TypeScript project checking plus 7.96-second bundle, existing chunk warning). The actual browser retried the exact corrected synthetic payment, restored its source-file action, closed back to the same two-payment search and compared all nine bank records unchanged. No JavaScript errors. Private payment-details-retry.json retains the result. The guide now describes the in-place retry. No broad suite, real-evidence write or push; runtime unchanged.
+
+The implementation items in the completion plan are checked, with remaining external accuracy references/baseline and deployed/UI acceptance still explicit. Current work remains the final user-flow review and incoming feedback until 23:59 Dublin. Keep the existing five-minute heartbeat active. Do not manufacture features or repeat the completed broad suites to fill time; address demonstrated failures. Before any later explicit push, inspect the current tree and remote rather than assuming the earlier comparison remains current.
+
 ## Account scope and import notice agree, 15 September 2026
 
 Shared analysis selections are committed as 0c9c6609. The primary payment scope now uses the account label instead of its internal ID and describes applied date bounds plainly. Empty results refer to the account chooser without inventing missing details. The import notice now accurately says it is showing the statement's payments. Show this account's payments clears the statement table restriction before applying the account; the real case expands from six payments on that statement to seven on its account.

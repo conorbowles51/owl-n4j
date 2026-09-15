@@ -184,3 +184,7 @@ Six focused checks, TypeScript project checking, scoped lint and production buil
 The applied payment scope names the account and explains date bounds. The import notice matches the actual statement restriction. Show this account's payments includes its other statements again. Searching the account chooser retains the previously selected account's name; failed searches keep the account and dates with a direct retry.
 
 Nineteen focused checks, TypeScript project checking, scoped lint and production build passed. Browser checks expanded the six-payment statement to the seven-payment account, retained an empty date filter through refresh and retried an account search without changing its selection. All nine bank payments are unchanged. No broad suite or push.
+
+## Retry transaction details in place
+
+A failed transaction-details request now offers Try loading this transaction again. It retries the same payment without closing the source dialog or changing the table search. Incorrect source references continue to be refused. Thirteen focused checks, scoped lint and the TypeScript/production build passed. The actual browser recovered the expected payment and source action, then returned to its two-payment search. All nine records are unchanged.

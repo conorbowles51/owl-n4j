@@ -43,10 +43,11 @@ export function LedgerSourceDialog({
   const source = useQuery({
     queryKey: ["ledger-source", caseId, transactionId],
     retry: false,
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const data = citationSchema.parse(
         await fetchAPI(
-          `/api/financial/ledger/${encodeURIComponent(transactionId)}/source?${new URLSearchParams({ case_id: caseId })}`
+          `/api/financial/ledger/${encodeURIComponent(transactionId)}/source?${new URLSearchParams({ case_id: caseId })}`,
+          { signal }
         )
       )
       if (
@@ -97,8 +98,25 @@ export function LedgerSourceDialog({
                 : "Check the payment against its original statement."}
             </DialogDescription>
           </DialogHeader>
-          {source.isPending && <p>Loading source citation…</p>}
-          {source.isError && <p role="alert">{source.error.message}</p>}
+          {source.isPending && (
+            <p role="status">Loading transaction details…</p>
+          )}
+          {source.isError && (
+            <div role="alert" className="space-y-2">
+              <p>
+                Transaction details could not be loaded. {source.error.message}
+              </p>
+              <Button
+                variant="outline"
+                disabled={source.isFetching}
+                onClick={() => void source.refetch()}
+              >
+                {source.isFetching
+                  ? "Retrying transaction…"
+                  : "Try loading this transaction again"}
+              </Button>
+            </div>
+          )}
           {data && !source.isError && (
             <>
               {data.transaction && (
