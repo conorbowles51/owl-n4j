@@ -539,3 +539,54 @@ it("keeps a newly excluded payment visible so its required reason can be entered
     "Pending missing date evidence"
   )
 })
+
+it("saves a statement with matching balances and no payments, with a clear confirmation", async () => {
+  const empty = {
+    ...data,
+    can_import_balances: true,
+    transaction_count: 0,
+    rows: [
+      {
+        ...data.rows[0],
+        kind: "balance",
+        fields: { description: "Opening Balance", balance: "10000" },
+      },
+      {
+        ...data.rows[1],
+        kind: "balance",
+        excluded: true,
+        fields: { description: "Closing Balance", balance: "10000" },
+      },
+    ],
+  }
+  const base = vi.mocked(fetchAPI).getMockImplementation()!
+  vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
+    if (String(url).includes("/confirm?")) {
+      sent.push(options?.body)
+      return {
+        case_id: "case",
+        evidence_file_id: "file",
+        transaction_count: 0,
+        applied: true,
+      } as never
+    }
+    return String(url).includes("statement-import")
+      ? (empty as never)
+      : base(url, options)
+  })
+  const done = mount()
+  await open()
+  const save = screen.getByRole("button", { name: "Save statement balances" })
+  expect(save).toBeEnabled()
+  fireEvent.click(save)
+  await waitFor(() => expect(done).toHaveBeenCalledTimes(1))
+  expect(sent[0]).toMatchObject({
+    rows: [
+      { id: "1:0:0", excluded: true, balance_minor: "10000" },
+      { id: "1:0:1", excluded: true, balance_minor: "10000" },
+    ],
+  })
+  expect(
+    await screen.findByText(/Statement balances saved/)
+  ).toBeInTheDocument()
+})

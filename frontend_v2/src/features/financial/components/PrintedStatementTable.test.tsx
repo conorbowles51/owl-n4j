@@ -115,3 +115,85 @@ it("keeps separately extracted signs and description pieces clickable in the pri
     screen.queryByText("Rows needing a layout check")
   ).not.toBeInTheDocument()
 })
+
+it("keeps unheaded account rows in measured positions without inventing columns or splitting OCR cells", () => {
+  const onCell = vi.fn()
+  const combined = {
+    column_index: 2,
+    expected_text: "-20.00 80. 00",
+    locator: { page: 1, rect: [310000, 300000, 380000, 308000] },
+  }
+  render(
+    <PrintedStatementTable
+      onCell={onCell}
+      rows={[
+        {
+          id: "payment",
+          page_number: 1,
+          table_index: 0,
+          row_index: 10,
+          kind: "transaction",
+          fields: { statement_layout: "andrews-share-statement" },
+          source_cells: [
+            {
+              column_index: 0,
+              expected_text: "06/03",
+              locator: { page: 1, rect: [15000, 300000, 35000, 308000] },
+            },
+            {
+              column_index: 1,
+              expected_text: "Withdrawal Debit Card",
+              locator: { page: 1, rect: [75000, 300000, 180000, 308000] },
+            },
+            combined,
+          ],
+        },
+      ]}
+    />
+  )
+  const section = screen.getByRole("group", {
+    name: "Extracted account section in printed positions",
+  })
+  expect(within(section).queryByRole("columnheader")).not.toBeInTheDocument()
+  expect(
+    screen.queryByText("Rows needing a layout check")
+  ).not.toBeInTheDocument()
+  const amount = within(section).getByRole("button", { name: "-20.00 80. 00" })
+  fireEvent.click(amount)
+  expect(onCell).toHaveBeenCalledWith("payment", combined.locator)
+  expect(amount.style.gridColumn).not.toBe(
+    within(section).getByRole("button", { name: "06/03" }).style.gridColumn
+  )
+})
+
+it("retains unheaded source text when page positions are unavailable", () => {
+  const onCell = vi.fn()
+  render(
+    <PrintedStatementTable
+      onCell={onCell}
+      rows={[
+        {
+          id: "unlocated",
+          page_number: 1,
+          table_index: 0,
+          row_index: 0,
+          fields: { statement_layout: "andrews-share-statement" },
+          source_cells: [
+            {
+              column_index: 0,
+              expected_text: "Unlocated original reading",
+              locator: { kind: "page_only", page: 1 },
+            },
+          ],
+        },
+      ]}
+    />
+  )
+  fireEvent.click(
+    screen.getByRole("button", { name: "Unlocated original reading" })
+  )
+  expect(onCell).toHaveBeenCalledWith("unlocated", {
+    kind: "page_only",
+    page: 1,
+  })
+})

@@ -59,6 +59,7 @@ const proposalSchema = z.object({
   rows: z.array(row),
   issues: z.array(z.string()),
   transaction_count: z.number(),
+  can_import_balances: z.boolean().default(false),
   needs_attention: z.number(),
   page_numbers: z.array(z.number()).default([]),
   unassigned_page_numbers: z.array(z.number()).default([]),
@@ -69,6 +70,7 @@ const proposalSchema = z.object({
         id: z.string(),
         institution: z.string(),
         account_reference: z.string(),
+        account_label: z.string().optional(),
         statement_date: z.string().optional(),
         printed_statement_date: z.string().optional(),
         period_start: z.string(),
@@ -383,8 +385,8 @@ function StatementReview({
           This PDF contains {query.data.statement_choices.length} statements
         </h3>
         <p>
-          Choose a billing period to review its transactions. Page numbers refer
-          to the original PDF.
+          Choose an account and statement period to review. Savings and checking
+          sections are separate choices. Page numbers refer to the original PDF.
         </p>
         <div className="grid sm:grid-cols-2 gap-2">
           {query.data.statement_choices.map((item) => (
@@ -396,6 +398,7 @@ function StatementReview({
             >
               {item.institution} ·{" "}
               {item.account_reference || "Account needs review"} ·{" "}
+              {item.account_label ? `${item.account_label} · ` : ""}
               {item.period_start
                 ? `${item.period_start} to ${item.period_end}`
                 : item.statement_date ||
@@ -632,6 +635,20 @@ function EditableStatement({
           BigInt(r.amount_minor || "0") <= 0n))
   )
   const included = rows.filter((r) => !r.excluded)
+  const emptyStatementBalances = rows.filter((r) => {
+    const original = originals.get(r.id)
+    return (
+      original?.kind === "balance" &&
+      ["opening balance", "closing balance"].includes(
+        original.fields.description?.toLowerCase()
+      )
+    )
+  })
+  const matchingEmptyBalances =
+    emptyStatementBalances.length === 2 &&
+    emptyStatementBalances[0].balance_minor !== null &&
+    emptyStatementBalances[0].balance_minor ===
+      emptyStatementBalances[1].balance_minor
   const total = (direction: Edit["direction"]) =>
     included
       .filter((r) => r.direction === direction && /^\d+$/.test(r.amount_minor))
@@ -1533,10 +1550,9 @@ function EditableStatement({
         )}
         <div className="rounded border bg-muted/30 p-3 space-y-2">
           <p>
-            Import adds {included.length} transactions to the case. Original
-            readings and your corrections are retained. A matching running
-            balance is an arithmetic check, not a guarantee that the PDF
-            contained no missed transactions.
+            {data.can_import_balances && included.length === 0
+              ? "Save this account's statement period and its opening and closing balances. No transaction rows were found in this section. Check the original before saving."
+              : `Import adds ${included.length} transactions to the case. Original readings and your corrections are retained. Check the PDF for any missed transactions before confirming.`}
           </p>
           <Button
             disabled={
@@ -1548,14 +1564,25 @@ function EditableStatement({
               periodStart > periodEnd ||
               !holder.trim() ||
               !account.trim() ||
-              included.length === 0
+              (included.length === 0 &&
+                (!data.can_import_balances || !matchingEmptyBalances))
             }
             onClick={() => confirm.mutate()}
           >
             {confirm.isPending
               ? "Importing statement…"
-              : `Confirm import of ${included.length} transactions`}
+              : data.can_import_balances && included.length === 0
+                ? "Save statement balances"
+                : `Confirm import of ${included.length} transactions`}
           </Button>
+          {data.can_import_balances &&
+            included.length === 0 &&
+            !matchingEmptyBalances && (
+              <p className="text-sm">
+                Check the opening and closing balances. They must match when
+                there are no transactions.
+              </p>
+            )}
           {incomplete && (
             <p className="text-sm">
               Complete the flagged fields and record a reason for each
@@ -1567,8 +1594,9 @@ function EditableStatement({
       {confirm.isError && <p role="alert">{confirm.error.message}</p>}
       {confirm.isSuccess && (
         <p role="status">
-          Imported {confirm.data.transaction_count} transactions. Open
-          Transactions to investigate them.
+          {confirm.data.transaction_count === 0
+            ? "Statement balances saved. Use Review accounts in Statements to see its coverage."
+            : `Imported ${confirm.data.transaction_count} transactions. Open Transactions to investigate them.`}
         </p>
       )}
     </div>

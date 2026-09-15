@@ -474,3 +474,104 @@ class StatementImportTests(TransactionPersistenceTestCase):
         self.db.expire_all()
         self.assertEqual(len(list(self.db.scalars(select(FinancialStatementPeriod).where(FinancialStatementPeriod.source_document_id.in_(receipts))))),2)
         self.assertEqual(len(list(self.db.scalars(select(FinancialTransaction).where(FinancialTransaction.source_document_id.in_(receipts))))),6)
+
+    def andrews_request(self, share, *, install=False, no_payments=False):
+        from tests.test_financial_statement_import_andrews import two_shares
+        if install:
+            grid = two_shares()
+            if no_payments:
+                grid['rows'] = [r for r in grid['rows'] if r['row_index'] not in (10, 11, 14, 15)]
+                for r in grid['rows']:
+                    if r['row_index'] == 12: r['cells'][-1]['expected_text'] = '100.00'
+                    if r['row_index'] == 16: r['cells'][-1]['expected_text'] = '200.00'
+            self.db.get(EvidenceTableGeometry, (self.file.id, 1)).payload = [dict(
+                table_source='text_alignment', geometry_source='cell_rectangles',
+                table=dict(page=1, table=rectangle(0, x=0, width=600, height=800), unlocated_values=0,
+                    values=[dict(row=r['row_index'], column=c['column_index'], text=c['expected_text'], locator=c['locator'])
+                            for r in grid['rows'] for c in r['cells']]))]
+            self.db.commit()
+        with self.SessionLocal() as db:
+            choices = read_statement_import(db, case_id=self.case.id, evidence_file_id=self.file.id, currency='USD')
+            choice = next(s for s in choices['statement_choices'] if s['share_reference'] == share)
+            p = read_statement_import(db, case_id=self.case.id, evidence_file_id=self.file.id,
+                                      currency='USD', statement_id=choice['id'])
+        request = dict(expected_revision=p['revision'], statement_id=p['statement_id'], currency='USD',
+            **{key:p['metadata'][key] for key in ('holder', 'account_number', 'institution', 'period_start', 'period_end')},
+            rows=[dict(id=r['id'], excluded=r['excluded'], date=r['fields'].get('date',''),
+                description=r['fields'].get('description',''), counterparty=r['fields'].get('counterparty',''),
+                amount_minor=r['fields'].get('amount_minor','0'), direction=r['fields'].get('direction'),
+                balance_minor=r['fields'].get('balance'), reason='') for r in p['rows']])
+        return p, request
+
+    def test_andrews_shares_on_one_page_import_as_two_accounts_and_keep_balance_sources(self):
+        from postgres.models.financial import FinancialAccount, FinancialStatementPeriod
+        from services.financial.periods import read_opening, read_closing
+        from services.financial.ledger_source import statement_source
+        p, a = self.andrews_request('0000', install=True)
+        self.assertEqual(p['metadata']['balance_convention'], 'asset_balance')
+        first = self.confirm(a)
+        p, b = self.andrews_request('0040')
+        self.assertIsNone(p['current_import'])
+        second = self.confirm(b)
+        self.assertNotEqual(first['account_id'], second['account_id'])
+        self.assertFalse(self.confirm(a)['created'])
+        self.assertFalse(self.confirm(b)['created'])
+        self.db.expire_all()
+        for result, kind, opening, closing in ((first, 'savings', 10000, 12000), (second, 'checking', 20000, 18000)):
+            self.assertEqual(result['transaction_count'], 1)
+            self.assertEqual(self.db.get(FinancialAccount, UUID(result['account_id'])).account_type, kind)
+            period = self.db.scalar(select(FinancialStatementPeriod).where(FinancialStatementPeriod.source_document_id == UUID(result['source_document_id'])))
+            self.assertEqual(read_opening(period).amount.minor_units, opening)
+            self.assertEqual(read_closing(period).amount.minor_units, closing)
+            controls = statement_source(self.db, case_id=self.case.id, period_id=period.id)['reviewed_controls']
+            self.assertEqual(controls['balance_convention'], 'asset_balance')
+            self.assertEqual([c['reviewed_value'] for c in controls['controls']], [str(opening), str(closing)])
+        saved = self.db.get(FinancialSourceDocument, UUID(first['source_document_id'])).metadata_['statement_import_original']
+        self.assertTrue(saved['statement_row_addresses'])
+        self.assertEqual(next(r for r in saved['rows'] if not r['excluded'])['continuation_sources'][0]['source_cells'][0]['expected_text'], 'Funds Transfer via Mobile')
+
+    def test_andrews_statement_without_payments_saves_matching_balances(self):
+        from postgres.models.financial import FinancialStatementPeriod
+        from services.financial.periods import read_opening, read_closing
+        p, request = self.andrews_request('0000', install=True, no_payments=True)
+        self.assertTrue(p['can_import_balances'])
+        result = self.confirm(request)
+        self.assertEqual(result['transaction_count'], 0)
+        self.assertFalse(self.confirm(request)['created'])
+        self.db.expire_all()
+        period = self.db.scalar(select(FinancialStatementPeriod).where(FinancialStatementPeriod.source_document_id == UUID(result['source_document_id'])))
+        self.assertEqual(read_opening(period).amount.minor_units, 10000)
+        self.assertEqual(read_closing(period).amount.minor_units, 10000)
+
+    def test_balance_only_cannot_hide_transactions_or_record_unexplained_movement(self):
+        p, request = self.andrews_request('0000', install=True)
+        self.assertFalse(p['can_import_balances'])
+        for r in request['rows']:
+            if not r['excluded']: r.update(excluded=True, reason='Test omitted payment')
+        with self.assertRaisesRegex(PdfMappingError, 'matching opening and closing'):
+            self.confirm(request)
+        p, request = self.andrews_request('0000', install=True, no_payments=True)
+        closing_id = next(r['id'] for r in p['rows'] if r['fields'].get('description') == 'Closing Balance')
+        next(r for r in request['rows'] if r['id'] == closing_id).update(balance_minor='12000', reason='Synthetic changed balance')
+        with self.assertRaisesRegex(PdfMappingError, 'matching opening and closing'):
+            self.confirm(request)
+
+    def test_andrews_reread_row_numbers_cannot_hide_an_existing_import_or_mix_shares(self):
+        from copy import deepcopy
+        _, savings_request = self.andrews_request('0000', install=True)
+        savings = self.confirm(savings_request)
+        _, checking_request = self.andrews_request('0040')
+        checking = self.confirm(checking_request)
+        # Simulate a new reading that inserted header rows but retained the
+        # measured positions on the same source page. Row indexes are not stable.
+        geometry = self.db.get(EvidenceTableGeometry, (self.file.id, 1))
+        shifted = deepcopy(geometry.payload)
+        for value in shifted[0]['table']['values']:
+            value['row'] += 100
+        geometry.payload = shifted
+        self.db.commit()
+        for share, existing in (('0000', savings), ('0040', checking)):
+            proposal, request = self.andrews_request(share)
+            self.assertEqual(proposal['current_import']['source_document_id'], existing['source_document_id'])
+            with self.assertRaisesRegex(PdfMappingError, 'already has imported transactions'):
+                self.confirm(request)

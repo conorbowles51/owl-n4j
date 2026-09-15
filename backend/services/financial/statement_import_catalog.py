@@ -10,11 +10,18 @@ from services.financial.statement_layout_context import _cycle, CAPITAL_ONE_CARD
 
 
 def statement_catalog(sources):
-    groups = {}
+    from services.financial.statement_import_andrews import andrews_catalog
+    andrews, handled, incomplete = andrews_catalog(sources)
+    groups = {statement['id']: statement for statement in andrews}
     unclassified = []
     information = []
     from services.financial.statement_import_merrick import merrick_statement
     for source in sources:
+        address = (source['page_number'], source['table_index'])
+        if address in handled:
+            if address in incomplete:
+                unclassified.append(dict(page_number=address[0], table_index=address[1]))
+            continue
         merrick = merrick_statement(source)
         if merrick is not None:
             existing = groups.get(merrick["id"])

@@ -11,6 +11,7 @@ export type PrintedRow = {
   source_cells: PrintedCell[]
   kind?: string
   issues?: string[]
+  fields?: Record<string, string>
 }
 export type PrintedSection = {
   key: string

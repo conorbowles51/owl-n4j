@@ -16,7 +16,7 @@ def _control(role, row, original):
                 reviewed_value=row['balance_minor'], locator=locator.to_json(), reason=row['reason'])
 
 
-def retain_import_controls(document, period, request, originals, openings, closings):
+def retain_import_controls(document, period, request, originals, openings, closings, *, balance_convention='liability_owed'):
     controls = []
     for role, rows in (('opening', openings), ('closing', closings)):
         if len(rows) == 1:
@@ -24,7 +24,7 @@ def retain_import_controls(document, period, request, originals, openings, closi
             controls.append(_control(role, row.model_dump(mode='json'), originals[row.id]))
     record = dict(period_id=str(period.id), account_id=str(period.account_id),
                   source_document_id=str(document.id), currency=request.currency,
-                  balance_convention='liability_owed', controls=controls)
+                  balance_convention=balance_convention, controls=controls)
     document.metadata_ = {**document.metadata_, 'statement_import_controls': record,
                           'statement_import_controls_sha256': _digest(record)}
 
@@ -47,8 +47,8 @@ def read_import_controls(period, document, evidence):
             or original['currency'] != period.currency
             or original['case_id'] != str(period.case_id)
             or original['evidence_file_id'] != str(evidence.id)
-            or original['metadata'].get('balance_convention') != 'liability_owed'
-            or record['balance_convention'] != 'liability_owed'):
+            or record['balance_convention'] not in ('liability_owed', 'asset_balance')
+            or original['metadata'].get('balance_convention') != record['balance_convention']):
         raise ValueError('The balance review does not match this statement.')
     originals = {row['id']: row for row in original['rows']}
     expected = []
@@ -59,7 +59,8 @@ def read_import_controls(period, document, evidence):
         if len(matches) == 1:
             row = matches[0]
             amount = int(row['balance_minor'])
-            if not -9223372036854775807 <= amount <= 9223372036854775807:
+            minimum = -9223372036854775808 if record['balance_convention'] == 'asset_balance' else -9223372036854775807
+            if not minimum <= amount <= 9223372036854775807:
                 raise ValueError('The reviewed balance exceeds the supported range.')
             expected.append(_control(role, row, originals[row['id']]))
     if expected != record['controls']:

@@ -150,6 +150,8 @@ If a request fails, select **Refresh files** and inspect what arrived before upl
 
 For recognised Capital One collections, the period list includes supported Platinum, Secured Card and Platinum Secured Card headings. Choose the account ending and billing dates you need. Different account endings stay separate. The period count describes recognised statements; it does not mean every page or transaction has been verified.
 
+For supported Andrews statements, **BASE SHARE SAVINGS** and **FREE CHECKING** are separate choices. A share is a separate account section under the main account number. Choose the account name, share number and dates you want to review. The account field contains both the main number and the share number so savings and checking are kept separate after import.
+
 If a file has not finished processing, wait for its status to complete. If reading failed, use **Retry statement review** or the reprocessing controls described in section 7. Repeated uploads create separate source records and make duplicate review harder.
 
 ## Check the extracted statement
@@ -213,6 +215,18 @@ Select **Edit import values** above the viewer, then select **Show problems and 
 Use **Previous page**, **Next page** or the **Page** selector above the viewer to move through the original PDF. The PDF and extracted table change together. A page with no extracted rows still remains available as a PDF page; inspect it for anything missed. The viewer starts at the first page of the chosen statement.
 
 Each choice identifies a printed account and statement period or date. Select **Choose another statement period** to return to the list. Confirm each statement separately so its account and dates stay attached to the correct payments.
+
+### Check Andrews savings and checking statements
+
+1. Choose **BASE SHARE SAVINGS** or **FREE CHECKING** for the dates you need. If two choices have the same account and dates, compare their PDF page numbers and contents. They may be different copies; do not assume both should be imported.
+2. Choose the currency printed on the statement. Check the account holder, main account number and share number against the PDF.
+3. Read the selected account section beside the original. These statements may have no printed column headings. The extracted text keeps its measured horizontal positions, including continuation lines and blank spaces. Click any value to find it in the PDF.
+4. Select **Edit import values** to inspect the proposed dates, descriptions, credits, debits and running balances. Payment descriptions include their continuation lines, including a line on the following page when it can be linked to that payment.
+5. Correct each flagged value and explain the correction. A joined reading such as `20.00 120. 00` stays unchanged in the extracted view. Enter the correct amount and balance in the correction controls after checking the original. A second date printed without a heading is flagged for you to check; it is not silently assigned a different date meaning.
+6. Use **Next page** to inspect continuing transactions. Pages with unreadable account or period headings, gaps in the printed page sequence or an unrecognised account section need a coverage check. They remain available in the PDF. Reprocess the document or add a missed transaction only after checking which account and dates it belongs to.
+7. Confirm the transactions for this section. Return with **Choose another statement period** to review the other account section. Importing savings does not also import checking.
+
+If a supported savings or checking section contains no transaction rows and has both balance lines, the confirmation button says **Save statement balances**. Check both against the PDF. The opening and closing balances must match before a statement with no payments can be saved. Loupe then opens **Statements > Review accounts**, where you can see the account and its statement period. No transactions are added.
 
 Open **Inspect another page of the original PDF** when pages are listed as needing a coverage check. Choose **Original PDF page**, then **Show selected page**. Read unassigned pages for missed transactions and continuation tables. Loupe does not treat an unassigned page as proof that it contains no payments. If you find a payment for the selected account and period, add it as described below.
 
@@ -443,6 +457,8 @@ Open **Change history**. Expand the relevant decision to inspect the reason, act
 An excluded statement is marked above its balances. Its check does not add it back to current transaction totals. An agreeing balance also does not establish that every payment was extracted: missing equal incoming and outgoing amounts can leave a balance unchanged.
 
 New recognised Capital One and Merrick imports retain the account-summary balances and their PDF locations here. An older import that did not record those balances is not changed automatically. To add them, reopen its statement review and follow the replacement-import steps in section 7, including a reason for replacing the earlier reading.
+
+New supported Andrews imports also retain their opening and closing balances with links to the PDF. Each savings or checking section has its own account and period. Its balance is money held in that account, rather than an amount owed on a credit card.
 
 ![A synthetic credit-card statement with matching opening and closing amounts owed](images/19-card-statement-balances.png)
 

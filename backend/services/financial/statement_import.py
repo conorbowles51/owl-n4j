@@ -55,13 +55,14 @@ def _reading_dates(fields, reviewed_date, date_values=None):
     return result
 
 
-def _existing_statement(session, case_id, file, statement_id, addresses=()):
+def _existing_statement(session, case_id, file, statement_id, addresses=(), row_addresses=None, source_regions=None):
     from postgres.models.financial import FinancialSourceDocument
     candidates = session.scalars(select(FinancialSourceDocument).where(
         FinancialSourceDocument.case_id == case_id,
         FinancialSourceDocument.sha256_at_ingestion == file.sha256,
         FinancialSourceDocument.status != 'superseded').order_by(FinancialSourceDocument.id))
     addresses = set(addresses)
+    row_addresses = {tuple(value) for value in row_addresses} if row_addresses is not None else None
     matches = []
     for item in candidates:
         metadata = item.metadata_ or {}
@@ -70,6 +71,20 @@ def _existing_statement(session, case_id, file, statement_id, addresses=()):
             continue
         previous = metadata.get('statement_import_original', {}).get('sources', [])
         previous_addresses = {(source['page_number'], source['table_index']) for source in previous}
+        previous_rows = metadata.get('statement_import_original', {}).get('statement_row_addresses')
+        if row_addresses is not None and previous_rows is not None:
+            from services.financial.statement_import_andrews import source_regions_overlap
+            overlap = source_regions_overlap(source_regions,
+                metadata.get('statement_import_original', {}).get('statement_source_regions'))
+            if overlap is not None:
+                if overlap:
+                    matches.append(item)
+                continue
+            # If position comparison is unavailable, do not equate row numbers
+            # from different OCR readings. A shared page requires source review.
+            if {p for p, _ in addresses} & {p for p, _ in previous_addresses}:
+                matches.append(item)
+            continue
         # A reread may change the printed account or period. Overlapping source
         # tables still require replacement rather than being counted again.
         if addresses & previous_addresses:
@@ -133,13 +148,14 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
     if selected:
         addresses = {(item['page_number'], item['table_index']) for item in selected['sources']}
         sources = [source for source in all_sources if (source['page_number'], source['table_index']) in addresses]
-        metadata.update(account_type='credit_card', institution=selected['institution'], account_number=selected['account_reference'],
+        metadata.update(account_type=selected.get('account_type', 'credit_card'), institution=selected['institution'], account_number=selected['account_reference'],
                         period_start=selected['period_start'], period_end=selected['period_end'],
                         period=(selected['period_start'] + ' - ' + selected['period_end']) if selected['period_start'] else selected.get('printed_statement_date', ''))
         if selected.get('layout_id') in ('capital-one-card', 'merrick-card'):
             metadata['balance_convention'] = 'liability_owed'
-        if selected.get('holder'):
-            metadata['holder'] = selected['holder']
+        # A selected account must not inherit a name from a different section
+        # elsewhere in the same PDF.
+        metadata['holder'] = selected.get('holder', '')
         holders = set()
         for source in sources:
             if selected.get('layout_id') == 'capital-one-card' and source.get('layout_context'):
@@ -154,11 +170,17 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
         if len(holders) == 1:
             metadata['holder'] = next(iter(holders))
         issues = [issue for issue in issues if not ('account number' in issue and metadata['account_number']) and not ('account holder' in issue and metadata['holder'])]
+        if not metadata['holder'] and not any('account holder' in issue for issue in issues):
+            issues.append('Check the account holder. It could not be identified for this account section.')
         if selected.get('date_conflict'):
             issues.append('The statement date and billing-cycle closing date were read differently. Compare both dates with the PDF and correct the transaction dates before importing.')
         elif selected.get('layout_id') == 'merrick-card' and not selected.get('statement_date'):
             issues.append('The printed statement date could not be read. Check it against the PDF. Transaction years are proposed only where the printed month and year-to-date heading agree.')
-        issues.append('This is a credit-card statement. Debits increase the amount owed; credits reduce it. A card ending is a partial account reference.')
+        if metadata.get('balance_convention') == 'liability_owed':
+            issues.append('This is a credit-card statement. Debits increase the amount owed; credits reduce it. A card ending is a partial account reference.')
+        if selected.get('layout_id') == 'andrews-share-statement':
+            metadata['balance_convention'] = 'asset_balance'
+            issues.append('Reviewing ' + selected['account_label'] + ', share ' + selected['share_reference'] + '. Other account sections in this PDF are reviewed separately.')
         if catalog['unclassified_sources']:
             issues.append('Some pages could not be assigned to a printed statement period. They remain available in the original PDF.')
     all_page_numbers = sorted({p.page_number for p in pages} | {loc['page_number'] for loc in (text.source_locations or []) if type(loc.get('page_number')) is int and loc['page_number'] > 0})
@@ -177,7 +199,14 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
         get_currency(chosen_currency)
     except MoneyError as exc:
         raise PdfMappingError(str(exc), 422) from exc
-    for source in sources:
+    if selected and selected.get('layout_id') == 'andrews-share-statement':
+        from services.financial.statement_import_andrews import propose_andrews_statement
+        proposal = propose_andrews_statement(sources, chosen_currency, selected)
+        rows.extend(proposal['rows'])
+        issues.extend(proposal.get('issues', []))
+        if len(rows) > 1000:
+            raise PdfMappingError('This statement exceeds the 1,000-row review limit. No rows were omitted.', 422)
+    for source in ([] if selected and selected.get('layout_id') == 'andrews-share-statement' else sources):
         try:
             if selected and selected.get('layout_id') == 'merrick-card':
                 from services.financial.statement_import_merrick import propose_merrick_table
@@ -202,8 +231,15 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
     from postgres.models.financial import FinancialSourceDocument, FinancialTransaction
     from services.financial.duplicate_decisions import duplicate_revision
     from sqlalchemy import func
+    row_addresses = ([[s['page_number'], s['table_index'], index]
+                      for s in selected['sources'] for index in s['row_indices']]
+                     if selected and selected.get('layout_id') == 'andrews-share-statement' else None)
+    source_regions = None
+    if row_addresses is not None:
+        from services.financial.statement_import_andrews import andrews_source_regions
+        source_regions = andrews_source_regions(sources, selected)
     current = _existing_statement(session, case_id, file, statement_id,
-        ((source['page_number'], source['table_index']) for source in sources))
+        ((source['page_number'], source['table_index']) for source in sources), row_addresses, source_regions)
     current_import = None
     if current is not None:
         current_import = dict(source_document_id=str(current.id), evidence_file_id=str(current.evidence_file_id),
@@ -216,12 +252,21 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
         current_import['details_reason'] = recorded_review.get('details_reason', '')
     snapshot = dict(version=VERSION, source_sha256=file.sha256, sources=sources,
                     metadata=metadata, currency=chosen_currency, statement_id=statement_id)
+    if row_addresses is not None:
+        snapshot['statement_row_addresses'] = row_addresses
+    balance_only = (metadata.get('account_type') in ('savings', 'checking')
+                    and not any(not row['excluded'] for row in rows)
+                    and all(sum(row['kind'] == 'balance' and row['fields'].get('description', '').lower() == role + ' balance'
+                                for row in rows) == 1 for role in ('opening', 'closing')))
     return dict(case_id=str(case_id), evidence_file_id=str(evidence_file_id), filename=file.original_filename,
                 metadata=metadata, currency=chosen_currency, rows=rows, sources=sources, issues=issues,
+                can_import_balances=balance_only,
                 page_numbers=all_page_numbers,
                 unassigned_page_numbers=unassigned_pages if selected else [],
                 statement_page_numbers=sorted({source['page_number'] for source in sources}),
                 statement_choices=choices, statement_id=statement_id,
+                statement_row_addresses=row_addresses,
+                statement_source_regions=source_regions,
                 transaction_count=sum(not row['excluded'] for row in rows),
                 needs_attention=sum(bool(row['issues']) for row in rows) + len(issues),
                 revision=_digest(snapshot), current_import=current_import, applied=False)
@@ -300,8 +345,6 @@ class StatementImportRequest(_Contract):
                 raise ValueError('Statement period runs backwards.')
         if not self.holder.strip() or not self.account_number.strip():
             raise ValueError('Check the account details.')
-        if not any(not row.excluded for row in self.rows):
-            raise ValueError('At least one transaction is required.')
         return self
 
 
@@ -313,6 +356,13 @@ def check_import_request(proposal, request):
     if any(getattr(request, field) != proposal['metadata'].get(field, '') for field in ('holder', 'account_number', 'institution', 'period_start', 'period_end')) and not request.details_reason.strip():
         raise PdfMappingError('Explain the corrected account or statement details.', 422)
     originals = {row['id']: row for row in proposal['rows']}
+    if not any(not row.excluded for row in request.rows):
+        controls = [row for row in request.rows if row.id in originals and originals[row.id]['kind'] == 'balance'
+                    and originals[row.id]['fields'].get('description', '').lower() in ('opening balance', 'closing balance')]
+        if (not proposal.get('can_import_balances') or len(controls) != 2
+                or any(row.balance_minor is None for row in controls)
+                or controls[0].balance_minor != controls[1].balance_minor):
+            raise PdfMappingError('A statement without transactions must have matching opening and closing balances. Check both against the PDF.', 422)
     submitted = {row.id for row in request.rows}
     if not set(originals) <= submitted:
         raise PdfMappingError('The review must account for every prepared row. Reload the statement.', 409)
@@ -380,7 +430,8 @@ def confirm_statement_import(*, session_factory, case_id, evidence_file_id, requ
                 proposal = read_statement_import(session, case_id=case_id, evidence_file_id=evidence_file_id,
                                                  currency=request.currency, statement_id=request.statement_id)
                 existing = _existing_statement(session, case_id, file, request.statement_id,
-                    ((source['page_number'], source['table_index']) for source in proposal['sources']))
+                    ((source['page_number'], source['table_index']) for source in proposal['sources']),
+                    proposal.get('statement_row_addresses'), proposal.get('statement_source_regions'))
                 if existing is not None:
                     existing = session.scalar(select(FinancialSourceDocument).where(
                         FinancialSourceDocument.id == existing.id, FinancialSourceDocument.status != 'superseded'
@@ -426,13 +477,14 @@ def confirm_statement_import(*, session_factory, case_id, evidence_file_id, requ
                 from services.financial.accounts import AccountIdentityError
                 account_fields = dict(institution_name=request.institution or None,
                     identifier_as_printed=request.account_number, holder_name=request.holder,
-                    account_type='credit_card' if proposal.get('statement_id') else None,
+                    account_type=proposal['metadata'].get('account_type'),
                     currency=request.currency, metadata=dict(display_label=request.holder + ' · ' + request.account_number,
                         statement_source_file_id=str(evidence_file_id)))
                 try:
                     account_draft = AccountDraft.observed(**account_fields)
                 except AccountIdentityError:
-                    account_draft = AccountDraft.unidentified(distinguisher='statement:' + str(evidence_file_id) + ':' + request.currency, **account_fields)
+                    account_draft = AccountDraft.unidentified(distinguisher='statement:' + str(evidence_file_id) + ':' + request.currency
+                        + (':' + request.statement_id if request.statement_id else ''), **account_fields)
                 account = record_account(session, run, account_draft)
                 shares_source_references = session.scalar(select(FinancialSourceDocument.id).where(
                     FinancialSourceDocument.case_id == case_id, FinancialSourceDocument.sha256_at_ingestion == file.sha256).limit(1)) is not None
@@ -458,9 +510,10 @@ def confirm_statement_import(*, session_factory, case_id, evidence_file_id, requ
                 closing = BalanceObservation.printed(Money(balance_sign * int(closings[0].balance_minor), request.currency)) if len(closings) == 1 else BalanceObservation.absent()
                 period = record_statement_period(session, run, StatementPeriodDraft(account_id=account.id,
                     source_document_id=document.id, currency=request.currency, bounds=bounds, opening=opening, closing=closing))
-                if proposal['metadata'].get('balance_convention') == 'liability_owed':
+                if proposal['metadata'].get('balance_convention') in ('liability_owed', 'asset_balance'):
                     from services.financial.statement_import_controls import retain_import_controls
-                    retain_import_controls(document, period, request, originals, openings, closings)
+                    retain_import_controls(document, period, request, originals, openings, closings,
+                                           balance_convention=proposal['metadata']['balance_convention'])
                 drafts = []
                 for row in request.rows:
                     if row.excluded:

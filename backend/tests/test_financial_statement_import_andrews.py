@@ -1,0 +1,150 @@
+"""Synthetic Andrews-style sections; no private statement contents."""
+import unittest
+from copy import deepcopy
+
+from services.financial.statement_import_catalog import statement_catalog
+from services.financial.statement_import_andrews import andrews_page, propose_andrews_statement
+from tests.test_financial_pdf_geometry_candidates import rectangle
+
+
+def source(lines, *, page=1, printed_page=1, account='123456789', period='06/01/20 06/30/20', names=True):
+    # Tuples explicitly specify the measured x coordinate and printed text.
+    header = [[(420, 'Account Statement')], [(40, 'Andrews')], [(300, account)],
+              [(300, period)], [(300, str(printed_page))]]
+    if names:
+        header += [[(20, '>1234567890<')], [(20, 'EXAMPLE PERSON')], [(20, 'JOINT PERSON')], [(20, '1 TEST STREET')]]
+    result = dict(page_number=page, table_index=0, source_revision='a'*64, rows=[])
+    for i, values in enumerate(header + lines):
+        cells = []
+        for j, (x, text) in enumerate(values):
+            # Header remains within the top fifth; body begins below it.
+            y = 20+i*12 if i < len(header) else 220+(i-len(header))*12
+            locator = rectangle(y, x=x, width=min(575-x, max(10, len(text)*3)), height=8)
+            locator['page'] = page
+            cells.append(dict(column_index=j, expected_text=text, locator=locator))
+        result['rows'].append(dict(row_index=i, cells=cells))
+    return result
+
+
+def two_shares():
+    return source([
+        [(15, '06/01 ID 0000 BASE SHARE SAVINGS Previous Balance'), (350, '100.00')],
+        [(15, '06/03'), (75, 'Deposit Online Banking Transfer From Share 0040'), (310, '20.00 120.00')],
+        [(75, 'Funds Transfer via Mobile')],
+        [(15, '06/30'), (75, 'Ending Balance'), (350, '120.00')],
+        [(15, '06/01 ID 0040 FREE CHECKING Previous Balance'), (350, '200.00')],
+        [(15, '06/03'), (75, 'Withdrawal Online Banking Transfer To Share 0000'), (310, '-20.00'), (350, '180.00')],
+        [(75, 'Funds Transfer via Mobile')],
+        [(15, '06/30'), (75, 'Ending Balance'), (350, '180.00')],
+    ])
+
+
+def selected(sources, share='0040'):
+    st = next(s for s in statement_catalog(sources)['statements'] if s['share_reference'] == share)
+    keys = {(s['page_number'], s['table_index']) for s in st['sources']}
+    return st, propose_andrews_statement([s for s in sources if (s['page_number'], s['table_index']) in keys], 'USD', st)
+
+
+class AndrewsReaderTests(unittest.TestCase):
+    def test_savings_and_checking_stay_separate_with_original_cells(self):
+        original = two_shares(); before = deepcopy(original)
+        catalog = statement_catalog([original])
+        self.assertEqual(len(catalog['statements']), 2)
+        a, savings = selected([original], '0000')
+        b, checking = selected([original])
+        self.assertNotEqual(a['id'], b['id'])
+        self.assertNotEqual(a['account_reference'], b['account_reference'])
+        self.assertEqual(a['holder'], 'EXAMPLE PERSON / JOINT PERSON')
+        for proposal, direction, balance in ((savings, 'credit', '12000'), (checking, 'debit', '18000')):
+            rows = [r for r in proposal['rows'] if not r['excluded']]
+            self.assertEqual(len(rows), 1)
+            fields = rows[0]['fields']
+            self.assertEqual((fields['date'], fields['amount_minor'], fields['direction'], fields['balance']),
+                             ('2020-06-03', '2000', direction, balance))
+            self.assertEqual(fields['balance_difference_minor'], '0')
+            self.assertTrue(fields['description'].endswith('Funds Transfer via Mobile'))
+            self.assertEqual(rows[0]['issues'], [])
+            self.assertEqual(proposal['issues'], [])
+        self.assertEqual(original, before)
+        self.assertEqual(next(r for r in savings['rows'] if not r['excluded'])['source_cells'][2]['expected_text'], '20.00 120.00')
+
+    def test_continuation_uses_same_account_period_and_retains_cross_page_description(self):
+        a = source([
+            [(15, '06/01 ID 0040 FREE CHECKING Previous Balance'), (350, '100.00')],
+            [(15, '06/03'), (75, 'Withdrawal Debit Card'), (310, '-20.00 80.00')],
+            [(15, '--- Continued on following page ---')], [(15, '999999 footer')]])
+        b = source([[(75, 'EXAMPLE SHOP TEST CITY')],
+                    [(15, '06/04'), (75, 'Withdrawal Debit Card'), (310, '-10.00 70.00')],
+                    [(15, '06/30'), (75, 'Ending Balance'), (350, '70.00')]], page=2, printed_page=2, names=False)
+        st, p = selected([a, b])
+        self.assertEqual(st['page_numbers'], [1, 2])
+        rows = [r for r in p['rows'] if not r['excluded']]
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0]['fields']['description'], 'Withdrawal Debit Card\nEXAMPLE SHOP TEST CITY')
+        self.assertEqual(rows[0]['continuation_sources'][0]['page_number'], 2)
+        self.assertEqual(rows[1]['fields']['balance_difference_minor'], '0')
+        self.assertNotIn('footer', str(p))
+        for change in ('account', 'period', 'page', 'printed_page'):
+            values = dict(page=2, printed_page=2, names=False)
+            values[change] = {'account':'987654321', 'period':'07/01/20 07/31/20', 'page':3, 'printed_page':4}[change]
+            wrong = source([[(15, '06/30'), (75, 'Ending Balance'), (350, '70.00')]], **values)
+            st, p = selected([a, wrong])
+            self.assertEqual(st['page_numbers'], [1])
+            self.assertTrue(p['issues'])
+
+    def test_repeated_account_and_period_stays_a_separate_statement_occurrence(self):
+        a = two_shares(); b = deepcopy(a); b['page_number'] = 3
+        for r in b['rows']:
+            for c in r['cells']: c['locator']['page'] = 3
+        result = statement_catalog([a,b])['statements']
+        self.assertEqual(len(result), 4)
+        self.assertTrue(all(len(s['page_numbers']) == 1 for s in result))
+        self.assertEqual(len({s['id'] for s in result}), 4)
+
+    def test_invalid_heading_account_and_period_are_not_repaired(self):
+        for changes in ({'account':'12345O789'}, {'period':'06/01/20 06/31/20'}):
+            self.assertIsNone(andrews_page(source([], **changes)))
+        a = two_shares(); a['rows'][0]['cells'][0]['expected_text'] = 'Membership Application'
+        self.assertIsNone(andrews_page(a))
+        a = two_shares(); a['rows'][0]['cells'][0]['locator']['rect'] = [0, 0, 0, 0]
+        self.assertIsNone(andrews_page(a))
+
+    def test_unrecognised_share_does_not_inherit_previous_account(self):
+        a = source([
+            [(15, '06/01 ID 0040 FREE CHECKING Previous Balance'), (350, '100.00')],
+            [(15, '06/03'), (75, 'Deposit ACH Example'), (310, '20.00 120.00')],
+            [(15, '06/01 ID OOOO BASE SHARE SAVINGS Previous Balance'), (350, '50.00')],
+            [(15, '06/03'), (75, 'Deposit ACH Other'), (310, '30.00 80.00')]])
+        _, p = selected([a])
+        self.assertEqual(len([r for r in p['rows'] if not r['excluded']]), 1)
+        self.assertTrue(statement_catalog([a])['unclassified_sources'])
+
+    def test_damaged_dates_amounts_and_balances_are_independent_exceptions(self):
+        for date_text, money, expected in (
+            ('O6/03', '-20.00 80.00', {'amount_minor':'2000', 'balance':'8000'}),
+            ('06/03', '-2O.00 80.00', {'date':'2020-06-03', 'balance':'8000'}),
+            ('06/03', '-20.00 80. 00', {'date':'2020-06-03', 'amount_minor':'2000'}),
+            ('07/03', '-20.00 80.00', {'amount_minor':'2000', 'balance':'8000'})):
+            a = source([[(15, '06/01 ID 0040 FREE CHECKING Previous Balance'), (350, '100.00')],
+                        [(15, date_text), (75, 'Withdrawal Debit Card'), (310, money)]])
+            _, p = selected([a]); r = next(r for r in p['rows'] if not r['excluded'])
+            self.assertTrue(r['issues'])
+            for key,value in expected.items(): self.assertEqual(r['fields'][key], value)
+            self.assertEqual(r['source_cells'][-1]['expected_text'], money)
+            if date_text != '06/03': self.assertNotIn('date', r['fields'])
+
+    def test_missing_minus_and_two_unlabelled_dates_are_flagged(self):
+        a = source([[(15, '06/01 ID 0040 FREE CHECKING Previous Balance'), (350, '100.00')],
+                    [(15, '06/03 06/02 Withdrawal Debit Card'), (310, '20.00 80.00')]])
+        _, p = selected([a]); r = next(r for r in p['rows'] if not r['excluded'])
+        self.assertNotIn('direction', r['fields'])
+        self.assertEqual(r['fields']['additional_printed_date'], '06/02')
+        self.assertEqual(len(r['issues']), 2)
+
+    def test_refund_is_credit_and_balance_mismatch_is_reported(self):
+        a = source([[(15, '06/01 ID 0040 FREE CHECKING Previous Balance'), (350, '100.00')],
+                    [(15, '06/03'), (75, 'Withdrawal Adjustment Debit Card Credit Voucher'), (310, '20.00 121.00')]])
+        _, p = selected([a]); r = next(r for r in p['rows'] if not r['excluded'])
+        self.assertEqual(r['fields']['direction'], 'credit')
+        self.assertEqual(r['fields']['balance_difference_minor'], '100')
+        self.assertTrue(r['issues'])

@@ -310,3 +310,17 @@ The retained real-file comparison now fills four previously unresolved fee rows 
 - [x] Recognise exact Secured Card and Platinum Secured Card headings in both layout and period detection. The supplied collection now identifies 52 periods instead of 7. Preserve conflicting/damaged headers as unresolved.
 
 Validation: 57 package/report/router backend checks, 21 statement checks, 13 frontend checks, TypeScript, scoped lint, guide generation and build passed. Browser package assembly, independent rebuild, desktop/mobile readable reports and the exact statement-page review passed. No full suite or public push. The supplied Andrews multi-share statements and buyer-wire document remain unsupported automatic formats; independent measurements and full original expert-packet acceptance remain open.
+
+
+## Completed locally: Andrews savings and checking sections, 15 September 2026
+
+- [x] Recognise supported Andrews savings/checking sections and group only supported continuation pages. Keep different shares and repeated statement copies separate.
+- [x] Retain exact original fields and wrapped descriptions; read amounts/balances independently and flag OCR damage, uncertain date meanings, sign conflicts and balance differences.
+- [x] Compare physical account sections for overlapping imports so separate accounts on one PDF page can both be imported. Preserve duplicate/replacement protection when a reread renumbers rows; require review when positions cannot be compared.
+- [x] Record savings/checking account types and original balance sources. Save a statement without payments only when its opening/closing balances match; prevent empty imports from hiding proposed transactions.
+- [x] Show unheaded original rows in measured positions with source highlights, without inventing headers. Retain unlocated text and keep dates/amounts on one line.
+- [x] Check two-account persistence with synthetic data and the smaller supplied PDF through real upload, separate-share selection, source clicks and page navigation. Update the user guide.
+- [ ] Extend supported source layouts beyond BASE SHARE SAVINGS and FREE CHECKING, and address the remaining unreadable/conflicting sections in the larger file.
+- [ ] Add a separate interpretation for the supplied wire-detail report, preserving its sending/receiving parties, value date and redacted references without treating it as an account statement.
+
+Validation: 75 unique affected backend checks and 23 affected frontend checks passed, plus TypeScript, scoped lint, guide generation and production build. No full suite or public push. The local browser case shows 15 account/period choices and 7 first-savings payments; no real transactions were imported. A separate synthetic browser import saved a no-payment statement and opened Review accounts automatically. Native comparisons recognise 33 sections in the 99-page file and 15 in the 24-page file, with unresolved rows/coverage explicitly retained. These are not accuracy measurements. A two-page local OCR reread recovered one share heading but introduced other numerical errors, so it is not an unconditional improvement. Private receipts remain under data/local-runtime. Independent reviewed labels, measured release acceptance and applicable original expert-packet acceptance remain open.

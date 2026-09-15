@@ -612,6 +612,15 @@ export function FinancialPage() {
               </Button>
             </div>
             <div hidden={!reviewingAccounts}>
+              {importReceipt &&
+                importReceipt.case_id === caseId &&
+                importReceipt.transaction_count === 0 && (
+                  <p role="status" className="rounded border p-3 my-3">
+                    Saved the account and statement balances from{" "}
+                    {importReceipt.filename || "your statement"}. No payments
+                    were added.
+                  </p>
+                )}
               <ErrorBoundary level="section">
                 <FinancialAccounts
                   key={caseId}
@@ -631,7 +640,12 @@ export function FinancialPage() {
                 onImported={(result) => {
                   if (result) setImportReceipt(result)
                   store.setMode("transactions")
-                  store.setMainView("transactions")
+                  if (result?.transaction_count === 0) {
+                    setAccountReviewCase(caseId ?? null)
+                    store.setMainView("statements")
+                  } else {
+                    store.setMainView("transactions")
+                  }
                 }}
               />
             </div>
@@ -785,41 +799,43 @@ export function FinancialPage() {
                 Add statements
               </Button>
             </header>
-            {importReceipt && importReceipt.case_id === caseId && (
-              <section
-                role="status"
-                className="rounded border border-primary/30 bg-primary/5 p-3 space-y-2"
-              >
-                <p>
-                  <strong>
-                    {importReceipt.transaction_count} transactions imported
-                  </strong>{" "}
-                  from {importReceipt.filename || "your statement"}. Your
-                  existing investigation filters are still in place.
-                </p>
-                <div className="flex gap-2">
-                  {importReceipt.account_id && (
+            {importReceipt &&
+              importReceipt.case_id === caseId &&
+              importReceipt.transaction_count > 0 && (
+                <section
+                  role="status"
+                  className="rounded border border-primary/30 bg-primary/5 p-3 space-y-2"
+                >
+                  <p>
+                    <strong>
+                      {importReceipt.transaction_count} transactions imported
+                    </strong>{" "}
+                    from {importReceipt.filename || "your statement"}. Your
+                    existing investigation filters are still in place.
+                  </p>
+                  <div className="flex gap-2">
+                    {importReceipt.account_id && (
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          applyInvestigationScope({
+                            accountId: importReceipt.account_id,
+                          })
+                          setImportReceipt(null)
+                        }}
+                      >
+                        Show this account's payments
+                      </Button>
+                    )}
                     <Button
-                      variant="outline"
-                      onClick={() => {
-                        applyInvestigationScope({
-                          accountId: importReceipt.account_id,
-                        })
-                        setImportReceipt(null)
-                      }}
+                      variant="ghost"
+                      onClick={() => setImportReceipt(null)}
                     >
-                      Show this account's payments
+                      Dismiss
                     </Button>
-                  )}
-                  <Button
-                    variant="ghost"
-                    onClick={() => setImportReceipt(null)}
-                  >
-                    Dismiss
-                  </Button>
-                </div>
-              </section>
-            )}
+                  </div>
+                </section>
+              )}
             <ErrorBoundary level="section">
               <CorrectableLedger
                 investigation

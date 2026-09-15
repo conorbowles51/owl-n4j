@@ -12,7 +12,12 @@ export function PrintedStatementTable({
   rows: PrintedRow[]
   onCell: (rowId: string, locator: unknown) => void
 }) {
-  const { sections, remaining } = printedStatementSections(rows)
+  const positioned = rows.filter(
+    (row) => row.fields?.statement_layout === "andrews-share-statement"
+  )
+  const { sections, remaining } = printedStatementSections(
+    rows.filter((row) => !positioned.includes(row))
+  )
   const cell = (id: string, value: PrintedCell | undefined) =>
     value?.expected_text ? (
       <button
@@ -32,6 +37,9 @@ export function PrintedStatementTable({
   const additional = remaining.filter((row) => !unresolved.includes(row))
   return (
     <div className="space-y-4">
+      {positioned.length > 0 && (
+        <PositionedStatementRows rows={positioned} onCell={onCell} />
+      )}
       {sections.map((section) => (
         <section key={section.key} className="space-y-2">
           {section.title && (
@@ -99,7 +107,7 @@ export function PrintedStatementTable({
           ))}
         </section>
       )}
-      {!sections.length && (
+      {!sections.length && !positioned.length && (
         <p className="text-sm">
           A transaction table could not be reconstructed for this page. Check
           the original and the extracted text below.
@@ -126,6 +134,103 @@ export function PrintedStatementTable({
           ))}
         </details>
       )}
+    </div>
+  )
+}
+
+// These statements print aligned lines without column headings. Keep each
+// measured cell in its original horizontal position, including compound OCR
+// cells, rather than manufacturing headers or splitting a source highlight.
+function PositionedStatementRows({
+  rows,
+  onCell,
+}: {
+  rows: PrintedRow[]
+  onCell: (rowId: string, locator: unknown) => void
+}) {
+  const box = (cell: PrintedCell) => {
+    const value = (cell.locator as { rect?: number[] })?.rect
+    return Array.isArray(value) &&
+      value.length === 4 &&
+      value.every(Number.isFinite)
+      ? value
+      : null
+  }
+  const boxes = rows
+    .flatMap((row) => row.source_cells.map(box))
+    .filter((b) => b !== null)
+  if (!boxes.length) {
+    return (
+      <div className="space-y-2">
+        {rows.map((row) => (
+          <div key={row.id} className="flex flex-wrap gap-3">
+            {row.source_cells.map((cell) => (
+              <button
+                type="button"
+                key={cell.column_index}
+                className="text-left whitespace-pre-wrap"
+                onClick={() => onCell(row.id, cell.locator)}
+              >
+                {cell.expected_text}
+              </button>
+            ))}
+          </div>
+        ))}
+      </div>
+    )
+  }
+  const left = Math.min(...boxes.map((b) => b[0]))
+  const right = Math.max(...boxes.map((b) => b[2]))
+  const column = (x: number) =>
+    Math.min(
+      1001,
+      Math.max(
+        1,
+        1 + Math.round(((x - left) / Math.max(1, right - left)) * 1000)
+      )
+    )
+  return (
+    <div
+      className="overflow-auto rounded border"
+      role="group"
+      aria-label="Extracted account section in printed positions"
+    >
+      <div className="min-w-[540px] p-3 font-mono text-[11px] leading-5">
+        {rows.map((row) => (
+          <div
+            key={row.id}
+            className="grid border-b border-border/30 py-1"
+            style={{ gridTemplateColumns: "repeat(1000, minmax(0, 1fr))" }}
+          >
+            {row.source_cells.map((cell) => {
+              const rect = box(cell)
+              const numeric = /^[\d\s.,+\-/]+$/.test(cell.expected_text)
+              return (
+                <button
+                  key={cell.column_index}
+                  type="button"
+                  className="text-left whitespace-pre-wrap break-words hover:bg-accent focus-visible:outline-2 focus-visible:outline-primary"
+                  style={
+                    rect
+                      ? {
+                          gridColumn: `${column(rect[0])} / ${Math.max(column(rect[0]) + 1, column(rect[2]))}`,
+                          whiteSpace: numeric ? "pre" : "pre-wrap",
+                          textAlign:
+                            numeric && rect[0] > left + (right - left) * 0.6
+                              ? "right"
+                              : "left",
+                        }
+                      : { gridColumn: "1 / -1" }
+                  }
+                  onClick={() => onCell(row.id, cell.locator)}
+                >
+                  {cell.expected_text}
+                </button>
+              )
+            })}
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
