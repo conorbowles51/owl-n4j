@@ -1,3 +1,13 @@
+// This existing workflow fixture has case editing and upload access.
+vi.mock("../hooks/use-financial-access", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../hooks/use-financial-access")>()),
+  useFinancialAccess: () => ({
+    canEdit: true,
+    canUpload: true,
+    ready: true,
+    error: false,
+  }),
+}))
 /**
  * The dialog that reads a bank file to a person before storing it.
  *
@@ -31,7 +41,11 @@ import { SendToLedgerDialog } from "./SendToLedgerDialog"
 const CASE_ID = "case-1"
 const FILE_ID = "file-9"
 
-function period(overrides: Partial<NonNullable<FilePrecheck["accounts"][number]["period"]>> = {}) {
+function period(
+  overrides: Partial<
+    NonNullable<FilePrecheck["accounts"][number]["period"]>
+  > = {}
+) {
   return {
     currency: "USD",
     start: "2024-01-01",
@@ -130,7 +144,9 @@ function renderDialog(onClose = vi.fn()) {
 
 /** Fill both date fields, which is the minimum the read will accept. */
 function giveTheWindow(start = "2024-01-01", end = "2024-12-31") {
-  fireEvent.change(screen.getByTestId("window-start"), { target: { value: start } })
+  fireEvent.change(screen.getByTestId("window-start"), {
+    target: { value: start },
+  })
   fireEvent.change(screen.getByTestId("window-end"), { target: { value: end } })
 }
 
@@ -160,7 +176,9 @@ describe("SendToLedgerDialog", () => {
   })
 
   it("sends the period as typed, and the currency only when one was given", async () => {
-    const read = vi.spyOn(financialAPI, "precheckFile").mockResolvedValue(precheck())
+    const read = vi
+      .spyOn(financialAPI, "precheckFile")
+      .mockResolvedValue(precheck())
     renderDialog()
 
     giveTheWindow("1996-01-01", "2004-12-31")
@@ -179,7 +197,9 @@ describe("SendToLedgerDialog", () => {
   })
 
   it("passes a currency through when the reader supplied one", async () => {
-    const read = vi.spyOn(financialAPI, "precheckFile").mockResolvedValue(precheck())
+    const read = vi
+      .spyOn(financialAPI, "precheckFile")
+      .mockResolvedValue(precheck())
     renderDialog()
 
     giveTheWindow()
@@ -193,7 +213,9 @@ describe("SendToLedgerDialog", () => {
   })
 
   it("shows what the reading found, and stores nothing while it does", async () => {
-    const read = vi.spyOn(financialAPI, "precheckFile").mockResolvedValue(precheck())
+    const read = vi
+      .spyOn(financialAPI, "precheckFile")
+      .mockResolvedValue(precheck())
     const write = vi.spyOn(financialAPI, "ingestFile")
     renderDialog()
 
@@ -202,7 +224,9 @@ describe("SendToLedgerDialog", () => {
 
     expect(await screen.findByTestId("precheck-report")).toBeInTheDocument()
     expect(screen.getByText("Can be read")).toBeInTheDocument()
-    expect(screen.getByTestId("precheck-rows")).toHaveTextContent("42 of 42 rows read")
+    expect(screen.getByTestId("precheck-rows")).toHaveTextContent(
+      "42 of 42 rows read"
+    )
     expect(screen.getByTestId("precheck-span")).toHaveTextContent(
       "Covering 2024-01-03 to 2024-03-28"
     )
@@ -210,7 +234,9 @@ describe("SendToLedgerDialog", () => {
     const acct = screen.getByTestId("precheck-account")
     expect(acct).toHaveTextContent("****4021 (R Mensah)")
     expect(acct).toHaveTextContent("42 rows")
-    expect(acct).toHaveTextContent("Opening 1,000.00 USD / Closing 2,500.00 USD")
+    expect(acct).toHaveTextContent(
+      "Opening 1,000.00 USD / Closing 2,500.00 USD"
+    )
 
     expect(read).toHaveBeenCalledTimes(1)
     expect(write).not.toHaveBeenCalled()
@@ -257,15 +283,19 @@ describe("SendToLedgerDialog", () => {
     fireEvent.click(screen.getByTestId("read-file"))
 
     expect(await screen.findByTestId("precheck-report")).toBeInTheDocument()
-    expect(screen.getByText(/Unrecognised \(readable_with_notes\)/)).toBeInTheDocument()
+    expect(
+      screen.getByText(/Unrecognised \(readable_with_notes\)/)
+    ).toBeInTheDocument()
     expect(screen.getByTestId("store-file")).toBeInTheDocument()
   })
 
   it("writes with the same period the reading used, and reports what went in", async () => {
     vi.spyOn(financialAPI, "precheckFile").mockResolvedValue(precheck())
-    const write = vi.spyOn(financialAPI, "ingestFile").mockResolvedValue(
-      ingestion({ transactions_stored: 42, unlinked_rows: 0 })
-    )
+    const write = vi
+      .spyOn(financialAPI, "ingestFile")
+      .mockResolvedValue(
+        ingestion({ transactions_stored: 42, unlinked_rows: 0 })
+      )
     renderDialog()
 
     giveTheWindow("1996-01-01", "2004-12-31")
@@ -327,7 +357,9 @@ describe("SendToLedgerDialog", () => {
 
     const report = await screen.findByTestId("ingest-report")
     expect(report).toHaveTextContent("40 transactions added.")
-    expect(report).toHaveTextContent("2 rows could not be attached to an account")
+    expect(report).toHaveTextContent(
+      "2 rows could not be attached to an account"
+    )
   })
 
   it("shows a fault as a fault, and does not pass it off as a reading", async () => {
@@ -382,8 +414,16 @@ describe("SendToLedgerDialog", () => {
             currency: "JPY",
             period: period({
               currency: "JPY",
-              opening: { source: "printed", amount_minor: 250000, currency: "JPY" },
-              closing: { source: "printed", amount_minor: 310000, currency: "JPY" },
+              opening: {
+                source: "printed",
+                amount_minor: 250000,
+                currency: "JPY",
+              },
+              closing: {
+                source: "printed",
+                amount_minor: 310000,
+                currency: "JPY",
+              },
             }),
           }),
         ],

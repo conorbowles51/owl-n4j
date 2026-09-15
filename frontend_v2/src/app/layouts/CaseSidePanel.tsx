@@ -1,3 +1,4 @@
+import { FinancialAccessProvider } from "@/features/financial/components/FinancialAccessProvider"
 import { useState } from "react"
 import {
   Info,
@@ -249,7 +250,9 @@ export function CaseSidePanelContent() {
       <div className="flex-1 overflow-hidden">
         {isFinancialRoute && caseId && (
           <div className="h-full" hidden={tab !== "detail"}>
-            <StatementFilesPanel key={caseId} caseId={caseId} />
+            <FinancialAccessProvider caseId={caseId}>
+              <StatementFilesPanel key={caseId} caseId={caseId} />
+            </FinancialAccessProvider>
           </div>
         )}
         {tab === "detail" ? (

@@ -1,3 +1,4 @@
+import { useFinancialAccess } from "../hooks/use-financial-access"
 import { useRef, useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { z } from "zod"
@@ -23,7 +24,7 @@ const answer = z.object({
   adjudication_id: z.string().min(1),
 })
 
-export function DuplicateDecisionForm({
+function DuplicateDecisionFormForm({
   selection,
   onClose,
 }: {
@@ -168,4 +169,11 @@ export function DuplicateDecisionForm({
       </div>
     </form>
   )
+}
+
+export function DuplicateDecisionForm(
+  props: Parameters<typeof DuplicateDecisionFormForm>[0]
+) {
+  const { canEdit } = useFinancialAccess()
+  return canEdit ? <DuplicateDecisionFormForm {...props} /> : null
 }

@@ -1,3 +1,4 @@
+import { useFinancialAccess } from "../hooks/use-financial-access"
 import { useRef, useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { z } from "zod"
@@ -47,6 +48,7 @@ const importStates = z.object({
 })
 
 export function StatementFilesPanel({ caseId }: { caseId: string }) {
+  const { canUpload } = useFinancialAccess()
   const owner = useAuthStore(
     (state) => state.user?.id || state.user?.username || "anonymous"
   )
@@ -107,6 +109,7 @@ export function StatementFilesPanel({ caseId }: { caseId: string }) {
     })
   }
   const readStatement = async (fileId: string) => {
+    if (!canUpload) return
     setReading((current) => ({ ...current, [fileId]: true }))
     setError("")
     try {
@@ -131,36 +134,42 @@ export function StatementFilesPanel({ caseId }: { caseId: string }) {
     >
       <h2 className="font-semibold">Statement files</h2>
       <p className="text-sm text-muted-foreground">
-        Upload PDFs together, then select a ready file to open it in the
-        statement viewer. Supported wire reports and deposit receipts open a
-        separate review, which you can save in Findings.
+        {canUpload
+          ? "Upload PDFs together, then select a ready file to open it in the statement viewer."
+          : "Select a ready file to open its original PDF and extracted statement."}{" "}
+        Supported wire reports and deposit receipts open their own review.
       </p>
-      <input
-        ref={input}
-        type="file"
-        multiple
-        accept="application/pdf,.pdf"
-        aria-label="Statement PDFs"
-        className="hidden"
-        onChange={(event) => {
-          const selectedFiles = Array.from(event.target.files ?? [])
-          event.target.value = ""
-          setError("")
-          void uploadStatementFiles(
-            selectedFiles,
-            caseId,
-            owner,
-            refresh
-          ).catch((error) => setError(error.message))
-        }}
-      />
+      {canUpload && (
+        <input
+          ref={input}
+          type="file"
+          multiple
+          accept="application/pdf,.pdf"
+          aria-label="Statement PDFs"
+          className="hidden"
+          onChange={(event) => {
+            if (!canUpload) return
+            const selectedFiles = Array.from(event.target.files ?? [])
+            event.target.value = ""
+            setError("")
+            void uploadStatementFiles(
+              selectedFiles,
+              caseId,
+              owner,
+              refresh
+            ).catch((error) => setError(error.message))
+          }}
+        />
+      )}
       <div className="flex flex-wrap gap-2">
-        <Button
-          disabled={queue?.running}
-          onClick={() => input.current?.click()}
-        >
-          Upload PDFs
-        </Button>
+        {canUpload && (
+          <Button
+            disabled={queue?.running}
+            onClick={() => input.current?.click()}
+          >
+            Upload PDFs
+          </Button>
+        )}
         <Button
           variant="outline"
           onClick={() => {
@@ -171,10 +180,12 @@ export function StatementFilesPanel({ caseId }: { caseId: string }) {
           Refresh files
         </Button>
       </div>
-      <p className="text-xs text-muted-foreground">
-        Up to 20 PDFs per selection. Keep the browser tab open while uploads
-        finish. Each statement is reviewed and confirmed separately.
-      </p>
+      {canUpload && (
+        <p className="text-xs text-muted-foreground">
+          Up to 20 PDFs per selection. Keep the browser tab open while uploads
+          finish. Each statement is reviewed and confirmed separately.
+        </p>
+      )}
       {error && <p role="alert">{error}</p>}
       {queue && (
         <div aria-live="polite" className="space-y-2">
@@ -287,7 +298,7 @@ export function StatementFilesPanel({ caseId }: { caseId: string }) {
                   Open saved receipt reviews in Findings
                 </a>
               )}
-              {["unprocessed", "failed"].includes(file.status) && (
+              {canUpload && ["unprocessed", "failed"].includes(file.status) && (
                 <Button
                   variant="outline"
                   disabled={reading[file.id] || queue?.running}

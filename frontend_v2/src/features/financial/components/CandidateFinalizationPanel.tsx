@@ -1,3 +1,4 @@
+import { useFinancialAccess } from "../hooks/use-financial-access"
 import { StatementDraftPanel } from "./StatementDraftPanel"
 import { StatementScopeEditor } from "./StatementScopeEditor"
 import {
@@ -72,7 +73,7 @@ const receiptSchema = z
   })
 const previewSchema = z.union([readySchema, receiptSchema])
 
-export function CandidateFinalizationPanel(props: {
+function CandidateFinalizationPanelForm(props: {
   caseId: string
   fileId: string
 }) {
@@ -394,4 +395,11 @@ function Finalization({ caseId, fileId }: { caseId: string; fileId: string }) {
       )}
     </section>
   )
+}
+
+export function CandidateFinalizationPanel(
+  props: Parameters<typeof CandidateFinalizationPanelForm>[0]
+) {
+  const { canEdit } = useFinancialAccess()
+  return canEdit ? <CandidateFinalizationPanelForm {...props} /> : null
 }

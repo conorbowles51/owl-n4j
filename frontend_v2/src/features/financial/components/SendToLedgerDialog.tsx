@@ -1,3 +1,4 @@
+import { useFinancialAccess } from "../hooks/use-financial-access"
 /**
  * Reading a bank file to the reader, then storing it if they say so.
  *
@@ -87,7 +88,11 @@ interface SendToLedgerDialogProps {
  * balance is left absent: rendering it as zero would turn a fact the file did
  * not state into one it did.
  */
-function AccountSummary({ account }: { account: FilePrecheck["accounts"][number] }) {
+function AccountSummary({
+  account,
+}: {
+  account: FilePrecheck["accounts"][number]
+}) {
   const period = account.period
   const range = period ? formatPeriodRange(period.start, period.end) : null
 
@@ -108,9 +113,10 @@ function AccountSummary({ account }: { account: FilePrecheck["accounts"][number]
   }
 
   const balances = period
-    ? [balance("Opening", period.opening), balance("Closing", period.closing)].filter(
-        (line): line is string => line !== null
-      )
+    ? [
+        balance("Opening", period.opening),
+        balance("Closing", period.closing),
+      ].filter((line): line is string => line !== null)
     : []
 
   return (
@@ -127,19 +133,23 @@ function AccountSummary({ account }: { account: FilePrecheck["accounts"][number]
         </span>
       </div>
       {account.institution_name && (
-        <p className="mt-1 text-xs text-muted-foreground">{account.institution_name}</p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          {account.institution_name}
+        </p>
       )}
       {/* No period is the normal case for one of the four formats, so its
           absence is left unremarked rather than reported as a gap. */}
       {range && <p className="mt-1 text-xs text-muted-foreground">{range}</p>}
       {balances.length > 0 && (
-        <p className="mt-1 text-xs text-muted-foreground">{balances.join(" / ")}</p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          {balances.join(" / ")}
+        </p>
       )}
     </div>
   )
 }
 
-export function SendToLedgerDialog({
+function SendToLedgerDialogForm({
   caseId,
   fileId,
   fileName,
@@ -208,8 +218,8 @@ export function SendToLedgerDialog({
             Send to ledger
           </DialogTitle>
           <DialogDescription>
-            <span className="font-medium">{fileName ?? fileId}</span> is a bank file.
-            Reading it here shows what it holds before anything is stored.
+            <span className="font-medium">{fileName ?? fileId}</span> is a bank
+            file. Reading it here shows what it holds before anything is stored.
           </DialogDescription>
         </DialogHeader>
 
@@ -239,13 +249,15 @@ export function SendToLedgerDialog({
             </div>
           </div>
           <p className="text-xs text-muted-foreground">
-            Some bank files write years with two digits, so the period this matter
-            covers is what decides whether a statement is from 1998 or 2098. Give the
-            widest range the evidence could fall in.
+            Some bank files write years with two digits, so the period this
+            matter covers is what decides whether a statement is from 1998 or
+            2098. Give the widest range the evidence could fall in.
           </p>
 
           <div className="space-y-1.5">
-            <Label htmlFor="ledger-currency">Currency, if the file does not say</Label>
+            <Label htmlFor="ledger-currency">
+              Currency, if the file does not say
+            </Label>
             <Input
               id="ledger-currency"
               data-testid="default-currency"
@@ -255,8 +267,9 @@ export function SendToLedgerDialog({
               onChange={(e) => setDefaultCurrency(e.target.value)}
             />
             <p className="text-xs text-muted-foreground">
-              Only used where the file prints no currency of its own. A wrong answer
-              here produces amounts that look right, so leave it blank if unsure.
+              Only used where the file prints no currency of its own. A wrong
+              answer here produces amounts that look right, so leave it blank if
+              unsure.
             </p>
           </div>
 
@@ -280,10 +293,15 @@ export function SendToLedgerDialog({
                 const term = readIngestOutcome(written.outcome)
                 return (
                   <>
-                    <Badge variant={ingestVariant(term)} className="text-[10px]">
+                    <Badge
+                      variant={ingestVariant(term)}
+                      className="text-[10px]"
+                    >
                       {term.label}
                     </Badge>
-                    <p className="mt-2 text-xs text-muted-foreground">{term.description}</p>
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      {term.description}
+                    </p>
                     {didStore(written) && (
                       <p className="mt-1 text-xs text-muted-foreground">
                         {written.transactions_stored} transaction
@@ -297,7 +315,9 @@ export function SendToLedgerDialog({
                     {/* The endpoint's own words, kept because they name the
                         specific thing rather than the category of thing. */}
                     {written.reason && (
-                      <p className="mt-1 text-xs text-muted-foreground">{written.reason}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {written.reason}
+                      </p>
                     )}
                   </>
                 )
@@ -320,8 +340,14 @@ export function SendToLedgerDialog({
             {written ? "Done" : "Cancel"}
           </Button>
           {!written && !reading && (
-            <Button onClick={handleRead} disabled={!canRead} data-testid="read-file">
-              {precheck.isPending && <LoadingSpinner className="mr-1.5 size-3.5" />}
+            <Button
+              onClick={handleRead}
+              disabled={!canRead}
+              data-testid="read-file"
+            >
+              {precheck.isPending && (
+                <LoadingSpinner className="mr-1.5 size-3.5" />
+              )}
               Read the file
             </Button>
           )}
@@ -336,8 +362,14 @@ export function SendToLedgerDialog({
                 Change dates
               </Button>
               {wouldStore(reading) && (
-                <Button onClick={handleStore} disabled={busy} data-testid="store-file">
-                  {ingest.isPending && <LoadingSpinner className="mr-1.5 size-3.5" />}
+                <Button
+                  onClick={handleStore}
+                  disabled={busy}
+                  data-testid="store-file"
+                >
+                  {ingest.isPending && (
+                    <LoadingSpinner className="mr-1.5 size-3.5" />
+                  )}
                   Add to ledger
                 </Button>
               )}
@@ -371,7 +403,9 @@ function PrecheckReport({ precheck }: { precheck: FilePrecheck }) {
           {term.label}
         </Badge>
         {precheck.detected_format && (
-          <span className="text-xs text-muted-foreground">{precheck.detected_format}</span>
+          <span className="text-xs text-muted-foreground">
+            {precheck.detected_format}
+          </span>
         )}
       </div>
       <p className="text-xs text-muted-foreground">{term.description}</p>
@@ -380,8 +414,12 @@ function PrecheckReport({ precheck }: { precheck: FilePrecheck }) {
       )}
 
       {precheck.row_count !== null && (
-        <p className="text-xs text-muted-foreground" data-testid="precheck-rows">
-          {precheck.parsed_row_count ?? precheck.row_count} of {precheck.row_count} row
+        <p
+          className="text-xs text-muted-foreground"
+          data-testid="precheck-rows"
+        >
+          {precheck.parsed_row_count ?? precheck.row_count} of{" "}
+          {precheck.row_count} row
           {precheck.row_count === 1 ? "" : "s"} read
           {precheck.skipped.length > 0 &&
             `, ${precheck.skipped.length} skipped`}
@@ -393,7 +431,10 @@ function PrecheckReport({ precheck }: { precheck: FilePrecheck }) {
         precheck.earliest_ordering_date,
         precheck.latest_ordering_date
       ) && (
-        <p className="text-xs text-muted-foreground" data-testid="precheck-span">
+        <p
+          className="text-xs text-muted-foreground"
+          data-testid="precheck-span"
+        >
           Covering{" "}
           {formatPeriodRange(
             precheck.earliest_ordering_date,
@@ -406,19 +447,32 @@ function PrecheckReport({ precheck }: { precheck: FilePrecheck }) {
       {precheck.accounts.length > 0 && (
         <div className="space-y-2">
           {precheck.accounts.map((account, index) => (
-            <AccountSummary key={account.account_key ?? index} account={account} />
+            <AccountSummary
+              key={account.account_key ?? index}
+              account={account}
+            />
           ))}
         </div>
       )}
 
       {precheck.unattributed_row_count > 0 && (
-        <p className="text-xs text-muted-foreground" data-testid="precheck-unattributed">
+        <p
+          className="text-xs text-muted-foreground"
+          data-testid="precheck-unattributed"
+        >
           {precheck.unattributed_row_count} row
-          {precheck.unattributed_row_count === 1 ? "" : "s"} name an account this file
-          never introduces, so there is no way to say whose money moved. Nothing will
-          be stored until that is resolved.
+          {precheck.unattributed_row_count === 1 ? "" : "s"} name an account
+          this file never introduces, so there is no way to say whose money
+          moved. Nothing will be stored until that is resolved.
         </p>
       )}
     </div>
   )
+}
+
+export function SendToLedgerDialog(
+  props: Parameters<typeof SendToLedgerDialogForm>[0]
+) {
+  const { canEdit } = useFinancialAccess()
+  return canEdit ? <SendToLedgerDialogForm {...props} /> : null
 }

@@ -1,3 +1,4 @@
+import { useFinancialAccess } from "../hooks/use-financial-access"
 import { evidenceAPI } from "@/features/evidence/api"
 import { useEffect, useRef, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
@@ -26,7 +27,7 @@ const jobAnswer = z.object({
   job_type: z.string(),
   quality_report: z.record(z.string(), z.unknown()).optional(),
 })
-export function PdfReviewIntake({
+function PdfReviewIntakeForm({
   caseId,
   onReady,
   automaticReview = false,
@@ -286,4 +287,11 @@ export function PdfReviewIntake({
       )}
     </section>
   )
+}
+
+export function PdfReviewIntake(
+  props: Parameters<typeof PdfReviewIntakeForm>[0]
+) {
+  const { canUpload } = useFinancialAccess()
+  return canUpload ? <PdfReviewIntakeForm {...props} /> : null
 }

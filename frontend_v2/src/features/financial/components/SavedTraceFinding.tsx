@@ -1,3 +1,4 @@
+import { useFinancialAccess } from "../hooks/use-financial-access"
 import { useState } from "react"
 import { useMutation } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
@@ -14,7 +15,7 @@ import { readSavedTrace, traceFindingLinks } from "../lib/saved-trace"
 import { renderTraceReport, type VerifiedTrace } from "../lib/trace-report"
 import { TraceReportDownload } from "./TraceReportDownload"
 
-export function SaveTraceFinding({ trace }: { trace: VerifiedTrace }) {
+function SaveTraceFindingForm({ trace }: { trace: VerifiedTrace }) {
   const caseId = trace.envelope.case_id
   const [draft, setDraft, clear] = useFinancialDraft(
     caseId,
@@ -156,4 +157,11 @@ export function SavedTraceFinding({
       </Dialog>
     </>
   )
+}
+
+export function SaveTraceFinding(
+  props: Parameters<typeof SaveTraceFindingForm>[0]
+) {
+  const { canEdit } = useFinancialAccess()
+  return canEdit ? <SaveTraceFindingForm {...props} /> : null
 }

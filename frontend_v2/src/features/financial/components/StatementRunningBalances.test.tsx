@@ -1,3 +1,13 @@
+// This existing workflow fixture has case editing and upload access.
+vi.mock("../hooks/use-financial-access", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../hooks/use-financial-access")>()),
+  useFinancialAccess: () => ({
+    canEdit: true,
+    canUpload: true,
+    ready: true,
+    error: false,
+  }),
+}))
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { render, screen, fireEvent, waitFor } from "@testing-library/react"
 import { afterEach, expect, it, vi } from "vitest"

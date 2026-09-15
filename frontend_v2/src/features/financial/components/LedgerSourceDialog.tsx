@@ -1,3 +1,4 @@
+import { useFinancialAccess } from "../hooks/use-financial-access"
 import type { LedgerTransaction } from "../api"
 import { citationSchema } from "../lib/source-citation"
 import { formatLedgerAmount } from "../lib/ledger-format"
@@ -34,6 +35,7 @@ export function LedgerSourceDialog({
   initialNoteOpen?: boolean
   onAdjudicate?: (row: LedgerTransaction) => void
 }) {
+  const { canEdit } = useFinancialAccess()
   const [replacement, setReplacement] = useState<string | null>(null)
   const [viewFile, setViewFile] = useState(false)
   const [assessAmount, setAssessAmount] = useState(false)
@@ -90,8 +92,9 @@ export function LedgerSourceDialog({
           <DialogHeader>
             <DialogTitle>Transaction details</DialogTitle>
             <DialogDescription>
-              Check the payment against its statement, record a note, or correct
-              a value.
+              {canEdit
+                ? "Check the payment against its statement, record a note, or correct a value."
+                : "Check the payment against its original statement."}
             </DialogDescription>
           </DialogHeader>
           {source.isPending && <p>Loading source citation…</p>}
@@ -154,7 +157,8 @@ export function LedgerSourceDialog({
                       was not recorded.
                     </p>
                   )}
-                  {onAdjudicate &&
+                  {canEdit &&
+                    onAdjudicate &&
                     data.ledger_status === "admitted" &&
                     data.superseded_by_id === null && (
                       <Button
@@ -169,7 +173,7 @@ export function LedgerSourceDialog({
                         Exclude from totals
                       </Button>
                     )}
-                  {!correcting && (
+                  {canEdit && !correcting && (
                     <Button
                       variant="outline"
                       disabled={

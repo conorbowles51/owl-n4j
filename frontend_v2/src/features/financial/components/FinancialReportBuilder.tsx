@@ -1,3 +1,4 @@
+import { useFinancialAccess } from "../hooks/use-financial-access"
 import { useState } from "react"
 import { useMutation } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
@@ -21,7 +22,7 @@ import {
 } from "../lib/financial-report"
 import { FinancialReportDocument } from "./FinancialReportDocument"
 
-export function FinancialReportBuilder({
+function FinancialReportBuilderForm({
   caseId,
   caseTitle,
 }: {
@@ -303,4 +304,11 @@ export function FinancialReportBuilder({
       </Dialog>
     </div>
   )
+}
+
+export function FinancialReportBuilder(
+  props: Parameters<typeof FinancialReportBuilderForm>[0]
+) {
+  const { canEdit } = useFinancialAccess()
+  return canEdit ? <FinancialReportBuilderForm {...props} /> : null
 }

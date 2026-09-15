@@ -1,3 +1,8 @@
+import { useFinancialAccess } from "../hooks/use-financial-access"
+import {
+  FinancialAccessProvider,
+  FinancialAccessNotice,
+} from "./FinancialAccessProvider"
 import { useCase } from "@/features/cases/hooks/use-cases"
 import {
   FinancialNavigation,
@@ -85,6 +90,16 @@ import type {
 
 export function FinancialPage() {
   const { id: caseId } = useParams()
+  return (
+    <FinancialAccessProvider caseId={caseId}>
+      <FinancialPageContent />
+    </FinancialAccessProvider>
+  )
+}
+
+function FinancialPageContent() {
+  const { id: caseId } = useParams()
+  const { canEdit } = useFinancialAccess()
   const store = useFinancialStore()
   const [searchParams, setSearchParams] = useSearchParams()
   useEffect(() => {
@@ -520,6 +535,7 @@ export function FinancialPage() {
         onValueChange={(value) => store.setMainView(value as FinancialMainView)}
         className="flex min-h-0 flex-1 flex-col"
       >
+        <FinancialAccessNotice />
         <FinancialNavigation
           value={store.mainView}
           onChange={store.setMainView}
@@ -587,8 +603,9 @@ export function FinancialPage() {
             <header className="space-y-1">
               <h2 className="text-lg font-semibold">Statements</h2>
               <p className="text-sm text-muted-foreground">
-                Upload and check statements here. After confirmation, their
-                payments are available in Transactions.
+                {canEdit
+                  ? "Upload and check statements here. After confirmation, their payments are available in Transactions."
+                  : "Open the original statements and review their accounts and extracted payments."}
               </p>
             </header>
             <div
@@ -601,7 +618,7 @@ export function FinancialPage() {
                 aria-pressed={!reviewingAccounts}
                 onClick={() => setAccountReviewCase(null)}
               >
-                Upload and review statements
+                {canEdit ? "Upload and review statements" : "Open statements"}
               </Button>
               <Button
                 variant={reviewingAccounts ? "primary" : "outline"}
@@ -856,7 +873,7 @@ export function FinancialPage() {
               </p>
               {graphTab(
                 <>
-                  {isTransactionsMode && (
+                  {canEdit && isTransactionsMode && (
                     <BulkActionsBar
                       onBulkCategorize={() => setBulkCategorizeOpen(true)}
                       onBulkSetFrom={handleBulkSetFrom}

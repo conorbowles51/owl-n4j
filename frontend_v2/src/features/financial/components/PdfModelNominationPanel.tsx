@@ -1,3 +1,4 @@
+import { useFinancialAccess } from "../hooks/use-financial-access"
 import { randomRequestId } from "@/lib/browser-crypto"
 import { useEffect, useRef, useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
@@ -27,7 +28,7 @@ const historySchema = z.object({
   ),
   applied: z.literal(false),
 })
-export function PdfModelNominationPanel({
+function PdfModelNominationPanelContent({
   source,
   onSaved,
   onSource,
@@ -540,4 +541,11 @@ export function PdfModelNominationPanel({
       )}
     </section>
   )
+}
+
+export function PdfModelNominationPanel(
+  props: Parameters<typeof PdfModelNominationPanelContent>[0]
+) {
+  const { canEdit } = useFinancialAccess()
+  return canEdit ? <PdfModelNominationPanelContent {...props} /> : null
 }

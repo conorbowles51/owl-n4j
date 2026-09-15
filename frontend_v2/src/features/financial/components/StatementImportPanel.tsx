@@ -1,3 +1,4 @@
+import { useFinancialAccess } from "../hooks/use-financial-access"
 import { reviewSelectionBalance } from "../lib/statement-review-balance"
 import { ReprocessStatement } from "./ReprocessStatement"
 import { newReviewId } from "../lib/statement-review-id"
@@ -195,6 +196,7 @@ export function StatementImportPanel({
   caseId: string | undefined
   onImported: (result?: StatementImportReceipt) => void
 }) {
+  const { canEdit, canUpload } = useFinancialAccess()
   const owner = useAuthStore(
     (state) => state.user?.id || state.user?.username || "anonymous"
   )
@@ -247,7 +249,9 @@ export function StatementImportPanel({
         <div>
           <h2 className="font-semibold">Bank statements</h2>
           <p className="text-sm text-muted-foreground">
-            Add a statement, check any problems, then import its transactions.
+            {canEdit
+              ? "Add a statement, check any problems, then import its transactions."
+              : "Open a statement to compare its extracted values with the original PDF."}
           </p>
         </div>
         <div className="flex gap-2">
@@ -258,16 +262,22 @@ export function StatementImportPanel({
             Statement files
           </Button>
           <Button onClick={() => setOpen(!open)}>
-            {open ? "Close statement review" : "Import a statement"}
+            {open
+              ? "Close statement review"
+              : canEdit
+                ? "Import a statement"
+                : "Open statements"}
           </Button>
         </div>
       </div>
       <div hidden={!open}>
         {open && (
           <div className="space-y-3">
-            <Button variant="outline" onClick={() => setUpload((v) => !v)}>
-              Upload a statement
-            </Button>
+            {canUpload && (
+              <Button variant="outline" onClick={() => setUpload((v) => !v)}>
+                Upload a statement
+              </Button>
+            )}
             {upload && (
               <PdfReviewIntake
                 caseId={caseId}
@@ -341,6 +351,7 @@ function StatementReview({
   onImported: (result?: StatementImportReceipt) => void
   onReprocessed: (id: string) => void
 }) {
+  const { canEdit } = useFinancialAccess()
   const owner = useAuthStore(
     (state) => state.user?.id || state.user?.username || "anonymous"
   )
@@ -524,7 +535,9 @@ function StatementReview({
           <p>
             {query.data.current_import.transaction_count} current transactions
             remain in use. Select <strong>Open imported transactions</strong> to
-            investigate them or correct a value against its source.
+            {canEdit
+              ? "investigate them or correct a value against its source."
+              : "inspect them against their sources."}
           </p>
           {query.data.current_import.details_reason && (
             <p>
@@ -587,6 +600,7 @@ function EditableStatement({
   fileId: string
   onImported: (result?: StatementImportReceipt) => void
 }) {
+  const { canEdit } = useFinancialAccess()
   const owner = useAuthStore((state) => state.user?.id || state.user?.username)
   const draftKey = owner
     ? `loupe-statement-review:${owner}:${caseId}:${fileId}:${data.revision}`
@@ -873,8 +887,9 @@ function EditableStatement({
         )}
         <p className="text-sm">
           Compare the extracted statement with the original PDF. Select printed
-          text to locate it on the page. Corrections and import choices are
-          separate below the table.
+          text to locate it on the page.
+          {canEdit &&
+            " Corrections and import choices are separate below the table."}
         </p>
       </header>
       <div className="flex flex-wrap items-center gap-2">
@@ -908,18 +923,22 @@ function EditableStatement({
         >
           Next page
         </Button>
-        <Button
-          className="ml-auto"
-          onClick={
-            data.current_import?.evidence_file_id === fileId
-              ? () => onImported()
-              : editValues
-          }
-        >
-          {data.current_import?.evidence_file_id === fileId
-            ? "Edit imported transactions"
-            : "Edit import values"}
-        </Button>
+        {(canEdit || data.current_import?.evidence_file_id === fileId) && (
+          <Button
+            className="ml-auto"
+            onClick={
+              data.current_import?.evidence_file_id === fileId
+                ? () => onImported()
+                : editValues
+            }
+          >
+            {data.current_import?.evidence_file_id === fileId
+              ? canEdit
+                ? "Edit imported transactions"
+                : "Open imported transactions"
+              : "Edit import values"}
+          </Button>
+        )}
       </div>
       <fieldset
         disabled={confirm.isPending || confirm.isSuccess}
@@ -947,8 +966,9 @@ function EditableStatement({
             <h4 className="font-semibold">Extracted statement</h4>
             <p className="text-sm text-muted-foreground mb-3">
               Compare each table with the PDF. Select any printed value to
-              locate it on the page. Use “Show corrections and import choices”
-              below to change what will be imported.
+              locate it on the page.
+              {canEdit &&
+                " Use Show corrections and import choices below to change what will be imported."}
             </p>
             <PrintedStatementTable
               rows={data.rows.filter((row) => row.page_number === currentPage)}
@@ -960,16 +980,18 @@ function EditableStatement({
                 the original PDF alongside it.
               </p>
             )}
-            <Button
-              variant="outline"
-              className="my-3"
-              onClick={() => setCorrectionsOpen((value) => !value)}
-            >
-              {correctionsOpen
-                ? "Hide corrections and import choices"
-                : "Show corrections and import choices"}
-            </Button>
-            <div ref={correctionControls} hidden={!correctionsOpen}>
+            {canEdit && (
+              <Button
+                variant="outline"
+                className="my-3"
+                onClick={() => setCorrectionsOpen((value) => !value)}
+              >
+                {correctionsOpen
+                  ? "Hide corrections and import choices"
+                  : "Show corrections and import choices"}
+              </Button>
+            )}
+            <div ref={correctionControls} hidden={!canEdit || !correctionsOpen}>
               <div className="flex flex-wrap gap-4 text-sm">
                 <label>
                   <input
@@ -1308,6 +1330,7 @@ function EditableStatement({
               <label className="flex gap-2">
                 <input
                   type="checkbox"
+                  disabled={!canEdit}
                   checked={replacePrevious}
                   onChange={(e) => setReplacePrevious(e.target.checked)}
                 />
@@ -1322,6 +1345,7 @@ function EditableStatement({
             Account holder
             <input
               aria-label="Account holder"
+              readOnly={!canEdit}
               className="block border rounded p-2 w-full bg-background"
               value={holder}
               onChange={(e) => setHolder(e.target.value)}
@@ -1331,6 +1355,7 @@ function EditableStatement({
             Account number
             <input
               aria-label="Account number"
+              readOnly={!canEdit}
               className="block border rounded p-2 w-full bg-background"
               value={account}
               onChange={(e) => setAccount(e.target.value)}
@@ -1347,6 +1372,7 @@ function EditableStatement({
             Bank
             <input
               aria-label="Bank"
+              readOnly={!canEdit}
               className="block border rounded p-2 bg-background"
               value={institution}
               onChange={(e) => setInstitution(e.target.value)}
@@ -1357,6 +1383,7 @@ function EditableStatement({
             <input
               type="date"
               aria-label="Period start"
+              readOnly={!canEdit}
               className="block border rounded p-2 bg-background"
               value={periodStart}
               onChange={(e) => setPeriodStart(e.target.value)}
@@ -1367,6 +1394,7 @@ function EditableStatement({
             <input
               type="date"
               aria-label="Period end"
+              readOnly={!canEdit}
               className="block border rounded p-2 bg-background"
               value={periodEnd}
               onChange={(e) => setPeriodEnd(e.target.value)}
@@ -1377,6 +1405,7 @@ function EditableStatement({
               Reason for detail corrections
               <input
                 aria-label="Reason for detail corrections"
+                readOnly={!canEdit}
                 className="block border rounded p-2 bg-background"
                 value={detailsReason}
                 onChange={(e) => setDetailsReason(e.target.value)}
@@ -1461,8 +1490,18 @@ function EditableStatement({
                         controls.length > 1 ? "block underline" : "underline"
                       }
                       type="button"
-                      aria-label={`Edit ${label}${controls.length > 1 ? ` on page ${originals.get(control.id)?.page_number}, row ${originals.get(control.id)!.row_index + 1}` : ""}`}
-                      onClick={() => editBalance(control.id)}
+                      aria-label={`${canEdit ? "Edit" : "Inspect"} ${label}${controls.length > 1 ? ` on page ${originals.get(control.id)?.page_number}, row ${originals.get(control.id)!.row_index + 1}` : ""}`}
+                      onClick={() => {
+                        if (canEdit) editBalance(control.id)
+                        else {
+                          const original = originals.get(control.id)
+                          if (original)
+                            setFocus({
+                              rowId: original.id,
+                              locator: balanceLocator(original),
+                            })
+                        }
+                      }}
                     >
                       {controls.length > 1 &&
                         `Page ${originals.get(control.id)?.page_number}: `}
@@ -1479,7 +1518,9 @@ function EditableStatement({
           })}
         </div>
         <p className="text-sm text-muted-foreground">
-          Select an opening or closing amount to check its source or correct it.
+          {canEdit
+            ? "Select an opening or closing amount to check its source or correct it."
+            : "Select an opening or closing amount to check its source."}
         </p>
         <Button
           type="button"
@@ -1508,7 +1549,7 @@ function EditableStatement({
             ])
             setFocus({ rowId: id, locator: { kind: "page_only", page } })
           }}
-          disabled={!data.page_numbers.length}
+          disabled={!canEdit || !data.page_numbers.length}
         >
           Add a missed transaction
         </Button>
@@ -1649,6 +1690,7 @@ function EditableStatement({
           </p>
           <Button
             disabled={
+              !canEdit ||
               incomplete ||
               (!!data.current_import &&
                 (!replacePrevious || !detailsReason.trim())) ||
@@ -1661,7 +1703,9 @@ function EditableStatement({
                 !data.can_record_account_closure &&
                 (!data.can_import_balances || !matchingEmptyBalances))
             }
-            onClick={() => confirm.mutate()}
+            onClick={() => {
+              if (canEdit) confirm.mutate()
+            }}
           >
             {confirm.isPending
               ? "Importing statement…"

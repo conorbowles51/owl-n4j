@@ -1,3 +1,4 @@
+import { useFinancialAccess } from "../hooks/use-financial-access"
 import type { LedgerTransaction } from "../api"
 import { NativeControlComparisonPanel } from "./NativeControlComparisonPanel"
 import { PrintedTotalChecks } from "./PrintedTotalChecks"
@@ -15,7 +16,7 @@ import {
   type CorrectionPreview,
 } from "../lib/correction-contract"
 
-export function CorrectionForm({
+function CorrectionFormForm({
   caseId,
   transactionId,
   currency,
@@ -492,4 +493,11 @@ export function CorrectionForm({
       </div>
     </section>
   )
+}
+
+export function CorrectionForm(
+  props: Parameters<typeof CorrectionFormForm>[0]
+) {
+  const { canEdit } = useFinancialAccess()
+  return canEdit ? <CorrectionFormForm {...props} /> : null
 }

@@ -1,14 +1,6 @@
-import {
-  useEffect,
-  useState,
-} from "react"
-import {
-  Search,
-  Filter,
-  Upload,
-  Download,
-  Palette,
-} from "lucide-react"
+import { useFinancialAccess } from "../hooks/use-financial-access"
+import { useEffect, useState } from "react"
+import { Search, Filter, Upload, Download, Palette } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -46,6 +38,7 @@ export function FinancialToolbar({
     minAmount,
     maxAmount,
   } = useFinancialStore()
+  const { canEdit } = useFinancialAccess()
   const [searchInput, setSearchInput] = useState(searchQuery)
 
   useEffect(() => {
@@ -75,7 +68,11 @@ export function FinancialToolbar({
       <div className="relative">
         <Search className="absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
         <Input
-          placeholder={mode === "transactions" ? "Search transactions..." : "Search financial intelligence..."}
+          placeholder={
+            mode === "transactions"
+              ? "Search transactions..."
+              : "Search financial intelligence..."
+          }
           value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
           className="h-8 w-64 pl-8 text-xs"
@@ -123,26 +120,24 @@ export function FinancialToolbar({
 
       <div className="flex-1" />
 
-      {mode === "transactions" && (
+      {canEdit && mode === "transactions" && (
         <Button variant="ghost" size="sm" onClick={onOpenBulkImport}>
           <Upload className="size-3.5" />
           Import
         </Button>
       )}
 
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={onExportPdf}
-      >
+      <Button variant="ghost" size="sm" onClick={onExportPdf}>
         <Download className="size-3.5" />
         PDF
       </Button>
 
-      <Button variant="ghost" size="sm" onClick={onOpenCategoryManagement}>
-        <Palette className="size-3.5" />
-        Categories
-      </Button>
+      {canEdit && (
+        <Button variant="ghost" size="sm" onClick={onOpenCategoryManagement}>
+          <Palette className="size-3.5" />
+          Categories
+        </Button>
+      )}
     </div>
   )
 }

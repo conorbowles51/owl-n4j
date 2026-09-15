@@ -1,10 +1,11 @@
+import { useFinancialAccess } from "../hooks/use-financial-access"
 import { useFinancialDraft } from "../stores/financial-drafts"
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { useCreateCaseworkEntry } from "@/features/workspace/hooks/use-casework"
 import { transactionDetail } from "../lib/transaction-detail"
 
-export function TransactionNote({
+function TransactionNoteForm({
   caseId,
   transactionId,
   refId,
@@ -135,4 +136,11 @@ export function TransactionNote({
       )}
     </section>
   )
+}
+
+export function TransactionNote(
+  props: Parameters<typeof TransactionNoteForm>[0]
+) {
+  const { canEdit } = useFinancialAccess()
+  return canEdit ? <TransactionNoteForm {...props} /> : null
 }

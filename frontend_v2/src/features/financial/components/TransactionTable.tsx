@@ -1,3 +1,4 @@
+import { useFinancialAccess } from "../hooks/use-financial-access"
 import { useCallback } from "react"
 import {
   ChevronDown,
@@ -42,7 +43,11 @@ import {
 } from "@/components/ui/tooltip"
 import { useFinancialStore } from "../stores/financial.store"
 import { TransactionDetailPanel } from "./TransactionDetailPanel"
-import type { Transaction, FinancialCategory, FinancialDatasetMode } from "../api"
+import type {
+  Transaction,
+  FinancialCategory,
+  FinancialDatasetMode,
+} from "../api"
 import type { SortColumn } from "../stores/financial.store"
 import { formatFinancialDate } from "../lib/date-utils"
 
@@ -88,7 +93,8 @@ export function TransactionTable({
     toggleExpandedRow,
     toggleSort,
   } = useFinancialStore()
-  const editable = mode === "transactions"
+  const { canEdit } = useFinancialAccess()
+  const editable = canEdit && mode === "transactions"
 
   const handleRowCheckbox = useCallback(
     (key: string, e: React.MouseEvent) => {
@@ -125,12 +131,16 @@ export function TransactionTable({
   const getSortInfo = (key: string) => {
     const idx = sortColumns.findIndex((c) => c.key === key)
     if (idx < 0) return null
-    return { asc: sortColumns[idx].asc, index: sortColumns.length > 1 ? idx + 1 : null }
+    return {
+      asc: sortColumns[idx].asc,
+      index: sortColumns.length > 1 ? idx + 1 : null,
+    }
   }
 
   const renderSortIcon = (key: string) => {
     const info = getSortInfo(key)
-    if (!info) return <ChevronsUpDown className="size-3 text-muted-foreground" />
+    if (!info)
+      return <ChevronsUpDown className="size-3 text-muted-foreground" />
     return (
       <span className="inline-flex items-center gap-0.5">
         {info.asc ? (
@@ -244,7 +254,11 @@ export function TransactionTable({
                 colSpan={12}
                 className="h-24 text-center text-sm text-muted-foreground"
               >
-                No {mode === "transactions" ? "transactions" : "financial intelligence records"} found
+                No{" "}
+                {mode === "transactions"
+                  ? "transactions"
+                  : "financial intelligence records"}{" "}
+                found
               </TableCell>
             </TableRow>
           ) : (
@@ -344,7 +358,10 @@ function TransactionRow({
 
         {/* Expand */}
         <TableCell className="py-1.5">
-          <button onClick={onToggleExpand} className="text-muted-foreground hover:text-foreground">
+          <button
+            onClick={onToggleExpand}
+            className="text-muted-foreground hover:text-foreground"
+          >
             {isExpanded ? (
               <ChevronDown className="size-3.5" />
             ) : (

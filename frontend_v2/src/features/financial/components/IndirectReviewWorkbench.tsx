@@ -1,3 +1,4 @@
+import { useFinancialAccess } from "../hooks/use-financial-access"
 import { useFinancialDraft } from "../stores/financial-drafts"
 import { useState, useRef } from "react"
 import { useQuery } from "@tanstack/react-query"
@@ -120,6 +121,7 @@ export function IndirectReviewWorkbench({
       { entries: Record<string, Field>; checks: Record<string, Field> }
     >
   >(caseId, `${draftKey}:method-copies`, {})
+  const { canEdit } = useFinancialAccess()
   const save = useCreateCaseworkEntry(caseId)
   const catalog = useQuery({
     queryKey: ["financial-ledger", caseId, "indirect-methods"],
@@ -671,12 +673,15 @@ export function IndirectReviewWorkbench({
             </Button>
             <Button
               disabled={
+                !canEdit ||
                 !report.value.sources.length ||
                 save.isPending ||
                 save.isError ||
                 !!save.data
               }
-              onClick={saveNote}
+              onClick={() => {
+                if (canEdit) saveNote()
+              }}
             >
               Save workpaper in Findings
             </Button>

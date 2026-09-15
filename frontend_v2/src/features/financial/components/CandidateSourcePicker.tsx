@@ -1,3 +1,4 @@
+import { useFinancialAccess } from "../hooks/use-financial-access"
 import { SourceCustodyPanel } from "./SourceCustodyPanel"
 import { PdfModelNominationPanel } from "./PdfModelNominationPanel"
 import { StatementLayoutContextPanel } from "./StatementLayoutContextPanel"
@@ -271,6 +272,7 @@ function SourceSelection({
   const [blocked, setBlocked] = useState(false)
   const locked = useRef(false)
   const client = useQueryClient()
+  const { canEdit } = useFinancialAccess()
   const save = useMutation({
     retry: false,
     mutationFn: async () => {
@@ -648,9 +650,9 @@ function SourceSelection({
         totals.
       </p>
       <Button
-        disabled={disabled || !selected.length}
+        disabled={!canEdit || disabled || !selected.length}
         onClick={() => {
-          if (locked.current) return
+          if (!canEdit || locked.current) return
           locked.current = true
           save.mutate()
         }}

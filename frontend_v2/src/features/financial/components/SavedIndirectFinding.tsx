@@ -1,3 +1,4 @@
+import { useFinancialAccess } from "../hooks/use-financial-access"
 import { useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import type {
@@ -55,6 +56,7 @@ export function SavedIndirectFinding({
     mutationFn: () =>
       readSavedIndirect(link, entry.links, caseId, currentCatalog),
   })
+  const { canEdit } = useFinancialAccess()
   const copy = useMutation({
     retry: false,
     mutationFn: async () => {
@@ -182,12 +184,12 @@ export function SavedIndirectFinding({
               )}
               <div className="flex flex-wrap gap-2">
                 <Button
-                  disabled={copy.isPending}
+                  disabled={!canEdit || copy.isPending}
                   onClick={() => {
                     if (copy.data) {
                       setShowCopy(true)
                       setOpen(false)
-                    } else copy.mutate()
+                    } else if (canEdit) copy.mutate()
                   }}
                 >
                   {copy.isPending

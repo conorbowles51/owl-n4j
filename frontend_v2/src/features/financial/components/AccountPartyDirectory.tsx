@@ -1,3 +1,4 @@
+import { useFinancialAccess } from "../hooks/use-financial-access"
 import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { fetchAPI } from "@/lib/api-client"
@@ -29,6 +30,7 @@ export function AccountPartyDirectory({
     queryFn: async () => parse(await fetchAPI(url)),
     retry: false,
   })
+  const { canEdit } = useFinancialAccess()
   const save = useMutation({
     retry: false,
     mutationFn: async () => {
@@ -110,7 +112,7 @@ export function AccountPartyDirectory({
             {!state.parties.length && <p>No party links have been recorded.</p>}
           </div>
           <fieldset
-            disabled={save.isPending}
+            disabled={!canEdit || save.isPending}
             className="max-h-72 space-y-2 overflow-y-auto"
           >
             <legend>Accounts to link or unlink</legend>
@@ -144,7 +146,7 @@ export function AccountPartyDirectory({
               aria-label="Account party choice"
               className="ml-2 rounded border bg-background p-2"
               value={party}
-              disabled={save.isPending}
+              disabled={!canEdit || save.isPending}
               onChange={(e) => setParty(e.target.value)}
             >
               <option value="new">A new person or organisation</option>
@@ -164,7 +166,7 @@ export function AccountPartyDirectory({
                 className="ml-2 rounded border bg-background p-2"
                 maxLength={255}
                 value={name}
-                disabled={save.isPending}
+                disabled={!canEdit || save.isPending}
                 onChange={(e) => setName(e.target.value)}
               />
             </label>
@@ -176,12 +178,13 @@ export function AccountPartyDirectory({
               className="block w-full rounded border bg-background p-2"
               maxLength={4000}
               value={reason}
-              disabled={save.isPending}
+              disabled={!canEdit || save.isPending}
               onChange={(e) => setReason(e.target.value)}
             />
           </label>
           <Button
             disabled={
+              !canEdit ||
               save.isPending ||
               save.isError ||
               query.isFetching ||
@@ -190,7 +193,9 @@ export function AccountPartyDirectory({
               !reason.trim() ||
               (party === "new" && !name.trim())
             }
-            onClick={() => save.mutate()}
+            onClick={() => {
+              if (canEdit) save.mutate()
+            }}
           >
             Save account links
           </Button>

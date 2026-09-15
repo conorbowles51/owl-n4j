@@ -1,3 +1,4 @@
+import { useFinancialAccess } from "../hooks/use-financial-access"
 import { useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { z } from "zod"
@@ -51,6 +52,7 @@ export function PaymentDocumentReview({
 }: {
   data: PaymentDocumentProposal
 }) {
+  const { canEdit } = useFinancialAccess()
   const isReceipt = data.kind === "deposit_receipt"
   const amountKey = isReceipt ? "payment_amount" : "wire_amount"
   const dateKey = isReceipt ? "effective_date" : "value_date"
@@ -232,7 +234,7 @@ export function PaymentDocumentReview({
                         className="block w-full min-h-16 rounded border bg-background p-2 font-normal"
                         maxLength={2000}
                         value={draft.values[field.key] || ""}
-                        disabled={save.isPending || saved}
+                        disabled={!canEdit || save.isPending || saved}
                         onChange={(e) => edit(field.key, e.target.value)}
                       />
                     ) : (
@@ -247,7 +249,7 @@ export function PaymentDocumentReview({
                             : undefined
                         }
                         value={draft.values[field.key] || ""}
-                        disabled={save.isPending || saved}
+                        disabled={!canEdit || save.isPending || saved}
                         onChange={(e) =>
                           edit(
                             field.key,
@@ -299,7 +301,7 @@ export function PaymentDocumentReview({
                         className="block w-full rounded border bg-background p-2"
                         maxLength={2000}
                         value={draft.reasons[field.key] || ""}
-                        disabled={save.isPending || saved}
+                        disabled={!canEdit || save.isPending || saved}
                         onChange={(e) =>
                           setDraft((d) => ({
                             ...d,
@@ -376,7 +378,7 @@ export function PaymentDocumentReview({
                   <input
                     type="radio"
                     name="wire-payment"
-                    disabled={saved || save.isPending}
+                    disabled={!canEdit || saved || save.isPending}
                     checked={draft.transaction_id === candidate.transaction_id}
                     onChange={() =>
                       setDraft((d) => ({
@@ -422,7 +424,7 @@ export function PaymentDocumentReview({
                     className="block w-full rounded border bg-background p-2"
                     maxLength={2000}
                     value={draft.link_reason}
-                    disabled={save.isPending || saved}
+                    disabled={!canEdit || save.isPending || saved}
                     onChange={(e) =>
                       setDraft((d) => ({ ...d, link_reason: e.target.value }))
                     }
@@ -430,7 +432,7 @@ export function PaymentDocumentReview({
                 </label>
                 <Button
                   variant="ghost"
-                  disabled={save.isPending || saved}
+                  disabled={!canEdit || save.isPending || saved}
                   onClick={() =>
                     setDraft((d) => ({
                       ...d,
@@ -452,7 +454,7 @@ export function PaymentDocumentReview({
                 className="block w-full rounded border bg-background p-2"
                 value={draft.title}
                 maxLength={200}
-                disabled={save.isPending || saved}
+                disabled={!canEdit || save.isPending || saved}
                 onChange={(e) =>
                   setDraft((d) => ({ ...d, title: e.target.value }))
                 }
@@ -464,7 +466,7 @@ export function PaymentDocumentReview({
                 className="block w-full min-h-24 rounded border bg-background p-2"
                 value={draft.notes}
                 maxLength={8000}
-                disabled={save.isPending || saved}
+                disabled={!canEdit || save.isPending || saved}
                 onChange={(e) =>
                   setDraft((d) => ({ ...d, notes: e.target.value }))
                 }
@@ -478,6 +480,7 @@ export function PaymentDocumentReview({
             )}
             <Button
               disabled={
+                !canEdit ||
                 !data.supported ||
                 !canMatch ||
                 !draft.title.trim() ||
@@ -487,6 +490,7 @@ export function PaymentDocumentReview({
                 saved
               }
               onClick={() => {
+                if (!canEdit) return
                 setDraft(draft)
                 save.mutate()
               }}

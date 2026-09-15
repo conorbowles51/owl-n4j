@@ -1,3 +1,4 @@
+import { useFinancialAccess } from "../hooks/use-financial-access"
 import { randomRequestId } from "@/lib/browser-crypto"
 import { evidenceAPI } from "@/features/evidence/api"
 import { useRef, useState } from "react"
@@ -68,6 +69,7 @@ export function SourceCustodyPanel({
 }
 
 function CustodyEditor({ caseId, fileId }: { caseId: string; fileId: string }) {
+  const { canEdit } = useFinancialAccess()
   const client = useQueryClient()
   const key = ["financial-source-custody", caseId, fileId]
   const url = candidateUrl(`sources/${fileId}/custody`, caseId)
@@ -119,9 +121,9 @@ function CustodyEditor({ caseId, fileId }: { caseId: string; fileId: string }) {
   return (
     <div className="space-y-3 text-sm">
       <p>
-        Record how this source was obtained and any known transfers. Leave
-        unknown times blank. Recording a report does not verify its accuracy or
-        admit transactions.
+        {canEdit
+          ? "Record how this source was obtained and any known transfers. Leave unknown times blank."
+          : "Read the recorded history of how this source was obtained and transferred."}
       </p>
       {query.isPending && <p role="status">Loading custody history…</p>}
       {query.isError && <p role="alert">{query.error.message}</p>}
@@ -142,7 +144,7 @@ function CustodyEditor({ caseId, fileId }: { caseId: string; fileId: string }) {
             {query.data.events.map((e) => (
               <li key={e.id} className="break-words rounded border p-2">
                 <p>
-                  <strong>{e.report.event_kind}</strong> — reported time:{" "}
+                  <strong>{e.report.event_kind}</strong> · reported time:{" "}
                   {e.report.occurred_at || "Unknown"}
                 </p>
                 <p>
@@ -171,190 +173,195 @@ function CustodyEditor({ caseId, fileId }: { caseId: string; fileId: string }) {
                   </p>
                 )}
                 <p className="text-xs">Report ID: {e.id}</p>
-                <Button
-                  variant="outline"
-                  disabled={save.isPending}
-                  onClick={() => {
-                    setKind("correction")
-                    setCorrects(e.id)
-                    setMessage("")
-                  }}
-                >
-                  Correct this custody report
-                </Button>
+                {canEdit && (
+                  <Button
+                    variant="outline"
+                    disabled={save.isPending}
+                    onClick={() => {
+                      setKind("correction")
+                      setCorrects(e.id)
+                      setMessage("")
+                    }}
+                  >
+                    Correct this custody report
+                  </Button>
+                )}
               </li>
             ))}
           </ol>
-          <form
-            className="space-y-3"
-            onSubmit={(e) => {
-              e.preventDefault()
-              setMessage("")
-              const data = new FormData(e.currentTarget)
-              const value = (name: string) =>
-                String(data.get(name) || "").trim() || null
-              const time = value("occurred_at")
-              if (
-                time &&
-                (!/T.*(?:Z|[+-]\d{2}:\d{2})$/.test(time) ||
-                  Number.isNaN(Date.parse(time)))
-              ) {
-                setMessage(
-                  "Use a complete date and time with an explicit timezone, for example 2026-09-10T14:30:00+01:00."
-                )
-                return
-              }
-              const body = {
-                expected_source_sha256: query.data.evidence_sha256,
-                event_kind: kind,
-                occurred_at: time,
-                received_by: value("received_by"),
-                from_person_or_organisation: value(
-                  "from_person_or_organisation"
-                ),
-                acquisition_method: value("acquisition_method"),
-                native_file_status: value("native_file_status"),
-                certification_file_id: value("certification_file_id"),
-                corrects_event_id: kind === "correction" ? corrects : null,
-                reason: value("reason"),
-              }
-              const signature = JSON.stringify(body)
-              if (pending.current?.signature !== signature)
-                pending.current = { signature, id: randomRequestId() }
-              save.mutate({ ...body, event_id: pending.current.id })
-            }}
-          >
-            <fieldset disabled={save.isPending} className="grid gap-3">
-              <legend className="font-semibold">
-                Add a custody report (case editors)
-              </legend>
-              <label>
-                Report type
-                <select
-                  className="block w-full rounded border p-2"
-                  value={kind}
-                  onChange={(e) => {
-                    setKind(e.target.value)
-                    setMessage("")
-                  }}
-                >
-                  <option value="receipt">Receipt</option>
-                  <option value="transfer">Transfer</option>
-                  <option value="note">Additional information</option>
-                  <option value="correction" disabled={!corrects}>
-                    Correction to selected report
-                  </option>
-                </select>
-              </label>
-              {kind === "correction" && (
-                <p className="break-all">
-                  Correcting report {corrects}. Describe the corrected facts and
-                  why the earlier report was wrong.
-                </p>
-              )}
-              <label>
-                Reported event time with timezone (optional)
-                <input
-                  name="occurred_at"
-                  maxLength={64}
-                  placeholder="2026-09-10T14:30:00+01:00"
-                  className="block w-full rounded border p-2"
-                />
-              </label>
-              <label>
-                Received from (optional)
-                <input
-                  name="from_person_or_organisation"
-                  maxLength={512}
-                  className="block w-full rounded border p-2"
-                />
-              </label>
-              <label>
-                Received by
-                <input
-                  name="received_by"
-                  required={kind === "receipt" || kind === "transfer"}
-                  maxLength={512}
-                  className="block w-full rounded border p-2"
-                />
-              </label>
-              <label>
-                How obtained
-                <select
-                  name="acquisition_method"
-                  defaultValue="unknown"
-                  className="block w-full rounded border p-2"
-                >
-                  <option value="unknown">Unknown</option>
-                  <option value="production">Document production</option>
-                  <option value="subpoena">Subpoena</option>
-                  <option value="client">Client supplied</option>
-                  <option value="open_source">Public source</option>
-                  <option value="other">Other — explain below</option>
-                </select>
-              </label>
-              <label>
-                Native file availability
-                <select
-                  name="native_file_status"
-                  defaultValue="unknown"
-                  className="block w-full rounded border p-2"
-                >
-                  <option value="unknown">Unknown</option>
-                  <option value="provided">Provided</option>
-                  <option value="requested">Requested</option>
-                  <option value="unavailable">Unavailable</option>
-                </select>
-              </label>
-              <div>
-                <p>Supporting certification (optional)</p>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setLoadCertificates(true)}
-                >
-                  Choose a certification file from this case
-                </Button>
-                {certificates.isFetching && (
-                  <p role="status">Loading case files…</p>
-                )}
-                {certificates.isError && (
-                  <p role="alert">
-                    Case files could not be loaded. {certificates.error.message}
+          {canEdit && (
+            <form
+              className="space-y-3"
+              onSubmit={(e) => {
+                e.preventDefault()
+                setMessage("")
+                const data = new FormData(e.currentTarget)
+                const value = (name: string) =>
+                  String(data.get(name) || "").trim() || null
+                const time = value("occurred_at")
+                if (
+                  time &&
+                  (!/T.*(?:Z|[+-]\d{2}:\d{2})$/.test(time) ||
+                    Number.isNaN(Date.parse(time)))
+                ) {
+                  setMessage(
+                    "Use a complete date and time with an explicit timezone, for example 2026-09-10T14:30:00+01:00."
+                  )
+                  return
+                }
+                const body = {
+                  expected_source_sha256: query.data.evidence_sha256,
+                  event_kind: kind,
+                  occurred_at: time,
+                  received_by: value("received_by"),
+                  from_person_or_organisation: value(
+                    "from_person_or_organisation"
+                  ),
+                  acquisition_method: value("acquisition_method"),
+                  native_file_status: value("native_file_status"),
+                  certification_file_id: value("certification_file_id"),
+                  corrects_event_id: kind === "correction" ? corrects : null,
+                  reason: value("reason"),
+                }
+                const signature = JSON.stringify(body)
+                if (pending.current?.signature !== signature)
+                  pending.current = { signature, id: randomRequestId() }
+                save.mutate({ ...body, event_id: pending.current.id })
+              }}
+            >
+              <fieldset disabled={save.isPending} className="grid gap-3">
+                <legend className="font-semibold">
+                  Add a custody report (case editors)
+                </legend>
+                <label>
+                  Report type
+                  <select
+                    className="block w-full rounded border p-2"
+                    value={kind}
+                    onChange={(e) => {
+                      setKind(e.target.value)
+                      setMessage("")
+                    }}
+                  >
+                    <option value="receipt">Receipt</option>
+                    <option value="transfer">Transfer</option>
+                    <option value="note">Additional information</option>
+                    <option value="correction" disabled={!corrects}>
+                      Correction to selected report
+                    </option>
+                  </select>
+                </label>
+                {kind === "correction" && (
+                  <p className="break-all">
+                    Correcting report {corrects}. Describe the corrected facts
+                    and why the earlier report was wrong.
                   </p>
                 )}
-                <select
-                  aria-label="Supporting certification file"
-                  name="certification_file_id"
-                  className="block w-full rounded border p-2"
-                  defaultValue=""
-                >
-                  <option value="">No certification attached</option>
-                  {certificates.data
-                    ?.filter((file) => file.id !== fileId)
-                    .map((file) => (
-                      <option key={file.id} value={file.id}>
-                        {file.original_filename}
-                      </option>
-                    ))}
-                </select>
-              </div>
-              <label>
-                Details and reason
-                <textarea
-                  name="reason"
-                  required
-                  maxLength={4096}
-                  className="block w-full rounded border p-2"
-                />
-              </label>
-              <Button type="submit">
-                {save.isPending
-                  ? "Recording custody report…"
-                  : "Record custody report"}
-              </Button>
-            </fieldset>
-          </form>
+                <label>
+                  Reported event time with timezone (optional)
+                  <input
+                    name="occurred_at"
+                    maxLength={64}
+                    placeholder="2026-09-10T14:30:00+01:00"
+                    className="block w-full rounded border p-2"
+                  />
+                </label>
+                <label>
+                  Received from (optional)
+                  <input
+                    name="from_person_or_organisation"
+                    maxLength={512}
+                    className="block w-full rounded border p-2"
+                  />
+                </label>
+                <label>
+                  Received by
+                  <input
+                    name="received_by"
+                    required={kind === "receipt" || kind === "transfer"}
+                    maxLength={512}
+                    className="block w-full rounded border p-2"
+                  />
+                </label>
+                <label>
+                  How obtained
+                  <select
+                    name="acquisition_method"
+                    defaultValue="unknown"
+                    className="block w-full rounded border p-2"
+                  >
+                    <option value="unknown">Unknown</option>
+                    <option value="production">Document production</option>
+                    <option value="subpoena">Subpoena</option>
+                    <option value="client">Client supplied</option>
+                    <option value="open_source">Public source</option>
+                    <option value="other">Other — explain below</option>
+                  </select>
+                </label>
+                <label>
+                  Native file availability
+                  <select
+                    name="native_file_status"
+                    defaultValue="unknown"
+                    className="block w-full rounded border p-2"
+                  >
+                    <option value="unknown">Unknown</option>
+                    <option value="provided">Provided</option>
+                    <option value="requested">Requested</option>
+                    <option value="unavailable">Unavailable</option>
+                  </select>
+                </label>
+                <div>
+                  <p>Supporting certification (optional)</p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setLoadCertificates(true)}
+                  >
+                    Choose a certification file from this case
+                  </Button>
+                  {certificates.isFetching && (
+                    <p role="status">Loading case files…</p>
+                  )}
+                  {certificates.isError && (
+                    <p role="alert">
+                      Case files could not be loaded.{" "}
+                      {certificates.error.message}
+                    </p>
+                  )}
+                  <select
+                    aria-label="Supporting certification file"
+                    name="certification_file_id"
+                    className="block w-full rounded border p-2"
+                    defaultValue=""
+                  >
+                    <option value="">No certification attached</option>
+                    {certificates.data
+                      ?.filter((file) => file.id !== fileId)
+                      .map((file) => (
+                        <option key={file.id} value={file.id}>
+                          {file.original_filename}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+                <label>
+                  Details and reason
+                  <textarea
+                    name="reason"
+                    required
+                    maxLength={4096}
+                    className="block w-full rounded border p-2"
+                  />
+                </label>
+                <Button type="submit">
+                  {save.isPending
+                    ? "Recording custody report…"
+                    : "Record custody report"}
+                </Button>
+              </fieldset>
+            </form>
+          )}
         </>
       )}
       {save.isError && <p role="alert">{save.error.message}</p>}

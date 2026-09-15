@@ -1,3 +1,13 @@
+// This workflow fixture has case editing and upload access.
+vi.mock("../hooks/use-financial-access", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../hooks/use-financial-access")>()),
+  useFinancialAccess: () => ({
+    canEdit: true,
+    canUpload: true,
+    ready: true,
+    error: false,
+  }),
+}))
 import { render, screen, fireEvent } from "@testing-library/react"
 import { expect, it, vi } from "vitest"
 import { StatementScopeEditor } from "./StatementScopeEditor"
@@ -5,7 +15,9 @@ import {
   signedControlMinor,
   statementScope,
 } from "../lib/statement-scope-contract"
-vi.mock("./StatementEditorDraftPanel", () => ({ StatementEditorDraftPanel: () => null }))
+vi.mock("./StatementEditorDraftPanel", () => ({
+  StatementEditorDraftPanel: () => null,
+}))
 vi.mock("./StatementControlPicker", () => ({
   StatementControlPicker: ({
     onSelected,
@@ -134,12 +146,27 @@ it("does not round unsupported decimals or silently discard a sign", () => {
   expect(statementScope.safeParse({}).success).toBe(false)
 })
 it("requires a source for each direction total and keeps liability totals nonnegative", () => {
- const save=mount();basics();source("statement start");source("statement end")
- fill("Printed total money in","180.00");fill("Printed total money out","117.78")
- expect(screen.getByRole("button",{name:"Add statement to preview"})).toBeDisabled()
- source("total money in");source("total money out")
- fireEvent.click(screen.getByRole("button",{name:"Add statement to preview"}))
- expect(save.mock.calls[0][0]).toMatchObject({credits_total:{amount_minor:"18000"},debits_total:{amount_minor:"11778"},balance_convention:"liability_owed"})
- fill("Printed total money in","-1")
- expect(screen.getByRole("button",{name:"Add statement to preview"})).toBeDisabled()
+  const save = mount()
+  basics()
+  source("statement start")
+  source("statement end")
+  fill("Printed total money in", "180.00")
+  fill("Printed total money out", "117.78")
+  expect(
+    screen.getByRole("button", { name: "Add statement to preview" })
+  ).toBeDisabled()
+  source("total money in")
+  source("total money out")
+  fireEvent.click(
+    screen.getByRole("button", { name: "Add statement to preview" })
+  )
+  expect(save.mock.calls[0][0]).toMatchObject({
+    credits_total: { amount_minor: "18000" },
+    debits_total: { amount_minor: "11778" },
+    balance_convention: "liability_owed",
+  })
+  fill("Printed total money in", "-1")
+  expect(
+    screen.getByRole("button", { name: "Add statement to preview" })
+  ).toBeDisabled()
 })

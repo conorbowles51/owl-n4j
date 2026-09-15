@@ -1,3 +1,4 @@
+import { useFinancialAccess } from "../hooks/use-financial-access"
 import { PaymentIdentitySuggestions } from "./PaymentIdentitySuggestions"
 import { useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
@@ -32,6 +33,7 @@ export function CounterpartyPartyDirectory({ caseId }: { caseId: string }) {
     refetchOnWindowFocus: false,
     queryFn: async () => parse(await fetchAPI(url)),
   })
+  const { canEdit } = useFinancialAccess()
   const save = useMutation({
     retry: false,
     mutationFn: async () => {
@@ -227,68 +229,72 @@ export function CounterpartyPartyDirectory({ caseId }: { caseId: string }) {
                   Clear payment selection
                 </Button>
               </div>
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault()
-                  save.mutate()
-                }}
-                className="space-y-2"
-              >
-                <fieldset disabled={save.isPending} className="space-y-2">
-                  <label className="block">
-                    Reviewed party
-                    <select
-                      aria-label="Payment party choice"
-                      className="block w-full rounded border bg-background p-2"
-                      value={party}
-                      onChange={(e) => setParty(e.target.value)}
-                    >
-                      <option value="new">A new person or organisation</option>
-                      <option value="clear">Remove the selected links</option>
-                      {state.parties.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  {party === "new" && (
+              {canEdit && (
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault()
+                    save.mutate()
+                  }}
+                  className="space-y-2"
+                >
+                  <fieldset disabled={save.isPending} className="space-y-2">
                     <label className="block">
-                      Party name
-                      <input
-                        aria-label="Payment party name"
-                        required
-                        maxLength={255}
+                      Reviewed party
+                      <select
+                        aria-label="Payment party choice"
                         className="block w-full rounded border bg-background p-2"
-                        value={name}
-                        onChange={(e) => setName(e.target.value)}
+                        value={party}
+                        onChange={(e) => setParty(e.target.value)}
+                      >
+                        <option value="new">
+                          A new person or organisation
+                        </option>
+                        <option value="clear">Remove the selected links</option>
+                        {state.parties.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    {party === "new" && (
+                      <label className="block">
+                        Party name
+                        <input
+                          aria-label="Payment party name"
+                          required
+                          maxLength={255}
+                          className="block w-full rounded border bg-background p-2"
+                          value={name}
+                          onChange={(e) => setName(e.target.value)}
+                        />
+                      </label>
+                    )}
+                    <label className="block">
+                      Reason and supporting source interpretation
+                      <textarea
+                        aria-label="Payment identity reason"
+                        required
+                        maxLength={4000}
+                        className="block w-full rounded border bg-background p-2"
+                        value={reason}
+                        onChange={(e) => setReason(e.target.value)}
                       />
                     </label>
-                  )}
-                  <label className="block">
-                    Reason and supporting source interpretation
-                    <textarea
-                      aria-label="Payment identity reason"
-                      required
-                      maxLength={4000}
-                      className="block w-full rounded border bg-background p-2"
-                      value={reason}
-                      onChange={(e) => setReason(e.target.value)}
-                    />
-                  </label>
-                  <Button
-                    type="submit"
-                    disabled={
-                      !selected.length ||
-                      !reason.trim() ||
-                      (party === "new" && !name.trim()) ||
-                      save.isPending
-                    }
-                  >
-                    Save payment identity links
-                  </Button>
-                </fieldset>
-              </form>
+                    <Button
+                      type="submit"
+                      disabled={
+                        !selected.length ||
+                        !reason.trim() ||
+                        (party === "new" && !name.trim()) ||
+                        save.isPending
+                      }
+                    >
+                      Save payment identity links
+                    </Button>
+                  </fieldset>
+                </form>
+              )}
               {save.error && <p role="alert">{save.error.message}</p>}
               {save.isSuccess && (
                 <p role="status">

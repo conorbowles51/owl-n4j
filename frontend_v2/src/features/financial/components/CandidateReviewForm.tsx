@@ -1,3 +1,4 @@
+import { useFinancialAccess } from "../hooks/use-financial-access"
 import { CandidateSourcePanel } from "./CandidateSourcePanel"
 import { useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
@@ -159,6 +160,7 @@ function ReviewFields({
       return data
     },
   })
+  const { canEdit } = useFinancialAccess()
   const record = useMutation({
     retry: false,
     mutationFn: async (input: {
@@ -252,7 +254,7 @@ function ReviewFields({
             ...(counterparty ? { counterparty_raw: counterparty } : {}),
           }
         : null
-    record.mutate({ status, reading })
+    if (canEdit) record.mutate({ status, reading })
   }
   const disabled = record.isPending || blocked || accountBusy
   return (
@@ -497,6 +499,7 @@ function ReviewFields({
         <Button
           variant="outline"
           disabled={
+            !canEdit ||
             disabled ||
             assessment.isPending ||
             !/^[A-Z]{3}$/.test(assessmentCurrency)
@@ -563,7 +566,7 @@ function ReviewFields({
           {!finalized && (
             <>
               <Button
-                disabled={disabled || !reason.trim() || !ready}
+                disabled={!canEdit || disabled || !reason.trim() || !ready}
                 onClick={() => send("resolved")}
               >
                 Record resolved reading
@@ -571,7 +574,10 @@ function ReviewFields({
               <Button
                 variant="outline"
                 disabled={
-                  disabled || !reason.trim() || review.status === "rejected"
+                  !canEdit ||
+                  disabled ||
+                  !reason.trim() ||
+                  review.status === "rejected"
                 }
                 onClick={() => send("rejected")}
               >
@@ -580,7 +586,10 @@ function ReviewFields({
               <Button
                 variant="outline"
                 disabled={
-                  disabled || !reason.trim() || review.status === "pending"
+                  !canEdit ||
+                  disabled ||
+                  !reason.trim() ||
+                  review.status === "pending"
                 }
                 onClick={() => send("pending")}
               >

@@ -1,10 +1,11 @@
+import { useFinancialAccess } from "../hooks/use-financial-access"
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { useCreateCaseworkEntry } from "@/features/workspace/hooks/use-casework"
 import type { VerifiedClaimComparison } from "../lib/claim-comparison"
 import { claimReviewNote } from "../lib/claim-review-note"
 import { correctionMoney } from "../lib/correction-contract"
-export function ClaimComparisonDecision({
+function ClaimComparisonDecisionForm({
   report,
 }: {
   report: VerifiedClaimComparison
@@ -125,4 +126,11 @@ export function ClaimComparisonDecision({
       )}
     </section>
   )
+}
+
+export function ClaimComparisonDecision(
+  props: Parameters<typeof ClaimComparisonDecisionForm>[0]
+) {
+  const { canEdit } = useFinancialAccess()
+  return canEdit ? <ClaimComparisonDecisionForm {...props} /> : null
 }

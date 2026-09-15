@@ -1,3 +1,4 @@
+import { useFinancialAccess } from "../hooks/use-financial-access"
 import { useRef, useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { z } from "zod"
@@ -22,7 +23,7 @@ const resultSchema = z.object({
   created: z.boolean(),
   run_id: z.string(),
 })
-export function CandidateAccountForm({
+function CandidateAccountFormForm({
   caseId,
   candidateId,
   fileId,
@@ -164,4 +165,11 @@ export function CandidateAccountForm({
       )}
     </div>
   )
+}
+
+export function CandidateAccountForm(
+  props: Parameters<typeof CandidateAccountFormForm>[0]
+) {
+  const { canEdit } = useFinancialAccess()
+  return canEdit ? <CandidateAccountFormForm {...props} /> : null
 }

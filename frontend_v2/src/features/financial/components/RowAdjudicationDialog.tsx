@@ -1,3 +1,4 @@
+import { useFinancialAccess } from "../hooks/use-financial-access"
 /**
  * Setting one ledger row aside, or letting it back in, on a person's authority.
  *
@@ -234,9 +235,14 @@ function RowIdentity({
           )}
         </div>
         <div className="shrink-0 text-right">
-          <div className="font-mono text-sm tabular-nums" data-testid="adjudication-amount">
+          <div
+            className="font-mono text-sm tabular-nums"
+            data-testid="adjudication-amount"
+          >
             {amount.text}{" "}
-            <span className="text-xs text-muted-foreground">{amount.currency}</span>
+            <span className="text-xs text-muted-foreground">
+              {amount.currency}
+            </span>
           </div>
           {!amount.scaled && (
             <Badge
@@ -315,7 +321,9 @@ function AdjudicationAnswer({ reading }: { reading: RowAdjudicationReading }) {
         </span>
       </div>
 
-      <p className="text-xs text-muted-foreground">{reading.outcome.description}</p>
+      <p className="text-xs text-muted-foreground">
+        {reading.outcome.description}
+      </p>
 
       {reading.appliedDisagreesWithOutcome && (
         <p
@@ -328,11 +336,16 @@ function AdjudicationAnswer({ reading }: { reading: RowAdjudicationReading }) {
         </p>
       )}
 
-      <div data-testid="adjudication-reason" data-reason-kind={reading.reason.kind}>
+      <div
+        data-testid="adjudication-reason"
+        data-reason-kind={reading.reason.kind}
+      >
         <p className="text-xs font-medium">{reading.reason.heading}</p>
         {reading.reason.text !== null && (
           <>
-            <p className="mt-1 text-xs text-muted-foreground">{reading.reason.text}</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {reading.reason.text}
+            </p>
             <p
               className="mt-1 text-xs text-muted-foreground italic"
               data-testid="adjudication-reason-provenance"
@@ -350,7 +363,9 @@ function AdjudicationAnswer({ reading }: { reading: RowAdjudicationReading }) {
         <div
           data-testid="adjudication-rescue"
           data-rescue-key={reading.rescue.key}
-          data-rescue-raw={reading.rescue.raw === null ? "null" : String(reading.rescue.raw)}
+          data-rescue-raw={
+            reading.rescue.raw === null ? "null" : String(reading.rescue.raw)
+          }
         >
           <p className="text-xs font-medium">{reading.rescue.label}</p>
           <p className="mt-1 text-xs text-muted-foreground">
@@ -409,7 +424,7 @@ export interface RowAdjudicationDialogProps {
   onClose: () => void
 }
 
-export function RowAdjudicationDialog({
+function RowAdjudicationDialogForm({
   caseId,
   row,
   open,
@@ -425,7 +440,8 @@ export function RowAdjudicationDialog({
   const busy = adjudication.isPending
   const answer = adjudication.data
   const grounds = reason.trim()
-  const canSubmit = grounds !== "" && action !== null && !busy && answer === undefined
+  const canSubmit =
+    grounds !== "" && action !== null && !busy && answer === undefined
 
   const close = () => {
     // Cleared on the way out rather than on the way in, so a dialog reopened
@@ -468,7 +484,9 @@ export function RowAdjudicationDialog({
 
           {copy !== null && (
             <div className="space-y-1.5">
-              <Label htmlFor="adjudication-reason-input">{copy.reasonLabel}</Label>
+              <Label htmlFor="adjudication-reason-input">
+                {copy.reasonLabel}
+              </Label>
               <Textarea
                 id="adjudication-reason-input"
                 data-testid="adjudication-reason-input"
@@ -501,7 +519,11 @@ export function RowAdjudicationDialog({
               the same question again gets the same answer. A thrown error is
               different — nothing was decided — so the button stays for that. */}
           {answer === undefined && copy !== null && (
-            <Button onClick={submit} disabled={!canSubmit} data-testid="adjudication-submit">
+            <Button
+              onClick={submit}
+              disabled={!canSubmit}
+              data-testid="adjudication-submit"
+            >
               {busy && <LoadingSpinner className="mr-1.5 size-3.5" />}
               {copy.submit}
             </Button>
@@ -510,4 +532,11 @@ export function RowAdjudicationDialog({
       </DialogContent>
     </Dialog>
   )
+}
+
+export function RowAdjudicationDialog(
+  props: Parameters<typeof RowAdjudicationDialogForm>[0]
+) {
+  const { canEdit } = useFinancialAccess()
+  return canEdit ? <RowAdjudicationDialogForm {...props} /> : null
 }

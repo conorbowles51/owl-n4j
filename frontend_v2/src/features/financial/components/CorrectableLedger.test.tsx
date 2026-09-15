@@ -1,3 +1,13 @@
+// This existing workflow fixture has case editing and upload access.
+vi.mock("../hooks/use-financial-access", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../hooks/use-financial-access")>()),
+  useFinancialAccess: () => ({
+    canEdit: true,
+    canUpload: true,
+    ready: true,
+    error: false,
+  }),
+}))
 import { fireEvent, render, screen } from "@testing-library/react"
 import { expect, it, vi } from "vitest"
 import { CorrectableLedger } from "./CorrectableLedger"
@@ -38,14 +48,28 @@ vi.mock("./LedgerSummaryPanel", () => ({ LedgerSummaryPanel: () => null }))
 vi.mock("./LedgerTrendsPanel", () => ({ LedgerTrendsPanel: () => null }))
 
 vi.mock("./LedgerExportButton", () => ({
-  LedgerExportButton: ({caseId,params}:{caseId:string;params:object}) => <p data-testid="export-scope">{caseId}:{JSON.stringify(params)}</p>,
+  LedgerExportButton: ({
+    caseId,
+    params,
+  }: {
+    caseId: string
+    params: object
+  }) => (
+    <p data-testid="export-scope">
+      {caseId}:{JSON.stringify(params)}
+    </p>
+  ),
 }))
 it("exports the applied primary ledger scope and removes export on held-out switch", () => {
-  const {rerender}=render(<CorrectableLedger caseId="one" onAdjudicate={vi.fn()}/>)
+  const { rerender } = render(
+    <CorrectableLedger caseId="one" onAdjudicate={vi.fn()} />
+  )
   fireEvent.click(screen.getByText("Apply fixture filter"))
-  expect(screen.getByTestId("export-scope")).toHaveTextContent('one:{"accountId":"a"}')
-  rerender(<CorrectableLedger caseId="two" onAdjudicate={vi.fn()}/>)
-  expect(screen.getByTestId("export-scope")).toHaveTextContent('two:{}')
-  rerender(<CorrectableLedger caseId="two" heldOut onAdjudicate={vi.fn()}/>)
+  expect(screen.getByTestId("export-scope")).toHaveTextContent(
+    'one:{"accountId":"a"}'
+  )
+  rerender(<CorrectableLedger caseId="two" onAdjudicate={vi.fn()} />)
+  expect(screen.getByTestId("export-scope")).toHaveTextContent("two:{}")
+  rerender(<CorrectableLedger caseId="two" heldOut onAdjudicate={vi.fn()} />)
   expect(screen.queryByTestId("export-scope")).not.toBeInTheDocument()
 })

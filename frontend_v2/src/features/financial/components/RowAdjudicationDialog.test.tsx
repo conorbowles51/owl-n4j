@@ -1,3 +1,13 @@
+// This existing workflow fixture has case editing and upload access.
+vi.mock("../hooks/use-financial-access", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../hooks/use-financial-access")>()),
+  useFinancialAccess: () => ({
+    canEdit: true,
+    canUpload: true,
+    ready: true,
+    error: false,
+  }),
+}))
 /**
  * What this dialog has to get right about changing a row's standing.
  *
@@ -39,7 +49,11 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
-import { financialAPI, type LedgerTransaction, type RowAdjudication } from "../api"
+import {
+  financialAPI,
+  type LedgerTransaction,
+  type RowAdjudication,
+} from "../api"
 import { RowAdjudicationDialog } from "./RowAdjudicationDialog"
 
 const CASE_ID = "case-1"
@@ -50,7 +64,9 @@ const CASE_ID = "case-1"
  * in `LedgerTable.test.tsx`, and admitted by default because that is the row
  * the "set aside" path starts from.
  */
-function makeRow(overrides: Partial<LedgerTransaction> = {}): LedgerTransaction {
+function makeRow(
+  overrides: Partial<LedgerTransaction> = {}
+): LedgerTransaction {
   return {
     key: "txn-1",
     case_id: CASE_ID,
@@ -150,7 +166,12 @@ describe("RowAdjudicationDialog: which change it offers", () => {
   })
 
   it("offers letting back in for a row that is already held", () => {
-    renderDialog(makeRow({ ledger_status: "quarantined", quarantine_reason: "adjudicated" }))
+    renderDialog(
+      makeRow({
+        ledger_status: "quarantined",
+        quarantine_reason: "adjudicated",
+      })
+    )
     expect(screen.getByTestId("adjudication-title").textContent).toBe(
       "Let this row back in"
     )
@@ -163,9 +184,15 @@ describe("RowAdjudicationDialog: which change it offers", () => {
     // backwards puts a row back into the totals when somebody asked for it to
     // be taken out.
     const release = vi.spyOn(financialAPI, "releaseRow").mockResolvedValue(
-      answer({ outcome: "released", ledger_status: "admitted", quarantine_reason: null })
+      answer({
+        outcome: "released",
+        ledger_status: "admitted",
+        quarantine_reason: null,
+      })
     )
-    const quarantine = vi.spyOn(financialAPI, "quarantineRow").mockResolvedValue(answer())
+    const quarantine = vi
+      .spyOn(financialAPI, "quarantineRow")
+      .mockResolvedValue(answer())
 
     const held = renderDialog(makeRow({ ledger_status: "quarantined" }))
     giveGrounds("Confirmed against the original statement.")
@@ -236,7 +263,9 @@ describe("RowAdjudicationDialog: the grounds", () => {
   it("sends once there are words, and sends them trimmed", async () => {
     // Trimmed because the writer stores `"<actor>: <reason.strip()>"` either
     // way, so the words that go on the record are the words the guard checked.
-    const write = vi.spyOn(financialAPI, "quarantineRow").mockResolvedValue(answer())
+    const write = vi
+      .spyOn(financialAPI, "quarantineRow")
+      .mockResolvedValue(answer())
     renderDialog()
     giveGrounds("  Duplicate of row 44.\n")
     expect(submitButton().disabled).toBe(false)
@@ -254,7 +283,9 @@ describe("RowAdjudicationDialog: the grounds", () => {
     // `TransactionView.to_view` sets `key` to the row's id, and the route takes
     // that id in its path. Anything else here addresses the write to a row that
     // does not exist and gets a 404 the person cannot act on.
-    const write = vi.spyOn(financialAPI, "quarantineRow").mockResolvedValue(answer())
+    const write = vi
+      .spyOn(financialAPI, "quarantineRow")
+      .mockResolvedValue(answer())
     renderDialog(makeRow({ key: "9f1c2b4e-0000-4000-8000-000000000001" }))
     giveGrounds()
     fireEvent.click(submitButton())
@@ -272,7 +303,9 @@ describe("RowAdjudicationDialog: the grounds", () => {
 
 describe("RowAdjudicationDialog: the answer", () => {
   it("reports movement from applied when the row was taken out", async () => {
-    vi.spyOn(financialAPI, "quarantineRow").mockResolvedValue(answer({ applied: true }))
+    vi.spyOn(financialAPI, "quarantineRow").mockResolvedValue(
+      answer({ applied: true })
+    )
     renderDialog()
     giveGrounds()
     fireEvent.click(submitButton())
@@ -331,7 +364,9 @@ describe("RowAdjudicationDialog: the answer", () => {
   })
 
   it("raises no contradiction when the two agree", async () => {
-    vi.spyOn(financialAPI, "quarantineRow").mockResolvedValue(answer({ applied: true }))
+    vi.spyOn(financialAPI, "quarantineRow").mockResolvedValue(
+      answer({ applied: true })
+    )
     renderDialog()
     giveGrounds()
     fireEvent.click(submitButton())
@@ -347,11 +382,15 @@ describe("RowAdjudicationDialog: the answer", () => {
     fireEvent.click(submitButton())
 
     await screen.findByTestId("adjudication-answer")
-    expect(screen.getByTestId("adjudication-status-now").textContent).toContain("Quarantined")
+    expect(screen.getByTestId("adjudication-status-now").textContent).toContain(
+      "Quarantined"
+    )
     // Grounds are a proof or a person and the two must not look alike, so the
     // grounds the row now carries are shown rather than assumed.
     expect(screen.getByTestId("adjudication-grounds")).toBeTruthy()
-    expect(screen.getByTestId("adjudication-record-id").textContent).toContain("adj-1")
+    expect(screen.getByTestId("adjudication-record-id").textContent).toContain(
+      "adj-1"
+    )
   })
 })
 
@@ -372,9 +411,9 @@ describe("RowAdjudicationDialog: the reason field in the answer", () => {
     fireEvent.click(submitButton())
 
     await screen.findByTestId("adjudication-answer")
-    expect(screen.getByTestId("adjudication-reason").getAttribute("data-reason-kind")).toBe(
-      "rescue-note"
-    )
+    expect(
+      screen.getByTestId("adjudication-reason").getAttribute("data-reason-kind")
+    ).toBe("rescue-note")
     expect(screen.getByTestId("adjudication-reason-provenance")).toBeTruthy()
   })
 
@@ -395,9 +434,9 @@ describe("RowAdjudicationDialog: the reason field in the answer", () => {
     fireEvent.click(submitButton())
 
     await screen.findByTestId("adjudication-answer")
-    expect(screen.getByTestId("adjudication-reason").getAttribute("data-reason-kind")).toBe(
-      "not-carried"
-    )
+    expect(
+      screen.getByTestId("adjudication-reason").getAttribute("data-reason-kind")
+    ).toBe("not-carried")
     expect(screen.queryByTestId("adjudication-reason-provenance")).toBeNull()
   })
 })
@@ -432,12 +471,12 @@ describe("RowAdjudicationDialog: whether the statement balanced", () => {
     giveGrounds()
     fireEvent.click(submitButton())
     await screen.findByTestId("adjudication-answer")
-    expect(screen.getByTestId("adjudication-rescue").getAttribute("data-rescue-key")).toBe(
-      "rescue-none"
-    )
-    expect(screen.getByTestId("adjudication-rescue").getAttribute("data-rescue-raw")).toBe(
-      "false"
-    )
+    expect(
+      screen.getByTestId("adjudication-rescue").getAttribute("data-rescue-key")
+    ).toBe("rescue-none")
+    expect(
+      screen.getByTestId("adjudication-rescue").getAttribute("data-rescue-raw")
+    ).toBe("false")
     none.unmount()
 
     vi.spyOn(financialAPI, "quarantineRow").mockResolvedValue(
@@ -447,12 +486,12 @@ describe("RowAdjudicationDialog: whether the statement balanced", () => {
     giveGrounds()
     fireEvent.click(submitButton())
     await screen.findByTestId("adjudication-answer")
-    expect(screen.getByTestId("adjudication-rescue").getAttribute("data-rescue-key")).toBe(
-      "rescue-unknown"
-    )
-    expect(screen.getByTestId("adjudication-rescue").getAttribute("data-rescue-raw")).toBe(
-      "null"
-    )
+    expect(
+      screen.getByTestId("adjudication-rescue").getAttribute("data-rescue-key")
+    ).toBe("rescue-unknown")
+    expect(
+      screen.getByTestId("adjudication-rescue").getAttribute("data-rescue-raw")
+    ).toBe("null")
   })
 
   it("says nothing about a statement where no removal was checked against one", async () => {
@@ -510,7 +549,11 @@ describe("RowAdjudicationDialog: failure and closing", () => {
     // Any answer, including a refusal: asking the same question again gets the
     // same answer.
     vi.spyOn(financialAPI, "quarantineRow").mockResolvedValue(
-      answer({ outcome: "unchanged", applied: false, reason: "Already set aside." })
+      answer({
+        outcome: "unchanged",
+        applied: false,
+        reason: "Already set aside.",
+      })
     )
     renderDialog()
     giveGrounds()
@@ -532,7 +575,9 @@ describe("RowAdjudicationDialog: failure and closing", () => {
     // the click, so reading the button synchronously reads it before the write
     // has started and passes for the wrong reason.
     await waitFor(() => {
-      const cancel = screen.getByRole("button", { name: "Cancel" }) as HTMLButtonElement
+      const cancel = screen.getByRole("button", {
+        name: "Cancel",
+      }) as HTMLButtonElement
       expect(cancel.disabled).toBe(true)
     })
   })
@@ -549,9 +594,12 @@ describe("RowAdjudicationDialog: failure and closing", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Done" }))
     expect(onClose).toHaveBeenCalledTimes(1)
-    await waitFor(() => expect(screen.queryByTestId("adjudication-answer")).toBeNull())
+    await waitFor(() =>
+      expect(screen.queryByTestId("adjudication-answer")).toBeNull()
+    )
     expect(
-      (screen.getByTestId("adjudication-reason-input") as HTMLTextAreaElement).value
+      (screen.getByTestId("adjudication-reason-input") as HTMLTextAreaElement)
+        .value
     ).toBe("")
   })
 })
@@ -563,7 +611,9 @@ describe("RowAdjudicationDialog: failure and closing", () => {
 describe("RowAdjudicationDialog: the row it names", () => {
   it("scales the amount by the row's own currency", () => {
     renderDialog(makeRow({ amount_minor: 123456, currency: "JPY" }))
-    expect(screen.getByTestId("adjudication-amount").textContent).toContain("123,456")
+    expect(screen.getByTestId("adjudication-amount").textContent).toContain(
+      "123,456"
+    )
   })
 
   it("marks an amount it could not scale rather than passing it off as a figure", () => {

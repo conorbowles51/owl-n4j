@@ -1,3 +1,4 @@
+import { useFinancialAccess } from "../hooks/use-financial-access"
 import {
   Dialog,
   DialogContent,
@@ -14,7 +15,7 @@ import type { CaseworkLinkInput } from "@/features/workspace/casework-api"
 import { citationSchema } from "../lib/source-citation"
 import { useFinancialDraft } from "../stores/financial-drafts"
 
-export function SavePaymentSelection({
+function SavePaymentSelectionForm({
   caseId,
   ids,
   analysis,
@@ -209,4 +210,11 @@ export function SavePaymentSelection({
       </Dialog>
     </section>
   )
+}
+
+export function SavePaymentSelection(
+  props: Parameters<typeof SavePaymentSelectionForm>[0]
+) {
+  const { canEdit } = useFinancialAccess()
+  return canEdit ? <SavePaymentSelectionForm {...props} /> : null
 }

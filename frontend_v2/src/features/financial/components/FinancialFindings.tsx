@@ -1,3 +1,4 @@
+import { useFinancialAccess } from "../hooks/use-financial-access"
 import { FinancialReportBuilder } from "./FinancialReportBuilder"
 import { SavedFinancialReport } from "./SavedFinancialReport"
 import { useFinancialDraft } from "../stores/financial-drafts"
@@ -39,6 +40,7 @@ export function FinancialFindings({
   const selectNodes = useGraphStore((state) => state.selectNodes)
   const expand = useUIStore((state) => state.expandGraphPanelTo)
   const [page, setPage] = useState(0)
+  const { canEdit } = useFinancialAccess()
   const [search, setSearch] = useState("")
   const [error, setError] = useState("")
   const [source, setSource] = useState<string | null>(null)
@@ -100,7 +102,7 @@ export function FinancialFindings({
           className="rounded border bg-card p-4 space-y-3"
         >
           <h3 className="font-semibold">{entry.title || "Untitled note"}</h3>
-          {!entry.tags.includes("financial-report") && (
+          {canEdit && !entry.tags.includes("financial-report") && (
             <label className="flex gap-2 items-center text-sm">
               <input
                 type="checkbox"
@@ -270,7 +272,7 @@ export function FinancialFindings({
               </div>
             )
           })}
-          {!entry.tags.includes("financial-report") && (
+          {canEdit && !entry.tags.includes("financial-report") && (
             <details className="rounded border p-3 space-y-2">
               <summary className="cursor-pointer font-medium">
                 Create a report from this note

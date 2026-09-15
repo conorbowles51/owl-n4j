@@ -1,3 +1,4 @@
+import { useFinancialAccess } from "../hooks/use-financial-access"
 import { useEffect, useRef, useState } from "react"
 import { useMutation, useQuery } from "@tanstack/react-query"
 import { z } from "zod"
@@ -17,7 +18,7 @@ const recoverySchema = z.object({
   readingMode: z.enum(["automatic", "page_images"]).default("automatic"),
 })
 
-export function ReprocessStatement({
+function ReprocessStatementForm({
   caseId,
   fileId,
   onReady,
@@ -214,4 +215,11 @@ export function ReprocessStatement({
       )}
     </details>
   )
+}
+
+export function ReprocessStatement(
+  props: Parameters<typeof ReprocessStatementForm>[0]
+) {
+  const { canUpload } = useFinancialAccess()
+  return canUpload ? <ReprocessStatementForm {...props} /> : null
 }

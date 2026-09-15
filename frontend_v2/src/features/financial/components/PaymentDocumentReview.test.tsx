@@ -1,3 +1,13 @@
+// This existing workflow fixture has case editing and upload access.
+vi.mock("../hooks/use-financial-access", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../hooks/use-financial-access")>()),
+  useFinancialAccess: () => ({
+    canEdit: true,
+    canUpload: true,
+    ready: true,
+    error: false,
+  }),
+}))
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { beforeEach, expect, it, vi } from "vitest"
@@ -123,13 +133,17 @@ it("requires an explicit link and explanation, and retains the selected source a
     screen.getByRole("button", { name: "Save wire review" })
   ).toBeDisabled()
   fireEvent.change(
-    screen.getByLabelText("Why does this document support the selected payment?"),
+    screen.getByLabelText(
+      "Why does this document support the selected payment?"
+    ),
     { target: { value: "Same reference and amount." } }
   )
   view.unmount()
   mount()
   expect(
-    screen.getByLabelText("Why does this document support the selected payment?")
+    screen.getByLabelText(
+      "Why does this document support the selected payment?"
+    )
   ).toHaveValue("Same reference and amount.")
   fireEvent.click(
     screen.getByRole("button", { name: "Open selected payment and source" })

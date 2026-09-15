@@ -1,3 +1,4 @@
+import { useFinancialAccess } from "../hooks/use-financial-access"
 import { useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { z } from "zod"
@@ -69,6 +70,7 @@ export function StatementEditorDraftPanel({
     retry: false,
     queryFn: async () => parse(await fetchAPI(url)),
   })
+  const { canEdit } = useFinancialAccess()
   const save = useMutation({
     retry: false,
     mutationFn: async () => {
@@ -145,6 +147,7 @@ export function StatementEditorDraftPanel({
       )}
       <Button
         disabled={
+          !canEdit ||
           !valid.success ||
           !draft.data ||
           draft.isError ||
@@ -152,7 +155,9 @@ export function StatementEditorDraftPanel({
           save.isPending ||
           !!(draft.data.editor_draft && loaded !== draft.data.revision)
         }
-        onClick={() => save.mutate()}
+        onClick={() => {
+          if (canEdit) save.mutate()
+        }}
       >
         Save unfinished statement editor
       </Button>

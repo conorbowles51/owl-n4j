@@ -1,3 +1,13 @@
+// This existing workflow fixture has case editing and upload access.
+vi.mock("../hooks/use-financial-access", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../hooks/use-financial-access")>()),
+  useFinancialAccess: () => ({
+    canEdit: true,
+    canUpload: true,
+    ready: true,
+    error: false,
+  }),
+}))
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, expect, it, vi } from "vitest"
@@ -99,14 +109,12 @@ it.each([409, 500, 200])(
   }
 )
 it("restoration sends no primary and explains the effect on totals", async () => {
-  const fetch = vi
-    .spyOn(globalThis, "fetch")
-    .mockImplementation(
-      async () =>
-        new Response(JSON.stringify({ detail: "Legacy exclusion" }), {
-          status: 409,
-        })
-    )
+  const fetch = vi.spyOn(globalThis, "fetch").mockImplementation(
+    async () =>
+      new Response(JSON.stringify({ detail: "Legacy exclusion" }), {
+        status: 409,
+      })
+  )
   mount({ ...selection, primary: undefined })
   expect(screen.getByText(/Both copies may then count/)).toBeInTheDocument()
   submit()

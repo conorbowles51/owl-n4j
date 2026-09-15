@@ -33,6 +33,12 @@ One broad frontend run passed 1,146 tests. One broad backend run executed 4,583 
 
 The remote branch was fetched before this checkpoint and had no incoming changes. Local commits and private verification records are retained. Private PDFs, extracts, credentials and unrelated user files are excluded from the release commits.
 
+## Continued case access work
+
+Financial controls now follow the server’s exact case editing and file upload permissions. Read-only members can inspect original PDFs, explore payments and download saved work. Editing and upload controls are unavailable when their particular permission is absent. Access is checked again while the page is open; a failed check removes editing controls and offers an explicit retry.
+
+A temporary ordinary member passed the actual UI under three combinations: read-only, editing without upload, and upload without editing. All three opened payment sources, loaded the original statement image and reopened the saved report. The read-only member downloaded its PDFs. No financial records changed. Revoked membership was denied and the temporary member was deleted. Four backend checks and focused frontend checks passed; the earlier broad suites were not repeated.
+
 ## Remaining acceptance
 
 Damaged scans can still require correction or a better source copy. The supplied-page checks and synthetic case journey do not establish independent extraction accuracy across all bank formats. The seven unique supplied PDFs have a retained prediction capture, but independent human reference reviews and an approved baseline have not been supplied. The application records those measurements as unavailable.

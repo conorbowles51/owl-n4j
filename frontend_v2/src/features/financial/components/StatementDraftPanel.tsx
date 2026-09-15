@@ -1,3 +1,4 @@
+import { useFinancialAccess } from "../hooks/use-financial-access"
 import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { z } from "zod"
@@ -51,6 +52,7 @@ export function StatementDraftPanel({
     queryFn: async () => parse(await fetchAPI<unknown>(url)),
     retry: false,
   })
+  const { canEdit } = useFinancialAccess()
   const save = useMutation({
     retry: false,
     mutationFn: async () => {
@@ -93,7 +95,8 @@ export function StatementDraftPanel({
       <p>
         Save the statements added to this preview so you can return later. These
         are draft controls; source validation happens again before finalization.
-        Use Save unfinished statement editor inside the editor to save partially entered fields separately.
+        Use Save unfinished statement editor inside the editor to save partially
+        entered fields separately.
       </p>
       {draft.isPending ? (
         <p role="status">Loading saved controls…</p>
@@ -129,6 +132,7 @@ export function StatementDraftPanel({
             </Button>
             <Button
               disabled={
+                !canEdit ||
                 disabled ||
                 draft.isFetching ||
                 save.isPending ||
@@ -136,7 +140,9 @@ export function StatementDraftPanel({
                 (draft.data.revision !== null &&
                   loadedRevision !== draft.data.revision)
               }
-              onClick={() => save.mutate()}
+              onClick={() => {
+                if (canEdit) save.mutate()
+              }}
             >
               Save statement controls to case
             </Button>

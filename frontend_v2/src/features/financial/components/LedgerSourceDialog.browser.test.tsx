@@ -1,3 +1,13 @@
+// This existing workflow fixture has case editing and upload access.
+vi.mock("../hooks/use-financial-access", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../hooks/use-financial-access")>()),
+  useFinancialAccess: () => ({
+    canEdit: true,
+    canUpload: true,
+    ready: true,
+    error: false,
+  }),
+}))
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, expect, it, vi } from "vitest"
@@ -73,9 +83,12 @@ it("fetches the resolved evidence page, draws its stored rectangle and opens the
   fireEvent.click(screen.getByRole("button", { name: "Open source file" }))
   await screen.findByRole("heading", { name: "synthetic.pdf" })
   await vi.waitFor(() =>
-    expect(screen.getAllByTitle("synthetic.pdf").find((element) => element.tagName === "IFRAME")?.getAttribute("src")).toMatch(
-      /^blob:.*#page=2$/
-    )
+    expect(
+      screen
+        .getAllByTitle("synthetic.pdf")
+        .find((element) => element.tagName === "IFRAME")
+        ?.getAttribute("src")
+    ).toMatch(/^blob:.*#page=2$/)
   )
   expect(
     fetch.mock.calls.some(([url]) => url === `/api/evidence/${fileId}/file`)

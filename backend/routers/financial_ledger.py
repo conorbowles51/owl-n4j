@@ -101,6 +101,29 @@ router = APIRouter(
 )
 
 
+@router.get("/case-access")
+def get_financial_case_access(
+    response: Response,
+    case_id: UUID = Query(...),
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_db_user),
+):
+    """Expose the two permissions used by financial controls for this member."""
+    from services.case_service import check_case_access, has_permission, is_super_admin
+
+    response.headers["Cache-Control"] = "no-store"
+    _, membership = check_case_access(
+        db, case_id, current_user, required_permission=("case", "view")
+    )
+    admin = is_super_admin(current_user)
+    return dict(
+        case_id=str(case_id),
+        user_id=str(current_user.id),
+        can_edit=admin or has_permission(membership, "case", "edit"),
+        can_upload=admin or has_permission(membership, "evidence", "upload"),
+    )
+
+
 class CandidateAmountAssessmentRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     currency: str = Field(pattern=r"^[A-Z]{3}$", strict=True)

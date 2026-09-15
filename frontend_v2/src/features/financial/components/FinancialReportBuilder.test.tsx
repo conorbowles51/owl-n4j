@@ -1,3 +1,13 @@
+// This existing workflow fixture has case editing and upload access.
+vi.mock("../hooks/use-financial-access", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../hooks/use-financial-access")>()),
+  useFinancialAccess: () => ({
+    canEdit: true,
+    canUpload: true,
+    ready: true,
+    error: false,
+  }),
+}))
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { beforeEach, expect, it, vi } from "vitest"
@@ -16,13 +26,11 @@ beforeEach(() => {
 async function setup() {
   const f = await savedIndirectFixture()
   const key = `anonymous:${f.caseId}:${reportDraftName}`
-  useFinancialDraftStore
-    .getState()
-    .put(key, {
-      title: "Comparison for review",
-      introduction: "Check these records",
-      selected: [{ id: f.entry.id, title: f.entry.title, version: 1 }],
-    })
+  useFinancialDraftStore.getState().put(key, {
+    title: "Comparison for review",
+    introduction: "Check these records",
+    selected: [{ id: f.entry.id, title: f.entry.title, version: 1 }],
+  })
   api.get.mockResolvedValue(f.entry)
   api.create.mockResolvedValue({ ...f.entry, id: "report-created" })
   render(

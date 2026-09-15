@@ -1,3 +1,4 @@
+import { useFinancialAccess } from "../hooks/use-financial-access"
 import { useState } from "react"
 import { useInvestigationScope } from "../stores/investigation-scope"
 import { RequestedCoveragePanel } from "./RequestedCoveragePanel"
@@ -36,6 +37,7 @@ function CorrectableLedgerContent({
   investigation?: boolean
   heldOut?: boolean
 }) {
+  const { canEdit } = useFinancialAccess()
   const [params, setParams] = useInvestigationScope(caseId)
   const [selected, setSelected] = useState<LedgerTransaction | null>(null)
   const [source, setSource] = useState<{
@@ -70,7 +72,7 @@ function CorrectableLedgerContent({
           caseId={source.caseId}
           transactionId={source.transactionId}
           initialNoteOpen={source.note}
-          onAdjudicate={onAdjudicate}
+          onAdjudicate={canEdit ? onAdjudicate : undefined}
           onClose={() => setSource(null)}
         />
       )}
@@ -90,10 +92,14 @@ function CorrectableLedgerContent({
         investigation={investigation}
         caseId={caseId}
         params={heldOut ? undefined : params}
-        onAdjudicate={onAdjudicate}
-        onCorrect={selected ? undefined : setSelected}
-        onNote={(row) =>
-          caseId && setSource({ caseId, transactionId: row.key, note: true })
+        onAdjudicate={canEdit ? onAdjudicate : undefined}
+        onCorrect={!canEdit || selected ? undefined : setSelected}
+        onNote={
+          canEdit
+            ? (row) =>
+                caseId &&
+                setSource({ caseId, transactionId: row.key, note: true })
+            : undefined
         }
         onSource={(row) =>
           caseId && setSource({ caseId, transactionId: row.key })

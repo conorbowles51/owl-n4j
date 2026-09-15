@@ -1,3 +1,4 @@
+import { useFinancialAccess } from "../hooks/use-financial-access"
 import { RetainedFinancialTool } from "./FinancialNavigation"
 import { useFinancialDraft } from "../stores/financial-drafts"
 import { PaymentClaimComparison } from "./PaymentClaimComparison"
@@ -296,6 +297,7 @@ function PatternCard({
       ""
     ),
     [validation, setValidation] = useState("")
+  const { canEdit } = useFinancialAccess()
   const save = useCreateCaseworkEntry(scope.case_id)
   const submit = () => {
     try {
@@ -362,56 +364,57 @@ function PatternCard({
           </Button>
         </div>
       ))}
-      {save.data ? (
-        <p role="status">
-          Saved in Findings as a proposed explanation: {save.data.title}.{" "}
-          <a
-            className="underline"
-            href={`/cases/${encodeURIComponent(scope.case_id)}/workspace`}
+      {canEdit &&
+        (save.data ? (
+          <p role="status">
+            Saved in Findings as a proposed explanation: {save.data.title}.{" "}
+            <a
+              className="underline"
+              href={`/cases/${encodeURIComponent(scope.case_id)}/workspace`}
+            >
+              Open Workspace
+            </a>
+          </p>
+        ) : (
+          <fieldset
+            disabled={save.isPending || save.isError}
+            className="space-y-2"
           >
-            Open Workspace
-          </a>
-        </p>
-      ) : (
-        <fieldset
-          disabled={save.isPending || save.isError}
-          className="space-y-2"
-        >
-          <legend>Record your explanation</legend>
-          <label className="block">
-            Title
-            <input
-              aria-label={`Theory title ${h.id}`}
-              className="block w-full border bg-background p-2"
-              maxLength={255}
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-            />
-          </label>
-          <label className="block">
-            Reasoning and alternative explanations
-            <textarea
-              aria-label={`Hypothesis reasoning ${h.id}`}
-              className="block w-full border bg-background p-2"
-              maxLength={4096}
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-            />
-          </label>
-          <Button
-            disabled={
-              !title.trim() ||
-              !reason.trim() ||
-              h.sources.some((s) => !s.source.evidence_file_id)
-            }
-            onClick={submit}
-          >
-            {save.isPending
-              ? "Saving…"
-              : "Save explanation and supporting payments"}
-          </Button>
-        </fieldset>
-      )}
+            <legend>Record your explanation</legend>
+            <label className="block">
+              Title
+              <input
+                aria-label={`Theory title ${h.id}`}
+                className="block w-full border bg-background p-2"
+                maxLength={255}
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+              />
+            </label>
+            <label className="block">
+              Reasoning and alternative explanations
+              <textarea
+                aria-label={`Hypothesis reasoning ${h.id}`}
+                className="block w-full border bg-background p-2"
+                maxLength={4096}
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+              />
+            </label>
+            <Button
+              disabled={
+                !title.trim() ||
+                !reason.trim() ||
+                h.sources.some((s) => !s.source.evidence_file_id)
+              }
+              onClick={submit}
+            >
+              {save.isPending
+                ? "Saving…"
+                : "Save explanation and supporting payments"}
+            </Button>
+          </fieldset>
+        ))}
       {validation && <p role="alert">{validation}</p>}
       {save.isError && (
         <p role="alert">

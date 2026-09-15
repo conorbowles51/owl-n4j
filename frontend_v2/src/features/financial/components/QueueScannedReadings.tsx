@@ -1,3 +1,4 @@
+import { useFinancialAccess } from "../hooks/use-financial-access"
 import { useEffect, useRef, useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
@@ -9,7 +10,7 @@ import {
   verifyQueuedMapping,
   type ScannedPageProposal,
 } from "../lib/scanned-reading-queue"
-export function QueueScannedReadings({
+function QueueScannedReadingsContent({
   scan,
   onBusy,
   onSaved,
@@ -227,4 +228,11 @@ export function QueueScannedReadings({
       )}
     </section>
   )
+}
+
+export function QueueScannedReadings(
+  props: Parameters<typeof QueueScannedReadingsContent>[0]
+) {
+  const { canEdit } = useFinancialAccess()
+  return canEdit ? <QueueScannedReadingsContent {...props} /> : null
 }

@@ -1,6 +1,6 @@
 # Financial completion plan
 
-15 September 2026. User deadline: a usable financial application tonight, Europe/Dublin. Five-minute continuation checks run until the verified ready checkpoint or 23:59 today. The user will begin UI testing after travelling home. This is the current plan for finishing the financial work. It replaces the changing list of small next steps as the execution order. Earlier plans and their checked items remain as the development record. Completed work stays on this list.
+15 September 2026. User deadline: a usable financial application tonight, Europe/Dublin. Five-minute continuation checks remain active through 23:59 today. The user explicitly rejected stopping at the earlier local ready checkpoint. The user will begin UI testing after travelling home. This is the current plan for finishing the financial work. It replaces the changing list of small next steps as the execution order. Earlier plans and their checked items remain as the development record. Completed work stays on this list.
 
 The finished workflow is: upload statements and supporting payment documents, check flagged readings beside the originals, confirm a statement once, investigate the imported transactions, save observations and calculations, and produce a report another authorised investigator can reopen and check.
 
@@ -90,6 +90,17 @@ Done when: every primary tab gives a recognisable investigation task, saved work
 - [ ] Push only when explicitly requested, then verify the deployed build through the user-visible workflow where server access permits.
 
 Release evidence: [15 September release record](releases/2026-09-15-financial.md). One broad frontend run passed 1,146 tests. One broad backend run executed 4,583 tests and found missing package exports plus an ambiguous multi-period fixture; 43 affected tests passed after those fixes. Type checking, scoped lint, production build, clean backend startup and all fourteen local health/migration/case checks passed. The remote branch was fetched with no incoming changes. Private captures remain ignored and unrelated files remain untouched. The build is ready for the user's UI acceptance and an explicitly requested push. Independent human accuracy review and deployment acceptance remain unchecked.
+
+## Continuing user workflow checks
+
+The prior checked items stay as evidence. The user instructed continuous work after the local checkpoint; keep the schedule active until tonight or an explicit stop.
+
+- [x] Make read-only financial controls match the server's exact case edit/upload permissions while preserving inspection, analysis and downloads.
+- [x] Check the revised permissions with a real temporary read-only member and with separate edit/upload permissions.
+- [ ] Continue through large multi-statement files in the UI, including changing period, page and file, retaining corrections and finding unresolved rows.
+- [ ] Fix concrete defects from those checks and incoming UI feedback; record focused verification and detailed local commits.
+
+Access verification: the UI uses separate case editing and evidence upload flags from the server. A temporary ordinary member passed read-only, edit-without-upload and upload-without-edit checks against the same synthetic case. Original PDF images loaded, the saved report reopened and downloaded, and no financial writes occurred. Removing membership denied the access endpoint. The temporary member was removed. Focused checks: 4 backend access tests, 11 provider tests included in 245 affected component checks, then 56 checks for the final changed controls. No broad suite repeated.
 
 ## Execution rules
 
