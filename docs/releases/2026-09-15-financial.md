@@ -69,6 +69,12 @@ Continued investigation checks: a selection of 100 payments across three account
 
 The large-case graph revealed that choosing a name narrowed its payment list but left the graph crowded. Choosing a name now focuses both. Search can find an account or name, and Show all connections restores the complete applied range. Large graphs hide small name labels until zoomed in. All 2,700 payments appear in monthly trends; a 900-payment graph and 62 exact same-day threshold groups passed local browser checks. Four focused graph tests, seven selection/table checks, two graph source/boundary checks, type checking and scoped lint passed. No broad suite repeated.
 
+## Continued identity draft recovery
+
+Payment-name and account-owner link drafts now retain selected records, names, explanations and the revision originally reviewed. Refresh and reloading records preserve the draft. Changed records require an explicit review of the latest version before saving. Replaced payment selections remain visible as unavailable until removed. Account-link saves also verify that the response contains the requested links before announcing success.
+
+The real browser workflow retained a three-payment draft through refresh and a failed save, then saved exactly three links with unchanged original fields. Grouped totals remain EUR 4.14 and USD 2.07 separately. Two account-owner links survived refresh and saved with their history; selecting that owner produced the exact 176-payment account group, EUR 554.70 incoming and EUR 1,079.54 outgoing. Twelve focused payment/account directory tests, type checking and scoped lint passed.
+
 ## Remaining acceptance
 
 Damaged scans can still require correction or a better source copy. The supplied-page checks and synthetic case journey do not establish independent extraction accuracy across all bank formats. The seven unique supplied PDFs have a retained prediction capture, but independent human reference reviews and an approved baseline have not been supplied. The application records those measurements as unavailable.

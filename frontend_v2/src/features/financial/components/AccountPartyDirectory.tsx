@@ -1,9 +1,16 @@
 import { useFinancialAccess } from "../hooks/use-financial-access"
-import { useState } from "react"
+import { useFinancialDraft } from "../stores/financial-drafts"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { fetchAPI } from "@/lib/api-client"
 import { Button } from "@/components/ui/button"
 import { accountParties, type AccountParties } from "../lib/account-parties"
+type AccountLinkDraft = {
+  selected: string[]
+  party: string
+  name: string
+  reason: string
+  revision: string | null
+}
 
 export function AccountPartyDirectory({
   caseId,
@@ -13,10 +20,18 @@ export function AccountPartyDirectory({
   onChoose: (accountIds: string[], capture: AccountParties | null) => void
 }) {
   const client = useQueryClient()
-  const [selected, setSelected] = useState<string[]>([])
-  const [party, setParty] = useState("new"),
-    [name, setName] = useState(""),
-    [reason, setReason] = useState("")
+  const [draft, setDraft] = useFinancialDraft<AccountLinkDraft>(
+    caseId,
+    "account-identity-review",
+    {
+      selected: [],
+      party: "new",
+      name: "",
+      reason: "",
+      revision: null,
+    }
+  )
+  const { selected, party, name, reason } = draft
   const url = `/api/financial/account-parties?${new URLSearchParams({ case_id: caseId })}`
   const key = ["financial-ledger", caseId, "account-parties"]
   const parse = (data: unknown) => {
@@ -31,15 +46,38 @@ export function AccountPartyDirectory({
     retry: false,
   })
   const { canEdit } = useFinancialAccess()
+  const updateReview = (
+    patch:
+      | Partial<AccountLinkDraft>
+      | ((current: AccountLinkDraft) => Partial<AccountLinkDraft>)
+  ) =>
+    setDraft((current) => ({
+      ...current,
+      ...(typeof patch === "function" ? patch(current) : patch),
+      revision: current.revision ?? query.data?.revision ?? null,
+    }))
+  const changedSinceDraft =
+    !!query.data &&
+    draft.revision !== null &&
+    draft.revision !== query.data.revision
+  const unavailableSelected =
+    !!query.data &&
+    selected.some(
+      (id) => !query.data!.accounts.some((account) => account.id === id)
+    )
   const save = useMutation({
     retry: false,
     mutationFn: async () => {
       if (!query.data) throw Error("Reload the account links first.")
+      if (changedSinceDraft)
+        throw Error(
+          "Account records or saved links changed. Review the latest records before saving this draft."
+        )
       const answer = parse(
         await fetchAPI(url, {
           method: "POST",
           body: {
-            expected_revision: query.data.revision,
+            expected_revision: draft.revision ?? query.data.revision,
             account_ids: selected,
             reason,
             ...(party === "new"
@@ -50,15 +88,32 @@ export function AccountPartyDirectory({
           },
         })
       )
-      if (!answer.applied)
+      if (
+        !answer.applied ||
+        selected.some((id) => {
+          const account = answer.accounts.find((item) => item.id === id)
+          return (
+            !account ||
+            (party === "clear"
+              ? account.party !== null
+              : party === "new"
+                ? account.party?.name !== name.trim()
+                : account.party?.id !== party)
+          )
+        })
+      )
         throw Error("The account-link change was not confirmed.")
       return answer
     },
     onSuccess: async (data) => {
       client.setQueryData(key, data)
-      setSelected([])
-      setReason("")
-      setName("")
+      setDraft((current) => ({
+        ...current,
+        selected: [],
+        reason: "",
+        name: "",
+        revision: null,
+      }))
       onChoose([], null)
       await client.invalidateQueries({ queryKey: ["financial-ledger", caseId] })
     },
@@ -88,8 +143,42 @@ export function AccountPartyDirectory({
       </Button>
       {query.isPending && <p>Loading account links…</p>}
       {query.error && <p role="alert">{query.error.message}</p>}
-      {state && (
+      {state && !query.isError && (
         <>
+          <p className="text-sm text-muted-foreground">
+            Unfinished account selections, the name and your explanation are
+            kept in this browser tab after navigation or refresh. Save the links
+            before closing the tab to share them with the case.
+          </p>
+          {changedSinceDraft && (
+            <div role="alert" className="rounded border p-3 space-y-2">
+              <p>
+                Account records or saved links changed while this draft was
+                open. Your selections and explanation are retained. Check the
+                current account links below before using them to continue.
+              </p>
+              {canEdit && (
+                <Button
+                  disabled={query.isFetching || save.isPending}
+                  onClick={() => {
+                    setDraft((current) => ({
+                      ...current,
+                      revision: state.revision,
+                    }))
+                    save.reset()
+                  }}
+                >
+                  Use latest account records
+                </Button>
+              )}
+            </div>
+          )}
+          {unavailableSelected && (
+            <p role="alert">
+              Some selected accounts are no longer available. Clear the
+              selection and choose the current accounts.
+            </p>
+          )}
           <div className="space-y-2">
             {state.parties.map((p) => {
               const ids = state.accounts
@@ -123,11 +212,11 @@ export function AccountPartyDirectory({
                   aria-label={`Select account ${a.id}`}
                   checked={selected.includes(a.id)}
                   onChange={(e) =>
-                    setSelected((v) =>
-                      e.target.checked
-                        ? [...v, a.id]
-                        : v.filter((id) => id !== a.id)
-                    )
+                    updateReview((current) => ({
+                      selected: e.target.checked
+                        ? [...current.selected, a.id]
+                        : current.selected.filter((id) => id !== a.id),
+                    }))
                   }
                 />{" "}
                 {a.holder_as_recorded ?? "Holder not recorded"} ·{" "}
@@ -140,6 +229,17 @@ export function AccountPartyDirectory({
               </label>
             ))}
           </fieldset>
+          {canEdit && (
+            <Button
+              variant="outline"
+              disabled={!selected.length || save.isPending}
+              onClick={() =>
+                setDraft((current) => ({ ...current, selected: [] }))
+              }
+            >
+              Clear account selection
+            </Button>
+          )}
           <label className="block">
             Link selected accounts to
             <select
@@ -147,7 +247,7 @@ export function AccountPartyDirectory({
               className="ml-2 rounded border bg-background p-2"
               value={party}
               disabled={!canEdit || save.isPending}
-              onChange={(e) => setParty(e.target.value)}
+              onChange={(e) => updateReview({ party: e.target.value })}
             >
               <option value="new">A new person or organisation</option>
               {state.parties.map((p) => (
@@ -167,7 +267,7 @@ export function AccountPartyDirectory({
                 maxLength={255}
                 value={name}
                 disabled={!canEdit || save.isPending}
-                onChange={(e) => setName(e.target.value)}
+                onChange={(e) => updateReview({ name: e.target.value })}
               />
             </label>
           )}
@@ -179,7 +279,7 @@ export function AccountPartyDirectory({
               maxLength={4000}
               value={reason}
               disabled={!canEdit || save.isPending}
-              onChange={(e) => setReason(e.target.value)}
+              onChange={(e) => updateReview({ reason: e.target.value })}
             />
           </label>
           <Button
@@ -188,6 +288,8 @@ export function AccountPartyDirectory({
               save.isPending ||
               save.isError ||
               query.isFetching ||
+              changedSinceDraft ||
+              unavailableSelected ||
               !selected.length ||
               selected.length > 100 ||
               !reason.trim() ||

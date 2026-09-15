@@ -10,7 +10,8 @@ vi.mock("../hooks/use-financial-access", async (importOriginal) => ({
 }))
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { render, screen, fireEvent, waitFor } from "@testing-library/react"
-import { afterEach, it, expect, vi } from "vitest"
+import { afterEach, beforeEach, it, expect, vi } from "vitest"
+import { useFinancialDraftStore } from "../stores/financial-drafts"
 import { fetchAPI } from "@/lib/api-client"
 import { CounterpartyPartyDirectory } from "./CounterpartyPartyDirectory"
 vi.mock("@/lib/api-client", () => ({ fetchAPI: vi.fn() }))
@@ -20,6 +21,7 @@ vi.mock("./LedgerSourceDialog", () => ({
   ),
 }))
 afterEach(() => vi.resetAllMocks())
+beforeEach(() => useFinancialDraftStore.setState({ drafts: {} }))
 const caseId = "10000000-0000-4000-8000-000000000001",
   id = "10000000-0000-4000-8000-000000000002",
   partyId = "10000000-0000-4000-8000-000000000003"
@@ -46,7 +48,7 @@ const state = {
   limitation: "Identity does not change money",
 }
 function mount() {
-  render(
+  const view = render(
     <QueryClientProvider
       client={
         new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -58,6 +60,7 @@ function mount() {
   fireEvent.click(
     screen.getByRole("button", { name: "Open payment identity review" })
   )
+  return view
 }
 it("requires explicit selection and reason, then sends the captured revision", async () => {
   let current: unknown = state
@@ -196,4 +199,82 @@ it("a name suggestion prepares explicit review without saving or carrying an old
       .mocked(fetchAPI)
       .mock.calls.every(([, options]) => options?.method !== "POST")
   ).toBe(true)
+})
+
+it("restores an unfinished draft and requires review of a newer record revision before saving", async () => {
+  vi.mocked(fetchAPI).mockResolvedValue(state)
+  const first = mount()
+  fireEvent.click(await screen.findByLabelText("Link payment TX-TEST"))
+  fireEvent.change(screen.getByLabelText("Payment party name"), {
+    target: { value: "Supplier" },
+  })
+  fireEvent.change(screen.getByLabelText("Payment identity reason"), {
+    target: { value: "Checked the payment reference" },
+  })
+  first.unmount()
+  vi.mocked(fetchAPI).mockResolvedValue({ ...state, revision: "b".repeat(64) })
+  mount()
+  expect(await screen.findByLabelText("Link payment TX-TEST")).toBeChecked()
+  expect(screen.getByLabelText("Payment party name")).toHaveValue("Supplier")
+  expect(screen.getByLabelText("Payment identity reason")).toHaveValue(
+    "Checked the payment reference"
+  )
+  expect(screen.getByRole("alert")).toHaveTextContent(
+    "changed while this draft was open"
+  )
+  expect(
+    screen.getByRole("button", { name: "Save payment identity links" })
+  ).toBeDisabled()
+  expect(
+    vi
+      .mocked(fetchAPI)
+      .mock.calls.every(([, options]) => options?.method !== "POST")
+  ).toBe(true)
+  fireEvent.click(
+    screen.getByRole("button", { name: "Use latest payment records" })
+  )
+  fireEvent.click(
+    screen.getByRole("button", { name: "Save payment identity links" })
+  )
+  await waitFor(() =>
+    expect(fetchAPI).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        method: "POST",
+        body: expect.objectContaining({
+          expected_revision: "b".repeat(64),
+          transaction_ids: [id],
+          reason: "Checked the payment reference",
+        }),
+      })
+    )
+  )
+  // An unconfirmed save does not clear the user's draft.
+  expect(await screen.findByRole("alert")).toHaveTextContent("not confirmed")
+  expect(screen.getByLabelText("Payment identity reason")).toHaveValue(
+    "Checked the payment reference"
+  )
+})
+
+it("retains a replaced payment in the draft until the user removes it explicitly", async () => {
+  vi.mocked(fetchAPI).mockResolvedValue(state)
+  const first = mount()
+  fireEvent.click(await screen.findByLabelText("Link payment TX-TEST"))
+  first.unmount()
+  vi.mocked(fetchAPI).mockResolvedValue({
+    ...state,
+    revision: "b".repeat(64),
+    readings: [],
+  })
+  mount()
+  await screen.findByText(/1 selected payments are no longer current records/)
+  expect(
+    screen.getByRole("button", { name: "Save payment identity links" })
+  ).toBeDisabled()
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: "Remove unavailable payments from this selection",
+    })
+  )
+  expect(screen.getByText(/0 selected across pages/)).toBeInTheDocument()
 })

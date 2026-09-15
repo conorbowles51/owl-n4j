@@ -628,18 +628,22 @@ The same printed name can refer to different people. Different spellings can ref
 
 To undo a link, select the accounts, choose **Remove the existing links**, provide a reason and save. The original printed names and identifiers remain unchanged.
 
-### Link payment readings to a reviewed identity
+Your unfinished account selection, name and explanation survive navigation and refresh in this browser tab. They are not shared until you save. If the account records or saved links changed while you were working, check the current links and select **Use latest account records** before continuing. Use **Clear account selection** to start over without erasing your explanation.
 
-1. Open **Review people and organisations on payments**.
-2. Search names, descriptions or references.
-3. Inspect the sources of the readings you want to link.
-4. Select those readings explicitly.
-5. Choose an existing reviewed party or enter a new party name.
-6. Enter **Reason and supporting source interpretation**.
+### Link payments to a person or business
+
+1. In **People and businesses**, open **Link different names for the same person or business**, then select **Open payment identity review**.
+2. Search names, descriptions or references under **Find payment names, descriptions or references**.
+3. Inspect the sources of the payments you want to link.
+4. Tick those payments. Selections are kept when you change the search or move between pages.
+5. Under **Person or business**, choose an existing name or **A new person or organisation**. Enter **Name** if you are adding a new one.
+6. Answer **Why do these payments belong to this person or business?** Explain the source information you checked.
 7. Select **Save payment identity links** and inspect the saved history.
 8. In counterparty analysis, select **Combine names I have linked to the same person or business** if you want totals grouped by those decisions.
 
 Name suggestions help find possible links. Check each suggestion's explanation and competing identities before selecting it. Links apply to the selected readings, not automatically to every future payment with a similar name. Use **Remove the selected links** with a reason when undoing them.
+
+Unfinished selections, the search, name and explanation are kept in this browser tab after refresh. **Reload payment identities** refreshes the current records without clearing that draft. If records or saved links changed, inspect them and select **Use latest payment records** before saving. A corrected payment may replace one you selected earlier. The screen identifies unavailable selections; remove them from the selection, then inspect and choose the replacement from Transactions. A failed or unconfirmed save keeps your explanation so you can check the saved links before retrying.
 
 ### Inspect the payment graph
 
