@@ -30,6 +30,28 @@ class LedgerSummaryTests(fixture.DuplicateTestCase):
         self.assertFalse(result['applied'])
         self.assertFalse(self.db.new or self.db.dirty)
 
+    def test_totals_and_citations_do_not_repeat_the_full_source_reading_per_payment(self):
+        from sqlalchemy import event
+        row, doc = self.add(1234)
+        doc.metadata_ = {'statement_import_original': {'large_original': 'x' * 2_000_000}}
+        self.db.commit()
+        case_id = self.case.id
+        for capture in (False, True):
+            statements = []
+            def record(_conn, _cursor, statement, _params, _context, _many):
+                statements.append(statement)
+            event.listen(self.engine, 'before_cursor_execute', record)
+            try:
+                result = ledger_summary(self.db, case_id=case_id, capture_readings=capture)
+            finally:
+                event.remove(self.engine, 'before_cursor_execute', record)
+            self.assertEqual(result['currencies'][0]['credits_minor'], '1234')
+            self.assertEqual(len(statements), 1)
+            self.assertNotIn('financial_source_documents.metadata', statements[0])
+            if capture:
+                self.assertEqual(result['readings'][0]['source']['id'], str(doc.id))
+                self.assertEqual(result['readings'][0]['row']['amount_minor'], '1234')
+
     def test_exclusions_are_disjoint_and_original_is_not_double_counted(self):
         for status in (LedgerStatus.quarantined,LedgerStatus.superseded,LedgerStatus.rejected):self.add(status=status)
         row,doc=self.add();row.proof_class='p3';self.db.commit()

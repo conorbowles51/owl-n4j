@@ -6,6 +6,7 @@ are account postings, not deduplicated transfers or an opening/closing balance.
 """
 from datetime import date
 from sqlalchemy import select
+from sqlalchemy.orm import load_only
 from postgres.models.enums import ProofClass, LedgerStatus, DocumentStatus
 from postgres.models.financial import FinancialTransaction, FinancialSourceDocument, FinancialAccount
 from services.financial.proof_class import DEFAULT_TOTAL_CLASSES, counts_toward_totals
@@ -28,7 +29,15 @@ def ledger_summary(session, *, case_id, account_id=None, start_date=None, end_da
             raise LedgerSummaryError("Summary date bounds must be calendar dates.")
     if start_date and end_date and start_date > end_date:
         raise LedgerSummaryError("Summary start date must be on or before end date.")
-    query = select(FinancialTransaction, FinancialSourceDocument, FinancialAccount).outerjoin(
+    # A source can retain megabytes of original table readings. Selecting that
+    # JSON for every joined payment multiplied the same PDF data hundreds of
+    # times. Totals/citations need only the source identity and disposition.
+    query = select(FinancialTransaction, FinancialSourceDocument, FinancialAccount).options(load_only(
+        FinancialSourceDocument.id, FinancialSourceDocument.case_id, FinancialSourceDocument.status,
+        FinancialSourceDocument.proof_class, FinancialSourceDocument.evidence_file_id,
+        FinancialSourceDocument.sha256_at_ingestion, FinancialSourceDocument.parser_name,
+        FinancialSourceDocument.parser_version, raiseload=True,
+    )).outerjoin(
         FinancialSourceDocument, FinancialSourceDocument.id == FinancialTransaction.source_document_id
     ).outerjoin(FinancialAccount, FinancialAccount.id == FinancialTransaction.account_id).where(
         FinancialTransaction.case_id == case_id)
