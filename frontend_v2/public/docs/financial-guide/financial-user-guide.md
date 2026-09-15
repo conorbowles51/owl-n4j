@@ -105,6 +105,8 @@ Older manual reviews may use terms such as candidate, resolved reading or finali
 
 **Imported statement payments** and **Other financial records** are separate sets of information. Use the first for the statement workflow in this guide. The second contains information extracted from other evidence. An amount mentioned in a letter or interview is not automatically a bank transaction. Use the payment-claim comparison in Patterns to compare such a statement with recorded payments.
 
+To correct an amount in **Other financial records**, select its amount to open **Correct Amount**. Compare the current value and currency with the original evidence. Enter **New Amount** and **Correction Reason**, then select **Save Correction**. Loupe retains the original value and the explanation in its correction history. **Close** keeps your unfinished correction in this browser tab; reopen the same record to continue. A failed save displays an error and retains the draft. If the saved amount has changed in the meantime, the editor starts from that new amount. When no currency is recorded, the editor says so rather than displaying a dollar sign.
+
 ## Add a PDF
 
 ### Upload a bank or credit-card statement
@@ -504,6 +506,8 @@ For example, correcting a misread `61.26` to printed `61.62` creates a replaceme
 
 Restoring a row does not automatically make it verified. A correction or another exclusion may still affect its eligibility. If the application says someone changed the record since you opened it, reload and reassess the current record instead of resubmitting a stale form.
 
+An unfinished explanation stays in this browser tab for the same payment and inclusion status. After a refresh, reopen the action to continue. Selecting **Cancel** discards that explanation.
+
 ### Read the decision history
 
 Open **Change history**. Expand the relevant decision to inspect the reason, actor, time and affected records. For corrections, use **Original and replacement readings** and the available balance comparisons. Historical checks describe the records at that time; inspect current **Statements** for the latest checks.
@@ -588,6 +592,8 @@ For a case-wide review, expand **Checks across all accounts** at the bottom of *
 6. Check the decision confirmation, current ledger totals and **Change history**.
 
 For a bulk exclusion, inspect every selected document before confirming. Keep at least the intended retained evidence and read the affected counts. Do not exclude candidates solely because their amounts match.
+
+For an individual duplicate decision, an unfinished reason stays in this browser tab. Reopen the same comparison to continue. The draft belongs to the versions of both documents you compared. A different document version starts with an empty reason so an earlier explanation is not applied to changed evidence.
 
 ### Restore a duplicate exclusion
 
@@ -761,12 +767,14 @@ Repeated names, equal amounts, quick incoming/outgoing movements and split payme
 5. Enter the amount and date ranges supported by the quotation. Preserve uncertainty, such as “about 500” or “during March”.
 6. Choose **Claim currency** and record your interpretation of the account holder and payment direction in the available fields.
 7. Enter **Basis for the ranges and account interpretation**.
-8. Choose the comparison population and any additional tolerance. Zero tolerance compares the entered range exactly.
-9. Run the comparison and inspect the matching readings and sources.
+8. Under **Payments to compare**, choose **Verified transactions only** or **All imported transactions, including unverified**. Enter any additional amount tolerance. Zero tolerance compares the entered range exactly.
+9. Select **Find matching payments**. Check the date, amount and description of each result. Select **View payment source** beside a result to inspect its supporting statement.
 10. Select **Download claim comparison with sources**.
-11. If recording your response, use the accompanying decision controls, explain agreement or disagreement and select supporting attachments. Confirm the resulting note in Workspace.
+11. To record your response, select agreement or disagreement, choose up to 20 supporting payments and enter **Reason for your response**. Select **Save claim review with sources**. Confirm the resulting note in Workspace.
 
 The **Minimum tolerance (whole currency units)** field takes whole units. For example, enter `1` for GBP 1.00, not `100`. The extra amount tolerance is the larger of the percentage of the range midpoint and the stated minimum. A non-match can result from incomplete records. The claim remains separate from ledger totals.
+
+Your selected source, quotation and comparison fields are kept separately for each account in this browser tab. After a refresh, reopen **Patterns > Compare payment claim**, select **Use selected account**, then **Find matching payments** to calculate again. An unfinished response, explanation and supporting-payment selection also return for those exact claim details. If the calculation has changed, inspect the results and select **Use recalculated comparison** before saving. If a selected payment is no longer in the results, use **Remove unavailable selections**, then choose the supporting payments again. Saving the note makes it available to the case; a browser draft is not shared casework.
 
 ## Trace funds in one account
 

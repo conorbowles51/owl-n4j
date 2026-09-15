@@ -1,4 +1,5 @@
 import { ClaimComparisonDecision } from "./ClaimComparisonDecision"
+import { useFinancialDraft } from "../stores/financial-drafts"
 import { useState } from "react"
 import { useMutation } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
@@ -18,13 +19,19 @@ export function PaymentClaimComparison({ caseId }: { caseId: string }) {
         Compare a payment claim with the records
       </h2>
       <p>
-        Copy the original words and preserve any uncertainty as amount and date
-        ranges. The account holder and interpretation are explicit assumptions.
-        This comparison never adds a claim to ledger totals.
+        Check whether a payment mentioned in case evidence appears in an
+        account. Choose the source, copy its exact words, then enter the amount
+        and dates to look for. If either is uncertain, enter a range.
+      </p>
+      <p className="text-sm text-muted-foreground">
+        Your source, quotation and comparison settings are kept separately for
+        each account in this browser tab. After a refresh, apply the selected
+        account to reopen its draft, then run the comparison again.
       </p>
       <LedgerFilters
         caseId={caseId}
         accountOnly
+        draftName="payment-claim-account-filter"
         onApply={(p) => setAccount(p.accountId)}
       />
       {account ? (
@@ -42,28 +49,33 @@ function ClaimForm({
   caseId: string
   accountId: string
 }) {
-  const [source, setSource] = useState<{ id: string; label: string } | null>(
-      null
-    ),
-    [opened, setOpened] = useState<string | null>(null),
+  const [source, setSource] = useFinancialDraft<{
+    id: string
+    label: string
+  } | null>(caseId, `payment-claim-source:${accountId}`, null)
+  const [opened, setOpened] = useState<string | null>(null),
     [page, setPage] = useState(0)
-  const [fields, setFields] = useState({
-    quote: "",
-    source_location: "",
-    speaker: "",
-    payer: "",
-    payee: "",
-    currency: "GBP",
-    low: "",
-    high: "",
-    earliest: "",
-    latest: "",
-    account_holder: "",
-    interpretation_basis: "",
-    percent: "0",
-    floor: "0",
-    population: "verified",
-  })
+  const [fields, setFields] = useFinancialDraft(
+    caseId,
+    `payment-claim-fields:${accountId}`,
+    {
+      quote: "",
+      source_location: "",
+      speaker: "",
+      payer: "",
+      payee: "",
+      currency: "GBP",
+      low: "",
+      high: "",
+      earliest: "",
+      latest: "",
+      account_holder: "",
+      interpretation_basis: "",
+      percent: "0",
+      floor: "0",
+      population: "verified",
+    }
+  )
   const set = (key: keyof typeof fields, value: string) =>
     setFields((v) => ({ ...v, [key]: value }))
   const compare = useMutation({
@@ -82,9 +94,7 @@ function ClaimForm({
         !/^\d+$/.test(fields.floor) ||
         Number(fields.floor) > 1000000
       )
-        throw Error(
-          "Enter valid exact amount bounds and a tolerance from0–100%."
-        )
+        throw Error("Enter valid amounts and a tolerance from 0 to 100%.")
       const request = {
         account_id: accountId,
         source_file_id: source.id,
@@ -134,6 +144,7 @@ function ClaimForm({
       <ClaimEvidencePicker
         caseId={caseId}
         value={source}
+        disabled={compare.isPending}
         onChange={(v) => {
           setSource(v)
           compare.reset()
@@ -142,13 +153,14 @@ function ClaimForm({
       <form
         onSubmit={(e) => {
           e.preventDefault()
+          if (compare.isPending) return
           setPage(0)
           compare.mutate()
         }}
         onChange={() => compare.reset()}
       >
         <fieldset disabled={compare.isPending} className="space-y-3">
-          <legend>Claim as stated, and your interpretation</legend>
+          <legend>What payment does the source describe?</legend>
           <label className="block">
             Original quotation
             <textarea
@@ -249,15 +261,17 @@ function ClaimForm({
             />
           </label>
           <label>
-            Comparison population{" "}
+            Payments to compare{" "}
             <select
               aria-label="Claim comparison population"
               value={fields.population}
               onChange={(e) => set("population", e.target.value)}
               className="border bg-background p-2"
             >
-              <option value="verified">Verified only</option>
-              <option value="working">Working readings, including P3</option>
+              <option value="verified">Verified transactions only</option>
+              <option value="working">
+                All imported transactions, including unverified
+              </option>
             </select>
           </label>
           <p>
@@ -266,9 +280,7 @@ function ClaimForm({
             exactly.
           </p>
           <Button type="submit" disabled={!source}>
-            {compare.isPending
-              ? "Comparing…"
-              : "Compare claim with captured ledger"}
+            {compare.isPending ? "Comparing…" : "Find matching payments"}
           </Button>
         </fieldset>
       </form>
@@ -288,20 +300,30 @@ function ClaimForm({
         >
           <h3 className="font-semibold">
             {result.comparison.outcome === "corroborated"
-              ? "Rule proposal: possible corroboration"
-              : "Rule proposal: unresolved"}
+              ? "Payments may support this claim"
+              : "This comparison does not resolve the claim"}
           </h3>
           <p>
-            Claim class P4 · {fields.population} population · allowed amount
-            tolerance{" "}
+            {fields.population === "working"
+              ? "All imported transactions compared"
+              : "Verified transactions compared"}{" "}
+            · Amount tolerance:{" "}
             {correctionMoney(
               result.comparison.tolerance.minor_units,
               result.comparison.tolerance.currency
             )}
           </p>
-          {result.limitations.map((note) => (
-            <p key={note}>{note}</p>
-          ))}
+          <p>
+            Open the payments below to check their source. A similar amount and
+            date do not establish who made the payment. This search does not add
+            transactions or confirm that all statements have been supplied.
+          </p>
+          <details>
+            <summary>How this comparison was made</summary>
+            {result.limitations.map((note) => (
+              <p key={note}>{note}</p>
+            ))}
+          </details>
           {result.comparison.notes.map((note) => (
             <p key={note}>{note}</p>
           ))}
@@ -339,14 +361,14 @@ function ClaimForm({
                 {Object.values(candidate.components).map((component) => (
                   <p key={component.name}>
                     {component.name.replaceAll("_", " ")}: {component.agreement}{" "}
-                    — {component.detail}
+                    . {component.detail}
                   </p>
                 ))}
                 <Button
                   variant="outline"
                   onClick={() => setOpened(candidate.entry.transaction_id)}
                 >
-                  Inspect comparison reading{" "}
+                  View payment source{" "}
                   {candidate.entry.transaction_id.slice(0, 8)}
                 </Button>
               </article>

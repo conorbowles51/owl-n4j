@@ -21,7 +21,7 @@ export function claimReviewNote(
         )
     )
   )
-    throw Error("Choose at most20 distinct compared readings.")
+    throw Error("Choose up to 20 different payments from this comparison.")
   const captured = z
     .object({
       ledger_snapshot: z.object({
@@ -105,11 +105,11 @@ export function claimReviewNote(
     entry_type: "note",
     title: "Review of payment-claim comparison",
     body: [
-      `Investigator ${decision === "agree" ? "agrees" : "disagrees"} with the rule proposal: ${report.value.comparison.outcome}.`,
+      `Investigator ${decision === "agree" ? "agrees" : "disagrees"} with the comparison result: ${report.value.comparison.outcome === "corroborated" ? "payments may support the claim" : "the claim remains unresolved"}.`,
       reason.trim(),
       `Original quotation: ${String(report.value.inputs.quote)}`,
       `Source: ${report.value.claim_source.filename}; ${String(report.value.inputs.source_location)}.`,
-      `Claim remains P4. This review does not amend the ledger or promote evidence. Comparison reference: ${report.envelope.scenario_sha256}.`,
+      `This note records the investigator's interpretation. The original claim, payment values and verification status are unchanged. Comparison reference: ${report.envelope.scenario_sha256}.`,
     ].join("\n\n"),
     tags: ["financial", "claim-comparison", `proposal-${decision}`],
     links: [...links.values()],

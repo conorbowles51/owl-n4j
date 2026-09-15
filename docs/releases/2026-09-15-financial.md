@@ -75,6 +75,14 @@ Payment-name and account-owner link drafts now retain selected records, names, e
 
 The real browser workflow retained a three-payment draft through refresh and a failed save, then saved exactly three links with unchanged original fields. Grouped totals remain EUR 4.14 and USD 2.07 separately. Two account-owner links survived refresh and saved with their history; selecting that owner produced the exact 176-payment account group, EUR 554.70 incoming and EUR 1,079.54 outgoing. Twelve focused payment/account directory tests, type checking and scoped lint passed.
 
+## Review decisions and evidence corrections
+
+Claim source, quotation, amount/date ranges and interpretation now survive refresh separately for each account. The response, reason and supporting-payment selections return for the same claim inputs. Recalculated results require review before saving, and unavailable selections must be removed explicitly. Duplicate reasons stay tied to the exact compared document versions; exclusion reasons stay tied to the payment and its status.
+
+The other-evidence amount editor now opens with the selected value, displays the recorded currency and retains unfinished edits separately by record. A missing original amount stays unknown. Failed saves preserve the draft, and repeated Enter or Close cannot interrupt or duplicate a pending save.
+
+Local browser acceptance restored all claim fields and the response, opened the original payment PDF, verified the downloaded comparison hash and read back exactly one saved review with its selected payment and quotation. Note 917c963e-f40c-4b0f-a79a-86e93b6b1ec5 is in the existing synthetic completion case. The focused decision, editor and surrounding financial-page checks passed. No real financial data was changed and no broad suite was repeated.
+
 ## Remaining acceptance
 
 Damaged scans can still require correction or a better source copy. The supplied-page checks and synthetic case journey do not establish independent extraction accuracy across all bank formats. The seven unique supplied PDFs have a retained prediction capture, but independent human reference reviews and an approved baseline have not been supplied. The application records those measurements as unavailable.

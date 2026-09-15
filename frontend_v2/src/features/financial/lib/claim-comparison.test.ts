@@ -48,6 +48,6 @@ it("preserves a reviewer response and selected source reading in one grouped evi
   })
   expect(() => claimReviewNote(verified, "agree", "", [])).toThrow("Explain")
   expect(() => claimReviewNote(verified, "agree", "Reason", ["other"])).toThrow(
-    "distinct"
+    "different payments"
   )
 })

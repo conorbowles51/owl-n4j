@@ -234,12 +234,14 @@ function FinancialPageContent() {
   }, [])
 
   const handleAmountSave = useCallback(
-    (newAmount: number, correctionReason: string) => {
-      if (!amountEditTx) return
-      updateAmount.mutate(
-        { nodeKey: amountEditTx.key, newAmount, correctionReason },
-        { onSuccess: () => setAmountEditOpen(false) }
-      )
+    async (newAmount: number, correctionReason: string) => {
+      if (!amountEditTx)
+        throw new Error("Reopen the payment to correct its amount.")
+      return updateAmount.mutateAsync({
+        nodeKey: amountEditTx.key,
+        newAmount,
+        correctionReason,
+      })
     },
     [amountEditTx, updateAmount]
   )
@@ -1132,6 +1134,7 @@ function FinancialPageContent() {
       />
 
       <AmountEditDialog
+        caseId={caseId!}
         open={amountEditOpen}
         onOpenChange={setAmountEditOpen}
         transaction={amountEditTx}

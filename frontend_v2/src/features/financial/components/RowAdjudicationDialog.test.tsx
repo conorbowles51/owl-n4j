@@ -55,6 +55,7 @@ import {
   type RowAdjudication,
 } from "../api"
 import { RowAdjudicationDialog } from "./RowAdjudicationDialog"
+import { useFinancialDraftStore } from "../stores/financial-drafts"
 
 const CASE_ID = "case-1"
 
@@ -150,6 +151,23 @@ function submitButton(): HTMLButtonElement {
 
 beforeEach(() => {
   vi.restoreAllMocks()
+  useFinancialDraftStore.setState({ drafts: {} })
+})
+
+it("restores an unfinished reason only for the same payment and status", () => {
+  const first = renderDialog()
+  giveGrounds("This is the repeated payment on statement page 2.")
+  first.unmount()
+  const reopened = renderDialog()
+  expect(screen.getByTestId("adjudication-reason-input")).toHaveValue(
+    "This is the repeated payment on statement page 2."
+  )
+  reopened.unmount()
+  const other = renderDialog(makeRow({ key: "txn-2" }))
+  expect(screen.getByTestId("adjudication-reason-input")).toHaveValue("")
+  other.unmount()
+  renderDialog(makeRow({ ledger_status: "quarantined" }))
+  expect(screen.getByTestId("adjudication-reason-input")).toHaveValue("")
 })
 
 /* ------------------------------------------------------------------ *

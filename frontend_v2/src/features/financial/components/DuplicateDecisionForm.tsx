@@ -1,5 +1,6 @@
 import { useFinancialAccess } from "../hooks/use-financial-access"
-import { useRef, useState } from "react"
+import { useRef } from "react"
+import { useFinancialDraft } from "../stores/financial-drafts"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { z } from "zod"
 import { ApiError, fetchAPI } from "@/lib/api-client"
@@ -31,7 +32,11 @@ function DuplicateDecisionFormForm({
   selection: DuplicateSelection
   onClose: () => void
 }) {
-  const [reason, setReason] = useState("")
+  const [reason, setReason, clearReason] = useFinancialDraft(
+    selection.caseId,
+    `duplicate-decision:${JSON.stringify([selection.document.document_id, selection.document.revision, selection.primary?.document_id, selection.primary?.revision])}`,
+    ""
+  )
   const lock = useRef(false)
   const client = useQueryClient()
   const action = selection.primary ? "exclude" : "restore"
@@ -79,6 +84,7 @@ function DuplicateDecisionFormForm({
         queryKey: ["financial-decisions", variables.selected.caseId],
       })
     },
+    onSuccess: () => clearReason(),
   })
   const refused =
     mutation.error instanceof ApiError &&
@@ -139,6 +145,12 @@ function DuplicateDecisionFormForm({
           onChange={(event) => setReason(event.target.value)}
         />
       </label>
+      {!mutation.isSuccess && (
+        <p className="text-sm text-muted-foreground">
+          Your explanation is kept in this browser tab for these document
+          versions. Reopen the same comparison after refresh to continue.
+        </p>
+      )}
       {mutation.isSuccess && (
         <p role="status">
           Decision recorded. {mutation.data.changed_rows} rows{" "}
@@ -175,5 +187,10 @@ export function DuplicateDecisionForm(
   props: Parameters<typeof DuplicateDecisionFormForm>[0]
 ) {
   const { canEdit } = useFinancialAccess()
-  return canEdit ? <DuplicateDecisionFormForm {...props} /> : null
+  return canEdit ? (
+    <DuplicateDecisionFormForm
+      key={JSON.stringify(props.selection)}
+      {...props}
+    />
+  ) : null
 }

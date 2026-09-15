@@ -8,10 +8,12 @@ export function ClaimEvidencePicker({
   caseId,
   value,
   onChange,
+  disabled = false,
 }: {
   caseId: string
   value: { id: string; label: string } | null
   onChange: (value: { id: string; label: string }) => void
+  disabled?: boolean
 }) {
   const [search, setSearch] = useState(""),
     [view, setView] = useState(false)
@@ -35,7 +37,7 @@ export function ClaimEvidencePicker({
       <Button
         type="button"
         variant="outline"
-        disabled={load.isPending}
+        disabled={disabled || load.isPending}
         onClick={() => load.mutate()}
       >
         Search claim sources
@@ -48,6 +50,7 @@ export function ClaimEvidencePicker({
               key={item.target_id}
               type="button"
               variant="outline"
+              disabled={disabled}
               onClick={() =>
                 onChange({ id: item.target_id, label: item.label })
               }
@@ -62,7 +65,10 @@ export function ClaimEvidencePicker({
             </p>
           )}
           {load.data.items.length === 20 && (
-            <p>Showing the first20 matches; refine the search if needed.</p>
+            <p>
+              Showing the first 20 matches. Narrow the search to find another
+              file.
+            </p>
           )}
         </div>
       )}

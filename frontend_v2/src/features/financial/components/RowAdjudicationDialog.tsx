@@ -93,7 +93,7 @@ import { useFinancialAccess } from "../hooks/use-financial-access"
  */
 
 import { CircleHelp, TriangleAlert } from "lucide-react"
-import { useState } from "react"
+import { useFinancialDraft } from "../stores/financial-drafts"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -430,7 +430,11 @@ function RowAdjudicationDialogForm({
   open,
   onClose,
 }: RowAdjudicationDialogProps) {
-  const [reason, setReason] = useState("")
+  const [reason, setReason, clearReason] = useFinancialDraft(
+    caseId ?? "none",
+    `row-decision:${row.key}:${row.ledger_status}`,
+    ""
+  )
   const adjudication = useRowAdjudication(caseId)
 
   const status = readLedgerStatus(row.ledger_status)
@@ -448,7 +452,7 @@ function RowAdjudicationDialogForm({
     // on a different row cannot show the previous row's answer for the frame
     // before anything replaces it.
     adjudication.reset()
-    setReason("")
+    clearReason()
     onClose()
   }
 
@@ -496,6 +500,10 @@ function RowAdjudicationDialogForm({
                 onChange={(e) => setReason(e.target.value)}
               />
               <p className="text-xs text-muted-foreground">{copy.reasonHelp}</p>
+              <p className="text-xs text-muted-foreground">
+                Your unfinished reason is kept after refresh in this browser
+                tab. Cancel discards it.
+              </p>
             </div>
           )}
 

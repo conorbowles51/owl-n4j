@@ -10,13 +10,15 @@ vi.mock("../hooks/use-financial-access", async (importOriginal) => ({
 }))
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
-import { afterEach, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, expect, it, vi } from "vitest"
+import { useFinancialDraftStore } from "../stores/financial-drafts"
 import {
   DuplicateDecisionForm,
   type DuplicateSelection,
 } from "./DuplicateDecisionForm"
 
 afterEach(() => vi.restoreAllMocks())
+beforeEach(() => useFinancialDraftStore.setState({ drafts: {} }))
 const selection: DuplicateSelection = {
   caseId: "original-case",
   document: {
@@ -30,6 +32,35 @@ const selection: DuplicateSelection = {
     revision: "b".repeat(64),
   },
 }
+
+it("retains duplicate reasons for matching document versions only", () => {
+  const client = new QueryClient()
+  const show = (selected: DuplicateSelection) => (
+    <QueryClientProvider client={client}>
+      <DuplicateDecisionForm selection={selected} onClose={() => {}} />
+    </QueryClientProvider>
+  )
+  const first = render(show(selection))
+  fireEvent.change(screen.getByLabelText("Reason for this decision"), {
+    target: { value: "Same account, period and all twelve payments." },
+  })
+  first.unmount()
+  const reopened = render(show(selection))
+  expect(screen.getByLabelText("Reason for this decision")).toHaveValue(
+    "Same account, period and all twelve payments."
+  )
+  reopened.rerender(
+    show({
+      ...selection,
+      document: { ...selection.document, revision: "c".repeat(64) },
+    })
+  )
+  expect(screen.getByLabelText("Reason for this decision")).toHaveValue("")
+  reopened.rerender(show(selection))
+  expect(screen.getByLabelText("Reason for this decision")).toHaveValue(
+    "Same account, period and all twelve payments."
+  )
+})
 function mount(selected = selection) {
   const client = new QueryClient()
   const invalidate = vi.spyOn(client, "invalidateQueries")
