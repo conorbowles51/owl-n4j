@@ -1,3 +1,5 @@
+import { useFinancialDraft } from "../stores/financial-drafts"
+import { useOtherRecordsView } from "../hooks/use-other-records-view"
 import { useFinancialViewNavigation } from "../hooks/use-financial-view-navigation"
 import { useEvidenceReportDownload } from "../hooks/use-evidence-report-download"
 import { useFinancialAccess } from "../hooks/use-financial-access"
@@ -24,12 +26,7 @@ import { LedgerPostingGraph } from "./LedgerPostingGraph"
 import { LedgerTransfersWorkbench } from "./LedgerTransfersWorkbench"
 import { LedgerTracingWorkbench } from "./LedgerTracingWorkbench"
 import { LedgerCounterpartiesAnalysis } from "./LedgerCounterpartiesAnalysis"
-import {
-  useCallback,
-  useMemo,
-  useState,
-  type ReactNode,
-} from "react"
+import { useCallback, useMemo, useState, type ReactNode } from "react"
 import { useParams } from "react-router-dom"
 import { BarChart3, DollarSign, Users } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -103,6 +100,7 @@ function FinancialPageContent() {
   const { canEdit } = useFinancialAccess()
   const store = useFinancialStore()
   useFinancialViewNavigation(caseId)
+  useOtherRecordsView(caseId)
   const currentCase = useCase(caseId)
   const {
     download: downloadEvidenceReport,
@@ -125,10 +123,28 @@ function FinancialPageContent() {
   const usesLegacyFinancialModel =
     transactionsResponse?.uses_legacy_financial_model ?? false
   const isTransactionsMode = store.mode === "transactions"
-  const [selectedSenders, setSelectedSenders] = useState<Set<string>>(new Set())
-  const [selectedBeneficiaries, setSelectedBeneficiaries] = useState<
-    Set<string>
-  >(new Set())
+  const [partyView, setPartyView] = useFinancialDraft<{
+    senders: string[]
+    beneficiaries: string[]
+  }>(caseId || "", "other-record-parties", { senders: [], beneficiaries: [] })
+  const selectedSenders = useMemo(
+    () => new Set(partyView.senders),
+    [partyView.senders]
+  )
+  const selectedBeneficiaries = useMemo(
+    () => new Set(partyView.beneficiaries),
+    [partyView.beneficiaries]
+  )
+  const setSelectedSenders = useCallback(
+    (values: Set<string>) =>
+      setPartyView((current) => ({ ...current, senders: [...values] })),
+    [setPartyView]
+  )
+  const setSelectedBeneficiaries = useCallback(
+    (values: Set<string>) =>
+      setPartyView((current) => ({ ...current, beneficiaries: [...values] })),
+    [setPartyView]
+  )
 
   const categorize = useCategorize(caseId!)
   const batchCategorize = useBatchCategorize(caseId!)
@@ -148,6 +164,7 @@ function FinancialPageContent() {
     filteredCount,
     pageCount,
     categoryCounts,
+    currentPage: visibleRecordsPage,
   } = useFilteredTransactions(transactions, {
     searchQuery: store.searchQuery,
     selectedCategories: store.selectedCategories,
@@ -347,11 +364,12 @@ function FinancialPageContent() {
 
   const handleModeChange = useCallback(
     (mode: FinancialDatasetMode) => {
+      if (mode === store.mode) return
       store.setMode(mode)
       setSelectedSenders(new Set())
       setSelectedBeneficiaries(new Set())
     },
-    [store]
+    [store, setSelectedSenders, setSelectedBeneficiaries]
   )
 
   const handleSelectedSendersChange = useCallback(
@@ -359,7 +377,7 @@ function FinancialPageContent() {
       setSelectedSenders(value)
       store.setCurrentPage(0)
     },
-    [store]
+    [store, setSelectedSenders]
   )
 
   const handleSelectedBeneficiariesChange = useCallback(
@@ -367,7 +385,7 @@ function FinancialPageContent() {
       setSelectedBeneficiaries(value)
       store.setCurrentPage(0)
     },
-    [store]
+    [store, setSelectedBeneficiaries]
   )
 
   const handleExportPdf = useCallback(() => {
@@ -906,6 +924,7 @@ function FinancialPageContent() {
                     <div className="flex-1 overflow-auto">
                       <ErrorBoundary level="section">
                         <TransactionTable
+                          caseId={caseId}
                           mode={store.mode}
                           transactions={pageTransactions}
                           allTransactions={filteredTransactions}
@@ -922,7 +941,7 @@ function FinancialPageContent() {
                     </div>
 
                     <TablePagination
-                      currentPage={store.currentPage}
+                      currentPage={visibleRecordsPage}
                       pageCount={pageCount}
                       pageSize={store.pageSize}
                       filteredCount={filteredCount}

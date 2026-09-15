@@ -128,13 +128,17 @@ export const useFinancialStore = create<FinancialStore>()(
       ...initialState,
 
       setMode: (mode) =>
-        set({
-          mode,
-          currentPage: 0,
-          checkedKeys: new Set<string>(),
-          lastClickedKey: null,
-          expandedRowKeys: new Set<string>(),
-        }),
+        set((state) =>
+          state.mode === mode
+            ? state
+            : {
+                mode,
+                currentPage: 0,
+                checkedKeys: new Set<string>(),
+                lastClickedKey: null,
+                expandedRowKeys: new Set<string>(),
+              }
+        ),
       setSearchQuery: (query) => set({ searchQuery: query, currentPage: 0 }),
 
       setSelectedTypes: (types) =>

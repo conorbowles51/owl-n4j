@@ -105,6 +105,8 @@ Older manual reviews may use terms such as candidate, resolved reading or finali
 
 **Imported statement payments** and **Other financial records** are separate sets of information. Use the first for the statement workflow in this guide. The second contains information extracted from other evidence. An amount mentioned in a letter or interview is not automatically a bank transaction. Use the payment-claim comparison in Patterns to compare such a statement with recorded payments.
 
+When you use **Other financial records**, refreshing retains that view. Your search, category, person, date and amount filters, sort order, table page and expanded records are kept for the same user and case in this browser tab. Opening another case starts with that case’s own filters. Use **Reset all** above the filters to clear the search and filters. To return to bank payments, select **Imported statement payments**.
+
 To read a record, select its name or the arrow beside it. The details show its recorded amount and currency, source file, page, source text and any existing notes. Select the name or arrow again to close it. An absent source or currency is labelled as missing. The **Purpose**, **Counterparty Details** and **Notes** values here are read-only.
 
 Select **Open original file** in these details to open the linked evidence. A PDF opens at the recorded page. Use the arrows beside the page number to move backwards and forwards. The page count shows where the document ends. Use **+**, **−** or **Fit page width** to change the display size. If a page fails to load, select **Retry page**. Select **Close** at the top right of the viewer to return to the same record and filters. If no source file is linked, the details tell you to look in Evidence.

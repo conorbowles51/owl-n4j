@@ -9,6 +9,7 @@ import { DocumentViewer } from "@/components/ui/document-viewer"
 import { evidenceAPI } from "@/features/evidence/api"
 
 interface TransactionDetailPanelProps {
+  caseId?: string
   transaction: Transaction
   editable?: boolean
   onSave: (fields: {
@@ -55,6 +56,7 @@ function createTransactionDraft(transaction: Transaction): TransactionDraft {
 }
 
 export function TransactionDetailPanel({
+  caseId,
   transaction,
   editable = true,
   onSave,
@@ -202,6 +204,7 @@ export function TransactionDetailPanel({
                 }
                 navigationKey={transaction.key}
                 evidenceId={transaction.source_document_id}
+                caseId={caseId}
               />
             </>
           ) : (

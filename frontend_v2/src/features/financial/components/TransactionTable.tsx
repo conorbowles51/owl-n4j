@@ -53,6 +53,7 @@ import { formatFinancialDate } from "../lib/date-utils"
 import { formatEvidenceAmount } from "../lib/evidence-amounts"
 
 interface TransactionTableProps {
+  caseId?: string
   mode: FinancialDatasetMode
   transactions: Transaction[]
   allTransactions: Transaction[]
@@ -70,6 +71,7 @@ interface TransactionTableProps {
 }
 
 export function TransactionTable({
+  caseId,
   mode,
   transactions,
   allTransactions,
@@ -276,6 +278,7 @@ export function TransactionTable({
               return (
                 <TransactionRow
                   key={tx.key}
+                  caseId={caseId}
                   tx={tx}
                   editable={editable}
                   canEditRecord={canEdit}
@@ -303,6 +306,7 @@ export function TransactionTable({
 }
 
 interface TransactionRowProps {
+  caseId?: string
   tx: Transaction
   editable: boolean
   canEditRecord: boolean
@@ -325,6 +329,7 @@ interface TransactionRowProps {
 }
 
 function TransactionRow({
+  caseId,
   tx,
   editable,
   canEditRecord,
@@ -654,6 +659,7 @@ function TransactionRow({
         <TableRow>
           <TableCell colSpan={editable ? 12 : 10} className="p-0">
             <TransactionDetailPanel
+              caseId={caseId}
               transaction={tx}
               editable={editable}
               onSave={(fields) => onSaveDetails(tx.key, fields)}

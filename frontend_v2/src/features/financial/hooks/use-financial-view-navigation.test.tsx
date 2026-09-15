@@ -104,3 +104,41 @@ it("falls back to Transactions for an unsupported tab", () => {
     "transactions"
   )
 })
+it("retains Other financial records in the URL across refresh and tab changes", async () => {
+  const first = setup()
+  act(() => useFinancialStore.getState().setMode("intelligence"))
+  await waitFor(() =>
+    expect(screen.getByLabelText("Location")).toHaveTextContent(
+      "dataset=other-records"
+    )
+  )
+  act(() => useFinancialStore.getState().setMainView("trends"))
+  await waitFor(() =>
+    expect(screen.getByLabelText("Location")).toHaveTextContent(
+      "view=trends&dataset=other-records"
+    )
+  )
+  act(() => useFinancialStore.getState().setCurrentPage(3))
+  act(() => useFinancialStore.getState().setMainView("counterparties"))
+  expect(useFinancialStore.getState().currentPage).toBe(3)
+  const url = screen.getByLabelText("Location").textContent!
+  first.unmount()
+  useFinancialStore.getState().reset()
+  setup(url)
+  expect(useFinancialStore.getState().mode).toBe("intelligence")
+  expect(screen.getByLabelText("Financial tab")).toHaveTextContent(
+    "counterparties"
+  )
+  act(() => useFinancialStore.getState().setMode("transactions"))
+  await waitFor(() =>
+    expect(screen.getByLabelText("Location")).not.toHaveTextContent("dataset=")
+  )
+})
+it("does not carry the other-records dataset to a fresh case URL", async () => {
+  setup("/cases/first/financial?dataset=other-records")
+  expect(useFinancialStore.getState().mode).toBe("intelligence")
+  fireEvent.click(screen.getByRole("link", { name: "Another case" }))
+  await waitFor(() =>
+    expect(useFinancialStore.getState().mode).toBe("transactions")
+  )
+})

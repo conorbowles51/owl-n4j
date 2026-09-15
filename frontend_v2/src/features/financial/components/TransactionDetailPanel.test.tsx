@@ -12,18 +12,27 @@ vi.mock("@/components/ui/document-viewer", () => ({
     documentUrl,
     documentName,
     initialPage,
+    caseId,
+    evidenceId,
     onOpenChange,
   }: {
     open: boolean
     documentUrl: string
     documentName: string
     initialPage: number
+    caseId?: string
+    evidenceId?: string
     onOpenChange: (open: boolean) => void
   }) =>
     open ? (
       <section aria-label="Original file viewer">
         <a href={documentUrl}>{documentName}</a>
         <p>Page {initialPage}</p>
+        {caseId && evidenceId && (
+          <a href={`/cases/${caseId}/evidence?file=${evidenceId}`}>
+            Open file location
+          </a>
+        )}
         <button onClick={() => onOpenChange(false)}>Close original</button>
       </section>
     ) : null,
@@ -42,6 +51,7 @@ it("opens the linked original at its recorded page even without an exact text lo
   } as Transaction
   render(
     <TransactionDetailPanel
+      caseId="case-a"
       transaction={transaction}
       editable={false}
       onSave={vi.fn()}
@@ -56,6 +66,9 @@ it("opens the linked original at its recorded page even without an exact text lo
     "/api/evidence/source-file/file"
   )
   expect(screen.getByText("Page 2")).toBeVisible()
+  expect(
+    screen.getByRole("link", { name: "Open file location" })
+  ).toHaveAttribute("href", "/cases/case-a/evidence?file=source-file")
   fireEvent.click(screen.getByRole("button", { name: "Close original" }))
   expect(
     screen.queryByRole("region", { name: "Original file viewer" })

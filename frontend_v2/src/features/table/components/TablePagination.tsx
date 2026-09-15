@@ -1,4 +1,9 @@
-import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react"
+import {
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+} from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   Select,
@@ -28,7 +33,10 @@ export function TablePagination({
   onPageSizeChange,
 }: TablePaginationProps) {
   const start = pageSize === -1 ? 1 : currentPage * pageSize + 1
-  const end = pageSize === -1 ? filteredCount : Math.min((currentPage + 1) * pageSize, filteredCount)
+  const end =
+    pageSize === -1
+      ? filteredCount
+      : Math.min((currentPage + 1) * pageSize, filteredCount)
 
   return (
     <div className="flex items-center justify-between border-t border-border px-4 py-1.5">
@@ -61,6 +69,7 @@ export function TablePagination({
         <Button
           variant="ghost"
           size="icon-sm"
+          aria-label="First table page"
           onClick={() => onPageChange(0)}
           disabled={currentPage === 0}
         >
@@ -69,6 +78,7 @@ export function TablePagination({
         <Button
           variant="ghost"
           size="icon-sm"
+          aria-label="Previous table page"
           onClick={() => onPageChange(currentPage - 1)}
           disabled={currentPage === 0}
         >
@@ -82,6 +92,7 @@ export function TablePagination({
         <Button
           variant="ghost"
           size="icon-sm"
+          aria-label="Next table page"
           onClick={() => onPageChange(currentPage + 1)}
           disabled={currentPage >= pageCount - 1}
         >
@@ -90,6 +101,7 @@ export function TablePagination({
         <Button
           variant="ghost"
           size="icon-sm"
+          aria-label="Last table page"
           onClick={() => onPageChange(pageCount - 1)}
           disabled={currentPage >= pageCount - 1}
         >

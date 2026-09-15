@@ -27,6 +27,7 @@ interface FilteredResult {
   pageTransactions: Transaction[]
   filteredCount: number
   pageCount: number
+  currentPage: number
   categoryCounts: Map<string, number>
 }
 
@@ -98,11 +99,12 @@ export function useFilteredTransactions(
   const pageCount =
     pageSize === -1 ? 1 : Math.max(1, Math.ceil(filteredCount / pageSize))
 
+  const visiblePage = Math.max(0, Math.min(currentPage, pageCount - 1))
   const pageTransactions = useMemo(() => {
     if (pageSize === -1) return filteredTransactions
-    const start = currentPage * pageSize
+    const start = visiblePage * pageSize
     return filteredTransactions.slice(start, start + pageSize)
-  }, [filteredTransactions, pageSize, currentPage])
+  }, [filteredTransactions, pageSize, visiblePage])
 
   return {
     baseFilteredTransactions,
@@ -110,6 +112,7 @@ export function useFilteredTransactions(
     pageTransactions,
     filteredCount,
     pageCount,
+    currentPage: visiblePage,
     categoryCounts,
   }
 }

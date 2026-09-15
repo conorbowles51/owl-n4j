@@ -44,7 +44,10 @@ describe("financial store, global display preferences", () => {
   it("discards a tab left by an older build and keeps the rest", () => {
     const merge = (
       useFinancialStore.persist.getOptions() as {
-        merge?: (persisted: unknown, current: unknown) => Record<string, unknown>
+        merge?: (
+          persisted: unknown,
+          current: unknown
+        ) => Record<string, unknown>
       }
     ).merge
 
@@ -59,4 +62,14 @@ describe("financial store, global display preferences", () => {
     expect(merged.pageSize).toBe(200)
     expect(merged.mode).toBe("transactions")
   })
+})
+it("does not discard the current page or open record when the already-active dataset is chosen", () => {
+  useFinancialStore.getState().setMode("intelligence")
+  useFinancialStore.getState().setCurrentPage(2)
+  useFinancialStore.getState().toggleExpandedRow("record-a")
+  useFinancialStore.getState().setMode("intelligence")
+  expect(useFinancialStore.getState().currentPage).toBe(2)
+  expect(useFinancialStore.getState().expandedRowKeys.has("record-a")).toBe(
+    true
+  )
 })

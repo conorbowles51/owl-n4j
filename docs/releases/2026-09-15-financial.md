@@ -156,3 +156,7 @@ Payment table filters, sorting and pagination now survive opening the original f
 ### Returning to saved findings and recovering failed lists
 
 The active financial tab is retained in its URL, so refresh and browser Back return to Findings after opening a note in Workspace. Findings searches/pages and report-list pages remain separate for each user and case in the current browser tab. Failed loads offer retry buttons without clearing the search or report selection. Fifty-one focused navigation, list, page and store checks passed, with two final affected page checks after correcting duplicate React keys. The running browser verified the actual return and failure/retry workflows without changing saved notes or payment records. TypeScript, scoped lint and production build passed.
+
+### Retaining the other-record investigation view
+
+Other financial records now remains selected after refresh. Searches, category/person/date/amount filters, ordering, table page and expanded records survive the trip from an original PDF to Evidence and back. Each case and signed-in user has separate browser-tab settings. Reset all retains the cleared view; selecting the current dataset does not collapse records. Pagination stays within the available results after a reload. Original-file viewers in this area now offer Open file location. Fifty-six focused checks, TypeScript, scoped lint and production build passed. The actual two-case browser check retained views and compared all five/six supporting records and nine bank payments unchanged.

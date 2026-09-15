@@ -1,3 +1,4 @@
+import { useFinancialDraftStore } from "../stores/financial-drafts"
 // This existing workflow fixture has case editing and upload access.
 vi.mock("../hooks/use-financial-access", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../hooks/use-financial-access")>()),
@@ -92,6 +93,7 @@ vi.mock("../hooks/use-proof-standing", () => ({
 }))
 
 beforeEach(() => {
+  useFinancialDraftStore.setState({ drafts: {} })
   useStatementWorkspace.setState({ selections: {}, reviewChoices: {} })
   standing.useProofStanding.mockReturnValue({
     data: proofStanding(),

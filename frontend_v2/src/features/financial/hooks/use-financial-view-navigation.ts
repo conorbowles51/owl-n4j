@@ -17,12 +17,22 @@ export function useFinancialViewNavigation(caseId: string | undefined) {
       ? (requested as FinancialMainView)
       : "transactions"
     useFinancialStore.getState().setMainView(view)
+    const mode =
+      params.get("dataset") === "other-records"
+        ? "intelligence"
+        : "transactions"
+    if (useFinancialStore.getState().mode !== mode)
+      useFinancialStore.getState().setMode(mode)
     return useFinancialStore.subscribe((state, previous) => {
-      if (state.mainView === previous.mainView) return
+      if (state.mainView === previous.mainView && state.mode === previous.mode)
+        return
       setParams(
         (current) => {
           const next = new URLSearchParams(current)
           next.set("view", state.mainView)
+          if (state.mode === "intelligence")
+            next.set("dataset", "other-records")
+          else next.delete("dataset")
           return next
         },
         { replace: true }
