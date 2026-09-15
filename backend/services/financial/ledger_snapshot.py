@@ -28,6 +28,11 @@ def capture_ledger_snapshot(session, *, case_id, account_id=None, start_date=Non
 
 MAX_EXPORT_DECISIONS = 10000
 MAX_EXPORT_BYTES = 16 * 1024 * 1024
+# Complete ledger snapshots include both payment citations and the original
+# statement readings. A few thousand payments can legitimately exceed the
+# smaller report/scenario allowance. Keep those allowances independent.
+MAX_LEDGER_SNAPSHOT_BYTES = 64 * 1024 * 1024
+MAX_LEDGER_ARCHIVE_BYTES = 128 * 1024 * 1024
 
 
 @dataclass(frozen=True)
@@ -127,8 +132,8 @@ def capture_ledger_export(engine, *, case_id, account_id=None, start_date=None, 
                     document['limitations'].append('Bundled source files were read and matched to their recorded ingestion hashes for this export. This checks retained bytes, not source authenticity.')
                 content=json.dumps(document,sort_keys=True,separators=(',',':'),ensure_ascii=False,allow_nan=False)
     encoded=content.encode('utf-8')
-    if len(encoded)>MAX_EXPORT_BYTES:
-        raise LedgerSummaryError('Export exceeds 16 MiB; narrow the scope. No partial export was produced.')
+    if len(encoded)>MAX_LEDGER_SNAPSHOT_BYTES:
+        raise LedgerSummaryError('The complete ledger record exceeds 64 MiB. Choose one account or a shorter date range to export. No partial export was produced.')
     snapshot=LedgerSnapshot(content,hashlib.sha256(encoded).hexdigest(),len(encoded))
     manifest=dict(schema='loupe.financial.ledger_export_manifest/1',digest_covers='ledger_snapshot_json_utf8',
         document_sha256=snapshot.sha256,byte_count=snapshot.byte_count,
@@ -171,21 +176,27 @@ def ledger_export_archive(export, *, include_pdf=False):
         raise LedgerSummaryError('Expert support inventory exceeds the export limit; no partial export was produced.')
     manifest['expert_support'] = dict(filename='expert-support.json',sha256=hashlib.sha256(support_bytes).hexdigest(),
         byte_count=len(support_bytes),derived_from_sha256=export.snapshot.sha256,completeness='incomplete_expert_packet')
+    snapshot_bytes = export.snapshot.content.encode('utf-8')
+    if len(snapshot_bytes) > MAX_LEDGER_SNAPSHOT_BYTES:
+        raise LedgerSummaryError('The complete ledger record exceeds 64 MiB. Choose one account or a shorter date range to export. No partial export was produced.')
+    members = [('ledger-snapshot.json', snapshot_bytes),
+        ('manifest.json', json.dumps(manifest, sort_keys=True, separators=(',', ':')).encode('utf-8')),
+        ('ledger-report.html', report_bytes), ('expert-support.json', support_bytes)]
+    if pdf is not None:
+        members.append(('ledger-report.pdf', pdf))
+    members.extend((item['archive_path'], item['content']) for item in export.source_files)
+    if sum(len(content) for _, content in members) > MAX_LEDGER_ARCHIVE_BYTES:
+        raise LedgerSummaryError('The export and its source files exceed 128 MiB. Choose one account or a shorter date range to export. No partial export was produced.')
     stream=io.BytesIO()
     with zipfile.ZipFile(stream,'w',compression=zipfile.ZIP_DEFLATED) as archive:
-        for name,content in (('ledger-snapshot.json',export.snapshot.content),('manifest.json',json.dumps(manifest,sort_keys=True,separators=(',',':'))), ('ledger-report.html',report), ('expert-support.json',support)):
+        for name,content in members:
             info=zipfile.ZipInfo(name,date_time=(1980,1,1,0,0,0))
             info.compress_type=zipfile.ZIP_DEFLATED
-            archive.writestr(info,content.encode('utf-8'))
-        if pdf is not None:
-            info = zipfile.ZipInfo('ledger-report.pdf', date_time=(1980,1,1,0,0,0))
-            info.compress_type = zipfile.ZIP_DEFLATED
-            archive.writestr(info, pdf)
-        for item in export.source_files:
-            info=zipfile.ZipInfo(item['archive_path'],date_time=(1980,1,1,0,0,0))
-            info.compress_type=zipfile.ZIP_DEFLATED
-            archive.writestr(info,item['content'])
-    return stream.getvalue()
+            archive.writestr(info,content)
+    archive_bytes = stream.getvalue()
+    if len(archive_bytes) > MAX_LEDGER_ARCHIVE_BYTES:
+        raise LedgerSummaryError('The compressed export exceeds 128 MiB. Choose one account or a shorter date range to export.')
+    return archive_bytes
 
 
 def render_ledger_report(snapshot):
@@ -214,11 +225,12 @@ def render_ledger_report(snapshot):
         except (MoneyError, ValueError, TypeError):
             return value + ' minor units (unscaled: unsupported currency)'
 
-    def table(headers, rows, widths=None):
+    def table(headers, rows, widths=None, row_ids=None):
         columns = ('<colgroup>' + ''.join('<col style="width:' + str(width) + '%">' for width in widths) + '</colgroup>') if widths else ''
-        return '<table>' + columns + '<thead><tr>' + ''.join('<th>' + text(h) + '</th>' for h in headers) + (
-            '</tr></thead><tbody>' + ''.join('<tr>' + ''.join('<td>' + text(v) + '</td>' for v in row)
-            + '</tr>' for row in rows) + '</tbody></table>')
+        return ('<table class="payments">' if row_ids else '<table>') + columns + '<thead><tr>' + ''.join('<th>' + text(h) + '</th>' for h in headers) + (
+            '</tr></thead><tbody>' + ''.join(('<tr id="transaction-' + text(row_ids[index]) + '">' if row_ids else '<tr>')
+            + ''.join('<td>' + text(v) + '</td>' for v in row)
+            + '</tr>' for index, row in enumerate(rows)) + '</tbody></table>')
 
     def custody_entries(events):
         rendered = []
@@ -247,6 +259,7 @@ def render_ledger_report(snapshot):
         '<meta name="viewport" content="width=device-width, initial-scale=1">',
         '<title>Loupe ledger report</title><style>body{font:16px system-ui,sans-serif;max-width:1100px;margin:2rem auto;padding:0 1rem;color:#172033}',
         'table{border-collapse:collapse;width:100%;margin:1rem 0}th,td{border:1px solid #aaa;padding:.5rem;text-align:left;overflow-wrap:anywhere}',
+        '.payments{table-layout:fixed}.payments td:first-child{overflow-wrap:normal}',
         'pre{white-space:pre-wrap;overflow-wrap:anywhere}article{border-top:1px solid #aaa;margin-top:1rem;padding-top:1rem}',
         '@media print{details>*{display:block}thead{display:table-header-group}body{max-width:none}}</style></head><body>',
         '<h1>Loupe ledger report</h1><p>Captured account postings and recorded decisions.</p>',
@@ -332,7 +345,26 @@ def render_ledger_report(snapshot):
             actor.get('name') or actor.get('email') or actor.get('id') or 'Not recorded',context['generated_at'],marking]]),
             '<p>' + text(context['marking_basis']) + '</p>']
     parts += ['<h2>Captured readings</h2><p>Readings excluded from verified totals are retained for review. Current admitted P3 readings can enter the separate working totals. Displayed by ordering date; same-day display order does not establish bank sequence.</p>']
-    for reading in sorted(ledger['readings'], key=lambda value:(value['row']['ordering_date'],value['row']['key'])):
+    ordered_readings = sorted(ledger['readings'], key=lambda value:(value['row']['ordering_date'],value['row']['key']))
+    compact = len(ordered_readings) > 200
+    if compact:
+        source_names = {f['id']: f['original_filename'] for f in (document.get('processing_provenance') or {}).get('evidence_registrations', [])}
+        exclusion_labels = dict(proof_class_not_included='Not source verified', superseded='Replaced',
+            quarantined='Held for review', rejected='Rejected', source_not_admitted='Source excluded')
+        parts += ['<p>Every captured payment is listed below. Its full original fields, source locations, corrections and processing records are retained in the accompanying <a href="ledger-snapshot.json">ledger-snapshot.json</a>. Keep both files together. Source and transaction identifiers below locate the matching record in that file.</p>',
+            table(['Date', 'Account', 'Description', 'Credit', 'Debit', 'Recorded balance', 'Review', 'Reference / source'], [[
+                r['row']['ordering_date'] + (' (statement end; payment date unknown)' if r['row'].get('ordering_date_context') == 'statement_end_ordering_only' else ''),
+                ('Credit card: ' if (r.get('account') or {}).get('account_type') == 'credit_card' else '')
+                    + ((r.get('account') or {}).get('label') or r['row']['account_id']),
+                r['row']['description'],
+                money_display(r['row']['amount_minor'], r['row']['currency'], exact=False) if r['row']['direction'] == 'credit' else '',
+                money_display(r['row']['amount_minor'], r['row']['currency'], exact=False) if r['row']['direction'] == 'debit' else '',
+                money_display(r['row']['running_balance_minor'], r['row']['currency'], exact=False) if r['row'].get('running_balance_minor') is not None else 'Not recorded',
+                'In verified totals' if r['included'] else exclusion_labels.get(r['exclusion_reason'], str(r['exclusion_reason'])),
+                str(r['row'].get('ref_id') or r['row']['key']) + ' / ' + source_names.get(r['source'].get('evidence_file_id'), r['source']['id'])
+                    + ' / PDF page ' + str((r['row'].get('locator') or {}).get('page') or 'Not recorded')]
+                for r in ordered_readings], widths=[12,14,22,10,10,11,9,12], row_ids=[r['row']['key'] for r in ordered_readings])]
+    for reading in ([] if compact else ordered_readings):
         row = reading['row']
         parts += ['<article><h3>Reading ' + text(row.get('ref_id') or row['key']) + '</h3>',
             table(['Included in verified totals', 'Ordering date', 'Description', 'Direction', 'Currency', 'Amount (exact minor units in brackets)'],
@@ -420,9 +452,14 @@ def render_ledger_report(snapshot):
         parts += [details('Mapping source revisions and model requests', methods['methods'])]
     processing = document.get('processing_provenance')
     if processing:
+        displayed_processing = processing
+        if compact:
+            displayed_processing = {**processing, 'statement_import_history': [
+                {key: value for key, value in item.items() if key not in ('original', 'confirmation')}
+                for item in processing.get('statement_import_history', [])]}
         parts += ['<h2>Recorded processing versions</h2><p>' + text(processing['limitation']) + '</p>',
             table(['Run', 'Code version', 'Ruleset', 'Started', 'Completed'], [[r['id'],r['code_version'] or 'Unknown',r['ruleset_version'] or 'Unknown',r['started_at'] or 'Unknown',r['completed_at'] or 'Unknown'] for r in processing['runs']]),
-            details('Recorded source registration, parsers and processing operators',processing)]
+            details('Recorded source registration, parsers and processing operators',displayed_processing)]
     if processing and processing.get('custody_reports'):
         parts += ['<h2>Reported source custody</h2>']
         for custody in processing['custody_reports']:

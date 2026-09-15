@@ -3,11 +3,25 @@ import io
 import json
 import unittest
 from zipfile import ZipFile, ZIP_DEFLATED
+from unittest.mock import patch
 from services.financial.export_comparison import compare_ledger_exports, read_verified_ledger_archive
 from services.financial.ledger_summary import LedgerSummaryError
 
 
 class ExportComparisonTests(unittest.TestCase):
+    def test_full_statement_snapshot_can_exceed_the_smaller_report_allowance(self):
+        document = self.document()
+        document['processing_provenance'] = {'original_reading': 'x' * (17 * 1024 * 1024)}
+        archive = self.archive(document)
+        checked = read_verified_ledger_archive(archive)
+        self.assertEqual(checked['document'], document)
+        with patch('services.financial.export_comparison.MAX_LEDGER_SNAPSHOT_BYTES', 16 * 1024 * 1024):
+            with self.assertRaises(LedgerSummaryError):
+                read_verified_ledger_archive(archive)
+        with patch('services.financial.export_comparison.MAX_ARCHIVE_BYTES', 16 * 1024 * 1024):
+            with self.assertRaises(LedgerSummaryError):
+                read_verified_ledger_archive(archive)
+
     def document(self):
         return dict(schema='loupe.financial.ledger_snapshot/3', export_ready=True,
             ledger=dict(case_id='case', account_id=None, start_date=None, end_date=None, included_classes=['p1'],

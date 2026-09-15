@@ -138,7 +138,7 @@ If a file has not been read, select **Read statement** beside its name. If readi
 
 A file with saved imports shows its current imported payment count, account and recorded periods. This count is read from the case and remains available after reopening your browser. A PDF can contain other periods that have not been imported yet. Open the file to check those periods; the count does not mean the whole PDF is complete. Replaced or excluded payments are not included in this count.
 
-If a request fails, select **Refresh files** and inspect what arrived before uploading another copy. A connection failure can occur after the server received a file. Closing the browser tab can stop uploads that have not yet been sent. Refreshing the page clears the in-memory upload queue and page selections; uploaded files remain in the case, and saved review drafts can be restored by reopening the same statement and period in the same browser tab.
+If a request fails, select **Refresh files** and inspect what arrived before uploading another copy. A connection failure can occur after the server received a file. Closing the browser tab can stop uploads that have not yet been sent. Refreshing the page clears the upload queue shown on screen. Uploaded files remain in the case. The open statement, period, page and saved review draft are restored in the same browser tab.
 
 ![Statement file list, page controls and separate corrections using synthetic PDFs](images/13-statement-files.png)
 
@@ -202,6 +202,8 @@ If a file has not finished processing, wait for its status to complete. If readi
 ## Check the extracted statement
 
 ### Check the account and transaction count
+
+One statement review supports up to 1,000 possible transactions. Headings, page numbers and balance rows do not use that allowance. Unclear rows still count until checked. The complete review, including other page text, is limited to 10,000 rows. If a limit is reached, Loupe explains it and does not omit rows. Open a shorter statement period from the file list, or obtain statements for shorter periods.
 
 For statements without drawn table borders, Loupe uses the printed header positions to keep blank credit, debit and balance cells in their correct columns. If a row cannot be placed reliably, it is flagged for a layout check. Inspect its PDF before entering the values.
 
@@ -1004,7 +1006,9 @@ ZIP is a container of files. HTML is a report you open in a browser. JSON retain
 11. Check the case, exporter, preparation time, marking, account/date scope, populations, totals and limitations.
 12. Retain the original ZIP as well as any extracted viewing copy.
 
-The PDF option supports up to 2,000 captured readings. The originals option supports up to 100 files and 64 MiB. If a limit is exceeded, use a narrower documented scope or omit the optional PDF/originals as appropriate, then retain the needed separate captures. Do not describe several partial captures as one complete case export without checking their coverage.
+For more than 200 readings, the HTML report uses a compact table containing every payment and its source reference. Full original readings and corrections remain in `ledger-snapshot.json` alongside it. Keep the extracted files together.
+
+The complete ledger record supports up to 64 MiB, and the whole export, including originals, supports up to 128 MiB. The PDF option supports up to 2,000 captured readings. The originals option supports up to 100 files and 64 MiB. If a limit is exceeded, use a narrower documented scope or omit the optional PDF/originals as appropriate, then retain the needed separate captures. Do not describe several partial captures as one complete case export without checking their coverage.
 
 Originals are complete files. They may contain pages outside the selected account or date range. Review that scope before sharing. When originals are included, Loupe checks their bytes against the saved hashes. When they are not included, a recorded source hash is not a fresh check of the original file.
 

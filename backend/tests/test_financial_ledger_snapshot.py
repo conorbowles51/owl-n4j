@@ -82,6 +82,37 @@ class LedgerSnapshotTests(LedgerSummaryTests):
             self.assertEqual(json.loads(support)['derived_from_sha256'],snapshot.sha256)
             self.assertEqual(json.loads(support)['validation']['status'],'unavailable')
             self.assertEqual(json.loads(support)['completeness'],'incomplete_expert_packet')
+        with patch('services.financial.ledger_snapshot.MAX_LEDGER_ARCHIVE_BYTES', 1):
+            with self.assertRaisesRegex(LedgerSummaryError, '128 MiB'):
+                ledger_export_archive(LedgerExport(snapshot, '{}'))
+        with patch('services.financial.ledger_snapshot.MAX_LEDGER_SNAPSHOT_BYTES', 1):
+            with self.assertRaisesRegex(LedgerSummaryError, '64 MiB'):
+                ledger_export_archive(LedgerExport(snapshot, '{}'))
+
+    def test_large_readable_report_lists_every_payment_and_points_to_full_originals(self):
+        from copy import deepcopy
+        from services.financial.ledger_snapshot import LedgerSnapshot, render_ledger_report
+        self.add(1234)
+        document = json.loads(self.capture().content)
+        sample = document['ledger']['readings'][0]
+        document['ledger']['readings'] = []
+        for index in range(201):
+            row = deepcopy(sample)
+            row['row'].update(key=f'payment-{index}', description=f'Example payment {index}')
+            document['ledger']['readings'].append(row)
+        document['processing_provenance'] = dict(limitation='Recorded source', runs=[], statement_import_history=[
+            dict(source_document_id='source', original={'text': 'Full original retained only in JSON'},
+                 confirmation={'amount': '1234'}, original_sha256='a' * 64, confirmation_sha256='b' * 64)])
+        raw = json.dumps(document)
+        snapshot = LedgerSnapshot(raw, hashlib.sha256(raw.encode()).hexdigest(), len(raw.encode()))
+        report = render_ledger_report(snapshot)
+        for index in range(201):
+            self.assertIn(f'Example payment {index}</td>', report)
+            self.assertIn(f'id="transaction-payment-{index}"', report)
+        self.assertIn('href="ledger-snapshot.json"', report)
+        self.assertIn(snapshot.sha256, report)
+        self.assertNotIn('Full original retained only in JSON', report)
+        self.assertIn('Full original retained only in JSON', snapshot.content)
 
     def test_optional_pdf_is_bound_to_the_same_snapshot_manifest(self):
         import io, zipfile

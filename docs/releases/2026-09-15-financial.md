@@ -51,6 +51,18 @@ Signing in or out clears cached case queries, and delayed responses from an earl
 
 Twenty-two focused checks and the production build passed. A real temporary member lost and regained access while the financial case stayed open. A simulated expired-session response then led through sign-in back to Financial. The temporary member was removed. No financial records changed.
 
+## Continued volume and batch work
+
+Three 31-page synthetic PDFs now import 2,700 payments into three accounts. The review retains headings and page counters without treating them as payments. A statement allows 1,000 possible transactions plus its retained page text; large drafts survive refresh.
+
+PDF files run in separate processes. This fixes corruption and missing tables when the PDF library was used concurrently in threads. Progress, configured limits, worker crashes and cancellation are checked, including real OCR in a child process. Cancellation also stops the job's OCR process group on macOS/Linux.
+
+Ledger summaries no longer fetch each complete source reading once per payment. The 2,700-row financial table opened in 1.8 seconds locally. Pagination, both currencies, account/date filtering to 87 expected rows and source page 31 passed. All 2,700 dates, amounts, directions, balances, account links, currencies and source pages match the generated statement data.
+
+The whole-case export completed in 1.6 seconds locally. Its 18 MB JSON keeps every original reading and confirmation; its compact HTML lists all 2,700 payments. All three included PDFs match their originals byte for byte. Full ledger snapshots support 64 MiB and complete ZIPs remain bounded to 128 MiB, with the same bounds enforced on saved-file verification. Smaller report, scenario and PDF limits remain independent.
+
+Focused verification: 44 statement checks, six browser-draft checks, 47 PDF/OCR/geometry checks plus six final worker checks, 65 summary/snapshot checks and 39 affected export checks. These are overlapping focused groups, not a newly repeated full suite. Private synthetic acceptance records and captures are retained locally.
+
 ## Remaining acceptance
 
 Damaged scans can still require correction or a better source copy. The supplied-page checks and synthetic case journey do not establish independent extraction accuracy across all bank formats. The seven unique supplied PDFs have a retained prediction capture, but independent human reference reviews and an approved baseline have not been supplied. The application records those measurements as unavailable.

@@ -5,10 +5,10 @@ import json
 from pathlib import PurePosixPath
 from zipfile import ZipFile, BadZipFile
 
-from services.financial.ledger_snapshot import MAX_EXPORT_BYTES
+from services.financial.ledger_snapshot import MAX_EXPORT_BYTES, MAX_LEDGER_SNAPSHOT_BYTES, MAX_LEDGER_ARCHIVE_BYTES
 from services.financial.ledger_summary import LedgerSummaryError
 
-MAX_ARCHIVE_BYTES = 128 * 1024 * 1024
+MAX_ARCHIVE_BYTES = MAX_LEDGER_ARCHIVE_BYTES
 
 
 def _unique(pairs):
@@ -60,7 +60,7 @@ def read_verified_ledger_archive(content):
                 return data
 
             manifest = _json(read('manifest.json'))
-            raw = read('ledger-snapshot.json')
+            raw = read('ledger-snapshot.json', MAX_LEDGER_SNAPSHOT_BYTES)
             document = _json(raw)
             if (manifest['schema'] != 'loupe.financial.ledger_export_manifest/1'
                     or manifest['digest_covers'] != 'ledger_snapshot_json_utf8'
