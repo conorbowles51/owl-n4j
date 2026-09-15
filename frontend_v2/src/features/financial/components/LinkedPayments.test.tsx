@@ -9,10 +9,12 @@ vi.mock("../hooks/use-financial-access", async (importOriginal) => ({
   }),
 }))
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { fireEvent, render, screen } from "@testing-library/react"
+import { act, fireEvent, render, screen } from "@testing-library/react"
 import { beforeEach, expect, it, vi } from "vitest"
 import { LinkedPayments } from "./LinkedPayments"
 import { paymentFixture } from "../lib/payment-fixture.test-support"
+import { useFinancialDraftStore } from "../stores/financial-drafts"
+import { useAuthStore } from "@/features/auth/hooks/use-auth"
 const api = vi.hoisted(() => vi.fn())
 vi.mock("@/lib/api-client", () => ({ fetchAPI: api }))
 vi.mock("./SavePaymentSelection", () => ({
@@ -37,7 +39,11 @@ const source = {
   superseded_by_id: null,
   limitation: "Stored citation",
 }
-beforeEach(() => api.mockReset().mockResolvedValue(source))
+beforeEach(() => {
+  api.mockReset().mockResolvedValue(source)
+  useFinancialDraftStore.setState({ drafts: {} })
+  useAuthStore.setState({ user: null })
+})
 function mount() {
   render(
     <QueryClientProvider client={new QueryClient()}>
@@ -66,4 +72,51 @@ it.each([
   fireEvent.click(screen.getByRole("button", { name: "View payments (1)" }))
   await screen.findByRole("alert")
   expect(screen.queryByRole("table")).not.toBeInTheDocument()
+})
+
+it("keeps analysis selections when the list closes and exposes the same selection to Transactions", async () => {
+  mount()
+  fireEvent.click(screen.getByRole("button", { name: "View payments (1)" }))
+  await screen.findByRole("table")
+  fireEvent.click(screen.getByRole("checkbox"))
+  expect(
+    useFinancialDraftStore.getState().drafts["anonymous:case:selected-payments"]
+  ).toEqual(["payment"])
+  fireEvent.click(screen.getByRole("button", { name: "Hide payments (1)" }))
+  fireEvent.click(screen.getByRole("button", { name: "View payments (1)" }))
+  expect(await screen.findByRole("checkbox")).toBeChecked()
+  expect(screen.getByText("Save: payment")).toBeInTheDocument()
+})
+it("includes payments selected in other results and isolates another case and user", async () => {
+  useFinancialDraftStore
+    .getState()
+    .put("anonymous:case:selected-payments", ["elsewhere"])
+  const client = new QueryClient()
+  const showing = (caseId = "case") => (
+    <QueryClientProvider client={client}>
+      <LinkedPayments key={caseId} caseId={caseId} ids={["payment"]} />
+    </QueryClientProvider>
+  )
+  const view = render(showing())
+  fireEvent.click(screen.getByRole("button", { name: "View payments (1)" }))
+  await screen.findByRole("table")
+  fireEvent.click(screen.getByRole("checkbox"))
+  expect(screen.getByText("Save: elsewhere,payment")).toBeInTheDocument()
+  expect(screen.getByText(/1 are outside this result/)).toBeInTheDocument()
+  view.rerender(showing("other-case"))
+  fireEvent.click(screen.getByRole("button", { name: "View payments (1)" }))
+  await screen.findByRole("alert")
+  expect(screen.queryByText(/Save:/)).not.toBeInTheDocument()
+  view.rerender(showing())
+  fireEvent.click(screen.getByRole("button", { name: "View payments (1)" }))
+  expect(await screen.findByRole("checkbox")).toBeChecked()
+  act(() =>
+    useAuthStore.setState({
+      user: { id: "another-user", username: "another-user" } as NonNullable<
+        ReturnType<typeof useAuthStore.getState>["user"]
+      >,
+    })
+  )
+  expect(screen.getByRole("checkbox")).not.toBeChecked()
+  expect(screen.queryByText(/Save:/)).not.toBeInTheDocument()
 })

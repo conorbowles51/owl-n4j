@@ -172,3 +172,9 @@ Twenty-seven focused frontend and nine backend checks, TypeScript, scoped lint a
 Review selected payments lists the payments chosen across accounts and filters. It shows their source files and identifies corrected or excluded entries. Open a payment to inspect its original and current values; remove just that entry from the unfinished selection without affecting other choices, transactions or saved findings. Failed checks offer retry without treating a connection problem as an exclusion. Saving identifies the changed payment and retains the note.
 
 Eighteen focused checks, the actual TypeScript project build and scoped lint passed. The browser verified both versions, individual removal, refresh, retained note, one saved selection and readback of its exact payment ID. A temporary source-check failure retried without losing either selection. Nine bank payments remain unchanged. The guide now includes a synthetic example of this review. No broad suite, real financial write or push.
+
+## Keep analysis selections when changing views
+
+Payments selected through analysis results now join the same selection as Transactions. Hiding the result list, changing tabs and refreshing preserve the chosen IDs. Each result explains how many choices lie elsewhere, and its review can remove individual choices. Saving includes the whole selection. Read-only result lists omit Add note.
+
+Six focused checks, TypeScript project checking, scoped lint and production build passed. The actual counterparty-to-Transactions journey retained a selection, combined a second choice, restored both through refresh and shared an individual removal back to Transactions. All nine payments remain unchanged.

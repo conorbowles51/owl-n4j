@@ -548,6 +548,8 @@ If a selected payment was corrected or excluded, saving identifies the changed p
 
 A failed payment check says that it could not be checked. Select **Retry payment check** to try again. A connection failure does not mean that a payment was excluded.
 
+Payments chosen through **View payments** in People and businesses, Trends or Payment graph join the same selection shown in Transactions. Hiding a result list, changing tabs or refreshing does not discard these choices. Each open result states how many selected payments lie outside it. **Save selection with a note** saves the whole selection, including those other payments. Use **Review selected payments** to check or remove individual entries before saving.
+
 The saved selection keeps the payment values as they were when saved. Opening a linked payment shows its current record or correction history. A colleague with access to the case can read the saved note; your unfinished browser draft is not shared.
 
 At 100 selected payments, further checkboxes are disabled and the screen explains the limit. You can untick a selected payment and choose another. After saving, use **Clear selection** to start a separate group. Changing the account, table page or financial tab does not discard the selection. A refresh in the same browser tab restores it.

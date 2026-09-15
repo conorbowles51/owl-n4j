@@ -1,9 +1,11 @@
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
-import { fetchAPI } from "@/lib/api-client"
 import { LedgerSourceDialog } from "./LedgerSourceDialog"
-import { citationSchema } from "../lib/source-citation"
+import { readSelectedPayment } from "../lib/selected-payment-source"
+import { useFinancialDraft } from "../stores/financial-drafts"
+import { useFinancialAccess } from "../hooks/use-financial-access"
+import { SelectedPaymentsReview } from "./SelectedPaymentsReview"
 import {
   InvestigationTransactionTable,
   PaymentTotals,
@@ -37,34 +39,25 @@ export function LinkedPayments({
   )
 }
 function PaymentList({ caseId, ids }: { caseId: string; ids: string[] }) {
+  const { canEdit } = useFinancialAccess()
+  const [selected, setSelected] = useFinancialDraft<string[]>(
+    caseId,
+    "selected-payments",
+    []
+  )
+  const [reviewSelection, setReviewSelection] = useState(false)
   const [page, setPage] = useState(0),
-    [selected, setSelected] = useState<string[]>([]),
     [source, setSource] = useState<{ id: string; note: boolean } | null>(null)
   const visible = ids.slice(page * 20, page * 20 + 20)
   const query = useQuery({
     queryKey: ["financial-linked-payments", caseId, visible],
     retry: false,
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const result = []
       for (let i = 0; i < visible.length; i += 5) {
         const batch = await Promise.all(
           visible.slice(i, i + 5).map(async (id) => {
-            const data = citationSchema.parse(
-              await fetchAPI(
-                `/api/financial/ledger/${encodeURIComponent(id)}/source?${new URLSearchParams({ case_id: caseId })}`
-              )
-            )
-            if (
-              data.case_id !== caseId ||
-              data.transaction_id !== id ||
-              !data.transaction ||
-              data.transaction.key !== id ||
-              data.transaction.case_id !== caseId ||
-              data.transaction.source_document_id !== data.source_document_id
-            )
-              throw Error(
-                "The payment details did not match this case. Refresh this analysis."
-              )
+            const data = await readSelectedPayment(caseId, id, signal)
             return data.transaction
           })
         )
@@ -87,9 +80,9 @@ function PaymentList({ caseId, ids }: { caseId: string; ids: string[] }) {
       {query.data && (
         <>
           <p className="text-sm">
-            {ids.length} linked payments. Select up to 100 to save with a note.
-            Details show the current record; open a payment to inspect changes
-            since this analysis.
+            {ids.length} linked payments. Tick payments to add them to the same
+            selection you use in Transactions, up to 100 across all views. Open
+            a payment to inspect changes since this analysis.
           </p>
           <InvestigationTransactionTable
             rows={query.data}
@@ -102,24 +95,59 @@ function PaymentList({ caseId, ids }: { caseId: string; ids: string[] }) {
               )
             }
             onOpen={(row) => setSource({ id: row.key, note: false })}
-            onNote={(row) => setSource({ id: row.key, note: true })}
+            onNote={
+              canEdit
+                ? (row) => setSource({ id: row.key, note: true })
+                : undefined
+            }
           />
           <PaymentTotals label="Payments on this page" rows={query.data} />
         </>
       )}
       {!!selected.length && (
-        <SavePaymentSelection caseId={caseId} ids={selected} />
+        <div className="space-y-2">
+          <p>
+            {selected.length} payments selected across Financial.{" "}
+            {selected.filter((id) => !ids.includes(id)).length} are outside this
+            result and will also be saved.
+          </p>
+          <Button variant="outline" onClick={() => setReviewSelection(true)}>
+            Review selected payments
+          </Button>
+          <SavePaymentSelection
+            caseId={caseId}
+            ids={selected}
+            onReviewSelection={() => setReviewSelection(true)}
+          />
+          {reviewSelection && (
+            <SelectedPaymentsReview
+              key={caseId}
+              caseId={caseId}
+              ids={selected}
+              onRemove={(id) => {
+                setSelected((previous) =>
+                  previous.filter((value) => value !== id)
+                )
+                if (selected.length === 1) setReviewSelection(false)
+              }}
+              onClose={() => setReviewSelection(false)}
+            />
+          )}
+        </div>
       )}
       {ids.length > 20 && (
         <div className="flex gap-2 items-center">
-          <Button disabled={!page} onClick={() => setPage(page - 1)}>
+          <Button
+            disabled={!page || query.isFetching}
+            onClick={() => setPage(page - 1)}
+          >
             Previous payments
           </Button>
           <span>
             Page {page + 1} of {Math.ceil(ids.length / 20)}
           </span>
           <Button
-            disabled={(page + 1) * 20 >= ids.length}
+            disabled={(page + 1) * 20 >= ids.length || query.isFetching}
             onClick={() => setPage(page + 1)}
           >
             Next payments
