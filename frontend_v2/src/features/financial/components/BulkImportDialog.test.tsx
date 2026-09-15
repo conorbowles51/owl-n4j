@@ -151,10 +151,10 @@ it("does not report success or allow an immediate repeat after a lost save respo
   ).not.toBeInTheDocument()
 })
 
-it("previews unreadable amount text and submits its exact guard rather than zero", async () => {
-  const submit = vi
-    .fn()
-    .mockResolvedValue({
+it.each(["not stated", null])(
+  "previews unreadable or missing amount %j and submits its exact guard",
+  async (original) => {
+    const submit = vi.fn().mockResolvedValue({
       success: true,
       corrected: 1,
       errors: 0,
@@ -164,37 +164,40 @@ it("previews unreadable amount text and submits its exact guard rather than zero
           key: "unknown",
           status: "corrected",
           old_amount: null,
-          old_raw_amount: "not stated",
+          old_raw_amount: original,
           new_amount: 125,
         },
       ],
     })
-  render(
-    <BulkImportDialog
-      open
-      onOpenChange={vi.fn()}
-      transactions={[
-        {
-          ...transactions[0],
-          key: "unknown",
-          amount: null,
-          raw_amount: "not stated",
-        },
-      ]}
-      onSubmit={submit}
-    />
-  )
-  choose("key,amount,reason\nunknown,125,Checked the original file")
-  expect(await screen.findByText(/not stated/)).toBeVisible()
-  fireEvent.click(apply())
-  await waitFor(() =>
-    expect(submit).toHaveBeenCalledWith([
-      expect.objectContaining({
-        node_key: "unknown",
-        new_amount: 125,
-        expected_raw_amount: "not stated",
-        expected_amount: undefined,
-      }),
-    ])
-  )
-})
+    render(
+      <BulkImportDialog
+        open
+        onOpenChange={vi.fn()}
+        transactions={[
+          {
+            ...transactions[0],
+            key: "unknown",
+            amount: null,
+            raw_amount: original,
+          },
+        ]}
+        onSubmit={submit}
+      />
+    )
+    choose("key,amount,reason\nunknown,125,Checked the original file")
+    expect(
+      await screen.findByText(original === null ? /\(blank\)/ : /not stated/)
+    ).toBeVisible()
+    fireEvent.click(apply())
+    await waitFor(() =>
+      expect(submit).toHaveBeenCalledWith([
+        expect.objectContaining({
+          node_key: "unknown",
+          new_amount: 125,
+          expected_raw_amount: original,
+          expected_amount: undefined,
+        }),
+      ])
+    )
+  }
+)

@@ -526,7 +526,7 @@ class BulkCorrectionItem(BaseModel):
             raise ValueError('Supply one record key or one transaction name.')
         if Decimal(str(self.new_amount)).normalize().as_tuple().exponent < -2:
             raise ValueError('Use no more than two decimal places for a correction.')
-        if self.expected_amount is not None and self.expected_raw_amount is not None:
+        if self.expected_amount is not None and "expected_raw_amount" in self.model_fields_set:
             raise ValueError('Supply either the current numeric amount or its unreadable text, not both.')
         if recorded_amount(self.new_amount) is None:
             raise ValueError('The correction must be stored exactly to cents.')
@@ -558,7 +558,7 @@ class UpdateAmountRequest(BaseModel):
 
     @model_validator(mode='after')
     def one_expected_value(self):
-        if self.expected_amount is not None and self.expected_raw_amount is not None:
+        if self.expected_amount is not None and "expected_raw_amount" in self.model_fields_set:
             raise ValueError('Supply either the current numeric amount or its unreadable text, not both.')
         return self
 
@@ -582,11 +582,11 @@ async def update_transaction_amount(node_key: str, body: UpdateAmountRequest):
             new_amount=body.new_amount,
             correction_reason=body.correction_reason,
             expected_amount=body.expected_amount,
-            **({"expected_raw_amount": body.expected_raw_amount} if body.expected_raw_amount is not None else {}),
+            **({"expected_raw_amount": body.expected_raw_amount} if "expected_raw_amount" in body.model_fields_set else {}),
         )
         return result
     except ValueError as e:
-        raise HTTPException(status_code=409 if body.expected_amount is not None or body.expected_raw_amount is not None else 404, detail=str(e))
+        raise HTTPException(status_code=409 if body.expected_amount is not None or "expected_raw_amount" in body.model_fields_set else 404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -621,7 +621,7 @@ async def bulk_correct_transactions(body: BulkCorrectRequest):
             if match['key'] in seen:
                 raise HTTPException(status_code=400, detail=f'Record {match["key"]} is repeated. No corrections were applied.')
             seen.add(match['key'])
-            if (correction.expected_amount is not None and match.get('amount') != correction.expected_amount) or (correction.expected_raw_amount is not None and (match.get('amount') is not None or match.get('raw_amount') != correction.expected_raw_amount)):
+            if (correction.expected_amount is not None and match.get('amount') != correction.expected_amount) or ("expected_raw_amount" in correction.model_fields_set and (match.get('amount') is not None or match.get('raw_amount') != correction.expected_raw_amount)):
                 raise HTTPException(status_code=409, detail=f'Record {match["key"]} changed after the preview. Reload its amount. No corrections were applied.')
             selected.append((correction, match))
 
@@ -633,7 +633,7 @@ async def bulk_correct_transactions(body: BulkCorrectRequest):
                     new_amount=correction.new_amount,
                     correction_reason=correction.correction_reason,
                     expected_amount=correction.expected_amount,
-                    **({"expected_raw_amount": correction.expected_raw_amount} if correction.expected_raw_amount is not None else {}),
+                    **({"expected_raw_amount": correction.expected_raw_amount} if "expected_raw_amount" in correction.model_fields_set else {}),
                 )
                 if not answer.get('success') or answer.get('key') != match['key'] or answer.get('amount') != correction.new_amount:
                     raise ValueError('The response did not confirm this correction.')

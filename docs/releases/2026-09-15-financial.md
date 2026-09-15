@@ -140,3 +140,7 @@ Forty-seven distinct focused frontend checks and forty-seven backend checks pass
 ### Original files from imported payments
 
 The transaction detail dialog now uses the registered PDF page renderer and actual page count. The shared viewer has a visible Close action that returns to the previous details. Browser checks verified a one-page payment source and a three-page statement, page bounds, the same retained search and unchanged payment records. Fourteen focused unit checks and one Chromium component check passed, plus scoped lint, TypeScript and production build. Guide instructions now name the actual source, page and Close controls.
+
+### Missing amounts remain reviewable
+
+Explicit financial records remain visible when no amount was saved. Individual and file-based corrections compare that exact absence before changing it, and later corrections preserve the originally missing value. An older record in a mixed case no longer overrides another record's explicit financial classification. Fifty focused backend checks and thirty-three frontend checks passed, plus scoped lint, TypeScript and production build. Real browser recovery and edits, a stale-request refusal and exact two-page report read-back passed. Nine bank payments remain unchanged.

@@ -128,7 +128,7 @@ export function useUpdateAmount(caseId: string) {
       newAmount: number
       correctionReason: string
       expectedAmount?: number
-      expectedRawAmount?: string
+      expectedRawAmount?: string | null
     }) =>
       financialAPI.updateAmount(nodeKey, {
         caseId,

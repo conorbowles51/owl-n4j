@@ -28,6 +28,11 @@ LEGACY_FINANCIAL_EVENT_TYPES = [
 ]
 
 
+# An omitted guard keeps the older API contract. Explicit None means the
+# investigator reviewed an absent value, which must still be absent at save.
+_UNSET_EXPECTED_AMOUNT = object()
+
+
 class FinancialService:
     """Neo4j-backed service for financial transaction analysis."""
 
@@ -75,7 +80,7 @@ class FinancialService:
         record = session.run(
             """
             MATCH (n {case_id: $case_id})
-            WHERE n.amount IS NOT NULL
+            WHERE (n.amount IS NOT NULL OR coalesce(n.is_financial_event, false) = true)
             RETURN
                 count(n) AS total_amount_nodes,
                 sum(
@@ -101,16 +106,20 @@ class FinancialService:
 
     def _mode_filter_clause(self, alias: str, *, uses_legacy: bool, mode: str) -> str:
         normalized_mode = self._normalize_mode(mode)
-        if uses_legacy:
-            tx_clause = self._transaction_like_clause(alias)
-            return tx_clause if normalized_mode == "transactions" else f"NOT {tx_clause}"
-        if normalized_mode == "transactions":
-            return f"coalesce({alias}.is_evidence_backed_transaction, false) = true"
-        return (
+        explicit = (
+            f"coalesce({alias}.is_evidence_backed_transaction, false) = true"
+            if normalized_mode == "transactions" else
             f"coalesce({alias}.financial_view_mode, "
-            f"CASE WHEN coalesce({alias}.is_evidence_backed_transaction, false) THEN 'transaction' ELSE 'intelligence' END"
-            f") = 'intelligence'"
+            f"CASE WHEN coalesce({alias}.is_evidence_backed_transaction, false) THEN 'transaction' ELSE 'intelligence' END) = 'intelligence'"
         )
+        if not uses_legacy:
+            return explicit
+        tx_clause = self._transaction_like_clause(alias)
+        legacy = tx_clause if normalized_mode == "transactions" else f"NOT {tx_clause}"
+        # A legacy record in the case must not discard another record's explicit
+        # classification, especially an undated or amount-free financial claim.
+        tagged = f"({alias}.financial_model_version = 2 OR {alias}.financial_view_mode IS NOT NULL OR {alias}.is_evidence_backed_transaction IS NOT NULL)"
+        return f"(CASE WHEN {tagged} THEN ({explicit}) ELSE ({legacy}) END)"
 
     def _record_to_transaction(self, record, *, uses_legacy: bool, mode: str) -> Dict:
         from_key = record["from_entity_key"] or record["rel_from_key"] or record["initiator_key"]
@@ -202,7 +211,7 @@ class FinancialService:
 
             query = f"""
                 MATCH (n)
-                WHERE n.amount IS NOT NULL
+                WHERE (n.amount IS NOT NULL OR coalesce(n.is_financial_event, false) = true)
                 AND n.case_id = $case_id
                 AND {self._mode_filter_clause("n", uses_legacy=uses_legacy, mode=normalized_mode)}
                 {extra_filter}
@@ -589,13 +598,13 @@ class FinancialService:
         success_count = sum(1 for r in results if r.get("success"))
         return {"success": True, "updated": success_count, "total": len(node_keys)}
 
-    def update_transaction_amount(self, node_key: str, case_id: str, new_amount: float, correction_reason: str, expected_amount: Optional[float] = None, expected_raw_amount: Optional[str] = None) -> Dict:
+    def update_transaction_amount(self, node_key: str, case_id: str, new_amount: float, correction_reason: str, expected_amount: Optional[float] = None, expected_raw_amount=_UNSET_EXPECTED_AMOUNT) -> Dict:
         """Update a transaction amount, preserving the original value for audit trail."""
         def correct(tx):
             locked = tx.run(
                 """
                 MATCH (n {key: $key, case_id: $case_id})
-                WHERE n.amount IS NOT NULL
+                WHERE (n.amount IS NOT NULL OR coalesce(n.is_financial_event, false) = true)
                 SET n.amount_correction_revision = coalesce(n.amount_correction_revision, 0) + 1
                 RETURN n.amount AS amount
                 """, key=node_key, case_id=case_id,
@@ -603,14 +612,14 @@ class FinancialService:
             # The write lock remains held until this transaction commits. Raising
             # here rolls back its revision increment and leaves the amount intact.
             current = recorded_amount(locked["amount"]) if locked else None
-            raw_changed = expected_raw_amount is not None and (
+            raw_changed = expected_raw_amount is not _UNSET_EXPECTED_AMOUNT and (
                 current is not None or recorded_amount_text(locked["amount"] if locked else None) != expected_raw_amount)
             if locked is None or raw_changed or (expected_amount is not None and current != expected_amount):
                 raise ValueError(f"Record {node_key} is missing or its amount changed. Reload the record before correcting it.")
             result = tx.run(
                 """
                 MATCH (n {key: $key, case_id: $case_id})
-                SET n.original_amount = CASE WHEN n.original_amount IS NULL THEN n.amount ELSE n.original_amount END,
+                SET n.original_amount = CASE WHEN coalesce(n.amount_corrected, false) THEN n.original_amount ELSE n.amount END,
                     n.amount = $new_amount,
                     n.amount_corrected = true,
                     n.correction_reason = $correction_reason

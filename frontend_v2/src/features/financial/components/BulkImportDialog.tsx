@@ -21,7 +21,7 @@ import {
 
 interface PreviewCorrection extends FileCorrection {
   expected_amount?: number
-  expected_raw_amount?: string
+  expected_raw_amount?: string | null
   currency?: string
 }
 interface BulkImportDialogProps {
@@ -79,10 +79,7 @@ export function BulkImportDialog({
           throw Error(
             `Line ${row.line}: record ${row.node_key} is not in the current list. Check the key or clear the financial filters.`
           )
-        if (
-          transaction.amount === null &&
-          typeof transaction.raw_amount !== "string"
-        )
+        if (transaction.amount === null && transaction.raw_amount === undefined)
           throw Error(
             `Line ${row.line}: the original amount text is missing. Reload this record before correcting it.`
           )
@@ -90,9 +87,7 @@ export function BulkImportDialog({
           ...row,
           expected_amount: transaction.amount ?? undefined,
           expected_raw_amount:
-            transaction.amount === null
-              ? (transaction.raw_amount ?? undefined)
-              : undefined,
+            transaction.amount === null ? transaction.raw_amount : undefined,
           currency: transaction.currency,
         }
       })

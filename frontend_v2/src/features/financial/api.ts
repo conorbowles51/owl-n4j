@@ -121,7 +121,7 @@ export interface AmountCorrection {
   new_amount: number
   correction_reason: string
   expected_amount?: number
-  expected_raw_amount?: string
+  expected_raw_amount?: string | null
 }
 
 export interface BulkCorrectionResult {
@@ -1319,7 +1319,7 @@ export const financialAPI = {
       newAmount: number
       correctionReason: string
       expectedAmount?: number
-      expectedRawAmount?: string
+      expectedRawAmount?: string | null
     }
   ) => {
     const result = await fetchAPI<{
