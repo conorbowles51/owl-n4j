@@ -36,6 +36,59 @@ class TraceSupportArchiveTests(unittest.TestCase):
             self.assertEqual(support['tracing']['status'], 'selected_conditional_scenario')
             self.assertEqual(support['tracing']['scenario_sha256'], hashlib.sha256(self.f.content).hexdigest())
 
+    def test_readable_scenario_includes_reasons_order_and_linked_payments(self):
+        from html import escape
+        original = json.loads(self.f.content)
+        content = build_trace_support_archive([self.f.content])
+        with zipfile.ZipFile(io.BytesIO(content)) as archive:
+            manifest = json.loads(archive.read('manifest.json'))
+            self.assertEqual(manifest['scenario_reports_version'], 1)
+            reference = manifest['scenarios'][0]['report_reference']
+            report = archive.read(reference).decode()
+            self.assertIn(reference, archive.read('review-index.html').decode())
+            self.assertIn(escape(original['inputs']['opening_basis'], quote=True), report)
+            self.assertIn(escape(original['inputs']['order_basis'], quote=True), report)
+            self.assertIn(escape(original['inputs']['attributions'][0]['basis'], quote=True), report)
+            self.assertIn('Lowest intermediate balance', report)
+            self.assertIn('First in, first out (FIFO)', report)
+            self.assertIn('Direct tracing', report)
+            self.assertIn('No asset purchases or resales were selected', report)
+            self.assertIn('href="#payment-', report)
+            self.assertIn('id="payment-', report)
+            self.assertIn(hashlib.sha256(self.f.content).hexdigest(), report)
+            self.assertEqual(archive.read('scenarios/01/scenario.json'), self.f.content)
+
+    def test_old_packages_without_scenario_reports_keep_their_rebuild_contract(self):
+        content = build_trace_support_archive([self.f.content], include_scenario_reports=False)
+        with zipfile.ZipFile(io.BytesIO(content)) as archive:
+            self.assertNotIn('scenarios/01/report.html', archive.namelist())
+            self.assertNotIn('scenario_reports_version', json.loads(archive.read('manifest.json')))
+        self.assertEqual(verify_trace_support_archive(content)['status'], 'verified_bytes_matching_rebuild')
+
+    def test_rehashed_scenario_report_change_is_identified(self):
+        content = build_trace_support_archive([self.f.content])
+        def change(files):
+            name = 'scenarios/01/report.html'
+            files[name] = files[name].replace(b'Opening money', b'Altered opening money')
+            manifest = json.loads(files['manifest.json'])
+            for item in manifest['files']:
+                if item['filename'] == name:
+                    item.update(byte_count=len(files[name]), sha256=hashlib.sha256(files[name]).hexdigest())
+            files['manifest.json'] = json.dumps(manifest).encode()
+        result = verify_trace_support_archive(self.rewrite_archive(content, change))
+        self.assertEqual(result['status'], 'verified_bytes_different_rebuild')
+        self.assertEqual(result['changed_members'], ['scenarios/01/report.html'])
+
+    def test_unknown_or_boolean_scenario_report_version_is_refused(self):
+        content = build_trace_support_archive([self.f.content])
+        for version in (2, True, '1'):
+            def change(files):
+                manifest = json.loads(files['manifest.json'])
+                manifest['scenario_reports_version'] = version
+                files['manifest.json'] = json.dumps(manifest).encode()
+            with self.assertRaises(LedgerSummaryError):
+                verify_trace_support_archive(self.rewrite_archive(content, change))
+
     def test_supplied_synthetic_measurements_stay_synthetic(self):
         corpus = corpus_fixture.ExtractionEvaluationTests().corpus()
         archive_bytes = build_trace_support_archive([self.f.content], validation_corpus=corpus)

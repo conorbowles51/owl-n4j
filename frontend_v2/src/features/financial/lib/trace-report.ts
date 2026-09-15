@@ -41,7 +41,17 @@ function assetReport(assets: TraceAssetResults) {
                 `Claim: ${claim}`,
                 correctionMoney(amount, asset.currency),
               ]),
-              ["Outside claims", correctionMoney(outside, asset.currency)],
+              [
+                "Other recorded funds",
+                correctionMoney(
+                  (
+                    BigInt(outside) -
+                    BigInt(unidentified) -
+                    BigInt(unfunded)
+                  ).toString(),
+                  asset.currency
+                ),
+              ],
               ["Unidentified", correctionMoney(unidentified, asset.currency)],
               ["Unfunded", correctionMoney(unfunded, asset.currency)],
             ]

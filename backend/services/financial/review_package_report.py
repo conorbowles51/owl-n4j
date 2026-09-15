@@ -5,7 +5,7 @@ from services.financial.ledger_summary import LedgerSummaryError
 from services.financial.money import Money
 
 
-def render_review_package_report(*, case_id, scenarios, supports, preparation=None, ledger=None, measurement=None, ledger_support_attached=False, ledger_support=None):
+def render_review_package_report(*, case_id, scenarios, supports, preparation=None, ledger=None, measurement=None, ledger_support_attached=False, ledger_support=None, scenario_reports=False):
     def text(value): return escape('Not recorded' if value is None else str(value), quote=True)
     def table(headers, rows):
         return '<table><thead><tr>'+''.join('<th>'+text(v)+'</th>' for v in headers)+'</tr></thead><tbody>'+''.join(
@@ -32,6 +32,8 @@ def render_review_package_report(*, case_id, scenarios, supports, preparation=No
     for i in range(len(scenarios)):
         prefix=f'scenarios/{i+1:02d}/'
         parts += ['<li>Scenario '+str(i+1)+': <a href="'+prefix+'scenario.json">original scenario</a>, <a href="'+prefix+'replay.json">recalculation check</a>, <a href="'+prefix+'expert-support.json">methods, versions and support index</a>.</li>']
+        if scenario_reports:
+            parts += ['<li><a href="'+prefix+'report.html">Read calculation '+str(i+1)+'</a>: saved reasons, transfer steps, results under each method, asset purchases, resales and payment references.</li>']
     if measurement is not None:
         parts += ['<li><a href="validation/measurements.json">Extraction measurements</a> and <a href="validation/corpus.json">measured corpus</a>.</li>']
     parts += ['</ul><h2>Material still requiring review</h2><ul>',

@@ -154,8 +154,8 @@ export function TraceReportDownload({ trace }: { trace: VerifiedTrace }) {
       <p className="text-sm">
         Includes method comparisons, captured assumptions and the source audit.
         Keep the original scenario JSON alongside it. The audit bundle also
-        includes a recalculation check and recorded processing history. It
-        covers this scenario, not the complete case history.
+        includes a readable report, recalculation check and recorded processing
+        history. It covers this scenario, not the complete case history.
       </p>
       {error && <p role="alert">{error}</p>}
     </div>

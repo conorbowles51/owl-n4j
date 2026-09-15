@@ -10,6 +10,7 @@ import zipfile
 
 from services.financial.expert_support import build_expert_support
 from services.financial.review_package_report import render_review_package_report
+from services.financial.trace_scenario_report import render_scenario_report
 from services.financial.ledger_summary import LedgerSummaryError
 from services.financial.trace_replay import replay_trace
 from services.financial.extraction_evaluation import evaluate_extraction
@@ -32,11 +33,13 @@ def validation_source_overlap(source_records, corpus):
         limitation='Recorded digest overlap does not establish that the case used the measured extraction version, settings or review process. Pending sources outside selected ledger readings are not covered by this comparison.')
 
 
-def build_trace_support_archive(scenarios, *, validation_corpus=None, reference_review=None, validation_predictions=None, ledger_archive=None, expected_case_id=None, preparation=None, include_readable_index=True, include_ledger_support_summary=True):
+def build_trace_support_archive(scenarios, *, validation_corpus=None, reference_review=None, validation_predictions=None, ledger_archive=None, expected_case_id=None, preparation=None, include_readable_index=True, include_ledger_support_summary=True, include_scenario_reports=True):
     if type(include_readable_index) is not bool:
         raise LedgerSummaryError('Readable index selection must be boolean.')
     if type(include_ledger_support_summary) is not bool:
         raise LedgerSummaryError('Ledger support summary selection must be boolean.')
+    if type(include_scenario_reports) is not bool:
+        raise LedgerSummaryError('Scenario report selection must be boolean.')
     if not isinstance(scenarios, (list, tuple)) or len(scenarios) > 8:
         raise LedgerSummaryError('Select at most eight saved tracing scenarios.')
     if not scenarios and ledger_archive is None:
@@ -81,6 +84,10 @@ def build_trace_support_archive(scenarios, *, validation_corpus=None, reference_
         add_json(prefix + 'expert-support.json', support)
         scopes.append(dict(scenario_reference=prefix + 'scenario.json', snapshot_sha256=replay['snapshot_sha256'],
                           support_reference=prefix + 'expert-support.json'))
+        if include_scenario_reports and include_readable_index:
+            entries[prefix + 'report.html'] = render_scenario_report(scenario,
+                scenario_sha256=replay['original_sha256'], preparation=preparation)
+            scopes[-1]['report_reference'] = prefix + 'report.html'
 
     captured_ledger = None
     ledger_document = None
@@ -148,7 +155,7 @@ def build_trace_support_archive(scenarios, *, validation_corpus=None, reference_
             supports=[json.loads(entries[scope['support_reference']]) for scope in scopes],
             preparation=preparation, ledger=ledger_document, measurement=measurement,
             ledger_support_attached=bool(captured_ledger and captured_ledger.get('support_reference')),
-            ledger_support=ledger_support)
+            ledger_support=ledger_support, scenario_reports=bool(scenarios and include_scenario_reports))
     manifest = dict(schema_version='loupe.financial.trace_support_archive/1', case_id=next(iter(cases)),
         completeness='incomplete_expert_packet', scenarios=scopes, validation=validation, preparation=preparation,
         limitation='Selected scenarios preserve separate captured scopes. This bundle does not establish complete case custody, all human decisions, a complete historical toolchain, an expert opinion or signature. Hashes detect byte changes relative to this manifest; they do not authenticate authorship.',
@@ -156,6 +163,8 @@ def build_trace_support_archive(scenarios, *, validation_corpus=None, reference_
                for name, content in sorted(entries.items())])
     if include_readable_index:
         manifest['readable_index'] = 'review-index.html'
+        if scenarios and include_scenario_reports:
+            manifest['scenario_reports_version'] = 1
         if ledger_support is not None:
             manifest['ledger_support_summary'] = 'ledger/captured-expert-support.json'
     if captured_ledger is not None:
@@ -226,9 +235,13 @@ def verify_trace_support_archive(content, *, expected_sha256=None, expected_case
         if 'ledger_support_summary' in manifest and (manifest['ledger_support_summary'] != 'ledger/captured-expert-support.json'
                 or 'ledger/captured-expert-support.json' not in members or 'readable_index' not in manifest):
             raise ValueError('Unsupported ledger support summary reference.')
+        if 'scenario_reports_version' in manifest and (type(manifest['scenario_reports_version']) is not int
+                or manifest['scenario_reports_version'] != 1 or 'readable_index' not in manifest or not manifest['scenarios']):
+            raise ValueError('Unsupported scenario report version.')
         options = dict(expected_case_id=manifest['case_id'], preparation=manifest.get('preparation'),
             include_readable_index='readable_index' in manifest,
-            include_ledger_support_summary='ledger_support_summary' in manifest)
+            include_ledger_support_summary='ledger_support_summary' in manifest,
+            include_scenario_reports='scenario_reports_version' in manifest)
         validation = manifest['validation']
         if validation['status'] == 'reconciled_reference_measurement_context':
             options['reference_review'] = parse_review_json(members[validation['reference_review_reference']])

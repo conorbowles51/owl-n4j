@@ -104,6 +104,7 @@
 <li>Choose a statement period and currency if requested.</li>
 <li>If the statement was already imported, select <strong>Open imported transactions</strong> to return to the investigation view. Do not upload another copy to make it appear again.</li>
 </ol>
+<p>For recognised Capital One collections, the period list includes supported Platinum, Secured Card and Platinum Secured Card headings. Choose the account ending and billing dates you need. Different account endings stay separate. The period count describes recognised statements; it does not mean every page or transaction has been verified.</p>
 <p>If a file has not finished processing, wait for its status to complete. If reading failed, use <strong>Retry statement review</strong> or the reprocessing controls described in section 7. Repeated uploads create separate source records and make duplicate review harder.</p>
 <h2 id="check-the-extracted-statement">Check the extracted statement</h2>
 <h3>Check the account and transaction count</h3>
@@ -742,7 +743,10 @@
 <li>Extract the ZIP and open <code>review-index.html</code>.</li>
 <li>Check the listed inputs, each capture&#x27;s scope, method results and any validation or custody information. If you attached a ledger export containing support records, <strong>Saved ledger methods, versions and decision references</strong> opens an unchanged copy of that saved index. Older exports may not contain it.</li>
 <li>Read <strong>Saved ledger processing and review</strong> for the import counts and software versions retained with the ledger. <strong>Reported source custody</strong> shows recorded receipts, transfers and corrections. The event time and the time the report was saved are shown separately. If tracing scenarios are included, <strong>Recorded statement processing</strong> describes their saved extraction versions. A missing value remains <strong>Not recorded</strong>; Loupe does not fill historical gaps with current values.</li>
-<li>Retain the ZIP and original input files.</li>
+<li>If the package contains tracing calculations, select <strong>Read calculation 1</strong> (or the number you need). Read <strong>Recorded reasons and assumptions</strong> to check the opening money, amounts assigned to claims, payment order and transfer choices.</li>
+<li>Under <strong>Results by method</strong>, compare the separate calculations. Asset purchase and resale amounts are shown with their recorded reasons. They are already represented in the cash payments, so do not add them to cash totals again. The allocation rows separate named claims, other recorded funds, unidentified money and unfunded amounts without counting the same amount twice.</li>
+<li>Select a payment link in a reason, transfer or asset table. It takes you to that payment&#x27;s saved values, original date fields, source-file reference and PDF page where recorded. These are the values captured when the calculation was saved.</li>
+<li>Retain the ZIP and original input files. Older packages may contain the original scenario JSON without the individual readable reports. Assemble a new package from those saved inputs if you need the reports; the original package stays unchanged.</li>
 </ol>
 <p>The index links the retained files and keeps their scopes separate. Assembly does not merge ledger rows or make different captures contemporaneous. Enclosed files retain their original markings. Synthetic validation remains labelled synthetic. Missing measurements remain missing.</p>
 <h2 id="compare-and-check-saved-packages">Compare and check saved packages</h2>

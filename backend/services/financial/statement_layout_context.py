@@ -16,6 +16,9 @@ _MONTHS = {name.lower(): index for index, names in enumerate((
 _DATE = r'([A-Za-z]+)\.?\s+(\d{1,2}),\s+(20\d{2})'
 _CYCLE = re.compile(r'^' + _DATE + r'\s+-\s+' + _DATE + r'\s*\|\s*(\d{1,2}) days in Billing Cycle$')
 _SECTION = re.compile(r'^(.+?) #(\d{4}): (Payments, Credits and Adjustments|Transactions)$')
+CAPITAL_ONE_CARD_HEADING = re.compile(
+    r'(?:Platinum MasterCard Account Ending in|Platinum Mastercard ending in|Platinum Card ending in|'
+    r'(?:Platinum Card|Secured Card|Platinum Secured Card) \| Platinum Mastercard ending in) (\d{4})')
 
 
 def _cycle(text):
@@ -66,9 +69,7 @@ def statement_layout_context(rows):
                     if reading: count_source = following
             if reading:
                 cycles.append((row['row_index'],cell,reading,count_source))
-    cards = [(i,c) for i,c in flat if re.fullmatch(
-        r'(?:Platinum MasterCard Account Ending in|Platinum Mastercard ending in|Platinum Card ending in|Platinum Card \| Platinum Mastercard ending in) \d{4}',
-        c['expected_text'].strip())]
+    cards = [(i,c) for i,c in flat if CAPITAL_ONE_CARD_HEADING.fullmatch(c['expected_text'].strip())]
     if len(marks)!=1 or len(cycles)!=1 or len(cards)!=1:
         return None
     cycle_row, cycle_cell, (start,end), count_cell = cycles[0]

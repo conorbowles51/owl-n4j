@@ -52,7 +52,7 @@ Approved scope: 11 September 2026. The user requested a proper plan and implemen
 
 ## 5. Verify real statement interpretation
 
-- [ ] Locate and inspect the exact Capital One layout shown by the user.
+- [x] Locate and inspect the exact Capital One layout shown by the user. The newly supplied 222-page collection was checked locally on 14 September; the screenshot period opens with its three correct transaction dates, amounts and directions.
 - [x] Compare proposed transactions with the original, independently of what the reconstructed text grid shows.
 - [x] Reconstruct separate transaction sections using their positions and headings. Do not place advertising and page headers inside transaction tables.
 - [x] Retain raw extracted text for diagnosis without presenting it as accurate layout.
@@ -121,7 +121,7 @@ One broad financial regression run returned 1,059 frontend passes with nine obso
 
 ### Limits kept visible
 
-- [ ] Verify the exact Capital One account ending 8160 from the user's screenshot when that file is available. The supplied Capital One file ends in 3539. Do not claim those are the same document.
+- [x] Verify the exact Capital One account ending 8160 from the user's screenshot. The separate 222-page collection is now supplied and its screenshot page passed a fresh local preparation and browser review on 14 September. This resolves the missing-file check, not independent accuracy across the whole collection.
 - Complex scans are not guaranteed to reconstruct every printed table. Damaged OCR and unassigned pages are shown for review. Original text and files remain available; no guess is silently substituted for the statement.
 - Uploads that have not finished sending need the browser open. Unsaved form drafts are browser-tab work, not a shared server record. Saved notes, imports and calculations are case records available to authorised colleagues.
 - Downloadable note reports and PDFs are available directly from Financial Findings. The separate platform Reports editor has not been replaced by this feature.
@@ -299,3 +299,14 @@ Independent reference labels, the missing exact Capital One 8160 document, exter
 Validation: 40 affected backend checks and 17 frontend checks passed, plus TypeScript, scoped ESLint, guide generation and production build. No full suite. The final browser check imported one 25.00 USD fee, preserved transaction date 8 March, saved the deliberately corrected posting date 10 March and retained the original posting date 9 March. Draft recovery, exact posting-cell highlight and a zero balance difference passed. Read-only database verification confirms both original and corrected dates. Local receipt: data/local-runtime/capital-dates-final-acceptance.json. The first synthetic fixture had misaligned summary amounts; its missing-closing-balance result was preserved, and the corrected fixture was a new file and case.
 
 The retained real-file comparison now fills four previously unresolved fee rows on pages 57, 81, 87 and 91. All earlier money/date readings are unchanged. The selected 27 statement periods still contain 42 proposed rows, including 19 undated interest rows requiring review. No date was guessed, no real import or PDF changed, and no further OCR/provider call occurred. This is not independent corpus validation. Local record: data/local-runtime/capital-fee-comparison.json. Broader acceptance requirements remain open. No public push was performed.
+
+
+## Completed locally: readable tracing reports and supplied secured-card statements, 14 September 2026
+
+- [x] Include a readable report for each selected tracing scenario in the review package, with saved reasons, payment order, transfer choices, per-method results, asset/resale allocations and links to captured payments and source references.
+- [x] Retain original scenario bytes and separately hash the reports. Preserve older package rebuilds through an optional versioned report flag; reject unknown versions and identify altered derived reports.
+- [x] Split other recorded funds from unidentified/unfunded asset portions in both readable report paths so the same money is not shown twice in additive categories.
+- [x] Inspect the exact Capital One source from the earlier screenshot and verify its three transactions through a fresh local upload and browser review, without importing real payments.
+- [x] Recognise exact Secured Card and Platinum Secured Card headings in both layout and period detection. The supplied collection now identifies 52 periods instead of 7. Preserve conflicting/damaged headers as unresolved.
+
+Validation: 57 package/report/router backend checks, 21 statement checks, 13 frontend checks, TypeScript, scoped lint, guide generation and build passed. Browser package assembly, independent rebuild, desktop/mobile readable reports and the exact statement-page review passed. No full suite or public push. The supplied Andrews multi-share statements and buyer-wire document remain unsupported automatic formats; independent measurements and full original expert-packet acceptance remain open.

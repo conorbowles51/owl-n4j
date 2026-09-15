@@ -29,3 +29,24 @@ class StatementCatalogTests(unittest.TestCase):
         result=statement_catalog([page(1),page(2,card='9999')])
         self.assertEqual(len(result['statements']),2)
         self.assertNotEqual(result['statements'][0]['id'],result['statements'][1]['id'])
+
+    def test_secured_card_product_names_retain_account_and_period_grouping(self):
+        sources = [page(1), page(2), page(3, card='9999')]
+        sources[1]['rows'][0]['cells'][0]['expected_text'] = 'Secured Card | Platinum Mastercard ending in 3539'
+        sources[2]['rows'][0]['cells'][0]['expected_text'] = 'Platinum Secured Card | Platinum Mastercard ending in 9999'
+        result = statement_catalog(sources)
+        self.assertEqual(len(result['statements']), 2)
+        self.assertEqual(result['statements'][0]['page_numbers'], [1, 2])
+        self.assertEqual(result['statements'][1]['account_reference'], '****9999')
+        self.assertTrue(result['complete_coverage'])
+
+    def test_near_matching_secured_headings_and_conflicting_accounts_remain_unclassified(self):
+        for heading in ('Secured Card | Platinum Mastercard ending in 35O9',
+                        'Some Card | Platinum Mastercard ending in 3539',
+                        'Platinum Secured Card | Platinum Mastercard ending in 3539 text'):
+            value = page(1)
+            value['rows'][0]['cells'][0]['expected_text'] = heading
+            self.assertEqual(statement_catalog([value])['statements'], [])
+        value = page(1)
+        value['rows'] += source([['Secured Card | Platinum Mastercard ending in 9999']])['rows']
+        self.assertEqual(statement_catalog([value])['statements'], [])

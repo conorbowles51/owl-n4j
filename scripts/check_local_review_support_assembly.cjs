@@ -18,6 +18,7 @@ for name,value in [('review',record),('predictions',predictions)]:
   const ledger=await page.request.get(`http://127.0.0.1:58002/api/financial/ledger-export?case_id=${caseId}&include_case_financial_history=true`,{headers:{Authorization:`Bearer ${token}`}});
   if(!ledger.ok())throw Error(await ledger.text());fs.writeFileSync('/tmp/loupe-assembly-synthetic-ledger.zip',await ledger.body());
   await page.goto(`http://127.0.0.1:55174/cases/${caseId}/financial`);await page.getByRole('tab',{name:'Transactions',exact:true}).click();
+  await page.getByText('Reports, balance coverage and verification details',{exact:true}).click();
   await page.getByText('Assemble a review package',{exact:true}).click();
   await page.getByLabel('Saved tracing scenarios (JSON)',{exact:true}).setInputFiles(path.join(root,'data/local-runtime/resale-asset-trace-scenario.json'));
   await page.getByLabel('Saved ledger export (ZIP)',{exact:true}).setInputFiles('/tmp/loupe-assembly-synthetic-ledger.zip');

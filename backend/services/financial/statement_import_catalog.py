@@ -5,11 +5,8 @@ period. Page numbers remain the original PDF numbers. Unclassified pages are
 retained separately so detection cannot silently turn a whole file into a
 complete statement.
 """
-import re
 from services.financial.pdf_candidates import _digest
-from services.financial.statement_layout_context import _cycle
-
-_CARD = re.compile(r'(?:Platinum MasterCard Account Ending in|Platinum Mastercard ending in|Platinum Card ending in|Platinum Card \| Platinum Mastercard ending in) (\d{4})')
+from services.financial.statement_layout_context import _cycle, CAPITAL_ONE_CARD_HEADING
 
 
 def statement_catalog(sources):
@@ -45,7 +42,7 @@ def statement_catalog(sources):
                         value = _cycle(cell['expected_text'].strip() + ' ' + following['expected_text'].strip())
                 if value:
                     cycles.add(tuple(day.isoformat() for day in value))
-        cards = {m[1] for c in cells if (m := _CARD.fullmatch(c['expected_text'].strip()))}
+        cards = {m[1] for c in cells if (m := CAPITAL_ONE_CARD_HEADING.fullmatch(c['expected_text'].strip()))}
         institution = any('capitalone.com' in c['expected_text'].lower() or c['expected_text'].strip() == 'Capital One' for c in cells)
         key = (source['page_number'], source['table_index'])
         if len(cycles) != 1 or len(cards) != 1 or not institution:
