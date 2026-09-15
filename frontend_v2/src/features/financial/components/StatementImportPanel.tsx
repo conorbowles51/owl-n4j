@@ -864,6 +864,31 @@ function EditableStatement({
       input?.scrollIntoView({ block: "center", behavior: "smooth" })
     })
   }
+  const reviewRow = (id: string) => {
+    const original = originals.get(id)
+    if (!original) return
+    setOnlyIssues(false)
+    setShowExcluded(true)
+    setFocus({
+      rowId: id,
+      locator: original.source_cells[0]?.locator ?? {
+        kind: "page_only",
+        page: original.page_number,
+      },
+    })
+    setCorrectionsOpen(true)
+    requestAnimationFrame(() => {
+      const input = Array.from(
+        correctionControls.current?.querySelectorAll<HTMLInputElement>(
+          "input"
+        ) ?? []
+      ).find(
+        (element) => element.getAttribute("aria-label") === `Include row ${id}`
+      )
+      input?.focus({ preventScroll: true })
+      input?.scrollIntoView({ block: "center", behavior: "smooth" })
+    })
+  }
   return (
     <div className="space-y-4 pt-4">
       <header>
@@ -968,6 +993,9 @@ function EditableStatement({
             <PrintedStatementTable
               rows={data.rows.filter((row) => row.page_number === currentPage)}
               onCell={(rowId, locator) => setFocus({ rowId, locator })}
+              onReviewRow={
+                canEdit && !data.current_import ? reviewRow : undefined
+              }
             />
             {!data.rows.some((row) => row.page_number === currentPage) && (
               <p className="my-3 text-sm">

@@ -373,6 +373,15 @@ A masked card ending is only a partial account reference. Do not use a matching 
 
 ## Correct problems before import
 
+### Review a line that could not be placed in the table
+
+1. Find the line under **Rows needing a layout check** and select **Review this row**.
+2. Loupe opens **Corrections and import choices**, moves to that row's **Use** checkbox and shows its original PDF location alongside the controls.
+3. If the line is a payment, enter the correct date, description and amount after comparing it with the PDF. If it is a footer, heading or other non-payment text, clear **Use** for that row.
+4. Enter **Reason for correction or decision**. For example: "Printed footer with no payment amount." Check the transaction count before confirming the import.
+
+This action opens the review controls; it does not save an import or alter the original file. Your unfinished choice and explanation return after a refresh in the same browser tab.
+
 ### Fix a misread value
 
 Before confirmation, use **Edit import values**. For a statement already imported, **Edit imported transactions** opens the current transaction workspace; use the transaction's correction action there. Corrections to the current record are separate from the unchanged original extraction.

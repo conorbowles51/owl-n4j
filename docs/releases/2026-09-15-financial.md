@@ -196,3 +196,7 @@ Local PDF reading and OCR no longer require an OpenAI environment key to pass en
 ## Scanned statement columns
 
 Scanned statement proposals now compare the positions of amounts across each printed section when money headings and amounts use different alignment. Ambiguous credit/debit assignments remain flagged. The viewer follows those source-column references and keeps printed values and blank cells. The actual native/scanned synthetic pair matched all six payments, opening and closing controls, and original balance highlights without importing financial records. The synthetic footer remains a separate unresolved line.
+
+## Resolve flagged rows directly
+
+Review this row opens the corresponding import checkbox and correction fields beside the original PDF. A user can correct the reading or exclude non-payment text with a reason. The actual synthetic footer exclusion and explanation survived refresh, leaving exactly six payments ready to confirm. Existing imported statements retain their transaction correction route.

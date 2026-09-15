@@ -1,4 +1,5 @@
 import { Fragment } from "react"
+import { Button } from "@/components/ui/button"
 import {
   printedStatementSections,
   type PrintedCell,
@@ -8,9 +9,11 @@ import {
 export function PrintedStatementTable({
   rows,
   onCell,
+  onReviewRow,
 }: {
   rows: PrintedRow[]
   onCell: (rowId: string, locator: unknown) => void
+  onReviewRow?: (rowId: string) => void
 }) {
   const positioned = rows.filter(
     (row) => row.fields?.statement_layout === "andrews-share-statement"
@@ -103,6 +106,15 @@ export function PrintedStatementTable({
               {row.source_cells.map((value) => (
                 <span key={value.column_index}>{cell(row.id, value)}</span>
               ))}
+              {onReviewRow && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => onReviewRow(row.id)}
+                >
+                  Review this row
+                </Button>
+              )}
             </div>
           ))}
         </section>

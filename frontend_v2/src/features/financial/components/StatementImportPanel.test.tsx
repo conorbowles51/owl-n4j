@@ -137,6 +137,60 @@ beforeEach(() => {
     return data as never
   })
 })
+it("opens and focuses a flagged row's import choice while retaining another correction", async () => {
+  const flagged = {
+    ...data,
+    rows: [
+      ...data.rows,
+      {
+        ...data.rows[0],
+        id: "1:0:15",
+        row_index: 15,
+        source_cells: [
+          {
+            column_index: 0,
+            expected_text: "Printed footer",
+            locator: { kind: "page_only", page: 1 },
+          },
+        ],
+        kind: "unresolved",
+        excluded: false,
+        issues: ["Check this row"],
+      },
+    ],
+  }
+  const base = vi.mocked(fetchAPI).getMockImplementation()!
+  vi.mocked(fetchAPI).mockImplementation(async (url, options) =>
+    String(url).includes("statement-import")
+      ? (flagged as never)
+      : base(url, options)
+  )
+  mount()
+  await open()
+  fireEvent.change(screen.getByLabelText("Credit 1:0:1"), {
+    target: { value: "130.00" },
+  })
+  fireEvent.click(
+    screen.getByRole("button", { name: "Hide corrections and import choices" })
+  )
+  fireEvent.click(
+    screen.getAllByRole("button", { name: "Review this row" }).at(-1)!
+  )
+  await waitFor(() =>
+    expect(screen.getByLabelText("Include row 1:0:15")).toHaveFocus()
+  )
+  expect(screen.getByLabelText("Credit 1:0:1")).toHaveValue("130.00")
+  expect(screen.getByText("Original PDF beside editable values")).toBeVisible()
+  fireEvent.click(screen.getByLabelText("Include row 1:0:15"))
+  fireEvent.change(screen.getByLabelText("Reason 1:0:15"), {
+    target: { value: "Printed footer, not a payment." },
+  })
+  expect(screen.getByLabelText("Include row 1:0:15")).not.toBeChecked()
+  expect(screen.getByLabelText("Reason 1:0:15")).toHaveValue(
+    "Printed footer, not a payment."
+  )
+  expect(sent).toEqual([])
+})
 it("automatically fills a statement and imports once", async () => {
   const done = mount()
   await open()

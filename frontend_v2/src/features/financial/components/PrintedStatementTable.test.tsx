@@ -2,6 +2,45 @@ import { render, screen, fireEvent, within } from "@testing-library/react"
 import { expect, it, vi } from "vitest"
 import { PrintedStatementTable } from "./PrintedStatementTable"
 
+it("opens the requested flagged row for review without changing its source click", () => {
+  const onCell = vi.fn(),
+    onReviewRow = vi.fn()
+  const original = {
+    id: "1:0:15",
+    page_number: 1,
+    table_index: 0,
+    row_index: 15,
+    kind: "unresolved",
+    issues: ["Check this row"],
+    source_cells: [
+      {
+        column_index: 0,
+        expected_text: "Printed footer",
+        locator: { kind: "page_only", page: 1 },
+      },
+    ],
+  }
+  const { rerender } = render(
+    <PrintedStatementTable
+      rows={[original]}
+      onCell={onCell}
+      onReviewRow={onReviewRow}
+    />
+  )
+  fireEvent.click(screen.getByRole("button", { name: "Review this row" }))
+  expect(onReviewRow).toHaveBeenCalledWith(original.id)
+  expect(onCell).not.toHaveBeenCalled()
+  fireEvent.click(screen.getByRole("button", { name: "Printed footer" }))
+  expect(onCell).toHaveBeenCalledWith(
+    original.id,
+    original.source_cells[0].locator
+  )
+  rerender(<PrintedStatementTable rows={[original]} onCell={onCell} />)
+  expect(
+    screen.queryByRole("button", { name: "Review this row" })
+  ).not.toBeInTheDocument()
+})
+
 it("retains printed headings, formatted values and empty debit or credit cells", () => {
   const onCell = vi.fn()
   const row = (id: string, index: number, values: string[]) => ({
