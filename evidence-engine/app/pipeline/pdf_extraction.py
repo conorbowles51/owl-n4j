@@ -3,7 +3,10 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
+import multiprocessing
+import os
 import re
+import signal
 import sys
 import time
 from dataclasses import dataclass, field
@@ -818,6 +821,99 @@ def _extract_pdf_sync(
         document.close()
 
 
+_PDF_WORKER_SETTINGS = (
+    'pdf_ocr_dpi', 'pdf_ocr_max_pixels', 'pdf_ocr_page_timeout_seconds',
+    'pdf_ocr_max_concurrency', 'tesseract_lang', 'max_pdf_pages',
+)
+
+
+def _pdf_worker(connection, file_path, reading_mode, configuration):
+    """Own every MuPDF object in a fresh process, including table-reader state."""
+    try:
+        if os.name == 'posix':
+            # Keep Tesseract subprocesses in this job's process group so a
+            # cancelled reading does not leave OCR running after its slot opens.
+            os.setsid()
+        for name in _PDF_WORKER_SETTINGS:
+            setattr(settings, name, configuration[name])
+        result = _extract_pdf_sync(file_path,
+            lambda progress: connection.send(('progress', progress)), reading_mode=reading_mode)
+        connection.send(('result', result))
+    except Exception as exc:
+        connection.send(('error', str(exc)))
+    finally:
+        connection.close()
+
+
+def _receive_pdf_message(connection, worker):
+    while not connection.poll(0.25):
+        if not worker.is_alive():
+            raise PdfOcrError('The PDF reader stopped before completing this file. Retry reading the PDF.')
+    try:
+        return connection.recv()
+    except EOFError as exc:
+        raise PdfOcrError('The PDF reader closed before completing this file. Retry reading the PDF.') from exc
+
+
+def _close_pdf_worker(worker, completed):
+    if not completed and worker.is_alive():
+        try:
+            if os.name == 'posix' and os.getpgid(worker.pid) == worker.pid:
+                os.killpg(worker.pid, signal.SIGTERM)
+            else:
+                worker.terminate()
+        except ProcessLookupError:
+            pass
+    worker.join(timeout=1)
+    if worker.is_alive():
+        try:
+            if os.name == 'posix' and os.getpgid(worker.pid) == worker.pid:
+                os.killpg(worker.pid, signal.SIGKILL)
+            else:
+                worker.kill()
+        except ProcessLookupError:
+            pass
+        worker.join()
+
+
+async def _extract_pdf_in_process(file_path, progress_callback=None, *, reading_mode='automatic'):
+    # PyMuPDF explicitly does not support concurrent threads, even when each
+    # thread opens a separate file. Spawn avoids inheriting its global state.
+    # https://pymupdf.readthedocs.io/en/latest/recipes-multiprocessing.html
+    context = multiprocessing.get_context('spawn')
+    incoming, outgoing = context.Pipe(duplex=False)
+    worker = context.Process(target=_pdf_worker, args=(outgoing, file_path, reading_mode,
+        {name: getattr(settings, name) for name in _PDF_WORKER_SETTINGS}), daemon=True)
+    reader = None
+    completed = False
+    try:
+        worker.start()
+        outgoing.close()
+        while True:
+            reader = asyncio.create_task(asyncio.to_thread(_receive_pdf_message, incoming, worker))
+            kind, value = await asyncio.shield(reader)
+            reader = None
+            if kind == 'progress':
+                if progress_callback is not None:
+                    await progress_callback(value)
+            elif kind == 'result':
+                completed = True
+                return value
+            else:
+                raise PdfOcrError(value)
+    finally:
+        # Keep the concurrency slot until the child actually exits, including
+        # cancellation and failed progress updates. Drain any in-flight reader
+        # before closing its pipe so no background thread outlives the job.
+        if worker.pid is not None:
+            await asyncio.to_thread(_close_pdf_worker, worker, completed)
+        if reader is not None:
+            await asyncio.gather(reader, return_exceptions=True)
+        incoming.close()
+        outgoing.close()
+        worker.close()
+
+
 async def extract_pdf(
     file_path: str,
     progress_callback: PdfProgressCallback | None = None,
@@ -826,26 +922,4 @@ async def extract_pdf(
 ) -> PdfExtractionResult:
     semaphore = _get_pdf_extraction_semaphore()
     async with semaphore:
-        if progress_callback is None:
-            return await asyncio.to_thread(_extract_pdf_sync, file_path, reading_mode=reading_mode)
-
-        queue: asyncio.Queue[PdfExtractionProgress] = asyncio.Queue()
-        loop = asyncio.get_running_loop()
-
-        def report_from_thread(progress: PdfExtractionProgress) -> None:
-            loop.call_soon_threadsafe(queue.put_nowait, progress)
-
-        worker = asyncio.create_task(
-            asyncio.to_thread(_extract_pdf_sync, file_path, report_from_thread, reading_mode=reading_mode)
-        )
-        while not worker.done():
-            try:
-                progress = await asyncio.wait_for(queue.get(), timeout=0.5)
-            except asyncio.TimeoutError:
-                continue
-            await progress_callback(progress)
-
-        result = await worker
-        while not queue.empty():
-            await progress_callback(queue.get_nowait())
-        return result
+        return await _extract_pdf_in_process(file_path, progress_callback, reading_mode=reading_mode)

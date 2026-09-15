@@ -27,6 +27,8 @@ import pytest
 
 from app.pipeline import pdf_extraction
 
+pytestmark = pytest.mark.usefixtures('inline_pdf_worker')
+
 # The same ruled table the pre-existing extraction test uses, built the same
 # way, so that the byte string asserted below is the one already in the suite.
 COLUMNS = [72, 250, 430]

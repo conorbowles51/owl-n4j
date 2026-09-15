@@ -4,7 +4,6 @@ import asyncio
 import hashlib
 import shutil
 import threading
-import time
 import uuid
 
 import fitz
@@ -21,6 +20,8 @@ from app.pipeline.pdf_extraction import PdfExtractionProgress
 from app.pipeline.pdf_extraction import PdfExtractionResult
 from app.pipeline.pdf_extraction import PdfOcrError
 from app.services.evidence_document_text import build_canonical_document_text
+
+pytestmark = pytest.mark.usefixtures('inline_pdf_worker')
 
 
 def _add_text_to_page(page: fitz.Page, content: str) -> None:
@@ -717,17 +718,17 @@ async def test_pdf_extraction_concurrency_is_bounded_to_configured_limit(
     maximum_active = 0
     lock = threading.Lock()
 
-    def fake_extract(_file_path, _report_progress=None, *, reading_mode="automatic"):
+    async def fake_extract(_file_path, _report_progress=None, *, reading_mode="automatic"):
         nonlocal active, maximum_active
         with lock:
             active += 1
             maximum_active = max(maximum_active, active)
-        time.sleep(0.05)
+        await asyncio.sleep(0.05)
         with lock:
             active -= 1
         return PdfExtractionResult(text="ok", metadata={})
 
-    monkeypatch.setattr(pdf_extraction, "_extract_pdf_sync", fake_extract)
+    monkeypatch.setattr(pdf_extraction, "_extract_pdf_in_process", fake_extract)
     await asyncio.gather(*(pdf_extraction.extract_pdf(str(index)) for index in range(6)))
 
     assert maximum_active == 2
