@@ -1,3 +1,7 @@
+import {
+  useFinancialDraft,
+  useFinancialOrderDraft,
+} from "../stores/financial-drafts"
 import { SaveTraceFinding } from "./SavedTraceFinding"
 import { traceMethods } from "../lib/trace-methods"
 import { TraceReportDownload } from "./TraceReportDownload"
@@ -22,10 +26,18 @@ import {
 import { RequestedCoveragePanel } from "./RequestedCoveragePanel"
 import { LedgerSourceDialog } from "./LedgerSourceDialog"
 export function NetworkTracingWorkbench({ caseId }: { caseId: string }) {
-  const [start, setStart] = useState(""),
-    [end, setEnd] = useState(""),
-    [population, setPopulation] = useState("verified"),
-    [tolerance, setTolerance] = useState("3")
+  const [start, setStart] = useFinancialDraft(caseId, "network-start", ""),
+    [end, setEnd] = useFinancialDraft(caseId, "network-end", ""),
+    [population, setPopulation] = useFinancialDraft(
+      caseId,
+      "network-population",
+      "verified"
+    ),
+    [tolerance, setTolerance] = useFinancialDraft(
+      caseId,
+      "network-tolerance",
+      "3"
+    )
   const load = useMutation({
     retry: false,
     mutationFn: async () => {
@@ -56,6 +68,11 @@ export function NetworkTracingWorkbench({ caseId }: { caseId: string }) {
         Choose the transfers you want to follow, identify the funds you are
         investigating and compare how each calculation allocates withdrawals
         across accounts.
+      </p>
+      <p className="text-sm text-muted-foreground">
+        Unfinished inputs are kept in this browser tab. After a refresh, load
+        the same dates and currency to continue. Changed payments require fresh
+        review. Calculate again before saving a result to Findings.
       </p>
       <form
         onSubmit={(e) => {
@@ -137,7 +154,11 @@ export function NetworkTracingWorkbench({ caseId }: { caseId: string }) {
 }
 function NetworkCurrency({ scope }: { scope: NetworkInputs }) {
   const currencies = [...new Set(scope.rows.map((r) => r.currency))],
-    [currency, setCurrency] = useState(currencies[0] ?? "")
+    [currency, setCurrency] = useFinancialDraft(
+      scope.case_id,
+      `network-currency:${scope.snapshot_sha256}`,
+      currencies[0] ?? ""
+    )
   if (!currencies.length)
     return (
       <p>
@@ -173,28 +194,64 @@ function NetworkForm({
 }) {
   const accounts = scope.accounts.filter((a) => a.currency === currency),
     candidates = scope.candidates.filter((p) => p.currency === currency)
-  const [ordered, setOrdered] = useState(() =>
+  const draftKey = `network-trace:${scope.snapshot_sha256}:${scope.start_date}:${scope.end_date}:${scope.population}:${scope.tolerance_days}:${currency}`
+  const [ordered, setOrdered] = useFinancialOrderDraft(
+    scope.case_id,
+    `${draftKey}:order`,
     scope.rows
       .filter((r) => r.currency === currency)
-      .sort((a, b) => a.ordering_date.localeCompare(b.ordering_date))
+      .sort((a, b) => a.ordering_date.localeCompare(b.ordering_date)),
+    (r) => r.key
   )
-  const [openings, setOpenings] = useState(() =>
+  const [openings, setOpenings] = useFinancialDraft(
+      scope.case_id,
+      `${draftKey}:openings`,
       accounts.map((a) => ({
         account_id: a.account_id,
         amount_input: "",
         basis: "",
       }))
     ),
-    [attributions, setAttributions] = useState<DraftAttribution[]>([
-      { transaction_id: "", claim_id: "", amount_input: "", basis: "" },
-    ]),
-    [chosen, setChosen] = useState<number[]>([]),
-    [selectedMethods, setSelectedMethods] = useState<string[]>([]),
-    [basis, setBasis] = useState(""),
-    [assetUses, setAssetUses] = useState<TraceAssetUse[]>([]),
-    [allowBackward, setAllowBackward] = useState(false),
-    [backwardBasis, setBackwardBasis] = useState(""),
-    [orderBasis, setOrderBasis] = useState(""),
+    [attributions, setAttributions] = useFinancialDraft<DraftAttribution[]>(
+      scope.case_id,
+      `${draftKey}:attributions`,
+      [{ transaction_id: "", claim_id: "", amount_input: "", basis: "" }]
+    ),
+    [chosen, setChosen] = useFinancialDraft<number[]>(
+      scope.case_id,
+      `${draftKey}:pairs`,
+      []
+    ),
+    [selectedMethods, setSelectedMethods] = useFinancialDraft<string[]>(
+      scope.case_id,
+      `${draftKey}:methods`,
+      []
+    ),
+    [basis, setBasis] = useFinancialDraft(
+      scope.case_id,
+      `${draftKey}:pair-basis`,
+      ""
+    ),
+    [assetUses, setAssetUses] = useFinancialDraft<TraceAssetUse[]>(
+      scope.case_id,
+      `${draftKey}:assets`,
+      []
+    ),
+    [allowBackward, setAllowBackward] = useFinancialDraft(
+      scope.case_id,
+      `${draftKey}:allow-backward`,
+      false
+    ),
+    [backwardBasis, setBackwardBasis] = useFinancialDraft(
+      scope.case_id,
+      `${draftKey}:backward-basis`,
+      ""
+    ),
+    [orderBasis, setOrderBasis] = useFinancialDraft(
+      scope.case_id,
+      `${draftKey}:order-basis`,
+      ""
+    ),
     [pairPage, setPairPage] = useState(0),
     [source, setSource] = useState<string | null>(null)
   const selectedPairs = chosen.map((i) => candidates[i]),

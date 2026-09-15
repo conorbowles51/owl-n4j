@@ -1,4 +1,18 @@
-## Current completion: summary preparation fixed, 15 September 2026
+## Current completion: combined investigation and recovery verified, 15 September 2026
+
+Continue through docs/loupe-financial-completion-plan.md without pausing. Five-minute heartbeat active until 23:59 Europe/Dublin tonight. No push without a new explicit request. HEAD before this draft batch: c14cfc98.
+
+Source recovery passed: smaller Andrews local page-image retry recovered September savings and survived processing refresh; damaged dates remain flagged. The larger missing predecessor remains flagged with its original page and recovery controls. Old readings retained, no real imports. Private andrews-reprocess-acceptance.json and missing-continuation-ui-check.json.
+
+Same synthetic case 95081ef8-8ffe-475a-bc32-fc77aa1bd0e6: nine payments, two accounts, three PDFs. Correcting USD 120 to 125 retains the original and updates totals and analysis to credits 1975/debits 900. Failed note save retains text through refresh; two supplier payments save at USD 200. USD 300 transfer, single-account FIFO and cross-account calculations retain unfinished inputs through refresh and recalculate. Single-account FIFO leaves USD 220 of the selected USD 900 deposit. Calculations remain investigator assumptions.
+
+Combined report saves/reopens receipt, correction note, supplier selection, transfer and tracing, preserving five note versions and three byte-identical PDFs. A temporary read-only member reopened/downloaded this same report. Edits returned 403; revoked membership denied the same token. Temporary user removed. Private completion-case-journey.json, completion-report.zip, completion-access.json and completion-*-trace.json retain evidence. Reuse these IDs; do not repeat imports or saved notes.
+
+Uncommitted fixes retain correction, transfer, tracing and indirect-workpaper drafts in browser-tab storage, separated by user/case. Snapshot keys reject assumptions from changed readings. Recalculation is required after refresh. A live check exposed applied account/date filters resetting despite saved transfers; investigation scope and population now persist. Saved order retains IDs only, uses current values and never drops newly loaded payments. Accessible textarea names remain stable after restoring text.
+
+Focused checks passed: correction 16; final tracing/transfer 10; network 2; indirect 1; filters 3; draft store 3; shared scope/transfer/graph/timeline 12. Current TypeScript passed. Scoped lint in progress. No full suite or build at this checkpoint. Finish guide/commit, evidence-package mapping, reproducible validation inputs, final UI and final integration checks.
+
+## Previous completion: summary preparation fixed, 15 September 2026
 
 The five-minute continuation schedule remains active through 23:59 Europe/Dublin tonight. Current step: complete the supplied-source recovery checks, then execute the combined investigation and release acceptance items in docs/loupe-financial-completion-plan.md. Do not stop at this checkpoint or push without a new explicit request.
 

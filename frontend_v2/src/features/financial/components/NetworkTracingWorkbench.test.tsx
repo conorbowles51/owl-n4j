@@ -1,11 +1,13 @@
+import { useFinancialDraftStore } from "../stores/financial-drafts"
 import { render, screen, fireEvent } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { afterEach, expect, it, vi } from "vitest"
+import { beforeEach, afterEach, expect, it, vi } from "vitest"
 import { NetworkTracingWorkbench } from "./NetworkTracingWorkbench"
 vi.mock("./RequestedCoveragePanel", () => ({
   RequestedCoveragePanel: () => null,
 }))
 afterEach(() => vi.restoreAllMocks())
+beforeEach(() => useFinancialDraftStore.setState({ drafts: {} }))
 const row = (
   key: string,
   account_id: string,
@@ -94,5 +96,45 @@ it("requires explicit account openings, pairings and methods; excludes receiving
   })
   expect(
     screen.queryByLabelText("Opening amount account 1")
+  ).not.toBeInTheDocument()
+})
+
+it("restores cross-account inputs and pair selection after reopening", async () => {
+  vi.spyOn(globalThis, "fetch").mockImplementation(
+    async () => new Response(JSON.stringify(scope), { status: 200 })
+  )
+  const mount = () =>
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <NetworkTracingWorkbench caseId="case" />
+      </QueryClientProvider>
+    )
+  const first = mount()
+  for (const [label, value] of [
+    ["Trace from date", "2026-01-01"],
+    ["Trace through date", "2026-01-31"],
+    ["Cross-account population", "working"],
+  ])
+    fireEvent.change(screen.getByLabelText(label), { target: { value } })
+  fireEvent.click(
+    screen.getByRole("button", { name: "Load cross-account inputs" })
+  )
+  await screen.findByLabelText("Opening amount account 1")
+  fireEvent.change(screen.getByLabelText("Opening amount account 1"), {
+    target: { value: "150.00" },
+  })
+  fireEvent.click(screen.getByLabelText("Trace transfer pair 1"))
+  first.unmount()
+  mount()
+  expect(screen.getByLabelText("Trace from date")).toHaveValue("2026-01-01")
+  fireEvent.click(
+    screen.getByRole("button", { name: "Load cross-account inputs" })
+  )
+  expect(await screen.findByLabelText("Opening amount account 1")).toHaveValue(
+    "150.00"
+  )
+  expect(screen.getByLabelText("Trace transfer pair 1")).toBeChecked()
+  expect(
+    screen.queryByText("Conditional cross-account results")
   ).not.toBeInTheDocument()
 })

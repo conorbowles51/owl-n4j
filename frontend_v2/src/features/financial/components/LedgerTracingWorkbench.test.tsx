@@ -1,5 +1,6 @@
+import { useFinancialDraftStore } from "../stores/financial-drafts"
 import { render, screen, fireEvent, waitFor } from "@testing-library/react"
-import { describe, it, expect, vi } from "vitest"
+import { beforeEach, describe, it, expect, vi } from "vitest"
 import { LedgerTracingWorkbench } from "./LedgerTracingWorkbench"
 import { fetchAPI } from "@/lib/api-client"
 vi.mock("@/lib/api-client", () => ({ fetchAPI: vi.fn() }))
@@ -21,6 +22,10 @@ vi.mock("./LedgerFilters", () => ({
     </button>
   ),
 }))
+beforeEach(() => {
+  useFinancialDraftStore.setState({ drafts: {} })
+  vi.mocked(fetchAPI).mockReset()
+})
 const inputs = {
   case_id: "case",
   account_id: "account",
@@ -92,7 +97,7 @@ it("adds and removes deposit attributions without losing another claim", async (
   fireEvent.click(
     screen.getByRole("button", { name: "Add deposit attribution" })
   )
-  fireEvent.change(screen.getByLabelText("Claim label 2"), {
+  fireEvent.change(await screen.findByLabelText("Claim label 2"), {
     target: { value: "Second claim" },
   })
   fireEvent.click(screen.getByRole("button", { name: "Remove attribution 1" }))
@@ -146,4 +151,51 @@ it("converts decimal currency inputs exactly before submitting the scenario", as
       { transaction_id: "row", claim_id: "Claim", amount_minor: "50" },
     ],
   })
+})
+
+it("restores tracing assumptions only for the same loaded payments", async () => {
+  vi.mocked(fetchAPI).mockResolvedValue(inputs)
+  const first = render(<LedgerTracingWorkbench caseId="case" />)
+  fireEvent.click(screen.getByRole("button", { name: "Apply scope" }))
+  fireEvent.click(screen.getByRole("button", { name: "Load tracing inputs" }))
+  await screen.findByLabelText("Opening balance (GBP)")
+  fireEvent.change(screen.getByLabelText("Opening balance (GBP)"), {
+    target: { value: "220.00" },
+  })
+  fireEvent.change(screen.getByLabelText("Opening balance basis"), {
+    target: { value: "Opening amount on page 1" },
+  })
+  fireEvent.change(screen.getByLabelText("Claim label"), {
+    target: { value: "Deposit being investigated" },
+  })
+  fireEvent.click(
+    screen.getByRole("checkbox", { name: /^First in, first out/ })
+  )
+  first.unmount()
+  const next = render(<LedgerTracingWorkbench caseId="case" />)
+  fireEvent.click(screen.getByRole("button", { name: "Load tracing inputs" }))
+  expect(await screen.findByLabelText("Opening balance (GBP)")).toHaveValue(
+    "220.00"
+  )
+  expect(screen.getByLabelText("Opening balance basis")).toHaveValue(
+    "Opening amount on page 1"
+  )
+  expect(screen.getByLabelText("Claim label")).toHaveValue(
+    "Deposit being investigated"
+  )
+  expect(
+    screen.getByRole("checkbox", { name: /^First in, first out/ })
+  ).toBeChecked()
+  expect(
+    screen.queryByRole("button", { name: "Download conditional scenario" })
+  ).not.toBeInTheDocument()
+  next.unmount()
+  vi.mocked(fetchAPI).mockResolvedValue({
+    ...inputs,
+    snapshot_sha256: "b".repeat(64),
+  })
+  render(<LedgerTracingWorkbench caseId="case" />)
+  fireEvent.click(screen.getByRole("button", { name: "Load tracing inputs" }))
+  expect(await screen.findByLabelText("Opening balance (GBP)")).toHaveValue("")
+  expect(screen.getByLabelText("Claim label")).toHaveValue("")
 })

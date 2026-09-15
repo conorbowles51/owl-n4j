@@ -469,6 +469,9 @@ The saved selection keeps the payment values as they were when saved. Opening a 
 1. Locate the payment in **Transactions**.
 2. Select **Open transaction** and compare it with its original statement.
 3. Select **Correct a value**. Its current fields are filled in. Correct the printed date, description, counterparty, reference, transaction type, amount, direction or balance as needed. Leave an unprinted date or balance empty; at least one date is required.
+
+   Unrecorded correction fields are kept in this browser tab. After a refresh, open the same transaction and select **Correct a value** again. Review a fresh preview before recording the correction. Closing the tab may discard unfinished edits.
+
 4. Select **Preview correction**.
 5. Read **Changes to record** and compare the before and after statement controls. Read any warning that the document will be excluded from verified totals or the replacement remains held out.
 6. Enter **Reason for correction**, identifying the source and the error.
@@ -745,6 +748,8 @@ The **Minimum tolerance (whole currency units)** field takes whole units. For ex
 
 Tracing asks how selected calculation rules allocate money under assumptions you supply. Begin only after checking the account's readings, dates and source coverage.
 
+Your account, dates, opening amount, explanations, selected deposits and calculation choices stay in this browser tab after a refresh. Reopen **Trace funds**, then select **Load tracing inputs** for the same account and dates. Calculate again before saving. If a transaction has changed, check the new readings and enter fresh assumptions for that set of payments.
+
 ### Load the account
 
 1. Open **More financial tools**, then **Trace funds**.
@@ -788,6 +793,8 @@ Use the methods offered by the selected screen and record why you are comparing 
 Editing an assumption clears a stale result. Calculate again and save a new scenario. A downloaded scenario is a record of its captured inputs; it does not update when the live ledger changes.
 
 ## Trace funds between accounts
+
+Unfinished dates, account opening amounts, deposit choices and selected transfers stay in this browser tab after refresh. Select **Load cross-account inputs** to continue with the same dates and currency, then calculate again. Changed payments require fresh review before saving another result.
 
 1. Open **More financial tools**, then **Trace funds** and **Trace between accounts**.
 2. Enter **Trace from date**, **Trace through date**, population and transfer date tolerance.
@@ -894,7 +901,7 @@ The viewer shows the calculation as it was saved. It does not recalculate using 
 5. Select **Save workpaper in Findings**. A new note is created with the revised calculation and a link to the original workpaper.
 6. Open that new note to check the saved result.
 
-Use **Hide revised copy** to fold away the editing form and **Continue revised copy** to return to it. Changing financial tabs retains the form. Save before refreshing the page, leaving the case or closing the browser; an unsaved copy is not a shared case record.
+Use **Hide revised copy** to fold away the editing form and **Continue revised copy** to return to it. Changing financial tabs retains the form. After refresh, reopen the same saved workpaper and its revised copy to restore your unfinished fields. Calculate again before saving. Save before closing the browser tab if you need to keep the work with the case or share it with colleagues.
 
 To resume a downloaded calculation file instead, open **Indirect review methods**, find **Restore a downloaded workpaper** and select the original JSON file. Check the restored subject, dates, inputs and result before editing. Changing a field clears the old result until you calculate again.
 
@@ -1088,7 +1095,7 @@ External timestamping is an administrator-operated process, not a button an inve
 | A pattern theory or claim response | Use the provided Workspace save action and confirm the entry. | Open Workspace and inspect the saved entry and attachments. |
 | A ledger report | Wait for the completed download and retain the ZIP. | Open the retained report or prepare a fresh capture for current records. |
 
-Switching financial tabs keeps visited forms and analysis results during that page visit. Statement drafts and unfinished note text also have browser-tab storage where the screen says so. These are not shared case records. Save your notes and calculations before closing or refreshing the browser; uploads or calculations still running can be interrupted.
+Switching financial tabs keeps visited forms and analysis results during that page visit. Account/date filters, statement and document reviews, transaction corrections, notes, selected payments, report drafts, transfer choices and tracing/workpaper inputs also have browser-tab storage where the screen says so. After refresh, reopen the same form and source to continue. Transfer choices restore when you find the same candidate payments again; changed readings require new choices. Calculations must be run again before saving a result. Save your work to the case before closing the browser tab or sharing it with colleagues. Uploads or calculations still running can be interrupted.
 
 If a save's outcome is uncertain, reload the saved record first. A repeated click is not a reliable way to find out whether the first request succeeded.
 

@@ -1,3 +1,4 @@
+import { useFinancialDraft } from "../stores/financial-drafts"
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
@@ -14,18 +15,34 @@ export function LedgerFilters({
   caseId,
   onApply,
   accountOnly = false,
+  draftName,
 }: {
   caseId: string
+  draftName?: string
   accountOnly?: boolean
   onApply: (params: LedgerQueryParams) => void
 }) {
-  const [search, setSearch] = useState("")
-  const [requestedSearch, setRequestedSearch] = useState<string | null>(null)
-  const [account, setAccount] = useState<{ id: string; label: string } | null>(
-    null
+  const [saved, setSaved] = useFinancialDraft(
+    caseId,
+    draftName ?? "ledger-filters",
+    {
+      search: "",
+      account: null as { id: string; label: string } | null,
+      start: "",
+      end: "",
+    }
   )
-  const [start, setStart] = useState("")
-  const [end, setEnd] = useState("")
+  const [local, setLocal] = useState(saved)
+  const { search, account, start, end } = draftName ? saved : local
+  const update = draftName ? setSaved : setLocal
+  const setSearch = (search: string) =>
+    update((previous) => ({ ...previous, search }))
+  const setAccount = (account: { id: string; label: string } | null) =>
+    update((previous) => ({ ...previous, account }))
+  const setStart = (start: string) =>
+    update((previous) => ({ ...previous, start }))
+  const setEnd = (end: string) => update((previous) => ({ ...previous, end }))
+  const [requestedSearch, setRequestedSearch] = useState<string | null>(null)
   const accounts = useQuery({
     queryKey: ["financial-ledger", caseId, "filter-accounts", requestedSearch],
     enabled: requestedSearch !== null,

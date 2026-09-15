@@ -1,7 +1,8 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
-import { afterEach, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, expect, it, vi } from "vitest"
 import { CorrectionForm } from "./CorrectionForm"
+import { useFinancialDraftStore } from "../stores/financial-drafts"
 import {
   correctionMinor,
   correctionMoney,
@@ -9,6 +10,7 @@ import {
 } from "../lib/correction-contract"
 
 afterEach(() => vi.restoreAllMocks())
+beforeEach(() => useFinancialDraftStore.setState({ drafts: {} }))
 const preview = {
   case_id: "case-a",
   transaction_id: "old",
@@ -68,6 +70,43 @@ function mount(initialDirection: "credit" | "debit" = "credit") {
 function response(value: unknown, status = 200) {
   return new Response(JSON.stringify(value), { status })
 }
+it("restores an unfinished correction after reopening and requires a fresh preview", () => {
+  const client = new QueryClient()
+  const form = (id = "old") => (
+    <QueryClientProvider client={client}>
+      <CorrectionForm
+        caseId="case-a"
+        transactionId={id}
+        currency="GBP"
+        onClose={vi.fn()}
+      />
+    </QueryClientProvider>
+  )
+  const first = render(form())
+  fireEvent.change(screen.getByLabelText("Proposed amount (GBP)"), {
+    target: { value: "125.50" },
+  })
+  fireEvent.change(screen.getByLabelText("Direction"), {
+    target: { value: "debit" },
+  })
+  fireEvent.change(screen.getByLabelText("Reason for correction"), {
+    target: { value: "Compared with the printed amount" },
+  })
+  first.unmount()
+  const reopened = render(form())
+  expect(screen.getByLabelText("Proposed amount (GBP)")).toHaveValue("125.50")
+  expect(screen.getByLabelText("Direction")).toHaveValue("debit")
+  expect(screen.getByLabelText("Reason for correction")).toHaveValue(
+    "Compared with the printed amount"
+  )
+  expect(
+    screen.getByRole("button", { name: "Record correction" })
+  ).toBeDisabled()
+  reopened.unmount()
+  render(form("another-payment"))
+  expect(screen.getByLabelText("Proposed amount (GBP)")).toHaveValue("")
+  expect(screen.getByLabelText("Reason for correction")).toHaveValue("")
+})
 it("preserves exact major/minor values and rejects invalid precision", () => {
   expect(correctionMinor("90071992547409.93", "GBP")).toBe("9007199254740993")
   expect(correctionMoney("9007199254740993", "GBP")).toBe(
@@ -256,15 +295,13 @@ it("previews source-field edits without requiring an amount change and resets th
     description: "Corrected description",
     running_balance_minor: "-125",
   }
-  const fetch = vi
-    .spyOn(globalThis, "fetch")
-    .mockResolvedValue(
-      response({
-        ...preview,
-        proposed: { ...preview.proposed, amount_minor: "100" },
-        field_changes: fields,
-      })
-    )
+  const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+    response({
+      ...preview,
+      proposed: { ...preview.proposed, amount_minor: "100" },
+      field_changes: fields,
+    })
+  )
   render(
     <QueryClientProvider client={new QueryClient()}>
       <CorrectionForm

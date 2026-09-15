@@ -1,37 +1,68 @@
 import { create } from "zustand"
+import { createJSONStorage, persist } from "zustand/middleware"
+import { useAuthStore } from "@/features/auth/hooks/use-auth"
 import type { LedgerQueryParams } from "../hooks/use-ledger-transactions"
 
 type Scope = Pick<LedgerQueryParams, "accountId" | "startDate" | "endDate">
+export type AnalysisPopulation = "working" | "verified"
 const emptyScope: Scope = {}
+const ownerKey = () => {
+  const user = useAuthStore.getState().user
+  return user?.id || user?.username
+}
+const scopeKey = (caseId: string, owner = ownerKey()) =>
+  owner ? JSON.stringify([owner, caseId]) : caseId
 
-// A case's applied account/date selection follows its investigation tabs.
-// Draft filter edits stay in the form until Apply. Nothing is written to disk.
+// Applied filters follow investigation tabs and survive refresh in this browser
+// tab. Each signed-in user's case scope is separate from everyone else's.
 export const useInvestigationScopeStore = create<{
   scopes: Record<string, Scope>
+  populations: Record<string, AnalysisPopulation>
   apply: (caseId: string, scope: Scope) => void
+  setPopulation: (caseId: string, value: AnalysisPopulation) => void
   reset: () => void
-}>((set) => ({
-  scopes: {},
-  apply: (caseId, scope) =>
-    set((state) => ({
-      scopes: {
-        ...state.scopes,
-        [caseId]: {
-          accountId: scope.accountId,
-          startDate: scope.startDate,
-          endDate: scope.endDate,
-        },
-      },
-    })),
-  reset: () => {
-    set({ scopes: {} })
-    useAnalysisPopulationStore.setState({ cases: {} })
-  },
-}))
+}>()(
+  persist(
+    (set) => ({
+      scopes: {},
+      populations: {},
+      apply: (caseId, scope) =>
+        set((state) => ({
+          scopes: {
+            ...state.scopes,
+            [scopeKey(caseId)]: {
+              accountId: scope.accountId,
+              startDate: scope.startDate,
+              endDate: scope.endDate,
+            },
+          },
+        })),
+      setPopulation: (caseId, value) =>
+        set((state) => ({
+          populations: { ...state.populations, [scopeKey(caseId)]: value },
+        })),
+      reset: () => set({ scopes: {}, populations: {} }),
+    }),
+    {
+      name: "loupe-investigation-scope",
+      storage: createJSONStorage(() => sessionStorage),
+      partialize: (state) => ({
+        scopes: state.scopes,
+        populations: state.populations,
+      }),
+    }
+  )
+)
+
+function useScopeKey(caseId: string | undefined) {
+  const owner = useAuthStore((state) => state.user?.id || state.user?.username)
+  return caseId ? scopeKey(caseId, owner) : undefined
+}
 
 export function useInvestigationScope(caseId: string | undefined) {
+  const key = useScopeKey(caseId)
   const scope = useInvestigationScopeStore((state) =>
-    caseId ? (state.scopes[caseId] ?? emptyScope) : emptyScope
+    key ? (state.scopes[key] ?? emptyScope) : emptyScope
   )
   const apply = useInvestigationScopeStore((state) => state.apply)
   return [
@@ -42,21 +73,12 @@ export function useInvestigationScope(caseId: string | undefined) {
   ] as const
 }
 
-export type AnalysisPopulation = "working" | "verified"
-const useAnalysisPopulationStore = create<{
-  cases: Record<string, AnalysisPopulation>
-  set: (caseId: string, value: AnalysisPopulation) => void
-}>((set) => ({
-  cases: {},
-  set: (caseId, value) =>
-    set((state) => ({ cases: { ...state.cases, [caseId]: value } })),
-}))
-
 export function useAnalysisPopulation(caseId: string | undefined) {
-  const population = useAnalysisPopulationStore((state) =>
-    caseId ? (state.cases[caseId] ?? "working") : "working"
+  const key = useScopeKey(caseId)
+  const population = useInvestigationScopeStore((state) =>
+    key ? (state.populations[key] ?? "working") : "working"
   )
-  const set = useAnalysisPopulationStore((state) => state.set)
+  const set = useInvestigationScopeStore((state) => state.setPopulation)
   return [
     population,
     (value: string) => {

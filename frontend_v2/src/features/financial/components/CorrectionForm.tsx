@@ -2,6 +2,7 @@ import type { LedgerTransaction } from "../api"
 import { NativeControlComparisonPanel } from "./NativeControlComparisonPanel"
 import { PrintedTotalChecks } from "./PrintedTotalChecks"
 import { useRef, useState } from "react"
+import { useFinancialDraft } from "../stores/financial-drafts"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { ApiError, fetchAPI } from "@/lib/api-client"
 import { RunningBalanceComparisonPanel } from "./RunningBalanceComparisonPanel"
@@ -33,9 +34,6 @@ export function CorrectionForm({
     value === null
       ? ""
       : correctionMoney(String(value), currency).replace(` ${currency}`, "")
-  const [amount, setAmount] = useState(
-    initialRow ? editAmount(initialRow.amount_minor) : ""
-  )
   const fieldLabels = {
     transaction_date: "Transaction date",
     posted_date: "Booking date",
@@ -46,17 +44,27 @@ export function CorrectionForm({
     bank_reference: "Bank reference",
     transaction_type: "Transaction type",
   } as const
-  const [editedFields, setEditedFields] = useState<Record<string, string>>(() =>
-    Object.fromEntries(
-      Object.keys(fieldLabels).map((key) => [
-        key,
-        initialRow?.[key as keyof typeof fieldLabels] ?? "",
-      ])
-    )
+  const [savedDraft, setDraft, clearDraft] = useFinancialDraft(
+    caseId,
+    `transaction-correction:${transactionId}:${currency}`,
+    {
+      amount: initialRow ? editAmount(initialRow.amount_minor) : "",
+      direction: initialDirection,
+      reason: "",
+      balance: initialRow ? editAmount(initialRow.running_balance_minor) : "",
+      editedFields: Object.fromEntries(
+        Object.keys(fieldLabels).map((key) => [
+          key,
+          initialRow?.[key as keyof typeof fieldLabels] ?? "",
+        ])
+      ) as Record<string, string>,
+    }
   )
-  const [balance, setBalance] = useState(
-    initialRow ? editAmount(initialRow.running_balance_minor) : ""
-  )
+  const [completedDraft, setCompletedDraft] = useState<
+    typeof savedDraft | null
+  >(null)
+  const { amount, direction, reason, balance, editedFields } =
+    completedDraft ?? savedDraft
   const balanceMagnitude = correctionMinor(balance.replace(/^-/, ""), currency)
   const balanceMinor =
     balance === ""
@@ -81,10 +89,6 @@ export function CorrectionForm({
     )
       fieldChanges.running_balance_minor = balanceMinor
   }
-  const [direction, setDirection] = useState<"credit" | "debit">(
-    initialDirection
-  )
-  const [reason, setReason] = useState("")
   const lock = useRef(false)
   const client = useQueryClient()
   const minor = correctionMinor(amount, currency)
@@ -158,6 +162,10 @@ export function CorrectionForm({
         throw new Error("The response did not confirm the reviewed correction.")
       return data
     },
+    onSuccess: () => {
+      setCompletedDraft(savedDraft)
+      clearDraft()
+    },
     onSettled: (_data, _error, variables) => {
       void client.invalidateQueries({
         queryKey: ["ledger-source", variables.reviewed.case_id],
@@ -194,6 +202,13 @@ export function CorrectionForm({
         The original reading and citation stay in the ledger. A correction
         creates a replacement and records your reason.
       </p>
+      {!finished && (
+        <p className="text-sm text-muted-foreground">
+          These edits are kept in this browser tab until you record the
+          correction. After a refresh, open this transaction's correction again
+          to continue. Closing the browser tab may discard unrecorded edits.
+        </p>
+      )}
       <label className="block text-sm">
         Proposed amount ({currency})
         <input
@@ -203,7 +218,7 @@ export function CorrectionForm({
           value={amount}
           disabled={busy || finished}
           onChange={(e) => {
-            setAmount(e.target.value)
+            setDraft((current) => ({ ...current, amount: e.target.value }))
             preview.reset()
           }}
         />
@@ -215,7 +230,10 @@ export function CorrectionForm({
           value={direction}
           disabled={busy || finished}
           onChange={(e) => {
-            setDirection(e.target.value as "credit" | "debit")
+            setDraft((current) => ({
+              ...current,
+              direction: e.target.value as "credit" | "debit",
+            }))
             preview.reset()
           }}
         >
@@ -235,9 +253,12 @@ export function CorrectionForm({
                 maxLength={4000}
                 disabled={busy || finished}
                 onChange={(event) => {
-                  setEditedFields((current) => ({
+                  setDraft((current) => ({
                     ...current,
-                    [key]: event.target.value,
+                    editedFields: {
+                      ...current.editedFields,
+                      [key]: event.target.value,
+                    },
                   }))
                   preview.reset()
                 }}
@@ -252,7 +273,10 @@ export function CorrectionForm({
               value={balance}
               disabled={busy || finished}
               onChange={(event) => {
-                setBalance(event.target.value)
+                setDraft((current) => ({
+                  ...current,
+                  balance: event.target.value,
+                }))
                 preview.reset()
               }}
             />
@@ -407,11 +431,14 @@ export function CorrectionForm({
       <label className="block text-sm">
         Reason for correction
         <textarea
+          aria-label="Reason for correction"
           className="mt-1 block w-full rounded border bg-background p-2"
           maxLength={4000}
           value={reason}
           disabled={busy || finished}
-          onChange={(e) => setReason(e.target.value)}
+          onChange={(e) =>
+            setDraft((current) => ({ ...current, reason: e.target.value }))
+          }
         />
       </label>
       {record.isSuccess && (

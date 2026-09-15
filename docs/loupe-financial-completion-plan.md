@@ -12,7 +12,7 @@ The finished workflow is: upload statements and supporting payment documents, ch
 - [x] Review the supplied Wells Fargo wire report separately, save checked details in Findings and optionally link an existing payment.
 - [x] Finish the Andrews deposit receipt inside a multi-document PDF: selection, separate dates and balances, masked account reference, saved finding, optional payment link, original source and report inclusion. Verified with the supplied receipt on PDF page 42 and a synthetic statement plus two receipts; separate drafts, refresh, same-file payment link, saved source and exact-PDF report passed.
 - [x] Account for every page in the eight supplied files: statement section, supporting receipt, application/terms, repeated copy, or an explicit unresolved page. Recorded all 567 pages (511 unique-file pages) in the private inventory and summarised them in loupe-supplied-statement-checks.md. Unresolved account/continuation pages remain explicit.
-- [ ] Check the remaining damaged account headings and missing continuation sequence. Use existing correction/reprocessing controls where they suffice; fix any path that loses original readings or leaves the user unable to finish the review. Unreadable identifiers remain unknown until the original supports a correction.
+- [x] Check the remaining damaged account headings and missing continuation sequence. The local OCR retry recovers the smaller Andrews file's September savings section and two payments; damaged dates still need checking. Its processing request survived refresh. The larger file's missing predecessor remains flagged, opens at page 13 and has source/reprocessing/manual review controls. Use existing correction/reprocessing controls where they suffice; fix any path that loses original readings or leaves the user unable to finish the review. Unreadable identifiers remain unknown until the original supports a correction.
 
 Done when: all supplied files can be opened; each recognised section can be reviewed independently; every remaining unreadable or missing item has a visible next action; source-only checks and synthetic imports prove that receipts, headings, balances and duplicate copies do not inflate transactions. This is not a promise that illegible source text can be recovered automatically.
 
@@ -25,8 +25,8 @@ The following features are implemented. Final acceptance checks must use the sam
 - [x] Inspect account holders, statement periods, missing dates and balances.
 - [x] Investigate people/businesses, compare transfers, inspect patterns and trends, follow the graph and compare case events.
 - [x] Save named transaction selections, notes, comparisons and tracing calculations in Findings.
-- [ ] Repeat the full journey after the new document support, including one correction propagating to totals, analysis and reports, and one receipt linked to an existing payment without duplication.
-- [ ] Verify that an authorised second case member can reopen the saved work and original sources and that a read-only member cannot change it.
+- [x] Repeat the full journey after the new document support, including one correction propagating to totals, analysis and reports, and one receipt linked to an existing payment without duplication. One synthetic case covers nine payments, two accounts, three PDFs, a retained correction, failed-save recovery, selections, paired transfer, single/cross-account tracing and a five-finding report. Exact original PDFs verified.
+- [x] Verify that an authorised second case member can reopen the saved work and original sources and that a read-only member cannot change it. The second member reopened/downloaded the same report; edit attempts and revoked reads returned 403. Temporary user removed.
 
 Done when: an investigator can move from original evidence to a recorded observation and report without resorting to internal processing screens or losing their place.
 

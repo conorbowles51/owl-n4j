@@ -1,3 +1,4 @@
+import { useFinancialDraft } from "../stores/financial-drafts"
 import { useState, useRef } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
@@ -66,34 +67,59 @@ export function IndirectReviewWorkbench({
 }) {
   const initial =
     initialReview?.value.case_id === caseId ? initialReview.value : undefined
-  const [method, setMethod] = useState<IndirectRequest["method"]>(
+  const draftKey = `indirect:${copiedFrom ?? "new"}:${initialReview?.envelope.scenario_sha256 ?? "new"}`
+  const [method, setMethod] = useFinancialDraft<IndirectRequest["method"]>(
+      caseId,
+      `${draftKey}:method`,
       initial?.inputs.method ?? "net_worth"
     ),
-    [currency, setCurrency] = useState(initial?.inputs.currency ?? ""),
-    [subject, setSubject] = useState(initial?.inputs.subject ?? ""),
-    [start, setStart] = useState(initial?.inputs.start_date ?? ""),
-    [end, setEnd] = useState(initial?.inputs.end_date ?? ""),
-    [entries, setEntries] = useState<Record<string, Field>>(() =>
+    [currency, setCurrency] = useFinancialDraft(
+      caseId,
+      `${draftKey}:currency`,
+      initial?.inputs.currency ?? ""
+    ),
+    [subject, setSubject] = useFinancialDraft(
+      caseId,
+      `${draftKey}:subject`,
+      initial?.inputs.subject ?? ""
+    ),
+    [start, setStart] = useFinancialDraft(
+      caseId,
+      `${draftKey}:start`,
+      initial?.inputs.start_date ?? ""
+    ),
+    [end, setEnd] = useFinancialDraft(
+      caseId,
+      `${draftKey}:end`,
+      initial?.inputs.end_date ?? ""
+    ),
+    [entries, setEntries] = useFinancialDraft<Record<string, Field>>(
+      caseId,
+      `${draftKey}:entries`,
       initial ? restoredFields(initial.inputs) : {}
     ),
-    [checks, setChecks] = useState<Record<string, Field>>(() =>
+    [checks, setChecks] = useFinancialDraft<Record<string, Field>>(
+      caseId,
+      `${draftKey}:checks`,
       initial ? restoredFields(initial.inputs, true) : {}
     ),
     [search, setSearch] = useState(""),
-    [sources, setSources] = useState<{ id: string; label: string }[]>(
-      () => initial?.sources.map((s) => ({ id: s.id, label: s.filename })) ?? []
+    [sources, setSources] = useFinancialDraft<{ id: string; label: string }[]>(
+      caseId,
+      `${draftKey}:sources`,
+      initial?.sources.map((s) => ({ id: s.id, label: s.filename })) ?? []
     ),
     [source, setSource] = useState<{ id: string; label: string } | null>(null),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
     [report, setReport] = useState<VerifiedIndirectReview | null>(null)
   const revision = useRef(0)
-  const [drafts, setDrafts] = useState<
+  const [drafts, setDrafts] = useFinancialDraft<
     Record<
       string,
       { entries: Record<string, Field>; checks: Record<string, Field> }
     >
-  >({})
+  >(caseId, `${draftKey}:method-copies`, {})
   const save = useCreateCaseworkEntry(caseId)
   const catalog = useQuery({
     queryKey: ["financial-ledger", caseId, "indirect-methods"],
@@ -377,6 +403,12 @@ export function IndirectReviewWorkbench({
         spending, when payment records alone do not answer your question. Enter
         each amount, explain how you arrived at it and attach the supporting
         file. The result depends on these inputs and your recorded checks.
+      </p>
+      <p className="text-sm text-muted-foreground">
+        Unfinished entries and source references are kept in this browser tab
+        after a refresh. Recalculate and select Save workpaper in Findings to
+        share the result with the case. Closing the browser tab may discard
+        unsaved work.
       </p>
       {initial && (
         <p role="status" className="rounded border p-3">

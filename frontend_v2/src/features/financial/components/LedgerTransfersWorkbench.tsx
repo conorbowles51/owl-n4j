@@ -128,8 +128,16 @@ function TransferScope({
   population: "working" | "verified"
   tolerance: number
 }) {
-  const [selected, setSelected] = useState<number[]>([]),
-    [basis, setBasis] = useFinancialDraft(caseId, "transfer-basis", ""),
+  const draftKey = `transfer:${start}:${end}:${population}:${tolerance}`
+  const [pairDraft, setPairDraft] = useFinancialDraft(
+    caseId,
+    `${draftKey}:pairs`,
+    {
+      snapshot: "",
+      pairs: [] as { debit_id: string; credit_id: string }[],
+    }
+  )
+  const [basis, setBasis] = useFinancialDraft(caseId, `${draftKey}:basis`, ""),
     [page, setPage] = useState(0),
     [source, setSource] = useState<string | null>(null)
   const load = useMutation({
@@ -157,12 +165,37 @@ function TransferScope({
       return data
     },
     onSuccess: () => {
-      setSelected([])
       setPage(0)
       setSource(null)
       scenario.reset()
     },
   })
+  const restored =
+    load.data && pairDraft.snapshot === load.data.snapshot_sha256
+      ? pairDraft.pairs.map((pair) =>
+          load.data!.candidates.findIndex(
+            (candidate) =>
+              candidate.debit_id === pair.debit_id &&
+              candidate.credit_id === pair.credit_id
+          )
+        )
+      : []
+  const selected =
+    restored.every((index) => index >= 0) &&
+    new Set(restored).size === restored.length
+      ? restored
+      : []
+  const setSelected = (next: number[] | ((previous: number[]) => number[])) => {
+    if (!load.data) return
+    const indices = typeof next === "function" ? next(selected) : next
+    setPairDraft({
+      snapshot: load.data.snapshot_sha256,
+      pairs: indices.map((index) => ({
+        debit_id: load.data!.candidates[index].debit_id,
+        credit_id: load.data!.candidates[index].credit_id,
+      })),
+    })
+  }
   const scenario = useMutation({
     retry: false,
     mutationFn: async () => {
@@ -216,12 +249,25 @@ function TransferScope({
         onClick={() => {
           load.reset()
           scenario.reset()
-          setSelected([])
           load.mutate()
         }}
       >
         Find possible transfers
       </Button>
+      <p className="text-sm text-muted-foreground">
+        Your selections and explanation are kept in this browser tab. After a
+        refresh, find possible transfers again to restore them. Save the
+        comparison in Findings to share it with the case.
+      </p>
+      {load.data &&
+        !load.isPending &&
+        pairDraft.pairs.length > 0 &&
+        selected.length !== pairDraft.pairs.length && (
+          <p role="status">
+            The payments or possible pairs changed. Review and select the
+            transfers again before calculating.
+          </p>
+        )}
       {load.isPending && <p role="status">Comparing payments…</p>}
       {load.isError && (
         <p role="alert">

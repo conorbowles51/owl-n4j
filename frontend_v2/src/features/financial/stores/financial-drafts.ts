@@ -55,3 +55,27 @@ export function useFinancialDraft<T>(caseId: string, name: string, initial: T) {
     () => useFinancialDraftStore.getState().remove(key),
   ] as const
 }
+
+// Keep only the chosen order, not a second copy of financial readings. A stale
+// or incomplete order must never drop a newly loaded payment from calculation.
+export function useFinancialOrderDraft<T>(
+  caseId: string,
+  name: string,
+  items: T[],
+  keyOf: (item: T) => string
+) {
+  const [keys, setKeys] = useFinancialDraft(caseId, name, items.map(keyOf))
+  const byKey = new Map(items.map((item) => [keyOf(item), item]))
+  const ordered = (value: string[]) =>
+    Array.isArray(value) &&
+    value.length === items.length &&
+    new Set(value).size === items.length &&
+    value.every((key) => byKey.has(key))
+      ? value.map((key) => byKey.get(key)!)
+      : items
+  const update = (next: T[] | ((previous: T[]) => T[])) =>
+    setKeys((previous) =>
+      (typeof next === "function" ? next(ordered(previous)) : next).map(keyOf)
+    )
+  return [ordered(keys), update] as const
+}

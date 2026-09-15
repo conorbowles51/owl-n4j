@@ -167,6 +167,7 @@ export function SavePaymentSelection({
               <label className="block">
                 What did you notice?
                 <textarea
+                  aria-label="What did you notice?"
                   className="block w-full rounded border bg-background p-2 min-h-24"
                   value={draft.body}
                   maxLength={8000}

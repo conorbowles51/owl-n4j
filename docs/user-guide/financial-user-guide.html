@@ -354,15 +354,34 @@
 <h2 id="correct-a-reading-or-change-its-inclusion">Correct a reading or change its inclusion</h2>
 <h3>Correct a transaction</h3>
 <ol>
-<li>Locate the payment in <strong>Transactions</strong>.</li>
-<li>Select <strong>Open transaction</strong> and compare it with its original statement.</li>
-<li>Select <strong>Correct a value</strong>. Its current fields are filled in. Correct the printed date, description, counterparty, reference, transaction type, amount, direction or balance as needed. Leave an unprinted date or balance empty; at least one date is required.</li>
-<li>Select <strong>Preview correction</strong>.</li>
-<li>Read <strong>Changes to record</strong> and compare the before and after statement controls. Read any warning that the document will be excluded from verified totals or the replacement remains held out.</li>
-<li>Enter <strong>Reason for correction</strong>, identifying the source and the error.</li>
-<li>Select <strong>Record correction</strong> in the preview.</li>
-<li>Read the saved outcome, then inspect <strong>Change history</strong> and the original/replacement readings.</li>
-<li>Reload the affected ledger and analysis views before using their totals. Recalculate any saved scenario you intend to use with the new readings.</li>
+<li>
+<p>Locate the payment in <strong>Transactions</strong>.</p>
+</li>
+<li>
+<p>Select <strong>Open transaction</strong> and compare it with its original statement.</p>
+</li>
+<li>
+<p>Select <strong>Correct a value</strong>. Its current fields are filled in. Correct the printed date, description, counterparty, reference, transaction type, amount, direction or balance as needed. Leave an unprinted date or balance empty; at least one date is required.</p>
+<p>Unrecorded correction fields are kept in this browser tab. After a refresh, open the same transaction and select <strong>Correct a value</strong> again. Review a fresh preview before recording the correction. Closing the tab may discard unfinished edits.</p>
+</li>
+<li>
+<p>Select <strong>Preview correction</strong>.</p>
+</li>
+<li>
+<p>Read <strong>Changes to record</strong> and compare the before and after statement controls. Read any warning that the document will be excluded from verified totals or the replacement remains held out.</p>
+</li>
+<li>
+<p>Enter <strong>Reason for correction</strong>, identifying the source and the error.</p>
+</li>
+<li>
+<p>Select <strong>Record correction</strong> in the preview.</p>
+</li>
+<li>
+<p>Read the saved outcome, then inspect <strong>Change history</strong> and the original/replacement readings.</p>
+</li>
+<li>
+<p>Reload the affected ledger and analysis views before using their totals. Recalculate any saved scenario you intend to use with the new readings.</p>
+</li>
 </ol>
 <p>For example, correcting a misread <code>61.26</code> to printed <code>61.62</code> creates a replacement. The original reading, source and reason remain available. Do not treat a saved export made before the correction as a current report.</p>
 <h3>Hold a row out or restore it</h3>
@@ -587,6 +606,7 @@
 <p>The <strong>Minimum tolerance (whole currency units)</strong> field takes whole units. For example, enter <code>1</code> for GBP 1.00, not <code>100</code>. The extra amount tolerance is the larger of the percentage of the range midpoint and the stated minimum. A non-match can result from incomplete records. The claim remains separate from ledger totals.</p>
 <h2 id="trace-funds-in-one-account">Trace funds in one account</h2>
 <p>Tracing asks how selected calculation rules allocate money under assumptions you supply. Begin only after checking the account&#x27;s readings, dates and source coverage.</p>
+<p>Your account, dates, opening amount, explanations, selected deposits and calculation choices stay in this browser tab after a refresh. Reopen <strong>Trace funds</strong>, then select <strong>Load tracing inputs</strong> for the same account and dates. Calculate again before saving. If a transaction has changed, check the new readings and enter fresh assumptions for that set of payments.</p>
 <h3>Load the account</h3>
 <ol>
 <li>Open <strong>More financial tools</strong>, then <strong>Trace funds</strong>.</li>
@@ -618,6 +638,7 @@
 <p>Use the methods offered by the selected screen and record why you are comparing them. Loupe does not decide which method should govern the case. If methods produce different answers, retain that difference and explain the assumptions rather than presenting only the most favourable number.</p>
 <p>Editing an assumption clears a stale result. Calculate again and save a new scenario. A downloaded scenario is a record of its captured inputs; it does not update when the live ledger changes.</p>
 <h2 id="trace-funds-between-accounts">Trace funds between accounts</h2>
+<p>Unfinished dates, account opening amounts, deposit choices and selected transfers stay in this browser tab after refresh. Select <strong>Load cross-account inputs</strong> to continue with the same dates and currency, then calculate again. Changed payments require fresh review before saving another result.</p>
 <ol>
 <li>Open <strong>More financial tools</strong>, then <strong>Trace funds</strong> and <strong>Trace between accounts</strong>.</li>
 <li>Enter <strong>Trace from date</strong>, <strong>Trace through date</strong>, population and transfer date tolerance.</li>
@@ -704,7 +725,7 @@
 <li>Select <strong>Save workpaper in Findings</strong>. A new note is created with the revised calculation and a link to the original workpaper.</li>
 <li>Open that new note to check the saved result.</li>
 </ol>
-<p>Use <strong>Hide revised copy</strong> to fold away the editing form and <strong>Continue revised copy</strong> to return to it. Changing financial tabs retains the form. Save before refreshing the page, leaving the case or closing the browser; an unsaved copy is not a shared case record.</p>
+<p>Use <strong>Hide revised copy</strong> to fold away the editing form and <strong>Continue revised copy</strong> to return to it. Changing financial tabs retains the form. After refresh, reopen the same saved workpaper and its revised copy to restore your unfinished fields. Calculate again before saving. Save before closing the browser tab if you need to keep the work with the case or share it with colleagues.</p>
 <p>To resume a downloaded calculation file instead, open <strong>Indirect review methods</strong>, find <strong>Restore a downloaded workpaper</strong> and select the original JSON file. Check the restored subject, dates, inputs and result before editing. Changing a field clears the old result until you calculate again.</p>
 <h2 id="download-reports-and-supporting-records">Download reports and supporting records</h2>
 <h3>Build a report from several findings</h3>
@@ -838,7 +859,7 @@
 <p>External timestamping is an administrator-operated process, not a button an investigator must find on these screens. If your case requires it, give the administrator the case and retained export you want covered, and ask for the retained verification record. Do not assume it runs automatically. A timestamp can support when a particular captured record existed; it does not verify the financial facts inside it.</p>
 <h2 id="stop-work-and-return-later">Stop work and return later</h2>
 <div class="table-scroll"><table><thead><tr><th>Work</th><th>What to do before leaving</th><th>What to do on return</th></tr></thead><tbody><tr><td>Unconfirmed normal statement review</td><td>Look for the message that the review is saved in this browser tab.</td><td>In the same tab, reopen the same file, statement period and currency. The draft restores if its source revision has not changed. Closing the tab may discard it.</td></tr><tr><td>Imported statement</td><td>Wait for import confirmation.</td><td>Open Transactions or reopen the uploaded statement.</td></tr><tr><td>Transaction note</td><td>Select Save investigation note and wait for Note saved.</td><td>Open Workspace, then Casework and Notes.</td></tr><tr><td>Selected PDF rows in advanced review</td><td>Select Save selected rows for review and wait for confirmation.</td><td>Open PDF readings, find the saved batch and open its readings.</td></tr><tr><td>A review decision</td><td>Record resolved reading or Reject reading and check the confirmation.</td><td>Reload the batch and use the saved progress and pending filter.</td></tr><tr><td>A partially filled statement</td><td>Use Save unfinished statement editor.</td><td>Load unfinished statement editor.</td></tr><tr><td>Statements already added to a preview</td><td>Save statement controls to case.</td><td>Load saved statement controls and inspect them.</td></tr><tr><td>Custody or identity decisions</td><td>Save and confirm the recorded history.</td><td>Reload the relevant history before adding or changing anything.</td></tr><tr><td>A tracing calculation</td><td>Save this calculation in Findings, then wait for confirmation. Download a report if needed.</td><td>Open Findings, then Open saved calculation. Use Trace funds to calculate a new result with current records.</td></tr><tr><td>A transfer comparison</td><td>Save this analysis with a note.</td><td>Open Findings to review its selected payments and explanation.</td></tr><tr><td>A report containing several findings</td><td>Select Save report to case and wait for confirmation.</td><td>Open Reports, find its title under Financial reports and select Open financial report.</td></tr><tr><td>A selected set of payments</td><td>Save selection with a note and wait for confirmation.</td><td>Reopen the named entry in Findings.</td></tr><tr><td>An indirect workpaper</td><td>Save workpaper in Findings. Download it if you also need the calculation file.</td><td>Open saved workpaper in Findings, or restore the downloaded file.</td></tr><tr><td>A pattern theory or claim response</td><td>Use the provided Workspace save action and confirm the entry.</td><td>Open Workspace and inspect the saved entry and attachments.</td></tr><tr><td>A ledger report</td><td>Wait for the completed download and retain the ZIP.</td><td>Open the retained report or prepare a fresh capture for current records.</td></tr></tbody></table></div>
-<p>Switching financial tabs keeps visited forms and analysis results during that page visit. Statement drafts and unfinished note text also have browser-tab storage where the screen says so. These are not shared case records. Save your notes and calculations before closing or refreshing the browser; uploads or calculations still running can be interrupted.</p>
+<p>Switching financial tabs keeps visited forms and analysis results during that page visit. Account/date filters, statement and document reviews, transaction corrections, notes, selected payments, report drafts, transfer choices and tracing/workpaper inputs also have browser-tab storage where the screen says so. After refresh, reopen the same form and source to continue. Transfer choices restore when you find the same candidate payments again; changed readings require new choices. Calculations must be run again before saving a result. Save your work to the case before closing the browser tab or sharing it with colleagues. Uploads or calculations still running can be interrupted.</p>
 <p>If a save&#x27;s outcome is uncertain, reload the saved record first. A repeated click is not a reliable way to find out whether the first request succeeded.</p>
 <h2 id="solve-common-problems">Solve common problems</h2>
 <div class="table-scroll"><table><thead><tr><th>Problem</th><th>What to do</th></tr></thead><tbody><tr><td>I cannot see the case</td><td>Check that you signed into the correct server and account. Ask the case owner to check access.</td></tr><tr><td>I can read but cannot save</td><td>Ask for case editing access. Keep a note of the intended decision and source location.</td></tr><tr><td>There are no prepared PDF pages</td><td>Check the correct file&#x27;s preparation status. Preparation must complete before stored tables can be selected.</td></tr><tr><td>The PDF has unreadable or misplaced text</td><td>Compare the original page with the stored table. Review OCR results carefully. Keep unsupported readings pending and report the page.</td></tr><tr><td>Scan results omit a page</td><td>Read its unchecked or ambiguous reason and inspect the page manually. Scan results do not establish full-document coverage.</td></tr><tr><td>AI reports authentication or provider failure</td><td>Use manual review where possible. Ask the administrator to check the server&#x27;s configured provider. Do not paste a key into a case note.</td></tr><tr><td>A model attempt appears stuck</td><td>Check its saved status. Follow the same-request retry or interrupted-attempt controls; avoid repeated fresh requests.</td></tr><tr><td>The amount is zero</td><td>Inspect the source. A printed zero can be a valid reading; a missing or illegible value is unknown and should not be entered as zero.</td></tr><tr><td>No account matches</td><td>Search more narrowly, inspect the account references and create a clearly reasoned provisional account if justified.</td></tr><tr><td>A date is ambiguous</td><td>Inspect all cited date cells and the period context. Keep the type or year unresolved rather than guessing.</td></tr><tr><td>Finalization is disabled</td><td>Read the preview errors. Check pending rows, incomplete-coverage acknowledgement, finalization reason, source changes and statement controls.</td></tr><tr><td>I forgot pages after finalizing</td><td>Preserve the existing finalization and tell the case lead which pages were missed. Do not delete or blindly reimport to bypass the seal. Plan a separately identified supplementary review with duplicate checks.</td></tr><tr><td>Verified totals are zero</td><td>Inspect working totals and evidence classes. Finalized manual PDF readings remain P3.</td></tr><tr><td>A statement does not balance</td><td>Open printed controls and source readings. Check direction, account section, missing fees, duplicates and actual errors before correcting.</td></tr><tr><td>A period balances but rows are missing</td><td>Review page and row coverage. Matching balances do not prove that every transaction was captured.</td></tr><tr><td>A saved decision conflicts with another change</td><td>Reload the current record and its history, then make a new decision against that version.</td></tr><tr><td>A tracing result disappears</td><td>An input changed. Review the new assumptions and recalculate; use the earlier download for the old result.</td></tr><tr><td>A transfer has several possible partners</td><td>Open all relevant sources. Leave the choice unresolved unless you can explain a specific hypothesis.</td></tr><tr><td>The export says a source changed or is missing</td><td>Retain the message and source reference. Ask the administrator to inspect the stored file. Do not replace the source just to pass export checks.</td></tr><tr><td>A PDF export exceeds its limit</td><td>Narrow and document the scope, or download the non-PDF capture and prepare appropriately scoped reports.</td></tr><tr><td>A package check fails</td><td>Keep the original ZIP and verification result. Report the exact failure and avoid sharing it as a verified package.</td></tr><tr><td>A list says its count disagrees or data is incomplete</td><td>Treat it as a partial answer. Record the message and do not describe its total as the full case.</td></tr></tbody></table></div>

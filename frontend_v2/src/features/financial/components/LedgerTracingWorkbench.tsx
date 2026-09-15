@@ -1,3 +1,7 @@
+import {
+  useFinancialDraft,
+  useFinancialOrderDraft,
+} from "../stores/financial-drafts"
 import { SaveTraceFinding } from "./SavedTraceFinding"
 import { traceMethods } from "../lib/trace-methods"
 import { RetainedFinancialTool } from "./FinancialNavigation"
@@ -28,7 +32,11 @@ export function LedgerTracingWorkbench({
 }: {
   caseId: string | undefined
 }) {
-  const [mode, setMode] = useState("single")
+  const [mode, setMode] = useFinancialDraft(
+    caseId ?? "none",
+    "tracing-mode",
+    "single"
+  )
   if (!caseId) return <p>Choose a case for tracing.</p>
   return (
     <div>
@@ -65,8 +73,14 @@ export function LedgerTracingWorkbench({
   )
 }
 function CaseTracing({ caseId }: { caseId: string }) {
-  const [params, setParams] = useState<LedgerQueryParams>({})
-  const [population, setPopulation] = useState<"working" | "verified">(
+  const [params, setParams] = useFinancialDraft<LedgerQueryParams>(
+    caseId,
+    "single-trace-scope",
+    {}
+  )
+  const [population, setPopulation] = useFinancialDraft<"working" | "verified">(
+    caseId,
+    "single-trace-population",
     "verified"
   )
   return (
@@ -77,7 +91,11 @@ function CaseTracing({ caseId }: { caseId: string }) {
         funds, deposit attribution and same-day order are your assumptions.
         Results do not establish ownership or which legal rule applies.
       </p>
-      <LedgerFilters caseId={caseId} onApply={setParams} />
+      <LedgerFilters
+        caseId={caseId}
+        onApply={setParams}
+        draftName="single-trace-filter"
+      />
       <RequestedCoveragePanel caseId={caseId} params={params} />
       <label>
         Tracing population{" "}
@@ -169,21 +187,47 @@ function ScopedTracing({
   )
 }
 function ScenarioForm({ inputs }: { inputs: TraceInputs }) {
-  const [rows, setRows] = useState(() =>
+  const draftKey = `single-trace:${inputs.snapshot_sha256}:${inputs.account_id}:${inputs.start_date}:${inputs.end_date}:${inputs.population}`
+  const [rows, setRows] = useFinancialOrderDraft(
+    inputs.case_id,
+    `${draftKey}:order`,
     [...inputs.readings].sort((a, b) =>
       a.row.ordering_date.localeCompare(b.row.ordering_date)
-    )
+    ),
+    (r) => r.row.key
   )
   const [source, setSource] = useState<string | null>(null)
-  const [opening, setOpening] = useState(""),
-    [openingBasis, setOpeningBasis] = useState("")
-  const [orderBasis, setOrderBasis] = useState("")
-  const [assetUses, setAssetUses] = useState<TraceAssetUse[]>([])
-  const [attributions, setAttributions] = useState([
-    { transaction_id: "", claim_id: "", amount_input: "", basis: "" },
-  ])
-  const [selected, setSelected] = useState<string[]>([]),
-    [busy, setBusy] = useState(false),
+  const [opening, setOpening] = useFinancialDraft(
+      inputs.case_id,
+      `${draftKey}:opening`,
+      ""
+    ),
+    [openingBasis, setOpeningBasis] = useFinancialDraft(
+      inputs.case_id,
+      `${draftKey}:opening-basis`,
+      ""
+    )
+  const [orderBasis, setOrderBasis] = useFinancialDraft(
+    inputs.case_id,
+    `${draftKey}:order-basis`,
+    ""
+  )
+  const [assetUses, setAssetUses] = useFinancialDraft<TraceAssetUse[]>(
+    inputs.case_id,
+    `${draftKey}:assets`,
+    []
+  )
+  const [attributions, setAttributions] = useFinancialDraft(
+    inputs.case_id,
+    `${draftKey}:attributions`,
+    [{ transaction_id: "", claim_id: "", amount_input: "", basis: "" }]
+  )
+  const [selected, setSelected] = useFinancialDraft<string[]>(
+    inputs.case_id,
+    `${draftKey}:methods`,
+    []
+  )
+  const [busy, setBusy] = useState(false),
     [error, setError] = useState("")
   const [result, setResult] = useState<Awaited<
     ReturnType<typeof verifyTraceResponse>
@@ -279,6 +323,11 @@ function ScenarioForm({ inputs }: { inputs: TraceInputs }) {
         Enter amounts in currency units, using a decimal point where needed and
         no thousands separators.
       </p>
+      <p className="text-sm text-muted-foreground">
+        Unfinished inputs are kept in this browser tab. After a refresh, load
+        the same account and dates to continue. If its payments changed, review
+        fresh inputs. Calculate again before saving a result to Findings.
+      </p>
       <form
         onSubmit={(e) => {
           e.preventDefault()
@@ -307,6 +356,7 @@ function ScenarioForm({ inputs }: { inputs: TraceInputs }) {
           <label className="block">
             Opening balance basis{" "}
             <textarea
+              aria-label="Opening balance basis"
               className="block w-full border p-1"
               required
               value={openingBasis}
@@ -355,6 +405,7 @@ function ScenarioForm({ inputs }: { inputs: TraceInputs }) {
           <label className="block">
             Basis for accepting this movement order{" "}
             <textarea
+              aria-label="Basis for accepting this movement order"
               className="block w-full border p-1"
               required
               value={orderBasis}

@@ -16,10 +16,14 @@ import { TraceReportDownload } from "./TraceReportDownload"
 
 export function SaveTraceFinding({ trace }: { trace: VerifiedTrace }) {
   const caseId = trace.envelope.case_id
-  const [draft, setDraft, clear] = useFinancialDraft(caseId, "trace-note", {
-    title: "",
-    body: "",
-  })
+  const [draft, setDraft, clear] = useFinancialDraft(
+    caseId,
+    `trace-note:${trace.envelope.scenario_sha256}`,
+    {
+      title: "",
+      body: "",
+    }
+  )
   const create = useCreateCaseworkEntry(caseId)
   const save = useMutation({
     retry: false,
@@ -66,6 +70,7 @@ export function SaveTraceFinding({ trace }: { trace: VerifiedTrace }) {
           <label className="block">
             What does the calculation help you examine?
             <textarea
+              aria-label="What does the calculation help you examine?"
               className="block w-full rounded border p-2"
               value={draft.body}
               maxLength={8000}

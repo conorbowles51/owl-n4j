@@ -1,6 +1,10 @@
+import { useFinancialDraftStore } from "../stores/financial-drafts"
 import { beforeEach } from "vitest"
 import { useInvestigationScopeStore } from "../stores/investigation-scope"
-beforeEach(() => useInvestigationScopeStore.getState().reset())
+beforeEach(() => {
+  useInvestigationScopeStore.getState().reset()
+  useFinancialDraftStore.setState({ drafts: {} })
+})
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { render, screen, fireEvent } from "@testing-library/react"
 import { afterEach, expect, it, vi } from "vitest"
@@ -123,4 +127,44 @@ it("scope changes discard selected pairs and old results", async () => {
     target: { value: "verified" },
   })
   expect(screen.queryByLabelText("Pair transfer 1")).not.toBeInTheDocument()
+})
+
+it("restores selected transfer identities only while the loaded payments agree", async () => {
+  let source = input
+  vi.spyOn(globalThis, "fetch").mockImplementation(
+    async () => new Response(JSON.stringify(source), { status: 200 })
+  )
+  const mount = () =>
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <LedgerTransfersWorkbench caseId="case" />
+      </QueryClientProvider>
+    )
+  const first = mount()
+  fireEvent.click(
+    screen.getByRole("button", { name: "Find possible transfers" })
+  )
+  fireEvent.click(await screen.findByLabelText("Pair transfer 1"))
+  fireEvent.change(screen.getByLabelText("Basis for transfer pairings"), {
+    target: { value: "Compared both statements" },
+  })
+  first.unmount()
+  const next = mount()
+  fireEvent.click(
+    screen.getByRole("button", { name: "Find possible transfers" })
+  )
+  expect(await screen.findByLabelText("Pair transfer 1")).toBeChecked()
+  expect(screen.getByLabelText("Basis for transfer pairings")).toHaveValue(
+    "Compared both statements"
+  )
+  next.unmount()
+  source = { ...input, snapshot_sha256: "b".repeat(64) }
+  mount()
+  fireEvent.click(
+    screen.getByRole("button", { name: "Find possible transfers" })
+  )
+  expect(await screen.findByLabelText("Pair transfer 1")).not.toBeChecked()
+  expect(
+    screen.getByText(/payments or possible pairs changed/)
+  ).toBeInTheDocument()
 })
