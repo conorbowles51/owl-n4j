@@ -244,3 +244,30 @@ class AndrewsReaderTests(unittest.TestCase):
         gap = deepcopy(original); gap[0]['page_number'] = 8
         st, _ = selected(gap)
         self.assertEqual(st['page_numbers'], [3, 2])
+
+    def test_payment_share_and_closure_are_account_information_not_card_debt_or_payments(self):
+        for end in ('06/30 Ending Balance', '06/29 ID 0011 VISA PAYMENT Closed'):
+            closing = [(15, end)] + ([(350, '0.00')] if 'Ending' in end else [])
+            data=source([[(15, '06/01 ID 0011 VISA PAYMENT Previous Balance'), (350, '0.00')], closing,
+                         [(15, '*** This is the final statement you will receive for this account***')],
+                         [(15, '06/01 ID 0040 FREE CHECKING Previous Balance'), (350, '200.00')],
+                         [(15, '06/30 Ending Balance'), (350, '200.00')]])
+            st, proposal=selected([data], '0011')
+            self.assertEqual(st['account_type'],'other');self.assertEqual(st['account_label'],'VISA PAYMENT')
+            self.assertFalse(any(not r['excluded'] for r in proposal['rows']))
+            self.assertNotIn('FREE CHECKING',str(proposal))
+            if 'Closed' in end:
+                self.assertEqual(st['account_closure']['date'],'2020-06-29')
+                self.assertFalse(any(r['fields'].get('description')=='Closing Balance' for r in proposal['rows']))
+                self.assertEqual(proposal['issues'],[])
+            else:
+                self.assertNotIn('account_closure',st)
+                self.assertEqual(len([r for r in proposal['rows'] if r['kind']=='balance']),2)
+
+    def test_different_share_or_outside_period_closure_is_not_accepted(self):
+        for text in ('06/29 ID 0040 VISA PAYMENT Closed','07/29 ID 0011 VISA PAYMENT Closed'):
+            data=source([[(15, '06/01 ID 0011 VISA PAYMENT Previous Balance'), (350, '0.00')],[(15,text)]])
+            st, proposal=selected([data], '0011')
+            self.assertNotIn('account_closure',st)
+            self.assertTrue(any(not r['excluded'] for r in proposal['rows']))
+            self.assertTrue(proposal['issues'])

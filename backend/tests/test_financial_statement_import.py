@@ -605,3 +605,39 @@ class StatementImportTests(TransactionPersistenceTestCase):
         self.assertEqual([str(row.transaction_date) for row in saved], ['2020-06-03', '2020-06-04'])
         self.assertEqual([row.running_balance_minor for row in saved], [8000, 10000])
         self.assertEqual([row.provenance['statement_import_original']['page_number'] for row in saved], [2, 1])
+
+    def test_closed_payment_share_saves_notice_without_inventing_a_final_balance(self):
+        from tests.test_financial_statement_import_andrews import source
+        from postgres.models.financial import FinancialAccount, FinancialStatementPeriod
+        from services.financial.periods import read_opening, read_closing
+        from services.financial.ledger_source import statement_source
+        grid = source([[(15,'06/01 ID 0011 VISA PAYMENT Previous Balance'),(350,'0.00')],
+                       [(15,'06/29 ID 0011 VISA PAYMENT Closed')],
+                       [(15,'*** This is the final statement you will receive for this account***')]])
+        self.db.get(EvidenceTableGeometry,(self.file.id,1)).payload=[dict(table_source='text_alignment',geometry_source='cell_rectangles',
+            table=dict(page=1,table=rectangle(0,x=0,width=600,height=800),unlocated_values=0,
+                values=[dict(row=r['row_index'],column=c['column_index'],text=c['expected_text'],locator=c['locator']) for r in grid['rows'] for c in r['cells']]))]
+        self.db.commit()
+        p, request = self.andrews_request('0011')
+        self.assertTrue(p['can_record_account_closure']);self.assertFalse(p['can_import_balances'])
+        self.assertEqual(p['metadata']['account_closure']['date'],'2020-06-29')
+        from copy import deepcopy
+        from services.financial.statement_import import check_import_request, StatementImportRequest
+        incorrect = deepcopy(request)
+        notice = next(r for r in incorrect['rows'] if 'Closed' in r['description'])
+        notice.update(excluded=False, date='2020-06-29', amount_minor='100', direction='credit', reason='Wrongly treated closure as a payment')
+        with self.assertRaisesRegex(PdfMappingError, 'closure notice is not a payment'):
+            check_import_request(p, StatementImportRequest.model_validate(incorrect))
+        result=self.confirm(request);self.assertEqual(result['transaction_count'],0)
+        self.assertEqual(result['account_closed_on'],'2020-06-29')
+        self.assertFalse(self.confirm(request)['created'])
+        self.db.expire_all()
+        account=self.db.get(FinancialAccount,UUID(result['account_id']));self.assertEqual(account.account_type,'other')
+        period=self.db.scalar(select(FinancialStatementPeriod).where(FinancialStatementPeriod.source_document_id==UUID(result['source_document_id'])))
+        self.assertEqual(read_opening(period).amount.minor_units,0)
+        self.assertIsNone(read_closing(period).amount)
+        controls=statement_source(self.db,case_id=self.case.id,period_id=period.id)['reviewed_controls']
+        self.assertEqual([c['role'] for c in controls['controls']],['opening'])
+        self.assertEqual(controls['account_closure']['original_text'],'06/29 ID 0011 VISA PAYMENT Closed')
+        self.assertEqual(controls['account_closure']['date'],'2020-06-29')
+        self.assertEqual(controls['account_closure']['locator']['page'],1)

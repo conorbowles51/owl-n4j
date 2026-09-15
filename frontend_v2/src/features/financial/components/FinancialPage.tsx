@@ -616,7 +616,9 @@ export function FinancialPage() {
                 importReceipt.case_id === caseId &&
                 importReceipt.transaction_count === 0 && (
                   <p role="status" className="rounded border p-3 my-3">
-                    Saved the account and statement balances from{" "}
+                    {importReceipt.account_closed_on
+                      ? `Recorded the account closure on ${importReceipt.account_closed_on} from `
+                      : "Saved the account and statement balances from "}
                     {importReceipt.filename || "your statement"}. No payments
                     were added.
                   </p>

@@ -187,6 +187,10 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
             issues.append('This is a credit-card statement. Debits increase the amount owed; credits reduce it. A card ending is a partial account reference.')
         if selected.get('layout_id') == 'andrews-share-statement':
             metadata['balance_convention'] = 'asset_balance'
+            if selected.get('account_closure'):
+                metadata['account_closure'] = selected['account_closure']
+            if selected['account_type'] == 'other':
+                issues.append('The printed account label is VISA PAYMENT. Its account type is recorded as Other; this label does not establish a credit-card balance.')
             issues.append('Reviewing ' + selected['account_label'] + ', share ' + selected['share_reference'] + '. Other account sections in this PDF are reviewed separately.')
             if selected.get('uses_printed_page_order'):
                 issues.append('These statement pages are out of order in the PDF. Payments follow the printed page numbers. The source viewer keeps the original PDF page numbers.')
@@ -263,12 +267,17 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
                     metadata=metadata, currency=chosen_currency, statement_id=statement_id)
     if row_addresses is not None:
         snapshot['statement_row_addresses'] = row_addresses
-    balance_only = (metadata.get('account_type') in ('savings', 'checking')
+    balance_only = (metadata.get('account_type') in ('savings', 'checking', 'other')
                     and not any(not row['excluded'] for row in rows)
                     and all(sum(row['kind'] == 'balance' and row['fields'].get('description', '').lower() == role + ' balance'
                                 for row in rows) == 1 for role in ('opening', 'closing')))
+    closure_only = bool(metadata.get('account_closure') and selected and selected.get('layout_id') == 'andrews-share-statement'
+                        and not any(not row['excluded'] for row in rows)
+                        and any(row['kind'] == 'balance' and row['fields'].get('description') == 'Opening Balance'
+                                and 'balance' in row['fields'] for row in rows))
     return dict(case_id=str(case_id), evidence_file_id=str(evidence_file_id), filename=file.original_filename,
                 metadata=metadata, currency=chosen_currency, rows=rows, sources=sources, issues=issues,
+                can_record_account_closure=closure_only,
                 can_import_balances=balance_only,
                 page_numbers=all_page_numbers,
                 unassigned_page_numbers=unassigned_pages if selected else [],
@@ -369,7 +378,7 @@ def check_import_request(proposal, request):
     if not any(not row.excluded for row in request.rows):
         controls = [row for row in request.rows if row.id in originals and originals[row.id]['kind'] == 'balance'
                     and originals[row.id]['fields'].get('description', '').lower() in ('opening balance', 'closing balance')]
-        if (not proposal.get('can_import_balances') or len(controls) != 2
+        if not proposal.get('can_record_account_closure') and (not proposal.get('can_import_balances') or len(controls) != 2
                 or any(row.balance_minor is None for row in controls)
                 or controls[0].balance_minor != controls[1].balance_minor):
             raise PdfMappingError('A statement without transactions must have matching opening and closing balances. Check both against the PDF.', 422)
@@ -391,6 +400,8 @@ def check_import_request(proposal, request):
         additional_roles = set(_date_roles(fields)) - {_primary_date_role(fields)}
         if not set(row.date_values) <= additional_roles:
             raise PdfMappingError('Only separately identified source dates can be corrected here. Reload the statement.', 422)
+        if fields.get('account_closed_on') and not row.excluded:
+            raise PdfMappingError('An account closure notice is not a payment. Keep it outside the transaction list.', 422)
         if fields.get('balance_convention') == 'liability_owed':
             if not row.excluded:
                 raise PdfMappingError('An account-summary balance is not a transaction. Keep it outside the transaction list.', 422)
@@ -454,7 +465,7 @@ def confirm_statement_import(*, session_factory, case_id, evidence_file_id, requ
                 if existing is not None:
                     if (existing.metadata_ or {}).get('statement_import_request_sha256') == request_hash:
                         imported_count = sum(not row['excluded'] for row in existing.metadata_['statement_import_request']['rows'])
-                        return dict(case_id=str(case_id), evidence_file_id=str(evidence_file_id), source_document_id=str(existing.id), transaction_count=imported_count, created=False, applied=True)
+                        return dict(case_id=str(case_id), evidence_file_id=str(evidence_file_id), source_document_id=str(existing.id), transaction_count=imported_count, account_closed_on=((existing.metadata_.get('statement_import_original', {}).get('metadata', {}).get('account_closure')) or {}).get('date'), created=False, applied=True)
                     from services.financial.duplicate_decisions import duplicate_revision
                     parent = (file.metadata_ or {}).get('statement_parent_evidence_id')
                     root = (file.metadata_ or {}).get('statement_root_evidence_id')
@@ -563,7 +574,7 @@ def confirm_statement_import(*, session_factory, case_id, evidence_file_id, requ
                 run.transaction_admitted(len(transactions))
                 return dict(case_id=str(case_id), evidence_file_id=str(evidence_file_id),
                     source_document_id=str(document.id), account_id=str(account.id),
-                    transaction_count=len(transactions), created=True, applied=True)
+                    transaction_count=len(transactions), account_closed_on=(proposal['metadata'].get('account_closure') or {}).get('date'), created=True, applied=True)
             except Exception:
                 session.rollback()
                 raise

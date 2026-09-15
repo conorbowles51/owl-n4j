@@ -17,6 +17,14 @@ import { assertCandidateScope, candidateUrl } from "../lib/candidate-contract"
 import { TransactionSourceHighlight } from "./TransactionSourceHighlight"
 import { correctionMoney } from "../lib/correction-contract"
 const retainedControls = z.object({
+  account_closure: z
+    .object({
+      date: z.string(),
+      original_text: z.string(),
+      locator: z.unknown(),
+    })
+    .nullable()
+    .optional(),
   finalization_id: z.string().uuid().nullable(),
   import_source_document_id: z.string().uuid().optional(),
   currency: z.string().regex(/^[A-Z]{3}$/),
@@ -145,6 +153,40 @@ export function StatementSourceButton({
                     <p>{query.data.reviewed_controls.reason}</p>
                     <p>{query.data.reviewed_controls.scope}</p>
                   </details>
+                  {query.data.reviewed_controls.account_closure && (
+                    <div className="space-y-2">
+                      <p>
+                        Account closed on{" "}
+                        {query.data.reviewed_controls.account_closure.date}, as
+                        recorded in this statement. A closure notice does not
+                        establish a final account balance.
+                      </p>
+                      <Button
+                        variant="outline"
+                        onClick={() => setControlRole("account_closure")}
+                      >
+                        Inspect account closure notice
+                      </Button>
+                      {controlRole === "account_closure" && (
+                        <>
+                          <p>
+                            Original text:{" "}
+                            {
+                              query.data.reviewed_controls.account_closure
+                                .original_text
+                            }
+                          </p>
+                          <TransactionSourceHighlight
+                            sourceDocumentId={query.data.evidence_file_id}
+                            locatorPayload={
+                              query.data.reviewed_controls.account_closure
+                                .locator
+                            }
+                          />
+                        </>
+                      )}
+                    </div>
+                  )}
                   <div className="grid gap-2 sm:grid-cols-2">
                     {query.data.reviewed_controls.controls.map((control) => (
                       <Button

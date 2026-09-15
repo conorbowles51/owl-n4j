@@ -50,6 +50,17 @@ const proposalSchema = z.object({
   currency: z.string(),
   revision: z.string(),
   metadata: z.object({
+    account_closure: z
+      .object({
+        date: z.string(),
+        page_number: z.number().int().positive(),
+        table_index: z.number().int().nonnegative(),
+        row_index: z.number().int(),
+        source_cells: z.array(
+          z.object({ expected_text: z.string(), locator: z.unknown() })
+        ),
+      })
+      .optional(),
     account_type: z.string().optional(),
     balance_convention: z.enum(["asset_balance", "liability_owed"]).optional(),
     institution: z.string(),
@@ -63,6 +74,7 @@ const proposalSchema = z.object({
   issues: z.array(z.string()),
   transaction_count: z.number(),
   can_import_balances: z.boolean().default(false),
+  can_record_account_closure: z.boolean().default(false),
   needs_attention: z.number(),
   page_numbers: z.array(z.number()).default([]),
   unassigned_page_numbers: z.array(z.number()).default([]),
@@ -110,6 +122,7 @@ export type StatementImportReceipt = {
   account_id?: string
   transaction_count: number
   filename?: string
+  account_closed_on?: string | null
 }
 type Proposal = z.infer<typeof proposalSchema>
 type Edit = {
@@ -132,6 +145,7 @@ const receipt = z.object({
   source_document_id: z.string().optional(),
   account_id: z.string().optional(),
   applied: z.literal(true),
+  account_closed_on: z.string().nullable().optional(),
 })
 
 function initialRows(data: Proposal): Edit[] {
@@ -1563,10 +1577,33 @@ function EditableStatement({
           </div>
         )}
         <div className="rounded border bg-muted/30 p-3 space-y-2">
+          {data.metadata.account_closure && (
+            <div className="space-y-2">
+              <p>
+                The statement records this account as closed on{" "}
+                {data.metadata.account_closure.date}. This is an account notice,
+                not a payment. An unprinted closing balance remains unknown.
+              </p>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  const closure = data.metadata.account_closure!
+                  setFocus({
+                    rowId: `${closure.page_number}:${closure.table_index}:${closure.row_index}`,
+                    locator: closure.source_cells[0]?.locator,
+                  })
+                }}
+              >
+                View account closure in PDF
+              </Button>
+            </div>
+          )}
           <p>
-            {data.can_import_balances && included.length === 0
-              ? "Save this account's statement period and its opening and closing balances. No transaction rows were found in this section. Check the original before saving."
-              : `Import adds ${included.length} transactions to the case. Original readings and your corrections are retained. Check the PDF for any missed transactions before confirming.`}
+            {data.can_record_account_closure && included.length === 0
+              ? "Save the account, statement period and printed closure notice. No transaction rows were found in this section. This does not supply a missing closing balance."
+              : data.can_import_balances && included.length === 0
+                ? "Save this account's statement period and its opening and closing balances. No transaction rows were found in this section. Check the original before saving."
+                : `Import adds ${included.length} transactions to the case. Original readings and your corrections are retained. Check the PDF for any missed transactions before confirming.`}
           </p>
           <Button
             disabled={
@@ -1579,15 +1616,18 @@ function EditableStatement({
               !holder.trim() ||
               !account.trim() ||
               (included.length === 0 &&
+                !data.can_record_account_closure &&
                 (!data.can_import_balances || !matchingEmptyBalances))
             }
             onClick={() => confirm.mutate()}
           >
             {confirm.isPending
               ? "Importing statement…"
-              : data.can_import_balances && included.length === 0
-                ? "Save statement balances"
-                : `Confirm import of ${included.length} transactions`}
+              : data.can_record_account_closure && included.length === 0
+                ? "Save account closure"
+                : data.can_import_balances && included.length === 0
+                  ? "Save statement balances"
+                  : `Confirm import of ${included.length} transactions`}
           </Button>
           {data.can_import_balances &&
             included.length === 0 &&
@@ -1608,9 +1648,11 @@ function EditableStatement({
       {confirm.isError && <p role="alert">{confirm.error.message}</p>}
       {confirm.isSuccess && (
         <p role="status">
-          {confirm.data.transaction_count === 0
-            ? "Statement balances saved. Use Review accounts in Statements to see its coverage."
-            : `Imported ${confirm.data.transaction_count} transactions. Open Transactions to investigate them.`}
+          {confirm.data.account_closed_on
+            ? "Account closure recorded. Open Review accounts in Statements to inspect its source."
+            : confirm.data.transaction_count === 0
+              ? "Statement balances saved. Use Review accounts in Statements to see its coverage."
+              : `Imported ${confirm.data.transaction_count} transactions. Open Transactions to investigate them.`}
         </p>
       )}
     </div>

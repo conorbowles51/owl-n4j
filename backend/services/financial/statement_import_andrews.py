@@ -16,9 +16,10 @@ _LAYOUT = 'andrews-share-statement'
 _DATE = r'\d{2}/\d{2}'
 _SPACED_MONEY = r'[+-]?\s*(?:\d{1,3}(?:,\d{3})+|\d+)\s*\.\s*\d{2}'
 _FULL_DATE = r'\d\s*\d\s*/\s*\d\s*\d\s*/\s*(?:2\s*0\s*)?\d\s*\d'
-_TYPES = {'BASE SHARE SAVINGS': 'savings', 'FREE CHECKING': 'checking'}
-_SHARE = re.compile(r'^(\d{2}/\d{2}) ID (\d{4}) (BASE SHARE SAVINGS|FREE CHECKING) Previous Balance(?: |$)')
+_TYPES = {'BASE SHARE SAVINGS': 'savings', 'FREE CHECKING': 'checking', 'VISA PAYMENT': 'other'}
+_SHARE = re.compile(r'^(\d{2}/\d{2}) ID (\d{4}) (BASE SHARE SAVINGS|FREE CHECKING|VISA PAYMENT) Previous Balance(?: |$)')
 
+_CLOSED = re.compile(r'^(\d{2}/\d{2}) ID (\d{4}) (BASE SHARE SAVINGS|FREE CHECKING|VISA PAYMENT) Closed$')
 
 def _text(row):
     return ' '.join(c['expected_text'].strip() for c in row['cells']).strip()
@@ -206,6 +207,15 @@ def andrews_catalog(sources):
                 addressed.add(active['id'])
             elif re.match(r'^\d{2}/\d{2}(?: |$)', text):
                 unknown = True
+            closure = _CLOSED.fullmatch(text)
+            if closure and active:
+                closed_on = _period_date(closure[1], active)
+                if closure[2] == active['share_reference'] and closure[3] == active['account_label'] and closed_on:
+                    active['account_closure'] = dict(date=closed_on, page_number=source['page_number'], table_index=source['table_index'],
+                        row_index=row['row_index'], source_cells=row['cells'])
+                else:
+                    unknown = True
+                active = None
             if re.match(r'^\d{2}/\d{2} Ending Balance(?: |$)', text):
                 active = None
         if addressed:
@@ -298,6 +308,11 @@ def propose_andrews_statement(sources, currency, statement):
             item['fields']['statement_layout'] = _LAYOUT
             if 'Continued on following page' in text:
                 continue
+            closure = statement.get('account_closure')
+            if (closure and source['page_number'] == closure['page_number']
+                    and source['table_index'] == closure['table_index'] and index == closure['row_index']):
+                item['fields'].update(account_closed_on=closure['date'], description=text)
+                continue
             money_cells = _money_cells(row, page['width'])
             money = ' '.join(c['expected_text'].strip() for c in money_cells)
             body = ' '.join(c['expected_text'].strip() for c in cells if c not in money_cells)
@@ -385,6 +400,6 @@ def propose_andrews_statement(sources, currency, statement):
     issues = []
     for name in ('Opening Balance', 'Closing Balance'):
         controls = [r for r in result if r['kind'] == 'balance' and r['fields'].get('description') == name]
-        if not controls:
+        if not controls and not (name == 'Closing Balance' and statement.get('account_closure')):
             issues.append(f'The {name.lower()} was not found for this account section. Check the PDF for a missing or unreadable page.')
     return dict(rows=result, issues=issues)

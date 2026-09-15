@@ -590,3 +590,74 @@ it("saves a statement with matching balances and no payments, with a clear confi
     await screen.findByText(/Statement balances saved/)
   ).toBeInTheDocument()
 })
+it("records a closure notice with no payments and no invented closing balance", async () => {
+  const closure = {
+    ...data,
+    can_record_account_closure: true,
+    transaction_count: 0,
+    metadata: {
+      ...data.metadata,
+      account_closure: {
+        date: "2020-06-29",
+        page_number: 1,
+        table_index: 0,
+        row_index: 1,
+        source_cells: data.rows[1].source_cells,
+      },
+    },
+    rows: [
+      {
+        ...data.rows[0],
+        kind: "balance",
+        fields: { description: "Opening Balance", balance: "0" },
+      },
+      {
+        ...data.rows[1],
+        kind: "statement_information",
+        excluded: true,
+        fields: {
+          account_closed_on: "2020-06-29",
+          description: "06/29 ID 0011 VISA PAYMENT Closed",
+        },
+      },
+    ],
+  }
+  const base = vi.mocked(fetchAPI).getMockImplementation()!
+  vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
+    if (String(url).includes("/confirm?")) {
+      sent.push(options?.body)
+      return {
+        case_id: "case",
+        evidence_file_id: "file",
+        transaction_count: 0,
+        account_closed_on: "2020-06-29",
+        applied: true,
+      } as never
+    }
+    return String(url).includes("statement-import")
+      ? (closure as never)
+      : base(url, options)
+  })
+  const done = mount()
+  await open()
+  expect(
+    screen.getByText(/An unprinted closing balance remains unknown/)
+  ).toBeVisible()
+  expect(
+    screen.getByRole("button", { name: "View account closure in PDF" })
+  ).toBeVisible()
+  fireEvent.click(screen.getByRole("button", { name: "Save account closure" }))
+  await waitFor(() => expect(done).toHaveBeenCalledTimes(1))
+  expect(done).toHaveBeenCalledWith(
+    expect.objectContaining({
+      transaction_count: 0,
+      account_closed_on: "2020-06-29",
+    })
+  )
+  expect(sent[0]).toMatchObject({
+    rows: [
+      { balance_minor: "0", excluded: true },
+      { balance_minor: null, excluded: true },
+    ],
+  })
+})

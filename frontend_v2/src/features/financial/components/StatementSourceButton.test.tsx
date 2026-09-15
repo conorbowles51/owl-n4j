@@ -124,3 +124,34 @@ it.each(["legacy review", "statement import"])(
     )
   }
 )
+it("opens the retained closure notice separately from balances", async () => {
+  mount({
+    ...answer,
+    reviewed_controls: {
+      finalization_id: null,
+      currency: "USD",
+      balance_convention: "asset_balance",
+      reason: "Printed notice",
+      scope: "Saved with import",
+      controls: [],
+      account_closure: {
+        date: "2020-06-29",
+        original_text: "06/29 ID 0011 VISA PAYMENT Closed",
+        locator: { kind: "page_only", page: 1 },
+      },
+    },
+  })
+  fireEvent.click(
+    screen.getByRole("button", { name: "Inspect statement source" })
+  )
+  fireEvent.click(
+    await screen.findByRole("button", {
+      name: "Inspect account closure notice",
+    })
+  )
+  expect(
+    screen.getByText(/Original text: 06\/29 ID 0011 VISA PAYMENT Closed/)
+  ).toBeVisible()
+  expect(screen.getByText(/Control source.*"page":1/)).toBeVisible()
+  expect(screen.queryByRole("button", { name: /Inspect closing/ })).toBeNull()
+})

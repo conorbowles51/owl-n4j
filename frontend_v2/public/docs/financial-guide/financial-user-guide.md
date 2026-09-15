@@ -240,9 +240,9 @@ Use **Previous page**, **Next page** or the **Page** selector above the viewer t
 
 Each choice identifies a printed account and statement period or date. Select **Choose another statement period** to return to the list. Confirm each statement separately so its account and dates stay attached to the correct payments.
 
-### Check Andrews savings and checking statements
+### Check Andrews account sections
 
-1. Choose **BASE SHARE SAVINGS** or **FREE CHECKING** for the dates you need. If two choices have the same account and dates, compare their PDF page numbers and contents. They may be different copies; do not assume both should be imported.
+1. Choose **BASE SHARE SAVINGS**, **FREE CHECKING** or **VISA PAYMENT** for the dates you need. If two choices have the same account and dates, compare their PDF page numbers and contents. They may be different copies; do not assume both should be imported.
 2. Choose the currency printed on the statement. Check the account holder, main account number and share number against the PDF.
 3. Read the selected account section beside the original. These statements may have no printed column headings. The extracted text keeps its measured horizontal positions, including continuation lines and blank spaces. Click any value to find it in the PDF.
 4. Select **Edit import values** to inspect the proposed dates, descriptions, credits, debits and running balances. Payment descriptions include their continuation lines, including a line on the following page when it can be linked to that payment.
@@ -254,7 +254,21 @@ The reader can follow a continuation page whose logo was not read when its accou
 
 If a complete set of pages has unique printed page numbers but is stored out of order in the PDF, Loupe reads its payments in the printed order. Review starts on the first statement page. **Previous page** and **Next page** still move through the original PDF file, so use a transaction's source link to go directly to its page. Loupe only rearranges a block with consecutive, unique printed page numbers. It does not invent missing page numbers.
 
-If a supported savings or checking section contains no transaction rows and has both balance lines, the confirmation button says **Save statement balances**. Check both against the PDF. The opening and closing balances must match before a statement with no payments can be saved. Loupe then opens **Statements > Review accounts**, where you can see the account and its statement period. No transactions are added.
+A **VISA PAYMENT** section is saved as account type **Other**, using its printed share number and label. Check its purpose against your evidence; the label alone does not identify a credit-card balance.
+
+If a supported Andrews section contains no transaction rows and has both balance lines, the confirmation button says **Save statement balances**. Check both against the PDF. The opening and closing balances must match before a statement with no payments can be saved. Loupe then opens **Statements > Review accounts**, where you can see the account and its statement period. No transactions are added.
+
+If the section instead contains a dated account closure notice and no payments, use this process:
+
+1. Select **View account closure in PDF** and check the share number, account label and date against the original notice.
+2. Check the opening balance and any other supplied account details. If there is no printed closing balance, leave it unknown. A closure notice does not supply an amount.
+3. Select **Save account closure**. Loupe records the statement period and closure notice without adding a transaction.
+4. Open **Statements > Review accounts**, select **Review statements** on the account, then select **Open statement and balances** for that period.
+5. Select **Inspect account closure notice** to reopen its original text and highlighted location in the PDF. The balance check may still say **Missing balances** if no closing balance was printed.
+
+![A saved synthetic account closure notice with its original PDF location highlighted](images/21-account-closure.png)
+
+*The closure date is recorded separately from the opening balance. Select Inspect account closure notice to check the original text again.*
 
 Open **Inspect another page of the original PDF** when pages are listed as needing a coverage check. Choose **Original PDF page**, then **Show selected page**. Read unassigned pages for missed transactions and continuation tables. Loupe does not treat an unassigned page as proof that it contains no payments. If you find a payment for the selected account and period, add it as described below.
 

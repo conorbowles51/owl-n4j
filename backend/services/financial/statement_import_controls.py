@@ -67,9 +67,20 @@ def read_import_controls(period, document, evidence):
         raise ValueError('The balance citations do not match the saved review.')
     if document.page_count is not None and any(Locator.from_json(c['locator']).page > document.page_count for c in expected):
         raise ValueError('A balance citation exceeds the source page count.')
+    closure = original['metadata'].get('account_closure')
+    closure_citation = None
+    if closure:
+        matches = [r for r in original['rows'] if r['page_number'] == closure['page_number'] and r['table_index'] == closure['table_index']
+                   and r['row_index'] == closure['row_index'] and r['fields'].get('account_closed_on') == closure['date']]
+        if len(matches) != 1 or matches[0]['source_cells'] != closure['source_cells'] or not closure['source_cells']:
+            raise ValueError('The retained closure notice does not match its source row.')
+        locator = Locator.from_json(closure['source_cells'][0]['locator'])
+        if locator.page != closure['page_number'] or document.page_count is not None and locator.page > document.page_count:
+            raise ValueError('The account closure source exceeds the document.')
+        closure_citation = dict(date=closure['date'], original_text=' '.join(c['expected_text'] for c in closure['source_cells']), locator=locator.to_json())
     reasons = [f"{c['role'].title()}: {c['reason']}" for c in expected if c['reason']]
     return dict(import_source_document_id=str(document.id), finalization_id=None,
                 currency=record['currency'], balance_convention=record['balance_convention'],
                 reason='; '.join(reasons) or 'Account-summary balances accepted at import.',
-                controls=expected,
+                controls=expected, account_closure=closure_citation,
                 scope='Amounts and PDF locations saved with this import. Corrections preserve the original printed text.')
