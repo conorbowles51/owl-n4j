@@ -74,16 +74,42 @@ def _reading_dates(fields, reviewed_date, date_values=None):
     return result
 
 
-def _existing_statement(session, case_id, file, statement_id, addresses=(), row_addresses=None, source_regions=None):
+def _existing_statement(session, case_id, file, statement_id, addresses=(), row_addresses=None, source_regions=None, *, excluded_duplicates=False):
     from postgres.models.financial import FinancialSourceDocument
-    candidates = session.scalars(select(FinancialSourceDocument).where(
+    query = select(FinancialSourceDocument).where(
         FinancialSourceDocument.case_id == case_id,
-        FinancialSourceDocument.sha256_at_ingestion == file.sha256,
-        FinancialSourceDocument.status != 'superseded').order_by(FinancialSourceDocument.id))
+        FinancialSourceDocument.sha256_at_ingestion == file.sha256)
+    if excluded_duplicates:
+        # A fresh OCR reading of this same source must not bypass its recorded
+        # duplicate exclusion. Unrelated copies with the same bytes are not
+        # given that file's exclusion, and normal replacement history is skipped.
+        from uuid import UUID
+        try:
+            root_id = UUID((file.metadata_ or {}).get('statement_root_evidence_id', str(file.id)))
+        except (ValueError, TypeError, AttributeError):
+            raise PdfMappingError('The statement source history is invalid. Review its file history before importing.', 409)
+        related_files = select(EvidenceFile.id).where(
+            EvidenceFile.case_id == case_id,
+            (EvidenceFile.id == root_id) |
+            (EvidenceFile.metadata_['statement_root_evidence_id'].as_string() == str(root_id)))
+        query = query.where(FinancialSourceDocument.status == 'superseded',
+            FinancialSourceDocument.duplicate_match_rung.is_not(None),
+            FinancialSourceDocument.evidence_file_id.in_(related_files))
+    else:
+        query = query.where(FinancialSourceDocument.status != 'superseded')
+    candidates = session.scalars(query.order_by(FinancialSourceDocument.id))
     addresses = set(addresses)
     row_addresses = {tuple(value) for value in row_addresses} if row_addresses is not None else None
     matches = []
     for item in candidates:
+        if excluded_duplicates:
+            retained = session.get(FinancialSourceDocument, item.superseded_by_id)
+            replacement_request = (retained.metadata_ or {}).get('statement_import_request', {}) if retained else {}
+            if (retained and retained.case_id == case_id and
+                    replacement_request.get('replaces_source_document_id') == str(item.id)):
+                # A confirmed reread replaces this reading within the same PDF
+                # history. That is not an investigator's duplicate exclusion.
+                continue
         metadata = item.metadata_ or {}
         if metadata.get('statement_import_statement_id') in (None, statement_id):
             matches.append(item)
@@ -282,6 +308,11 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
         source_regions = andrews_source_regions(sources, selected)
     current = _existing_statement(session, case_id, file, statement_id,
         ((source['page_number'], source['table_index']) for source in sources), row_addresses, source_regions)
+    excluded_copy = _existing_statement(session, case_id, file, statement_id,
+        ((source['page_number'], source['table_index']) for source in sources), row_addresses, source_regions,
+        excluded_duplicates=True)
+    if excluded_copy is not None:
+        current = excluded_copy
     current_import = None
     if current is not None:
         current_file = session.get(EvidenceFile, current.evidence_file_id)
@@ -295,6 +326,14 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
                  excluded=bool(row.get('excluded')), reason=row['reason'])
             for row in recorded_review.get('rows', []) if row.get('reason')]
         current_import['details_reason'] = recorded_review.get('details_reason', '')
+        current_import['excluded_as_duplicate'] = excluded_copy is not None
+        if excluded_copy is not None:
+            retained = session.scalar(select(FinancialSourceDocument).where(
+                FinancialSourceDocument.id == excluded_copy.superseded_by_id,
+                FinancialSourceDocument.case_id == case_id))
+            retained_file = session.get(EvidenceFile, retained.evidence_file_id) if retained else None
+            current_import['retained_filename'] = retained_file.original_filename if retained_file else None
+            current_import['transaction_count'] = 0
     snapshot = dict(version=VERSION, source_sha256=file.sha256, sources=sources,
                     metadata=metadata, currency=chosen_currency, statement_id=statement_id)
     if row_addresses is not None:
@@ -486,6 +525,9 @@ def confirm_statement_import(*, session_factory, case_id, evidence_file_id, requ
                                                  currency=request.currency, statement_id=request.statement_id)
                 if proposal.get('document_review') is not None:
                     raise PdfMappingError('Save this wire report from its document review. It cannot be imported as an account statement.', 422)
+                if (proposal.get('current_import') or {}).get('excluded_as_duplicate'):
+                    raise PdfMappingError(
+                        'This statement was excluded as a duplicate. Review or restore its recorded decision in Import review before importing again.', 409)
                 existing = _existing_statement(session, case_id, file, request.statement_id,
                     ((source['page_number'], source['table_index']) for source in proposal['sources']),
                     proposal.get('statement_row_addresses'), proposal.get('statement_source_regions'))

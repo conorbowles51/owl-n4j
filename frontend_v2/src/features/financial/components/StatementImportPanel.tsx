@@ -105,6 +105,8 @@ const proposalSchema = z.object({
       filename: z.string().nullable().optional(),
       revision: z.string(),
       transaction_count: z.number(),
+      excluded_as_duplicate: z.boolean().default(false),
+      retained_filename: z.string().nullable().optional(),
       details_reason: z.string().default(""),
       review_decisions: z
         .array(
@@ -491,77 +493,109 @@ function StatementReview({
             : "Choose another statement period"}
         </Button>
       )}
-      <ReprocessStatement
-        key={fileId}
-        caseId={caseId}
-        fileId={fileId}
-        onReady={onReprocessed}
-      />
-      {query.data.current_import && (
-        <Button
-          variant="outline"
-          onClick={() =>
-            onImported({
-              ...query.data.current_import!,
-              case_id: caseId,
-              account_id: query.data.current_import!.account_id || undefined,
-              filename:
-                query.data.current_import!.filename || query.data.filename,
-            })
-          }
-        >
-          Open imported transactions
-        </Button>
-      )}
-      {query.data.current_import?.evidence_file_id === fileId && (
+      {query.data.current_import?.excluded_as_duplicate ? (
         <section
           className="rounded border p-4 space-y-3"
-          aria-label="Recorded statement import"
+          aria-label="Excluded statement copy"
         >
           <h3 className="font-semibold">
-            This statement has already been imported
+            This copy was excluded as a duplicate
           </h3>
           <p>
-            {query.data.current_import.transaction_count} current transactions
-            remain in use. Select <strong>Open imported transactions</strong> to
-            {canEdit
-              ? "investigate them or correct a value against its source."
-              : "inspect them against their sources."}
+            Its original statement is kept for reference. Its payments do not
+            count in Transactions.
           </p>
-          {query.data.current_import.details_reason && (
-            <p>
-              Account or statement detail decision:{" "}
-              {query.data.current_import.details_reason}
-            </p>
+          {query.data.current_import.retained_filename && (
+            <p>Retained file: {query.data.current_import.retained_filename}</p>
           )}
-          {query.data.current_import.review_decisions.length > 0 && (
-            <details>
-              <summary>
-                Recorded import decisions (
-                {query.data.current_import.review_decisions.length})
-              </summary>
-              <ul className="space-y-3 mt-3">
-                {query.data.current_import.review_decisions.map(
-                  (decision, index) => (
-                    <li key={index} className="rounded border p-3">
-                      <p className="font-medium">
-                        {decision.date || "Date not recorded"} ·{" "}
-                        {decision.description || "Description not recorded"}
-                      </p>
-                      <p>
-                        {decision.excluded
-                          ? "Excluded from this import"
-                          : "Included after review"}
-                        : {decision.reason}
-                      </p>
-                    </li>
-                  )
-                )}
-              </ul>
-            </details>
-          )}
+          <p>
+            Open the recorded decision to check why this copy was excluded or to
+            restore it. Reopening this PDF does not import its payments again.
+          </p>
+          <Button asChild variant="outline">
+            <a
+              href={`/cases/${encodeURIComponent(caseId)}/financial?view=ledger`}
+            >
+              Review duplicate decision
+            </a>
+          </Button>
         </section>
+      ) : (
+        <ReprocessStatement
+          key={fileId}
+          caseId={caseId}
+          fileId={fileId}
+          onReady={onReprocessed}
+        />
       )}
+      {query.data.current_import &&
+        !query.data.current_import.excluded_as_duplicate && (
+          <Button
+            variant="outline"
+            onClick={() =>
+              onImported({
+                ...query.data.current_import!,
+                case_id: caseId,
+                account_id: query.data.current_import!.account_id || undefined,
+                filename:
+                  query.data.current_import!.filename || query.data.filename,
+              })
+            }
+          >
+            Open imported transactions
+          </Button>
+        )}
+      {query.data.current_import?.evidence_file_id === fileId &&
+        !query.data.current_import.excluded_as_duplicate && (
+          <section
+            className="rounded border p-4 space-y-3"
+            aria-label="Recorded statement import"
+          >
+            <h3 className="font-semibold">
+              This statement has already been imported
+            </h3>
+            <p>
+              {query.data.current_import.transaction_count} current transactions
+              remain in use. Select <strong>Open imported transactions</strong>{" "}
+              to
+              {canEdit
+                ? "investigate them or correct a value against its source."
+                : "inspect them against their sources."}
+            </p>
+            {query.data.current_import.details_reason && (
+              <p>
+                Account or statement detail decision:{" "}
+                {query.data.current_import.details_reason}
+              </p>
+            )}
+            {query.data.current_import.review_decisions.length > 0 && (
+              <details>
+                <summary>
+                  Recorded import decisions (
+                  {query.data.current_import.review_decisions.length})
+                </summary>
+                <ul className="space-y-3 mt-3">
+                  {query.data.current_import.review_decisions.map(
+                    (decision, index) => (
+                      <li key={index} className="rounded border p-3">
+                        <p className="font-medium">
+                          {decision.date || "Date not recorded"} ·{" "}
+                          {decision.description || "Description not recorded"}
+                        </p>
+                        <p>
+                          {decision.excluded
+                            ? "Excluded from this import"
+                            : "Included after review"}
+                          : {decision.reason}
+                        </p>
+                      </li>
+                    )
+                  )}
+                </ul>
+              </details>
+            )}
+          </section>
+        )}
       <div>
         {query.data.current_import?.evidence_file_id === fileId && (
           <h3 className="font-semibold">Original extraction</h3>
@@ -589,7 +623,9 @@ function EditableStatement({
   fileId: string
   onImported: (result?: StatementImportReceipt) => void
 }) {
-  const { canEdit } = useFinancialAccess()
+  const { canEdit: caseCanEdit } = useFinancialAccess()
+  const excludedCopy = !!data.current_import?.excluded_as_duplicate
+  const canEdit = caseCanEdit && !excludedCopy
   const owner = useAuthStore((state) => state.user?.id || state.user?.username)
   const draftKey = owner
     ? `loupe-statement-review:${owner}:${caseId}:${fileId}:${data.revision}`
@@ -893,7 +929,7 @@ function EditableStatement({
     <div className="space-y-4 pt-4">
       <header>
         <h3 className="text-lg font-semibold">Review {data.filename}</h3>
-        {draftSaved && (
+        {draftSaved && !excludedCopy && (
           <p className="text-xs text-muted-foreground" role="status">
             Review saved in this browser tab. Reopening this statement after a
             refresh restores it. Closing the tab may discard it.
@@ -937,28 +973,31 @@ function EditableStatement({
         >
           Next page
         </Button>
-        {(canEdit || data.current_import?.evidence_file_id === fileId) && (
-          <Button
-            className="ml-auto"
-            onClick={
-              data.current_import?.evidence_file_id === fileId
-                ? () =>
-                    onImported({
-                      ...data.current_import!,
-                      case_id: caseId,
-                      account_id: data.current_import!.account_id || undefined,
-                      filename: data.current_import!.filename || data.filename,
-                    })
-                : editValues
-            }
-          >
-            {data.current_import?.evidence_file_id === fileId
-              ? canEdit
-                ? "Edit imported transactions"
-                : "Open imported transactions"
-              : "Edit import values"}
-          </Button>
-        )}
+        {!excludedCopy &&
+          (canEdit || data.current_import?.evidence_file_id === fileId) && (
+            <Button
+              className="ml-auto"
+              onClick={
+                data.current_import?.evidence_file_id === fileId
+                  ? () =>
+                      onImported({
+                        ...data.current_import!,
+                        case_id: caseId,
+                        account_id:
+                          data.current_import!.account_id || undefined,
+                        filename:
+                          data.current_import!.filename || data.filename,
+                      })
+                  : editValues
+              }
+            >
+              {data.current_import?.evidence_file_id === fileId
+                ? canEdit
+                  ? "Edit imported transactions"
+                  : "Open imported transactions"
+                : "Edit import values"}
+            </Button>
+          )}
       </div>
       <fieldset
         disabled={confirm.isPending || confirm.isSuccess}
@@ -1338,7 +1377,7 @@ function EditableStatement({
             </div>
           </div>
         </div>
-        {data.current_import && (
+        {data.current_import && !excludedCopy && (
           <div className="rounded border p-3 space-y-2">
             <p>
               This statement already contributes{" "}
@@ -1423,7 +1462,7 @@ function EditableStatement({
               onChange={(e) => setPeriodEnd(e.target.value)}
             />
           </label>
-          {(detailsChanged || data.current_import) && (
+          {!excludedCopy && (detailsChanged || data.current_import) && (
             <label>
               Reason for detail corrections
               <input
@@ -1446,7 +1485,13 @@ function EditableStatement({
         )}
         <div className="flex flex-wrap gap-5 text-sm">
           <span>
-            <strong>{included.length}</strong> transactions to import
+            {excludedCopy ? (
+              "This copy contributes no transactions to the case totals."
+            ) : (
+              <>
+                <strong>{included.length}</strong> transactions to import
+              </>
+            )}
           </span>
           <span>
             {data.metadata.account_type === "credit_card"
@@ -1545,37 +1590,39 @@ function EditableStatement({
             ? "Select an opening or closing amount to check its source or correct it."
             : "Select an opening or closing amount to check its source."}
         </p>
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => {
-            const page =
-              (focus ? originals.get(focus.rowId)?.page_number : undefined) ??
-              sourcePage
-            if (!page) return
-            const id = `manual:${newReviewId()}`
-            setCorrectionsOpen(true)
-            setRows((current) => [
-              ...current,
-              {
-                id,
-                excluded: false,
-                manual_page: page,
-                date: "",
-                description: "",
-                amount_minor: "0",
-                direction: "",
-                counterparty: "",
-                balance_minor: null,
-                reason: "",
-              },
-            ])
-            setFocus({ rowId: id, locator: { kind: "page_only", page } })
-          }}
-          disabled={!canEdit || !data.page_numbers.length}
-        >
-          Add a missed transaction
-        </Button>
+        {!excludedCopy && (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              const page =
+                (focus ? originals.get(focus.rowId)?.page_number : undefined) ??
+                sourcePage
+              if (!page) return
+              const id = `manual:${newReviewId()}`
+              setCorrectionsOpen(true)
+              setRows((current) => [
+                ...current,
+                {
+                  id,
+                  excluded: false,
+                  manual_page: page,
+                  date: "",
+                  description: "",
+                  amount_minor: "0",
+                  direction: "",
+                  counterparty: "",
+                  balance_minor: null,
+                  reason: "",
+                },
+              ])
+              setFocus({ rowId: id, locator: { kind: "page_only", page } })
+            }}
+            disabled={!canEdit || !data.page_numbers.length}
+          >
+            Add a missed transaction
+          </Button>
+        )}
         <details className="border rounded p-3 text-sm">
           <summary className="cursor-pointer">
             Inspect another page of the original PDF
@@ -1587,8 +1634,9 @@ function EditableStatement({
             <p>
               These pages were not assigned to a statement or recognised as
               standard card terms. Check them for missed transactions before
-              relying on complete coverage. Use Add a missed transaction if you
-              find one for this account and period.
+              relying on complete coverage.
+              {!excludedCopy &&
+                " Use Add a missed transaction if you find one for this account and period."}
             </p>
           )}
           <label className="block mt-2">
@@ -1682,77 +1730,80 @@ function EditableStatement({
             </Button>
           </div>
         )}
-        <div className="rounded border bg-muted/30 p-3 space-y-2">
-          {data.metadata.account_closure && (
-            <div className="space-y-2">
-              <p>
-                The statement records this account as closed on{" "}
-                {data.metadata.account_closure.date}. This is an account notice,
-                not a payment. An unprinted closing balance remains unknown.
-              </p>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  const closure = data.metadata.account_closure!
-                  setFocus({
-                    rowId: `${closure.page_number}:${closure.table_index}:${closure.row_index}`,
-                    locator: closure.source_cells[0]?.locator,
-                  })
-                }}
-              >
-                View account closure in PDF
-              </Button>
-            </div>
-          )}
-          <p>
-            {data.can_record_account_closure && included.length === 0
-              ? "Save the account, statement period and printed closure notice. No transaction rows were found in this section. This does not supply a missing closing balance."
-              : data.can_import_balances && included.length === 0
-                ? "Save this account's statement period and its opening and closing balances. No transaction rows were found in this section. Check the original before saving."
-                : `Import adds ${included.length} transactions to the case. Original readings and your corrections are retained. Check the PDF for any missed transactions before confirming.`}
-          </p>
-          <Button
-            disabled={
-              !canEdit ||
-              incomplete ||
-              (!!data.current_import &&
-                (!replacePrevious || !detailsReason.trim())) ||
-              (detailsChanged && !detailsReason.trim()) ||
-              Boolean(periodStart) !== Boolean(periodEnd) ||
-              periodStart > periodEnd ||
-              !holder.trim() ||
-              !account.trim() ||
-              (included.length === 0 &&
-                !data.can_record_account_closure &&
-                (!data.can_import_balances || !matchingEmptyBalances))
-            }
-            onClick={() => {
-              if (canEdit) confirm.mutate()
-            }}
-          >
-            {confirm.isPending
-              ? "Importing statement…"
-              : data.can_record_account_closure && included.length === 0
-                ? "Save account closure"
+        {!excludedCopy && (
+          <div className="rounded border bg-muted/30 p-3 space-y-2">
+            {data.metadata.account_closure && (
+              <div className="space-y-2">
+                <p>
+                  The statement records this account as closed on{" "}
+                  {data.metadata.account_closure.date}. This is an account
+                  notice, not a payment. An unprinted closing balance remains
+                  unknown.
+                </p>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    const closure = data.metadata.account_closure!
+                    setFocus({
+                      rowId: `${closure.page_number}:${closure.table_index}:${closure.row_index}`,
+                      locator: closure.source_cells[0]?.locator,
+                    })
+                  }}
+                >
+                  View account closure in PDF
+                </Button>
+              </div>
+            )}
+            <p>
+              {data.can_record_account_closure && included.length === 0
+                ? "Save the account, statement period and printed closure notice. No transaction rows were found in this section. This does not supply a missing closing balance."
                 : data.can_import_balances && included.length === 0
-                  ? "Save statement balances"
-                  : `Confirm import of ${included.length} transactions`}
-          </Button>
-          {data.can_import_balances &&
-            included.length === 0 &&
-            !matchingEmptyBalances && (
+                  ? "Save this account's statement period and its opening and closing balances. No transaction rows were found in this section. Check the original before saving."
+                  : `Import adds ${included.length} transactions to the case. Original readings and your corrections are retained. Check the PDF for any missed transactions before confirming.`}
+            </p>
+            <Button
+              disabled={
+                !canEdit ||
+                incomplete ||
+                (!!data.current_import &&
+                  (!replacePrevious || !detailsReason.trim())) ||
+                (detailsChanged && !detailsReason.trim()) ||
+                Boolean(periodStart) !== Boolean(periodEnd) ||
+                periodStart > periodEnd ||
+                !holder.trim() ||
+                !account.trim() ||
+                (included.length === 0 &&
+                  !data.can_record_account_closure &&
+                  (!data.can_import_balances || !matchingEmptyBalances))
+              }
+              onClick={() => {
+                if (canEdit) confirm.mutate()
+              }}
+            >
+              {confirm.isPending
+                ? "Importing statement…"
+                : data.can_record_account_closure && included.length === 0
+                  ? "Save account closure"
+                  : data.can_import_balances && included.length === 0
+                    ? "Save statement balances"
+                    : `Confirm import of ${included.length} transactions`}
+            </Button>
+            {data.can_import_balances &&
+              included.length === 0 &&
+              !matchingEmptyBalances && (
+                <p className="text-sm">
+                  Check the opening and closing balances. They must match when
+                  there are no transactions.
+                </p>
+              )}
+            {incomplete && (
               <p className="text-sm">
-                Check the opening and closing balances. They must match when
-                there are no transactions.
+                Complete the flagged fields and record a reason for each
+                correction or exception before importing.
               </p>
             )}
-          {incomplete && (
-            <p className="text-sm">
-              Complete the flagged fields and record a reason for each
-              correction or exception before importing.
-            </p>
-          )}
-        </div>
+          </div>
+        )}
       </fieldset>
       {confirm.isError && <p role="alert">{confirm.error.message}</p>}
       {confirm.isSuccess && (

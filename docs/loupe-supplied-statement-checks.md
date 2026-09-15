@@ -30,3 +30,9 @@ The remaining pages are account/statement sections, recognised card terms, notic
 - Private preparation and proposal caches bind these counts to the original source hashes. New preparation is required for previously processed files whose unboxed text was omitted. The reader version is `statement-review-v13`.
 
 The recovery and combined investigation checks are complete and recorded in the financial completion plan and the 15 September release record. Damaged source readings remain flagged for the investigator. Independent human reference reviews are a separate acceptance item.
+
+## Reader change comparison, 15 September evening
+
+The seven-source read-only capture was repeated with `statement-review-v15` after the scanned-column fix. All original source sizes and SHA-256 hashes were checked. Across 182 document sections, the saved candidate rows, dates, amounts, credit/debit assignments, balances, account details, original cell locations and flagged problems match the previous v13 capture. Its 2,955 automatic candidate rows include unresolved readings; this is not a count of verified transactions.
+
+Private records `completion-reader-v15-capture`, `reader-v13-v15-prediction-diff.json` and `reader-v15-field-comparison.json` retain the comparison. No financial records were written. These results establish consistency with the earlier automatic capture, not independent extraction accuracy. The earlier inventory above remains a record of its particular preparation and page-review counts, which use different definitions from the capture's candidate totals.

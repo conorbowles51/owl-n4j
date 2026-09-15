@@ -62,6 +62,86 @@ class StatementImportTests(TransactionPersistenceTestCase):
         self.assertFalse(repeated['created'])
         self.assertEqual(repeated['transaction_count'], saved['transaction_count'])
 
+    def excluded_import(self):
+        from copy import deepcopy
+        from services.financial.duplicate_decisions import decide_duplicate, duplicate_revision
+        primary_request = self.request()
+        primary_request.update(institution='Synthetic Bank', details_reason='Bank checked against the test source.')
+        primary = self.confirm(primary_request)
+        primary_file = self.file
+        raw = self.path.read_bytes() + b'\n% duplicate copy'
+        copy_path = Path(self._directory) / 'copy.pdf'
+        copy_path.write_bytes(raw)
+        copied = self.evidence(hashlib.sha256(raw).hexdigest())
+        copied.stored_path = str(copy_path)
+        text = self.db.get(EvidenceDocumentText, primary_file.id)
+        geometry = self.db.get(EvidenceTableGeometry, (primary_file.id, 1))
+        self.db.add(EvidenceDocumentText(evidence_file_id=copied.id, content=text.content,
+            content_sha256=text.content_sha256, character_count=text.character_count,
+            engine_job_id=text.engine_job_id, source_locations=deepcopy(text.source_locations)))
+        self.db.add(EvidenceTableGeometry(evidence_file_id=copied.id, page_number=1,
+            engine_job_id=geometry.engine_job_id, payload=deepcopy(geometry.payload)))
+        self.db.commit()
+        self.file = copied
+        request = self.request()
+        request.update(institution='Synthetic Bank', details_reason='Bank checked against the test source.')
+        duplicate = self.confirm(request)
+        with self.SessionLocal() as db:
+            source = db.get(FinancialSourceDocument, UUID(duplicate['source_document_id']))
+            retained = db.get(FinancialSourceDocument, UUID(primary['source_document_id']))
+            decide_duplicate(db, case_id=self.case.id, document_id=source.id, action='exclude',
+                expected_revision=duplicate_revision(db, source), primary_id=retained.id,
+                expected_primary_revision=duplicate_revision(db, retained), actor=self.actor,
+                reason='Same printed payments; retain the primary synthetic statement.')
+        return primary_file, duplicate, request
+
+    def test_excluded_pdf_reopens_its_decision_and_refuses_another_import(self):
+        primary_file, duplicate, request = self.excluded_import()
+        current = self.preview()['current_import']
+        self.assertTrue(current['excluded_as_duplicate'])
+        self.assertEqual(current['source_document_id'], duplicate['source_document_id'])
+        self.assertEqual(current['transaction_count'], 0)
+        self.assertEqual(current['retained_filename'], primary_file.original_filename)
+        with self.assertRaisesRegex(PdfMappingError, 'excluded as a duplicate'):
+            self.confirm(request)
+        with self.SessionLocal() as db:
+            primary = read_statement_import(db, case_id=self.case.id, evidence_file_id=primary_file.id)
+            self.assertFalse(primary['current_import']['excluded_as_duplicate'])
+            self.assertEqual(primary['current_import']['transaction_count'], 12)
+            self.assertEqual(len(list(db.scalars(select(FinancialTransaction).where(
+                FinancialTransaction.ledger_status == 'admitted')))), 12)
+            from services.financial.duplicate_decisions import decide_duplicate, duplicate_revision
+            source = db.get(FinancialSourceDocument, UUID(duplicate['source_document_id']))
+            decide_duplicate(db, case_id=self.case.id, document_id=source.id, action='restore',
+                expected_revision=duplicate_revision(db, source), actor=self.actor,
+                reason='Restore the recorded synthetic exclusion for the continuation check.')
+        restored = self.preview()['current_import']
+        self.assertFalse(restored['excluded_as_duplicate'])
+        self.assertEqual(restored['transaction_count'], 12)
+        self.assertFalse(self.confirm(request)['created'])
+
+    def test_rereading_the_same_excluded_source_cannot_bypass_its_decision(self):
+        from copy import deepcopy
+        from services.financial.statement_reprocessing import create_statement_version
+        _, _, _ = self.excluded_import()
+        original_id = self.file.id
+        with self.SessionLocal() as db:
+            version = create_statement_version(db, case_id=self.case.id, evidence_file_id=original_id,
+                request_id=uuid4(), actor=self.actor, resolve_path=Path)
+            text = db.get(EvidenceDocumentText, original_id)
+            geometry = db.get(EvidenceTableGeometry, (original_id, 1))
+            db.add(EvidenceDocumentText(evidence_file_id=version.id, content=text.content,
+                content_sha256=text.content_sha256, character_count=text.character_count,
+                engine_job_id=text.engine_job_id, source_locations=deepcopy(text.source_locations)))
+            db.add(EvidenceTableGeometry(evidence_file_id=version.id, page_number=1,
+                engine_job_id=geometry.engine_job_id, payload=deepcopy(geometry.payload)))
+            db.commit()
+            version_id = version.id
+        self.file = self.db.get(type(self.file), version_id)
+        self.assertTrue(self.preview()['current_import']['excluded_as_duplicate'])
+        with self.assertRaisesRegex(PdfMappingError, 'excluded as a duplicate'):
+            self.confirm()
+
     def prepare_long_statement(self, count):
         from tests.test_financial_statement_import_proposal import source
         job = self.db.get(EvidenceDocumentText, self.file.id).engine_job_id

@@ -137,6 +137,48 @@ beforeEach(() => {
     return data as never
   })
 })
+it("opens an excluded duplicate as a source without offering another import", async () => {
+  const base = vi.mocked(fetchAPI).getMockImplementation()!
+  vi.mocked(fetchAPI).mockImplementation(async (url, options) =>
+    String(url).includes("statement-import")
+      ? ({
+          ...data,
+          current_import: {
+            source_document_id: "excluded",
+            evidence_file_id: "file",
+            revision: "b".repeat(64),
+            transaction_count: 0,
+            excluded_as_duplicate: true,
+            retained_filename: "retained.pdf",
+          },
+        } as never)
+      : base(url, options)
+  )
+  const done = mount()
+  fireEvent.click(screen.getByRole("button", { name: "Import a statement" }))
+  await screen.findByRole("option", { name: "statement.pdf" })
+  fireEvent.change(screen.getByLabelText("Uploaded statement"), {
+    target: { value: "file" },
+  })
+  await screen.findByText("Review statement.pdf")
+  expect(
+    screen.getByText("This copy was excluded as a duplicate")
+  ).toBeVisible()
+  expect(screen.getByText("Retained file: retained.pdf")).toBeVisible()
+  expect(screen.getByText("Original PDF beside editable values")).toBeVisible()
+  expect(
+    screen.getByRole("link", { name: "Review duplicate decision" })
+  ).toHaveAttribute("href", "/cases/case/financial?view=ledger")
+  expect(
+    screen.queryByRole("button", {
+      name: /Confirm import|Edit imported|Open imported|Read again|Add a missed transaction|Show corrections and import choices/,
+    })
+  ).not.toBeInTheDocument()
+  expect(screen.queryByText(/transactions to import/)).not.toBeInTheDocument()
+  expect(screen.getByLabelText("Account holder")).toHaveAttribute("readonly")
+  expect(sent).toEqual([])
+  expect(done).not.toHaveBeenCalled()
+})
 it("opens and focuses a flagged row's import choice while retaining another correction", async () => {
   const flagged = {
     ...data,

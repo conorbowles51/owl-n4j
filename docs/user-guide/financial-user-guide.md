@@ -702,7 +702,14 @@ For an individual duplicate decision, an unfinished reason stays in this browser
 
 ### Restore a duplicate exclusion
 
-Open the recorded duplicate decision and its restore action. Read which rows can return, enter the reason and confirm. Only rows held out by that particular exclusion return. Corrected or separately held-out rows are not automatically restored. Both copies may count afterward, so recheck the ledger.
+1. On **Import review**, select **Compare documents**.
+2. Expand **Excluded documents** and select **Restore [filename]** for the copy you need.
+3. Read which payments can return, enter your explanation in **Reason for this decision**, then select **Record decision**.
+4. Return to **Transactions** and check the totals. Both copies can count after restoration.
+
+Only payments excluded by that decision return. Payments that were corrected or separately set aside are not automatically restored.
+
+If you reopen an excluded PDF from the statement file list, the viewer says **This copy was excluded as a duplicate** and names the retained file. The original PDF and extracted text remain available, but this copy contributes no transactions to the case totals. Select **Review duplicate decision** to reach the comparison above. Reopening or rereading the PDF cannot bypass the saved exclusion and import the same copy again.
 
 ### Compare with another case
 

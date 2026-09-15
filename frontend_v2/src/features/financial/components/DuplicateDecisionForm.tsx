@@ -84,6 +84,7 @@ function DuplicateDecisionFormForm({
         "financial-linked-payments",
         "financial-proof-standing",
         "statement-import-status",
+        "statement-import",
       ]) {
         void client.invalidateQueries({
           queryKey: [prefix, variables.selected.caseId],

@@ -164,6 +164,7 @@ it("refreshes previously opened payment sources and analysis lists after a dupli
     "financial-linked-payments",
     "financial-proof-standing",
     "statement-import-status",
+    "statement-import",
   ]
   for (const prefix of prefixes) {
     client.setQueryData([prefix, selection.caseId, "prior-view"], {
