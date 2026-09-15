@@ -11,7 +11,7 @@ from services.financial.money import get_currency
 from services.financial.pdf_candidates import _digest
 from services.financial.source_dates import assess_date_text
 
-VERSION = 'statement-review-v14'
+VERSION = 'statement-review-v15'
 _HEADERS = {
     'date': 'date', 'transaction date': 'date', 'trans date': 'date',
     'booking date': 'booking_date', 'posting date': 'booking_date',
@@ -80,26 +80,50 @@ def _rect(cell, page):
     return rect, size
 
 
-def _printed_roles(source, header, row, roles):
-    """Text-alignment grids number present cells, so blank columns need geometry.
+def _printed_layouts(source, header, following, roles):
+    """Find column boundaries supported by the rows below this printed header.
 
-    Assign only cells wholly inside a single band between printed headings.
-    Keep original cell indices and positions for corrections and citations.
-    Uncertain or overlapping positions remain exceptions, never index fallbacks.
+    Text-alignment cells omit blank columns. Headings may be left, centre or
+    right aligned while amounts are right aligned. Compare those three layouts
+    across the section rather than assuming the gap midpoint for each value.
+    Equal-scoring layouts remain alternatives: a row is mapped only when they
+    agree, so a lone ambiguous credit/debit value is not guessed.
     """
     headings = [(c, _rect(c, source['page_number'])) for c in header]
     if not headings or any(p is None for _, p in headings):
-        return None
+        return []
     size = headings[0][1][1]
     headings.sort(key=lambda item: item[1][0][0])
     if any(p[1] != size for _, p in headings):
-        return None
-    boundaries = [0]
-    for (_, left), (_, right) in zip(headings, headings[1:]):
+        return []
+    gaps = []
+    money_roles = {'credit', 'debit', 'amount', 'balance'}
+    for (left_cell, left), (right_cell, right) in zip(headings, headings[1:]):
         if left[0][2] >= right[0][0]:
-            return None
-        boundaries.append((left[0][2]+right[0][0]) / 2)
-    boundaries.append(size[0])
+            return []
+        gaps.append((left[0][2], right[0][0],
+                     roles.get(left_cell['column_index']) in money_roles
+                     and roles.get(right_cell['column_index']) in money_roles))
+    layouts = []
+    for fraction in (0.0, 0.5, 1.0):
+        boundaries = [0, *[start + (end-start)*(fraction if numeric else 0.5)
+                           for start, end, numeric in gaps], size[0]]
+        score = 0
+        for row in following:
+            labels = {_HEADERS.get(' '.join(c['expected_text'].lower().split())) for c in row['cells']}
+            if labels & {'date', 'booking_date', 'value_date'} and labels & {'credit', 'debit', 'amount'}:
+                break
+            assigned = _assign_printed_cells(source, headings, boundaries, row, roles)
+            if assigned and (assigned.keys() & {'date', 'booking_date', 'value_date'}
+                             and assigned.keys() & {'credit', 'debit', 'amount', 'balance'}):
+                score += 1
+        layouts.append((score, headings, boundaries))
+    best = max(layout[0] for layout in layouts)
+    return [(headings, boundaries) for score, headings, boundaries in layouts if score == best]
+
+
+def _assign_printed_cells(source, headings, boundaries, row, roles):
+    size = headings[0][1][1]
     assigned = {}
     for cell in row['cells']:
         pos = _rect(cell, source['page_number'])
@@ -113,6 +137,17 @@ def _printed_roles(source, header, row, roles):
             return None
         assigned[column] = cell
     return {role: assigned[col] for col, role in roles.items() if col in assigned}
+
+
+def _printed_roles(source, layouts, row, roles):
+    assignments = [_assign_printed_cells(source, headings, boundaries, row, roles)
+                   for headings, boundaries in layouts]
+    if not assignments or any(assignment is None for assignment in assignments):
+        return None
+    first = assignments[0]
+    if any(assignment != first for assignment in assignments[1:]):
+        return None
+    return first
 
 
 def _statement_heading(row):
@@ -145,9 +180,10 @@ def propose_table(source, currency, *, page_has_transaction_table=False):
     get_currency(currency)
     roles = None
     header = []
+    layouts = []
     result = []
     previous_balance = None
-    for row in source['rows']:
+    for index, row in enumerate(source['rows']):
         cells = {c['column_index']: c for c in row['cells']}
         labels = [(c['column_index'], _HEADERS.get(' '.join(c['expected_text'].lower().split()))) for c in row['cells']]
         known = [(column, role) for column, role in labels if role]
@@ -168,6 +204,8 @@ def propose_table(source, currency, *, page_has_transaction_table=False):
             else:
                 roles = possible
                 header = row['cells']
+                if source.get('table_source') == 'text_alignment':
+                    layouts = _printed_layouts(source, header, source['rows'][index+1:], roles)
                 # Exclude only explicit statement metadata above a recognised table.
                 for earlier in result:
                     if earlier['kind'] == 'unresolved' and _statement_heading({'cells': earlier['source_cells']}):
@@ -184,7 +222,7 @@ def propose_table(source, currency, *, page_has_transaction_table=False):
             result.append(item)
             continue
         if source.get('table_source') == 'text_alignment':
-            role_cells = _printed_roles(source, header, row, roles)
+            role_cells = _printed_roles(source, layouts, row, roles)
             if role_cells is None:
                 item.update(kind='unresolved', issues=['The values do not fit the printed columns. Check the row against the PDF before entering its fields.'])
                 result.append(item)

@@ -19,6 +19,78 @@ const row = (
   source_cells: PrintedRow["source_cells"],
   kind = "statement_information"
 ) => ({ id, row_index, page_number: 3, table_index: 0, kind, source_cells })
+it("keeps right-aligned scanned amounts under their measured credit, debit and balance columns", () => {
+  const header = row("header", 0, [
+    cell(0, "Date", 31000, 49000),
+    cell(1, "Description", 113000, 157000),
+    cell(2, "Credit", 391000, 415000),
+    cell(3, "Debit", 465000, 485000),
+    cell(4, "Balance", 537000, 569000),
+  ])
+  const incoming = {
+    ...row(
+      "in",
+      1,
+      [
+        cell(0, "2020-07-02", 31000, 76000),
+        cell(1, "Incoming payment", 113000, 222000),
+        cell(2, "900.00", 424000, 452000),
+        cell(3, "1120.00", 566000, 598000),
+      ],
+      "transaction"
+    ),
+    fields: {
+      date_column: "0",
+      description_column: "1",
+      credit_column: "2",
+      balance_column: "3",
+    },
+  }
+  const outgoing = {
+    ...row(
+      "out",
+      2,
+      [
+        cell(0, "2020-07-03", 31000, 76000),
+        cell(1, "Outgoing payment", 113000, 228000),
+        cell(2, "300.00", 497000, 525000),
+        cell(3, "820.00", 570000, 598000),
+      ],
+      "transaction"
+    ),
+    fields: {
+      date_column: "0",
+      description_column: "1",
+      debit_column: "2",
+      balance_column: "3",
+    },
+  }
+  const opening = {
+    ...row(
+      "opening",
+      3,
+      [
+        cell(0, "2020-07-01", 31000, 76000),
+        cell(1, "Opening Balance", 113000, 181000),
+        cell(2, "220.00", 570000, 598000),
+      ],
+      "balance"
+    ),
+    fields: { date_column: "0", description_column: "1", balance_column: "2" },
+  }
+  const rows = [header, incoming, outgoing, opening]
+  const original = structuredClone(rows)
+  const result = printedStatementSections(rows)
+  expect(
+    result.sections[0].rows.map((r) => r.cells.map((c) => c?.expected_text))
+  ).toEqual([
+    ["2020-07-02", "Incoming payment", "900.00", undefined, "1120.00"],
+    ["2020-07-03", "Outgoing payment", undefined, "300.00", "820.00"],
+    ["2020-07-01", "Opening Balance", undefined, undefined, "220.00"],
+  ])
+  expect(result.remaining).toEqual([])
+  expect(rows).toEqual(original)
+})
 it("separates printed cardholder sections, drops the adjacent ad from the table, and aligns the printed total by position", () => {
   const rows = [
     row("title", 0, [

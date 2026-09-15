@@ -192,3 +192,7 @@ A failed transaction-details request now offers Try loading this transaction aga
 ## Statement worker startup
 
 Local PDF reading and OCR no longer require an OpenAI environment key to pass engine readiness. Missing database, storage, OCR or other required runtime services still prevent the worker from starting. Actual AI operations continue to use their configured provider credentials. The isolated local launcher clears every provider key. Ten focused health/credential checks, a clean local restart and real native/scanned PDF preparation passed without AI credentials; no transactions were imported.
+
+## Scanned statement columns
+
+Scanned statement proposals now compare the positions of amounts across each printed section when money headings and amounts use different alignment. Ambiguous credit/debit assignments remain flagged. The viewer follows those source-column references and keeps printed values and blank cells. The actual native/scanned synthetic pair matched all six payments, opening and closing controls, and original balance highlights without importing financial records. The synthetic footer remains a separate unresolved line.

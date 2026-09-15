@@ -269,7 +269,7 @@ If a file has not finished processing, wait for its status to complete. If readi
 
 One statement review supports up to 1,000 possible transactions. Headings, page numbers and balance rows do not use that allowance. Unclear rows still count until checked. The complete review, including other page text, is limited to 10,000 rows. If a limit is reached, Loupe explains it and does not omit rows. Open a shorter statement period from the file list, or obtain statements for shorter periods.
 
-For statements without drawn table borders, Loupe uses the printed header positions to keep blank credit, debit and balance cells in their correct columns. If a row cannot be placed reliably, it is flagged for a layout check. Inspect its PDF before entering the values.
+For scanned statements and statements without drawn table borders, Loupe compares the printed headings with the positions of the amounts across the table. This keeps blank credit, debit and balance cells in their correct columns, including when headings sit to the left and amounts sit to the right. The extracted table keeps the printed text. If the positions do not establish which column contains an amount, the row is flagged for a layout check. Inspect its PDF before entering the values.
 
 1. Compare **Account holder**, **Account number** and **Bank** with the statement header. A beneficiary account mentioned in a transfer is not necessarily the account that issued the statement.
 2. Check the statement currency and any recorded **Period start** and **Period end**.

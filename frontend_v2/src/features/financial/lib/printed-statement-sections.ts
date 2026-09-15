@@ -54,6 +54,8 @@ const amounts = new Set([
   "money out",
   "paid in",
   "paid out",
+  "deposits",
+  "withdrawals",
   "balance",
   "running balance",
 ])
@@ -64,6 +66,46 @@ const numericText = (text: string) =>
 const signText = (text: string) => /^[+-]$/.test(text.trim())
 const sameLine = (a: number[], b: number[]) =>
   Math.min(a[3], b[3]) > Math.max(a[1], b[1])
+
+function sourceRole(header: PrintedCell) {
+  const text = label(header)
+  if (["post date", "posting date", "booking date"].includes(text))
+    return "booking_date"
+  if (text === "value date") return "value_date"
+  if (dates.has(text)) return "date"
+  if (["credit", "credits", "money in", "paid in", "deposits"].includes(text))
+    return "credit"
+  if (
+    ["debit", "debits", "money out", "paid out", "withdrawals"].includes(text)
+  )
+    return "debit"
+  if (["balance", "running balance"].includes(text)) return "balance"
+  if (text === "amount") return "amount"
+  if (
+    [
+      "description",
+      "details",
+      "transaction details",
+      "item description",
+    ].includes(text)
+  )
+    return "description"
+  return undefined
+}
+
+function locatedColumn(
+  row: PrintedRow,
+  cell: PrintedCell,
+  columns: PrintedSection["columns"]
+) {
+  const matching = columns.flatMap((column, index) => {
+    const role = column.header && sourceRole(column.header)
+    return role && row.fields?.[`${role}_column`] === String(cell.column_index)
+      ? [index]
+      : []
+  })
+  return matching.length === 1 ? matching[0] : -1
+}
 
 function printedColumns(headers: PrintedCell[], following: PrintedRow[]) {
   const columns: PrintedSection["columns"] = headers.map((header) => ({
@@ -275,6 +317,7 @@ export function printedStatementSections(rows: PrintedRow[]) {
           numericText(c.expected_text) &&
           Math.abs(box[0] - lastHeaderBox[0]) <= 3000
         return (
+          locatedColumn(row, c, active!.columns) >= 0 ||
           !bounds ||
           !box ||
           (box[0] >= bounds[0] - 3000 && box[2] <= bounds[1] + 3000) ||
@@ -299,7 +342,12 @@ export function printedStatementSections(rows: PrintedRow[]) {
         let column = active.columns.findIndex(
           (c) => c.header?.column_index === cell.column_index
         )
-        if (box && active.columns.every((c) => c.box)) {
+        // The reader retains each original cell index after checking the
+        // complete section's layout. Use that measured mapping when present:
+        // header text can be left aligned while the amounts are right aligned.
+        const located = locatedColumn(row, cell, active.columns)
+        if (located >= 0) column = located
+        else if (box && active.columns.every((c) => c.box)) {
           // OCR can remove a date separator. A numeric reading in the printed
           // date position still belongs under Date, not under Amount.
           const dateColumn = active.columns.findIndex(

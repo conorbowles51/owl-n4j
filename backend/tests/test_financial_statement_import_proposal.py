@@ -109,6 +109,60 @@ class ReviewedDateMeaningTests(unittest.TestCase):
 
 
 class TextPositionStatementTests(unittest.TestCase):
+    def right_aligned_amounts(self):
+        from tests.test_financial_pdf_geometry_candidates import rectangle
+        grid = [
+            [(31,49,'Date'), (113,157,'Description'), (391,415,'Credit'), (465,485,'Debit'), (537,569,'Balance')],
+            [(31,76,'2020-07-01'), (113,181,'Opening Balance'), (570,598,'220.00')],
+            [(31,76,'2020-07-02'), (113,222,'Wire from Alpha Consulting'), (424,452,'900.00'), (566,598,'1120.00')],
+            [(31,76,'2020-07-03'), (113,228,'Transfer to Example Savings'), (497,525,'300.00'), (570,598,'820.00')],
+            [(31,76,'2020-07-31'), (113,181,'Closing Balance'), (570,598,'820.00')],
+        ]
+        data = source([])
+        data['table_source'] = 'text_alignment'
+        data['rows'] = [dict(row_index=i, cells=[dict(column_index=j, expected_text=value,
+            locator=rectangle(190+i*26, x=x, width=right-x)) for j,(x,right,value) in enumerate(values)])
+            for i,values in enumerate(grid)]
+        return data
+
+    def test_left_aligned_headings_and_right_aligned_numbers_keep_blank_columns(self):
+        data = self.right_aligned_amounts()
+        original = deepcopy(data)
+        result = propose_table(data, 'USD')
+        self.assertEqual(result['transaction_count'], 2)
+        self.assertEqual(result['needs_attention'], 0)
+        incoming, outgoing = result['rows'][2:4]
+        self.assertEqual([incoming['fields']['direction'], outgoing['fields']['direction']], ['credit', 'debit'])
+        self.assertEqual([incoming['fields']['amount_minor'], outgoing['fields']['amount_minor']], ['90000', '30000'])
+        self.assertEqual([incoming['fields']['balance'], outgoing['fields']['balance']], ['112000', '82000'])
+        self.assertEqual(outgoing['fields']['debit_column'], '2')
+        self.assertEqual(outgoing['fields']['balance_column'], '3')
+        self.assertEqual([r['fields'].get('balance_difference_minor') for r in (incoming,outgoing)], ['0','0'])
+        self.assertEqual(data, original)
+
+    def test_lone_amount_between_credit_and_debit_headings_stays_unresolved(self):
+        data = self.right_aligned_amounts()
+        # Without a debit row, both alignments fit the geometry. Arithmetic is
+        # not used to guess which printed money column owns the payment.
+        del data['rows'][3]
+        result = propose_table(data, 'USD')
+        incoming = result['rows'][2]
+        self.assertEqual(incoming['kind'], 'unresolved')
+        self.assertNotIn('direction', incoming['fields'])
+        self.assertTrue(incoming['issues'])
+
+    def test_a_new_printed_header_starts_a_separate_alignment(self):
+        data = self.right_aligned_amounts()
+        left_aligned = self.fixture()['rows'][4:]
+        for index, row in enumerate(left_aligned, len(data['rows'])):
+            row['row_index'] = index
+        data['rows'].extend(left_aligned)
+        result = propose_table(data, 'USD')
+        self.assertEqual(result['transaction_count'], 4)
+        self.assertEqual(result['needs_attention'], 0)
+        self.assertEqual([r['fields']['direction'] for r in result['rows'] if not r['excluded']],
+                         ['credit','debit','credit','debit'])
+
     def fixture(self):
         from tests.test_financial_pdf_geometry_candidates import rectangle
         grid=[[(20,'BANK STATEMENT - EXAMPLE RECEIVER')],[(20,'SYNTHETIC TEST BANK')],
