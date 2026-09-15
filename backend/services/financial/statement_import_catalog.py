@@ -9,6 +9,45 @@ from services.financial.pdf_candidates import _digest
 from services.financial.statement_layout_context import _cycle, CAPITAL_ONE_CARD_HEADING
 
 
+def _capital_page_contexts(sources):
+    """Read account/period context across tables on the same physical page.
+
+    A continuation without a readable bank mark can use an exact account and
+    period already established by a branded page. Conflicting page headers are
+    never assigned by their position beside another statement.
+    """
+    pages = {}
+    for source in sources:
+        pages.setdefault(source['page_number'], []).extend(source['rows'])
+    candidates, established, information = {}, set(), {}
+    for page, rows in pages.items():
+        cells = [c for row in rows for c in row['cells']]
+        content = ' '.join(c['expected_text'] for c in cells)
+        if ('How can I Avoid Paying Interest Charges?' in content and
+            'How can I Close My Account?' in content and 'Billing Rights Summary' in content and
+            not any(c['expected_text'].strip() in ('Trans Date', 'Transaction Date', 'Date') for c in cells)):
+            information[page] = 'card_terms'
+        cycles = set()
+        for row in rows:
+            for index, cell in enumerate(row['cells']):
+                value = _cycle(cell['expected_text'].strip())
+                if value is None and index + 1 < len(row['cells']):
+                    following = row['cells'][index + 1]
+                    if following['column_index'] == cell['column_index'] + 1:
+                        value = _cycle(cell['expected_text'].strip() + ' ' + following['expected_text'].strip())
+                if value:
+                    cycles.add(tuple(day.isoformat() for day in value))
+        cards = {m[1] for c in cells if (m := CAPITAL_ONE_CARD_HEADING.fullmatch(c['expected_text'].strip()))}
+        if len(cycles) != 1 or len(cards) != 1:
+            continue
+        start, end = next(iter(cycles))
+        key = (next(iter(cards)), start, end)
+        candidates[page] = key
+        if any('capitalone.com' in c['expected_text'].lower() or c['expected_text'].strip() == 'Capital One' for c in cells):
+            established.add(key)
+    return {page: key for page, key in candidates.items() if key in established}, information
+
+
 def statement_catalog(sources):
     from services.financial.statement_import_andrews import andrews_catalog
     andrews, handled, incomplete = andrews_catalog(sources)
@@ -16,6 +55,7 @@ def statement_catalog(sources):
     unclassified = []
     information = []
     from services.financial.statement_import_merrick import merrick_statement
+    capital_pages, information_pages = _capital_page_contexts(sources)
     for source in sources:
         address = (source['page_number'], source['table_index'])
         if address in handled:
@@ -31,32 +71,15 @@ def statement_catalog(sources):
                 existing['sources'].extend(merrick['sources'])
                 existing['page_numbers'] = sorted(set(existing['page_numbers'] + merrick['page_numbers']))
             continue
-        cells = [c for r in source['rows'] for c in r['cells']]
-        content = ' '.join(c['expected_text'] for c in cells)
-        if ('How can I Avoid Paying Interest Charges?' in content and
-            'How can I Close My Account?' in content and
-            'Billing Rights Summary' in content and
-            not any(c['expected_text'].strip() in ('Trans Date', 'Transaction Date', 'Date') for c in cells)):
-            information.append(dict(page_number=source['page_number'], table_index=source['table_index'], kind='card_terms'))
+        if source['page_number'] in information_pages:
+            information.append(dict(page_number=source['page_number'], table_index=source['table_index'], kind=information_pages[source['page_number']]))
             continue
-        cycles = set()
-        for row in source['rows']:
-            for index, cell in enumerate(row['cells']):
-                value = _cycle(cell['expected_text'].strip())
-                if value is None and index + 1 < len(row['cells']):
-                    following = row['cells'][index + 1]
-                    if following['column_index'] == cell['column_index'] + 1:
-                        value = _cycle(cell['expected_text'].strip() + ' ' + following['expected_text'].strip())
-                if value:
-                    cycles.add(tuple(day.isoformat() for day in value))
-        cards = {m[1] for c in cells if (m := CAPITAL_ONE_CARD_HEADING.fullmatch(c['expected_text'].strip()))}
-        institution = any('capitalone.com' in c['expected_text'].lower() or c['expected_text'].strip() == 'Capital One' for c in cells)
         key = (source['page_number'], source['table_index'])
-        if len(cycles) != 1 or len(cards) != 1 or not institution:
+        identity = capital_pages.get(source['page_number'])
+        if identity is None:
             unclassified.append(dict(page_number=key[0], table_index=key[1]))
             continue
-        start, end = next(iter(cycles))
-        card = next(iter(cards))
+        card, start, end = identity
         identity = dict(layout_id='capital-one-card', institution='Capital One', account_reference='****' + card,
                         period_start=start, period_end=end)
         identifier = _digest(identity)

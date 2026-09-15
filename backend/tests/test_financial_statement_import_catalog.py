@@ -10,6 +10,25 @@ def page(number, period='May 12, 2020 - Jun. 11, 2020 | 31 days in Billing Cycle
 
 
 class StatementCatalogTests(unittest.TestCase):
+    def test_summary_and_terms_use_context_on_the_same_page(self):
+        header=page(1);header['table_index']=2
+        summary=source([['Account Summary'],['Previous Balance','$100.00'],['New Balance','$200.00']])
+        result=statement_catalog([summary,header])
+        self.assertEqual(len(result['statements']),1)
+        self.assertEqual([s['table_index'] for s in result['statements'][0]['sources']],[0,2])
+        # A second printed account on that page invalidates page-wide context.
+        conflicting=page(1,card='9999');conflicting['table_index']=3
+        self.assertEqual(statement_catalog([summary,header,conflicting])['statements'],[])
+
+    def test_continuation_needs_an_exact_established_account_and_period(self):
+        continuation=page(2);continuation['rows']=continuation['rows'][:2]
+        self.assertEqual(statement_catalog([continuation])['statements'],[])
+        self.assertEqual(statement_catalog([page(1),continuation])['statements'][0]['page_numbers'],[1,2])
+        continuation['rows'][0]['cells'][0]['expected_text']='Platinum MasterCard Account Ending in 9999'
+        result=statement_catalog([page(1),continuation])
+        self.assertEqual(result['statements'][0]['page_numbers'],[1])
+        self.assertEqual(result['unclassified_sources'],[dict(page_number=2,table_index=0)])
+
     def test_groups_repeated_period_headers_but_keeps_other_periods_separate(self):
         result=statement_catalog([page(1),page(3),page(4,'Jun. 12, 2020 - Jul. 11, 2020 | 30 days in Billing Cycle')])
         self.assertEqual(len(result['statements']),2)

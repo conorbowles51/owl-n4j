@@ -1,3 +1,19 @@
+## Current completion: summary preparation fixed, 15 September 2026
+
+The five-minute continuation schedule remains active through 23:59 Europe/Dublin tonight. Current step: complete the supplied-source recovery checks, then execute the combined investigation and release acceptance items in docs/loupe-financial-completion-plan.md. Do not stop at this checkpoint or push without a new explicit request.
+
+Native PDF preparation now preserves text outside drawn table boxes, including unboxed account summaries and page headings. Drawn cells and their indices remain unchanged; displayed-coordinate overlap prevents duplicating their words. Capital One account/period grouping uses unambiguous same-page context, and exact established context for continuation pages. Conflicting page headers stay unassigned. Generic statement headings outside the transaction table remain excluded; unexplained text is still flagged. Reader version statement-review-v13.
+
+Both supplied Capital One files retain their proposed payment counts (301 and 42) and now retain all 106 and 54 summary balance readings. The simple statement still produces exactly 12 payments. A duplicated Capital One period retains both copies; the UI now links each repeated balance to its page and permits an explained correction/clearing instead of saying Not identified. Original values remain retained.
+
+All 567 pages across eight filenames are accounted for, with seven unique files/511 unique-file pages. See docs/loupe-supplied-statement-checks.md and the private financial-completion-page-inventory.json. Missing predecessors and damaged headings remain explicit; this is not independent extraction accuracy. The 24-page Andrews file is currently being reprocessed through the UI using local page-image OCR, to check damaged-heading recovery and processing recovery after refresh. Do not claim that result until its browser receipt succeeds.
+
+Validation: 78 focused backend checks, 16 statement review component checks, TypeScript and scoped lint passed. The 222-page Capital One file reprocessed through the UI, opened its first period's three payments and both balances, and highlighted the opening balance at its original PDF position. The old preparation is retained; no real payments were imported. Private receipt: capital-summary-reprocess-browser.json. Guide regenerated, 22 synthetic images. No full-suite run or push.
+
+## Deadline and continuation, 15 September 2026
+
+Neil requires a usable financial application tonight and will test the UI in a few hours after travelling. Continue without pauses. The existing heartbeat continue-loupe-development is ACTIVE every five minutes through 23:59 Europe/Dublin today, with the current completion plan and no-push rule. It must resume unfinished work without duplicating active commands. Report a material deadline risk promptly; no guaranteed completion claim. Current work is the Capital One preparation fix and all-page inventory below.
+
 ## Current completion work: receipt review finished, page inventory in progress
 
 The Andrews deposit receipt workflow is implemented and verified. A synthetic three-page PDF imported one statement payment, kept two receipt drafts separate through switching and refresh, saved a receipt linked to the existing payment, reopened page 2 from Findings and exported one byte-identical original PDF with both sources. The mixed-file browser exposed a duplicate Workspace evidence link; the save now combines receipt and payment anchors on one file link. A regression test covers persistence and idempotence. Receipt dates with two-digit years and absent currency stay flagged; masked references and previous/new/available balances remain separate. The real receipt on PDF page 42 opened without changes or imports, among 44 statement choices and one receipt choice.

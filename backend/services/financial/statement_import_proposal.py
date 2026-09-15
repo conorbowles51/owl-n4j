@@ -11,7 +11,7 @@ from services.financial.money import get_currency
 from services.financial.pdf_candidates import _digest
 from services.financial.source_dates import assess_date_text
 
-VERSION = 'statement-review-v12'
+VERSION = 'statement-review-v13'
 _HEADERS = {
     'date': 'date', 'transaction date': 'date', 'trans date': 'date',
     'booking date': 'booking_date', 'posting date': 'booking_date',
@@ -119,12 +119,21 @@ def _statement_heading(row):
     if len(row['cells']) != 1:
         return False
     text = ' '.join(row['cells'][0]['expected_text'].split())
-    return bool(re.fullmatch(r'(?:Account (?:Name|Holder|Number|No)|IBAN|Statement Period|Period|Currency|Bank|Institution): .+', text, re.I)
+    return bool(re.fullmatch(r'(?:Account (?:Name|Holder|Number|No)|IBAN|Statement Period|Period|Currency|Bank|Institution|Reference): .+', text, re.I)
                 or re.fullmatch(r'(?:BANK|BUSINESS ACCOUNT|ACCOUNT) STATEMENT(?: - .+)?', text, re.I)
+                or text == 'BENEFICIARY FOR OUTGOING TRANSFERS'
                 or re.fullmatch(r'[A-Z .&]+(?:BANK|CREDIT UNION)(?:,? N[.]?A[.]?)?', text))
 
 
-def propose_table(source, currency):
+def has_transaction_header(source):
+    for row in source['rows']:
+        roles = {_HEADERS.get(' '.join(c['expected_text'].lower().split())) for c in row['cells']}
+        if roles & {'date', 'booking_date', 'value_date'} and roles & {'credit', 'debit', 'amount'}:
+            return True
+    return False
+
+
+def propose_table(source, currency, *, page_has_transaction_table=False):
     """Interpret labelled columns automatically; preserve every unexplained row."""
     get_currency(currency)
     roles = None
@@ -156,7 +165,11 @@ def propose_table(source, currency):
             result.append(item)
             continue
         if roles is None:
-            item.update(kind='unresolved', issues=['The system could not identify this row from a transaction header.'])
+            if page_has_transaction_table and (_statement_heading(row) or
+                    len(row['cells']) == 1 and row['cells'][0]['expected_text'].strip() == 'TRANSACTION HISTORY'):
+                item.update(kind='header', excluded=True)
+            else:
+                item.update(kind='unresolved', issues=['The system could not identify this row from a transaction header.'])
             result.append(item)
             continue
         if source.get('table_source') == 'text_alignment':

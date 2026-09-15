@@ -18,6 +18,14 @@ def statement():
 
 
 class AutomaticStatementProposalTests(unittest.TestCase):
+    def test_separate_page_headings_are_not_payments_but_unknown_text_needs_review(self):
+        data=source([['Account Name: Example Person'],['TRANSACTION HISTORY'],['Unexplained value 100.00']])
+        result=propose_table(data,'USD',page_has_transaction_table=True)
+        self.assertTrue(result['rows'][0]['excluded'])
+        self.assertTrue(result['rows'][1]['excluded'])
+        self.assertFalse(result['rows'][2]['excluded'])
+        self.assertEqual(result['rows'][2]['kind'],'unresolved')
+
     def test_complete_nexus_without_manual_columns_or_row_selection(self):
         original=statement(); before=deepcopy(original)
         result=propose_table(original,'EUR')

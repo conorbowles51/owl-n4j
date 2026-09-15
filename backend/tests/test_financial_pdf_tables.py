@@ -493,6 +493,31 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(table.table_source, TableSource.drawn_geometry)
         self.assertIn("Alice | 25000", table.chunk)
 
+    def test_text_outside_drawn_tables_is_retained_without_repeating_table_words(self):
+        outside = [(20., 20., 110., 28., 'Account summary')]
+        tables = read_tables(RecoverablePage([StubTable(GRID, RECTS)], words=WORDS + outside), 1)
+        self.assertEqual(len(tables), 2)
+        self.assertEqual(tables[0].chunk, only(RecoverablePage([StubTable(GRID, RECTS)])).chunk)
+        self.assertEqual(tables[1].table_source, TableSource.text_alignment)
+        self.assertIn('Account summary', tables[1].chunk)
+        self.assertNotIn('COFFEE', tables[1].chunk)
+        self.assertEqual(tables[1].geometry.located_values, 1)
+
+    def test_outside_word_filter_uses_displayed_coordinates_on_rotated_pages(self):
+        from services.financial.locators import capture
+        from postgres.models.enums import CoordinateSpace
+        words = [(100.,100.,140.,108.,'INSIDE'),(20.,20.,100.,28.,'OUTSIDE')]
+        for angle in (0,90,180,270):
+            width,height = (792.,612.) if angle in (90,270) else (612.,792.)
+            rect=capture(page_number=1,rect=(90.,90.,150.,120.),space=CoordinateSpace.pdf_unrotated,
+                rotation=angle,page_width=width,page_height=height)
+            box=tuple(v/1000 for v in (rect.x0,rect.y0,rect.x1,rect.y1))
+            table=StubTable([['INSIDE']],[[box]],bbox=box)
+            result=read_tables(RecoverablePage([table],words=words,width=width,height=height,rotation=angle),1)
+            self.assertEqual(len(result),2)
+            self.assertNotIn('INSIDE',result[1].chunk)
+            self.assertIn('OUTSIDE',result[1].chunk)
+
     def test_a_drawn_table_with_no_text_falls_through_to_recovery(self):
         # A table object that yields no rows at all.  "Found a table" is not
         # the same question as "found any rows", and only the second matters.

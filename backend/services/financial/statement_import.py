@@ -228,6 +228,8 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
         issues.extend(proposal.get('issues', []))
         if len(rows) > 1000:
             raise PdfMappingError('This statement exceeds the 1,000-row review limit. No rows were omitted.', 422)
+    from services.financial.statement_import_proposal import has_transaction_header
+    transaction_header_pages = {s['page_number'] for s in sources if has_transaction_header(s)} if not selected else set()
     for source in ([] if selected and selected.get('layout_id') == 'andrews-share-statement' else sources):
         try:
             if selected and selected.get('layout_id') == 'merrick-card':
@@ -237,7 +239,8 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
                 from services.financial.statement_import_card import propose_card_table
                 proposal = propose_card_table(source, chosen_currency, selected)
             else:
-                proposal = propose_table(source, chosen_currency)
+                proposal = propose_table(source, chosen_currency,
+                    page_has_transaction_table=source['page_number'] in transaction_header_pages)
         except ValueError as exc:
             raise PdfMappingError(str(exc), 422) from exc
         rows.extend(proposal['rows'])

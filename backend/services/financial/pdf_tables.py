@@ -20,10 +20,10 @@ Python this repository's tests run on; judgement placed there would ship
 unexercised.  Placed here it is tested, and the pipeline keeps only attribute
 reads, which are the part that cannot be got subtly wrong.
 
-A page is read for drawn geometry first and, only if that yields no table with
-text in it, read again by where its words sit -- see
-:mod:`services.financial.text_rows` for the measurements that made the second
-pass necessary.  Which pass a table came out of is recorded as
+A page is read for drawn geometry first. If no cells can be located, the
+word-position reading replaces it. Otherwise, words outside the drawn table
+boxes are retained separately so summaries and headings are not discarded.
+See :mod:`services.financial.text_rows` for the word-position reader.  Which pass a table came out of is recorded as
 :class:`TableSource`, kept as a separate axis from the geometry grading below
 because the two vary independently and because a row inferred from spacing is a
 weaker claim than one read out of a ruled cell.
@@ -111,7 +111,7 @@ class TableSource(str, Enum):
     #: Found by ``find_tables()`` from the page's own ruled geometry.
     drawn_geometry = "drawn_geometry"
     #: Recovered by :func:`services.financial.text_rows.read_text_rows` from
-    #: word positions, because the drawn pass produced nothing.
+    #: word positions, or outside the drawn table boxes.
     text_alignment = "text_alignment"
 
 
@@ -369,6 +369,34 @@ def _recover(page: Any) -> list[Any]:
     return [recovered] if recovered is not None else []
 
 
+def _outside_drawn_tables(page, tables, *, page_number, rotation, page_width, page_height):
+    """Retain text outside the existing table boxes without repeating their cells.
+
+    A page may put payment warnings in a ruled box and the account summary in
+    plain text beside it. Finding that box must not discard the rest of the page.
+    All comparisons use displayed coordinates, including on rotated PDFs.
+    """
+    from types import SimpleNamespace
+    from services.financial.locators import capture
+    boxes = [table.geometry.locator.rectangle if table.geometry else None for table in tables]
+    if not boxes or any(box is None for box in boxes):
+        return []
+    try:
+        words = []
+        for word in page.get_text('words'):
+            if len(word) < 5 or not isinstance(word[4], str) or not word[4].strip():
+                continue
+            rect = capture(page_number=page_number, rect=tuple(word[:4]),
+                space=TEXT_COORDINATE_SPACE, rotation=rotation, page_width=page_width, page_height=page_height)
+            if not any(min(rect.x1, box.x1) > max(rect.x0, box.x0)
+                       and min(rect.y1, box.y1) > max(rect.y0, box.y0) for box in boxes):
+                words.append(word)
+        recovered = read_text_rows(SimpleNamespace(get_text=lambda kind: words), minimum_rows=1)
+    except Exception:
+        return []
+    return [recovered] if recovered is not None else []
+
+
 def read_tables(page: Any, page_number: int) -> tuple[ExtractedTable, ...]:
     """Every table on a page, each with its text and as much geometry as holds.
 
@@ -406,6 +434,11 @@ def read_tables(page: Any, page_number: int) -> tuple[ExtractedTable, ...]:
     pass produced nothing at all; a page where neither reading can be located
     keeps the drawn one, since with nothing to choose between them the
     document's own reading wins by default.
+
+    When drawn cells are available, their tables remain unchanged and a separate
+    reading preserves words wholly outside their boxes. It never repeats words
+    intersecting the drawn tables. This retains unboxed account summaries and
+    page headers beside boxed payment notices.
 
     Exceptions from ``extract()`` propagate, because it is the call that
     produces the text and its failure is a page-level failure the pipeline
@@ -454,6 +487,13 @@ def read_tables(page: Any, page_number: int) -> tuple[ExtractedTable, ...]:
         )
         if _resolved_cells(recovered) or not tables:
             tables = recovered or tables
+    elif extent_failure is None:
+        tables.extend(_build(
+            _outside_drawn_tables(page, tables, page_number=page_number, rotation=rotation,
+                page_width=page_width, page_height=page_height),
+            table_source=TableSource.text_alignment, space=TEXT_COORDINATE_SPACE,
+            page_number=page_number, extent_failure=None, rotation=rotation,
+            page_width=page_width, page_height=page_height))
 
     if not tables and drawn_failure is not None:
         raise drawn_failure

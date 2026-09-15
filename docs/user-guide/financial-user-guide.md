@@ -233,6 +233,10 @@ To check or correct a balance before import:
 
 An unreadable or conflicting summary value needs review. Loupe leaves it unresolved rather than choosing the payment coupon or treating it as zero. A card interest charge without a printed transaction date also remains flagged; check and record the date separately.
 
+If the review finds more than one opening or closing balance, it shows a link for each original page. Open each reading and compare the copies. Clear a repeated balance in the correction table and give a reason. Check for repeated payments too. Clearing a balance does not exclude any transactions.
+
+If a previously prepared Capital One file has transactions but no account-summary balances, use **Read the statement again**. This prepares the unboxed summary text as well as the drawn tables. Check the new reading before confirming any replacement.
+
 A manually added transaction has a page citation but does not establish its position among the printed rows. Loupe therefore explains when it cannot perform the sequential running-balance check. Check that payment against the PDF and compare the statement totals.
 
 Capital One fee tables can have either **Date** or separate **Trans Date** and **Post Date** columns. Loupe reads the fee row and keeps those dates separate. **Total Fees for This Period** is a total, so it is not added as another payment. An interest charge without a printed date still needs your review.

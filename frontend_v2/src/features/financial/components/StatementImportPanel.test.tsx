@@ -369,6 +369,78 @@ it("opens card-balance corrections from the summary and submits the printed sign
   ).toMatchObject({ balance_minor: "100100", excluded: true })
 })
 
+it("keeps repeated statement balances editable instead of calling them missing", async () => {
+  const repeated = {
+    ...data,
+    metadata: {
+      ...data.metadata,
+      account_type: "credit_card",
+      balance_convention: "liability_owed",
+    },
+    rows: [
+      ...data.rows,
+      ...[1, 4].map((page) => ({
+        ...data.rows[0],
+        id: `${page}:0:2`,
+        page_number: page,
+        row_index: 2,
+        kind: "balance",
+        fields: {
+          description: "Opening Balance",
+          balance: "100000",
+          balance_column: "1",
+        },
+        source_cells: [
+          {
+            column_index: 1,
+            expected_text: "$1,000.00",
+            locator: { kind: "page_only", page },
+          },
+        ],
+      })),
+    ],
+  }
+  const base = vi.mocked(fetchAPI).getMockImplementation()!
+  vi.mocked(fetchAPI).mockImplementation((url, options) =>
+    String(url).includes("statement-import") &&
+    !String(url).includes("/confirm?")
+      ? Promise.resolve(repeated as never)
+      : base(url, options)
+  )
+  mount()
+  await open()
+  expect(screen.getByText(/Found 2 readings/)).toBeInTheDocument()
+  fireEvent.click(
+    screen.getByRole("button", { name: "Hide corrections and import choices" })
+  )
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: "Edit opening amount owed on page 4, row 3",
+    })
+  )
+  fireEvent.change(await screen.findByLabelText("Balance 4:0:2"), {
+    target: { value: "" },
+  })
+  fireEvent.change(screen.getByLabelText("Reason 4:0:2"), {
+    target: { value: "Page 4 repeats the statement on page 1" },
+  })
+  fireEvent.click(
+    screen.getByRole("button", { name: "Confirm import of 1 transactions" })
+  )
+  await waitFor(() => expect(sent.length).toBe(1))
+  const request = sent[0] as {
+    rows: { id: string; balance_minor: string | null; excluded: boolean }[]
+  }
+  expect(request.rows.find((r) => r.id === "1:0:2")).toMatchObject({
+    balance_minor: "100000",
+    excluded: true,
+  })
+  expect(request.rows.find((r) => r.id === "4:0:2")).toMatchObject({
+    balance_minor: null,
+    excluded: true,
+  })
+})
+
 it("changes the printed page with next and previous controls", async () => {
   vi.mocked(fetchAPI).mockImplementation(async (url) =>
     String(url).startsWith("/api/evidence?")

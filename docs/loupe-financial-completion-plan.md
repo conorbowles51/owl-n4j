@@ -1,6 +1,6 @@
 # Financial completion plan
 
-15 September 2026. This is the current plan for finishing the financial work. It replaces the changing list of small next steps as the execution order. Earlier plans and their checked items remain as the development record. Completed work stays on this list.
+15 September 2026. User deadline: a usable financial application tonight, Europe/Dublin. Five-minute continuation checks are active through 23:59 today. The user will begin UI testing after travelling home. This is the current plan for finishing the financial work. It replaces the changing list of small next steps as the execution order. Earlier plans and their checked items remain as the development record. Completed work stays on this list.
 
 The finished workflow is: upload statements and supporting payment documents, check flagged readings beside the originals, confirm a statement once, investigate the imported transactions, save observations and calculations, and produce a report another authorised investigator can reopen and check.
 
@@ -11,7 +11,7 @@ The finished workflow is: upload statements and supporting payment documents, ch
 - [x] Preserve blank columns, account closure notices and statements with no payments without creating false transactions or balances.
 - [x] Review the supplied Wells Fargo wire report separately, save checked details in Findings and optionally link an existing payment.
 - [x] Finish the Andrews deposit receipt inside a multi-document PDF: selection, separate dates and balances, masked account reference, saved finding, optional payment link, original source and report inclusion. Verified with the supplied receipt on PDF page 42 and a synthetic statement plus two receipts; separate drafts, refresh, same-file payment link, saved source and exact-PDF report passed.
-- [ ] Account for every page in the eight supplied files: statement section, supporting receipt, application/terms, repeated copy, or an explicit unresolved page. Record a source-by-source result and do not call a missed page complete.
+- [x] Account for every page in the eight supplied files: statement section, supporting receipt, application/terms, repeated copy, or an explicit unresolved page. Recorded all 567 pages (511 unique-file pages) in the private inventory and summarised them in loupe-supplied-statement-checks.md. Unresolved account/continuation pages remain explicit.
 - [ ] Check the remaining damaged account headings and missing continuation sequence. Use existing correction/reprocessing controls where they suffice; fix any path that loses original readings or leaves the user unable to finish the review. Unreadable identifiers remain unknown until the original supports a correction.
 
 Done when: all supplied files can be opened; each recognised section can be reviewed independently; every remaining unreadable or missing item has a visible next action; source-only checks and synthetic imports prove that receipts, headings, balances and duplicate copies do not inflate transactions. This is not a promise that illegible source text can be recovered automatically.

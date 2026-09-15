@@ -426,7 +426,7 @@ def _measured_word_cells(line, band, gap_threshold):
     cells.append(_cell_of(run, band))
     return cells
 
-def read_text_rows(page: Any, *, word_cells: bool = False) -> Optional[TextRowTable]:
+def read_text_rows(page: Any, *, word_cells: bool = False, minimum_rows: int = MIN_ROWS) -> Optional[TextRowTable]:
     """Every row this page's word positions describe, or ``None`` if too few.
 
     Returns a single table covering the page rather than attempting to find
@@ -444,7 +444,7 @@ def read_text_rows(page: Any, *, word_cells: bool = False) -> Optional[TextRowTa
     height = _median_height(words)
     tolerance = max(1.0, LINE_TOLERANCE * height) if height else 1.0
     lines = group_lines(words, tolerance)
-    if len(lines) < MIN_ROWS:
+    if len(lines) < minimum_rows:
         return None
 
     gap_threshold = max(MIN_COLUMN_GAP, COLUMN_GAP * _median_gap(lines))
@@ -468,7 +468,7 @@ def read_text_rows(page: Any, *, word_cells: bool = False) -> Optional[TextRowTa
             )
         )
 
-    if len(rows) < MIN_ROWS:
+    if len(rows) < minimum_rows:
         return None
 
     bbox = _bbox_of(rows)

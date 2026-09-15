@@ -1435,12 +1435,11 @@ function EditableStatement({
                 originals
                   .get(item.id)
                   ?.fields.description?.trim()
-                  .toLowerCase() === `${role} balance` &&
-                item.balance_minor !== null
+                  .toLowerCase() === `${role} balance`
             )
-            const control = controls.length === 1 ? controls[0] : null
+            const label = `${role} ${data.metadata.balance_convention === "liability_owed" ? "amount owed" : "balance"}`
             return (
-              <div key={role}>
+              <div key={role} className="space-y-1">
                 <span className="capitalize">
                   {role}{" "}
                   {data.metadata.balance_convention === "liability_owed"
@@ -1448,16 +1447,30 @@ function EditableStatement({
                     : "balance"}
                   :{" "}
                 </span>
-                {control ? (
-                  <button
-                    className="underline"
-                    type="button"
-                    aria-label={`Edit ${role} ${data.metadata.balance_convention === "liability_owed" ? "amount owed" : "balance"}`}
-                    onClick={() => editBalance(control.id)}
-                  >
-                    {displayAmount(control.balance_minor!, digits)}{" "}
-                    {data.currency}
-                  </button>
+                {controls.length > 1 && (
+                  <p className="text-amber-700 dark:text-amber-400">
+                    Found {controls.length} readings. Check each page. Clear any
+                    repeated balance in Corrections and explain why.
+                  </p>
+                )}
+                {controls.length ? (
+                  controls.map((control) => (
+                    <button
+                      key={control.id}
+                      className={
+                        controls.length > 1 ? "block underline" : "underline"
+                      }
+                      type="button"
+                      aria-label={`Edit ${label}${controls.length > 1 ? ` on page ${originals.get(control.id)?.page_number}, row ${originals.get(control.id)!.row_index + 1}` : ""}`}
+                      onClick={() => editBalance(control.id)}
+                    >
+                      {controls.length > 1 &&
+                        `Page ${originals.get(control.id)?.page_number}: `}
+                      {control.balance_minor === null
+                        ? "Enter amount"
+                        : `${displayAmount(control.balance_minor, digits)} ${data.currency}`}
+                    </button>
+                  ))
                 ) : (
                   <span className="text-muted-foreground">Not identified</span>
                 )}
