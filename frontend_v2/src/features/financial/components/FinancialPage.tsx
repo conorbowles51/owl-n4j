@@ -241,6 +241,7 @@ function FinancialPageContent() {
         nodeKey: amountEditTx.key,
         newAmount,
         correctionReason,
+        expectedAmount: amountEditTx.amount,
       })
     },
     [amountEditTx, updateAmount]
@@ -326,16 +327,15 @@ function FinancialPageContent() {
   )
 
   const handleBulkImport = useCallback(
-    (
+    async (
       corrections: {
         node_key: string
         new_amount: number
         correction_reason: string
+        expected_amount?: number
       }[]
     ) => {
-      bulkCorrect.mutate(corrections, {
-        onSuccess: () => setBulkImportOpen(false),
-      })
+      return bulkCorrect.mutateAsync(corrections)
     },
     [bulkCorrect]
   )
@@ -1153,9 +1153,10 @@ function FinancialPageContent() {
       />
 
       <BulkImportDialog
+        key={caseId}
         open={bulkImportOpen}
         onOpenChange={setBulkImportOpen}
-        transactions={transactions}
+        transactions={filteredTransactions}
         onSubmit={handleBulkImport}
         isPending={bulkCorrect.isPending}
       />

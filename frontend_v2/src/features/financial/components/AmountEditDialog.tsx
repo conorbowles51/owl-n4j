@@ -45,6 +45,8 @@ function AmountEditForm({
   const valid =
     amount.trim() !== "" &&
     Number.isFinite(parsed) &&
+    parsed !== 0 &&
+    /^[-+]?(?:\d+(?:\.\d{0,2}0*)?|\.\d{1,2}0*)$/.test(amount) &&
     parsed !== transaction.amount &&
     reason.trim() !== ""
   const handleSave = async () => {
@@ -89,7 +91,7 @@ function AmountEditForm({
           <DialogTitle className="text-sm">Correct Amount</DialogTitle>
           <DialogDescription className="text-xs">
             Change the amount read from this evidence. The original value and
-            your explanation remain in the correction history.
+            the latest explanation are retained with this record.
           </DialogDescription>
         </DialogHeader>
 
@@ -132,8 +134,16 @@ function AmountEditForm({
               onChange={(e) =>
                 setDraft((current) => ({ ...current, amount: e.target.value }))
               }
+              aria-describedby="amount-correction-help"
               className="font-mono"
             />
+            <p
+              id="amount-correction-help"
+              className="mt-1 text-xs text-muted-foreground"
+            >
+              Use up to two decimal places. Zero cannot be saved as a financial
+              amount here.
+            </p>
           </div>
 
           <div>

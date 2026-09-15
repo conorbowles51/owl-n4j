@@ -8,7 +8,8 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, HTTPException
 from fastapi.responses import Response
-from pydantic import BaseModel
+from decimal import Decimal
+from pydantic import BaseModel, Field, FiniteFloat, field_validator, model_validator
 from sqlalchemy.orm import Session
 
 from postgres.models.user import User
@@ -495,20 +496,49 @@ async def auto_extract_from_to(
 
 
 class BulkCorrectionItem(BaseModel):
-    name: str
-    new_amount: float
-    correction_reason: str
+    node_key: Optional[str] = Field(default=None, min_length=1, max_length=512)
+    name: Optional[str] = Field(default=None, min_length=1, max_length=512)
+    new_amount: FiniteFloat
+    expected_amount: Optional[FiniteFloat] = None
+    correction_reason: str = Field(min_length=1, max_length=4000)
+
+    @model_validator(mode='after')
+    def validate_correction(self):
+        if bool(self.node_key) == bool(self.name):
+            raise ValueError('Supply one record key or one transaction name.')
+        if Decimal(str(self.new_amount)).normalize().as_tuple().exponent < -2:
+            raise ValueError('Use no more than two decimal places for a correction.')
+        if self.new_amount == 0:
+            raise ValueError('Correction amount cannot be zero.')
+        if not self.correction_reason.strip():
+            raise ValueError('Explain why the amount is being corrected.')
+        return self
 
 
 class BulkCorrectRequest(BaseModel):
     case_id: str
-    corrections: List[BulkCorrectionItem]
+    corrections: List[BulkCorrectionItem] = Field(min_length=1, max_length=1000)
 
 
 class UpdateAmountRequest(BaseModel):
     case_id: str
-    new_amount: float
-    correction_reason: str
+    new_amount: FiniteFloat
+    expected_amount: Optional[FiniteFloat] = None
+    correction_reason: str = Field(min_length=1, max_length=4000)
+
+    @field_validator('new_amount')
+    @classmethod
+    def amount_precision(cls, value):
+        if Decimal(str(value)).normalize().as_tuple().exponent < -2:
+            raise ValueError('Use no more than two decimal places for a correction.')
+        return value
+
+    @field_validator('correction_reason')
+    @classmethod
+    def reason_is_not_blank(cls, value):
+        if not value.strip():
+            raise ValueError('Explain why the amount is being corrected.')
+        return value
 
 
 @router.put("/transactions/{node_key}/amount")
@@ -522,87 +552,72 @@ async def update_transaction_amount(node_key: str, body: UpdateAmountRequest):
             case_id=body.case_id,
             new_amount=body.new_amount,
             correction_reason=body.correction_reason,
+            expected_amount=body.expected_amount,
         )
         return result
     except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=409 if body.expected_amount is not None else 404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/transactions/bulk-correct")
 async def bulk_correct_transactions(body: BulkCorrectRequest):
-    """Apply amount corrections in bulk, matching by transaction name."""
-    if not body.corrections:
-        raise HTTPException(status_code=400, detail="No corrections provided")
+    """Correct exact record keys; older name-based requests must identify one record."""
     try:
-        # Fetch all transactions for this case to match by name
-        all_txns_result = neo4j_service.get_financial_transactions(case_id=body.case_id)
-        all_txns = (
-            all_txns_result.get("transactions", [])
-            if isinstance(all_txns_result, dict)
-            else all_txns_result
-        )
-
-        # Build a lookup: lowercase name -> list of transaction dicts
-        name_lookup: dict = {}
-        for t in all_txns:
-            name = (t.get("name") or "").strip().lower()
+        by_key = {}
+        for mode in ('transactions', 'intelligence'):
+            response = neo4j_service.get_financial_transactions(case_id=body.case_id, mode=mode)
+            rows = response.get('transactions', []) if isinstance(response, dict) else response
+            by_key.update((row['key'], row) for row in rows)
+        names = {}
+        for row in by_key.values():
+            name = (row.get('name') or '').strip().lower()
             if name:
-                name_lookup.setdefault(name, []).append(t)
+                names.setdefault(name, []).append(row)
+
+        selected = []
+        seen = set()
+        for correction in body.corrections:
+            if correction.node_key:
+                match = by_key.get(correction.node_key)
+                if match is None:
+                    raise HTTPException(status_code=404, detail=f'Record {correction.node_key} is not in this case. No corrections were applied.')
+            else:
+                matches = names.get(correction.name.strip().lower(), [])
+                if len(matches) != 1:
+                    raise HTTPException(status_code=409, detail=f'Name {correction.name!r} must identify exactly one record. Use record keys instead. No corrections were applied.')
+                match = matches[0]
+            if match['key'] in seen:
+                raise HTTPException(status_code=400, detail=f'Record {match["key"]} is repeated. No corrections were applied.')
+            seen.add(match['key'])
+            if correction.expected_amount is not None and match.get('amount') != correction.expected_amount:
+                raise HTTPException(status_code=409, detail=f'Record {match["key"]} changed after the preview. Reload its amount. No corrections were applied.')
+            selected.append((correction, match))
 
         results = []
-        for correction in body.corrections:
-            search_name = correction.name.strip().lower()
-            if not search_name:
-                results.append({"name": correction.name, "status": "skipped", "reason": "Empty name"})
-                continue
-
-            matches = name_lookup.get(search_name)
-            if not matches:
-                results.append({"name": correction.name, "status": "not_found", "reason": "No matching transaction"})
-                continue
-
-            if correction.new_amount == 0:
-                results.append({"name": correction.name, "status": "skipped", "reason": "Amount cannot be zero"})
-                continue
-
-            for match in matches:
-                try:
-                    neo4j_service.update_transaction_amount(
-                        node_key=match["key"],
-                        case_id=body.case_id,
-                        new_amount=correction.new_amount,
-                        correction_reason=correction.correction_reason,
-                    )
-                    results.append({
-                        "name": correction.name,
-                        "key": match["key"],
-                        "status": "corrected",
-                        "old_amount": match.get("amount"),
-                        "new_amount": correction.new_amount,
-                    })
-                except Exception as exc:
-                    results.append({
-                        "name": correction.name,
-                        "key": match["key"],
-                        "status": "error",
-                        "reason": str(exc),
-                    })
-
-        corrected = sum(1 for r in results if r["status"] == "corrected")
-        not_found = sum(1 for r in results if r["status"] == "not_found")
-        errors = sum(1 for r in results if r["status"] == "error")
-        return {
-            "success": True,
-            "corrected": corrected,
-            "not_found": not_found,
-            "errors": errors,
-            "total": len(body.corrections),
-            "results": results,
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        for correction, match in selected:
+            try:
+                answer = neo4j_service.update_transaction_amount(
+                    node_key=match['key'], case_id=body.case_id,
+                    new_amount=correction.new_amount,
+                    correction_reason=correction.correction_reason,
+                    expected_amount=correction.expected_amount,
+                )
+                if not answer.get('success') or answer.get('key') != match['key'] or answer.get('amount') != correction.new_amount:
+                    raise ValueError('The response did not confirm this correction.')
+                results.append(dict(key=match['key'], name=correction.name, status='corrected',
+                                    old_amount=match.get('amount'), new_amount=correction.new_amount))
+            except Exception as exc:
+                results.append(dict(key=match['key'], name=correction.name, status='error', reason=str(exc)))
+        corrected = sum(row['status'] == 'corrected' for row in results)
+        return dict(success=corrected == len(results), corrected=corrected, not_found=0,
+                    errors=len(results) - corrected, total=len(results), results=results)
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception('Bulk financial correction failed for case %s', body.case_id)
+        raise HTTPException(status_code=500, detail='Corrections could not be confirmed. Reload the records before retrying.')
 
 
 class LinkSubTransactionRequest(BaseModel):

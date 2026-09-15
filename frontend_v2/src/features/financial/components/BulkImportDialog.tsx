@@ -1,7 +1,6 @@
-import { useCallback, useMemo, useState } from "react"
-import { Upload, FileSpreadsheet, AlertTriangle, CheckCircle2 } from "lucide-react"
+import { useMemo, useRef, useState } from "react"
+import { ApiError } from "@/lib/api-client"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
 import {
   Dialog,
   DialogContent,
@@ -10,80 +9,26 @@ import {
   DialogFooter,
   DialogDescription,
 } from "@/components/ui/dialog"
-import { ScrollArea } from "@/components/ui/scroll-area"
+import type {
+  AmountCorrection,
+  BulkCorrectionResult,
+  Transaction,
+} from "../api"
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-import type { Transaction } from "../api"
+  parseCorrectionFile,
+  type FileCorrection,
+} from "../lib/bulk-correction-file"
 
-interface ParsedCorrection {
-  node_key: string
-  new_amount: number
-  correction_reason: string
-  matched: boolean
-  original_amount?: number
+interface PreviewCorrection extends FileCorrection {
+  expected_amount: number
+  currency?: string
 }
-
 interface BulkImportDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   transactions: Transaction[]
-  onSubmit: (
-    corrections: { node_key: string; new_amount: number; correction_reason: string }[]
-  ) => void
+  onSubmit: (corrections: AmountCorrection[]) => Promise<BulkCorrectionResult>
   isPending?: boolean
-}
-
-function parseCSV(text: string): string[][] {
-  const lines = text.split(/\r?\n/).filter((l) => l.trim())
-  return lines.map((line) => {
-    const cells: string[] = []
-    let current = ""
-    let inQuotes = false
-    for (const ch of line) {
-      if (ch === '"') {
-        inQuotes = !inQuotes
-      } else if ((ch === "," || ch === "\t") && !inQuotes) {
-        cells.push(current.trim())
-        current = ""
-      } else {
-        current += ch
-      }
-    }
-    cells.push(current.trim())
-    return cells
-  })
-}
-
-function detectColumns(headers: string[]): {
-  keyCol: number
-  amountCol: number
-  reasonCol: number
-} {
-  const lower = headers.map((h) => h.toLowerCase().replace(/[^a-z]/g, ""))
-  const keyCol = lower.findIndex(
-    (h) =>
-      h.includes("key") ||
-      h.includes("id") ||
-      h.includes("identifier") ||
-      h.includes("nodekey")
-  )
-  const amountCol = lower.findIndex(
-    (h) => h.includes("amount") || h.includes("value") || h.includes("newamount")
-  )
-  const reasonCol = lower.findIndex(
-    (h) => h.includes("reason") || h.includes("note") || h.includes("comment")
-  )
-  return {
-    keyCol: keyCol >= 0 ? keyCol : 0,
-    amountCol: amountCol >= 0 ? amountCol : 1,
-    reasonCol: reasonCol >= 0 ? reasonCol : 2,
-  }
 }
 
 export function BulkImportDialog({
@@ -93,197 +38,291 @@ export function BulkImportDialog({
   onSubmit,
   isPending,
 }: BulkImportDialogProps) {
-  const [parsed, setParsed] = useState<ParsedCorrection[]>([])
+  const [parsed, setParsed] = useState<PreviewCorrection[]>([])
   const [error, setError] = useState("")
   const [fileName, setFileName] = useState("")
-
+  const [reading, setReading] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [attempted, setAttempted] = useState(false)
+  const [uncertain, setUncertain] = useState(false)
+  const [result, setResult] = useState<BulkCorrectionResult | null>(null)
+  const input = useRef<HTMLInputElement>(null)
+  const fileVersion = useRef(0)
+  const lock = useRef(false)
+  const busy = saving || isPending
   const txMap = useMemo(
-    () => new Map(transactions.map((transaction) => [transaction.key, transaction])),
+    () => new Map(transactions.map((row) => [row.key, row])),
     [transactions]
   )
 
-  const handleFile = useCallback(
-    async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0]
-      if (!file) return
-
-      setError("")
-      setFileName(file.name)
-
-      try {
-        const text = await file.text()
-        const rows = parseCSV(text)
-        if (rows.length < 2) {
-          setError("File must have a header row and at least one data row")
-          return
+  const readFile = async (file: File) => {
+    const version = ++fileVersion.current
+    setParsed([])
+    setError("")
+    setResult(null)
+    setAttempted(false)
+    setUncertain(false)
+    setFileName(file.name)
+    setReading(true)
+    try {
+      if (file.size > 2 * 1024 * 1024)
+        throw Error("Choose a correction file smaller than 2 MB.")
+      if (!/\.(csv|tsv|txt)$/i.test(file.name))
+        throw Error(
+          "Choose a CSV or TSV file. Save an Excel workbook as CSV first."
+        )
+      const corrections = parseCorrectionFile(await file.text(), file.name)
+      const preview = corrections.map((row) => {
+        const transaction = txMap.get(row.node_key)
+        if (!transaction)
+          throw Error(
+            `Line ${row.line}: record ${row.node_key} is not in the current list. Check the key or clear the financial filters.`
+          )
+        return {
+          ...row,
+          expected_amount: transaction.amount,
+          currency: transaction.currency,
         }
-
-        const { keyCol, amountCol, reasonCol } = detectColumns(rows[0])
-        const corrections: ParsedCorrection[] = []
-
-        for (let i = 1; i < rows.length; i++) {
-          const row = rows[i]
-          const key = row[keyCol]
-          const amount = parseFloat(row[amountCol])
-          const reason = row[reasonCol] || "Bulk correction"
-
-          if (!key || isNaN(amount)) continue
-
-          const tx = txMap.get(key)
-          corrections.push({
-            node_key: key,
-            new_amount: amount,
-            correction_reason: reason,
-            matched: !!tx,
-            original_amount: tx?.amount,
-          })
-        }
-
-        if (corrections.length === 0) {
-          setError("No valid corrections found in file")
-          return
-        }
-
-        setParsed(corrections)
-      } catch {
-        setError("Failed to parse file")
-      }
-    },
-    [txMap]
-  )
-
-  const matchedCount = parsed.filter((c) => c.matched).length
-  const unmatchedCount = parsed.length - matchedCount
-
-  const handleSubmit = () => {
-    const matched = parsed.filter((c) => c.matched)
-    onSubmit(
-      matched.map(({ node_key, new_amount, correction_reason }) => ({
-        node_key,
-        new_amount,
-        correction_reason,
-      }))
-    )
+      })
+      if (version === fileVersion.current) setParsed(preview)
+    } catch (cause) {
+      if (version === fileVersion.current)
+        setError(
+          cause instanceof Error
+            ? cause.message
+            : "This file could not be read."
+        )
+    } finally {
+      if (version === fileVersion.current) setReading(false)
+    }
   }
-
-  const handleClose = (isOpen: boolean) => {
-    if (!isOpen) {
+  const downloadTemplate = () => {
+    const quote = (value: string) => `"${value.replaceAll('"', '""')}"`
+    const csv = [
+      "key,amount,reason",
+      ...transactions.map((row) => `${quote(row.key)},${row.amount},`),
+    ].join("\r\n")
+    const url = URL.createObjectURL(
+      new Blob([csv], { type: "text/csv;charset=utf-8" })
+    )
+    const link = document.createElement("a")
+    link.href = url
+    link.download = "financial-amount-corrections.csv"
+    link.click()
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+  }
+  const apply = async () => {
+    if (lock.current || busy || reading || attempted || !parsed.length) return
+    lock.current = true
+    setSaving(true)
+    setAttempted(true)
+    setError("")
+    try {
+      setResult(
+        await onSubmit(
+          parsed.map(
+            ({ node_key, new_amount, correction_reason, expected_amount }) => ({
+              node_key,
+              new_amount,
+              correction_reason,
+              expected_amount,
+            })
+          )
+        )
+      )
+    } catch (cause) {
+      setUncertain(
+        !(cause instanceof ApiError) ||
+          ![400, 401, 403, 404, 409, 422].includes(cause.status)
+      )
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : "The correction results could not be confirmed."
+      )
+    } finally {
+      lock.current = false
+      setSaving(false)
+    }
+  }
+  const close = (next: boolean) => {
+    if (lock.current || busy) return
+    if (!next) {
+      fileVersion.current++
       setParsed([])
       setError("")
       setFileName("")
+      setReading(false)
+      setAttempted(false)
+      setResult(null)
     }
-    onOpenChange(isOpen)
+    onOpenChange(next)
   }
-
   return (
-    <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-lg">
+    <Dialog open={open} onOpenChange={close}>
+      <DialogContent className="max-w-3xl">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-sm">
-            <FileSpreadsheet className="size-4" />
-            Bulk Import Corrections
-          </DialogTitle>
-          <DialogDescription className="text-xs">
-            Upload a CSV or TSV file with columns: key/id, amount, reason
+          <DialogTitle>Correct amounts from a file</DialogTitle>
+          <DialogDescription>
+            Choose a CSV or TSV containing key, amount and reason columns. Each
+            key must identify a record in the current financial list.
           </DialogDescription>
         </DialogHeader>
-
         <div className="space-y-3">
-          {/* Upload */}
-          <label className="flex cursor-pointer flex-col items-center gap-2 rounded-lg border-2 border-dashed border-border p-4 hover:bg-muted/50">
-            <Upload className="size-6 text-muted-foreground" />
-            <span className="text-xs text-muted-foreground">
-              {fileName || "Click to upload CSV, TSV, or XLSX"}
-            </span>
-            <input
-              type="file"
-              accept=".csv,.tsv,.txt,.xlsx"
-              onChange={handleFile}
-              className="hidden"
-            />
-          </label>
-
+          <p className="text-sm">
+            Use amounts with up to two decimal places, such as 1250.50, without
+            currency symbols or thousands separators. Include an explanation for
+            every correction. Up to 1,000 records and 2 MB per file.
+          </p>
+          <Button
+            variant="outline"
+            disabled={
+              busy || transactions.length === 0 || transactions.length > 1000
+            }
+            onClick={downloadTemplate}
+          >
+            Download correction template
+          </Button>
+          <p className="text-sm text-muted-foreground">
+            The template contains the keys and amounts in the current list. Keep
+            only the rows you want to correct, change their amounts and enter a
+            reason on each row. Save the file as CSV, then choose it below.
+            {transactions.length > 1000 &&
+              " Filter the list to 1,000 records or fewer before downloading a template."}
+          </p>
+          <input
+            ref={input}
+            className="hidden"
+            type="file"
+            accept=".csv,.tsv,.txt"
+            aria-label="Correction file"
+            disabled={busy}
+            onChange={(event) => {
+              const file = event.target.files?.[0]
+              event.target.value = ""
+              if (file) void readFile(file)
+            }}
+          />
+          <Button
+            variant="outline"
+            disabled={busy}
+            onClick={() => input.current?.click()}
+          >
+            Choose correction file
+          </Button>
+          {fileName && <p className="text-sm">Selected file: {fileName}</p>}
+          {reading && <p role="status">Reading correction file...</p>}
           {error && (
-            <div className="flex items-center gap-2 rounded-md bg-red-500/10 px-3 py-2">
-              <AlertTriangle className="size-4 text-red-500" />
-              <p className="text-xs text-red-500">{error}</p>
+            <div
+              role="alert"
+              className="rounded border border-destructive p-3 text-sm"
+            >
+              <p>{error}</p>
+              <p>
+                {uncertain
+                  ? "Check the current records before trying again. A correction may have been saved even if its response was lost."
+                  : "No corrections have been applied. Fix the file or reload the records, then choose the file again."}
+              </p>
             </div>
           )}
-
-          {/* Preview */}
           {parsed.length > 0 && (
             <>
-              <div className="flex items-center gap-2">
-                <Badge variant="success">{matchedCount} matched</Badge>
-                {unmatchedCount > 0 && (
-                  <Badge variant="destructive">{unmatchedCount} unmatched</Badge>
-                )}
-              </div>
-
-              <ScrollArea className="max-h-48">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="text-[10px]">Status</TableHead>
-                      <TableHead className="text-[10px]">Key</TableHead>
-                      <TableHead className="text-[10px] text-right">
-                        Original
-                      </TableHead>
-                      <TableHead className="text-[10px] text-right">
-                        New
-                      </TableHead>
-                      <TableHead className="text-[10px]">Reason</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {parsed.map((row, i) => (
-                      <TableRow key={i}>
-                        <TableCell className="py-1">
-                          {row.matched ? (
-                            <CheckCircle2 className="size-3.5 text-emerald-500" />
-                          ) : (
-                            <AlertTriangle className="size-3.5 text-red-500" />
-                          )}
-                        </TableCell>
-                        <TableCell className="py-1 font-mono text-[10px]">
-                          {row.node_key.length > 20
-                            ? `${row.node_key.slice(0, 20)}...`
-                            : row.node_key}
-                        </TableCell>
-                        <TableCell className="py-1 text-right font-mono text-[10px]">
-                          {row.original_amount?.toLocaleString() || "—"}
-                        </TableCell>
-                        <TableCell className="py-1 text-right font-mono text-[10px]">
-                          {row.new_amount.toLocaleString()}
-                        </TableCell>
-                        <TableCell className="py-1 text-[10px] max-w-[120px] truncate">
+              <p className="text-sm">
+                {parsed.length} corrections ready to check. Amounts use each
+                record's existing currency.
+              </p>
+              <div className="max-h-80 overflow-auto rounded border">
+                <table
+                  className="w-full text-sm"
+                  aria-label="Correction file preview"
+                >
+                  <thead>
+                    <tr>
+                      {[
+                        "File line",
+                        "Record key",
+                        "Current amount",
+                        "New amount",
+                        "Reason",
+                      ].map((label) => (
+                        <th className="p-2 text-left" key={label}>
+                          {label}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {parsed.map((row) => (
+                      <tr key={row.node_key} className="border-t">
+                        <td className="p-2">{row.line}</td>
+                        <td className="p-2 break-all">{row.node_key}</td>
+                        <td className="p-2 tabular-nums">
+                          {row.expected_amount.toLocaleString("en-IE", {
+                            maximumFractionDigits: 20,
+                          })}{" "}
+                          {row.currency ?? "(currency not recorded)"}
+                        </td>
+                        <td className="p-2 tabular-nums">
+                          {row.new_amount.toLocaleString("en-IE", {
+                            maximumFractionDigits: 20,
+                          })}{" "}
+                          {row.currency ?? "(currency not recorded)"}
+                        </td>
+                        <td className="p-2 whitespace-pre-wrap break-words">
                           {row.correction_reason}
-                        </TableCell>
-                      </TableRow>
+                        </td>
+                      </tr>
                     ))}
-                  </TableBody>
-                </Table>
-              </ScrollArea>
+                  </tbody>
+                </table>
+              </div>
             </>
           )}
+          {result && (
+            <section
+              aria-label="Correction results"
+              className="space-y-2 rounded border p-3 text-sm"
+            >
+              <p role="status">
+                {result.corrected} of {result.total} corrections saved.{" "}
+                {result.errors} failed.
+              </p>
+              {result.results.map((row) => (
+                <p key={row.key}>
+                  {row.key}:{" "}
+                  {row.status === "corrected"
+                    ? "Saved"
+                    : row.reason || "Could not be saved"}
+                </p>
+              ))}
+              {result.errors > 0 && (
+                <p>
+                  Keep the saved corrections. Check the failed records and
+                  prepare a new file containing only the corrections still
+                  needed.
+                </p>
+              )}
+            </section>
+          )}
         </div>
-
         <DialogFooter>
-          <Button variant="outline" size="sm" onClick={() => handleClose(false)}>
-            Cancel
+          <Button
+            variant="outline"
+            disabled={busy}
+            onClick={() => close(false)}
+          >
+            Close
           </Button>
-          {parsed.length > 0 && matchedCount > 0 && (
+          {!attempted && parsed.length > 0 && (
             <Button
               variant="primary"
-              size="sm"
-              onClick={handleSubmit}
-              disabled={isPending}
+              disabled={busy || reading}
+              onClick={() => void apply()}
             >
-              {isPending
-                ? "Applying..."
-                : `Apply ${matchedCount} Correction${matchedCount !== 1 ? "s" : ""}`}
+              Apply {parsed.length} corrections
             </Button>
           )}
+          {busy && <p role="status">Applying corrections...</p>}
         </DialogFooter>
       </DialogContent>
     </Dialog>

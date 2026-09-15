@@ -120,10 +120,10 @@ export function FinancialToolbar({
 
       <div className="flex-1" />
 
-      {canEdit && mode === "transactions" && (
+      {canEdit && (
         <Button variant="ghost" size="sm" onClick={onOpenBulkImport}>
           <Upload className="size-3.5" />
-          Import
+          Correct amounts from file
         </Button>
       )}
 

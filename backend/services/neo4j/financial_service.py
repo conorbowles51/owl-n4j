@@ -158,7 +158,7 @@ class FinancialService:
             "parent_transaction_key": record["parent_transaction_key"],
             "amount_corrected": record["amount_corrected"] or False,
             "original_amount": (
-                safe_float(record["original_amount"])
+                safe_float(record["original_amount"]) or safe_float(re.sub(r"[^\d.\-]", "", str(record["original_amount"])))
                 if record.get("original_amount") is not None
                 else None
             ),
@@ -596,10 +596,25 @@ class FinancialService:
         success_count = sum(1 for r in results if r.get("success"))
         return {"success": True, "updated": success_count, "total": len(node_keys)}
 
-    def update_transaction_amount(self, node_key: str, case_id: str, new_amount: float, correction_reason: str) -> Dict:
+    def update_transaction_amount(self, node_key: str, case_id: str, new_amount: float, correction_reason: str, expected_amount: Optional[float] = None) -> Dict:
         """Update a transaction amount, preserving the original value for audit trail."""
-        with driver.session() as session:
-            result = session.run(
+        def correct(tx):
+            locked = tx.run(
+                """
+                MATCH (n {key: $key, case_id: $case_id})
+                WHERE n.amount IS NOT NULL
+                SET n.amount_correction_revision = coalesce(n.amount_correction_revision, 0) + 1
+                RETURN n.amount AS amount
+                """, key=node_key, case_id=case_id,
+            ).single()
+            # The write lock remains held until this transaction commits. Raising
+            # here rolls back its revision increment and leaves the amount intact.
+            current = safe_float(locked["amount"]) if locked else None
+            if locked and current == 0:
+                current = safe_float(re.sub(r"[^\d.\-]", "", str(locked["amount"])))
+            if locked is None or (expected_amount is not None and current != expected_amount):
+                raise ValueError(f"Record {node_key} is missing or its amount changed. Reload the record before correcting it.")
+            result = tx.run(
                 """
                 MATCH (n {key: $key, case_id: $case_id})
                 SET n.original_amount = CASE WHEN n.original_amount IS NULL THEN n.amount ELSE n.original_amount END,
@@ -608,19 +623,14 @@ class FinancialService:
                     n.correction_reason = $correction_reason
                 RETURN n.key AS key, n.amount AS amount, n.original_amount AS original_amount
                 """,
-                key=node_key,
-                case_id=case_id,
-                new_amount=new_amount,
+                key=node_key, case_id=case_id, new_amount=new_amount,
                 correction_reason=correction_reason,
             ).single()
-            if not result:
-                raise ValueError(f"Node not found: {node_key} in case {case_id}")
-            return {
-                "success": True,
-                "key": result["key"],
-                "amount": result["amount"],
-                "original_amount": result["original_amount"],
-            }
+            return {"success": True, "key": result["key"], "amount": result["amount"],
+                    "original_amount": result["original_amount"]}
+
+        with driver.session() as session:
+            return session.execute_write(correct)
 
     def link_sub_transaction(self, parent_key: str, child_key: str, case_id: str) -> Dict:
         """Link a child transaction to a parent transaction."""

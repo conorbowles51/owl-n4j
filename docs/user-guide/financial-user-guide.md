@@ -105,7 +105,23 @@ Older manual reviews may use terms such as candidate, resolved reading or finali
 
 **Imported statement payments** and **Other financial records** are separate sets of information. Use the first for the statement workflow in this guide. The second contains information extracted from other evidence. An amount mentioned in a letter or interview is not automatically a bank transaction. Use the payment-claim comparison in Patterns to compare such a statement with recorded payments.
 
-To correct an amount in **Other financial records**, select its amount to open **Correct Amount**. Compare the current value and currency with the original evidence. Enter **New Amount** and **Correction Reason**, then select **Save Correction**. Loupe retains the original value and the explanation in its correction history. **Close** keeps your unfinished correction in this browser tab; reopen the same record to continue. A failed save displays an error and retains the draft. If the saved amount has changed in the meantime, the editor starts from that new amount. When no currency is recorded, the editor says so rather than displaying a dollar sign.
+To correct an amount in **Other financial records**, select its amount to open **Correct Amount**. Compare the current value and currency with the original evidence. Enter **New Amount** and **Correction Reason**, then select **Save Correction**. Loupe retains the original amount and the latest explanation with this record. A later correction replaces that explanation. **Close** keeps your unfinished correction in this browser tab; reopen the same record to continue. A failed save displays an error and retains the draft. If the saved amount changes while you are editing, the save is refused. Reopen the record to start from its new amount. When no currency is recorded, the editor says so rather than displaying a dollar sign.
+
+
+### Correct several amounts from a file
+
+This tool changes amounts in **Other financial records**. It does not upload bank statements or change imported statement payments.
+
+1. Open **Transactions**, then **Other financial records**. Use the search and filters to show the records you want to work on.
+2. Select **Correct amounts from file**, then **Download correction template**. The template contains the record keys and current amounts in the displayed list. If there are more than 1,000 records, narrow the list first.
+3. Open the CSV. Keep only the rows you want to correct. Leave each **key** unchanged, enter the corrected **amount** and explain the correction in **reason**. Check each amount against its source evidence.
+4. Use up to two decimal places, such as **1250.50**. Do not include currency symbols or thousands separators. Each record keeps its existing currency. Every row needs a reason and a non-zero amount.
+5. Save as CSV, then select **Choose correction file**. TSV files are also accepted. The file must contain at most 1,000 corrections and be smaller than 2 MB. Excel workbooks must be saved as CSV first.
+6. Check the preview. It shows each record key, its current amount and currency, the new amount and your reason. An invalid row stops the whole file before submission. Fix the file and choose it again.
+7. Select **Apply [count] corrections** once. Keep the dialog open while the request finishes.
+8. Read the results. Each record shows whether its correction was saved. If some failed, retain the saved corrections and prepare a file containing only those still needed. If a response cannot be confirmed, reload the records and check them before trying again.
+
+If a record's amount changes after your preview, Loupe refuses that correction. Reload the list before preparing another preview. The original amount and latest correction explanation remain with each record.
 
 ## Add a PDF
 

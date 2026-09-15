@@ -1,4 +1,5 @@
 import { fetchAPI } from "@/lib/api-client"
+import { verifyBulkCorrectionResponse } from "./lib/bulk-correction-file"
 
 export interface TransactionEntity {
   key: string | null
@@ -117,6 +118,21 @@ export interface AmountCorrection {
   node_key: string
   new_amount: number
   correction_reason: string
+  expected_amount?: number
+}
+
+export interface BulkCorrectionResult {
+  success: boolean
+  corrected: number
+  errors: number
+  total: number
+  results: Array<{
+    key: string
+    status: "corrected" | "error"
+    old_amount?: number | null
+    new_amount?: number
+    reason?: string
+  }>
 }
 
 export interface VolumeDataPoint {
@@ -1268,7 +1284,12 @@ export const financialAPI = {
 
   updateAmount: (
     nodeKey: string,
-    params: { caseId: string; newAmount: number; correctionReason: string }
+    params: {
+      caseId: string
+      newAmount: number
+      correctionReason: string
+      expectedAmount?: number
+    }
   ) =>
     fetchAPI<void>(
       `/api/financial/transactions/${encodeURIComponent(nodeKey)}/amount`,
@@ -1278,15 +1299,19 @@ export const financialAPI = {
           case_id: params.caseId,
           new_amount: params.newAmount,
           correction_reason: params.correctionReason,
+          expected_amount: params.expectedAmount,
         },
       }
     ),
 
-  bulkCorrect: (caseId: string, corrections: AmountCorrection[]) =>
-    fetchAPI<void>("/api/financial/transactions/bulk-correct", {
-      method: "POST",
-      body: { case_id: caseId, corrections },
-    }),
+  bulkCorrect: async (caseId: string, corrections: AmountCorrection[]) =>
+    verifyBulkCorrectionResponse(
+      await fetchAPI<unknown>("/api/financial/transactions/bulk-correct", {
+        method: "POST",
+        body: { case_id: caseId, corrections },
+      }),
+      corrections
+    ),
 
   linkSubTransaction: (parentKey: string, childKey: string, caseId: string) =>
     fetchAPI<void>(

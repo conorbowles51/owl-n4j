@@ -274,6 +274,7 @@ export function TransactionTable({
                   key={tx.key}
                   tx={tx}
                   editable={editable}
+                  canCorrectAmount={canEdit}
                   indent={indent}
                   isChecked={isChecked}
                   isExpanded={isExpanded}
@@ -300,6 +301,7 @@ export function TransactionTable({
 interface TransactionRowProps {
   tx: Transaction
   editable: boolean
+  canCorrectAmount: boolean
   indent: boolean
   isChecked: boolean
   isExpanded: boolean
@@ -321,6 +323,7 @@ interface TransactionRowProps {
 function TransactionRow({
   tx,
   editable,
+  canCorrectAmount,
   indent,
   isChecked,
   isExpanded,
@@ -464,22 +467,36 @@ function TransactionRow({
         <TableCell className="py-1.5 text-right">
           <button
             className="inline-flex items-center gap-1 hover:underline"
-            disabled={!editable}
+            disabled={!canCorrectAmount}
+            aria-label={`Correct amount for ${tx.name || tx.key}`}
             onClick={() => onAmountClick(tx)}
           >
-            <CostBadge amount={tx.amount} />
+            {tx.currency && /^[A-Z]{3}$/.test(tx.currency) ? (
+              <CostBadge amount={tx.amount} currency={tx.currency} />
+            ) : (
+              <span>
+                {tx.amount.toLocaleString("en-IE")}{" "}
+                {tx.currency || "(currency not recorded)"}
+              </span>
+            )}
             {tx.amount_corrected && (
               <Tooltip>
-                <TooltipTrigger>
-                  <AlertCircle className="size-3 text-yellow-600 dark:text-yellow-300" />
+                <TooltipTrigger asChild>
+                  <span>
+                    <AlertCircle className="size-3 text-yellow-600 dark:text-yellow-300" />
+                  </span>
                 </TooltipTrigger>
                 <TooltipContent>
                   <p className="text-xs">
                     Corrected from{" "}
-                    {tx.original_amount?.toLocaleString("en-US", {
-                      style: "currency",
-                      currency: tx.currency || "USD",
-                    })}
+                    {tx.original_amount == null
+                      ? "not recorded"
+                      : tx.currency && /^[A-Z]{3}$/.test(tx.currency)
+                        ? tx.original_amount.toLocaleString("en-IE", {
+                            style: "currency",
+                            currency: tx.currency,
+                          })
+                        : `${tx.original_amount.toLocaleString("en-IE")} ${tx.currency || "(currency not recorded)"}`}
                   </p>
                   {tx.correction_reason && (
                     <p className="text-[10px] text-muted-foreground">
@@ -505,6 +522,7 @@ function TransactionRow({
         <TableCell className="py-1.5">
           <Select
             value={tx.category || ""}
+            disabled={!editable}
             onValueChange={(val) => onCategorize(tx.key, val)}
           >
             <SelectTrigger className="h-6 w-28 text-[10px] border-none bg-transparent hover:bg-muted">

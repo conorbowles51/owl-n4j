@@ -121,15 +121,18 @@ export function useUpdateAmount(caseId: string) {
       nodeKey,
       newAmount,
       correctionReason,
+      expectedAmount,
     }: {
       nodeKey: string
       newAmount: number
       correctionReason: string
+      expectedAmount?: number
     }) =>
       financialAPI.updateAmount(nodeKey, {
         caseId,
         newAmount,
         correctionReason,
+        expectedAmount,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["financial", caseId] })
@@ -199,7 +202,7 @@ export function useBatchSetFromTo(caseId: string) {
 export function useBulkCorrect(caseId: string) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (corrections: { node_key: string; new_amount: number; correction_reason: string }[]) =>
+    mutationFn: (corrections: { node_key: string; new_amount: number; correction_reason: string; expected_amount?: number }[]) =>
       financialAPI.bulkCorrect(caseId, corrections),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["financial", caseId] })
