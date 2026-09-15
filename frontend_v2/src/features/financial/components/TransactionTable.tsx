@@ -509,10 +509,15 @@ function TransactionRow({
           >
             {tx.currency &&
             /^[A-Z]{3}$/.test(tx.currency) &&
+            tx.amount !== null &&
             Number.isFinite(tx.amount) ? (
               <CostBadge amount={tx.amount} currency={tx.currency} />
             ) : (
-              <span>{formatEvidenceAmount(tx.amount, tx.currency)}</span>
+              <span>
+                {tx.amount === null && tx.raw_amount
+                  ? "Amount needs review"
+                  : formatEvidenceAmount(tx.amount, tx.currency)}
+              </span>
             )}
             {tx.amount_corrected && (
               <Tooltip>
@@ -525,7 +530,7 @@ function TransactionRow({
                   <p className="text-xs">
                     Corrected from{" "}
                     {tx.original_amount == null
-                      ? "not recorded"
+                      ? tx.original_amount_raw || "not recorded"
                       : tx.currency && /^[A-Z]{3}$/.test(tx.currency)
                         ? tx.original_amount.toLocaleString("en-IE", {
                             style: "currency",

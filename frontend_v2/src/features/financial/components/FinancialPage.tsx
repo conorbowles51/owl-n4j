@@ -243,11 +243,22 @@ function FinancialPageContent() {
     async (newAmount: number, correctionReason: string) => {
       if (!amountEditTx)
         throw new Error("Reopen the payment to correct its amount.")
+      if (
+        amountEditTx.amount === null &&
+        typeof amountEditTx.raw_amount !== "string"
+      )
+        throw new Error(
+          "The original amount text is missing. Reload this record before correcting it."
+        )
       return updateAmount.mutateAsync({
         nodeKey: amountEditTx.key,
         newAmount,
         correctionReason,
-        expectedAmount: amountEditTx.amount,
+        expectedAmount: amountEditTx.amount ?? undefined,
+        expectedRawAmount:
+          amountEditTx.amount === null
+            ? (amountEditTx.raw_amount ?? undefined)
+            : undefined,
       })
     },
     [amountEditTx, updateAmount]
@@ -339,6 +350,7 @@ function FinancialPageContent() {
         new_amount: number
         correction_reason: string
         expected_amount?: number
+        expected_raw_amount?: string
       }[]
     ) => {
       return bulkCorrect.mutateAsync(corrections)

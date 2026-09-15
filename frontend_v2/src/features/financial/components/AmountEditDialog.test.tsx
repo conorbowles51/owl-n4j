@@ -42,7 +42,7 @@ const button = () => screen.getByRole("button", { name: "Save Correction" })
 it("opens with the selected amount and currency without inventing a missing original amount", () => {
   setup({ ...transaction, amount_corrected: true, original_amount: null })
   expect(screen.getByLabelText("New amount")).toHaveValue(120)
-  expect(screen.getByText("€120.00")).toBeVisible()
+  expect(screen.getByText("120.00 EUR")).toBeVisible()
   expect(screen.getByText(/Original: Not recorded/)).toBeVisible()
   expect(button()).toBeDisabled()
 })
@@ -114,6 +114,22 @@ it("submits once while pending and clears the draft only on success", async () =
 
 it("does not assume dollars when currency was not recorded", () => {
   setup({ ...transaction, currency: undefined })
-  expect(screen.getByText("120 (currency not recorded)")).toBeVisible()
+  expect(screen.getByText("120.00 (currency not recorded)")).toBeVisible()
   expect(screen.queryByText("$120.00")).not.toBeInTheDocument()
+})
+
+it("keeps an unreadable original as text and starts its correction empty", async () => {
+  const view = setup({ ...transaction, amount: null, raw_amount: "not stated" })
+  expect(screen.getByText("Saved amount text: not stated")).toBeVisible()
+  expect(screen.getByText("Amount not recorded")).toBeVisible()
+  expect(screen.getByLabelText("New amount")).toHaveValue(null)
+  expect(button()).toBeDisabled()
+  edit()
+  fireEvent.click(button())
+  await waitFor(() =>
+    expect(view.save).toHaveBeenCalledWith(
+      125.5,
+      "The printed receipt shows 125.50."
+    )
+  )
 })

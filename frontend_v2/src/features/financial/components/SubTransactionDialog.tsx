@@ -2,7 +2,7 @@ import { useState } from "react"
 import { Split } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { CostBadge } from "@/components/ui/cost-badge"
+import { formatEvidenceAmount } from "../lib/evidence-amounts"
 import {
   Dialog,
   DialogContent,
@@ -38,8 +38,14 @@ export function SubTransactionDialog({
 
   if (!parent) return null
 
-  const subTotal = subTransactions.reduce((sum, t) => sum + t.amount, 0)
-  const remaining = parent.amount - subTotal
+  const knownAmounts =
+    parent.amount !== null &&
+    subTransactions.every(
+      (t) => t.amount !== null && t.currency === parent.currency
+    )
+  const subTotal = subTransactions.reduce((sum, t) => sum + (t.amount ?? 0), 0)
+  const remaining =
+    knownAmounts && parent.amount !== null ? parent.amount - subTotal : null
 
   const fromName = parent.from_entity?.name || "Unknown"
   const toName = parent.to_entity?.name || "Unknown"
@@ -49,8 +55,12 @@ export function SubTransactionDialog({
       t.key !== parent.key &&
       !subTransactions.some((s) => s.key === t.key) &&
       !t.parent_transaction_key &&
-      ((t.from_entity?.name || "").toLowerCase().includes(search.toLowerCase()) ||
-        (t.to_entity?.name || "").toLowerCase().includes(search.toLowerCase()) ||
+      ((t.from_entity?.name || "")
+        .toLowerCase()
+        .includes(search.toLowerCase()) ||
+        (t.to_entity?.name || "")
+          .toLowerCase()
+          .includes(search.toLowerCase()) ||
         (t.purpose || "").toLowerCase().includes(search.toLowerCase()))
   )
 
@@ -71,7 +81,7 @@ export function SubTransactionDialog({
           {/* Parent info */}
           <div className="flex items-center justify-between rounded-md border border-border px-3 py-2">
             <span className="text-xs font-medium">Parent total</span>
-            <CostBadge amount={parent.amount} />
+            <span>{formatEvidenceAmount(parent.amount, parent.currency)}</span>
           </div>
 
           {/* Linked sub-transactions */}
@@ -88,9 +98,12 @@ export function SubTransactionDialog({
                       className="flex items-center gap-2 rounded-md border border-border px-2 py-1.5 text-xs"
                     >
                       <span className="flex-1 truncate">
-                        {sub.from_entity?.name || "—"} → {sub.to_entity?.name || "—"}
+                        {sub.from_entity?.name || "—"} →{" "}
+                        {sub.to_entity?.name || "—"}
                       </span>
-                      <CostBadge amount={sub.amount} />
+                      <span>
+                        {formatEvidenceAmount(sub.amount, sub.currency)}
+                      </span>
                       <Button
                         variant="ghost"
                         size="sm"
@@ -105,7 +118,11 @@ export function SubTransactionDialog({
               </ScrollArea>
               <div className="mt-1 flex items-center justify-between text-xs">
                 <span className="text-muted-foreground">Remaining</span>
-                <CostBadge amount={remaining} />
+                <span>
+                  {remaining === null
+                    ? "Not totalled"
+                    : formatEvidenceAmount(remaining, parent.currency)}
+                </span>
               </div>
             </div>
           )}
@@ -131,9 +148,10 @@ export function SubTransactionDialog({
                       {formatFinancialDate(tx.date)}
                     </span>
                     <span className="flex-1 truncate">
-                      {tx.from_entity?.name || "—"} → {tx.to_entity?.name || "—"}
+                      {tx.from_entity?.name || "—"} →{" "}
+                      {tx.to_entity?.name || "—"}
                     </span>
-                    <CostBadge amount={tx.amount} />
+                    <span>{formatEvidenceAmount(tx.amount, tx.currency)}</span>
                   </button>
                 ))}
               </div>
@@ -142,7 +160,11 @@ export function SubTransactionDialog({
         </div>
 
         <DialogFooter>
-          <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => onOpenChange(false)}
+          >
             Done
           </Button>
         </DialogFooter>

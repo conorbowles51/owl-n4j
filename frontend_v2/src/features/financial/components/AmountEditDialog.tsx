@@ -3,7 +3,7 @@ import { useFinancialDraft } from "../stores/financial-drafts"
 import { AlertCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { CostBadge } from "@/components/ui/cost-badge"
+import { formatEvidenceAmount } from "../lib/evidence-amounts"
 import {
   Dialog,
   DialogContent,
@@ -33,8 +33,11 @@ function AmountEditForm({
 }: AmountEditDialogProps & { transaction: Transaction }) {
   const [draft, setDraft, clearDraft] = useFinancialDraft(
     caseId,
-    `evidence-amount:${JSON.stringify([transaction.key, transaction.amount, transaction.currency, transaction.correction_reason])}`,
-    { amount: String(transaction.amount), reason: "" }
+    `evidence-amount:${JSON.stringify([transaction.key, transaction.amount, transaction.raw_amount, transaction.currency, transaction.correction_reason])}`,
+    {
+      amount: transaction.amount === null ? "" : String(transaction.amount),
+      reason: "",
+    }
   )
   const { amount, reason } = draft
   const [saving, setSaving] = useState(false)
@@ -45,6 +48,7 @@ function AmountEditForm({
   const valid =
     amount.trim() !== "" &&
     Number.isFinite(parsed) &&
+    Number.isSafeInteger(Math.round(parsed * 100)) &&
     parsed !== 0 &&
     /^[-+]?(?:\d+(?:\.\d{0,2}0*)?|\.\d{1,2}0*)$/.test(amount) &&
     parsed !== transaction.amount &&
@@ -69,15 +73,9 @@ function AmountEditForm({
       setSaving(false)
     }
   }
-  const money = (value: number) =>
-    transaction.currency && /^[A-Z]{3}$/.test(transaction.currency) ? (
-      <CostBadge amount={value} currency={transaction.currency} />
-    ) : (
-      <span>
-        {value.toLocaleString("en-IE", { maximumFractionDigits: 8 })} (currency
-        not recorded)
-      </span>
-    )
+  const money = (value: number | null) => (
+    <span>{formatEvidenceAmount(value, transaction.currency)}</span>
+  )
 
   return (
     <Dialog
@@ -104,7 +102,7 @@ function AmountEditForm({
                 <p className="text-muted-foreground">
                   Original:{" "}
                   {transaction.original_amount == null
-                    ? "Not recorded"
+                    ? transaction.original_amount_raw || "Not recorded"
                     : money(transaction.original_amount)}
                 </p>
                 {transaction.correction_reason && (
@@ -121,6 +119,11 @@ function AmountEditForm({
               Current Amount
             </label>
             {money(transaction.amount)}
+            {transaction.amount === null && transaction.raw_amount != null && (
+              <p className="mt-1 text-sm break-words">
+                Saved amount text: {transaction.raw_amount || "(blank)"}
+              </p>
+            )}
           </div>
 
           <div>
@@ -209,6 +212,7 @@ export function AmountEditDialog(props: AmountEditDialogProps) {
         props.caseId,
         props.transaction.key,
         props.transaction.amount,
+        props.transaction.raw_amount,
         props.transaction.currency,
         props.transaction.correction_reason,
       ])}

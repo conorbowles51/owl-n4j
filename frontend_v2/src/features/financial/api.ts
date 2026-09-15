@@ -41,7 +41,8 @@ interface BaseFinancialRecord {
   time?: string
   name?: string
   type?: string
-  amount: number
+  amount: number | null
+  raw_amount?: string | null
   currency?: string
   category?: string
   summary?: string
@@ -52,6 +53,7 @@ interface BaseFinancialRecord {
   is_parent?: boolean
   parent_transaction_key?: string | null
   amount_corrected?: boolean
+  original_amount_raw?: string | null
   original_amount?: number | null
   correction_reason?: string | null
   purpose?: string
@@ -119,6 +121,7 @@ export interface AmountCorrection {
   new_amount: number
   correction_reason: string
   expected_amount?: number
+  expected_raw_amount?: string
 }
 
 export interface BulkCorrectionResult {
@@ -1309,27 +1312,40 @@ export const financialAPI = {
     return result
   },
 
-  updateAmount: (
+  updateAmount: async (
     nodeKey: string,
     params: {
       caseId: string
       newAmount: number
       correctionReason: string
       expectedAmount?: number
+      expectedRawAmount?: string
     }
-  ) =>
-    fetchAPI<void>(
-      `/api/financial/transactions/${encodeURIComponent(nodeKey)}/amount`,
-      {
-        method: "PUT",
-        body: {
-          case_id: params.caseId,
-          new_amount: params.newAmount,
-          correction_reason: params.correctionReason,
-          expected_amount: params.expectedAmount,
-        },
-      }
-    ),
+  ) => {
+    const result = await fetchAPI<{
+      success?: boolean
+      key?: string
+      amount?: number
+    }>(`/api/financial/transactions/${encodeURIComponent(nodeKey)}/amount`, {
+      method: "PUT",
+      body: {
+        case_id: params.caseId,
+        new_amount: params.newAmount,
+        correction_reason: params.correctionReason,
+        expected_amount: params.expectedAmount,
+        expected_raw_amount: params.expectedRawAmount,
+      },
+    })
+    if (
+      result?.success !== true ||
+      result.key !== nodeKey ||
+      result.amount !== params.newAmount
+    )
+      throw new Error(
+        "The correction was not confirmed. Reload the record to check its amount before trying again."
+      )
+    return result
+  },
 
   bulkCorrect: async (caseId: string, corrections: AmountCorrection[]) =>
     verifyBulkCorrectionResponse(

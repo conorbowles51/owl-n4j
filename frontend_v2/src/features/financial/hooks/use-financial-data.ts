@@ -122,17 +122,20 @@ export function useUpdateAmount(caseId: string) {
       newAmount,
       correctionReason,
       expectedAmount,
+      expectedRawAmount,
     }: {
       nodeKey: string
       newAmount: number
       correctionReason: string
       expectedAmount?: number
+      expectedRawAmount?: string
     }) =>
       financialAPI.updateAmount(nodeKey, {
         caseId,
         newAmount,
         correctionReason,
         expectedAmount,
+        expectedRawAmount,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["financial", caseId] })

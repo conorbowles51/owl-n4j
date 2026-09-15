@@ -9,7 +9,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, HTTPException
 from fastapi.responses import Response
 from decimal import Decimal
-from pydantic import BaseModel, Field, FiniteFloat, field_validator, model_validator
+from pydantic import BaseModel, Field, FiniteFloat, StrictStr, field_validator, model_validator
 from sqlalchemy.orm import Session
 
 from postgres.models.user import User
@@ -20,6 +20,7 @@ from services.financial import attach_transaction_locators
 from services.neo4j_service import neo4j_service
 from services.case_service import CaseAccessDenied, CaseNotFound, check_case_access
 from services.financial_export_service import render_financial_export
+from services.financial_record_amounts import recorded_amount
 from services.financial_record_dates import financial_record_day as _financial_record_day, validate_financial_date_range
 
 import re
@@ -516,6 +517,7 @@ class BulkCorrectionItem(BaseModel):
     name: Optional[str] = Field(default=None, min_length=1, max_length=512)
     new_amount: FiniteFloat
     expected_amount: Optional[FiniteFloat] = None
+    expected_raw_amount: Optional[StrictStr] = Field(default=None, max_length=10000)
     correction_reason: str = Field(min_length=1, max_length=4000)
 
     @model_validator(mode='after')
@@ -524,6 +526,10 @@ class BulkCorrectionItem(BaseModel):
             raise ValueError('Supply one record key or one transaction name.')
         if Decimal(str(self.new_amount)).normalize().as_tuple().exponent < -2:
             raise ValueError('Use no more than two decimal places for a correction.')
+        if self.expected_amount is not None and self.expected_raw_amount is not None:
+            raise ValueError('Supply either the current numeric amount or its unreadable text, not both.')
+        if recorded_amount(self.new_amount) is None:
+            raise ValueError('The correction must be stored exactly to cents.')
         if self.new_amount == 0:
             raise ValueError('Correction amount cannot be zero.')
         if not self.correction_reason.strip():
@@ -540,14 +546,21 @@ class UpdateAmountRequest(BaseModel):
     case_id: str
     new_amount: FiniteFloat
     expected_amount: Optional[FiniteFloat] = None
+    expected_raw_amount: Optional[StrictStr] = Field(default=None, max_length=10000)
     correction_reason: str = Field(min_length=1, max_length=4000)
 
     @field_validator('new_amount')
     @classmethod
     def amount_precision(cls, value):
-        if Decimal(str(value)).normalize().as_tuple().exponent < -2:
-            raise ValueError('Use no more than two decimal places for a correction.')
+        if recorded_amount(value) is None:
+            raise ValueError('Use an amount that can be stored exactly with no more than two decimal places.')
         return value
+
+    @model_validator(mode='after')
+    def one_expected_value(self):
+        if self.expected_amount is not None and self.expected_raw_amount is not None:
+            raise ValueError('Supply either the current numeric amount or its unreadable text, not both.')
+        return self
 
     @field_validator('correction_reason')
     @classmethod
@@ -569,10 +582,11 @@ async def update_transaction_amount(node_key: str, body: UpdateAmountRequest):
             new_amount=body.new_amount,
             correction_reason=body.correction_reason,
             expected_amount=body.expected_amount,
+            **({"expected_raw_amount": body.expected_raw_amount} if body.expected_raw_amount is not None else {}),
         )
         return result
     except ValueError as e:
-        raise HTTPException(status_code=409 if body.expected_amount is not None else 404, detail=str(e))
+        raise HTTPException(status_code=409 if body.expected_amount is not None or body.expected_raw_amount is not None else 404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -607,7 +621,7 @@ async def bulk_correct_transactions(body: BulkCorrectRequest):
             if match['key'] in seen:
                 raise HTTPException(status_code=400, detail=f'Record {match["key"]} is repeated. No corrections were applied.')
             seen.add(match['key'])
-            if correction.expected_amount is not None and match.get('amount') != correction.expected_amount:
+            if (correction.expected_amount is not None and match.get('amount') != correction.expected_amount) or (correction.expected_raw_amount is not None and (match.get('amount') is not None or match.get('raw_amount') != correction.expected_raw_amount)):
                 raise HTTPException(status_code=409, detail=f'Record {match["key"]} changed after the preview. Reload its amount. No corrections were applied.')
             selected.append((correction, match))
 
@@ -619,11 +633,12 @@ async def bulk_correct_transactions(body: BulkCorrectRequest):
                     new_amount=correction.new_amount,
                     correction_reason=correction.correction_reason,
                     expected_amount=correction.expected_amount,
+                    **({"expected_raw_amount": correction.expected_raw_amount} if correction.expected_raw_amount is not None else {}),
                 )
                 if not answer.get('success') or answer.get('key') != match['key'] or answer.get('amount') != correction.new_amount:
                     raise ValueError('The response did not confirm this correction.')
                 results.append(dict(key=match['key'], name=correction.name, status='corrected',
-                                    old_amount=match.get('amount'), new_amount=correction.new_amount))
+                                    old_amount=match.get('amount'), old_raw_amount=match.get('raw_amount'), new_amount=correction.new_amount))
             except Exception as exc:
                 results.append(dict(key=match['key'], name=correction.name, status='error', reason=str(exc)))
         corrected = sum(row['status'] == 'corrected' for row in results)
@@ -764,10 +779,10 @@ async def export_financial_pdf(
         if min_amount is not None and max_amount is not None and min_amount > max_amount:
             raise HTTPException(status_code=422, detail='Minimum amount must not exceed maximum amount.')
         if min_amount is not None:
-            transactions = [t for t in transactions if abs(float(t.get('amount') or 0)) >= min_amount]
+            transactions = [t for t in transactions if (value := recorded_amount(t.get('amount'))) is not None and abs(value) >= min_amount]
             filters.append(f'Minimum amount (absolute value): {min_amount}')
         if max_amount is not None:
-            transactions = [t for t in transactions if abs(float(t.get('amount') or 0)) <= max_amount]
+            transactions = [t for t in transactions if (value := recorded_amount(t.get('amount'))) is not None and abs(value) <= max_amount]
             filters.append(f'Maximum amount (absolute value): {max_amount}')
         base_filtered_transactions = transactions
 

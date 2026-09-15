@@ -257,8 +257,13 @@ def build_financial_export_html(
             details_parts.append(
                 f'<span style="color: #475569; font-style: italic;">[AI] {_esc(summary)}</span>'
             )
+        if t.get('amount') is None and t.get('raw_amount') is not None:
+            details_parts.append('Amount needs review. Saved text: ' + _esc(t['raw_amount'] or '(blank)'))
         if t.get('amount_corrected'):
-            details_parts.append('Original amount: ' + _esc(_amount_label(t.get('original_amount'), t.get('currency'))))
+            if t.get('original_amount') is None and t.get('original_amount_raw') is not None:
+                details_parts.append('Original amount text: ' + _esc(t['original_amount_raw'] or '(blank)'))
+            else:
+                details_parts.append('Original amount: ' + _esc(_amount_label(t.get('original_amount'), t.get('currency'))))
             details_parts.append('Latest correction: ' + _esc(t.get('correction_reason') or 'Explanation not recorded'))
         details_html = "<br>".join(details_parts) if details_parts else "-"
 
@@ -404,6 +409,8 @@ def build_financial_export_html(
             .compact-table {{
                 border: none;
             }}
+            .record-table {{ table-layout: fixed; }}
+            .record-table .cell, .record-table .th {{ overflow-wrap: break-word; }}
             .cell {{
                 padding: 6px 8px;
                 border-bottom: 1px solid #e2e8f0;
@@ -472,16 +479,20 @@ def build_financial_export_html(
         <p class="report-note">Different currencies remain separate. Missing currencies or amounts are not totalled. These sums are not account balances.</p>
         {_render_entity_flow_section(entity_flow)}
 
-        <table class="report-table">
+        <table class="report-table record-table">
+            <colgroup>
+                <col style="width: 10%;"><col style="width: 15%;"><col style="width: 8%;"><col style="width: 8%;">
+                <col style="width: 10%;"><col style="width: 9%;"><col style="width: 16%;"><col style="width: 24%;">
+            </colgroup>
             <thead>
                 <tr>
-                    <th class="th" style="width: 8%;">Date</th>
-                    <th class="th" style="width: 16%;">Name</th>
-                    <th class="th" style="width: 12%;">Sender</th>
-                    <th class="th" style="width: 12%;">Beneficiary</th>
-                    <th class="th" style="width: 9%; text-align: right;">Amount</th>
-                    <th class="th" style="width: 10%;">Category</th>
-                    <th class="th" style="width: 14%;">Original source</th>
+                    <th class="th" >Date</th>
+                    <th class="th" >Name</th>
+                    <th class="th" >Sender</th>
+                    <th class="th" >Beneficiary</th>
+                    <th class="th" style="text-align: right;">Amount</th>
+                    <th class="th" >Category</th>
+                    <th class="th" >Original source</th>
                     <th class="th">Details / AI Summary</th>
                 </tr>
             </thead>

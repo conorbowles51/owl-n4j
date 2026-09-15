@@ -80,3 +80,11 @@ class ReportFilterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result['total'], 2)
         query = connection.session.return_value.__enter__.return_value.run.call_args.args[0]
         self.assertIn('substring(trim(toString(n.date)), 0, 10) <= $end_date', query)
+
+    async def test_numeric_filters_exclude_unreadable_values_instead_of_treating_them_as_zero(self):
+        kwargs = {name: value.default.default for name, value in inspect.signature(financial.export_financial_pdf).parameters.items()}
+        kwargs.update(case_id='case-a', mode='intelligence', include_entity_notes=False, max_amount=100)
+        records=[dict(key='unknown',amount=None,raw_amount='not stated'),dict(key='zero',amount=0),dict(key='known',amount=50)]
+        with patch.object(financial.neo4j_service, 'get_financial_transactions', return_value=dict(transactions=records)), patch.object(financial, 'render_financial_export', return_value=dict(content=b'PDF',media_type='application/pdf',extension='pdf')) as render:
+            await financial.export_financial_pdf(**kwargs)
+            self.assertEqual([row['key'] for row in render.call_args.args[0]], ['zero','known'])

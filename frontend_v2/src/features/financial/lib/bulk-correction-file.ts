@@ -17,6 +17,7 @@ export function verifyBulkCorrectionResponse(
       key: z.string(),
       status: z.literal("corrected"),
       old_amount: z.number().nullable().optional(),
+      old_raw_amount: z.string().nullable().optional(),
       new_amount: z.number(),
     }),
     z.object({
@@ -52,7 +53,10 @@ export function verifyBulkCorrectionResponse(
         (item.status === "corrected" &&
           (item.new_amount !== request.new_amount ||
             (request.expected_amount !== undefined &&
-              item.old_amount !== request.expected_amount)))
+              item.old_amount !== request.expected_amount) ||
+            (request.expected_raw_amount !== undefined &&
+              (item.old_amount !== null ||
+                item.old_raw_amount !== request.expected_raw_amount))))
       )
     })
   )

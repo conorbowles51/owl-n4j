@@ -118,3 +118,45 @@ it("refuses incomplete, duplicate or mismatched confirmation records", () => {
   ])
     expect(() => verifyBulkCorrectionResponse(bad, request)).toThrow()
 })
+
+it("requires the original unreadable text in a confirmed correction result", () => {
+  const requested = [
+    {
+      node_key: "one",
+      new_amount: 125,
+      correction_reason: "Checked",
+      expected_raw_amount: "not stated",
+    },
+  ]
+  const response = {
+    success: true,
+    corrected: 1,
+    errors: 0,
+    total: 1,
+    results: [
+      {
+        key: "one",
+        status: "corrected",
+        old_amount: null,
+        old_raw_amount: "not stated",
+        new_amount: 125,
+      },
+    ],
+  }
+  expect(verifyBulkCorrectionResponse(response, requested).corrected).toBe(1)
+  expect(() =>
+    verifyBulkCorrectionResponse(
+      { ...response, results: [{ ...response.results[0], old_amount: 0 }] },
+      requested
+    )
+  ).toThrow("not confirm")
+  expect(() =>
+    verifyBulkCorrectionResponse(
+      {
+        ...response,
+        results: [{ ...response.results[0], old_raw_amount: "changed" }],
+      },
+      requested
+    )
+  ).toThrow("not confirm")
+})

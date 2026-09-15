@@ -20,7 +20,8 @@ import {
 } from "../lib/bulk-correction-file"
 
 interface PreviewCorrection extends FileCorrection {
-  expected_amount: number
+  expected_amount?: number
+  expected_raw_amount?: string
   currency?: string
 }
 interface BulkImportDialogProps {
@@ -78,9 +79,20 @@ export function BulkImportDialog({
           throw Error(
             `Line ${row.line}: record ${row.node_key} is not in the current list. Check the key or clear the financial filters.`
           )
+        if (
+          transaction.amount === null &&
+          typeof transaction.raw_amount !== "string"
+        )
+          throw Error(
+            `Line ${row.line}: the original amount text is missing. Reload this record before correcting it.`
+          )
         return {
           ...row,
-          expected_amount: transaction.amount,
+          expected_amount: transaction.amount ?? undefined,
+          expected_raw_amount:
+            transaction.amount === null
+              ? (transaction.raw_amount ?? undefined)
+              : undefined,
           currency: transaction.currency,
         }
       })
@@ -100,7 +112,7 @@ export function BulkImportDialog({
     const quote = (value: string) => `"${value.replaceAll('"', '""')}"`
     const csv = [
       "key,amount,reason",
-      ...transactions.map((row) => `${quote(row.key)},${row.amount},`),
+      ...transactions.map((row) => `${quote(row.key)},${row.amount ?? ""},`),
     ].join("\r\n")
     const url = URL.createObjectURL(
       new Blob([csv], { type: "text/csv;charset=utf-8" })
@@ -121,11 +133,18 @@ export function BulkImportDialog({
       setResult(
         await onSubmit(
           parsed.map(
-            ({ node_key, new_amount, correction_reason, expected_amount }) => ({
+            ({
               node_key,
               new_amount,
               correction_reason,
               expected_amount,
+              expected_raw_amount,
+            }) => ({
+              node_key,
+              new_amount,
+              correction_reason,
+              expected_amount,
+              expected_raw_amount,
             })
           )
         )
@@ -257,9 +276,11 @@ export function BulkImportDialog({
                         <td className="p-2">{row.line}</td>
                         <td className="p-2 break-all">{row.node_key}</td>
                         <td className="p-2 tabular-nums">
-                          {row.expected_amount.toLocaleString("en-IE", {
-                            maximumFractionDigits: 20,
-                          })}{" "}
+                          {row.expected_amount === undefined
+                            ? row.expected_raw_amount || "(blank)"
+                            : row.expected_amount.toLocaleString("en-IE", {
+                                maximumFractionDigits: 20,
+                              })}{" "}
                           {row.currency ?? "(currency not recorded)"}
                         </td>
                         <td className="p-2 tabular-nums">

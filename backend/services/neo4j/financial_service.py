@@ -6,6 +6,8 @@ Neo4jService and dealt with financial transactions now lives here.
 """
 
 import logging
+import math
+from services.financial_record_amounts import recorded_amount, recorded_amount_text
 import re
 from services.financial_record_dates import financial_record_day, validate_financial_date_range
 from typing import Dict, List, Optional
@@ -32,7 +34,7 @@ class FinancialService:
     @staticmethod
     def _sanitize_scalar(value):
         if isinstance(value, float):
-            return safe_float(value, default=0)
+            return value if math.isfinite(value) else None
         return value
 
     def _sanitize_transaction(self, transaction: Dict) -> Dict:
@@ -116,22 +118,8 @@ class FinancialService:
         to_key = record["to_entity_key"] or record["rel_to_key"] or record["rf_key"]
         to_name = record["to_entity_name"] or record["rel_to_name"] or record["rf_name"] or record["prop_receiver"]
 
-        amount_val = safe_float(record["amount"])
-        if amount_val == 0:
-            raw = record.get("raw_amount")
-            if raw is not None:
-                cleaned = re.sub(r"[^\d.\-]", "", str(raw))
-                amount_val = safe_float(cleaned)
-                if amount_val != 0:
-                    logger.warning(
-                        "Amount fallback used for tx %s: raw=%r -> %s",
-                        record["key"], raw, amount_val
-                    )
-                else:
-                    logger.warning(
-                        "Amount resolved to 0 for tx %s: raw=%r",
-                        record["key"], raw
-                    )
+        raw_amount = record.get("raw_amount") if record.get("raw_amount") is not None else record.get("amount")
+        amount_val = recorded_amount(raw_amount)
 
         requested_mode = self._normalize_mode(mode)
         record_mode = record.get("financial_view_mode") or ("intelligence" if requested_mode == "intelligence" else "transaction")
@@ -145,6 +133,7 @@ class FinancialService:
             "date": record["date"],
             "time": record["time"],
             "amount": amount_val,
+            "raw_amount": recorded_amount_text(raw_amount),
             "currency": record["currency"],
             "summary": record["summary"],
             "category": record["financial_category"] or "Uncategorized",
@@ -158,11 +147,8 @@ class FinancialService:
             "is_parent": record["is_parent"] or False,
             "parent_transaction_key": record["parent_transaction_key"],
             "amount_corrected": record["amount_corrected"] or False,
-            "original_amount": (
-                safe_float(record["original_amount"]) or safe_float(re.sub(r"[^\d.\-]", "", str(record["original_amount"])))
-                if record.get("original_amount") is not None
-                else None
-            ),
+            "original_amount": recorded_amount(record.get("original_amount")),
+            "original_amount_raw": recorded_amount_text(record.get("original_amount")),
             "correction_reason": record["correction_reason"],
             "financial_record_kind": record.get("financial_record_kind") or ("transaction" if record_mode == "transaction" else "other"),
             "financial_view_mode": record_mode,
@@ -603,7 +589,7 @@ class FinancialService:
         success_count = sum(1 for r in results if r.get("success"))
         return {"success": True, "updated": success_count, "total": len(node_keys)}
 
-    def update_transaction_amount(self, node_key: str, case_id: str, new_amount: float, correction_reason: str, expected_amount: Optional[float] = None) -> Dict:
+    def update_transaction_amount(self, node_key: str, case_id: str, new_amount: float, correction_reason: str, expected_amount: Optional[float] = None, expected_raw_amount: Optional[str] = None) -> Dict:
         """Update a transaction amount, preserving the original value for audit trail."""
         def correct(tx):
             locked = tx.run(
@@ -616,10 +602,10 @@ class FinancialService:
             ).single()
             # The write lock remains held until this transaction commits. Raising
             # here rolls back its revision increment and leaves the amount intact.
-            current = safe_float(locked["amount"]) if locked else None
-            if locked and current == 0:
-                current = safe_float(re.sub(r"[^\d.\-]", "", str(locked["amount"])))
-            if locked is None or (expected_amount is not None and current != expected_amount):
+            current = recorded_amount(locked["amount"]) if locked else None
+            raw_changed = expected_raw_amount is not None and (
+                current is not None or recorded_amount_text(locked["amount"] if locked else None) != expected_raw_amount)
+            if locked is None or raw_changed or (expected_amount is not None and current != expected_amount):
                 raise ValueError(f"Record {node_key} is missing or its amount changed. Reload the record before correcting it.")
             result = tx.run(
                 """
@@ -634,7 +620,8 @@ class FinancialService:
                 correction_reason=correction_reason,
             ).single()
             return {"success": True, "key": result["key"], "amount": result["amount"],
-                    "original_amount": result["original_amount"]}
+                    "original_amount": self._sanitize_scalar(result["original_amount"]),
+                    "original_amount_raw": recorded_amount_text(result["original_amount"])}
 
         with driver.session() as session:
             return session.execute_write(correct)

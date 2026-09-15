@@ -111,8 +111,14 @@ Select **Open original file** in these details to open the linked evidence. A PD
 
 ![A synthetic receipt opened from Other financial records at page 2 of 3](images/24-other-record-original.png)
 
+If a record says **Amount needs review**, select its name to read the saved amount text and open the original file. This text has not been treated as zero. Numeric amount filters leave it out, so clear those filters if the record disappears. A currency total says **Not totalled** while it includes an unreadable amount.
+
 To correct an amount in **Other financial records**, select its amount to open **Correct Amount**. Compare the current value and currency with the original evidence. Enter **New Amount** and **Correction Reason**, then select **Save Correction**. Loupe retains the original amount and the latest explanation with this record. A later correction replaces that explanation. **Close** keeps your unfinished correction in this browser tab; reopen the same record to continue. A failed save displays an error and retains the draft. If the saved amount changes while you are editing, the save is refused. Reopen the record to start from its new amount. When no currency is recorded, the editor says so rather than displaying a dollar sign.
 
+
+If the current amount is unreadable, **New Amount** starts empty. Check the original file, enter the amount and explain the correction. The original text is retained after saving. If another change has replaced that text, reload the record before correcting it. Reports include the original text and your latest explanation.
+
+![Correcting a deliberately unreadable amount against a synthetic receipt](images/25-unreadable-amount-correction.png)
 
 ### Correct several amounts from a file
 

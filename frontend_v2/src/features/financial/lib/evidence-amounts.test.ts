@@ -5,6 +5,7 @@ import {
   formatEvidenceCents,
   summarizeEvidenceAmounts,
 } from "./evidence-amounts"
+import { filterTransactionsBase } from "./filter-transactions"
 import { buildEvidenceVolumeData } from "./evidence-chart-data"
 
 function row(
@@ -84,4 +85,29 @@ it("keeps month and week grouping on the recorded calendar dates", () => {
   expect(buildEvidenceVolumeData(records, "weekly").data[0].period).toBe(
     "2026-08-30"
   )
+})
+
+it("does not turn unreadable amounts into zero for totals, charts or a numeric filter", () => {
+  const record = {
+    key: "unknown",
+    amount: null,
+    raw_amount: "not stated",
+    currency: "USD",
+    date: "2026-09-02",
+  } as Transaction
+  const totals = summarizeEvidenceAmounts([record])
+  expect(totals[0].incomplete).toBe(true)
+  expect(evidenceAmountCents(record.amount)).toBeNull()
+  expect(
+    filterTransactionsBase([record, { ...record, key: "zero", amount: 0 }], {
+      searchQuery: "",
+      selectedCategories: new Set(),
+      startDate: "",
+      endDate: "",
+      entityFilter: null,
+      minAmount: "",
+      maxAmount: "100",
+      sortColumns: [],
+    }).map((row) => row.key)
+  ).toEqual(["zero"])
 })

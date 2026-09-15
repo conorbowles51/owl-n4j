@@ -70,7 +70,14 @@ export function compareTransactions(
       cmp = compareDateValues(a.date, b.date)
       break
     case "amount":
-      cmp = a.amount - b.amount
+      cmp =
+        a.amount === null
+          ? b.amount === null
+            ? 0
+            : 1
+          : b.amount === null
+            ? -1
+            : a.amount - b.amount
       break
     case "name":
       cmp = (a.name || "").localeCompare(b.name || "")
@@ -138,14 +145,18 @@ export function filterTransactionsBase(
   if (minAmount) {
     const min = parseFloat(minAmount)
     if (!Number.isNaN(min)) {
-      result = result.filter((tx) => Math.abs(tx.amount) >= min)
+      result = result.filter(
+        (tx) => tx.amount !== null && Math.abs(tx.amount) >= min
+      )
     }
   }
 
   if (maxAmount) {
     const max = parseFloat(maxAmount)
     if (!Number.isNaN(max)) {
-      result = result.filter((tx) => Math.abs(tx.amount) <= max)
+      result = result.filter(
+        (tx) => tx.amount !== null && Math.abs(tx.amount) <= max
+      )
     }
   }
 
@@ -223,6 +234,7 @@ export function buildEntityFlowRows(
   const grouped = new Map<string, EntityFlowRow>()
 
   for (const tx of transactions) {
+    if (tx.amount === null || !Number.isFinite(tx.amount)) continue
     const entity = side === "from" ? tx.from_entity : tx.to_entity
     const counterpart = counterSide === "from" ? tx.from_entity : tx.to_entity
     const counterpartValue = getEntitySelectionValue(counterpart)

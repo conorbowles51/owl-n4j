@@ -2,8 +2,9 @@ import type { Transaction } from "../api"
 
 // These older evidence amounts are supplied at two decimal places. Refuse to
 // turn an unsafe Number into an apparently exact total.
-export function evidenceAmountCents(amount: number): bigint | null {
+export function evidenceAmountCents(amount: number | null): bigint | null {
   if (
+    amount === null ||
     !Number.isFinite(amount) ||
     !Number.isSafeInteger(Math.round(amount * 100))
   )
@@ -20,10 +21,10 @@ export function evidenceCurrency(value: string | undefined): string | null {
   return currency && /^[A-Z]{3}$/.test(currency) ? currency : null
 }
 export function formatEvidenceAmount(
-  amount: number,
+  amount: number | null,
   currency?: string
 ): string {
-  if (!Number.isFinite(amount)) return "Amount not recorded"
+  if (amount === null || !Number.isFinite(amount)) return "Amount not recorded"
   const cents = evidenceAmountCents(amount)
   const text = cents === null ? String(amount) : formatEvidenceCents(cents)
   const label =

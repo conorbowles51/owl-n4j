@@ -143,6 +143,21 @@ export function TransactionDetailPanel({
           />
         </div>
 
+        {transaction.amount === null && transaction.raw_amount != null && (
+          <div className="md:col-span-3 rounded border p-3 text-sm">
+            <p>
+              Amount needs review. The saved text could not be used as a numeric
+              amount.
+            </p>
+            <p className="mt-1 whitespace-pre-wrap break-words">
+              Saved amount text: {transaction.raw_amount || "(blank)"}
+            </p>
+            <p className="mt-1">
+              Compare it with the original file, then select the amount in the
+              record row to enter a correction if you can edit this case.
+            </p>
+          </div>
+        )}
         {transaction.source_excerpt && (
           <div className="md:col-span-3">
             <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
