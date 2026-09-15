@@ -43,7 +43,9 @@ Select **Financial guide** above the financial tabs. The button stays visible wh
 
 Ask your administrator for the Loupe address, your own sign-in details and access to the case you will work on. Reading a case, editing its records and uploading files are separate permissions. A notice above the financial tabs explains any restriction on your access. With read-only access, you can open statements, inspect payments, explore results and download saved reports. Editing controls are unavailable. If you can edit but cannot upload, you can work with the files already in the case. Ask the case owner for the permission you need.
 
-If **Case access could not be checked** appears, select **Check access again**. Editing and uploads stay unavailable until the check succeeds. This can happen after a connection problem or a change to your membership.
+If **Case access could not be checked** appears, select **Check access again**. Editing and uploads stay unavailable until the check succeeds. This can happen after a connection problem.
+
+If **Your session has expired** appears, select **Sign in again**, sign in, then reopen the case. Unfinished statement work remains in the same browser tab. If the case is no longer available to your account, ask its owner to check your membership. Select **Check access again** after access is restored, or **Open cases** to choose another case.
 
 Keep the original files supplied to you. Work from the evidence registered in the correct case. A file on your computer is not available to colleagues until it has been uploaded to their Loupe server. Local development cases are not copied to the server by a software deployment.
 

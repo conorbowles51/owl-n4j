@@ -45,6 +45,12 @@ Refreshing now restores the open file, statement period, currency and PDF page i
 
 The supplied 222-page PDF passed correction retention across periods, file versions, tabs and refresh, with the original image loaded. Search located the requested period among 52 sections. The 99-page Andrews file passed switching among 45 sections, the unassigned continuation page and its separate receipt, including refresh. No real payments were imported and no financial records changed. Twenty-seven focused checks, type checking and scoped lint passed.
 
+## Continued session recovery
+
+Signing in or out clears cached case queries, and delayed responses from an earlier session cannot clear a newer token or replace its profile. Expired financial access offers Sign in again. A denied case hides its contents and offers Open cases or a deliberate access recheck.
+
+Twenty-two focused checks and the production build passed. A real temporary member lost and regained access while the financial case stayed open. A simulated expired-session response then led through sign-in back to Financial. The temporary member was removed. No financial records changed.
+
 ## Remaining acceptance
 
 Damaged scans can still require correction or a better source copy. The supplied-page checks and synthetic case journey do not establish independent extraction accuracy across all bank formats. The seven unique supplied PDFs have a retained prediction capture, but independent human reference reviews and an approved baseline have not been supplied. The application records those measurements as unavailable.

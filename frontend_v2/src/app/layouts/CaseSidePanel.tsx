@@ -250,7 +250,7 @@ export function CaseSidePanelContent() {
       <div className="flex-1 overflow-hidden">
         {isFinancialRoute && caseId && (
           <div className="h-full" hidden={tab !== "detail"}>
-            <FinancialAccessProvider caseId={caseId}>
+            <FinancialAccessProvider caseId={caseId} quietFailure>
               <StatementFilesPanel key={caseId} caseId={caseId} />
             </FinancialAccessProvider>
           </div>

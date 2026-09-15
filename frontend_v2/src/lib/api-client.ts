@@ -63,7 +63,10 @@ export async function fetchAPI<T>(
         // ignore parse errors
       }
 
-      if (response.status === 401) {
+      if (
+        response.status === 401 &&
+        localStorage.getItem("authToken") === token
+      ) {
         localStorage.removeItem("authToken")
       }
 
@@ -71,11 +74,14 @@ export async function fetchAPI<T>(
       const message =
         typeof detail === "string"
           ? detail
-          : detail && typeof detail === "object" && "message" in detail && typeof detail.message === "string"
+          : detail &&
+              typeof detail === "object" &&
+              "message" in detail &&
+              typeof detail.message === "string"
             ? detail.message
-          : detail
-            ? JSON.stringify(detail)
-            : `Request failed: ${response.status}`
+            : detail
+              ? JSON.stringify(detail)
+              : `Request failed: ${response.status}`
       throw new ApiError(message, response.status, errorData)
     }
 

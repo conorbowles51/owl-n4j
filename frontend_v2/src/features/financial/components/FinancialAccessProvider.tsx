@@ -19,9 +19,11 @@ const accessSchema = z.object({
 export function FinancialAccessProvider({
   caseId,
   children,
+  quietFailure = false,
 }: {
   caseId: string | undefined
   children: ReactNode
+  quietFailure?: boolean
 }) {
   const user = useAuthStore((state) => state.user)
   const owner = user?.id || user?.username
@@ -42,6 +44,14 @@ export function FinancialAccessProvider({
       return data
     },
   })
+  const status =
+    query.error && "status" in query.error ? query.error.status : undefined
+  const failure =
+    status === 401
+      ? "expired"
+      : status === 403 || status === 404
+        ? "denied"
+        : undefined
   const ready =
     !!owner &&
     !!caseId &&
@@ -55,12 +65,13 @@ export function FinancialAccessProvider({
         canUpload: ready && query.data?.can_upload === true,
         ready,
         error: query.isError,
+        failure,
         retry: () => {
           void query.refetch()
         },
       }}
     >
-      {children}
+      {failure ? quietFailure ? null : <FinancialAccessNotice /> : children}
     </FinancialAccessContext.Provider>
   )
 }
@@ -73,7 +84,31 @@ export function FinancialAccessNotice() {
       className="border-b px-4 py-2 text-sm"
       role={access.error ? "alert" : "status"}
     >
-      {access.error ? (
+      {access.failure === "expired" ? (
+        <>
+          Your session has expired. Sign in again to continue. Unfinished
+          statement work stays in this browser tab.
+          <Button asChild variant="outline" size="sm" className="ml-2">
+            <a href="/login">Sign in again</a>
+          </Button>
+        </>
+      ) : access.failure === "denied" ? (
+        <>
+          This case is no longer available to your account. Ask the case owner
+          to check your access.
+          <Button asChild variant="outline" size="sm" className="ml-2">
+            <a href="/cases">Open cases</a>
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="ml-2"
+            onClick={access.retry}
+          >
+            Check access again
+          </Button>
+        </>
+      ) : access.error ? (
         <>
           Case access could not be checked. Editing and uploads are unavailable
           until access is confirmed.

@@ -5,6 +5,7 @@ export type FinancialAccess = {
   canUpload: boolean
   ready: boolean
   error: boolean
+  failure?: "expired" | "denied"
   retry?: () => void
 }
 

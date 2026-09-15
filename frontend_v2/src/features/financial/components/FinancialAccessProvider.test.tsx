@@ -150,3 +150,27 @@ it("mutation-only forms are absent without a permission provider", () => {
   expect(container).toBeEmptyDOMElement()
   expect(api).not.toHaveBeenCalled()
 })
+
+it.each([401, 403, 404])(
+  "removes case contents and offers a useful recovery action after HTTP %s",
+  async (status) => {
+    api.mockResolvedValue(response(true, true))
+    const { client } = setup()
+    await screen.findByText("access-ready")
+    api.mockRejectedValue(Object.assign(Error("Access denied"), { status }))
+    await act(async () => {
+      await client.invalidateQueries({ queryKey: ["financial-case-access"] })
+    })
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      status === 401
+        ? "Your session has expired"
+        : "This case is no longer available"
+    )
+    expect(screen.queryByRole("button", { name: "Edit record" })).toBeNull()
+    expect(
+      screen.getByRole("link", {
+        name: status === 401 ? "Sign in again" : "Open cases",
+      })
+    ).toHaveAttribute("href", status === 401 ? "/login" : "/cases")
+  }
+)

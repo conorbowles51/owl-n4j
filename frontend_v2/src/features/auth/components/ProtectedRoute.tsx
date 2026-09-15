@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect } from "react"
 import { Navigate, Outlet, useLocation } from "react-router-dom"
 import { useAuthStore } from "../hooks/use-auth"
 import { authAPI } from "../api"
@@ -6,33 +6,41 @@ import { LoadingSpinner } from "@/components/ui/loading-spinner"
 
 export function ProtectedRoute() {
   const { isAuthenticated, user, setUser, logout } = useAuthStore()
-  const [checking, setChecking] = useState(!user && isAuthenticated)
   const location = useLocation()
 
   useEffect(() => {
     if (isAuthenticated && !user) {
+      const token = localStorage.getItem("authToken")
+      let active = true
       authAPI
         .me()
         .then((u) => {
-          setUser(u)
+          if (active && localStorage.getItem("authToken") === token) setUser(u)
         })
         .catch(() => {
-          logout()
+          if (
+            active &&
+            (!localStorage.getItem("authToken") ||
+              localStorage.getItem("authToken") === token)
+          )
+            logout()
         })
-        .finally(() => setChecking(false))
+      return () => {
+        active = false
+      }
     }
   }, [isAuthenticated, user, setUser, logout])
 
-  if (checking) {
+  if (!isAuthenticated) {
+    return <Navigate to="/login" state={{ from: location }} replace />
+  }
+
+  if (!user) {
     return (
       <div className="flex h-screen items-center justify-center">
         <LoadingSpinner size="lg" />
       </div>
     )
-  }
-
-  if (!isAuthenticated) {
-    return <Navigate to="/login" state={{ from: location }} replace />
   }
 
   return <Outlet />
