@@ -3,7 +3,11 @@ import { useFinancialDraft } from "../stores/financial-drafts"
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { useCreateCaseworkEntry } from "@/features/workspace/hooks/use-casework"
-import type { VerifiedClaimComparison } from "../lib/claim-comparison"
+import {
+  type VerifiedClaimComparison,
+  claimVerdictLabel,
+  orderClaimCandidates,
+} from "../lib/claim-comparison"
 import { claimReviewNote } from "../lib/claim-review-note"
 import { correctionMoney } from "../lib/correction-contract"
 function ClaimComparisonDecisionForm({
@@ -51,10 +55,11 @@ function ClaimComparisonDecisionForm({
       aria-label="Review the claim comparison"
       className="space-y-3 rounded border p-3"
     >
-      <h4 className="font-semibold">Record your response to this proposal</h4>
+      <h4 className="font-semibold">Record your conclusion</h4>
       <p>
-        This creates a Workspace note with the quotation, selected source
-        readings and your reasoning. It does not change the claim or ledger.
+        Save a Workspace note with the quotation, your explanation and the
+        payments you select below. The original claim and payments stay
+        unchanged.
       </p>
       {!save.data && (
         <p className="text-sm text-muted-foreground">
@@ -127,8 +132,8 @@ function ClaimComparisonDecisionForm({
               className="ml-2 border bg-background p-2"
             >
               <option value="">Choose a response</option>
-              <option value="agree">Agree with the proposal</option>
-              <option value="disagree">Disagree with the proposal</option>
+              <option value="agree">Agree with the comparison</option>
+              <option value="disagree">Disagree with the comparison</option>
             </select>
           </label>
           <label className="block">
@@ -152,19 +157,22 @@ function ClaimComparisonDecisionForm({
               }
               className="block w-full border bg-background p-2"
             >
-              {report.value.comparison.candidates.map((c) => (
-                <option
-                  key={c.entry.transaction_id}
-                  value={c.entry.transaction_id}
-                >
-                  {c.verdict.replaceAll("_", " ")} ·{" "}
-                  {correctionMoney(
-                    c.entry.amount.minor_units,
-                    c.entry.amount.currency
-                  )}{" "}
-                  · {c.entry.transaction_id}
-                </option>
-              ))}
+              {orderClaimCandidates(report.value.comparison.candidates).map(
+                (c) => (
+                  <option
+                    key={c.entry.transaction_id}
+                    value={c.entry.transaction_id}
+                  >
+                    {c.entry.ordering_date} ·{" "}
+                    {correctionMoney(
+                      c.entry.amount.minor_units,
+                      c.entry.amount.currency
+                    )}{" "}
+                    · {c.entry.description || "No description recorded"} ·{" "}
+                    {claimVerdictLabel(c.verdict)}
+                  </option>
+                )
+              )}
             </select>
           </label>
           {selected.length > 20 && (

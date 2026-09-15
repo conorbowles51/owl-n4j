@@ -768,7 +768,7 @@ Repeated names, equal amounts, quick incoming/outgoing movements and split payme
 6. Choose **Claim currency** and record your interpretation of the account holder and payment direction in the available fields.
 7. Enter **Basis for the ranges and account interpretation**.
 8. Under **Payments to compare**, choose **Verified transactions only** or **All imported transactions, including unverified**. Enter any additional amount tolerance. Zero tolerance compares the entered range exactly.
-9. Select **Find matching payments**. Check the date, amount and description of each result. Select **View payment source** beside a result to inspect its supporting statement.
+9. Select **Find matching payments**. Matching payments appear first, followed by payments with a different amount, missing details or other differences. Check each date, amount and description. Expand **Why this result?** to see the comparison of each field. Select **View payment source** beside a result to inspect its supporting statement.
 10. Select **Download claim comparison with sources**.
 11. To record your response, select agreement or disagreement, choose up to 20 supporting payments and enter **Reason for your response**. Select **Save claim review with sources**. Confirm the resulting note in Workspace.
 
@@ -1356,6 +1356,8 @@ If an attempt is labelled **SIMULATED**, it is test data. Do not describe it as 
 
 A useful reason is specific: “Page 4, purchase row: printed amount is 61.62. Selected the card-ending 3539 account. Used the transaction date column, not the posting date column.” Avoid reasons such as “checked” when a decision involves uncertainty.
 
+Unfinished values and the reason stay in this browser tab. After a refresh, open **Import review > Open PDF readings**, reopen the saved batch and select the same source row. If its saved review has changed, Loupe shows the current saved values instead of applying your earlier draft to that new version. After an unsuccessful save, use **Reload review** to check whether anything was recorded. A draft for an unchanged review returns with its values intact.
+
 ![Original source and review fields for a finalized synthetic reading](images/10-reading-review.png)
 
 *The original source appears beside the review fields. This example has already been finalized, so its fields are read-only. An unfinished reading uses this area to record a decision.*
@@ -1376,6 +1378,8 @@ For an undated fee or interest row, leave the transaction, booking and value dat
 6. Check that the new account is selected, then complete the reading decision.
 
 Creating an account does not resolve the reading. It also does not establish the holder's identity.
+
+An unfinished provisional-account label and explanation also return when you reopen that reading. They are kept separately for each reading version and currency. Changing the currency starts a separate draft so an account label is not accidentally reused for a different currency.
 
 #### Advanced: Reject or reopen a reading
 
@@ -1443,3 +1447,5 @@ These two saves are separate: one preserves the editor you are still filling in;
 11. Open **Statements** and inspect the resulting checks.
 
 Finalized manual PDF rows remain P3. Finalization does not certify complete extraction, identify every account holder or promote readings into verified totals. To change a written amount later, use a ledger correction. Do not attempt to reopen the original source selection as if it were an unsaved form.
+
+Your unfinished finalization explanation stays in this browser tab. After a refresh, load the preview and check both confirmations again. If the reviewed rows or statement controls changed, check the updated preview before selecting **Use explanation for this preview**, or edit the reason to describe the current selection. A failed or interrupted request keeps the explanation; the saved receipt is the confirmation that finalization succeeded.

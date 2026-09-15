@@ -1,4 +1,5 @@
 import { useFinancialAccess } from "../hooks/use-financial-access"
+import { useFinancialDraft } from "../stores/financial-drafts"
 import { CandidateSourcePanel } from "./CandidateSourcePanel"
 import { useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
@@ -91,36 +92,55 @@ function ReviewFields({
 }) {
   const finalized = review.finalization_id !== null
   const previous = review.reading
-  const [currency, setCurrency] = useState(previous?.currency ?? "")
+  const [stored, setDraft, clearDraft] = useFinancialDraft(
+    caseId,
+    `candidate-review:${JSON.stringify([fileId, mappingId, review.candidate_id, review.review_revision, review.finalization_id])}`,
+    {
+      currency: previous?.currency ?? "",
+      amount: previous
+        ? correctionMoney(previous.amount_minor, previous.currency).slice(
+            0,
+            -previous.currency.length - 1
+          )
+        : "",
+      account: previous?.account_id ?? "",
+      newAccount: null as CandidateAccount | null,
+      direction: previous?.direction ?? "",
+      statementEndDate: previous?.statement_end_date ?? "",
+      bookingDate: previous?.booking_date ?? "",
+      valueDate: previous?.value_date ?? "",
+      transactionDate: previous?.transaction_date ?? "",
+      description: previous?.description ?? "",
+      counterparty: previous?.counterparty_raw ?? "",
+      reason: "",
+      search: "",
+    }
+  )
+  const [completed, setCompleted] = useState<typeof stored | null>(null)
+  const draft = completed ?? stored
+  const {
+    currency,
+    amount,
+    account,
+    newAccount,
+    direction,
+    statementEndDate,
+    bookingDate,
+    valueDate,
+    transactionDate,
+    description,
+    counterparty,
+    reason,
+    search,
+  } = draft
+  const field = <K extends keyof typeof draft>(
+    key: K,
+    value: (typeof draft)[K]
+  ) => setDraft((current) => ({ ...current, [key]: value }))
   const [sourceCurrency, setSourceCurrency] = useState(previous?.currency ?? "")
   const assessmentCurrency = finalized ? sourceCurrency : currency
-  const [amount, setAmount] = useState(
-    previous
-      ? correctionMoney(previous.amount_minor, previous.currency).slice(
-          0,
-          -previous.currency.length - 1
-        )
-      : ""
-  )
-  const [account, setAccount] = useState(previous?.account_id ?? "")
-  const [newAccount, setNewAccount] = useState<CandidateAccount | null>(null)
   const [accountBusy, setAccountBusy] = useState(false)
   const accountBusyRef = useRef(false)
-  const [direction, setDirection] = useState(previous?.direction ?? "")
-  const [statementEndDate, setStatementEndDate] = useState(
-    previous?.statement_end_date ?? ""
-  )
-  const [bookingDate, setBookingDate] = useState(previous?.booking_date ?? "")
-  const [valueDate, setValueDate] = useState(previous?.value_date ?? "")
-  const [transactionDate, setTransactionDate] = useState(
-    previous?.transaction_date ?? ""
-  )
-  const [description, setDescription] = useState(previous?.description ?? "")
-  const [counterparty, setCounterparty] = useState(
-    previous?.counterparty_raw ?? ""
-  )
-  const [reason, setReason] = useState("")
-  const [search, setSearch] = useState("")
   const [blocked, setBlocked] = useState(false)
   const lock = useRef(false)
   const client = useQueryClient()
@@ -191,6 +211,10 @@ function ReviewFields({
           "The saved response does not match this review. Reload to check its outcome."
         )
       return data
+    },
+    onSuccess: () => {
+      setCompleted(draft)
+      clearDraft()
     },
     onSettled: () => {
       setBlocked(true)
@@ -269,6 +293,14 @@ function ReviewFields({
         <p>
           Review status: <strong>{review.status}</strong>.
         </p>
+        {!finalized && !record.isSuccess && (
+          <p className="text-muted-foreground">
+            Unfinished values and your explanation are kept in this browser tab.
+            Reopen this reading to continue. If someone changes its saved
+            review, the current saved values are shown instead of the older
+            draft.
+          </p>
+        )}
         {finalized ? (
           <p role="status">
             Finalized reading. Original values and review history are read-only.
@@ -311,7 +343,7 @@ function ReviewFields({
               value={currency}
               maxLength={3}
               onChange={(e) => {
-                setCurrency(e.target.value.toUpperCase())
+                field("currency", e.target.value.toUpperCase())
                 assessment.reset()
               }}
               placeholder="GBP"
@@ -323,7 +355,7 @@ function ReviewFields({
               className={fieldClass}
               inputMode="decimal"
               value={amount}
-              onChange={(e) => setAmount(e.target.value)}
+              onChange={(e) => field("amount", e.target.value)}
               placeholder="12.34"
             />
           </label>
@@ -333,7 +365,7 @@ function ReviewFields({
               className={fieldClass}
               value={search}
               maxLength={128}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => field("search", e.target.value)}
             />
           </label>
           <label>
@@ -342,7 +374,7 @@ function ReviewFields({
               aria-label="Account"
               className={fieldClass}
               value={account}
-              onChange={(e) => setAccount(e.target.value)}
+              onChange={(e) => field("account", e.target.value)}
             >
               <option value="">Choose an account</option>
               {accountOptions.map((item) => (
@@ -367,7 +399,7 @@ function ReviewFields({
               aria-label="Direction"
               className={fieldClass}
               value={direction}
-              onChange={(e) => setDirection(e.target.value)}
+              onChange={(e) => field("direction", e.target.value)}
             >
               <option value="">Choose a direction</option>
               <option value="debit">Money out</option>
@@ -380,7 +412,7 @@ function ReviewFields({
               className={fieldClass}
               type="date"
               value={bookingDate}
-              onChange={(e) => setBookingDate(e.target.value)}
+              onChange={(e) => field("bookingDate", e.target.value)}
             />
           </label>
           <label>
@@ -389,7 +421,7 @@ function ReviewFields({
               className={fieldClass}
               type="date"
               value={valueDate}
-              onChange={(e) => setValueDate(e.target.value)}
+              onChange={(e) => field("valueDate", e.target.value)}
             />
           </label>
           <label>
@@ -398,7 +430,7 @@ function ReviewFields({
               className={fieldClass}
               type="date"
               value={transactionDate}
-              onChange={(e) => setTransactionDate(e.target.value)}
+              onChange={(e) => field("transactionDate", e.target.value)}
             />
           </label>
           <label className="sm:col-span-2">
@@ -408,7 +440,7 @@ function ReviewFields({
               type="date"
               aria-label="Statement end date (ordering only)"
               value={statementEndDate}
-              onChange={(e) => setStatementEndDate(e.target.value)}
+              onChange={(e) => field("statementEndDate", e.target.value)}
             />
             <span className="block text-xs text-muted-foreground">
               For undated fees or interest only. Leave the row dates empty. This
@@ -422,7 +454,7 @@ function ReviewFields({
               className={fieldClass}
               value={description}
               maxLength={4096}
-              onChange={(e) => setDescription(e.target.value)}
+              onChange={(e) => field("description", e.target.value)}
             />
           </label>
           <label>
@@ -432,7 +464,7 @@ function ReviewFields({
               className={fieldClass}
               value={counterparty}
               maxLength={4096}
-              onChange={(e) => setCounterparty(e.target.value)}
+              onChange={(e) => field("counterparty", e.target.value)}
             />
             <span className="block text-xs text-muted-foreground">
               Record only the name shown by the source. Leave empty if unknown;
@@ -446,7 +478,7 @@ function ReviewFields({
               className={fieldClass}
               value={reason}
               maxLength={4096}
-              onChange={(e) => setReason(e.target.value)}
+              onChange={(e) => field("reason", e.target.value)}
             />
           </label>
         </fieldset>
@@ -463,8 +495,8 @@ function ReviewFields({
               setAccountBusy(busy)
             }}
             onCreated={(created) => {
-              setNewAccount(created)
-              setAccount(created.id)
+              field("newAccount", created)
+              field("account", created.id)
             }}
           />
         )}

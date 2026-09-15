@@ -104,3 +104,32 @@ export async function verifyClaimComparison(
 export type VerifiedClaimComparison = Awaited<
   ReturnType<typeof verifyClaimComparison>
 >
+
+export function claimVerdictLabel(verdict: string) {
+  switch (verdict) {
+    case "matches":
+      return "Matches the entered details"
+    case "differs_on_amount":
+      return "Similar details, different amount"
+    case "inconclusive":
+      return "Missing details to check"
+    case "excluded":
+      return "Does not match these details"
+    default:
+      return "Unrecognised comparison result"
+  }
+}
+
+export function orderClaimCandidates<T extends { verdict: string }>(
+  candidates: T[]
+): T[] {
+  const rank: Record<string, number> = {
+    matches: 0,
+    differs_on_amount: 1,
+    inconclusive: 2,
+    excluded: 3,
+  }
+  return [...candidates].sort(
+    (a, b) => (rank[a.verdict] ?? 4) - (rank[b.verdict] ?? 4)
+  )
+}

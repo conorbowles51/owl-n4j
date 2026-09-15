@@ -10,7 +10,9 @@ vi.mock("../hooks/use-financial-access", async (importOriginal) => ({
 }))
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { render, screen, fireEvent } from "@testing-library/react"
-import { afterEach, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, expect, it, vi } from "vitest"
+import { useFinancialDraftStore } from "../stores/financial-drafts"
+beforeEach(() => useFinancialDraftStore.setState({ drafts: {} }))
 import { CandidateFinalizationPanel } from "./CandidateFinalizationPanel"
 vi.mock("./StatementDraftPanel", () => ({ StatementDraftPanel: () => null }))
 const fixture = vi.hoisted(() => {

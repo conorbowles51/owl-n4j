@@ -10,10 +10,12 @@ vi.mock("../hooks/use-financial-access", async (importOriginal) => ({
 }))
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
-import { afterEach, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, expect, it, vi } from "vitest"
+import { useFinancialDraftStore } from "../stores/financial-drafts"
 import { CandidateAccountForm } from "./CandidateAccountForm"
 afterEach(() => vi.restoreAllMocks())
-function mount(currency = "GBP") {
+beforeEach(() => useFinancialDraftStore.setState({ drafts: {} }))
+function mount(currency = "GBP", reviewRevision = "a".repeat(64)) {
   const onCreated = vi.fn(),
     onBusy = vi.fn()
   const client = new QueryClient({
@@ -25,7 +27,7 @@ function mount(currency = "GBP") {
         caseId="case-a"
         candidateId="candidate-a"
         fileId="file-a"
-        reviewRevision={"a".repeat(64)}
+        reviewRevision={reviewRevision}
         currency={currency}
         disabled={false}
         onCreated={onCreated}
@@ -33,9 +35,10 @@ function mount(currency = "GBP") {
       />
     </QueryClientProvider>
   )
-  fireEvent.click(
-    screen.getByRole("button", { name: "Set up a provisional account" })
-  )
+  const open = screen.queryByRole("button", {
+    name: "Set up a provisional account",
+  })
+  if (open) fireEvent.click(open)
   return { ...view, onCreated, onBusy, client }
 }
 function server({ status = 200, wrongCase = false } = {}) {
@@ -77,6 +80,27 @@ function fill() {
     target: { value: "Number is redacted" },
   })
 }
+it("restores an account draft only for the same currency and reading version", () => {
+  server()
+  const first = mount()
+  fill()
+  first.unmount()
+  const reopened = mount()
+  expect(screen.getByLabelText("Provisional account label")).toHaveValue(
+    "Redacted card A"
+  )
+  expect(screen.getByLabelText("Reason for provisional account")).toHaveValue(
+    "Number is redacted"
+  )
+  reopened.unmount()
+  const otherCurrency = mount("EUR")
+  expect(screen.getByLabelText("Provisional account label")).toHaveValue("")
+  otherCurrency.unmount()
+  mount("GBP", "b".repeat(64))
+  expect(screen.getByLabelText("Reason for provisional account")).toHaveValue(
+    ""
+  )
+})
 it("requires a label, reason and currency without guessing an identifier", () => {
   server()
   mount("")

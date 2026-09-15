@@ -10,9 +10,11 @@ vi.mock("../hooks/use-financial-access", async (importOriginal) => ({
 }))
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
-import { afterEach, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, expect, it, vi } from "vitest"
+import { useFinancialDraftStore } from "../stores/financial-drafts"
 import { CandidateFinalizationPanel } from "./CandidateFinalizationPanel"
 afterEach(() => vi.restoreAllMocks())
+beforeEach(() => useFinancialDraftStore.setState({ drafts: {} }))
 vi.mock("./StatementDraftPanel", () => ({ StatementDraftPanel: () => null }))
 const ready = {
   case_id: "case-a",
@@ -75,6 +77,47 @@ function confirm() {
     target: { value: "Reviewed selected financial rows" },
   })
 }
+it("retains the explanation after refresh but requires fresh confirmations and review of changed rows", async () => {
+  let revision = ready.revision
+  vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+    response({ ...ready, revision })
+  )
+  const first = mount()
+  await preview()
+  confirm()
+  first.unmount()
+  const reopened = mount()
+  await preview()
+  expect(screen.getByLabelText("Reason for finalization")).toHaveValue(
+    "Reviewed selected financial rows"
+  )
+  expect(
+    screen.getByRole("checkbox", { name: /These are documentary/ })
+  ).not.toBeChecked()
+  expect(
+    screen.getByRole("checkbox", { name: /I accept incomplete/ })
+  ).not.toBeChecked()
+  expect(
+    screen.getByRole("button", { name: "Finalize selected rows" })
+  ).toBeDisabled()
+  reopened.unmount()
+  revision = "c".repeat(64)
+  mount()
+  await preview()
+  fireEvent.click(
+    screen.getByRole("checkbox", { name: /These are documentary/ })
+  )
+  fireEvent.click(screen.getByRole("checkbox", { name: /I accept incomplete/ }))
+  expect(
+    screen.getByRole("button", { name: "Finalize selected rows" })
+  ).toBeDisabled()
+  fireEvent.click(
+    screen.getByRole("button", { name: "Use explanation for this preview" })
+  )
+  expect(
+    screen.getByRole("button", { name: "Finalize selected rows" })
+  ).toBeEnabled()
+})
 it("requires preview, explicit confirmations and reason before writing", async () => {
   const fetch = vi
     .spyOn(globalThis, "fetch")
@@ -126,7 +169,7 @@ it("does not allow double submission while the write is unresolved", async () =>
   finish(response(receipt))
   await screen.findByText(/Finalized 2 transactions/)
 })
-it("requires reload after uncertain failure and resets acceptance", async () => {
+it("requires reload after uncertain failure and fresh acceptance while retaining the explanation", async () => {
   vi.spyOn(globalThis, "fetch")
     .mockResolvedValueOnce(response(ready))
     .mockResolvedValueOnce(response({ detail: "Source changed" }, 409))
@@ -150,7 +193,9 @@ it("requires reload after uncertain failure and resets acceptance", async () => 
   expect(
     screen.getByRole("checkbox", { name: /These are documentary/ })
   ).not.toBeChecked()
-  expect(screen.getByLabelText("Reason for finalization")).toHaveValue("")
+  expect(screen.getByLabelText("Reason for finalization")).toHaveValue(
+    "Reviewed selected financial rows"
+  )
 })
 it("refuses a preview belonging to another file", async () => {
   vi.spyOn(globalThis, "fetch").mockResolvedValue(

@@ -10,7 +10,8 @@ vi.mock("../hooks/use-financial-access", async (importOriginal) => ({
 }))
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
-import { afterEach, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, expect, it, vi } from "vitest"
+import { useFinancialDraftStore } from "../stores/financial-drafts"
 import { CandidateReviewForm } from "./CandidateReviewForm"
 import { PdfCandidatesPanel } from "./PdfCandidatesPanel"
 
@@ -22,6 +23,7 @@ vi.mock("./TransactionSourceHighlight", () => ({
   }) => <p>Source file: {sourceDocumentId}</p>,
 }))
 afterEach(() => vi.restoreAllMocks())
+beforeEach(() => useFinancialDraftStore.setState({ drafts: {} }))
 const original = {
   cells: [{ column_index: 0, proposed_meaning: "amount", text: "1234" }],
 }
@@ -163,6 +165,34 @@ async function fill() {
     fireEvent.change(screen.getByLabelText(label), { target: { value } })
 }
 
+it("retains unfinished reading fields and the explanation only for the same review version", async () => {
+  const options = { review: { ...base } }
+  mockServer(options)
+  const first = mountForm()
+  await fill()
+  fireEvent.change(
+    screen.getByLabelText("Counterparty as printed (optional)"),
+    {
+      target: { value: "Printed Company" },
+    }
+  )
+  first.unmount()
+  const reopened = mountForm()
+  expect(await screen.findByLabelText("Reviewed amount")).toHaveValue("2.00")
+  expect(screen.getByLabelText("Booking date")).toHaveValue("2026-02-01")
+  expect(screen.getByLabelText("Reason for decision")).toHaveValue(
+    "Checked original"
+  )
+  expect(
+    screen.getByLabelText("Counterparty as printed (optional)")
+  ).toHaveValue("Printed Company")
+  reopened.unmount()
+  options.review = { ...base, review_revision: "b".repeat(64) }
+  mountForm()
+  expect(await screen.findByLabelText("Reviewed amount")).toHaveValue("")
+  expect(screen.getByLabelText("Reason for decision")).toHaveValue("")
+})
+
 it("does not query until PDF readings are opened and shows a saved batch", async () => {
   const fetch = mockServer()
   const client = new QueryClient()
@@ -266,6 +296,10 @@ it("blocks stale or uncertain retries until an explicit reload", async () => {
   fireEvent.click(screen.getByRole("button", { name: "Reload review" }))
   await waitFor(() =>
     expect(screen.queryByRole("alert")).not.toBeInTheDocument()
+  )
+  expect(await screen.findByLabelText("Reviewed amount")).toHaveValue("2.00")
+  expect(screen.getByLabelText("Reason for decision")).toHaveValue(
+    "Checked original"
   )
 })
 

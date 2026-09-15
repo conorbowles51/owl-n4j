@@ -1,4 +1,5 @@
 import { useFinancialAccess } from "../hooks/use-financial-access"
+import { useFinancialDraft } from "../stores/financial-drafts"
 import { useRef, useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { z } from "zod"
@@ -42,9 +43,13 @@ function CandidateAccountFormForm({
   onCreated: (account: CandidateAccount) => void
   onBusy: (busy: boolean) => void
 }) {
-  const [opened, setOpened] = useState(false)
-  const [label, setLabel] = useState("")
-  const [reason, setReason] = useState("")
+  const [draft, setDraft] = useFinancialDraft(
+    caseId,
+    `candidate-account:${JSON.stringify([candidateId, fileId, reviewRevision, currency])}`,
+    { label: "", reason: "" }
+  )
+  const { label, reason } = draft
+  const [opened, setOpened] = useState(Boolean(label || reason))
   const [blocked, setBlocked] = useState(false)
   const lock = useRef(false)
   const client = useQueryClient()
@@ -121,7 +126,9 @@ function CandidateAccountFormForm({
                 className="block w-full rounded border bg-background p-2"
                 value={label}
                 maxLength={128}
-                onChange={(e) => setLabel(e.target.value)}
+                onChange={(e) =>
+                  setDraft((current) => ({ ...current, label: e.target.value }))
+                }
                 placeholder="Redacted card A"
               />
             </label>
@@ -132,7 +139,12 @@ function CandidateAccountFormForm({
                 className="block w-full rounded border bg-background p-2"
                 value={reason}
                 maxLength={4096}
-                onChange={(e) => setReason(e.target.value)}
+                onChange={(e) =>
+                  setDraft((current) => ({
+                    ...current,
+                    reason: e.target.value,
+                  }))
+                }
               />
             </label>
             <Button
@@ -171,5 +183,16 @@ export function CandidateAccountForm(
   props: Parameters<typeof CandidateAccountFormForm>[0]
 ) {
   const { canEdit } = useFinancialAccess()
-  return canEdit ? <CandidateAccountFormForm {...props} /> : null
+  return canEdit ? (
+    <CandidateAccountFormForm
+      key={JSON.stringify([
+        props.caseId,
+        props.candidateId,
+        props.fileId,
+        props.reviewRevision,
+        props.currency,
+      ])}
+      {...props}
+    />
+  ) : null
 }

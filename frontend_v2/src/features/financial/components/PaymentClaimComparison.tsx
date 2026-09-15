@@ -6,7 +6,11 @@ import { Button } from "@/components/ui/button"
 import { fetchAPI } from "@/lib/api-client"
 import { candidateUrl } from "../lib/candidate-contract"
 import { correctionMinor, correctionMoney } from "../lib/correction-contract"
-import { verifyClaimComparison } from "../lib/claim-comparison"
+import {
+  verifyClaimComparison,
+  claimVerdictLabel,
+  orderClaimCandidates,
+} from "../lib/claim-comparison"
 import { LedgerFilters } from "./LedgerFilters"
 import { LedgerSourceDialog } from "./LedgerSourceDialog"
 import { ClaimEvidencePicker } from "./ClaimEvidencePicker"
@@ -139,6 +143,9 @@ function ClaimForm({
     setTimeout(() => URL.revokeObjectURL(url), 1000)
   }
   const result = compare.data?.value
+  const displayCandidates = orderClaimCandidates(
+    result?.comparison.candidates ?? []
+  )
   return (
     <div className="space-y-4">
       <ClaimEvidencePicker
@@ -334,11 +341,17 @@ function ClaimForm({
             </p>
           )}
           <p>
-            {result.date_unavailable_ids.length} readings have unknown
-            transaction timing and were not matched.{" "}
-            {result.comparison.candidates.length} dated readings compared.
+            {
+              displayCandidates.filter(
+                (candidate) => candidate.verdict === "matches"
+              ).length
+            }{" "}
+            payments match the entered details out of {displayCandidates.length}{" "}
+            compared. Matching payments appear first.{" "}
+            {result.date_unavailable_ids.length > 0 &&
+              `${result.date_unavailable_ids.length} payments have no usable date and could not be compared.`}
           </p>
-          {result.comparison.candidates
+          {displayCandidates
             .slice(page * 20, page * 20 + 20)
             .map((candidate) => (
               <article
@@ -346,24 +359,29 @@ function ClaimForm({
                 className="rounded border p-3"
               >
                 <h4 className="font-semibold">
-                  {candidate.verdict.replaceAll("_", " ")} ·{" "}
+                  {claimVerdictLabel(candidate.verdict)} ·{" "}
                   {correctionMoney(
                     candidate.entry.amount.minor_units,
                     candidate.entry.amount.currency
-                  )}{" "}
-                  · {candidate.entry.proof_class.toUpperCase()}
+                  )}
                 </h4>
                 <p>
                   {candidate.entry.ordering_date} (
                   {candidate.entry.chronology_basis.replaceAll("_", " ")}) ·{" "}
                   {candidate.entry.description}
                 </p>
-                {Object.values(candidate.components).map((component) => (
-                  <p key={component.name}>
-                    {component.name.replaceAll("_", " ")}: {component.agreement}{" "}
-                    . {component.detail}
+                <details className="my-2">
+                  <summary>Why this result?</summary>
+                  <p>
+                    Reading class: {candidate.entry.proof_class.toUpperCase()}
                   </p>
-                ))}
+                  {Object.values(candidate.components).map((component) => (
+                    <p key={component.name}>
+                      {component.name.replaceAll("_", " ")}:{" "}
+                      {component.agreement}. {component.detail}
+                    </p>
+                  ))}
+                </details>
                 <Button
                   variant="outline"
                   onClick={() => setOpened(candidate.entry.transaction_id)}

@@ -83,6 +83,10 @@ The other-evidence amount editor now opens with the selected value, displays the
 
 Local browser acceptance restored all claim fields and the response, opened the original payment PDF, verified the downloaded comparison hash and read back exactly one saved review with its selected payment and quotation. Note 917c963e-f40c-4b0f-a79a-86e93b6b1ec5 is in the existing synthetic completion case. The focused decision, editor and surrounding financial-page checks passed. No real financial data was changed and no broad suite was repeated.
 
+Advanced manual reading edits now survive refresh for the same saved review version, including separate booking/value/transaction dates, account and explanation. Provisional-account drafts stay separate by currency and reading version. Finalization retains the reason but requires fresh confirmations after reloading, and changed previews require explicit review. The actual synthetic browser check restored every edited field and source image without recording any financial or review changes. All 34 affected advanced-review checks passed.
+
+Claim results now put matches first, followed by amount differences, incomplete comparisons and nonmatches. Supporting-payment choices show dates, amounts and descriptions. Field-by-field explanations remain available under Why this result. Eight focused claim checks and the real seven-payment result check passed. The production frontend build passed in 7.17 seconds, with the existing chunk-size warning. No broad suite repeated.
+
 ## Remaining acceptance
 
 Damaged scans can still require correction or a better source copy. The supplied-page checks and synthetic case journey do not establish independent extraction accuracy across all bank formats. The seven unique supplied PDFs have a retained prediction capture, but independent human reference reviews and an approved baseline have not been supplied. The application records those measurements as unavailable.

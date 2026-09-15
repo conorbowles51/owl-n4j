@@ -1,10 +1,33 @@
 import { expect, it } from "vitest"
 import fixture from "./claim-comparison.fixture.json"
-import { verifyClaimComparison } from "./claim-comparison"
+import {
+  verifyClaimComparison,
+  claimVerdictLabel,
+  orderClaimCandidates,
+} from "./claim-comparison"
 import { claimReviewNote } from "./claim-review-note"
 const captured = JSON.parse(fixture.scenario_json),
   request = captured.inputs,
   caseId = captured.case_id
+it("puts matching payments first without dropping excluded or incomplete comparisons", () => {
+  const candidates = [
+    "excluded",
+    "inconclusive",
+    "matches",
+    "differs_on_amount",
+    "matches",
+    "unexpected",
+  ].map((verdict, id) => ({ verdict, id }))
+  const ordered = orderClaimCandidates(candidates)
+  expect(ordered.map((candidate) => candidate.id)).toEqual([2, 4, 3, 1, 0, 5])
+  expect(candidates.map((candidate) => candidate.id)).toEqual([
+    0, 1, 2, 3, 4, 5,
+  ])
+  expect(claimVerdictLabel("excluded")).toBe("Does not match these details")
+  expect(claimVerdictLabel("differs_on_amount")).toBe(
+    "Similar details, different amount"
+  )
+})
 it("verifies backend-generated comparison bytes and refuses input or digest changes", async () => {
   expect(
     (await verifyClaimComparison(fixture, caseId, request)).value

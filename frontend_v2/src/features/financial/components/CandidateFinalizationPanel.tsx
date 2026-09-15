@@ -7,6 +7,7 @@ import {
   type StatementScope,
 } from "../lib/statement-scope-contract"
 import { useRef, useState } from "react"
+import { useFinancialDraft } from "../stores/financial-drafts"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { z } from "zod"
 import { Button } from "@/components/ui/button"
@@ -85,7 +86,12 @@ function Finalization({ caseId, fileId }: { caseId: string; fileId: string }) {
   const [blocked, setBlocked] = useState(false)
   const [documentary, setDocumentary] = useState(false)
   const [coverage, setCoverage] = useState(false)
-  const [reason, setReason] = useState("")
+  const [reasonDraft, setReasonDraft, clearReason] = useFinancialDraft(
+    caseId,
+    `candidate-finalization:${fileId}`,
+    { reason: "", reviewedRevision: null as string | null }
+  )
+  const reason = reasonDraft.reason
   const [source, setSource] = useState<string | null>(null)
   const [statementScopes, setStatementScopes] = useState<StatementScope[]>([])
   const [editingStatement, setEditingStatement] = useState(false)
@@ -132,7 +138,14 @@ function Finalization({ caseId, fileId }: { caseId: string; fileId: string }) {
     retry: false,
     mutationFn: async () => {
       const data = preview.data
-      if (!data || data.applied || !documentary || !coverage || !reason.trim())
+      if (
+        !data ||
+        data.applied ||
+        !documentary ||
+        !coverage ||
+        !reason.trim() ||
+        reasonDraft.reviewedRevision !== data.revision
+      )
         throw new Error(
           "Load a current preview and complete both confirmations and the reason."
         )
@@ -167,6 +180,7 @@ function Finalization({ caseId, fileId }: { caseId: string; fileId: string }) {
         )
       return result
     },
+    onSuccess: clearReason,
     onSettled: () => {
       setBlocked(true)
       for (const prefix of [
@@ -206,7 +220,6 @@ function Finalization({ caseId, fileId }: { caseId: string; fileId: string }) {
           setBlocked(false)
           setDocumentary(false)
           setCoverage(false)
-          setReason("")
           preview.mutate()
         }}
       >
@@ -334,14 +347,44 @@ function Finalization({ caseId, fileId }: { caseId: string; fileId: string }) {
                 className="block w-full rounded border bg-background p-2"
                 value={reason}
                 maxLength={4096}
-                onChange={(e) => setReason(e.target.value)}
+                onChange={(e) =>
+                  setReasonDraft({
+                    reason: e.target.value,
+                    reviewedRevision: ready.revision,
+                  })
+                }
               />
             </label>
+            <p className="text-muted-foreground">
+              Your explanation is kept in this browser tab. After reopening,
+              load the preview and check both confirmations again.
+            </p>
+            {reason.trim() &&
+              reasonDraft.reviewedRevision !== ready.revision && (
+                <div role="alert" className="space-y-2 rounded border p-3">
+                  <p>
+                    The reviewed rows or statement controls have changed. Check
+                    this preview before using your earlier explanation.
+                  </p>
+                  <Button
+                    variant="outline"
+                    onClick={() =>
+                      setReasonDraft((current) => ({
+                        ...current,
+                        reviewedRevision: ready.revision,
+                      }))
+                    }
+                  >
+                    Use explanation for this preview
+                  </Button>
+                </div>
+              )}
             <Button
               disabled={
                 !documentary ||
                 !coverage ||
                 !reason.trim() ||
+                reasonDraft.reviewedRevision !== ready.revision ||
                 Boolean(ready.unbound_statement_dates)
               }
               onClick={() => {
