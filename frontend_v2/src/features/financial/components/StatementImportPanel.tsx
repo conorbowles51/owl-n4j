@@ -883,6 +883,7 @@ function EditableStatement({
               <TransactionSourceHighlight
                 sourceDocumentId={fileId}
                 locatorPayload={focus.locator}
+                wholePage={!focus.rowId || focus.rowId.startsWith("page:")}
               />
             </aside>
           )}

@@ -181,6 +181,8 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
         if selected.get('layout_id') == 'andrews-share-statement':
             metadata['balance_convention'] = 'asset_balance'
             issues.append('Reviewing ' + selected['account_label'] + ', share ' + selected['share_reference'] + '. Other account sections in this PDF are reviewed separately.')
+            if selected.get('uses_printed_page_order'):
+                issues.append('These statement pages are out of order in the PDF. Payments follow the printed page numbers. The source viewer keeps the original PDF page numbers.')
         if catalog['unclassified_sources']:
             issues.append('Some pages could not be assigned to a printed statement period. They remain available in the original PDF.')
     all_page_numbers = sorted({p.page_number for p in pages} | {loc['page_number'] for loc in (text.source_locations or []) if type(loc.get('page_number')) is int and loc['page_number'] > 0})
@@ -263,7 +265,8 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
                 can_import_balances=balance_only,
                 page_numbers=all_page_numbers,
                 unassigned_page_numbers=unassigned_pages if selected else [],
-                statement_page_numbers=sorted({source['page_number'] for source in sources}),
+                statement_page_numbers=(selected['page_numbers'] if selected and selected.get('uses_printed_page_order')
+                                        else sorted({source['page_number'] for source in sources})),
                 statement_choices=choices, statement_id=statement_id,
                 statement_row_addresses=row_addresses,
                 statement_source_regions=source_regions,

@@ -1,8 +1,9 @@
 """Read Andrews savings/checking sections without mixing their account shares.
 
 Recognition uses the measured account/period heading and each printed share
-heading. A continuation needs an adjacent PDF page with the same account and
-period, a preceding continuation notice and no conflicting printed page number.
+heading. Continuations use adjacent source pages or a complete block ordered by
+unique printed page numbers. They require the same account and period, a prior
+continuation notice and no conflicting page number.
 Original cells are retained, including joined or damaged OCR money fields.
 """
 import re
@@ -13,7 +14,8 @@ from services.financial.statement_import_proposal import exact_amount
 
 _LAYOUT = 'andrews-share-statement'
 _DATE = r'\d{2}/\d{2}'
-_MONEY = r'[+-]?(?:\d{1,3}(?:,\d{3})+|\d+)\.\d{2}'
+_SPACED_MONEY = r'[+-]?\s*(?:\d{1,3}(?:,\d{3})+|\d+)\s*\.\s*\d{2}'
+_FULL_DATE = r'\d\s*\d\s*/\s*\d\s*\d\s*/\s*(?:2\s*0\s*)?\d\s*\d'
 _TYPES = {'BASE SHARE SAVINGS': 'savings', 'FREE CHECKING': 'checking'}
 _SHARE = re.compile(r'^(\d{2}/\d{2}) ID (\d{4}) (BASE SHARE SAVINGS|FREE CHECKING) Previous Balance(?: |$)')
 
@@ -32,7 +34,7 @@ def _box(cell):
 
 
 def _full_date(value):
-    m = re.fullmatch(r'(\d{2})/(\d{2})/(20\d{2}|\d{2})', value)
+    m = re.fullmatch(r'(\d{2})/(\d{2})/(20\d{2}|\d{2})', re.sub(r'\s+', '', value))
     if not m:
         return None
     try:
@@ -41,28 +43,28 @@ def _full_date(value):
         return None
 
 
-def andrews_page(source):
+def andrews_page(source, *, allow_unbranded=False):
     """Identify the heading, never a number from the body or an application."""
     rows = source['rows']
     cells = [c for r in rows for c in r['cells']]
-    marks = [c for c in cells if c['expected_text'].strip() == 'Andrews' and _box(c)]
-    titles = [c for c in cells if re.fullmatch(r'Account\s*-?\s*Statement', c['expected_text'].strip()) and _box(c)]
-    if len(marks) != 1 or len(titles) != 1:
+    marks = [c for c in cells if re.fullmatch(r'\.?Andrews', c['expected_text'].strip()) and _box(c)]
+    titles = [c for c in cells if re.fullmatch(r'Account\s*[-·]?\s*Statement', c['expected_text'].strip()) and _box(c)]
+    if len(titles) != 1 or len(marks) > 1 or (not marks and not allow_unbranded):
         return None
-    size = marks[0]['locator'].get('page_size', [])
+    size = titles[0]['locator'].get('page_size', [])
     if not isinstance(size, list) or len(size) != 2:
         return None
     width, height = size
     if (type(width) is not int or type(height) is not int or
-            not _box(marks[0])[0] < width * .4 < _box(titles[0])[0] or
-            max(_box(marks[0])[3], _box(titles[0])[3]) > height * .15):
+            not width * .4 < _box(titles[0])[0] or _box(titles[0])[3] > height * .15 or
+            any(_box(c)[0] >= width * .4 or _box(c)[3] > height * .15 for c in marks)):
         return None
     top = [r for r in rows if r['cells'] and all(_box(c) and _box(c)[3] < height * .2 for c in r['cells'])]
     accounts = [(r, c) for r in top for c in r['cells'] if re.fullmatch(r'\d{9}', c['expected_text'].strip())
                 and _box(c)[0] > width * .4]
     cycles = []
     for row in top:
-        m = re.fullmatch(r'(\d{2}/\d{2}/(?:20\d{2}|\d{2}))\s+(\d{2}/\d{2}/(?:20\d{2}|\d{2}))', _text(row))
+        m = re.fullmatch(r'(' + _FULL_DATE + r')\s+(' + _FULL_DATE + r')', _text(row))
         if m:
             a, b = _full_date(m[1]), _full_date(m[2])
             if a and b and 0 <= (b-a).days <= 62:
@@ -79,6 +81,7 @@ def andrews_page(source):
         page_number = int(_text(following))
     body = following['row_index'] + 1 if page_number is not None else cycle_row['row_index'] + 1
     return dict(account=account['expected_text'].strip(), start=start.isoformat(), end=end.isoformat(),
+                branded=bool(marks),
                 printed_page=page_number, body_start=body, width=width,
                 heading_rows=[r['row_index'] for r in rows if r['row_index'] < body])
 
@@ -100,25 +103,70 @@ def _holder(rows):
     return value if len(value) <= 128 else ''
 
 
+def _reading_order(sources):
+    """Order a complete, uniquely numbered block by its printed page numbers.
+
+    The physical pages must be contiguous and print the same account/period.
+    Missing or repeated numbers keep their original order. No number is inferred
+    for an unreadable heading. Original page addresses are never changed.
+    """
+    ordered = sorted(sources, key=lambda s: (s['page_number'], s['table_index']))
+    block = []
+
+    def emit():
+        numbers = [page['printed_page'] for _, page in block]
+        if (len(numbers) > 1 and sorted(numbers) == list(range(1, len(numbers)+1))
+                and next(page for _, page in block if page['printed_page'] == 1)['branded']
+                and numbers != sorted(numbers)):
+            group = (block[0][0]['page_number'], block[0][0]['table_index'])
+            return [(source, group) for source, _ in sorted(block, key=lambda item: item[1]['printed_page'])]
+        return [(source, None) for source, _ in block]
+
+    for source in ordered:
+        page = andrews_page(source, allow_unbranded=True)
+        if page is None or page['printed_page'] is None:
+            yield from emit()
+            block = []
+            yield source, None
+            continue
+        if block:
+            previous_source, previous = block[-1]
+            if (source['page_number'] != previous_source['page_number'] + 1 or
+                    source['table_index'] != previous_source['table_index'] or
+                    any(page[k] != previous[k] for k in ('account', 'start', 'end'))):
+                yield from emit()
+                block = []
+        block.append((source, page))
+    yield from emit()
+
+
 def andrews_catalog(sources):
     groups = {}
     handled = set()
     incomplete = set()
     previous = None
     active = None
-    for source in sorted(sources, key=lambda s: (s['page_number'], s['table_index'])):
-        page = andrews_page(source)
+    for source, order_group in _reading_order(sources):
+        page = andrews_page(source, allow_unbranded=True)
         key = (source['page_number'], source['table_index'])
         if page is None:
             active = None
             previous = None
             continue
-        continues = (previous and active and key == (previous['pdf_page'] + 1, previous['table_index'])
+        follows = (previous and (key == (previous['pdf_page'] + 1, previous['table_index']) or
+                   order_group is not None and order_group == previous['order_group']))
+        continues = (follows and active
                      and previous['continues'] and page['account'] == previous['account']
                      and (page['start'], page['end']) == (previous['start'], previous['end'])
                      and (page['printed_page'] is None or previous['printed_page'] is None
                           or page['printed_page'] == previous['printed_page'] + 1)
                      and page['printed_page'] != 1)
+        # A missing logo can be tolerated only within an already identified
+        # statement, never as the start of an otherwise anonymous document.
+        if not page['branded'] and not continues:
+            active = None
+            previous = None
+            continue
         if not continues:
             active = None
         addressed = set()
@@ -146,6 +194,8 @@ def andrews_catalog(sources):
                 else:
                     unknown = True
             if active is not None:
+                if order_group is not None:
+                    active['uses_printed_page_order'] = True
                 scope = next((s for s in active['sources'] if (s['page_number'], s['table_index']) == key), None)
                 if scope is None:
                     scope = dict(page_number=key[0], table_index=key[1], source_revision=source['source_revision'],
@@ -162,7 +212,7 @@ def andrews_catalog(sources):
             handled.add(key)
         if unknown:
             incomplete.add(key)
-        previous = dict(**page, pdf_page=key[0], table_index=key[1],
+        previous = dict(**page, pdf_page=key[0], table_index=key[1], order_group=order_group,
                         continues=any('Continued on following page' in _text(r) for r in source['rows']))
     return list(groups.values()), handled, incomplete
 
@@ -214,9 +264,9 @@ def source_regions_overlap(current, previous):
 
 
 def _amount(text, currency):
-    if not re.fullmatch(_MONEY, text):
+    if not re.fullmatch(_SPACED_MONEY, text):
         raise ValueError('Check the amount in the PDF, including its sign and decimal point.')
-    return int(exact_amount(text, currency))
+    return int(exact_amount(re.sub(r'\s+', '', text), currency))
 
 
 def _money_cells(row, width):
@@ -228,8 +278,9 @@ def propose_andrews_statement(sources, currency, statement):
     previous_balance = None
     previous_payment = None
     scopes = {(s['page_number'], s['table_index']):s for s in statement['sources']}
-    for source in sources:
-        page = andrews_page(source)
+    order = {key: index for index, key in enumerate(scopes)}
+    for source in sorted(sources, key=lambda s: order[(s['page_number'], s['table_index'])]):
+        page = andrews_page(source, allow_unbranded=True)
         scope = scopes[(source['page_number'], source['table_index'])]
         for row in source['rows']:
             index = row['row_index']
@@ -290,10 +341,10 @@ def propose_andrews_statement(sources, currency, statement):
                 if parsed and parsed[2]:
                     fields['additional_printed_date'] = parsed[2]
                     item['issues'].append('This line prints a second date without a heading. Check which date belongs to the transaction.')
-                pair = re.fullmatch(r'(' + _MONEY + r')\s+(.+)', money)
+                pair = re.fullmatch(r'(' + _SPACED_MONEY + r')\s+(.+)', money)
                 amount_text, balance_text = (pair[1], pair[2]) if pair else ('', '')
                 if pair is None:
-                    trailing = re.fullmatch(r'(.+)\s+(' + _MONEY + r')', money)
+                    trailing = re.fullmatch(r'(.+)\s+(' + _SPACED_MONEY + r')', money)
                     if trailing:
                         amount_text, balance_text = trailing[1], trailing[2]
                 if len(money_cells) == 2:

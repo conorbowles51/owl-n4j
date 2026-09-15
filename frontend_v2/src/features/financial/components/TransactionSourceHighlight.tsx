@@ -37,6 +37,7 @@ interface TransactionSourceHighlightProps {
   locatorPayload: unknown
   sourceDocumentId?: string | null
   valueLabel?: string
+  wholePage?: boolean
 }
 
 /** The one page number a `page_only` or `page_rectangle` locator asks for; null otherwise. */
@@ -56,6 +57,7 @@ export function TransactionSourceHighlight({
   locatorPayload,
   sourceDocumentId,
   valueLabel,
+  wholePage,
 }: TransactionSourceHighlightProps) {
   const page = pageNeedingImage(locatorPayload)
   const imageUrl =
@@ -92,6 +94,7 @@ export function TransactionSourceHighlight({
       locatorPayload={locatorPayload}
       objectUrl={objectUrl}
       valueLabel={valueLabel}
+      wholePage={wholePage}
     />
   )
 }
@@ -100,10 +103,12 @@ function ZoomableSource({
   locatorPayload,
   objectUrl,
   valueLabel,
+  wholePage,
 }: {
   locatorPayload: unknown
   objectUrl: string | null
   valueLabel?: string
+  wholePage?: boolean
 }) {
   const [zoom, setZoom] = useState(100)
   const viewport = useRef<HTMLDivElement>(null)
@@ -179,6 +184,7 @@ function ZoomableSource({
             payload={locatorPayload}
             pageImageUrl={objectUrl}
             valueLabel={valueLabel}
+            wholePage={wholePage}
           />
         </div>
       </div>

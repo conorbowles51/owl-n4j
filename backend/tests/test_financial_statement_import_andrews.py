@@ -123,7 +123,7 @@ class AndrewsReaderTests(unittest.TestCase):
         for date_text, money, expected in (
             ('O6/03', '-20.00 80.00', {'amount_minor':'2000', 'balance':'8000'}),
             ('06/03', '-2O.00 80.00', {'date':'2020-06-03', 'balance':'8000'}),
-            ('06/03', '-20.00 80. 00', {'date':'2020-06-03', 'amount_minor':'2000'}),
+            ('06/03', '-20.00 8O.00', {'date':'2020-06-03', 'amount_minor':'2000'}),
             ('07/03', '-20.00 80.00', {'amount_minor':'2000', 'balance':'8000'})):
             a = source([[(15, '06/01 ID 0040 FREE CHECKING Previous Balance'), (350, '100.00')],
                         [(15, date_text), (75, 'Withdrawal Debit Card'), (310, money)]])
@@ -148,3 +148,99 @@ class AndrewsReaderTests(unittest.TestCase):
         self.assertEqual(r['fields']['direction'], 'credit')
         self.assertEqual(r['fields']['balance_difference_minor'], '100')
         self.assertTrue(r['issues'])
+
+    def test_missing_logo_only_continues_an_identified_adjacent_statement(self):
+        first = source([
+            [(15, '06/01 ID 0040 FREE CHECKING Previous Balance'), (350, '100.00')],
+            [(15, '06/03'), (75, 'Withdrawal Debit Card'), (310, '-20.00 80.00')],
+            [(15, '--- Continued on following page ---')]])
+        second = source([
+            [(75, 'EXAMPLE SHOP')],
+            [(15, '06/04'), (75, 'Withdrawal Debit Card'), (310, '-10.00 70.00')],
+            [(15, '06/30'), (75, 'Ending Balance'), (350, '70.00')]],
+            page=2, printed_page=2, names=False)
+        second['rows'] = [r for r in second['rows'] if r['row_index'] != 1]
+        self.assertIsNone(andrews_page(second))
+        statement, proposal = selected([first, second])
+        self.assertEqual(statement['page_numbers'], [1, 2])
+        rows = [r for r in proposal['rows'] if not r['excluded']]
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[1]['fields']['balance_difference_minor'], '0')
+        self.assertTrue(rows[0]['fields']['description'].endswith('EXAMPLE SHOP'))
+        self.assertFalse(statement_catalog([second])['statements'])
+        for field, value in (('page_number', 3), ('account', '987654321'),
+                             ('period', '07/01/20 07/31/20'), ('printed_page', '1')):
+            wrong = deepcopy(second)
+            if field == 'page_number':
+                wrong[field] = value
+            else:
+                index = {'account':2, 'period':3, 'printed_page':4}[field]
+                next(r for r in wrong['rows'] if r['row_index'] == index)['cells'][0]['expected_text'] = value
+            statement, _ = selected([first, wrong])
+            self.assertEqual(statement['page_numbers'], [1])
+        first['rows'] = first['rows'][:-1]
+        statement, _ = selected([first, second])
+        self.assertEqual(statement['page_numbers'], [1])
+
+    def test_spacing_in_printed_period_and_money_keeps_all_original_digits(self):
+        original = source([
+            [(15, '06/01 ID 0040 FREE CHECKING Previous Balance'), (350, '100 . 00')],
+            [(15, '06/03'), (75, 'Withdrawal Debit Card'), (310, '- 20 . 00 80. 00')],
+            [(15, '06/30'), (75, 'Ending Balance'), (350, '80 .00')]],
+            period='0 6/01 /2 0 06/3 0/20')
+        original['rows'][0]['cells'][0]['expected_text'] = 'Account ·Statement'
+        original['rows'][1]['cells'][0]['expected_text'] = '.Andrews'
+        before = deepcopy(original)
+        statement, proposal = selected([original])
+        self.assertEqual((statement['period_start'], statement['period_end']), ('2020-06-01', '2020-06-30'))
+        row = next(r for r in proposal['rows'] if not r['excluded'])
+        self.assertEqual((row['fields']['amount_minor'], row['fields']['balance']), ('2000', '8000'))
+        self.assertEqual(row['fields']['balance_difference_minor'], '0')
+        self.assertFalse(row['issues'])
+        self.assertEqual(original, before)
+        for value in ('-2 0.00', '-2O.00', '-20.0 0', '-20,00', '--20.00'):
+            damaged = deepcopy(original)
+            damaged['rows'][10]['cells'][-1]['expected_text'] = value + ' 80.00'
+            _, p = selected([damaged])
+            item = next(r for r in p['rows'] if not r['excluded'])
+            self.assertNotIn('amount_minor', item['fields'])
+            self.assertTrue(item['issues'])
+
+    def test_out_of_order_pages_use_unique_printed_numbers_without_changing_pdf_addresses(self):
+        first = source([
+            [(15, '06/01 ID 0040 FREE CHECKING Previous Balance'), (350, '100.00')],
+            [(15, '06/03'), (75, 'Withdrawal Debit Card'), (310, '-20.00 80.00')],
+            [(15, '--- Continued on following page ---')]], page=3, printed_page=1)
+        second = source([
+            [(75, 'EXAMPLE SHOP')],
+            [(15, '06/04'), (75, 'Withdrawal Debit Card'), (310, '-10.00 70.00')],
+            [(15, '--- Continued on following page ---')]], page=2, printed_page=2, names=False)
+        third = source([
+            [(15, '06/05'), (75, 'Deposit ACH Example'), (310, '30.00 100.00')],
+            [(15, '06/30'), (75, 'Ending Balance'), (350, '100.00')]], page=1, printed_page=3, names=False)
+        original = [third, second, first]; before = deepcopy(original)
+        statement, proposal = selected(original)
+        self.assertTrue(statement['uses_printed_page_order'])
+        self.assertEqual(statement['page_numbers'], [3, 2, 1])
+        rows = [r for r in proposal['rows'] if not r['excluded']]
+        self.assertEqual([r['fields']['date'] for r in rows], ['2020-06-03', '2020-06-04', '2020-06-05'])
+        self.assertEqual([r['page_number'] for r in rows], [3, 2, 1])
+        self.assertEqual([r['fields']['balance_difference_minor'] for r in rows], ['0', '0', '0'])
+        self.assertEqual(rows[0]['continuation_sources'][0]['page_number'], 2)
+        self.assertEqual(original, before)
+        for value in ('2', '4'):
+            damaged = deepcopy(original)
+            damaged[0]['rows'][4]['cells'][0]['expected_text'] = value
+            st, p = selected(damaged)
+            self.assertNotIn('uses_printed_page_order', st)
+            self.assertEqual(st['page_numbers'], [3])
+        # A readable 1,2 prefix may be ordered, but neither an unreadable page
+        # outside it nor a page across a physical gap is pulled into that prefix.
+        damaged = deepcopy(original)
+        damaged[0]['rows'][4]['cells'][0]['expected_text'] = 'unreadable'
+        st, p = selected(damaged)
+        self.assertEqual(st['page_numbers'], [3, 2])
+        self.assertTrue(p['issues'])
+        gap = deepcopy(original); gap[0]['page_number'] = 8
+        st, _ = selected(gap)
+        self.assertEqual(st['page_numbers'], [3, 2])

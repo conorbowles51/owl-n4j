@@ -45,6 +45,8 @@ interface SourceHighlightProps {
   pageImageUrl?: string | null
   /** What the highlighted value is, for the highlight's accessible name. */
   valueLabel?: string
+  /** The user opened a whole page without selecting a transaction value. */
+  wholePage?: boolean
 }
 
 function percent(fraction: number): string {
@@ -52,7 +54,13 @@ function percent(fraction: number): string {
 }
 
 /** One sentence, styled alike wherever the page itself cannot be shown. */
-function Sentence({ children, testId }: { children: ReactNode; testId: string }) {
+function Sentence({
+  children,
+  testId,
+}: {
+  children: ReactNode
+  testId: string
+}) {
   return (
     <p data-testid={testId} className="text-xs text-muted-foreground">
       {children}
@@ -60,7 +68,12 @@ function Sentence({ children, testId }: { children: ReactNode; testId: string })
   )
 }
 
-export function SourceHighlight({ payload, pageImageUrl, valueLabel }: SourceHighlightProps) {
+export function SourceHighlight({
+  payload,
+  pageImageUrl,
+  valueLabel,
+  wholePage,
+}: SourceHighlightProps) {
   const [failedImage, setFailedImage] = useState<string | null>(null)
   const reading = readLocator(payload)
 
@@ -76,11 +89,17 @@ export function SourceHighlight({ payload, pageImageUrl, valueLabel }: SourceHig
 
   const locator = reading.locator
 
-  if (pageImageUrl && failedImage === pageImageUrl &&
-      (locator.kind === "page_only" || locator.kind === "page_rectangle")) {
-    return <p role="alert" className="text-xs text-destructive">
-      Source page {locator.page} could not be displayed. No source highlight is shown. Close and reopen the source to retry.
-    </p>
+  if (
+    pageImageUrl &&
+    failedImage === pageImageUrl &&
+    (locator.kind === "page_only" || locator.kind === "page_rectangle")
+  ) {
+    return (
+      <p role="alert" className="text-xs text-destructive">
+        Source page {locator.page} could not be displayed. No source highlight
+        is shown. Close and reopen the source to retry.
+      </p>
+    )
   }
 
   if (locator.kind === "not_positional") {
@@ -105,8 +124,17 @@ export function SourceHighlight({ payload, pageImageUrl, valueLabel }: SourceHig
     return (
       <div className="space-y-1">
         <Sentence testId="locator-page-only">
-          Read from page {locator.page}. The position on the page was not captured for
-          this row.{pageImageUrl ? " The page is shown without a highlight." : " No rendering of the page is available."}
+          {wholePage ? (
+            `Original PDF page ${locator.page}.`
+          ) : (
+            <>
+              Read from page {locator.page}. The position on the page was not
+              captured for this row.
+              {pageImageUrl
+                ? " The page is shown without a highlight."
+                : " No rendering of the page is available."}
+            </>
+          )}
         </Sentence>
         {pageImageUrl ? (
           <img
@@ -124,8 +152,8 @@ export function SourceHighlight({ payload, pageImageUrl, valueLabel }: SourceHig
   if (!pageImageUrl) {
     return (
       <Sentence testId="locator-no-page-image">
-        The exact place on page {locator.page} is recorded, but no rendering of the
-        page is available to draw it on.
+        The exact place on page {locator.page} is recorded, but no rendering of
+        the page is available to draw it on.
       </Sentence>
     )
   }

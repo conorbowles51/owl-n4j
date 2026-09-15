@@ -575,3 +575,33 @@ class StatementImportTests(TransactionPersistenceTestCase):
             self.assertEqual(proposal['current_import']['source_document_id'], existing['source_document_id'])
             with self.assertRaisesRegex(PdfMappingError, 'already has imported transactions'):
                 self.confirm(request)
+
+    def test_andrews_printed_order_is_saved_with_original_pdf_page_locations(self):
+        from tests.test_financial_statement_import_andrews import source
+        grids = [source([
+            [(15, '06/04'), (75, 'Deposit ACH Example'), (310, '20.00 100.00')],
+            [(15, '06/30'), (75, 'Ending Balance'), (350, '100.00')]], page=1, printed_page=2, names=False),
+            source([
+            [(15, '06/01 ID 0040 FREE CHECKING Previous Balance'), (350, '100.00')],
+            [(15, '06/03'), (75, 'Withdrawal Debit Card'), (310, '-20.00 80.00')],
+            [(15, '--- Continued on following page ---')]], page=2, printed_page=1)]
+        for grid in grids:
+            geometry = self.db.get(EvidenceTableGeometry, (self.file.id, grid['page_number']))
+            if geometry is None:
+                geometry = EvidenceTableGeometry(evidence_file_id=self.file.id, page_number=grid['page_number'],
+                    engine_job_id=self.db.get(EvidenceDocumentText, self.file.id).engine_job_id)
+                self.db.add(geometry)
+            geometry.payload = [dict(table_source='text_alignment', geometry_source='cell_rectangles',
+                table=dict(page=grid['page_number'], table=dict(rectangle(0, x=0, width=600, height=800), page=grid['page_number']), unlocated_values=0,
+                    values=[dict(row=r['row_index'], column=c['column_index'], text=c['expected_text'], locator=c['locator'])
+                            for r in grid['rows'] for c in r['cells']]))]
+        self.db.commit()
+        proposal, request = self.andrews_request('0040')
+        self.assertEqual(proposal['statement_page_numbers'], [2, 1])
+        receipt = self.confirm(request)
+        self.db.expire_all()
+        saved = list(self.db.scalars(select(FinancialTransaction).where(
+            FinancialTransaction.source_document_id == UUID(receipt['source_document_id'])).order_by(FinancialTransaction.row_index)))
+        self.assertEqual([str(row.transaction_date) for row in saved], ['2020-06-03', '2020-06-04'])
+        self.assertEqual([row.running_balance_minor for row in saved], [8000, 10000])
+        self.assertEqual([row.provenance['statement_import_original']['page_number'] for row in saved], [2, 1])
