@@ -88,6 +88,10 @@ export function DocumentViewer({
 }: DocumentViewerProps) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [openFileError, setOpenFileError] = useState<string | null>(null)
+  const [openingFile, setOpeningFile] = useState(false)
+  const openFileAttempt = useRef(0)
+  const openFileBusy = useRef(false)
   const [currentPage, setCurrentPage] = useState(initialPage)
   const [pageTotal, setPageTotal] = useState<{ fileId: string; count: number } | null>(null)
   const onPageCount = useCallback((fileId: string, count: number) => setPageTotal({ fileId, count }), [])
@@ -109,6 +113,10 @@ export function DocumentViewer({
 
   // Reset and fetch when dialog opens
   useEffect(() => {
+    ++openFileAttempt.current
+    openFileBusy.current = false
+    setOpeningFile(false)
+    setOpenFileError(null)
     if (!open) return
     setLoading(true)
     setError(null)
@@ -156,8 +164,22 @@ export function DocumentViewer({
   const pdfUrlWithPage = displayUrl && isPdf ? `${displayUrl}#page=${currentPage}` : null
 
   const handleOpenInNewTab = () => {
-    if (!documentUrl) return
-    void openProtectedFile(documentUrl).catch(() => setError("Failed to open document"))
+    if (!documentUrl || openFileBusy.current) return
+    const attempt = ++openFileAttempt.current
+    openFileBusy.current = true
+    setOpeningFile(true)
+    setOpenFileError(null)
+    void openProtectedFile(documentUrl)
+      .catch(() => {
+        if (attempt === openFileAttempt.current)
+          setOpenFileError("The original file could not be opened in a new tab. You can keep using this viewer or try again.")
+      })
+      .finally(() => {
+        if (attempt === openFileAttempt.current) {
+          openFileBusy.current = false
+          setOpeningFile(false)
+        }
+      })
   }
 
   const renderContent = () => {
@@ -315,7 +337,7 @@ export function DocumentViewer({
                 onNavigate={() => onOpenChange(false)}
               />
             )}
-            <Button variant="ghost" size="icon-sm" onClick={handleOpenInNewTab} title="Open in new tab">
+            <Button variant="ghost" size="icon-sm" onClick={handleOpenInNewTab} disabled={openingFile} title="Open in new tab">
               <ExternalLink className="size-4" />
             </Button>
             <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)} aria-label="Close document">
@@ -325,6 +347,14 @@ export function DocumentViewer({
           </div>
         </DialogHeader>
 
+        {openFileError && (
+          <div className="flex flex-wrap items-center gap-2 border-b px-4 py-2 text-sm">
+            <p role="alert">{openFileError}</p>
+            <Button variant="outline" size="sm" onClick={handleOpenInNewTab} disabled={openingFile}>
+              Try opening again
+            </Button>
+          </div>
+        )}
         <div className="flex-1 relative overflow-hidden">
           {loading && !usesPageImages && (
             <div className="absolute inset-0 z-10 flex items-center justify-center bg-background">

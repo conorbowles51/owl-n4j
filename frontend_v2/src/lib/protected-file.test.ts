@@ -44,11 +44,13 @@ describe("fetchProtectedBlob", () => {
   })
 
   it("throws when the protected file request fails", async () => {
-    vi.mocked(globalThis.fetch).mockResolvedValue(new Response(null, { status: 404 }))
-
-    await expect(fetchProtectedBlob("/api/evidence/missing/file")).rejects.toThrow(
-      "File request failed: 404"
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      new Response(null, { status: 404 })
     )
+
+    await expect(
+      fetchProtectedBlob("/api/evidence/missing/file")
+    ).rejects.toThrow("File request failed: 404")
   })
 })
 
@@ -110,5 +112,85 @@ describe("useProtectedObjectUrl", () => {
     await waitFor(() =>
       expect(result.current.objectUrl).toBe("blob:protected-second")
     )
+  })
+})
+
+describe("protected source response ownership", () => {
+  beforeEach(() => {
+    localStorage.setItem("authToken", "first-user")
+    vi.stubGlobal("fetch", vi.fn())
+    vi.spyOn(URL, "createObjectURL")
+      .mockReturnValueOnce("blob:new-source")
+      .mockReturnValueOnce("blob:stale-source")
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {})
+  })
+  afterEach(() => {
+    localStorage.removeItem("authToken")
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+  })
+
+  it.each(["cancelled", "signed out"])(
+    "does not deliver file bytes when a read finishes after it was %s",
+    async (change) => {
+      let finish!: (blob: Blob) => void
+      const body = new Promise<Blob>((resolve) => {
+        finish = resolve
+      })
+      vi.mocked(fetch).mockResolvedValue({
+        ok: true,
+        blob: () => body,
+      } as Response)
+      const controller = new AbortController()
+      const pending = fetchProtectedBlob("/source", controller.signal)
+      if (change === "cancelled") controller.abort()
+      else localStorage.removeItem("authToken")
+      finish(new Blob(["old private bytes"]))
+      await expect(pending).rejects.toThrow()
+    }
+  )
+
+  it("ignores an old page response after closing and reopening the same source", async () => {
+    let finish!: (blob: Blob) => void
+    const body = new Promise<Blob>((resolve) => {
+      finish = resolve
+    })
+    vi.mocked(fetch)
+      .mockResolvedValueOnce({ ok: true, blob: () => body } as Response)
+      .mockResolvedValueOnce(new Response("current bytes"))
+    const { result, rerender } = renderHook(
+      ({ enabled }) => useProtectedObjectUrl("/source", enabled),
+      { initialProps: { enabled: true } }
+    )
+    rerender({ enabled: false })
+    rerender({ enabled: true })
+    await waitFor(() =>
+      expect(result.current.objectUrl).toBe("blob:new-source")
+    )
+    await act(async () => {
+      finish(new Blob(["old bytes"]))
+      await body
+    })
+    expect(result.current.objectUrl).toBe("blob:new-source")
+    expect(URL.createObjectURL).toHaveBeenCalledTimes(1)
+  })
+
+  it("reloads the same source for a new signed-in session without exposing the earlier URL", async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response("first bytes"))
+    const { result, rerender } = renderHook(() =>
+      useProtectedObjectUrl("/source")
+    )
+    await waitFor(() =>
+      expect(result.current.objectUrl).toBe("blob:new-source")
+    )
+    vi.mocked(fetch).mockResolvedValue(new Response("second bytes"))
+    localStorage.setItem("authToken", "second-user")
+    rerender()
+    expect(result.current.objectUrl).toBeNull()
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2))
+    expect(vi.mocked(fetch).mock.calls[1][1]?.headers).toEqual({
+      Authorization: "Bearer second-user",
+    })
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:new-source")
   })
 })

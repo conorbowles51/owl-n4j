@@ -144,3 +144,7 @@ The transaction detail dialog now uses the registered PDF page renderer and actu
 ### Missing amounts remain reviewable
 
 Explicit financial records remain visible when no amount was saved. Individual and file-based corrections compare that exact absence before changing it, and later corrections preserve the originally missing value. An older record in a mixed case no longer overrides another record's explicit financial classification. Fifty focused backend checks and thirty-three frontend checks passed, plus scoped lint, TypeScript and production build. Real browser recovery and edits, a stale-request refusal and exact two-page report read-back passed. Nine bank payments remain unchanged.
+
+### Source-preview and separate-file recovery
+
+Delayed responses can no longer replace a reopened original-source preview or expose its object URL after the signed-in session changes. File reads recheck cancellation/session before returning bytes. A failed separate-file open leaves the current PDF visible and provides a retry, with repeat pending requests locked. Eighteen distinct focused checks passed, plus scoped lint, TypeScript and production build. A local browser failure/retry downloaded the exact original SHA-256, retained the visible page and returned to transaction details without changing any payment.

@@ -511,6 +511,8 @@ The total labelled **Payments matching your filters** covers all matching table 
 5. Select **Close** at the top right to return to the transaction details. Use **Correct a value** if a recorded field is wrong, or **Add investigation note** to record a question or observation.
 6. Close the detail panel to return to the same payment list and search.
 
+The arrow at the top right of the PDF viewer opens the original file in a separate browser tab. If that request fails, the current page stays visible. Select **Try opening again** to retry, or continue using the viewer.
+
 ### Record an investigation note
 
 1. Select **Add note** beside a transaction, or **Add investigation note** in its details.

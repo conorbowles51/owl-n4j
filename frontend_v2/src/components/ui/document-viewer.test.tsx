@@ -1,6 +1,7 @@
-import { fireEvent, render, screen } from "@testing-library/react"
+import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { expect, it, vi } from "vitest"
 import { DocumentViewer } from "./document-viewer"
+import { openProtectedFile } from "@/lib/protected-file"
 
 vi.mock("@/lib/protected-file", () => ({
   openProtectedFile: vi.fn(),
@@ -70,4 +71,31 @@ it("uses the source page count and closes without leaving the current view", () 
   expect(screen.getByText("Page 1 of 3")).toBeVisible()
   fireEvent.click(screen.getByRole("button", { name: "Close document" }))
   expect(onOpenChange).toHaveBeenCalledWith(false)
+})
+
+it("keeps the PDF page available after a failed new-tab request and allows retry", async () => {
+  vi.mocked(openProtectedFile)
+    .mockRejectedValueOnce(new Error("Connection lost"))
+    .mockResolvedValueOnce()
+  render(
+    <DocumentViewer
+      open
+      onOpenChange={vi.fn()}
+      documentUrl="/source.pdf"
+      documentName="source.pdf"
+      evidenceId="source"
+      initialPage={2}
+    />
+  )
+  fireEvent.click(screen.getByRole("button", { name: "Open in new tab" }))
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "could not be opened in a new tab"
+  )
+  expect(screen.queryByText("Failed to load pdf")).toBeNull()
+  expect(
+    screen.getByRole("button", { name: "Read source page 2" })
+  ).toBeVisible()
+  fireEvent.click(screen.getByRole("button", { name: "Try opening again" }))
+  await waitFor(() => expect(screen.queryByRole("alert")).toBeNull())
+  expect(openProtectedFile).toHaveBeenCalledTimes(2)
 })
