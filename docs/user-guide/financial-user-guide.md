@@ -457,7 +457,9 @@ Custody records describe how a source came into the case and any reported transf
 10. Enter **Details and reason**, then select **Record custody report**.
 11. Reload custody history and confirm the report appears with the signed-in author and recorded time.
 
-To correct a report, select **Correct this custody report**, enter the corrected account and reason, then save. The correction adds a record; it does not erase the earlier one. “No custody reports recorded” means earlier custody is unknown, not that custody was verified or uninterrupted.
+Your unfinished fields and selected certification stay in this browser tab when you close the source or refresh. Reopen the same source and **Source custody records** to continue. They are not saved to the case until the recorded confirmation appears. If a save is interrupted, reload the history before changing the draft. Submitting the unchanged report again uses the same request, so an already saved report is returned without adding another copy.
+
+To correct a report, select **Correct this custody report**. Loupe fills in that report's existing details. Change the incorrect fields, enter a new **Details and reason** explaining the correction, then save. Your selected report and edits also survive refresh. If the registered source changed, check the current original before choosing **Use details for the current source**. The correction adds a record; it does not erase the earlier one. “No custody reports recorded” means earlier custody is unknown, not that custody was verified or uninterrupted.
 
 ## Read and filter transactions
 
