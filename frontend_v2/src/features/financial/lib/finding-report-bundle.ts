@@ -39,7 +39,7 @@ export async function verifiedFindingSources(
       saved.original.evidence_file_id !== link.target_id
     )
       throw Error(
-        "The saved wire review does not match its supporting document."
+        "The saved document review does not match its supporting document."
       )
     if (
       sourceDigests[link.target_id] &&

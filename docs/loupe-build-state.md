@@ -1,3 +1,15 @@
+## Current completion work: receipt review finished, page inventory in progress
+
+The Andrews deposit receipt workflow is implemented and verified. A synthetic three-page PDF imported one statement payment, kept two receipt drafts separate through switching and refresh, saved a receipt linked to the existing payment, reopened page 2 from Findings and exported one byte-identical original PDF with both sources. The mixed-file browser exposed a duplicate Workspace evidence link; the save now combines receipt and payment anchors on one file link. A regression test covers persistence and idempotence. Receipt dates with two-digit years and absent currency stay flagged; masked references and previous/new/available balances remain separate. The real receipt on PDF page 42 opened without changes or imports, among 44 statement choices and one receipt choice.
+
+Validation: 30 focused backend checks in the final affected run, 36 affected frontend checks across focused runs, TypeScript and scoped lint passed. Synthetic review/report screenshots were inspected. Guide regenerated with 22 synthetic images, closed by default. Private verification: receipt-browser.json, receipt-report-with-pdfs.zip, real-receipt-browser.json. No full suite or push. The same local synthetic case 95081ef8-8ffe-475a-bc32-fc77aa1bd0e6 will be reused for cross-feature acceptance.
+
+The all-page inventory exposed a preparation gap on Capital One summary pages: successful drawn tables suppress the remaining page text, losing account/period headings and the unboxed account summary. Fix preservation of non-table text and same-page statement grouping next. The private page inventory includes all eight filenames (one identical duplicate), membership/legal pages, statement information and unresolved sources. It is not an independent extraction accuracy measurement. Merrick payment-history pages 51/52 remain supporting information, not account statement transactions.
+
+## Execution plan, 15 September 2026
+
+The user explicitly requested a concrete plan to finish the whole financial piece and continuous work without pauses. Follow docs/loupe-financial-completion-plan.md in order. Current work is section 1, the deposit receipt inside a statement collection; backend and frontend changes are in progress and uncommitted. Complete save/reopen/report acceptance before moving to cross-feature checks. No routine permission questions or push.
+
 ## Current continuation: OCR spacing in fixed Andrews headings, 15 September 2026
 
 Local closure checkpoint committed as 35457d7e. Follow-up reading of the remaining pages found extra OCR spaces inside Account Statement and Previous Balance. The reader now permits whitespace between the unchanged letters of those fixed labels, while retaining title geometry, brand/established-continuation requirements and exact account/period checks. This does not repair source digits, substitute letters or invent missing page numbers. A recognised share label with a damaged opening phrase resets the active account so following rows cannot inherit a different share. Original cells remain unchanged. Reader version is statement-review-v12.

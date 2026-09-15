@@ -61,3 +61,31 @@ export const wireCapture = () => ({
   notes: "Check the purpose.",
   link_reason: "",
 })
+
+export const receiptFixture: PaymentDocumentProposal = {
+  ...wireFixture,
+  kind: "deposit_receipt",
+  document_id: "d".repeat(64),
+  filename: "synthetic-collection.pdf",
+  revision: "c".repeat(64),
+  page_numbers: [2],
+  fields: wireFixture.fields.slice(0, 3).map((field) => ({
+    ...field,
+    key:
+      field.key === "wire_amount"
+        ? "payment_amount"
+        : field.key === "value_date"
+          ? "effective_date"
+          : field.key,
+    label:
+      field.key === "wire_amount"
+        ? "Deposit amount"
+        : field.key === "value_date"
+          ? "Effective date"
+          : "Receipt currency",
+    source_cells: field.source_cells.map((cell) => ({
+      ...cell,
+      locator: { kind: "page_only", page: 2 },
+    })),
+  })),
+}

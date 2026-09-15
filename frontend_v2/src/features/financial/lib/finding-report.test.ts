@@ -1,4 +1,4 @@
-import { wireCapture } from "./payment-document.test-support"
+import { wireCapture, receiptFixture } from "./payment-document.test-support"
 import { expect, it } from "vitest"
 import type { CaseworkEntry } from "@/features/workspace/casework-api"
 import { findingReport } from "./finding-report"
@@ -83,4 +83,27 @@ it("includes original wire readings and explained corrections without inventing 
   expect(html).not.toContain("Selected payments (")
   review.original.evidence_file_id = "another-file"
   expect(() => findingReport(e, "case")).toThrow("supporting document")
+})
+
+it("exports a receipt with its original PDF page and no invented payment", () => {
+  const review = {
+    ...wireCapture(),
+    original: receiptFixture,
+    reviewed_values: Object.fromEntries(
+      receiptFixture.fields.map((f) => [f.key, f.value])
+    ),
+  }
+  const e = entry()
+  e.links = [
+    {
+      ...e.links[0],
+      target_id: receiptFixture.evidence_file_id,
+      source_anchor: { page_number: 2 },
+      metadata: review,
+    },
+  ]
+  const html = findingReport(e, "case")
+  expect(html).toContain("Deposit receipt: original and saved values")
+  expect(html).toContain("Original PDF pages 2")
+  expect(html).not.toContain("Selected payments (")
 })

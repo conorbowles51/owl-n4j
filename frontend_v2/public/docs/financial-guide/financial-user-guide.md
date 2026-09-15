@@ -140,6 +140,25 @@ If a request fails, select **Refresh files** and inspect what arrived before upl
 
 *Choose a ready filename on the right to open it. Edit import values opens the correction controls while the original PDF stays visible.*
 
+### Review a deposit receipt
+
+A supported **Andrews Federal Credit Union** deposit receipt opens separately from bank statements. If one PDF contains both, select the receipt under **Statements and receipts in this PDF**. Its page number identifies which receipt you are opening.
+
+1. In **Statements**, open **Statement files** and choose the PDF. Select **Deposit receipt** for the required page.
+2. Compare **Deposit amount**, **Previous balance**, **New balance** and **Available balance** with the original. These are separate values. The available balance may differ from the new balance.
+3. Check **Effective date** and **Receipt date** separately. If a printed date has a two-digit year, enter the full date after checking supporting evidence and explain the check. Enter the currency only when the evidence establishes it.
+4. Keep **Account reference as printed** masked when the original is masked. Check handwriting directly in the PDF and record any observation in **Your observations**.
+5. Correct any misread field. Its original reading stays visible. Give a reason in the field's **Correction or check** box. Use the PDF buttons to see the original location.
+6. If the deposit is already in Transactions, select **Find matching payments**. Results show incoming payments with the same amount and currency and a recorded date within three days of the effective date. Open the payment and source, choose the matching payment and explain the connection. You can also save without linking a payment.
+7. Enter **Review title** and **Your observations**, then select **Save receipt review**. This saves a note in **Findings** without adding the deposit a second time to account totals.
+8. In **Findings**, open **Open original deposit receipt** to return to its page. Open **Create a report from this note** to download the checked fields, reasons, observations and any linked payment. **Download report with source PDFs** also includes the original file.
+
+Use **Choose another statement or receipt** to switch within the PDF. Each receipt keeps a separate unfinished draft in the same browser tab, including after refresh. Save the review to keep it with the case before closing that tab. When a receipt and its linked payment share one PDF, the report includes that file once and retains both references.
+
+![Synthetic deposit receipt beside its checked fields](images/22-deposit-receipt-review.png)
+
+*The receipt is shown on the left. Original readings, editable values and reasons are shown on the right. This example uses synthetic data.*
+
 ### Review a wire-detail report
 
 Use this process for a supported, single-report **Wells Fargo Wire Transfer Detail Report** PDF. Other wire layouts are not automatically read yet. A wire report records payment instructions and parties; it does not provide an account statement's transaction history or balances.

@@ -46,10 +46,10 @@ from services.financial.statement_import import StatementImportRequest, confirm_
 
 @router.post('/{evidence_file_id}/payment-document/matches')
 def payment_matches(evidence_file_id: UUID, body: PaymentMatchRequest, case_id: UUID = Query(...),
-                    db: Session = Depends(get_db)):
+                    document_id: str | None = Query(None, pattern=r'^[a-f0-9]{64}$'), db: Session = Depends(get_db)):
     try:
-        read_payment_document(db, case_id=case_id, evidence_file_id=evidence_file_id)
-        return matching_payments(db, case_id=case_id, request=body)
+        proposal = read_payment_document(db, case_id=case_id, evidence_file_id=evidence_file_id, document_id=document_id)
+        return matching_payments(db, case_id=case_id, request=body, direction='credit' if proposal['kind'] == 'deposit_receipt' else None)
     except PdfMappingError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 

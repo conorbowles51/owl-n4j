@@ -30,6 +30,7 @@ const importStates = z.object({
     z.object({
       evidence_file_id: z.string(),
       current_transactions: z.number().int().nonnegative(),
+      receipt_review_count: z.number().int().nonnegative().default(0),
       wire_review_count: z.number().int().nonnegative().default(0),
       periods: z.array(
         z.object({
@@ -131,7 +132,7 @@ export function StatementFilesPanel({ caseId }: { caseId: string }) {
       <h2 className="font-semibold">Statement files</h2>
       <p className="text-sm text-muted-foreground">
         Upload PDFs together, then select a ready file to open it in the
-        statement viewer. Supported Wells Fargo wire-detail reports open a
+        statement viewer. Supported wire reports and deposit receipts open a
         separate review, which you can save in Findings.
       </p>
       <input
@@ -252,6 +253,12 @@ export function StatementFilesPanel({ caseId }: { caseId: string }) {
                       : ""}
                   </span>
                 ))}
+                {!!saved?.receipt_review_count && (
+                  <p>
+                    {saved.receipt_review_count} saved receipt{" "}
+                    {saved.receipt_review_count === 1 ? "review" : "reviews"}
+                  </p>
+                )}
                 {saved && !saved.wire_review_count && (
                   <span className="block text-xs mt-1">
                     Open to review this file and any other statement periods.
@@ -270,6 +277,14 @@ export function StatementFilesPanel({ caseId }: { caseId: string }) {
                   href={`/cases/${caseId}/financial?view=findings`}
                 >
                   Open saved wire reviews in Findings
+                </a>
+              )}
+              {!!saved?.receipt_review_count && (
+                <a
+                  className="inline-block underline text-sm"
+                  href={`/cases/${caseId}/financial?view=findings`}
+                >
+                  Open saved receipt reviews in Findings
                 </a>
               )}
               {["unprocessed", "failed"].includes(file.status) && (

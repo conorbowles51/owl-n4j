@@ -5,7 +5,11 @@ import {
   PaymentDocumentReview,
   SavedPaymentDocument,
 } from "./PaymentDocumentReview"
-import { wireFixture, wireCapture } from "../lib/payment-document.test-support"
+import {
+  wireFixture,
+  wireCapture,
+  receiptFixture,
+} from "../lib/payment-document.test-support"
 import { paymentFixture } from "../lib/payment-fixture.test-support"
 import { useFinancialDraftStore } from "../stores/financial-drafts"
 import { fetchAPI } from "@/lib/api-client"
@@ -27,7 +31,7 @@ beforeEach(() => {
   api.mockReset()
   useFinancialDraftStore.setState({ drafts: {} })
 })
-function mount() {
+function mount(data = wireFixture) {
   return render(
     <QueryClientProvider
       client={
@@ -39,7 +43,7 @@ function mount() {
         })
       }
     >
-      <PaymentDocumentReview data={wireFixture} />
+      <PaymentDocumentReview data={data} />
     </QueryClientProvider>
   )
 }
@@ -119,13 +123,13 @@ it("requires an explicit link and explanation, and retains the selected source a
     screen.getByRole("button", { name: "Save wire review" })
   ).toBeDisabled()
   fireEvent.change(
-    screen.getByLabelText("Why does this report support the selected payment?"),
+    screen.getByLabelText("Why does this document support the selected payment?"),
     { target: { value: "Same reference and amount." } }
   )
   view.unmount()
   mount()
   expect(
-    screen.getByLabelText("Why does this report support the selected payment?")
+    screen.getByLabelText("Why does this document support the selected payment?")
   ).toHaveValue("Same reference and amount.")
   fireEvent.click(
     screen.getByRole("button", { name: "Open selected payment and source" })
@@ -198,4 +202,50 @@ it("reopens saved originals and rejects a review attached to the wrong case", ()
   )
   expect(screen.getByRole("alert")).toHaveTextContent("do not match")
   expect(screen.queryByText("Original PDF wire-file")).toBeNull()
+})
+
+it("saves a selected receipt and reopens its original page without creating a wire or statement import", async () => {
+  api.mockResolvedValue({
+    case_id: "case",
+    entry_id: "receipt-note",
+    created: true,
+    transaction_count: 0,
+  })
+  mount(receiptFixture)
+  expect(
+    screen.getByRole("region", { name: "Deposit receipt review" })
+  ).toBeVisible()
+  fireEvent.click(screen.getByRole("button", { name: "Save receipt review" }))
+  await screen.findByText(/Receipt review saved in Findings/)
+  expect(api).toHaveBeenCalledWith(
+    expect.stringContaining("/payment-document/save"),
+    expect.objectContaining({
+      body: expect.objectContaining({
+        document_id: receiptFixture.document_id,
+        values: expect.objectContaining({
+          payment_amount: "120.00",
+          effective_date: "2021-03-23",
+        }),
+      }),
+    })
+  )
+})
+it("uses the selected receipt and effective date for payment suggestions", async () => {
+  api.mockResolvedValue({
+    case_id: "case",
+    candidates: [],
+    more_matches: false,
+    explanation: "Checked matches",
+  })
+  mount(receiptFixture)
+  fireEvent.click(
+    screen.getByRole("button", { name: "Find matching payments" })
+  )
+  await screen.findByText(/No imported payments match/)
+  expect(api).toHaveBeenCalledWith(
+    expect.stringContaining("document_id=" + receiptFixture.document_id),
+    expect.objectContaining({
+      body: { amount: "120.00", currency: "USD", value_date: "2021-03-23" },
+    })
+  )
 })

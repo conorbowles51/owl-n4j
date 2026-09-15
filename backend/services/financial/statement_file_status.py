@@ -70,5 +70,6 @@ def statement_file_status(session, *, case_id):
             continue
         seen.add((entry.id, link.target_id))
         item = files.setdefault(link.target_id, dict(evidence_file_id=link.target_id, current_transactions=0, periods=[]))
-        item['wire_review_count'] = item.get('wire_review_count', 0) + 1
+        count_key = 'receipt_review_count' if original.get('kind') == 'deposit_receipt' else 'wire_review_count'
+        item[count_key] = item.get(count_key, 0) + 1
     return dict(case_id=str(case_id), files=list(files.values()), truncated=truncated)

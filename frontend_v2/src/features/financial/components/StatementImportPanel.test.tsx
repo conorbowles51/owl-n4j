@@ -1,3 +1,4 @@
+import { receiptFixture } from "../lib/payment-document.test-support"
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { beforeEach, expect, it, vi } from "vitest"
@@ -660,4 +661,65 @@ it("records a closure notice with no payments and no invented closing balance", 
       { balance_minor: null, excluded: true },
     ],
   })
+})
+
+it("opens a receipt separately from statement periods and returns to the same file choices", async () => {
+  const choices = [
+    {
+      id: "s".repeat(64),
+      institution: "Example Bank",
+      account_reference: "12345",
+      period_start: "2023-01-01",
+      period_end: "2023-01-31",
+      page_numbers: [1],
+    },
+    {
+      id: receiptFixture.document_id!,
+      institution: "Andrews Federal Credit Union",
+      account_reference: "XXXX5678",
+      account_label: "Deposit receipt",
+      document_kind: "deposit_receipt",
+      period_start: "",
+      period_end: "",
+      printed_statement_date: "03/23/21",
+      page_numbers: [2],
+    },
+  ]
+  vi.mocked(fetchAPI).mockImplementation(async (url) => {
+    if (String(url).startsWith("/api/evidence?"))
+      return {
+        files: [
+          {
+            id: "file",
+            case_id: "case",
+            original_filename: "mixed.pdf",
+            status: "processed",
+          },
+        ],
+      } as never
+    const selected = String(url).includes(
+      "statement_id=" + receiptFixture.document_id
+    )
+    return {
+      ...data,
+      rows: [],
+      statement_choices: choices,
+      statement_id: selected ? receiptFixture.document_id : null,
+      ...(selected
+        ? { document_review: { ...receiptFixture, evidence_file_id: "file" } }
+        : {}),
+    } as never
+  })
+  mount()
+  useStatementWorkspace.getState().select("anonymous:case", "file")
+  await screen.findByText("Statements and receipts in this PDF")
+  fireEvent.click(
+    screen.getByRole("button", { name: /Deposit receipt.*pages 2/ })
+  )
+  await screen.findByRole("region", { name: "Deposit receipt review" })
+  expect(screen.queryByRole("button", { name: /Confirm import/ })).toBeNull()
+  fireEvent.click(
+    screen.getByRole("button", { name: "Choose another statement or receipt" })
+  )
+  await screen.findByText("Statements and receipts in this PDF")
 })

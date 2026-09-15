@@ -730,3 +730,11 @@ The larger supplied Andrews PDF now has 43 recognised sections instead of 37, in
 Validation: 15 Andrews reader checks and 5 affected import checks passed. The guide regenerated; no frontend code changed, so no repeat frontend suite or production build was needed after the preceding successful build. No full suite. The larger supplied PDF now has 44 recognised account sections and 2,044 proposed payments, adding 94 rows with 93 readable amounts and 88 readable balances. All previously populated date/amount/direction/balance values are unchanged. The smaller PDF remains 15 sections and 381 rows. Seven sources in the larger PDF and six in the smaller still need classification or coverage review. Original cells are unchanged; these counts are not independent accuracy measurements.
 
 Visual source checks compared 33 readable amount/balance pairs across pages 90 and 96. The application displays October's 80 payments, including 13 on its last page, and December's 96 payments across original pages 95 to 99. Source image/highlight and retained damaged-value flags passed with no console errors. Browser helpers were corrected after a development-server reload interrupted a read, and to select the original amount cell by its recorded column because the original text includes spaces. No real payments were imported and no further OCR or provider request was made. Private receipts remain under data/local-runtime. No push.
+
+## In progress: deposit receipts inside statement collections
+
+- [ ] Offer a recognised Andrews deposit receipt as its own choice in a mixed PDF, retaining the original page.
+- [ ] Review its deposit amount, dates, masked reference, share and separate balances against the PDF. Keep uncertain years/currency and unreadable fields for correction.
+- [ ] Save the checked receipt and observations in Findings, with an optional explicit link to an existing payment and no new ledger transaction.
+- [ ] Reopen and export the saved receipt, show both statement imports and document reviews in the file list, and retain separate drafts for each receipt.
+- [ ] Verify a synthetic mixed-document upload through save/reopen/export and inspect the real receipt without importing real records.

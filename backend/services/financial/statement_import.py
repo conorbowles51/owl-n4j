@@ -139,7 +139,8 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
             needs_attention=0, revision=payment_document['revision'], applied=False,
             document_review=payment_document, page_numbers=payment_document['page_numbers'])
     catalog = statement_catalog(all_sources)
-    choices = catalog['statements']
+    from services.financial.deposit_receipt_proposal import deposit_receipt_choices
+    choices = catalog['statements'] + deposit_receipt_choices(all_sources)
     selected = next((item for item in choices if item['id'] == statement_id), None)
     if statement_id and selected is None:
         raise PdfMappingError('This statement period is no longer available. Reload the document.', 409)
@@ -149,8 +150,16 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
     if len(choices) > 1 and selected is None:
         return dict(case_id=str(case_id), evidence_file_id=str(evidence_file_id), filename=file.original_filename,
                     metadata=metadata, currency=chosen_currency, rows=[], sources=[], issues=[],
-                    transaction_count=0, needs_attention=0, revision=_digest(catalog),
+                    transaction_count=0, needs_attention=0, revision=_digest(dict(catalog=catalog, choices=choices)),
                     statement_choices=choices, statement_id=None, page_numbers=[p.page_number for p in pages], applied=False)
+    if selected and selected.get('document_kind'):
+        document = payment_document_response(file, all_sources, case_id=case_id, document_id=selected['id'])
+        if document is None:
+            raise PdfMappingError('This receipt is no longer available. Reload the PDF.', 409)
+        return dict(case_id=str(case_id), evidence_file_id=str(file.id), filename=file.original_filename,
+            metadata=metadata, currency='', rows=[], sources=[], issues=[], transaction_count=0,
+            needs_attention=0, revision=document['revision'], applied=False, document_review=document,
+            statement_choices=choices, statement_id=selected['id'], page_numbers=document['page_numbers'])
     sources = all_sources
     if selected:
         addresses = {(item['page_number'], item['table_index']) for item in selected['sources']}

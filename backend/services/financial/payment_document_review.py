@@ -16,8 +16,13 @@ from services.financial.statement_import_proposal import exact_amount
 from services.financial.money import MoneyError
 
 
-def payment_document_response(file, sources, *, case_id):
-    proposal = propose_payment_document(sources)
+def payment_document_response(file, sources, *, case_id, document_id=None):
+    if document_id:
+        from services.financial.deposit_receipt_proposal import propose_deposit_receipt
+        matches = [p for source in sources if (p := propose_deposit_receipt(source)) and p['document_id'] == document_id]
+        proposal = matches[0] if len(matches) == 1 else None
+    else:
+        proposal = propose_payment_document(sources)
     if proposal is None:
         return None
     proposal.update(case_id=str(case_id), evidence_file_id=str(file.id), filename=file.original_filename,
@@ -26,7 +31,7 @@ def payment_document_response(file, sources, *, case_id):
     return proposal
 
 
-def read_payment_document(session, *, case_id, evidence_file_id):
+def read_payment_document(session, *, case_id, evidence_file_id, document_id=None):
     file = session.scalar(select(EvidenceFile).where(EvidenceFile.id == evidence_file_id, EvidenceFile.case_id == case_id))
     if file is None:
         raise PdfMappingError('Document not found in this case.', 404)
@@ -36,9 +41,9 @@ def read_payment_document(session, *, case_id, evidence_file_id):
         raise PdfMappingError('Prepare the PDF before reviewing its payment details.', 409)
     sources = [read_candidate_source(session, case_id=case_id, evidence_file_id=file.id,
         page_number=p.page_number, table_index=index) for p in pages for index in range(len(p.payload or []))]
-    proposal = payment_document_response(file, sources, case_id=case_id)
+    proposal = payment_document_response(file, sources, case_id=case_id, document_id=document_id)
     if proposal is None or not proposal['supported']:
-        raise PdfMappingError('This file is not a supported wire-detail report.', 422)
+        raise PdfMappingError('This selection is not a supported payment document.', 422)
     return proposal
 
 
@@ -49,16 +54,16 @@ class PaymentMatchRequest(BaseModel):
     value_date: date
 
 
-def _match_conditions(case_id, request):
+def _match_conditions(case_id, request, *, direction=None):
     try:
         minor = int(exact_amount(request.amount, request.currency))
     except (ValueError, MoneyError) as exc:
         raise PdfMappingError('Check the amount and currency before finding payments.', 422) from exc
     if minor < 0:
-        raise PdfMappingError('Enter the positive wire amount.', 422)
+        raise PdfMappingError('Enter a positive payment amount.', 422)
     start = date.fromordinal(max(date.min.toordinal(), request.value_date.toordinal() - 3))
     end = date.fromordinal(min(date.max.toordinal(), request.value_date.toordinal() + 3))
-    return (FinancialTransaction.case_id == case_id,
+    return ((FinancialTransaction.direction == direction,) if direction else ()) + (FinancialTransaction.case_id == case_id,
         FinancialTransaction.ledger_status == 'admitted', FinancialSourceDocument.case_id == case_id,
         FinancialSourceDocument.status == 'admitted', FinancialTransaction.currency == request.currency,
         FinancialTransaction.amount_minor == minor,
@@ -66,11 +71,11 @@ def _match_conditions(case_id, request):
             FinancialTransaction.posted_date, FinancialTransaction.value_date, FinancialTransaction.effective_date))))
 
 
-def matching_payments(session, *, case_id, request):
+def matching_payments(session, *, case_id, request, direction=None):
     from services.financial.ledger_source import ledger_source
     request = PaymentMatchRequest.model_validate(request)
     rows = list(session.scalars(select(FinancialTransaction).join(FinancialSourceDocument,
-        FinancialTransaction.source_document_id == FinancialSourceDocument.id).where(*_match_conditions(case_id, request))
+        FinancialTransaction.source_document_id == FinancialSourceDocument.id).where(*_match_conditions(case_id, request, direction=direction))
         .order_by(FinancialTransaction.ordering_date, FinancialTransaction.id).limit(26)))
     candidates = []
     for row in rows[:25]:
@@ -84,6 +89,7 @@ def matching_payments(session, *, case_id, request):
 class PaymentDocumentReviewRequest(BaseModel):
     model_config = ConfigDict(extra='forbid')
     request_id: UUID
+    document_id: str | None = Field(default=None, pattern=r'^[a-f0-9]{64}$')
     expected_revision: str = Field(pattern=r'^[a-f0-9]{64}$')
     title: str = Field(min_length=1, max_length=200)
     values: dict[str, str]
@@ -108,7 +114,7 @@ def save_payment_document(session, *, case_id, evidence_file_id, request, user, 
     from services.financial.ledger_source import ledger_source
     from services.workspace_entry_service import create_entry
     request = PaymentDocumentReviewRequest.model_validate(request)
-    digest = _digest(request.model_dump(mode='json'))
+    digest = _digest(request.model_dump(mode='json', exclude={'document_id'} if request.document_id is None else set()))
     identifier = uuid5(NAMESPACE_URL, f'loupe-wire-review:{case_id}:{evidence_file_id}:{request.request_id}')
     file = session.scalar(select(EvidenceFile).where(EvidenceFile.id == evidence_file_id,
         EvidenceFile.case_id == case_id).with_for_update())
@@ -122,7 +128,7 @@ def save_payment_document(session, *, case_id, evidence_file_id, request, user, 
         return dict(case_id=str(case_id), entry_id=str(existing.id), created=False, transaction_count=0)
     session.execute(select(EvidenceDocumentText).where(EvidenceDocumentText.evidence_file_id == file.id).with_for_update()).all()
     session.execute(select(EvidenceTableGeometry).where(EvidenceTableGeometry.evidence_file_id == file.id).with_for_update()).all()
-    proposal = read_payment_document(session, case_id=case_id, evidence_file_id=file.id)
+    proposal = read_payment_document(session, case_id=case_id, evidence_file_id=file.id, document_id=request.document_id)
     if proposal['revision'] != request.expected_revision:
         raise PdfMappingError('The document reading changed. Reload it before saving.', 409)
     originals = {field['key']:field for field in proposal['fields']}
@@ -133,13 +139,26 @@ def save_payment_document(session, *, case_id, evidence_file_id, request, user, 
         if (value != original['value'] or value and original['issues']) and not request.reasons.get(key,'').strip():
             raise PdfMappingError(f'Explain the correction or check for {original["label"].lower()}.', 422)
     values = request.values
+    receipt = proposal['kind'] == 'deposit_receipt'
+    amount_key, date_key = ('payment_amount', 'effective_date') if receipt else ('wire_amount', 'value_date')
     try:
-        if not re.fullmatch(r'\d{4}-\d{2}-\d{2}', values['value_date']):
+        if not re.fullmatch(r'\d{4}-\d{2}-\d{2}', values[date_key]):
             raise ValueError('date')
-        match_request = PaymentMatchRequest(amount=values['wire_amount'], currency=values['currency'], value_date=date.fromisoformat(values['value_date']))
+        match_request = PaymentMatchRequest(amount=values[amount_key], currency=values['currency'], value_date=date.fromisoformat(values[date_key]))
         _match_conditions(case_id, match_request)
-    except ValueError as exc:
-        raise PdfMappingError('Check the wire amount, currency and value date before saving.', 422) from exc
+        if receipt:
+            if int(exact_amount(values[amount_key], values['currency'])) <= 0:
+                raise ValueError('Deposit must be positive')
+            for field in proposal['fields']:
+                value = values[field['key']]
+                if value and field['input_type'] == 'date':
+                    if not re.fullmatch(r'\d{4}-\d{2}-\d{2}', value):
+                        raise ValueError('date')
+                    date.fromisoformat(value)
+                if value and field['input_type'] == 'amount':
+                    exact_amount(value, values['currency'])
+    except (ValueError, MoneyError) as exc:
+        raise PdfMappingError('Check the payment amount, currency, dates and any recorded balances before saving.', 422) from exc
     path = resolve_path(file.stored_path)
     if path is None or not path.is_file() or path.stat().st_size > 256*1024*1024:
         raise PdfMappingError('The original PDF is unavailable for verification.', 409)
@@ -157,9 +176,9 @@ def save_payment_document(session, *, case_id, evidence_file_id, request, user, 
     if request.transaction_id:
         transaction = session.scalar(select(FinancialTransaction).join(FinancialSourceDocument,
             FinancialTransaction.source_document_id == FinancialSourceDocument.id).where(
-                FinancialTransaction.id == request.transaction_id, *_match_conditions(case_id, match_request)).with_for_update())
+                FinancialTransaction.id == request.transaction_id, *_match_conditions(case_id, match_request, direction='credit' if receipt else None)).with_for_update())
         if transaction is None:
-            raise PdfMappingError('The selected payment no longer matches this wire review. Find payments again.', 409)
+            raise PdfMappingError('The selected payment no longer matches this document review. Find payments again.', 409)
         link_source = ledger_source(session, case_id=case_id, transaction_id=transaction.id)
         if _digest(link_source) != request.transaction_revision:
             raise PdfMappingError('The selected payment changed. Open it and check the link again.', 409)
@@ -168,18 +187,26 @@ def save_payment_document(session, *, case_id, evidence_file_id, request, user, 
     links = [dict(target_type='evidence', target_id=str(file.id), target_label=file.original_filename,
         relationship='context', source_anchor=dict(page_number=proposal['page_numbers'][0]), metadata=capture)]
     if link_source:
-        links.append(dict(target_type='evidence', target_id=link_source['evidence_file_id'],
+        payment_link = dict(target_type='evidence', target_id=link_source['evidence_file_id'],
             target_label=link_source['filename'], relationship='supports',
             source_anchor=dict(financial_transaction_ids=[link_source['transaction_id']],
                 financial_ref_ids=[link_source['ref_id']], locator=link_source['locator']),
-            metadata=dict(schema='loupe.financial.transaction_note/1', transactions=[link_source['transaction']])))
-    body = 'Wire report review\n\n' + '\n'.join(f'{field["label"]}: {values[field["key"]] or "Not recorded"}' for field in proposal['fields'])
+            metadata=dict(schema='loupe.financial.transaction_note/1', transactions=[link_source['transaction']]))
+        if payment_link['target_id'] == str(file.id):
+            # One file can contain both the receipt and the statement. Workspace
+            # links are unique per file; retain both anchors on that one link.
+            links[0]['source_anchor'].update(payment_link['source_anchor'])
+            links[0]['metadata']['transactions'] = payment_link['metadata']['transactions']
+            links[0]['relationship'] = 'supports'
+        else:
+            links.append(payment_link)
+    body = ('Deposit receipt review\n\n' if receipt else 'Wire report review\n\n') + '\n'.join(f'{field["label"]}: {values[field["key"]] or "Not recorded"}' for field in proposal['fields'])
     for key, reason in request.reasons.items():
         if reason.strip(): body += f'\n\n{originals[key]["label"]}, correction or check: {reason.strip()}'
     if request.notes.strip(): body += '\n\nInvestigation note: '+request.notes.strip()
     if link_source: body += '\n\nLinked payment '+link_source['ref_id']+': '+request.link_reason.strip()
     body += '\n\nSaving this review did not add a payment to account totals.'
     entry = create_entry(session, case_id=case_id, current_user=user, entry_id=identifier,
-        entry_type='note', title=request.title.strip(), body=body, tags=['financial','wire-review'],
+        entry_type='note', title=request.title.strip(), body=body, tags=['financial', 'receipt-review' if receipt else 'wire-review'],
         links=links, compatibility_metadata=dict(payment_document_request_sha256=digest))
     return dict(case_id=str(case_id), entry_id=entry['id'], created=True, transaction_count=0)

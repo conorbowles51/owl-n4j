@@ -86,6 +86,7 @@ const proposalSchema = z.object({
         institution: z.string(),
         account_reference: z.string(),
         account_label: z.string().optional(),
+        document_kind: z.literal("deposit_receipt").optional(),
         statement_date: z.string().optional(),
         printed_statement_date: z.string().optional(),
         period_start: z.string(),
@@ -395,6 +396,9 @@ function StatementReview({
         />
       </div>
     )
+  const hasReceipts = query.data.statement_choices.some(
+    (item) => item.document_kind === "deposit_receipt"
+  )
   if (query.data.document_review) {
     const document = query.data.document_review
     if (document.case_id !== caseId || document.evidence_file_id !== fileId)
@@ -403,17 +407,31 @@ function StatementReview({
           The document review does not match this case and file.
         </p>
       )
-    return <PaymentDocumentReview key={document.revision} data={document} />
+    return (
+      <div className="space-y-3">
+        {query.data.statement_choices.length > 1 && (
+          <Button variant="outline" onClick={() => setStatementId("")}>
+            Choose another statement or receipt
+          </Button>
+        )}
+        <PaymentDocumentReview key={document.revision} data={document} />
+      </div>
+    )
   }
   if (query.data.statement_choices.length > 1 && !query.data.statement_id)
     return (
       <section className="space-y-3 py-4" aria-label="Statements in this PDF">
         <h3 className="font-semibold">
-          This PDF contains {query.data.statement_choices.length} statements
+          {hasReceipts
+            ? "Statements and receipts in this PDF"
+            : `This PDF contains ${query.data.statement_choices.length} statements`}
         </h3>
         <p>
           Choose an account and statement period to review. Savings and checking
-          sections are separate choices. Page numbers refer to the original PDF.
+          sections are separate choices.{" "}
+          {hasReceipts &&
+            "Deposit receipts are reviewed separately and do not add transactions."}{" "}
+          Page numbers refer to the original PDF.
         </p>
         <div className="grid sm:grid-cols-2 gap-2">
           {query.data.statement_choices.map((item) => (
@@ -423,13 +441,13 @@ function StatementReview({
               key={item.id}
               onClick={() => setStatementId(item.id)}
             >
-              {item.institution} ·{" "}
+              {item.document_kind ? "Deposit receipt" : item.institution} ·{" "}
               {item.account_reference || "Account needs review"} ·{" "}
               {item.account_label ? `${item.account_label} · ` : ""}
               {item.period_start
                 ? `${item.period_start} to ${item.period_end}`
                 : item.statement_date ||
-                  `Check statement date: ${item.printed_statement_date || "unreadable"}`}{" "}
+                  `Check date: ${item.printed_statement_date || "unreadable"}`}{" "}
               · pages {item.page_numbers.join(", ")}
             </Button>
           ))}
@@ -438,39 +456,50 @@ function StatementReview({
     )
   if (!query.data.currency)
     return (
-      <label className="block my-4">
-        Statement currency
-        <select
-          aria-label="Statement currency"
-          value={currency}
-          onChange={(e) => setCurrency(e.target.value)}
-          className="border p-2 bg-background"
-        >
-          <option value="">Choose currency</option>
-          {Array.from(
-            new Set([
-              "EUR",
-              "GBP",
-              "USD",
-              "CAD",
-              "AUD",
-              "JPY",
-              "KWD",
-              ...(typeof Intl.supportedValuesOf === "function"
-                ? Intl.supportedValuesOf("currency")
-                : []),
-            ])
-          ).map((c) => (
-            <option key={c}>{c}</option>
-          ))}
-        </select>
-      </label>
+      <div>
+        {query.data.statement_choices.length > 1 && (
+          <Button variant="outline" onClick={() => setStatementId("")}>
+            {hasReceipts
+              ? "Choose another statement or receipt"
+              : "Choose another statement period"}
+          </Button>
+        )}
+        <label className="block my-4">
+          Statement currency
+          <select
+            aria-label="Statement currency"
+            value={currency}
+            onChange={(e) => setCurrency(e.target.value)}
+            className="border p-2 bg-background"
+          >
+            <option value="">Choose currency</option>
+            {Array.from(
+              new Set([
+                "EUR",
+                "GBP",
+                "USD",
+                "CAD",
+                "AUD",
+                "JPY",
+                "KWD",
+                ...(typeof Intl.supportedValuesOf === "function"
+                  ? Intl.supportedValuesOf("currency")
+                  : []),
+              ])
+            ).map((c) => (
+              <option key={c}>{c}</option>
+            ))}
+          </select>
+        </label>
+      </div>
     )
   return (
     <div className="space-y-3">
       {query.data.statement_choices.length > 1 && (
         <Button variant="outline" onClick={() => setStatementId("")}>
-          Choose another statement period
+          {hasReceipts
+            ? "Choose another statement or receipt"
+            : "Choose another statement period"}
         </Button>
       )}
       <ReprocessStatement

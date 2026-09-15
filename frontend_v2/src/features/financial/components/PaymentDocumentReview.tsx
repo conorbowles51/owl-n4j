@@ -51,9 +51,16 @@ export function PaymentDocumentReview({
 }: {
   data: PaymentDocumentProposal
 }) {
+  const isReceipt = data.kind === "deposit_receipt"
+  const amountKey = isReceipt ? "payment_amount" : "wire_amount"
+  const dateKey = isReceipt ? "effective_date" : "value_date"
   const [initial] = useState<Draft>(() => ({
     request_id: newReviewId(),
-    title: `Wire review: ${data.filename}`.slice(0, 200),
+    title:
+      `${isReceipt ? "Receipt" : "Wire"} review: ${data.filename}${isReceipt ? ` · page ${data.page_numbers[0]}` : ""}`.slice(
+        0,
+        200
+      ),
     values: Object.fromEntries(data.fields.map((f) => [f.key, f.value])),
     reasons: {},
     notes: "",
@@ -76,14 +83,17 @@ export function PaymentDocumentReview({
   const endpoint = `/api/financial/statement-import/${data.evidence_file_id}/payment-document`
   const matches = useMutation({
     mutationFn: () =>
-      fetchAPI(`${endpoint}/matches?case_id=${data.case_id}`, {
-        method: "POST",
-        body: {
-          amount: draft.values.wire_amount,
-          currency: draft.values.currency,
-          value_date: draft.values.value_date,
-        },
-      }).then((value) => matchesSchema.parse(value)),
+      fetchAPI(
+        `${endpoint}/matches?case_id=${data.case_id}${data.document_id ? `&document_id=${data.document_id}` : ""}`,
+        {
+          method: "POST",
+          body: {
+            amount: draft.values[amountKey],
+            currency: draft.values.currency,
+            value_date: draft.values[dateKey],
+          },
+        }
+      ).then((value) => matchesSchema.parse(value)),
   })
   const save = useMutation({
     mutationFn: () =>
@@ -91,6 +101,7 @@ export function PaymentDocumentReview({
         method: "POST",
         body: {
           request_id: draft.request_id,
+          ...(data.document_id ? { document_id: data.document_id } : {}),
           title: draft.title,
           values: draft.values,
           reasons: draft.reasons,
@@ -128,9 +139,9 @@ export function PaymentDocumentReview({
       !draft.reasons[f.key]?.trim()
   )
   const canMatch =
-    !!draft.values.wire_amount &&
+    !!draft.values[amountKey] &&
     /^[A-Z]{3}$/.test(draft.values.currency || "") &&
-    /^\d{4}-\d{2}-\d{2}$/.test(draft.values.value_date || "")
+    /^\d{4}-\d{2}-\d{2}$/.test(draft.values[dateKey] || "")
   const saved = !!draft.saved_entry_id || save.data?.case_id === data.case_id
   const edit = (key: string, value: string) => {
     setDraft((d) => ({
@@ -143,14 +154,18 @@ export function PaymentDocumentReview({
     matches.reset()
   }
   return (
-    <section className="space-y-4 py-4" aria-label="Wire report review">
+    <section
+      className="space-y-4 py-4"
+      aria-label={isReceipt ? "Deposit receipt review" : "Wire report review"}
+    >
       <header>
         <h3 className="text-lg font-semibold">
-          Review wire report: {data.filename}
+          Review {isReceipt ? "deposit receipt" : "wire report"}:{" "}
+          {data.filename}
         </h3>
         <p>
           Check the payment details against the original PDF, then save your
-          observations in Findings. You can link the report to an existing
+          observations in Findings. You can link the document to an existing
           payment. Saving this review adds no payment to account totals.
         </p>
       </header>
@@ -160,7 +175,7 @@ export function PaymentDocumentReview({
           <label>
             Original PDF page{" "}
             <select
-              aria-label="Wire report page"
+              aria-label={isReceipt ? "Receipt page" : "Wire report page"}
               className="rounded border bg-background p-2"
               onChange={(event) => {
                 setFocus({
@@ -187,13 +202,16 @@ export function PaymentDocumentReview({
         </div>
       ) : (
         <>
+          {isReceipt && data.issues.map((issue) => <p key={issue}>{issue}</p>)}
           <p className="text-sm text-muted-foreground">
             Unfinished changes are kept in this browser tab. Save the review to
             keep it with the case.
           </p>
           <div className="grid gap-4 xl:grid-cols-[minmax(300px,2fr)_minmax(0,3fr)] items-start">
             <div className="rounded border p-3 xl:sticky xl:top-2">
-              <h4 className="font-semibold mb-2">Original wire report</h4>
+              <h4 className="font-semibold mb-2">
+                Original {isReceipt ? "deposit receipt" : "wire report"}
+              </h4>
               <TransactionSourceHighlight
                 sourceDocumentId={data.evidence_file_id}
                 locatorPayload={focus}
@@ -300,15 +318,22 @@ export function PaymentDocumentReview({
           </div>
           <section
             className="rounded border p-4 space-y-3"
-            aria-label="Link a wire to an imported payment"
+            aria-label={
+              isReceipt
+                ? "Link a receipt to an imported payment"
+                : "Link a wire to an imported payment"
+            }
           >
             <h4 className="font-semibold">
               Link to a payment already in this case
             </h4>
             <p>
               Look for the same currency and amount within three days of the
-              value date. Open both sources before choosing a payment. You can
-              save the wire review without a link.
+              {isReceipt
+                ? "effective date. Only incoming payments are offered."
+                : "value date."}{" "}
+              Open both sources before choosing a payment. You can save this
+              review without a link.
             </p>
             <Button
               variant="outline"
@@ -332,8 +357,8 @@ export function PaymentDocumentReview({
             {matches.isError && <p role="alert">{matches.error.message}</p>}
             {matches.isSuccess && !candidates.length && (
               <p>
-                No imported payments match these details. The wire review can
-                still be saved.
+                No imported payments match these details. This review can still
+                be saved.
               </p>
             )}
             {matches.data?.more_matches && (
@@ -392,7 +417,7 @@ export function PaymentDocumentReview({
                   Open selected payment and source
                 </Button>
                 <label className="block">
-                  Why does this report support the selected payment?
+                  Why does this document support the selected payment?
                   <textarea
                     className="block w-full rounded border bg-background p-2"
                     maxLength={2000}
@@ -466,7 +491,11 @@ export function PaymentDocumentReview({
                 save.mutate()
               }}
             >
-              {save.isPending ? "Saving review…" : "Save wire review"}
+              {save.isPending
+                ? "Saving review…"
+                : isReceipt
+                  ? "Save receipt review"
+                  : "Save wire review"}
             </Button>
             {save.isError && (
               <p role="alert">
@@ -476,7 +505,8 @@ export function PaymentDocumentReview({
             {saved && (
               <div className="space-y-2">
                 <p role="status">
-                  Wire review saved in Findings. No payment was added.{" "}
+                  {isReceipt ? "Receipt" : "Wire"} review saved in Findings. No
+                  payment was added.{" "}
                   <a
                     className="underline"
                     href={`/cases/${data.case_id}/financial?view=findings`}
@@ -536,12 +566,19 @@ export function SavedPaymentDocument({
   )
     return (
       <p role="alert">
-        The saved wire details do not match this case and document.
+        The saved document details do not match this case and document.
       </p>
     )
   const saved = parsed.data
   return (
-    <section className="space-y-3" aria-label="Saved wire details">
+    <section
+      className="space-y-3"
+      aria-label={
+        saved.original.kind === "deposit_receipt"
+          ? "Saved receipt details"
+          : "Saved wire details"
+      }
+    >
       <details>
         <summary className="cursor-pointer">
           Compare the saved values with their original readings
@@ -589,7 +626,10 @@ export function SavedPaymentDocument({
           setWholePage(true)
         }}
       >
-        Open original wire report
+        Open original{" "}
+        {saved.original.kind === "deposit_receipt"
+          ? "deposit receipt"
+          : "wire report"}
       </Button>
       {focus !== null && (
         <div className="max-w-2xl rounded border p-3">

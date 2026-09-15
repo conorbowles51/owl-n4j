@@ -5,7 +5,11 @@ export const paymentDocumentSchema =
 export const paymentDocumentProposal = z.object({
   schema: z.literal(paymentDocumentSchema),
   version: z.string(),
-  kind: z.literal("wire_report"),
+  kind: z.enum(["wire_report", "deposit_receipt"]),
+  document_id: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/)
+    .optional(),
   case_id: z.string(),
   evidence_file_id: z.string(),
   filename: z.string(),

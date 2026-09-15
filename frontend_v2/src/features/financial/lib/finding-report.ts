@@ -40,7 +40,7 @@ export function findingReport(
       rows.set(row.key, { row, filename: link.target_label || "Statement" })
     }
   }
-  const wireReviews = entry.links
+  const documentReviews = entry.links
     .filter((link) => link.metadata.schema === paymentDocumentSchema)
     .map((link) => {
       const review = savedPaymentDocument.parse(link.metadata)
@@ -50,9 +50,9 @@ export function findingReport(
         review.original.evidence_file_id !== link.target_id
       )
         throw Error(
-          "The saved wire review does not match its supporting document."
+          "The saved document review does not match its supporting document."
         )
-      return `<h2>Wire report: original and saved values</h2><p>${escape(link.target_label)} · Original PDF pages ${review.original.page_numbers.join(", ")}</p><table><thead><tr><th>Detail</th><th>Original reading</th><th>Saved value</th><th>Correction or check</th></tr></thead><tbody>${review.original.fields.map((field) => `<tr><th>${escape(field.label)}</th><td class="note">${escape(field.raw || "Not read")}</td><td class="note">${escape(review.reviewed_values[field.key] || "Not recorded")}</td><td class="note">${escape(review.correction_reasons[field.key])}</td></tr>`).join("")}</tbody></table><p class="muted">These are the saved document readings and the investigator's corrections. Saving this review did not add a payment to account totals.</p>`
+      return `<h2>${review.original.kind === "deposit_receipt" ? "Deposit receipt" : "Wire report"}: original and saved values</h2><p>${escape(link.target_label)} · Original PDF pages ${review.original.page_numbers.join(", ")}</p><table><thead><tr><th>Detail</th><th>Original reading</th><th>Saved value</th><th>Correction or check</th></tr></thead><tbody>${review.original.fields.map((field) => `<tr><th>${escape(field.label)}</th><td class="note">${escape(field.raw || "Not read")}</td><td class="note">${escape(review.reviewed_values[field.key] || "Not recorded")}</td><td class="note">${escape(review.correction_reasons[field.key])}</td></tr>`).join("")}</tbody></table><p class="muted">These are the saved document readings and the investigator's corrections. Saving this review did not add a payment to account totals.</p>`
     })
     .join("")
   const analysisNotes = entry.links
@@ -98,5 +98,5 @@ export function findingReport(
 <h1>${escape(entry.title || "Financial note")}</h1><p class="muted">${escape(entry.entry_type)} · ${escape(entry.author_name || entry.author_email || "Author not recorded")}<br>Saved ${escape(entry.updated_at || entry.created_at || "date not recorded")}<br>Case ${escape(caseId)} · Record ${escape(entry.id)}</p>
 <h2>Observation</h2><p class="note">${escape(entry.body)}</p>
 ${rows.size ? `<h2>Selected payments (${rows.size})</h2><p class="muted">These values were recorded when this selection was saved. Later corrections are available by reopening the linked transactions in Loupe.</p><table><thead><tr><th>Date</th><th>Description</th><th>In or out</th><th>Amount</th><th>Statement and reference</th></tr></thead><tbody>${lines}</tbody></table>` : ""}
-${wireReviews}${analysisNotes}<h2>Supporting records</h2><ul>${entry.links.map((link) => `<li>${files?.[link.target_id] ? `<a href="${escape(files[link.target_id])}">${escape(link.target_label || link.target_id)}</a>` : escape(link.target_label || link.target_id)}${link.metadata.schema === "loupe.financial.event_context/1" ? `<br>${escape(link.metadata.date)}: ${escape(link.metadata.summary)}` : ""}${Array.isArray(link.source_anchor.financial_ref_ids) ? `<br>${link.source_anchor.financial_ref_ids.map(escape).join(", ")}` : ""}</li>`).join("")}</ul><p class="muted">This report contains this saved note and its attached payment values and references. ${files ? "The supporting original PDFs are included in the statements folder. Whole PDFs may contain other statement periods. Unrelated case records are not included." : "Original statement files and unrelated case records are not included."} Open the saved note in Loupe to inspect its evidence.</p></body></html>`
+${documentReviews}${analysisNotes}<h2>Supporting records</h2><ul>${entry.links.map((link) => `<li>${files?.[link.target_id] ? `<a href="${escape(files[link.target_id])}">${escape(link.target_label || link.target_id)}</a>` : escape(link.target_label || link.target_id)}${link.metadata.schema === "loupe.financial.event_context/1" ? `<br>${escape(link.metadata.date)}: ${escape(link.metadata.summary)}` : ""}${Array.isArray(link.source_anchor.financial_ref_ids) ? `<br>${link.source_anchor.financial_ref_ids.map(escape).join(", ")}` : ""}</li>`).join("")}</ul><p class="muted">This report contains this saved note and its attached payment values and references. ${files ? "The supporting original PDFs are included in the statements folder. Whole PDFs may contain other statement periods. Unrelated case records are not included." : "Original statement files and unrelated case records are not included."} Open the saved note in Loupe to inspect its evidence.</p></body></html>`
 }
