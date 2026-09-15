@@ -24,6 +24,8 @@ vi.mock("@/components/ui/document-viewer", () => ({
     open: boolean
     documentUrl: string
     initialPage: number
+    evidenceId: string
+    caseId: string
   }) =>
     props.open ? (
       <div data-testid="file-viewer">{JSON.stringify(props)}</div>
@@ -74,6 +76,10 @@ it("opens the evidence file and stored page, preserving the historical reading l
     `/api/evidence/${citation.evidence_file_id}/file`
   )
   expect(screen.getByTestId("file-viewer")).toHaveTextContent('"initialPage":3')
+  expect(screen.getByTestId("file-viewer")).toHaveTextContent(
+    `"evidenceId":"${citation.evidence_file_id}"`
+  )
+  expect(screen.getByTestId("file-viewer")).toHaveTextContent('"caseId":"case"')
   expect(fetch.mock.calls[0][0]).toContain("/ledger/row/source?case_id=case")
 })
 it("follows the recorded correction without losing the original source link", async () => {

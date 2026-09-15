@@ -107,7 +107,7 @@ Older manual reviews may use terms such as candidate, resolved reading or finali
 
 To read a record, select its name or the arrow beside it. The details show its recorded amount and currency, source file, page, source text and any existing notes. Select the name or arrow again to close it. An absent source or currency is labelled as missing. The **Purpose**, **Counterparty Details** and **Notes** values here are read-only.
 
-Select **Open original file** in these details to open the linked evidence. A PDF opens at the recorded page. Use the arrows beside the page number to move backwards and forwards. The page count shows where the document ends. Use **+**, **−** or **Fit page width** to change the display size. If a page fails to load, select **Retry page**. Close the viewer to return to the same record and filters. If no source file is linked, the details tell you to look in Evidence.
+Select **Open original file** in these details to open the linked evidence. A PDF opens at the recorded page. Use the arrows beside the page number to move backwards and forwards. The page count shows where the document ends. Use **+**, **−** or **Fit page width** to change the display size. If a page fails to load, select **Retry page**. Select **Close** at the top right of the viewer to return to the same record and filters. If no source file is linked, the details tell you to look in Evidence.
 
 ![A synthetic receipt opened from Other financial records at page 2 of 3](images/24-other-record-original.png)
 
@@ -506,9 +506,10 @@ The total labelled **Payments matching your filters** covers all matching table 
 
 1. Select a payment's description or **Open transaction**.
 2. Read its date, amount, recorded payer or payee and bank reference.
-3. Use the source controls to open the original document. Where a precise location is available, the relevant value is highlighted.
-4. Use **Correct a value** if a recorded field is wrong, or **Add investigation note** to record a question or observation.
-5. Close the detail panel to return to the same payment list.
+3. Inspect the highlighted source value in the details when a location is available. Select **Open source file** to view the complete original PDF at that page.
+4. Use the arrows beside the page number to move through the PDF. The page count shows its length. Use **+**, **−** or **Fit page width** to change its size.
+5. Select **Close** at the top right to return to the transaction details. Use **Correct a value** if a recorded field is wrong, or **Add investigation note** to record a question or observation.
+6. Close the detail panel to return to the same payment list and search.
 
 ### Record an investigation note
 
@@ -593,7 +594,7 @@ Open **Change history**. Expand the relevant decision to inspect the reason, act
 1. In **Statement balance checks**, find the statement by its filename and dates. A file containing several statement periods can appear more than once.
 2. Read the opening balance, closing balance and difference. For a credit card statement with a recorded amount-owed convention, the summary says **Opening amount owed** and **Closing amount owed**.
 3. Read the result. **Balances agree** means the imported payments agree with the recorded balances. **Balance difference** means you need to compare the payments and balances with the original. **Missing balances** means a recorded opening or closing balance is missing. A missing value is not treated as zero.
-4. Select **Open statement and balances**. In the window, inspect any retained balance or date readings. Select an available reading to locate it on the original page. **Open statement file** opens the PDF.
+4. Select **Open statement and balances**. In the window, inspect any retained balance or date readings. Select an available reading to locate it on the original page. **Open statement file** opens the PDF. Use the page arrows to move through it, then select **Close** to return to the statement balances.
 5. Select **View transactions for these dates** to open that account's imported payments during the statement period. The date filter can include payments from overlapping statements. If both statement dates are not recorded, the button instead opens all account transactions.
 6. Open a payment to compare its source and correct an actual reading error. Return to **Statements**, then select **Refresh balance checks** to see the current result.
 7. For more detail, expand **Calculation and further checks**. You can inspect the arithmetic, check running balances, compare printed totals where available, and inspect suggested causes of a difference. Suggestions are places to investigate, not automatic corrections. Internal signed balances may differ from a credit card's positive amount-owed display.

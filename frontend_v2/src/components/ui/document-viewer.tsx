@@ -17,6 +17,7 @@ import {
   Film,
   Music,
   Loader2,
+  X,
 } from "lucide-react"
 import { openProtectedFile, useProtectedObjectUrl } from "@/lib/protected-file"
 import { cn } from "@/lib/cn"
@@ -316,6 +317,10 @@ export function DocumentViewer({
             )}
             <Button variant="ghost" size="icon-sm" onClick={handleOpenInNewTab} title="Open in new tab">
               <ExternalLink className="size-4" />
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)} aria-label="Close document">
+              <X className="size-4" />
+              <span className="hidden sm:inline">Close</span>
             </Button>
           </div>
         </DialogHeader>

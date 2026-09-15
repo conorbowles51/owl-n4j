@@ -284,6 +284,8 @@ export function LedgerSourceDialog({
       </Dialog>
       {data && !source.isError && (
         <DocumentViewer
+          caseId={caseId}
+          evidenceId={data.evidence_file_id}
           open={viewFile}
           onOpenChange={setViewFile}
           documentUrl={evidenceAPI.getFileUrl(data.evidence_file_id)}

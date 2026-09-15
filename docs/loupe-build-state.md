@@ -1,3 +1,11 @@
+## Imported-payment original viewer verified, 15 September 2026
+
+Unreadable amount corrections are committed as 6127cdb4. The payment source dialog now supplies the registered evidence and case IDs to the shared PDF viewer. A real local browser probe confirmed the old route still used an iframe; it now renders the original page with the actual page count. A visible Close button returns to the transaction or statement details. Fourteen affected unit checks and one Chromium component check passed, with scoped lint, TypeScript and production build (7.28 seconds, existing chunk warning).
+
+The actual read-only browser check opened the one-page checking statement from a filtered payment, verified both page bounds, returned to its details and the same two-payment search, then opened the three-page statement through its balance check, moved forward/back and returned. All nine bank payments are unchanged and there were no JavaScript errors. Private payment-statement-source-ui.json retains exact transaction, period and file IDs. The first helper expected three pages for the one-page checking PDF; its assumption was corrected to the actual source. Guide rebuilt: 22,597 words, 25 synthetic images.
+
+Next: a remaining correction boundary is confirmed in code: a genuinely absent amount (raw_amount=null) cannot be corrected because the UI accepts only string source text. Make explicit null an exact expected-value condition, distinct from an omitted guard, and preserve an originally absent value across later corrections. Verify individual and file-based paths without repeating earlier mutations or broad suites. Keep working and keep the five-minute schedule active; no push.
+
 ## Unreadable evidence amounts and corrections verified, 15 September 2026
 
 Source viewing, dates and sign-in recovery are committed locally as 4eddf0c2. Continue without pausing or pushing. A confirmed read-only check found that "not stated" became zero in Other financial records. It now stays null with the exact original text. Supported decimal/thousands/currency formats retain their sign and cents, including valid zero and parentheses; ambiguous text, ranges, invalid/nonfinite values and amounts that cannot be stored exactly require review instead of stripping characters or rounding.

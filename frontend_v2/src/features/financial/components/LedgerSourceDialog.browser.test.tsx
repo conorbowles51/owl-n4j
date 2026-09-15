@@ -8,6 +8,7 @@ vi.mock("../hooks/use-financial-access", async (importOriginal) => ({
     error: false,
   }),
 }))
+import { MemoryRouter } from "react-router-dom"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, expect, it, vi } from "vitest"
@@ -57,16 +58,23 @@ it("fetches the resolved evidence page, draws its stored rectangle and opens the
               ),
             ],
             { type: "image/png" }
-          )
+          ),
+          { headers: { "Content-Type": "image/png", "X-PDF-Page-Count": "3" } }
         )
       return new Response(
         new Blob(["%PDF-1.4\n%%EOF"], { type: "application/pdf" })
       )
     })
   render(
-    <QueryClientProvider client={new QueryClient()}>
-      <LedgerSourceDialog caseId="case" transactionId="row" onClose={vi.fn()} />
-    </QueryClientProvider>
+    <MemoryRouter>
+      <QueryClientProvider client={new QueryClient()}>
+        <LedgerSourceDialog
+          caseId="case"
+          transactionId="row"
+          onClose={vi.fn()}
+        />
+      </QueryClientProvider>
+    </MemoryRouter>
   )
   const box = await screen.findByRole("img", {
     name: "Highlighted source of TX-TEST on page 2",
@@ -82,19 +90,18 @@ it("fetches the resolved evidence page, draws its stored rectangle and opens the
   ).toBe(true)
   fireEvent.click(screen.getByRole("button", { name: "Open source file" }))
   await screen.findByRole("heading", { name: "synthetic.pdf" })
-  await vi.waitFor(() =>
-    expect(
-      screen
-        .getAllByTitle("synthetic.pdf")
-        .find((element) => element.tagName === "IFRAME")
-        ?.getAttribute("src")
-    ).toMatch(/^blob:.*#page=2$/)
-  )
   expect(
-    fetch.mock.calls.some(([url]) => url === `/api/evidence/${fileId}/file`)
-  ).toBe(true)
-  fireEvent.keyDown(document, { key: "Escape" })
+    await screen.findByRole("img", { name: "Page 2 of the original PDF" })
+  ).toBeVisible()
+  expect(screen.getByText("Page 2 of 3")).toBeVisible()
+  expect(document.querySelector("iframe")).toBeNull()
+  fireEvent.click(screen.getByRole("button", { name: "Next PDF page" }))
   expect(
-    await screen.findByRole("heading", { name: "Ledger source" })
+    await screen.findByRole("img", { name: "Page 3 of the original PDF" })
+  ).toBeVisible()
+  expect(screen.getByRole("button", { name: "Next PDF page" })).toBeDisabled()
+  fireEvent.click(screen.getByRole("button", { name: "Close document" }))
+  expect(
+    await screen.findByRole("heading", { name: "Transaction details" })
   ).toBeVisible()
 })

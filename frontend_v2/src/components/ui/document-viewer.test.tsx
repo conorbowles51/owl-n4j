@@ -45,11 +45,12 @@ it("preserves the existing document URL viewer when no evidence ID is available"
   ).toBeDisabled()
 })
 
-it("uses the source page count to stop navigation at the first and last page", () => {
+it("uses the source page count and closes without leaving the current view", () => {
+  const onOpenChange = vi.fn()
   render(
     <DocumentViewer
       open
-      onOpenChange={vi.fn()}
+      onOpenChange={onOpenChange}
       documentUrl="/source.pdf"
       documentName="source.pdf"
       evidenceId="source"
@@ -67,4 +68,6 @@ it("uses the source page count to stop navigation at the first and last page", (
     screen.getByRole("button", { name: "Previous PDF page" })
   ).toBeDisabled()
   expect(screen.getByText("Page 1 of 3")).toBeVisible()
+  fireEvent.click(screen.getByRole("button", { name: "Close document" }))
+  expect(onOpenChange).toHaveBeenCalledWith(false)
 })
