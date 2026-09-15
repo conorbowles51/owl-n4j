@@ -1,3 +1,15 @@
+## Nightly handoff, 15 September 2026 at 23:59 Dublin
+
+The planned implementation and local verification are complete. Payment-claim refresh is committed as 1a987cb2. The final compiled preview serves that exact code identifier; its final TypeScript/build pass completed with a 13.61-second bundle and the existing chunk warning. The latest compiled browser journey passed payment/source navigation, retained search, guide assets and five-note report reopening/download with all nine payments unchanged. All fourteen service/case readiness checks passed. No broad suite was repeated after the focused fixes.
+
+The eight supplied filenames still match the original inventory hashes, with no new, changed or missing PDFs. Their final automatic capture comparison remains a consistency check, not independent extraction accuracy. The final claim recovery acceptance still records six unchanged payments, no financial writes and no JavaScript errors. Published guide Markdown matches its source, with 27 synthetic images and no em dashes.
+
+The release note now describes the resulting workflows, recovery, verification, limits and deployment steps in one coherent document. Detailed historical work remains below and completed items remain checked in the completion plan. User UI acceptance, approved independent extraction references/baseline and deployed-build verification remain open. No new UI feedback arrived during the closing review period, and no further implementation defect is currently recorded as open in the plan.
+
+No push. The read-only public server version check at about 23:44 Dublin returned 40fdf65, matching the last fetched remote head. At code commit 1a987cb2 the branch is zero behind and 56 commits ahead; this documentation-only handoff adds a local commit. A later explicit push should begin with a fresh remote/tree check, use the existing repository deployment process, then verify the actual server build and a test-case journey.
+
+The five-minute heartbeat stayed active through 23:59 Dublin and was then paused through the app tool; its saved PAUSED status was verified. Local services remain available: development UI 55174, compiled preview 55175, API 58002, engine 58003 and the worker. Private runtime records remain ignored. Preserve existing synthetic imports and decisions when resuming; do not repeat successful writers or broad suites without a new reason.
+
 ## Payment-claim comparison refresh, 15 September 2026
 
 Account label cleanup is committed as 50c92646. Payment-claim comparison was the remaining manually loaded analysis result outside the new case refresh guard. It now hides an earlier result and its save/download controls when case payments may have changed, refuses a response overtaken by that refresh, and retains the source, quotation and comparison fields for the next calculation. Existing saved findings remain unchanged. Indirect review uses explicitly entered figures and source references rather than a loaded payment snapshot, so its inputs do not need this guard.
