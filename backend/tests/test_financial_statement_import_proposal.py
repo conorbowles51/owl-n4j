@@ -87,3 +87,47 @@ class ReviewedDateMeaningTests(unittest.TestCase):
         for value in ('9223372036854775808','-9223372036854775809'):
             with self.subTest(value=value), self.assertRaises(ValidationError):
                 ImportRow(id='control', excluded=True, balance_minor=value)
+
+
+class TextPositionStatementTests(unittest.TestCase):
+    def fixture(self):
+        from tests.test_financial_pdf_geometry_candidates import rectangle
+        grid=[[(20,'BANK STATEMENT - EXAMPLE RECEIVER')],[(20,'SYNTHETIC TEST BANK')],
+              [(20,'Account Number: TEST-120')],[(20,'Currency: USD')],
+              [(20,'Date'),(100,'Description'),(370,'Credit'),(440,'Debit'),(510,'Balance')],
+              [(20,'2021-03-01'),(100,'Opening Balance'),(510,'100.00')],
+              [(20,'2021-03-23'),(100,'Wire TEST-REFERENCE'),(370,'120.00'),(510,'220.00')],
+              [(20,'2021-03-24'),(100,'Outgoing'),(440,'20.00'),(510,'200.00')],
+              [(20,'2021-03-31'),(100,'Closing Balance'),(510,'200.00')]]
+        result=source([]); result['table_source']='text_alignment'
+        result['rows']=[dict(row_index=i,cells=[dict(column_index=j,expected_text=t,
+            locator=rectangle(20+i*24,x=x,width=len(t)*3,height=10)) for j,(x,t) in enumerate(row)]) for i,row in enumerate(grid)]
+        return result
+
+    def test_blank_cells_follow_printed_positions_and_keep_original_source_indices(self):
+        data=self.fixture();before=deepcopy(data);result=propose_table(data,'USD')
+        self.assertEqual(result['transaction_count'],2);self.assertEqual(result['needs_attention'],0)
+        rows=[r for r in result['rows'] if not r['excluded']]
+        self.assertEqual([r['fields']['amount_minor'] for r in rows],['12000','2000'])
+        self.assertEqual([r['fields']['direction'] for r in rows],['credit','debit'])
+        self.assertEqual([r['fields']['balance'] for r in rows],['22000','20000'])
+        self.assertEqual(rows[1]['fields']['debit_column'],'2')
+        self.assertEqual(rows[1]['fields']['balance_column'],'3')
+        self.assertTrue(all(r['excluded'] for r in result['rows'][:6]))
+        self.assertEqual(data,before)
+
+    def test_crossing_or_unlocated_text_does_not_fall_back_to_shifted_indices(self):
+        for damaged in ('crossing','missing'):
+            data=self.fixture();cell=data['rows'][6]['cells'][3]
+            if damaged=='crossing': cell['locator']['rect'][0]=400
+            else: cell['locator']={'kind':'page_only','page':1}
+            row=propose_table(data,'USD')['rows'][6]
+            self.assertEqual(row['kind'],'unresolved')
+            self.assertNotIn('amount_minor',row['fields'])
+            self.assertNotIn('balance',row['fields'])
+            self.assertTrue(row['issues'])
+
+    def test_unknown_rows_before_a_header_are_not_silently_discarded(self):
+        data=self.fixture();data['rows'][0]['cells'][0]['expected_text']='2021-03-01 Unlabelled payment 450.00'
+        row=propose_table(data,'USD')['rows'][0]
+        self.assertFalse(row['excluded']);self.assertTrue(row['issues'])
