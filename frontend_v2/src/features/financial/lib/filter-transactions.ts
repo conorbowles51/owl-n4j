@@ -1,9 +1,6 @@
 import type { Transaction } from "../api"
 import type { SortColumn } from "../stores/financial.store"
-import {
-  getFinancialDateTimestamp,
-  isValidFinancialDate,
-} from "./date-utils"
+import { getFinancialDateTimestamp, financialDateDay } from "./date-utils"
 
 export interface BaseFilterParams {
   searchQuery: string
@@ -25,7 +22,10 @@ export interface EntityFlowRow {
 
 type EntitySide = "from" | "to"
 
-function matchesEntityText(value: string | null | undefined, query: string): boolean {
+function matchesEntityText(
+  value: string | null | undefined,
+  query: string
+): boolean {
   return !!value?.toLowerCase().includes(query)
 }
 
@@ -47,7 +47,10 @@ export function matchesEntityFilter(
   )
 }
 
-function compareDateValues(a: string | null | undefined, b: string | null | undefined) {
+function compareDateValues(
+  a: string | null | undefined,
+  b: string | null | undefined
+) {
   const aTime = getFinancialDateTimestamp(a)
   const bTime = getFinancialDateTimestamp(b)
   if (aTime == null && bTime == null) return 0
@@ -56,7 +59,11 @@ function compareDateValues(a: string | null | undefined, b: string | null | unde
   return aTime - bTime
 }
 
-export function compareTransactions(a: Transaction, b: Transaction, col: SortColumn): number {
+export function compareTransactions(
+  a: Transaction,
+  b: Transaction,
+  col: SortColumn
+): number {
   let cmp = 0
   switch (col.key) {
     case "date":
@@ -86,7 +93,10 @@ export function compareTransactions(a: Transaction, b: Transaction, col: SortCol
   return col.asc ? cmp : -cmp
 }
 
-export function transactionMatchesSearch(tx: Transaction, query: string): boolean {
+export function transactionMatchesSearch(
+  tx: Transaction,
+  query: string
+): boolean {
   const normalized = query.trim().toLowerCase()
   if (!normalized) return true
 
@@ -144,15 +154,17 @@ export function filterTransactionsBase(
   }
 
   if (startDate) {
-    result = result.filter(
-      (tx) => isValidFinancialDate(tx.date) && tx.date! >= startDate
-    )
+    result = result.filter((tx) => {
+      const day = financialDateDay(tx.date)
+      return day !== null && day >= startDate
+    })
   }
 
   if (endDate) {
-    result = result.filter(
-      (tx) => isValidFinancialDate(tx.date) && tx.date! <= endDate
-    )
+    result = result.filter((tx) => {
+      const day = financialDateDay(tx.date)
+      return day !== null && day <= endDate
+    })
   }
 
   if (selectedCategories.size > 0) {
@@ -187,7 +199,10 @@ export function applyDirectionalEntitySelections(
     const fromValue = getEntitySelectionValue(tx.from_entity)
     const toValue = getEntitySelectionValue(tx.to_entity)
 
-    if (fromSelections.size > 0 && (!fromValue || !fromSelections.has(fromValue))) {
+    if (
+      fromSelections.size > 0 &&
+      (!fromValue || !fromSelections.has(fromValue))
+    ) {
       return false
     }
 

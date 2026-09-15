@@ -20,6 +20,7 @@ from services.financial import attach_transaction_locators
 from services.neo4j_service import neo4j_service
 from services.case_service import CaseAccessDenied, CaseNotFound, check_case_access
 from services.financial_export_service import render_financial_export
+from services.financial_record_dates import financial_record_day as _financial_record_day, validate_financial_date_range
 
 import re
 import logging
@@ -248,6 +249,10 @@ async def get_financial_transactions(
     """
     Get financial transactions with from/to entity resolution for a specific case.
     """
+    try:
+        validate_financial_date_range(start_date, end_date)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     try:
         parsed_types = [t.strip() for t in types.split(",") if t.strip()] if types else None
         parsed_categories = [c.strip() for c in categories.split(",") if c.strip()] if categories else None
@@ -707,6 +712,10 @@ async def export_financial_pdf(
     Includes transaction names, AI summaries, and entity notes appendix.
     """
     try:
+        try:
+            validate_financial_date_range(start_date, end_date)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
         result = neo4j_service.get_financial_transactions(case_id=case_id, mode=mode)
         transactions = result.get("transactions", []) if isinstance(result, dict) else result
         filters = []
@@ -722,10 +731,10 @@ async def export_financial_pdf(
             ]
             filters.append(f"Categories: {', '.join(category_list)}")
         if start_date:
-            transactions = [t for t in transactions if t.get("date") and t["date"] >= start_date]
+            transactions = [t for t in transactions if (day := _financial_record_day(t.get("date"))) is not None and day >= start_date]
             filters.append(f"From: {start_date}")
         if end_date:
-            transactions = [t for t in transactions if t.get("date") and t["date"] <= end_date]
+            transactions = [t for t in transactions if (day := _financial_record_day(t.get("date"))) is not None and day <= end_date]
             filters.append(f"To: {end_date}")
         if entity_key:
             display_name = entity_name or entity_key

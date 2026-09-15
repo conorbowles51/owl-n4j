@@ -50,6 +50,7 @@ import type {
 } from "../api"
 import type { SortColumn } from "../stores/financial.store"
 import { formatFinancialDate } from "../lib/date-utils"
+import { formatEvidenceAmount } from "../lib/evidence-amounts"
 
 interface TransactionTableProps {
   mode: FinancialDatasetMode
@@ -179,12 +180,15 @@ export function TransactionTable({
       <Table>
         <TableHeader>
           <TableRow className="hover:bg-transparent">
-            <TableHead className="w-8">
-              <Checkbox
-                checked={allChecked}
-                onCheckedChange={handleSelectAll}
-              />
-            </TableHead>
+            {editable && (
+              <TableHead className="w-8">
+                <Checkbox
+                  aria-label="Select displayed records"
+                  checked={allChecked}
+                  onCheckedChange={handleSelectAll}
+                />
+              </TableHead>
+            )}
             <TableHead className="w-8" />
             <TableHead className="w-24">
               <button
@@ -199,7 +203,7 @@ export function TransactionTable({
                 className="flex items-center gap-1 text-xs"
                 onClick={(e) => handleSort("name", e)}
               >
-                Name {renderSortIcon("name")}
+                Record {renderSortIcon("name")}
               </button>
             </TableHead>
             <TableHead>
@@ -243,21 +247,21 @@ export function TransactionTable({
                 Category {renderSortIcon("category")}
               </button>
             </TableHead>
-            <TableHead className="w-32 text-xs">Provenance</TableHead>
-            <TableHead className="w-8" />
+            <TableHead className="w-32 text-xs">Source</TableHead>
+            {editable && <TableHead className="w-8" />}
           </TableRow>
         </TableHeader>
         <TableBody>
           {displayRows.length === 0 ? (
             <TableRow>
               <TableCell
-                colSpan={12}
+                colSpan={editable ? 12 : 10}
                 className="h-24 text-center text-sm text-muted-foreground"
               >
                 No{" "}
                 {mode === "transactions"
                   ? "transactions"
-                  : "financial intelligence records"}{" "}
+                  : "other financial records"}{" "}
                 found
               </TableCell>
             </TableRow>
@@ -359,7 +363,7 @@ function TransactionRow({
   }
   const provenanceLabel = tx.evidence_source_type
     ? `${tx.evidence_source_type.replaceAll("_", " ")}${tx.source_page ? ` p.${tx.source_page}` : ""}`
-    : tx.source_filename || "Legacy"
+    : tx.source_filename || "Not recorded"
   return (
     <>
       <TableRow
@@ -368,19 +372,24 @@ function TransactionRow({
         } ${indent ? "bg-muted/20" : ""}`}
       >
         {/* Checkbox */}
-        <TableCell className="py-1.5">
-          <Checkbox
-            checked={isChecked}
-            onClick={(e) => {
-              e.stopPropagation()
-              onCheckbox(tx.key, e as unknown as React.MouseEvent)
-            }}
-          />
-        </TableCell>
+        {editable && (
+          <TableCell className="py-1.5">
+            <Checkbox
+              aria-label={`Select record ${tx.name || tx.key}`}
+              checked={isChecked}
+              onClick={(e) => {
+                e.stopPropagation()
+                onCheckbox(tx.key, e as unknown as React.MouseEvent)
+              }}
+            />
+          </TableCell>
+        )}
 
         {/* Expand */}
         <TableCell className="py-1.5">
           <button
+            aria-label={`${isExpanded ? "Close" : "Open"} record ${tx.name || tx.key}`}
+            aria-expanded={isExpanded}
             onClick={onToggleExpand}
             className="text-muted-foreground hover:text-foreground"
           >
@@ -409,9 +418,13 @@ function TransactionRow({
         <TableCell className="py-1.5">
           <Tooltip>
             <TooltipTrigger asChild>
-              <span className="max-w-[120px] truncate text-xs block">
-                {tx.name || "—"}
-              </span>
+              <button
+                onClick={onToggleExpand}
+                aria-expanded={isExpanded}
+                className="max-w-[200px] text-left text-xs block hover:underline"
+              >
+                {tx.name || "Unnamed record"}
+              </button>
             </TooltipTrigger>
             {tx.name && <TooltipContent>{tx.name}</TooltipContent>}
           </Tooltip>
@@ -435,15 +448,17 @@ function TransactionRow({
                 M
               </span>
             )}
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="size-5 opacity-0 group-hover/from:opacity-100"
-              disabled={!editable}
-              onClick={() => onEntityEdit(tx, "from")}
-            >
-              <Edit2 className="size-2.5" />
-            </Button>
+            {editable && (
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="size-5 opacity-0 group-hover/from:opacity-100"
+                disabled={!editable}
+                onClick={() => onEntityEdit(tx, "from")}
+              >
+                <Edit2 className="size-2.5" />
+              </Button>
+            )}
           </div>
         </TableCell>
 
@@ -470,15 +485,17 @@ function TransactionRow({
                 M
               </span>
             )}
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="size-5 opacity-0 group-hover/to:opacity-100"
-              disabled={!editable}
-              onClick={() => onEntityEdit(tx, "to")}
-            >
-              <Edit2 className="size-2.5" />
-            </Button>
+            {editable && (
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="size-5 opacity-0 group-hover/to:opacity-100"
+                disabled={!editable}
+                onClick={() => onEntityEdit(tx, "to")}
+              >
+                <Edit2 className="size-2.5" />
+              </Button>
+            )}
           </div>
         </TableCell>
 
@@ -490,13 +507,12 @@ function TransactionRow({
             aria-label={`Correct amount for ${tx.name || tx.key}`}
             onClick={() => onAmountClick(tx)}
           >
-            {tx.currency && /^[A-Z]{3}$/.test(tx.currency) ? (
+            {tx.currency &&
+            /^[A-Z]{3}$/.test(tx.currency) &&
+            Number.isFinite(tx.amount) ? (
               <CostBadge amount={tx.amount} currency={tx.currency} />
             ) : (
-              <span>
-                {tx.amount.toLocaleString("en-IE")}{" "}
-                {tx.currency || "(currency not recorded)"}
-              </span>
+              <span>{formatEvidenceAmount(tx.amount, tx.currency)}</span>
             )}
             {tx.amount_corrected && (
               <Tooltip>
@@ -532,7 +548,7 @@ function TransactionRow({
         <TableCell className="py-1.5">
           {tx.type && (
             <Badge variant="outline" className="text-[10px]">
-              {tx.type}
+              {tx.type.replace(/([a-z])([A-Z])/g, "$1 $2").replaceAll("_", " ")}
             </Badge>
           )}
         </TableCell>
@@ -598,38 +614,40 @@ function TransactionRow({
         </TableCell>
 
         {/* Actions */}
-        <TableCell className="py-1.5">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className="size-6 opacity-0 group-hover:opacity-100"
-                disabled={!editable}
-              >
-                <MoreHorizontal className="size-3.5" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => onGroupSubTransactions(tx)}>
-                <Link className="size-3.5 mr-2" />
-                Group Sub-Transactions
-              </DropdownMenuItem>
-              {tx.parent_transaction_key && (
-                <DropdownMenuItem onClick={() => onRemoveFromGroup(tx)}>
-                  <Unlink className="size-3.5 mr-2" />
-                  Remove from Group
+        {editable && (
+          <TableCell className="py-1.5">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="size-6 opacity-0 group-hover:opacity-100"
+                  disabled={!editable}
+                >
+                  <MoreHorizontal className="size-3.5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => onGroupSubTransactions(tx)}>
+                  <Link className="size-3.5 mr-2" />
+                  Group Sub-Transactions
                 </DropdownMenuItem>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </TableCell>
+                {tx.parent_transaction_key && (
+                  <DropdownMenuItem onClick={() => onRemoveFromGroup(tx)}>
+                    <Unlink className="size-3.5 mr-2" />
+                    Remove from Group
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </TableCell>
+        )}
       </TableRow>
 
       {/* Expanded detail panel */}
       {isExpanded && (
         <TableRow>
-          <TableCell colSpan={12} className="p-0">
+          <TableCell colSpan={editable ? 12 : 10} className="p-0">
             <TransactionDetailPanel
               transaction={tx}
               editable={editable}

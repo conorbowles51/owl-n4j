@@ -19,6 +19,18 @@ export function evidenceCurrency(value: string | undefined): string | null {
   const currency = typeof value === "string" ? value.trim().toUpperCase() : null
   return currency && /^[A-Z]{3}$/.test(currency) ? currency : null
 }
+export function formatEvidenceAmount(
+  amount: number,
+  currency?: string
+): string {
+  if (!Number.isFinite(amount)) return "Amount not recorded"
+  const cents = evidenceAmountCents(amount)
+  const text = cents === null ? String(amount) : formatEvidenceCents(cents)
+  const label =
+    evidenceCurrency(currency) ||
+    (typeof currency === "string" ? currency.trim() : "")
+  return label ? `${text} ${label}` : `${text} (currency not recorded)`
+}
 export function summarizeEvidenceAmounts(records: Transaction[]) {
   const groups = new Map<
     string,

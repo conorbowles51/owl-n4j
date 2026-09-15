@@ -119,6 +119,7 @@ export function FinancialFilterPanel({
           <div className="flex items-center gap-2">
             <Input
               type="date"
+              aria-label="Other records from date"
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
               className="h-7 w-32 text-xs"
@@ -126,11 +127,17 @@ export function FinancialFilterPanel({
             <span className="text-xs text-muted-foreground">to</span>
             <Input
               type="date"
+              aria-label="Other records to date"
               value={endDate}
               onChange={(e) => setEndDate(e.target.value)}
               className="h-7 w-32 text-xs"
             />
           </div>
+          {startDate && endDate && startDate > endDate && (
+            <p role="alert" className="mt-1 text-xs text-destructive">
+              The from date must be on or before the to date.
+            </p>
+          )}
         </div>
 
         {/* Amount Range */}

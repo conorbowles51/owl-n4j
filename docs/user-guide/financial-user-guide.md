@@ -105,6 +105,12 @@ Older manual reviews may use terms such as candidate, resolved reading or finali
 
 **Imported statement payments** and **Other financial records** are separate sets of information. Use the first for the statement workflow in this guide. The second contains information extracted from other evidence. An amount mentioned in a letter or interview is not automatically a bank transaction. Use the payment-claim comparison in Patterns to compare such a statement with recorded payments.
 
+To read a record, select its name or the arrow beside it. The details show its recorded amount and currency, source file, page, source text and any existing notes. Select the name or arrow again to close it. An absent source or currency is labelled as missing. The **Purpose**, **Counterparty Details** and **Notes** values here are read-only.
+
+Select **Open original file** in these details to open the linked evidence. A PDF opens at the recorded page. Use the arrows beside the page number to move backwards and forwards. The page count shows where the document ends. Use **+**, **−** or **Fit page width** to change the display size. If a page fails to load, select **Retry page**. Close the viewer to return to the same record and filters. If no source file is linked, the details tell you to look in Evidence.
+
+![A synthetic receipt opened from Other financial records at page 2 of 3](images/24-other-record-original.png)
+
 To correct an amount in **Other financial records**, select its amount to open **Correct Amount**. Compare the current value and currency with the original evidence. Enter **New Amount** and **Correction Reason**, then select **Save Correction**. Loupe retains the original amount and the latest explanation with this record. A later correction replaces that explanation. **Close** keeps your unfinished correction in this browser tab; reopen the same record to continue. A failed save displays an error and retains the draft. If the saved amount changes while you are editing, the save is refused. Reopen the record to start from its new amount. When no currency is recorded, the editor says so rather than displaying a dollar sign.
 
 
@@ -148,7 +154,7 @@ The summary above the list groups the displayed records by their recorded curren
 ### Download other financial records
 
 1. Open **Transactions**, then **Other financial records**.
-2. Use the search, category, date, sender, receiver or amount filters to select the records you need. Amount limits compare the size of an amount, so a limit of 100 to 250 includes both 150 and -150.
+2. Use the search, category, date, sender, receiver or amount filters to select the records you need. Amount limits compare the size of an amount, so a limit of 100 to 250 includes both 150 and -150. Both dates are included. A record with a time on the final day is included too. Dates appear as year-month-day. Incomplete or impossible dates are marked **check date** and stay outside an active date filter; clear the dates to see those records.
 3. Select **Download report**. The button changes to **Preparing report...** while the report is created.
 4. Open the downloaded PDF. Check the case name, active filters and record count. The rows include the recorded amount and currency, available source details, original corrected amounts and the latest correction explanations.
 5. Read each currency total separately. Positive and negative signs are preserved; they do not by themselves establish who paid whom. A record with no currency remains visible but is not included in a currency total.
@@ -1187,6 +1193,7 @@ If a save's outcome is uncertain, reload the saved record first. A repeated clic
 
 | Problem | What to do |
 |---|---|
+| Loupe says Cannot check sign-in | Check your connection, then select **Retry connection**. Loupe keeps the current sign-in while it checks again. Use **Sign in again** if you want to sign out and enter your credentials again. An expired session still returns you to the login form. |
 | I cannot see the case | Check that you signed into the correct server and account. Ask the case owner to check access. |
 | I can read but cannot save | Ask for case editing access. Keep a note of the intended decision and source location. |
 | There are no prepared PDF pages | Check the correct file's preparation status. Preparation must complete before stored tables can be selected. |

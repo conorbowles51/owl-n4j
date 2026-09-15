@@ -2331,6 +2331,7 @@ def get_evidence_page_image(
         raise HTTPException(status_code=422, detail="The file could not be opened as a PDF")
 
     try:
+        page_count = document.page_count
         png = render_page_png(document, page_number=page_number, width=width)
     except PageRenderError as error:
         # The service's messages are written to be shown to the person who
@@ -2340,7 +2341,10 @@ def get_evidence_page_image(
     finally:
         document.close()
 
-    return Response(content=png, media_type="image/png")
+    return Response(content=png, media_type="image/png", headers={
+        "X-PDF-Page-Count": str(page_count),
+        "Cache-Control": "private, no-store",
+    })
 
 
 FRAMES_CACHE_DIR = BASE_DIR / "data" / "video_frames"

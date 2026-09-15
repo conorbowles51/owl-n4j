@@ -7,6 +7,7 @@ Neo4jService and dealt with financial transactions now lives here.
 
 import logging
 import re
+from services.financial_record_dates import financial_record_day, validate_financial_date_range
 from typing import Dict, List, Optional
 
 from services.neo4j.driver import driver, safe_float
@@ -190,6 +191,7 @@ class FinancialService:
         mode: str = "transactions",
     ) -> Dict:
         """Get financial records with strict provenance mode and legacy fallback."""
+        validate_financial_date_range(start_date, end_date)
         with driver.session() as session:
             normalized_mode = self._normalize_mode(mode)
             metadata = self._get_dataset_metadata(session, case_id, normalized_mode)
@@ -201,10 +203,10 @@ class FinancialService:
                 conditions.append("labels(n)[0] IN $types")
                 params["types"] = types
             if start_date:
-                conditions.append("n.date >= $start_date")
+                conditions.append("substring(trim(toString(n.date)), 0, 10) >= $start_date")
                 params["start_date"] = start_date
             if end_date:
-                conditions.append("n.date <= $end_date")
+                conditions.append("substring(trim(toString(n.date)), 0, 10) <= $end_date")
                 params["end_date"] = end_date
             if categories:
                 conditions.append("coalesce(n.financial_category, 'Uncategorized') IN $categories")
@@ -288,6 +290,11 @@ class FinancialService:
                     continue
                 deduped_transactions[transaction_key] = self._sanitize_transaction(transaction)
             transactions = list(deduped_transactions.values())
+            if start_date or end_date:
+                transactions = [row for row in transactions
+                    if (day := financial_record_day(row.get("date"))) is not None
+                    and (not start_date or day >= start_date)
+                    and (not end_date or day <= end_date)]
             return {"transactions": transactions, "total": len(transactions), **metadata}
 
     def get_financial_entities(self, case_id: str) -> List[Dict]:
