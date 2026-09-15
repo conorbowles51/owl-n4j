@@ -17,7 +17,11 @@ _DATE = r'\d{2}/\d{2}'
 _SPACED_MONEY = r'[+-]?\s*(?:\d{1,3}(?:,\d{3})+|\d+)\s*\.\s*\d{2}'
 _FULL_DATE = r'\d\s*\d\s*/\s*\d\s*\d\s*/\s*(?:2\s*0\s*)?\d\s*\d'
 _TYPES = {'BASE SHARE SAVINGS': 'savings', 'FREE CHECKING': 'checking', 'VISA PAYMENT': 'other'}
-_SHARE = re.compile(r'^(\d{2}/\d{2}) ID (\d{4}) (BASE SHARE SAVINGS|FREE CHECKING|VISA PAYMENT) Previous Balance(?: |$)')
+# OCR may insert spaces inside a fixed printed label. Match its letters exactly;
+# this does not repair account numbers, dates, amounts or substituted glyphs.
+_PREVIOUS = re.compile(r'(?<![A-Za-z])' + r'\s*'.join('PreviousBalance') + r'(?![A-Za-z])')
+_SHARE = re.compile(r'^(\d{2}/\d{2}) ID (\d{4}) (BASE SHARE SAVINGS|FREE CHECKING|VISA PAYMENT) ' + _PREVIOUS.pattern + r'(?: |$)')
+_SHARE_LABEL = re.compile(r'^\d{2}/\d{2} ID \S+ (BASE SHARE SAVINGS|FREE CHECKING|VISA PAYMENT)(?: |$)')
 
 _CLOSED = re.compile(r'^(\d{2}/\d{2}) ID (\d{4}) (BASE SHARE SAVINGS|FREE CHECKING|VISA PAYMENT) Closed$')
 
@@ -49,7 +53,7 @@ def andrews_page(source, *, allow_unbranded=False):
     rows = source['rows']
     cells = [c for r in rows for c in r['cells']]
     marks = [c for c in cells if re.fullmatch(r'\.?Andrews', c['expected_text'].strip()) and _box(c)]
-    titles = [c for c in cells if re.fullmatch(r'Account\s*[-·]?\s*Statement', c['expected_text'].strip()) and _box(c)]
+    titles = [c for c in cells if re.fullmatch(r'Account[-·]?Statement', re.sub(r'\s+', '', c['expected_text'])) and _box(c)]
     if len(titles) != 1 or len(marks) > 1 or (not marks and not allow_unbranded):
         return None
     size = titles[0]['locator'].get('page_size', [])
@@ -179,7 +183,7 @@ def andrews_catalog(sources):
             if 'Continued on following page' in text:
                 break
             match = _SHARE.match(text)
-            if 'Previous Balance' in text:
+            if _PREVIOUS.search(text) or (_SHARE_LABEL.match(text) and not _CLOSED.fullmatch(text)):
                 active = None
                 if match:
                     identity = dict(layout_id=_LAYOUT, institution='Andrews Federal Credit Union',

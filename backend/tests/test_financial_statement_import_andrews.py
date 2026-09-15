@@ -271,3 +271,33 @@ class AndrewsReaderTests(unittest.TestCase):
             self.assertNotIn('account_closure',st)
             self.assertTrue(any(not r['excluded'] for r in proposal['rows']))
             self.assertTrue(proposal['issues'])
+
+    def test_spaced_fixed_headings_keep_original_text_and_matching_continuations(self):
+        first = source([[(15, '06/01 ID 0040 FREE CHECKING Pre vious Bal ance'), (350, '100.00')],
+                        [(15, '--- Continued on following page ---')]])
+        second = source([[(15, '06/03'), (75, 'Deposit ACH Example'), (310, '20.00 120.00')],
+                         [(15, '06/30 Ending Balance'), (350, '120.00')]], page=2, printed_page=2, names=False)
+        second['rows'][0]['cells'][0]['expected_text'] = 'Ac count State ment'
+        second['rows'][1]['cells'][0]['expected_text'] = 'Unreadable logo'
+        before = deepcopy([first, second])
+        st, p = selected([first, second])
+        self.assertEqual(st['page_numbers'], [1, 2])
+        payment = next(r for r in p['rows'] if not r['excluded'])
+        self.assertEqual(payment['fields']['amount_minor'], '2000')
+        self.assertEqual(payment['fields']['balance'], '12000')
+        self.assertEqual(p['issues'], [])
+        self.assertEqual([first, second], before)
+        self.assertTrue(any('Pre vious Bal ance' in c['expected_text'] for r in p['rows'] for c in r['source_cells']))
+        second['rows'][0]['cells'][0]['expected_text'] = 'Acc0unt Statement'
+        self.assertIsNone(andrews_page(second, allow_unbranded=True))
+        self.assertEqual(selected([first, second])[0]['page_numbers'], [1])
+
+    def test_damaged_previous_balance_label_cannot_inherit_another_share(self):
+        grid = source([[(15, '06/01 ID 0040 FREE CHECKING Previous Balance'), (350, '100.00')],
+                       [(15, '06/03'), (75, 'Deposit ACH Example'), (310, '20.00 120.00')],
+                       [(15, '06/01 ID 0000 BASE SHARE SAVINGS Previ0us Balance'), (350, '300.00')],
+                       [(15, '06/04'), (75, 'Deposit ACH Other share'), (310, '40.00 340.00')]])
+        st, p = selected([grid])
+        self.assertEqual(len([r for r in p['rows'] if not r['excluded']]), 1)
+        self.assertNotIn('Other share', str(p))
+        self.assertTrue(statement_catalog([grid])['unclassified_sources'])
