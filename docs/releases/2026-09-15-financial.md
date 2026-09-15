@@ -148,3 +148,7 @@ Explicit financial records remain visible when no amount was saved. Individual a
 ### Source-preview and separate-file recovery
 
 Delayed responses can no longer replace a reopened original-source preview or expose its object URL after the signed-in session changes. File reads recheck cancellation/session before returning bytes. A failed separate-file open leaves the current PDF visible and provides a retry, with repeat pending requests locked. Eighteen distinct focused checks passed, plus scoped lint, TypeScript and production build. A local browser failure/retry downloaded the exact original SHA-256, retained the visible page and returned to transaction details without changing any payment.
+
+### Returning to the same payment view
+
+Payment table filters, sorting and pagination now survive opening the original file, visiting its location in Evidence, returning to Financial and refreshing. Settings remain separate for each signed-in user, case and applied account/date view. Changing a filter starts at the first matching page; clearing filters leaves selected payments intact. Seven focused checks and actual nine-payment and 2,700-payment browser journeys passed, along with TypeScript, scoped lint and the production build. No payment records changed.

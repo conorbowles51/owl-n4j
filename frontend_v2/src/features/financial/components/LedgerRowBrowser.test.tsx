@@ -1,5 +1,7 @@
-import { render, screen, fireEvent } from "@testing-library/react"
-import { expect, it, vi } from "vitest"
+import { act, render, screen, fireEvent } from "@testing-library/react"
+import { beforeEach, expect, it, vi } from "vitest"
+import { useAuthStore } from "@/features/auth/hooks/use-auth"
+import { useFinancialDraftStore } from "../stores/financial-drafts"
 import { LedgerRowBrowser } from "./LedgerRowBrowser"
 import type { LedgerTransaction } from "../api"
 vi.mock("./LedgerTable", () => ({
@@ -117,4 +119,94 @@ it("filters inclusive exact ranges, rejects invalid precision and resets on curr
   })
   expect(screen.getByLabelText("Table minimum amount")).toHaveValue("")
   expect(screen.getByRole("button", { name: "smaller" })).toBeInTheDocument()
+})
+
+vi.mock("./LedgerExportButton", () => ({ LedgerExportButton: () => null }))
+const user = (id: string) =>
+  ({ id, username: id }) as NonNullable<
+    ReturnType<typeof useAuthStore.getState>["user"]
+  >
+beforeEach(() => {
+  useFinancialDraftStore.setState({ drafts: {} })
+  useAuthStore.setState({ user: user("reviewer-a") })
+})
+
+it("restores every payment filter and the table page after leaving and reopening the case", () => {
+  const rows = Array.from({ length: 70 }, (_, i) =>
+    row(String(i), { amount_minor: "10000" })
+  )
+  const show = () => (
+    <LedgerRowBrowser
+      transactions={rows}
+      exportContext={{ caseId: "case-a", params: {} }}
+    />
+  )
+  const first = render(show())
+  for (const [name, value] of [
+    ["Search payments", "Payment"],
+    ["Currency", "GBP"],
+    ["Table minimum amount", "50"],
+    ["Table maximum amount", "150"],
+    ["Money in or out", "debit"],
+    ["Table proof class", "p3"],
+    ["Sort payments", "newest"],
+  ])
+    fireEvent.change(screen.getByLabelText(name), { target: { value } })
+  fireEvent.click(screen.getByRole("button", { name: "Next ledger rows" }))
+  expect(screen.getAllByRole("listitem")).toHaveLength(20)
+  first.unmount()
+  render(show())
+  for (const [name, value] of [
+    ["Search payments", "Payment"],
+    ["Currency", "GBP"],
+    ["Table minimum amount", "50"],
+    ["Table maximum amount", "150"],
+    ["Money in or out", "debit"],
+    ["Table proof class", "p3"],
+    ["Sort payments", "newest"],
+  ])
+    expect(screen.getByLabelText(name)).toHaveValue(value)
+  expect(screen.getByText("51–70 of 70 matching rows")).toBeVisible()
+  expect(screen.getAllByRole("listitem")).toHaveLength(20)
+})
+
+it("keeps table views separate by case, account/date scope and signed-in user", () => {
+  const rows = [row("one")]
+  const show = (caseId = "case-a", accountId?: string) => (
+    <LedgerRowBrowser
+      transactions={rows}
+      exportContext={{ caseId, params: { accountId } }}
+    />
+  )
+  const view = render(show())
+  fireEvent.change(screen.getByLabelText("Search payments"), {
+    target: { value: "Payment" },
+  })
+  view.rerender(show("case-b"))
+  expect(screen.getByLabelText("Search payments")).toHaveValue("")
+  view.rerender(show("case-a", "account-b"))
+  expect(screen.getByLabelText("Search payments")).toHaveValue("")
+  view.rerender(show())
+  expect(screen.getByLabelText("Search payments")).toHaveValue("Payment")
+  act(() => useAuthStore.setState({ user: user("reviewer-b") }))
+  view.rerender(show())
+  expect(screen.getByLabelText("Search payments")).toHaveValue("")
+})
+
+it("clears the saved table filters so reopening does not restore the old search", () => {
+  const show = () => (
+    <LedgerRowBrowser
+      transactions={[row("one")]}
+      exportContext={{ caseId: "case-a", params: {} }}
+    />
+  )
+  const view = render(show())
+  fireEvent.change(screen.getByLabelText("Search payments"), {
+    target: { value: "missing" },
+  })
+  fireEvent.click(screen.getByRole("button", { name: "Clear payment filters" }))
+  view.unmount()
+  render(show())
+  expect(screen.getByLabelText("Search payments")).toHaveValue("")
+  expect(screen.getByRole("button", { name: "one" })).toBeVisible()
 })

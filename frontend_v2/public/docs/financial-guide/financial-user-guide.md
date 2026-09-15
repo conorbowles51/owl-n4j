@@ -500,6 +500,8 @@ An ordering date is the date Loupe uses to place a reading in sequence. For some
 6. Use **Previous ledger rows** and **Next ledger rows** when there are more than 50 matches.
 7. Select **Clear payment filters** to remove the search, currency, amount and sort settings. The account and date filters above remain as you applied them.
 
+Your search, currency, amount limits, direction, sort order and table page are retained when you leave Financial or refresh in this browser tab. They are kept separately for each signed-in user, case and account/date view. Returning to a previous account/date view restores its table settings. **Clear payment filters** clears the saved settings for that view; it does not clear your selected payments.
+
 The total labelled **Payments matching your filters** covers all matching table pages. It changes when you search. It does not include unprocessed PDFs. Changing currency clears the previous amount range.
 
 ### Open a payment and its source

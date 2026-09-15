@@ -11,6 +11,16 @@ import { useState, type ComponentProps } from "react"
 import { Button } from "@/components/ui/button"
 import { LedgerTable } from "./LedgerTable"
 import type { LedgerTransaction } from "../api"
+const emptyView = {
+  search: "",
+  currency: "",
+  minimum: "",
+  maximum: "",
+  direction: "",
+  proof: "",
+  sort: "ledger",
+  page: 0,
+}
 function exactAmount(row: LedgerTransaction) {
   const value = row.amount_minor
   if (typeof value === "number" && !Number.isSafeInteger(value)) return null
@@ -26,14 +36,24 @@ export function LedgerRowBrowser({
   investigation?: boolean
   exportContext?: { caseId: string; params: LedgerQueryParams }
 }) {
-  const [search, setSearch] = useState(""),
-    [currency, setCurrency] = useState(""),
-    [minimum, setMinimum] = useState(""),
-    [maximum, setMaximum] = useState(""),
-    [direction, setDirection] = useState(""),
-    [proof, setProof] = useState(""),
-    [sort, setSort] = useState("ledger"),
-    [page, setPage] = useState(0)
+  const [localView, setLocalView] = useState(emptyView)
+  const [savedView, setSavedView] = useFinancialDraft(
+    exportContext?.caseId ?? "none",
+    `payment-table:${JSON.stringify([
+      investigation,
+      exportContext?.params.accountId ?? null,
+      exportContext?.params.startDate ?? null,
+      exportContext?.params.endDate ?? null,
+      exportContext?.params.ledgerStatus ?? "admitted",
+    ])}`,
+    emptyView
+  )
+  const view = exportContext ? savedView : localView
+  const setView = exportContext ? setSavedView : setLocalView
+  const { search, currency, minimum, maximum, direction, proof, sort, page } =
+    view
+  const changeView = (changes: Partial<typeof emptyView>) =>
+    setView((previous) => ({ ...previous, page: 0, ...changes }))
   const [selection, setSelection] = useFinancialDraft<string[]>(
     exportContext?.caseId ?? "none",
     "selected-payments",
@@ -103,8 +123,7 @@ export function LedgerRowBrowser({
             maxLength={256}
             value={search}
             onChange={(e) => {
-              setSearch(e.target.value)
-              setPage(0)
+              changeView({ search: e.target.value })
             }}
             placeholder="Description, name or reference"
           />
@@ -116,11 +135,12 @@ export function LedgerRowBrowser({
             className="block rounded border bg-background p-2"
             value={currency}
             onChange={(e) => {
-              setCurrency(e.target.value)
-              setMinimum("")
-              setMaximum("")
-              setPage(0)
-              if (sort.startsWith("amount")) setSort("ledger")
+              changeView({
+                currency: e.target.value,
+                minimum: "",
+                maximum: "",
+                sort: sort.startsWith("amount") ? "ledger" : sort,
+              })
             }}
           >
             <option value="">All currencies</option>
@@ -138,8 +158,7 @@ export function LedgerRowBrowser({
             className="block rounded border bg-background p-2"
             value={sort}
             onChange={(e) => {
-              setSort(e.target.value)
-              setPage(0)
+              changeView({ sort: e.target.value })
             }}
           >
             <option value="ledger">Recorded date order</option>
@@ -156,14 +175,7 @@ export function LedgerRowBrowser({
         <Button
           variant="outline"
           onClick={() => {
-            setSearch("")
-            setCurrency("")
-            setMinimum("")
-            setMaximum("")
-            setDirection("")
-            setProof("")
-            setSort("ledger")
-            setPage(0)
+            setView(emptyView)
           }}
         >
           Clear payment filters
@@ -187,8 +199,7 @@ export function LedgerRowBrowser({
                 disabled={!currency}
                 value={minimum}
                 onChange={(e) => {
-                  setMinimum(e.target.value)
-                  setPage(0)
+                  changeView({ minimum: e.target.value })
                 }}
               />
             </label>
@@ -202,8 +213,7 @@ export function LedgerRowBrowser({
                 disabled={!currency}
                 value={maximum}
                 onChange={(e) => {
-                  setMaximum(e.target.value)
-                  setPage(0)
+                  changeView({ maximum: e.target.value })
                 }}
               />
             </label>
@@ -214,8 +224,7 @@ export function LedgerRowBrowser({
                 className="block rounded border bg-background p-2"
                 value={direction}
                 onChange={(e) => {
-                  setDirection(e.target.value)
-                  setPage(0)
+                  changeView({ direction: e.target.value })
                 }}
               >
                 <option value="">Both directions</option>
@@ -234,8 +243,7 @@ export function LedgerRowBrowser({
                   className="block rounded border bg-background p-2"
                   value={proof}
                   onChange={(e) => {
-                    setProof(e.target.value)
-                    setPage(0)
+                    changeView({ proof: e.target.value })
                   }}
                 >
                   <option value="">All proof classes</option>
@@ -362,7 +370,7 @@ export function LedgerRowBrowser({
           <Button
             variant="outline"
             disabled={!index}
-            onClick={() => setPage(index - 1)}
+            onClick={() => changeView({ page: index - 1 })}
           >
             Previous ledger rows
           </Button>
@@ -373,7 +381,7 @@ export function LedgerRowBrowser({
           <Button
             variant="outline"
             disabled={(index + 1) * 50 >= rows.length}
-            onClick={() => setPage(index + 1)}
+            onClick={() => changeView({ page: index + 1 })}
           >
             Next ledger rows
           </Button>
