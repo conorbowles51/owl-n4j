@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { fetchAPI } from "@/lib/api-client"
@@ -22,9 +22,7 @@ export function InvestigationFilters({
     [start, setStart] = useState(initialParams.startDate ?? ""),
     [end, setEnd] = useState(initialParams.endDate ?? ""),
     [search, setSearch] = useState("")
-  const [selectedLabel, setSelectedLabel] = useState(
-    initialParams.accountId ?? ""
-  )
+  const [selectedLabel, setSelectedLabel] = useState("Selected account")
   const accounts = useQuery({
     queryKey: ["financial-ledger", caseId, "filter-accounts", search],
     retry: false,
@@ -38,6 +36,29 @@ export function InvestigationFilters({
       return data
     },
   })
+  const selectedAccount = accounts.data?.items.find(
+    (item) => item.id === account
+  )
+  const resolvedLabel = selectedAccount
+    ? [
+        selectedAccount.display_label ||
+          [
+            selectedAccount.holder,
+            selectedAccount.identifier,
+            selectedAccount.institution,
+          ]
+            .filter(Boolean)
+            .join(" · ") ||
+          selectedAccount.id,
+        selectedAccount.currency,
+      ]
+        .filter(Boolean)
+        .join(" ")
+    : undefined
+  useEffect(() => {
+    // Keep a resolved account name when a later search no longer includes it.
+    if (resolvedLabel) setSelectedLabel(resolvedLabel)
+  }, [resolvedLabel])
   const invalid = !!start && !!end && start > end
   return (
     <form
@@ -140,7 +161,22 @@ export function InvestigationFilters({
         <p role="alert">The start date must be on or before the end date.</p>
       )}
       {accounts.isError && (
-        <p role="alert">Account list unavailable. {accounts.error.message}</p>
+        <div role="alert" className="space-y-2">
+          <p>
+            Account list unavailable. Your chosen account and dates are
+            retained.
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={accounts.isFetching}
+            onClick={() => void accounts.refetch()}
+          >
+            {accounts.isFetching
+              ? "Retrying accounts…"
+              : "Try loading accounts again"}
+          </Button>
+        </div>
       )}
     </form>
   )

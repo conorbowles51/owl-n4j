@@ -247,3 +247,46 @@ describe("LedgerPanel filtered and incomplete empty answers", () => {
     expect(screen.getAllByTestId("ledger-row")).toHaveLength(1)
   })
 })
+
+it("names the selected account in the investigation scope without exposing an internal ID", () => {
+  useLedgerTransactions.mockReturnValue(
+    settled([
+      makeRow({ account_label: "Example Person · Example Bank · 12345678" }),
+    ])
+  )
+  render(
+    <LedgerPanel
+      caseId="case-1"
+      investigation
+      params={{
+        accountId: "acct-1",
+        startDate: "2024-01-01",
+        endDate: "2024-12-31",
+      }}
+    />
+  )
+  const scope = screen.getByTestId("ledger-filter-scope")
+  expect(scope).toHaveTextContent("Example Person · Example Bank · 12345678")
+  expect(scope).toHaveTextContent("From 2024-01-01, inclusive.")
+  expect(scope).toHaveTextContent("To 2024-12-31, inclusive.")
+  expect(scope).not.toHaveTextContent("acct-1")
+})
+it("keeps an empty investigation scope understandable without inventing account details", () => {
+  useLedgerTransactions.mockReturnValue(settled([]))
+  render(
+    <LedgerPanel
+      caseId="case-1"
+      investigation
+      params={{ accountId: "acct-2" }}
+    />
+  )
+  expect(screen.getByTestId("ledger-filter-scope")).toHaveTextContent(
+    "Showing the account selected above."
+  )
+  expect(screen.getByTestId("ledger-filter-scope")).not.toHaveTextContent(
+    "acct-2"
+  )
+  expect(
+    screen.getByText("No payments match these filters")
+  ).toBeInTheDocument()
+})

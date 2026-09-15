@@ -10,7 +10,7 @@ The local build is ready for UI acceptance and an explicitly requested push. It 
 4. Use People and businesses, Transfers, Patterns and Trends to investigate payments. More financial tools contains Payment graph, Trace funds and Payments and case events. Open the payments behind a result to check their sources.
 5. Save notes, payment selections, transfer comparisons and tracing calculations in Findings. Reopen them later or select them for a report. Another authorised case member can reopen the same saved work and supporting documents.
 6. Build a report with selected findings and original PDFs. The separate transaction export retains original/corrected versions and recorded history. The tracing review package retains selected calculation inputs, methods, results and verification records.
-7. Open the Financial guide when needed. It contains step-by-step instructions and 22 synthetic screenshots and closes without resetting the current form.
+7. Open the Financial guide when needed. It contains step-by-step instructions and 26 synthetic screenshots and closes without resetting the current form.
 
 Supported wire-detail reports and deposit receipts open a separate review. Their checked details can be saved in Findings and linked to an existing payment. They do not create a second payment merely because a statement records the same deposit or transfer.
 
@@ -178,3 +178,9 @@ Eighteen focused checks, the actual TypeScript project build and scoped lint pas
 Payments selected through analysis results now join the same selection as Transactions. Hiding the result list, changing tabs and refreshing preserve the chosen IDs. Each result explains how many choices lie elsewhere, and its review can remove individual choices. Saving includes the whole selection. Read-only result lists omit Add note.
 
 Six focused checks, TypeScript project checking, scoped lint and production build passed. The actual counterparty-to-Transactions journey retained a selection, combined a second choice, restored both through refresh and shared an individual removal back to Transactions. All nine payments remain unchanged.
+
+## Readable account scope and account-search recovery
+
+The applied payment scope names the account and explains date bounds. The import notice matches the actual statement restriction. Show this account's payments includes its other statements again. Searching the account chooser retains the previously selected account's name; failed searches keep the account and dates with a direct retry.
+
+Nineteen focused checks, TypeScript project checking, scoped lint and production build passed. Browser checks expanded the six-payment statement to the seven-payment account, retained an empty date filter through refresh and retried an account search without changing its selection. All nine bank payments are unchanged. No broad suite or push.

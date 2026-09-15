@@ -114,13 +114,32 @@ export function LedgerPanel({
   const hasScopeFilter = Boolean(
     params?.accountId || params?.startDate || params?.endDate
   )
-  const scope = [
-    params?.accountId ? `Account: ${params.accountId}.` : null,
-    params?.startDate ? `Ordering date on or after ${params.startDate}.` : null,
-    params?.endDate ? `Ordering date on or before ${params.endDate}.` : null,
-  ]
-    .filter(Boolean)
-    .join(" ")
+  const accountLabel = rows.find(
+    (row) => row.account_id === params?.accountId
+  )?.account_label
+  const scope = investigation
+    ? [
+        params?.accountId
+          ? accountLabel
+            ? `Account: ${accountLabel}.`
+            : "Showing the account selected above."
+          : null,
+        params?.startDate ? `From ${params.startDate}, inclusive.` : null,
+        params?.endDate ? `To ${params.endDate}, inclusive.` : null,
+      ]
+        .filter(Boolean)
+        .join(" ")
+    : [
+        params?.accountId ? `Account: ${params.accountId}.` : null,
+        params?.startDate
+          ? `Ordering date on or after ${params.startDate}.`
+          : null,
+        params?.endDate
+          ? `Ordering date on or before ${params.endDate}.`
+          : null,
+      ]
+        .filter(Boolean)
+        .join(" ")
 
   return (
     <div className="space-y-3">
@@ -129,8 +148,11 @@ export function LedgerPanel({
           className="text-xs text-muted-foreground"
           data-testid="ledger-filter-scope"
         >
-          {scope} Date filters use the ledger ordering date, which may differ
-          from a date printed on the statement.
+          {scope}{" "}
+          {investigation
+            ? (params?.startDate || params?.endDate) &&
+              "Dates use the date shown for each payment. Payments without their own transaction date are marked in the table."
+            : "Date filters use the ledger ordering date, which may differ from a date printed on the statement."}
         </p>
       )}
       {rows.length > 0 && (

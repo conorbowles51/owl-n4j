@@ -486,6 +486,8 @@ To correct a report, select **Correct this custody report**. Loupe fills in that
 5. The applied account and dates follow you between Transactions, People and businesses, Trends, Payment graph, Patterns and Payments and case events, including after a refresh in this browser tab. Read the scope displayed above the answer. Unsaved filter edits do not change the current result.
 6. Check working and verified totals separately, by currency.
 
+Searching the account chooser does not change the account already selected. Its name stays visible even when it falls outside the search results. If the lookup fails, your chosen account and dates are retained. Select **Try loading accounts again** to repeat that search, or use **Reset** to return to all accounts and dates.
+
 An ordering date is the date Loupe uses to place a reading in sequence. For some undated items it can be the statement end, not a known transaction date. Read the row's date basis before relying on exact timing.
 
 ![Transactions in a synthetic case](images/12-imported-transactions.png)
@@ -504,7 +506,7 @@ An ordering date is the date Loupe uses to place a reading in sequence. For some
 
 Your search, currency, amount limits, direction, sort order and table page are retained when you leave Financial or refresh in this browser tab. They are kept separately for each signed-in user, case and account/date view. Returning to a previous account/date view restores its table settings. **Clear payment filters** clears the saved settings for that view; it does not clear your selected payments.
 
-When you open imported transactions from a statement, **Statement: filename** appears above the table. Only payments imported from that source are shown. Select **Clear statement filter** to include other statements in the same account/date view. Your selected payments are retained. **Clear payment filters** also removes this statement restriction. Opening an account from Statements starts a fresh table view for that account.
+When you open imported transactions from a statement, **Statement: filename** appears above the table. Only payments imported from that source are shown. Select **Clear statement filter** to include other statements in the same account/date view. The import notice also offers **Show this account’s payments**, which clears the statement restriction and opens all imported payments for that account. Your selected payments are retained. **Clear payment filters** also removes this statement restriction. Opening an account from Statements starts a fresh table view for that account.
 
 **Download this table view** retains the selected statement and all matching payments, including matches on other table pages. The downloaded report names the statement filter. The accompanying account/date snapshot still includes the wider account history, which is described separately in the download.
 

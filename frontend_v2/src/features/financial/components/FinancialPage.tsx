@@ -872,19 +872,19 @@ function FinancialPageContent() {
                 >
                   <p>
                     <strong>
-                      {importReceipt.transaction_count} transactions imported
+                      {importReceipt.transaction_count} imported transactions
                     </strong>{" "}
-                    from {importReceipt.filename || "your statement"}. Your
-                    existing investigation filters are still in place.
+                    from {importReceipt.filename || "your statement"}. Showing
+                    this statement’s payments.
                   </p>
                   <div className="flex gap-2">
                     {importReceipt.account_id && (
                       <Button
                         variant="outline"
                         onClick={() => {
-                          applyInvestigationScope({
-                            accountId: importReceipt.account_id,
-                          })
+                          const scope = { accountId: importReceipt.account_id }
+                          if (caseId) resetPaymentTableView(caseId, scope)
+                          applyInvestigationScope(scope)
                           setImportReceipt(null)
                         }}
                       >
