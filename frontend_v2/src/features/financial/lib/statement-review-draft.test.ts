@@ -28,6 +28,24 @@ const draft: StatementDraft = {
   amountText: { "1:0:2": "12." },
 }
 beforeEach(() => sessionStorage.clear())
+it("restores all payments and retained headings from a long statement", () => {
+  const longDraft: StatementDraft = {
+    ...draft,
+    rows: Array.from({ length: 1240 }, (_, index) => ({
+      ...draft.rows[0],
+      id: String(index),
+      excluded: index >= 1000,
+    })),
+  }
+  expect(saveStatementDraft("long", longDraft)).toBe(true)
+  expect(readStatementDraft("long", "first")).toEqual(longDraft)
+  expect(
+    saveStatementDraft("too-long", {
+      ...longDraft,
+      rows: Array.from({ length: 10001 }, () => draft.rows[0]),
+    })
+  ).toBe(false)
+})
 it("restores incomplete edits exactly after a refresh", () => {
   expect(saveStatementDraft("user:case:file:first", draft)).toBe(true)
   expect(readStatementDraft("user:case:file:first", "first")).toEqual(draft)

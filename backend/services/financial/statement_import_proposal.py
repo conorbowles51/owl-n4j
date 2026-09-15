@@ -11,7 +11,7 @@ from services.financial.money import get_currency
 from services.financial.pdf_candidates import _digest
 from services.financial.source_dates import assess_date_text
 
-VERSION = 'statement-review-v13'
+VERSION = 'statement-review-v14'
 _HEADERS = {
     'date': 'date', 'transaction date': 'date', 'trans date': 'date',
     'booking date': 'booking_date', 'posting date': 'booking_date',
@@ -125,6 +125,13 @@ def _statement_heading(row):
                 or re.fullmatch(r'[A-Z .&]+(?:BANK|CREDIT UNION)(?:,? N[.]?A[.]?)?', text))
 
 
+def _statement_page_number(row):
+    if len(row['cells']) != 1:
+        return False
+    text = ' '.join(row['cells'][0]['expected_text'].split())
+    return bool(re.fullmatch(r'Page [1-9][0-9]* (?:of|/) [1-9][0-9]*', text, re.I))
+
+
 def has_transaction_header(source):
     for row in source['rows']:
         roles = {_HEADERS.get(' '.join(c['expected_text'].lower().split())) for c in row['cells']}
@@ -150,6 +157,10 @@ def propose_table(source, currency, *, page_has_transaction_table=False):
                     page_number=source['page_number'], table_index=source['table_index'],
                     row_index=row['row_index'], source_revision=source['source_revision'],
                     source_cells=row['cells'], fields={}, issues=[], excluded=False, kind='transaction')
+        if (page_has_transaction_table or roles is not None) and _statement_page_number(row):
+            item.update(kind='header', excluded=True)
+            result.append(item)
+            continue
         if is_header:
             if len(set(possible.values())) != len(possible):
                 roles = None

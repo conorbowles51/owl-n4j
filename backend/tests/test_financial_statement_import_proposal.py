@@ -18,6 +18,17 @@ def statement():
 
 
 class AutomaticStatementProposalTests(unittest.TestCase):
+    def test_page_counters_are_retained_without_becoming_payments(self):
+        data = source([['Page 1 of 31'], ['Page 2 / 31'], ['Page 3 of 31 fee 100.00']])
+        result = propose_table(data, 'EUR', page_has_transaction_table=True)
+        self.assertEqual([r['excluded'] for r in result['rows']], [True, True, False])
+        self.assertEqual(result['rows'][0]['source_cells'], data['rows'][0]['cells'])
+        self.assertEqual(result['transaction_count'], 1)
+        # A page-number-like payment description does not discard a payment.
+        payment = source([['Date', 'Description', 'Credit'], ['2024-01-01', 'Page 1 of 31', '100.00']])
+        self.assertFalse(propose_table(payment, 'EUR')['rows'][1]['excluded'])
+        self.assertFalse(propose_table(source([['Page 1 of 31']]), 'EUR')['rows'][0]['excluded'])
+
     def test_separate_page_headings_are_not_payments_but_unknown_text_needs_review(self):
         data=source([['Account Name: Example Person'],['TRANSACTION HISTORY'],['Unexplained value 100.00']])
         result=propose_table(data,'USD',page_has_transaction_table=True)

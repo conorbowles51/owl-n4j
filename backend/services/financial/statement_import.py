@@ -6,6 +6,18 @@ from services.financial.candidate_sources import read_candidate_source
 from services.financial.pdf_candidates import PdfMappingError, _digest
 from services.financial.statement_import_proposal import propose_table, VERSION
 
+MAX_STATEMENT_TRANSACTIONS = 1000
+MAX_STATEMENT_REVIEW_ROWS = 10000
+
+
+def _check_review_size(rows):
+    # Keep headings and balance controls available without making them consume
+    # the payment allowance. Unknown rows still count until they are resolved.
+    if len(rows) > MAX_STATEMENT_REVIEW_ROWS:
+        raise PdfMappingError('This statement exceeds the 10,000-row review limit, including headings and other page text. No rows were omitted.', 422)
+    if sum(not row['excluded'] for row in rows) > MAX_STATEMENT_TRANSACTIONS:
+        raise PdfMappingError('This statement has more than 1,000 possible transactions. Review a shorter statement period. No rows were omitted.', 422)
+
 
 def _label(content, labels):
     pattern = r'(?im)^\s*(?:' + '|'.join(re.escape(x) for x in labels) + r')\s*:\s*([^\n]+)'
@@ -226,8 +238,7 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
         proposal = propose_andrews_statement(sources, chosen_currency, selected)
         rows.extend(proposal['rows'])
         issues.extend(proposal.get('issues', []))
-        if len(rows) > 1000:
-            raise PdfMappingError('This statement exceeds the 1,000-row review limit. No rows were omitted.', 422)
+        _check_review_size(rows)
     from services.financial.statement_import_proposal import has_transaction_header
     transaction_header_pages = {s['page_number'] for s in sources if has_transaction_header(s)} if not selected else set()
     for source in ([] if selected and selected.get('layout_id') == 'andrews-share-statement' else sources):
@@ -245,8 +256,7 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
             raise PdfMappingError(str(exc), 422) from exc
         rows.extend(proposal['rows'])
         issues.extend(proposal.get('issues', []))
-        if len(rows) > 1000:
-            raise PdfMappingError('This statement exceeds the 1,000-row review limit. No rows were omitted.', 422)
+        _check_review_size(rows)
     if metadata.get('balance_convention') == 'liability_owed':
         for role in ('opening', 'closing'):
             controls = [row for row in rows if row['kind'] == 'balance'
@@ -356,10 +366,12 @@ class StatementImportRequest(_Contract):
     period_start: str = ''
     period_end: str = ''
     details_reason: Annotated[str, Field(max_length=4096)] = ''
-    rows: Annotated[list[ImportRow], Field(min_length=1, max_length=1000)]
+    rows: Annotated[list[ImportRow], Field(min_length=1, max_length=MAX_STATEMENT_REVIEW_ROWS)]
 
     @model_validator(mode='after')
     def distinct_rows(self):
+        if sum(not row.excluded for row in self.rows) > MAX_STATEMENT_TRANSACTIONS:
+            raise ValueError('A statement import can contain up to 1,000 transactions.')
         if len({r.id for r in self.rows}) != len(self.rows):
             raise ValueError('A statement row cannot be included twice.')
         if bool(self.replaces_source_document_id) != bool(self.replacement_revision):

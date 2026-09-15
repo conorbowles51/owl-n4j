@@ -50,6 +50,55 @@ class StatementImportTests(TransactionPersistenceTestCase):
         return confirm_statement_import(session_factory=self.SessionLocal,case_id=self.case.id,
             evidence_file_id=self.file.id,request=request or self.request(),actor=self.actor,resolve_path=Path)
 
+    def prepare_long_statement(self, count):
+        from tests.test_financial_statement_import_proposal import source
+        job = self.db.get(EvidenceDocumentText, self.file.id).engine_job_id
+        self.db.query(EvidenceTableGeometry).filter_by(evidence_file_id=self.file.id).delete()
+        for start in range(0, count, 25):
+            page = start // 25 + 1
+            grids = [source([['Date', 'Description', 'Credit', 'Debit', 'Balance']] + [
+                ['2024-01-01', f'Payment {i}', '1.00', '', str(i + 1)]
+                for i in range(start, min(start + 25, count))]),
+                source([['Account Name: Test Company'], ['Account Number: TEST123'],
+                        ['Currency: EUR'], ['Bank: Example Bank'], [f'Page {page} of {(count + 24) // 25}']])]
+            payload = [dict(table_source='drawn_geometry', geometry_source='cell_rectangles',
+                table=dict(page=page, table={**rectangle(0, x=0, width=600, height=800), 'page': page}, unlocated_values=0,
+                    values=[dict(row=r['row_index'], column=c['column_index'], text=c['expected_text'],
+                        locator={**rectangle(20 + r['row_index'] * 20, x=20 + c['column_index'] * 100, width=90, height=15), 'page': page})
+                        for r in grid['rows'] for c in r['cells']])) for grid in grids]
+            self.db.add(EvidenceTableGeometry(evidence_file_id=self.file.id, page_number=page,
+                engine_job_id=job, payload=payload))
+        self.db.commit()
+
+    def test_thousand_payments_keep_all_headings_and_confirmable_review_rows(self):
+        from services.financial.statement_import import StatementImportRequest, check_import_request
+        self.prepare_long_statement(1000)
+        preview = self.preview()
+        self.assertEqual(preview['transaction_count'], 1000)
+        self.assertEqual(len(preview['rows']), 1240)
+        self.assertEqual(preview['needs_attention'], 0)
+        request = StatementImportRequest.model_validate(self.request())
+        check_import_request(preview, request)
+        self.assertEqual(len(request.rows), 1240)
+        # Excluded text must still be accounted for, even in a long statement.
+        request = request.model_copy(update={'rows': [r for r in request.rows if not r.excluded]})
+        with self.assertRaisesRegex(PdfMappingError, 'every prepared row'):
+            check_import_request(preview, request)
+
+    def test_long_statement_limits_count_payments_and_bound_all_review_text(self):
+        from services.financial.statement_import import StatementImportRequest, _check_review_size
+        from pydantic import ValidationError
+        self.prepare_long_statement(1001)
+        with self.assertRaisesRegex(PdfMappingError, '1,000 possible transactions'):
+            self.preview()
+        with self.assertRaisesRegex(PdfMappingError, '10,000-row review limit'):
+            _check_review_size([dict(excluded=True)] * 10001)
+        request = dict(expected_revision='a' * 64, currency='EUR', holder='Example', account_number='123',
+            rows=[dict(id=str(i), date='2024-01-01', description='Payment', amount_minor='100', direction='credit')
+                  for i in range(1001)])
+        with self.assertRaisesRegex(ValidationError, 'up to 1,000 transactions'):
+            StatementImportRequest.model_validate(request)
+
     def card_balance_request(self):
         from tests.test_financial_statement_import_card import card_source, summary_source
         payload = []
