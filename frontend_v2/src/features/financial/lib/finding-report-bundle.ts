@@ -1,3 +1,4 @@
+import { paymentDocumentSchema, savedPaymentDocument } from "./payment-document"
 import { sha256Hex } from "@/lib/browser-crypto"
 import { zipSync, strToU8 } from "fflate"
 import { z } from "zod"
@@ -28,6 +29,25 @@ export async function verifiedFindingSources(
   )
     throw Error("The saved work does not match this case.")
   const links = entries.flatMap((entry) => entry.links)
+  const sourceDigests = { ...expectedDigests }
+  for (const link of links) {
+    if (link.metadata.schema !== paymentDocumentSchema) continue
+    const saved = savedPaymentDocument.parse(link.metadata)
+    if (
+      saved.original.case_id !== caseId ||
+      link.target_type !== "evidence" ||
+      saved.original.evidence_file_id !== link.target_id
+    )
+      throw Error(
+        "The saved wire review does not match its supporting document."
+      )
+    if (
+      sourceDigests[link.target_id] &&
+      sourceDigests[link.target_id] !== saved.original.file_sha256
+    )
+      throw Error("Saved reviews disagree about the original supporting file.")
+    sourceDigests[link.target_id] = saved.original.file_sha256
+  }
   const ids = [
     ...new Set(
       links
@@ -37,7 +57,7 @@ export async function verifiedFindingSources(
   ]
   if (!ids.length || ids.length > 20)
     throw Error("A report package needs between 1 and 20 supporting PDFs.")
-  if (Object.keys(expectedDigests).some((id) => !ids.includes(id)))
+  if (Object.keys(sourceDigests).some((id) => !ids.includes(id)))
     throw Error("A saved calculation is missing a supporting file reference.")
   const files = []
   let total = 0
@@ -47,7 +67,7 @@ export async function verifiedFindingSources(
     )
     if (file.case_id !== caseId || file.id !== id)
       throw Error("A supporting file belongs to another case.")
-    if (expectedDigests[file.id] && expectedDigests[file.id] !== file.sha256)
+    if (sourceDigests[file.id] && sourceDigests[file.id] !== file.sha256)
       throw Error(
         "A supporting file differs from the source recorded in a saved calculation."
       )

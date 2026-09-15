@@ -68,3 +68,20 @@ class StatementImportAuthorizationTests(unittest.TestCase):
             self.assertEqual(self.client.post(self.endpoint('/reprocess'), json=body).status_code, 422)
             version.assert_not_called()
             process.assert_not_awaited()
+
+    def test_wire_routes_require_case_access_and_edit_before_saving(self):
+        with patch.object(module, 'read_payment_document') as read, patch.object(module, 'save_payment_document') as save:
+            for suffix in ('/payment-document/matches', '/payment-document/save'):
+                self.assertEqual(self.client.post(self.endpoint(suffix), json={}).status_code, 401)
+            self.user(None)
+            for suffix in ('/payment-document/matches', '/payment-document/save'):
+                self.assertEqual(self.client.post(self.endpoint(suffix), json={}).status_code, 403)
+            self.user({'case': {'view': True, 'edit': False}})
+            self.assertEqual(self.client.post(self.endpoint('/payment-document/save'), json={}).status_code, 403)
+            with patch.object(module, 'matching_payments', return_value={'candidates': []}) as matches:
+                response = self.client.post(self.endpoint('/payment-document/matches'), json={
+                    'amount': '120.00', 'currency': 'USD', 'value_date': '2021-03-23'})
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(matches.call_args.kwargs['case_id'], self.db.case.id)
+            save.assert_not_called()
+            self.assertEqual(read.call_args.kwargs['case_id'], self.db.case.id)

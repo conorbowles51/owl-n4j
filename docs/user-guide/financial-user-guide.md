@@ -2,7 +2,7 @@
 
 Step-by-step instructions for reviewing financial records, investigating payments and preparing reports.
 
-**Edition: 11 September 2026.** This guide describes the financial screens in the local application. A server may show an older version until it is deployed. Screenshots use a development case with synthetic transactions. They illustrate the controls, not findings about a real person.
+**Edition: 15 September 2026.** This guide describes the financial screens in the local application. A server may show an older version until it is deployed. Screenshots use a development case with synthetic transactions. They illustrate the controls, not findings about a real person.
 
 ## Contents
 
@@ -123,7 +123,7 @@ You do not need to assign columns, select every payment, save a batch or finaliz
 ### Upload several statements and switch between files
 
 1. In **Bank statements**, select **Statement files**. The right-hand panel opens on **Statements**.
-2. Select **Upload statements** and choose up to 20 PDFs in one selection.
+2. Select **Upload PDFs** and choose up to 20 PDFs in one selection.
 3. Keep the browser tab open while Loupe uploads them. Each file shows its own progress. A failed request stays visible; other files can continue.
 4. Wait for a file to show **Ready to review**, then select its filename. It opens in the main statement viewer.
 5. Select another filename to switch files. Use **Search filenames** to narrow the list. The added time and short identifier distinguish files with the same name.
@@ -139,6 +139,28 @@ If a request fails, select **Refresh files** and inspect what arrived before upl
 ![Statement file list, page controls and separate corrections using synthetic PDFs](images/13-statement-files.png)
 
 *Choose a ready filename on the right to open it. Edit import values opens the correction controls while the original PDF stays visible.*
+
+### Review a wire-detail report
+
+Use this process for a supported, single-report **Wells Fargo Wire Transfer Detail Report** PDF. Other wire layouts are not automatically read yet. A wire report records payment instructions and parties; it does not provide an account statement's transaction history or balances.
+
+1. In **Statements**, open **Statement files** and select **Upload PDFs**. Choose the wire report. You can include it with other PDFs in the same upload.
+2. Wait for **Ready to review**, then select the filename. Loupe opens **Review wire report** with the original PDF beside its labelled details.
+3. Read the wire amount, currency and value date. Check each highlighted problem against the PDF. For example, if the currency was read as **USO**, enter **USD** only if the original supports that correction. The **USD equivalent amount** alone does not establish the wire's currency.
+4. Select **Show value in PDF** or **Show line in PDF** under a field to locate the original text. You can type directly into the field to correct it. The **Original reading** underneath remains unchanged.
+5. Enter the reason in **Correction or check** when you correct a field or accept one flagged for attention. Leave a party name or reference empty if it is redacted or cannot be read. Do not reconstruct it from another party's details.
+6. To connect the report to an already imported payment, select **Find matching payments**. Results have the same currency and amount and a recorded date within three days of the wire's value date. Select **Open payment and source**, compare the documents, then choose the payment and explain why the report supports it. A matching amount and date alone are not proof of a connection. You may save without linking a payment.
+7. Enter a **Review title** and **Your observations**, then select **Save wire review**. The amount, currency and value date must be present before saving. Loupe saves a note in **Findings**. This action does not create an account transaction or change payment totals.
+8. Select **Open Findings**. In the saved note, select **Compare the saved values with their original readings** to inspect corrections, or **Open original wire report** to see the PDF. Any linked payment remains available with its own original statement.
+9. To share the result, open **Create a report from this note**. The downloaded report includes the original readings, saved values, correction reasons and any linked payment. Use the supporting-PDF download option when the recipient also needs the original documents. You can include this note in a report with other findings.
+
+![Wire review with an original PDF, editable details and a recorded currency correction](images/20-wire-report-review.png)
+
+*This synthetic wire report contains a deliberate currency-reading error. The correction is shown with its reason while the original reading remains visible.*
+
+The file list shows the number of saved wire reviews and provides **Open saved wire reviews in Findings**. A saved wire review is separate from an imported statement payment.
+
+Unfinished wire reviews are kept in this browser tab. Saving keeps the review with the case. If you need to record a later correction, reopen the file and select **Create another review**. The earlier saved review remains in Findings. A changed source or payment must be checked again before a new link can be saved.
 
 ### Open a statement already uploaded
 
@@ -157,6 +179,8 @@ If a file has not finished processing, wait for its status to complete. If readi
 ## Check the extracted statement
 
 ### Check the account and transaction count
+
+For statements without drawn table borders, Loupe uses the printed header positions to keep blank credit, debit and balance cells in their correct columns. If a row cannot be placed reliably, it is flagged for a layout check. Inspect its PDF before entering the values.
 
 1. Compare **Account holder**, **Account number** and **Bank** with the statement header. A beneficiary account mentioned in a transfer is not necessarily the account that issued the statement.
 2. Check the statement currency and any recorded **Period start** and **Period end**.

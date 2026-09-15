@@ -21,6 +21,8 @@ import { Button } from "@/components/ui/button"
 import { LedgerSourceDialog } from "./LedgerSourceDialog"
 import { formatLedgerAmount } from "../lib/ledger-format"
 import { transactionDetail } from "../lib/transaction-detail"
+import { SavedPaymentDocument } from "./PaymentDocumentReview"
+import { paymentDocumentSchema } from "../lib/payment-document"
 
 export function FinancialFindings({
   caseId,
@@ -179,6 +181,13 @@ export function FinancialFindings({
                 <p className="text-sm font-medium">
                   {link.target_label || "Supporting record"}
                 </p>
+                {link.metadata.schema === paymentDocumentSchema && (
+                  <SavedPaymentDocument
+                    metadata={link.metadata}
+                    caseId={caseId}
+                    fileId={link.target_id}
+                  />
+                )}
                 {link.metadata?.schema ===
                   "loupe.financial.event_context/1" && (
                   <>

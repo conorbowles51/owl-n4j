@@ -14,6 +14,8 @@ import { fetchAPI } from "@/lib/api-client"
 import { PdfReviewIntake } from "./PdfReviewIntake"
 import { TransactionSourceHighlight } from "./TransactionSourceHighlight"
 import { PrintedStatementTable } from "./PrintedStatementTable"
+import { PaymentDocumentReview } from "./PaymentDocumentReview"
+import { paymentDocumentProposal } from "../lib/payment-document"
 import {
   additionalDateValues,
   dateLabels,
@@ -41,6 +43,7 @@ const row = z.object({
   kind: z.string(),
 })
 const proposalSchema = z.object({
+  document_review: paymentDocumentProposal.optional(),
   case_id: z.string(),
   evidence_file_id: z.string(),
   filename: z.string(),
@@ -378,6 +381,16 @@ function StatementReview({
         />
       </div>
     )
+  if (query.data.document_review) {
+    const document = query.data.document_review
+    if (document.case_id !== caseId || document.evidence_file_id !== fileId)
+      return (
+        <p role="alert">
+          The document review does not match this case and file.
+        </p>
+      )
+    return <PaymentDocumentReview key={document.revision} data={document} />
+  }
   if (query.data.statement_choices.length > 1 && !query.data.statement_id)
     return (
       <section className="space-y-3 py-4" aria-label="Statements in this PDF">

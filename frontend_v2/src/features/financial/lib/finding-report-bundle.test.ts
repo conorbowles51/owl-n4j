@@ -1,3 +1,4 @@
+import { wireCapture } from "./payment-document.test-support"
 import { afterEach, expect, it, vi } from "vitest"
 import { unzipSync, strFromU8 } from "fflate"
 import type { CaseworkEntry } from "@/features/workspace/casework-api"
@@ -99,5 +100,18 @@ it("refuses a payment citation pointing to a different file before downloading b
   await expect(
     findingReportBundle(entry, "case", new AbortController().signal)
   ).rejects.toThrow("does not match its supporting PDF")
+  expect(request).not.toHaveBeenCalled()
+})
+
+it("requires the wire PDF to match the original retained with its saved review", async () => {
+  const { request } = await setup()
+  const note = structuredClone(entry),
+    saved = wireCapture()
+  saved.original.evidence_file_id = id
+  note.links[0].metadata = saved
+  note.links[0].source_anchor = {}
+  await expect(
+    findingReportBundle(note, "case", new AbortController().signal)
+  ).rejects.toThrow("differs from the source recorded")
   expect(request).not.toHaveBeenCalled()
 })

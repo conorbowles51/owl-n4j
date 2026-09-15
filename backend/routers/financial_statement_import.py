@@ -10,6 +10,10 @@ from routers.users import get_current_db_user
 from services.financial.pdf_candidates import PdfMappingError
 from services.financial.statement_import import read_statement_import
 from services.financial.statement_file_status import statement_file_status
+from services.financial.payment_document_review import (
+    PaymentMatchRequest, PaymentDocumentReviewRequest, matching_payments,
+    read_payment_document, save_payment_document,
+)
 
 logger = logging.getLogger(__name__)
 _require_access = case_access_dependency(lambda request, payload: ('case', 'view'))
@@ -38,6 +42,32 @@ from sqlalchemy.orm import sessionmaker
 from routers.evidence import _resolve_stored_path
 from services.financial.quarantine_row import actor_from_user
 from services.financial.statement_import import StatementImportRequest, confirm_statement_import
+
+
+@router.post('/{evidence_file_id}/payment-document/matches')
+def payment_matches(evidence_file_id: UUID, body: PaymentMatchRequest, case_id: UUID = Query(...),
+                    db: Session = Depends(get_db)):
+    try:
+        read_payment_document(db, case_id=case_id, evidence_file_id=evidence_file_id)
+        return matching_payments(db, case_id=case_id, request=body)
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+@router.post('/{evidence_file_id}/payment-document/save', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
+def save_payment_review(evidence_file_id: UUID, body: PaymentDocumentReviewRequest, case_id: UUID = Query(...),
+                        user=Depends(get_current_db_user), db: Session = Depends(get_db)):
+    from services.workspace_entry_service import WorkspaceEntryValidationError
+    try:
+        return save_payment_document(db, case_id=case_id, evidence_file_id=evidence_file_id,
+            request=body, user=user, resolve_path=_resolve_stored_path)
+    except (PdfMappingError, WorkspaceEntryValidationError) as exc:
+        db.rollback()
+        raise HTTPException(status_code=getattr(exc, 'status_code', 422), detail=str(exc)) from exc
+    except Exception:
+        db.rollback()
+        logger.exception('Payment document review could not be saved')
+        raise HTTPException(status_code=500, detail='The review could not be confirmed. Retry the same save to check its outcome without creating another note.')
 
 
 @router.post('/{evidence_file_id}/confirm', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])

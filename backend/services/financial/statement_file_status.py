@@ -1,5 +1,5 @@
 """Saved import state for the statement file list, independent of browser drafts."""
-from sqlalchemy import select, func, case
+from sqlalchemy import select, func, case, cast, String
 from postgres.models.evidence import EvidenceFile
 from postgres.models.financial import (
     FinancialAccount as Account,
@@ -49,4 +49,26 @@ def statement_file_status(session, *, case_id):
             end=period.period_end.isoformat() if period.period_end else None,
             source_status=source.status,
         ))
+    from postgres.models.workspace_entry import WorkspaceEntry, WorkspaceEntryLink
+    from services.financial.payment_document_proposal import SCHEMA
+    reviews = session.execute(select(WorkspaceEntryLink, WorkspaceEntry)
+        .join(WorkspaceEntry, WorkspaceEntryLink.entry_id == WorkspaceEntry.id)
+        .join(EvidenceFile, func.replace(cast(EvidenceFile.id, String), '-', '') == func.replace(WorkspaceEntryLink.target_id, '-', ''))
+        .where(WorkspaceEntry.case_id == case_id, WorkspaceEntry.deleted_at.is_(None),
+               WorkspaceEntryLink.case_id == case_id, EvidenceFile.case_id == case_id,
+               WorkspaceEntryLink.target_type == 'evidence',
+               WorkspaceEntryLink.link_metadata['schema'].as_string() == SCHEMA)
+        .order_by(WorkspaceEntry.created_at.desc(), WorkspaceEntry.id).limit(5001)).all()
+    truncated = truncated or len(reviews) > 5000
+    seen = set()
+    for link, entry in reviews[:5000]:
+        original = (link.link_metadata or {}).get('original') or {}
+        if not isinstance(original, dict):
+            continue
+        if (original.get('case_id') != str(case_id) or original.get('evidence_file_id') != link.target_id
+                or (entry.id, link.target_id) in seen):
+            continue
+        seen.add((entry.id, link.target_id))
+        item = files.setdefault(link.target_id, dict(evidence_file_id=link.target_id, current_transactions=0, periods=[]))
+        item['wire_review_count'] = item.get('wire_review_count', 0) + 1
     return dict(case_id=str(case_id), files=list(files.values()), truncated=truncated)

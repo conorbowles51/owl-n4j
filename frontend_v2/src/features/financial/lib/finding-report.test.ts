@@ -1,3 +1,4 @@
+import { wireCapture } from "./payment-document.test-support"
 import { expect, it } from "vitest"
 import type { CaseworkEntry } from "@/features/workspace/casework-api"
 import { findingReport } from "./finding-report"
@@ -59,4 +60,27 @@ it("exports an existing note without inventing a payment snapshot", () => {
   const html = findingReport(e, "case")
   expect(html).not.toContain("Selected payments")
   expect(html).toContain("source.pdf")
+})
+
+it("includes original wire readings and explained corrections without inventing another payment", () => {
+  const e = entry()
+  const review = wireCapture()
+  review.reviewed_values.sending_party = "Corrected <sender>"
+  review.correction_reasons.sending_party = "Checked & recorded."
+  e.links = [
+    {
+      ...e.links[0],
+      target_id: "wire-file",
+      source_anchor: {},
+      metadata: review,
+    },
+  ]
+  const html = findingReport(e, "case")
+  expect(html).toContain("Wire report: original and saved values")
+  expect(html).toContain("EXAMPLE SENDER")
+  expect(html).toContain("Corrected &lt;sender&gt;")
+  expect(html).toContain("Checked &amp; recorded.")
+  expect(html).not.toContain("Selected payments (")
+  review.original.evidence_file_id = "another-file"
+  expect(() => findingReport(e, "case")).toThrow("supporting document")
 })

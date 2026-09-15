@@ -3,6 +3,12 @@ from tests.test_financial_duplicates import DuplicateTestCase
 
 
 class StatementFileStatusTests(DuplicateTestCase):
+    def setUp(self):
+        super().setUp()
+        from postgres.base import Base
+        from postgres.models.workspace_entry import WorkspaceEntry, WorkspaceEntryLink
+        Base.metadata.create_all(self.db.connection(), tables=[WorkspaceEntry.__table__, WorkspaceEntryLink.__table__])
+
     def test_saved_file_status_counts_current_payments_and_preserves_periods(self):
         document = self.make_document()
         period = self.make_period(document)

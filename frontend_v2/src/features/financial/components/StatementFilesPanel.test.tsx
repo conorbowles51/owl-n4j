@@ -136,3 +136,34 @@ it("shows saved import counts and periods after reopening the file list", async 
   ).toBeInTheDocument()
   expect(screen.queryByText("Ready to review")).not.toBeInTheDocument()
 })
+
+it("shows a saved wire review as a finding and provides a link without suggesting a payment import", async () => {
+  vi.mocked(fetchAPI).mockImplementation(async (url) =>
+    url.includes("/statement-import/files")
+      ? {
+          case_id: "case",
+          truncated: false,
+          files: [
+            {
+              evidence_file_id: "file",
+              current_transactions: 0,
+              periods: [],
+              wire_review_count: 1,
+            },
+          ],
+        }
+      : {
+          files: [
+            { ...file, original_filename: "wire.pdf", status: "processed" },
+          ],
+        }
+  )
+  mount()
+  expect(
+    await screen.findByRole("button", { name: /wire.pdf.*1 saved wire review/ })
+  ).toBeEnabled()
+  expect(
+    screen.getByRole("link", { name: "Open saved wire reviews in Findings" })
+  ).toHaveAttribute("href", "/cases/case/financial?view=findings")
+  expect(screen.queryByText(/0 imported payments/)).toBeNull()
+})

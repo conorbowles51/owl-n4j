@@ -131,6 +131,13 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
     all_sources = [read_candidate_source(session, case_id=case_id, evidence_file_id=evidence_file_id,
                     page_number=page.page_number, table_index=index)
                    for page in pages for index in range(len(page.payload or []))]
+    from services.financial.payment_document_review import payment_document_response
+    payment_document = payment_document_response(file, all_sources, case_id=case_id)
+    if payment_document is not None:
+        return dict(case_id=str(case_id), evidence_file_id=str(file.id), filename=file.original_filename,
+            metadata=metadata, currency='', rows=[], sources=[], issues=[], transaction_count=0,
+            needs_attention=0, revision=payment_document['revision'], applied=False,
+            document_review=payment_document, page_numbers=payment_document['page_numbers'])
     catalog = statement_catalog(all_sources)
     choices = catalog['statements']
     selected = next((item for item in choices if item['id'] == statement_id), None)
@@ -432,6 +439,8 @@ def confirm_statement_import(*, session_factory, case_id, evidence_file_id, requ
                 session.execute(select(EvidenceTableGeometry).where(EvidenceTableGeometry.evidence_file_id == evidence_file_id).order_by(EvidenceTableGeometry.page_number).with_for_update()).all()
                 proposal = read_statement_import(session, case_id=case_id, evidence_file_id=evidence_file_id,
                                                  currency=request.currency, statement_id=request.statement_id)
+                if proposal.get('document_review') is not None:
+                    raise PdfMappingError('Save this wire report from its document review. It cannot be imported as an account statement.', 422)
                 existing = _existing_statement(session, case_id, file, request.statement_id,
                     ((source['page_number'], source['table_index']) for source in proposal['sources']),
                     proposal.get('statement_row_addresses'), proposal.get('statement_source_regions'))
