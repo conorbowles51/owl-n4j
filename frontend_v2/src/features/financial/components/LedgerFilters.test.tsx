@@ -33,52 +33,58 @@ function mount(data = answer) {
 it("keeps drafts separate, requires an explicit account choice, applies and clears", async () => {
   const { fetch, apply } = mount()
   expect(fetch).not.toHaveBeenCalled()
-  fireEvent.change(screen.getByLabelText("Find a ledger account"), {
+  fireEvent.change(screen.getByLabelText("Search accounts"), {
     target: { value: "1234" },
   })
   fireEvent.click(screen.getByRole("button", { name: "Find accounts" }))
   fireEvent.click(await screen.findByRole("button", { name: /Select 1234/ }))
   expect(screen.getByText(/More accounts are available/)).toBeInTheDocument()
-  fireEvent.change(screen.getByLabelText("Ordering date from"), {
+  fireEvent.change(screen.getByLabelText("From date"), {
     target: { value: "2026-01-01" },
   })
-  fireEvent.change(screen.getByLabelText("Ordering date through"), {
+  fireEvent.change(screen.getByLabelText("To date"), {
     target: { value: "2026-01-31" },
   })
   expect(apply).not.toHaveBeenCalled()
-  fireEvent.click(screen.getByRole("button", { name: "Apply ledger filters" }))
+  fireEvent.click(
+    screen.getByRole("button", { name: "Apply account and dates" })
+  )
   expect(apply).toHaveBeenLastCalledWith({
     accountId: "account-a",
     startDate: "2026-01-01",
     endDate: "2026-01-31",
   })
   expect(String(fetch.mock.calls[0][0])).toContain("case_id=case-a&search=1234")
-  fireEvent.click(screen.getByRole("button", { name: "Clear ledger filters" }))
+  fireEvent.click(
+    screen.getByRole("button", { name: "Reset account and dates" })
+  )
   expect(apply).toHaveBeenLastCalledWith({})
-  expect(screen.getByLabelText("Ordering date from")).toHaveValue("")
-  expect(
-    screen.getByText("Selected account: All ledger accounts")
-  ).toBeInTheDocument()
+  expect(screen.getByLabelText("From date")).toHaveValue("")
+  expect(screen.getByText("Selected account: All accounts")).toBeInTheDocument()
 })
 it("blocks reversed dates but permits a single day and an open bound", () => {
   const { apply } = mount()
-  const start = screen.getByLabelText("Ordering date from"),
-    end = screen.getByLabelText("Ordering date through")
+  const start = screen.getByLabelText("From date"),
+    end = screen.getByLabelText("To date")
   fireEvent.change(start, { target: { value: "2026-03-01" } })
   fireEvent.change(end, { target: { value: "2026-02-28" } })
   expect(
-    screen.getByRole("button", { name: "Apply ledger filters" })
+    screen.getByRole("button", { name: "Apply account and dates" })
   ).toBeDisabled()
   expect(apply).not.toHaveBeenCalled()
   fireEvent.change(end, { target: { value: "2026-03-01" } })
-  fireEvent.click(screen.getByRole("button", { name: "Apply ledger filters" }))
+  fireEvent.click(
+    screen.getByRole("button", { name: "Apply account and dates" })
+  )
   expect(apply).toHaveBeenLastCalledWith({
     accountId: undefined,
     startDate: "2026-03-01",
     endDate: "2026-03-01",
   })
   fireEvent.change(end, { target: { value: "" } })
-  fireEvent.click(screen.getByRole("button", { name: "Apply ledger filters" }))
+  fireEvent.click(
+    screen.getByRole("button", { name: "Apply account and dates" })
+  )
   expect(apply).toHaveBeenLastCalledWith({
     accountId: undefined,
     startDate: "2026-03-01",

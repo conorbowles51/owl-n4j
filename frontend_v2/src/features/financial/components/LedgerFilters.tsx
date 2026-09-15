@@ -64,9 +64,7 @@ export function LedgerFilters({
       className="space-y-3 rounded border p-3"
     >
       <h3 className="font-semibold">
-        {accountOnly
-          ? "Choose the ledger account"
-          : "Filter current ledger rows"}
+        {accountOnly ? "Choose an account" : "Choose the account and dates"}
       </h3>
       <form
         className="flex flex-wrap items-end gap-2"
@@ -77,7 +75,7 @@ export function LedgerFilters({
         }}
       >
         <label>
-          Find a ledger account
+          Search accounts
           <input
             className="block rounded border p-2"
             value={search}
@@ -115,14 +113,14 @@ export function LedgerFilters({
                 onClick={() => setAccount({ id: item.id, label })}
               >
                 Select {label}
-                {item.provisional ? " (provisional identity)" : ""}
+                {item.provisional ? " (account details need checking)" : ""}
               </Button>
             )
           })}
           {accounts.data.items.length === 0 && (
             <p>
-              No matching ledger accounts. This does not establish that no
-              accounts exist in the evidence.
+              No imported account matches this search. Try part of the account
+              number, holder name or bank name.
             </p>
           )}
           {accounts.data.has_more && (
@@ -142,7 +140,7 @@ export function LedgerFilters({
             })
         }}
       >
-        <p>Selected account: {account?.label ?? "All ledger accounts"}</p>
+        <p>Selected account: {account?.label ?? "All accounts"}</p>
         <Button
           type="button"
           variant="outline"
@@ -154,7 +152,7 @@ export function LedgerFilters({
           <>
             <div className="flex flex-wrap gap-3">
               <label>
-                Ordering date from
+                From date
                 <input
                   className="block rounded border p-2"
                   type="date"
@@ -165,7 +163,7 @@ export function LedgerFilters({
                 />
               </label>
               <label>
-                Ordering date through
+                To date
                 <input
                   className="block rounded border p-2"
                   type="date"
@@ -177,9 +175,9 @@ export function LedgerFilters({
               </label>
             </div>
             <p>
-              Dates include both endpoints and use the ledger ordering date.
-              These filters do not establish that statement records or extracted
-              transactions are complete.
+              The range includes both dates. It uses each payment's ordering
+              date, which may differ from its printed transaction date. Open a
+              payment's date details to check which source date is used.
             </p>
           </>
         )}
@@ -188,7 +186,7 @@ export function LedgerFilters({
         )}
         <div className="flex gap-2">
           <Button type="submit" disabled={reversed}>
-            {accountOnly ? "Use selected account" : "Apply ledger filters"}
+            {accountOnly ? "Use selected account" : "Apply account and dates"}
           </Button>
           <Button
             type="button"
@@ -200,12 +198,12 @@ export function LedgerFilters({
               onApply({})
             }}
           >
-            {accountOnly ? "Clear selected account" : "Clear ledger filters"}
+            {accountOnly ? "Clear selected account" : "Reset account and dates"}
           </Button>
         </div>
         <p>
-          Changes take effect when you apply the filters. The scope above the
-          rows describes the current answer.
+          Apply your account and dates to update the result. The selected range
+          is shown with the payments.
         </p>
       </form>
     </section>

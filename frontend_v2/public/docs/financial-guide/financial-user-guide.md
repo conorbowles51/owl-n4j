@@ -407,7 +407,7 @@ To correct a report, select **Correct this custody report**, enter the corrected
 2. Choose an account in **Account**, or leave **All accounts** selected. Expand **Search accounts or check which dates are used** if the account you need is not listed.
 3. Enter **From** and **To** when restricting dates. Both endpoints are included.
 4. Select **Apply**, or **Reset** to return to all accounts and dates.
-5. The applied account and dates follow you between Transactions, Counterparties, Trends, Posting graph, Patterns and Case context during this visit. Read the scope displayed above the answer. Unsaved filter edits do not change the current result.
+5. The applied account and dates follow you between Transactions, People and businesses, Trends, Payment graph, Patterns and Payments and case events, including after a refresh in this browser tab. Read the scope displayed above the answer. Unsaved filter edits do not change the current result.
 6. Check working and verified totals separately, by currency.
 
 An ordering date is the date Loupe uses to place a reading in sequence. For some undated items it can be the statement end, not a known transaction date. Read the row's date basis before relying on exact timing.
@@ -704,7 +704,7 @@ Your account group stays selected when you move between financial tabs. Accounts
 
 Only selected pairs inside the chosen account group are treated as internal. An unidentified internal movement can remain in the external comparison until reviewed.
 
-The working or verified selection follows you between Trends, Counterparties, Posting graph, Transfers, Patterns and Case context. The Transactions tab remains the full current transaction record, with its own visible table filters; switching an analysis to verified-only does not remove imported records.
+The working or verified selection follows you between Trends, People and businesses, Payment graph, Transfers, Patterns and Payments and case events. The Transactions tab remains the full current transaction record, with its own visible table filters; switching an analysis to verified-only does not remove imported records.
 
 ## Review patterns and payment claims
 
@@ -755,7 +755,7 @@ Your account, dates, opening amount, explanations, selected deposits and calcula
 1. Open **More financial tools**, then **Trace funds**.
 2. Select **Trace one account**.
 3. Find and select one account.
-4. Enter both ordering-date bounds and select **Apply ledger filters**.
+4. Enter both ordering-date bounds and select **Apply account and dates**.
 5. Choose **Tracing population**.
 6. Select **Load tracing inputs**.
 7. Inspect the loaded currency, rows, excluded records and missing-evidence notices.

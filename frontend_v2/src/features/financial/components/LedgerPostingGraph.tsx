@@ -16,7 +16,7 @@ const Canvas = lazy(() => import("./LedgerGraphCanvas"))
 export function LedgerPostingGraph({ caseId }: { caseId: string | undefined }) {
   const [params, setParams] = useInvestigationScope(caseId)
   const [population, setPopulation] = useAnalysisPopulation(caseId)
-  if (!caseId) return <p>Choose a case to view its posting graph.</p>
+  if (!caseId) return <p>Choose a case to view its payment connections.</p>
   return (
     <section aria-label="Ledger posting graph" className="space-y-4 p-4">
       <h2 className="font-semibold">Payment connections</h2>
@@ -120,17 +120,17 @@ function GraphScope({
       >
         {opened ? "Refresh connections" : "Show connections"}
       </Button>
-      {opened && query.isPending && (
-        <p role="status">Loading current postings…</p>
-      )}
+      {opened && query.isPending && <p role="status">Loading payments…</p>}
       {query.isError && (
-        <p role="alert">Posting graph unavailable. {query.error.message}</p>
+        <p role="alert">
+          Payment connections are unavailable. {query.error.message}
+        </p>
       )}
       {query.data && !query.isFetching && !query.isError && (
         <>
           <p>
-            {query.data.edges.length} current postings ·{" "}
-            {query.data.excluded_rows} excluded
+            {query.data.edges.length} payments · {query.data.excluded_rows}{" "}
+            excluded
           </p>
           <details>
             <summary className="cursor-pointer">
@@ -140,12 +140,14 @@ function GraphScope({
           </details>
           {!query.data.edges.length ? (
             <p>
-              No postings in this scope. This does not prove there were no
-              transactions.
+              No payments match these filters. Change the account or dates, or
+              open Statements to check the imported files.
             </p>
           ) : (
             <>
-              <Suspense fallback={<p role="status">Drawing posting graph…</p>}>
+              <Suspense
+                fallback={<p role="status">Drawing payment connections…</p>}
+              >
                 <Canvas
                   key={query.data.snapshot_sha256}
                   data={query.data}

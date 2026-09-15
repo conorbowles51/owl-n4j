@@ -121,12 +121,12 @@ export function QuarantinePanel({
     return (
       <EmptyState
         icon={ShieldCheck}
-        title="No rows are currently quarantined"
+        title="No payments are waiting in excluded transactions"
         description={
-          "No row in this case's relational ledger is currently quarantined, " +
-          "but evidence classification and document status still determine inclusion in totals. Rows that " +
-          "were superseded or rejected are a separate matter and are not " +
-          "shown here."
+          "This page lists payments put aside for review. None are waiting here. " +
+          "Previous versions of corrected payments and rejected readings stay in Change history. " +
+          "For missing or unfinished imports, open Statements. A document or reading still " +
+          "needs the appropriate checks before it can contribute to verified totals."
         }
       />
     )

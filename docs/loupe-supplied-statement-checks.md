@@ -29,4 +29,4 @@ The remaining pages are account/statement sections, recognised card terms, notic
 - A source-only browser check reprocessed the actual 222-page file, opened its first period with three payments and both summary balances, and followed the opening amount to its original PDF position. The earlier reading remains available. No real payments were imported.
 - Private preparation and proposal caches bind these counts to the original source hashes. New preparation is required for previously processed files whose unboxed text was omitted. The reader version is `statement-review-v13`.
 
-The remaining recovery and combined investigation checks are tracked in the financial completion plan. Independent human reference reviews are a separate acceptance item.
+The recovery and combined investigation checks are complete and recorded in the financial completion plan and the 15 September release record. Damaged source readings remain flagged for the investigator. Independent human reference reviews are a separate acceptance item.

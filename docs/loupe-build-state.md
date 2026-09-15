@@ -1,3 +1,23 @@
+## Ready checkpoint: final local financial release, 15 September 2026
+
+The implemented financial workflow has reached its final local verification checkpoint. Read docs/releases/2026-09-15-financial.md and docs/loupe-financial-completion-plan.md for the exact scope and checked items. Do not repeat completed imports, reports or broad test runs. The user will test the UI after travelling home. No push without a new explicit request; the live server has not received these local changes. The five-minute continuation schedule should pause once this final release commit is recorded, and resume new work when the user supplies test feedback.
+
+Final source work: seven unique supplied PDFs/511 unique-file pages, eight filenames/567 pages accounted for. Account statements, Andrews shares, card balances, notices and supporting receipts/wires remain separate. Damaged dates, conflicting headings and missing continuation pages remain flagged with source/review/reprocessing actions. No real financial records were imported during acceptance. Reader version statement-review-v13.
+
+The combined synthetic case is 95081ef8-8ffe-475a-bc32-fc77aa1bd0e6: nine current payments, two accounts, three PDFs, a retained USD 120 to 125 correction, a receipt linked to an existing payment, saved note/selection/transfer/tracing and a five-finding report. Totals credits USD 1,975/debits USD 900. Single-account FIFO leaves USD 220 of the attributed deposit; cross-account tracing leaves USD 220 in checking and USD 80 in savings. Original PDFs are byte-identical in the reports. Eleven review-package members independently rebuilt without differences. Second-member reads/downloads, edit denial and revoked access passed.
+
+Draft fixes committed in 0636537b preserve unsaved correction, transfer, tracing, indirect workpaper and shared filter values per user/case in this browser tab. Failed note save plus refresh retained text, successful work reopened from Findings, and recalculation after refresh is explicit. Source reprocessing also survived refresh and retained prior versions.
+
+Validation capture and backend integration fixes committed in a3eefd7b. Seven-source read-only capture retains complete reader proposals, predictions, version, input inventory and hashes. A pinned source reproduced exactly. Independent reader records/baseline are not supplied, and measured real-source accuracy remains unavailable. Negative examples with no payments are supported in release comparisons. No fabricated reviews or provider calls.
+
+Final checks: 1,146 frontend tests passed in one broad run. The one broad backend run executed 4,583 tests and exposed eight missing public package exports plus a fixture with two statement periods occupying the same page coordinates. Package exports are fixed. The fixture now checks that conflicting page context is refused and two distinct pages import separately without duplicates. All 43 affected export/import/catalog checks passed afterward. Type checking, scoped lint, production build, clean backend startup, migration head and all fourteen local checks passed. No further full suite is needed absent new systemic evidence.
+
+UI: 28 views across fourteen financial areas at laptop width, file list open and closed, no JavaScript errors or page overflow. Corrected amounts verified through patterns, graph and timeline. Guide updated with 22 synthetic images; all-tab modal visibility, links, lazy image loading, mobile fit, focus return and form retention passed. It remains closed unless opened. Remaining wording in main tracing filters, graph and empty screens has been clarified. Every transaction now shows its account.
+
+Private evidence remains in data/local-runtime/completion-*.json and ZIPs plus /tmp/loupe-final-*.log. The fresh remote fetch had no incoming commits. Existing unrelated untracked documents, archives and probes were not staged. External acceptance still required: independent human extraction benchmark, optional external provider/timestamp checks where applicable, user UI review and deployed-build verification after an explicit push. Do not claim those are complete.
+
+## Previous checkpoint: combined investigation and recovery
+
 ## Current completion: combined investigation and recovery verified, 15 September 2026
 
 Continue through docs/loupe-financial-completion-plan.md without pausing. Five-minute heartbeat active until 23:59 Europe/Dublin tonight. No push without a new explicit request. HEAD before this draft batch: c14cfc98.

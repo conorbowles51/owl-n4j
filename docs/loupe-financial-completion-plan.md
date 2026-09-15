@@ -1,6 +1,6 @@
 # Financial completion plan
 
-15 September 2026. User deadline: a usable financial application tonight, Europe/Dublin. Five-minute continuation checks are active through 23:59 today. The user will begin UI testing after travelling home. This is the current plan for finishing the financial work. It replaces the changing list of small next steps as the execution order. Earlier plans and their checked items remain as the development record. Completed work stays on this list.
+15 September 2026. User deadline: a usable financial application tonight, Europe/Dublin. Five-minute continuation checks run until the verified ready checkpoint or 23:59 today. The user will begin UI testing after travelling home. This is the current plan for finishing the financial work. It replaces the changing list of small next steps as the execution order. Earlier plans and their checked items remain as the development record. Completed work stays on this list.
 
 The finished workflow is: upload statements and supporting payment documents, check flagged readings beside the originals, confirm a statement once, investigate the imported transactions, save observations and calculations, and produce a report another authorised investigator can reopen and check.
 
@@ -34,20 +34,24 @@ Done when: an investigator can move from original evidence to a recorded observa
 
 - [x] Separate statement review from the investigation table. Keep review state during financial tab changes.
 - [x] Retain original readings and explained corrections; save confirmed imports, notes and calculations with the case.
-- [ ] Check unsaved and saved states for every active form: statement correction, receipt/wire review, transaction note, selected payments, transfer comparison and tracing inputs. Check financial tab changes, refresh and reopening a saved case.
-- [ ] Check interrupted upload/processing, failed saves, retry, reprocessing and replacement imports through the current UI. Reuse existing targeted failure tests, adding tests only for a newly exposed defect.
-- [ ] Fix misleading save messages, accidental reset, duplicate-save behaviour or missing recovery actions found in this pass.
+- [x] Check unsaved and saved states for every active form: statement correction, receipt/wire review, transaction note, selected payments, transfer comparison and tracing inputs. Check financial tab changes, refresh and reopening a saved case.
+- [x] Check interrupted upload/processing, failed saves, retry, reprocessing and replacement imports through the current UI. Reuse existing targeted failure tests, adding tests only for a newly exposed defect.
+- [x] Fix misleading save messages, accidental reset, duplicate-save behaviour or missing recovery actions found in this pass.
 
 Done when: a failed action preserves the user's work and gives a useful retry; a successful action remains available after reopening. Any unsaved browser-only state is clearly identified.
+
+Recovery evidence: correction, receipt/wire, note, selection, transfer, single/cross-account tracing and indirect-workpaper drafts retain their values in browser-tab storage. Confirmed work reopens from the case. Same-case browser checks included a failed note save and refresh, changed transfer inputs, reprocessing and exact report reopening. The final frontend regression includes the targeted upload, retry and replacement-import failure tests. Browser-only drafts remain labelled; their calculations must be rerun after refresh.
 
 ## 4. Complete reports and the original evidence-package requirements
 
 - [x] Build and reopen shared reports from saved findings and calculations, with selected transaction values and source references.
 - [x] Include checked original PDFs, correction history, available source custody records, processing versions and saved tracing assumptions/results in the existing export paths.
 - [x] Verify downloaded file hashes and replay supported tracing calculations from the saved inputs.
-- [ ] Map each original expert-package requirement to the actual exported field/file and its verification. Use a finite requirement table; do not treat historical checkpoint wording as a new feature request.
-- [ ] Implement any missing capture or report link revealed by that table. Include the new receipt review and distinguish original, corrected and unknown values.
-- [ ] Verify one combined package from the final case independently of the page that created it. Confirm selected scope, exact amounts, evidence links, retained versions and accessible readable output.
+- [x] Map each original expert-package requirement to the actual exported field/file and its verification. Use a finite requirement table; do not treat historical checkpoint wording as a new feature request.
+- [x] Implement any missing capture or report link revealed by that table. Include the new receipt review and distinguish original, corrected and unknown values.
+- [x] Verify one combined package from the final case independently of the page that created it. Confirm selected scope, exact amounts, evidence links, retained versions and accessible readable output.
+
+Verified mapping: [Financial export acceptance](loupe-financial-export-acceptance.md). The combined report retains five findings and three exact PDFs; the review package independently rebuilt eleven members and both tracing scenarios without changes. Missing historical and independent-review material remains explicitly unavailable.
 
 Done when: every applicable requirement is either present and verified or explicitly records unavailable historical/source information. Software must not invent earlier custody, software versions or independent measurements that were never recorded. Genuine missing implementation stays unchecked.
 
@@ -55,10 +59,12 @@ Done when: every applicable requirement is either present and verified or explic
 
 - [x] Validate and reconcile two reader records, retain disagreements, bind predictions to source hashes and calculate exact extraction measurements.
 - [x] Compare a measured run with an earlier run without substituting test counts for source accuracy.
-- [ ] Check the actual reader/prediction workflow against the supported formats and make the final run reproducible from its private input inventory and reader version.
-- [ ] Connect an approved private corpus run to the release checks. Missing inputs must be explicitly unavailable, not a fabricated pass; a measured regression must fail the check.
-- [ ] Link available measurements into the evidence package with their real reviewer status and extraction versions.
+- [x] Check the actual reader/prediction workflow against the supported formats and make the final run reproducible from its private input inventory and reader version.
+- [ ] External acceptance: run the release check with approved independent reader records and a retained real baseline. The capture, reconciliation, pin checks and regression failure paths are implemented and tested. The seven-source private capture is ready, but no approved reader records or baseline are available. Do not substitute automatic proposals for those records.
+- [x] Link available measurements into the evidence package with their real reviewer status and extraction versions.
 - [ ] Obtain independent human reference reviews for a representative real corpus and run the resulting measurement. This is external acceptance work, not a reason to stop implementing the application or its validation tools.
+
+Capture evidence: all seven distinct supplied PDFs captured using statement-review-v13 in a read-only transaction. Output file sizes and hashes verified; a pinned source rerun reproduced the same proposals and predictions. No payments imported. The release check now supports completely reviewed documents with no transactions, and fails when a candidate invents a payment on one. Eight focused capture/release tests passed before the final regression.
 
 Done when: the software can run, retain and export the measured result reproducibly; the release record states exactly which real-source measurements are independently reviewed. External AI/provider validation remains separately identified if its configured credentials cannot authenticate. Local PDF and investigation development continues regardless.
 
@@ -66,20 +72,24 @@ Done when: the software can run, retain and export the measured result reproduci
 
 - [x] Keep Statements, Transactions and Findings separate, with visible original-document actions and usable upload buttons.
 - [x] Keep the Financial guide available in a modal and closed unless the user opens it.
-- [ ] Walk every financial area in the final case at laptop width with the right-hand file list both open and closed. Check page navigation, long values, errors, empty results and actionable controls.
-- [ ] Remove remaining internal terminology from the main workflow. Each screen must explain what it shows and the next useful action.
-- [ ] Update the step-by-step guide and synthetic images to the final buttons and process. Do not publish private statement screenshots.
+- [x] Walk every financial area in the final case at laptop width with the right-hand file list both open and closed. Check page navigation, long values, errors, empty results and actionable controls.
+- [x] Remove remaining internal terminology from the main workflow. Each screen must explain what it shows and the next useful action.
+- [x] Update the step-by-step guide and synthetic images to the final buttons and process. Do not publish private statement screenshots.
+
+Verification: all fourteen areas opened at 1440px with the file list open and closed (28 views), without JavaScript errors or page overflow. The final changed labels were captured again. Patterns, original-source dialogs, payment graph and timeline used the corrected nine-payment case. The guide has 22 synthetic images and passes all-tab visibility, contents, image, mobile, focus-return and unchanged-form checks.
 
 Done when: every primary tab gives a recognisable investigation task, saved work can be found again, and the guide's instructions match the actual screen.
 
 ## 7. Final integration and ready-to-push checkpoint
 
-- [ ] Finish all required code changes from sections 1 to 6 and mark them with verification evidence in this plan.
-- [ ] Run the affected integration checks and one broad financial regression run at this final milestone. Fix failures and rerun only affected checks unless a new systemic concern justifies more.
-- [ ] Run type checking, scoped lint, the production build and migration/startup checks appropriate to the final diff.
-- [ ] Review exact changed paths, preserve unrelated work and exclude private PDFs, local records and credentials.
-- [ ] Commit with detailed explanations, record release notes and leave a verified build ready to push. The existing server deploys from the repository; there is no separate deployment implementation blocker.
+- [x] Finish all required code changes from sections 1 to 6 and mark them with verification evidence in this plan.
+- [x] Run the affected integration checks and one broad financial regression run at this final milestone. Fix failures and rerun only affected checks unless a new systemic concern justifies more.
+- [x] Run type checking, scoped lint, the production build and migration/startup checks appropriate to the final diff.
+- [x] Review exact changed paths, preserve unrelated work and exclude private PDFs, local records and credentials.
+- [x] Commit with detailed explanations, record release notes and leave a verified build ready to push. The existing server deploys from the repository; there is no separate deployment implementation blocker.
 - [ ] Push only when explicitly requested, then verify the deployed build through the user-visible workflow where server access permits.
+
+Release evidence: [15 September release record](releases/2026-09-15-financial.md). One broad frontend run passed 1,146 tests. One broad backend run executed 4,583 tests and found missing package exports plus an ambiguous multi-period fixture; 43 affected tests passed after those fixes. Type checking, scoped lint, production build, clean backend startup and all fourteen local health/migration/case checks passed. The remote branch was fetched with no incoming changes. Private captures remain ignored and unrelated files remain untouched. The build is ready for the user's UI acceptance and an explicitly requested push. Independent human accuracy review and deployment acceptance remain unchecked.
 
 ## Execution rules
 

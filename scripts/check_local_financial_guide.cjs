@@ -37,22 +37,33 @@ const { chromium } = require(
       exact: true,
     });
     await guide.waitFor();
-    for (const name of [
-      "Ledger",
-      "Statements",
-      "Held out",
-      "Attempts",
-      "Decisions",
+    const primary = [
       "Transactions",
-      "Counterparties",
-      "Posting graph",
+      "Statements",
+      "Findings",
+      "People and businesses",
       "Transfers",
       "Patterns",
-      "Case context",
-      "Conditional tracing",
       "Trends",
-    ]) {
-      await page.getByRole("tab", { name, exact: true }).click();
+    ];
+    const extra = [
+      "Payment graph",
+      "Trace funds",
+      "Payments and case events",
+      "Import review",
+      "Excluded transactions",
+      "Processing history",
+      "Change history",
+    ];
+    for (const name of [...primary, ...extra]) {
+      if (primary.includes(name))
+        await page.getByRole("tab", { name, exact: true }).click();
+      else {
+        await page
+          .getByRole("button", { name: "More financial tools", exact: true })
+          .click();
+        await page.getByRole("menuitem", { name, exact: true }).click();
+      }
       if (!(await guide.isVisible())) throw Error("Guide absent " + name);
       const box = await guide.boundingBox();
       if (box.y < 0 || box.y + box.height > 1000)
@@ -70,8 +81,16 @@ const { chromium } = require(
     await dialog
       .getByRole("heading", { name: "Loupe financial user guide", exact: true })
       .waitFor();
-    const headings = await dialog.locator("h2").allTextContents();
-    if (headings.length !== 27) throw Error("Expected full guide chapters");
+    const headings = await dialog.locator("article h2").allTextContents();
+    const expectedChapters = fs
+      .readFileSync(
+        path.join(root, "docs/user-guide/financial-user-guide.md"),
+        "utf8",
+      )
+      .split("\n")
+      .filter((line) => line.startsWith("## ")).length;
+    if (headings.length !== expectedChapters)
+      throw Error("Expected full guide chapters");
     const bad = await dialog
       .locator('a[href^="#"]')
       .evaluateAll((links) =>
@@ -107,7 +126,11 @@ const { chromium } = require(
     await dialog.getByRole("link", { name: "Add a PDF", exact: true }).click();
     const img = dialog.getByAltText("PDF upload and preparation controls");
     await img.scrollIntoViewIfNeeded();
-    await img.evaluate((el) => el.decode());
+    await img.evaluate(async (el) => {
+      // Start the off-screen image request before decoding a lazily loaded image.
+      el.loading = "eager";
+      await el.decode();
+    });
     await page.screenshot({ path: "/tmp/loupe-guide-modal-mobile-image.png" });
     await dialog.getByRole("button", { name: "Close", exact: true }).click();
     if (
@@ -119,7 +142,7 @@ const { chromium } = require(
     if (writes) throw Error("Unexpected case write");
     console.log(
       JSON.stringify({
-        tabs_with_guide: 13,
+        tabs_with_guide: 14,
         contents_links: "passed",
         desktop_mobile: "passed",
         image_loaded: true,

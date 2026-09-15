@@ -44,10 +44,11 @@ function PatternScreen({ caseId }: { caseId: string | undefined }) {
     <section aria-label="Financial pattern review" className="space-y-4 p-4">
       <h2 className="font-semibold">Patterns to investigate</h2>
       <p>
-        Look for repeated names (even when amounts change), repeated amounts,
-        money coming in and going out soon afterwards, or smaller payments that
-        add up to an amount you choose. Run the checks below, open the matching
-        payments, then record what you think they show.
+        Look for names used in at least three payments on different dates (even
+        when amounts change), repeated amounts, money coming in and going out
+        soon afterwards, or smaller payments that add up to an amount you
+        choose. Run the checks below, open the matching payments, then record
+        what you think they show.
       </p>
       <InvestigationFilters
         key={JSON.stringify(params)}
@@ -227,15 +228,16 @@ function PatternScope({
             <p>{load.data.limitation}</p>
           </details>
           <p>
-            {load.data.reviewed_rows} current readings reviewed;{" "}
-            {load.data.date_unavailable_ids.length} readings lack transaction
-            timing for these screens. {load.data.hypotheses.length} candidates.
+            {load.data.reviewed_rows} payments checked;{" "}
+            {load.data.date_unavailable_ids.length} payments need a date checked
+            before they can be included. {load.data.hypotheses.length} possible
+            patterns.
           </p>
           {!load.data.hypotheses.length && (
             <p>
-              No candidates under the selected rules. This is not a finding that
-              no relevant pattern exists; missing evidence and other patterns
-              are not covered.
+              No patterns matched these checks. Try a different account, date
+              range or number of days between payments. Check Statements for
+              missing periods.
             </p>
           )}
           {load.data.hypotheses.slice(page * 10, page * 10 + 10).map((h) => (

@@ -168,7 +168,9 @@ it("corrects a held debit without releasing it, and keeps confirmation after a l
       <CorrectableLedger caseId="case-1" heldOut onAdjudicate={vi.fn()} />
     </QueryClientProvider>
   )
-  expect(screen.getByText("No rows are currently quarantined")).toBeVisible()
+  expect(
+    screen.getByText("No payments are waiting in excluded transactions")
+  ).toBeVisible()
   expect(screen.getByRole("status")).toHaveTextContent("TX-REPLACEMENT")
 })
 
@@ -273,7 +275,9 @@ describe("QuarantinePanel with no rows returned", () => {
 
     render(<QuarantinePanel caseId="case-1" />)
 
-    expect(screen.getByText("No rows are currently quarantined")).toBeTruthy()
+    expect(
+      screen.getByText("No payments are waiting in excluded transactions")
+    ).toBeTruthy()
     expect(screen.queryByTestId("ledger-table")).toBeNull()
   })
 
@@ -284,11 +288,15 @@ describe("QuarantinePanel with no rows returned", () => {
 
     render(<QuarantinePanel caseId="case-1" />)
 
-    const description = screen.getByText(/No row in this case's relational ledger/)
+    const description = screen.getByText(
+      /This page lists payments put aside for review/
+    )
     expect(description.textContent).not.toContain("change the status filter")
-    expect(description.textContent).toContain("superseded or rejected")
     expect(description.textContent).toContain(
-      "evidence classification and document status"
+      "corrected payments and rejected readings"
+    )
+    expect(description.textContent).toContain(
+      "appropriate checks before it can contribute to verified totals"
     )
     expect(description.textContent).not.toContain(
       "every row that was read into the ledger is counted"

@@ -140,6 +140,11 @@ export function InvestigationTransactionTable({
                     {row.counterparty_raw}
                   </p>
                 )}
+                {row.account_label && (
+                  <p className="text-xs text-muted-foreground break-words">
+                    Account: {row.account_label}
+                  </p>
+                )}
                 <div className="mt-1 flex flex-wrap gap-2">
                   <Button
                     size="sm"

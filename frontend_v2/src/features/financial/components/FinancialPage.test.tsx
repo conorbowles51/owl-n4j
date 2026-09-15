@@ -645,12 +645,12 @@ describe("FinancialPage, the held-out tab", () => {
     renderPage()
 
     expect(
-      screen.queryByText(/No rows are currently quarantined/i)
+      screen.queryByText(/No payments are waiting in excluded transactions/i)
     ).not.toBeInTheDocument()
 
     selectTab("Excluded transactions")
     expect(
-      screen.getByText(/No rows are currently quarantined/i)
+      screen.getByText(/No payments are waiting in excluded transactions/i)
     ).toBeInTheDocument()
   })
 
@@ -686,7 +686,7 @@ describe("FinancialPage, the held-out tab", () => {
 
     selectTab("Excluded transactions")
     expect(
-      screen.getByText(/No rows are currently quarantined/i)
+      screen.getByText(/No payments are waiting in excluded transactions/i)
     ).toBeInTheDocument()
     expect(
       screen.queryByText("No documentary transactions")
@@ -789,7 +789,7 @@ describe("FinancialPage, the row adjudication dialog", () => {
     rerender(pageTree())
 
     expect(
-      screen.getByText(/No rows are currently quarantined/i)
+      screen.getByText(/No payments are waiting in excluded transactions/i)
     ).toBeInTheDocument()
     expect(screen.getByTestId("adjudication-row")).toHaveAttribute(
       "data-row-key",
