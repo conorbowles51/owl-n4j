@@ -25,6 +25,8 @@ Supported wire-detail reports and deposit receipts open a separate review. Their
 
 ## Verification
 
+An open payment-claim comparison now refreshes after transactions may have changed. The previous result and save/download controls disappear until the investigator selects Find matching payments again. The quotation and search settings remain. Nine focused checks and an actual browser recovery check passed with no financial writes and all six test payments unchanged. The latest TypeScript project check and production build passed; the guide contains 27 synthetic images and instructions for this recovery.
+
 The same synthetic case produced money in of USD 1,975 and money out of USD 900 after a USD 120 payment was corrected to USD 125. The original reading stayed in its history. A USD 300 transfer was paired and two tracing scenarios were checked. The report retained five saved findings and three exact original PDFs. The larger review package rebuilt eleven files and both calculations without differences. A read-only second member could read and download but could not edit, and access was denied after membership removal.
 
 All fourteen financial areas were checked at laptop width with the file list open and closed. Live pattern, source, graph and timeline controls used the corrected payments. The guide passed its all-tab, contents, desktop/mobile, image-loading, focus and unchanged-form checks.

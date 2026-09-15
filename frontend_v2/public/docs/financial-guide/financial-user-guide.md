@@ -892,6 +892,8 @@ The **Minimum tolerance (whole currency units)** field takes whole units. For ex
 
 Your selected source, quotation and comparison fields are kept separately for each account in this browser tab. After a refresh, reopen **Patterns > Compare payment claim**, select **Use selected account**, then **Find matching payments** to calculate again. An unfinished response, explanation and supporting-payment selection also return for those exact claim details. If the calculation has changed, inspect the results and select **Use recalculated comparison** before saving. If a selected payment is no longer in the results, use **Remove unavailable selections**, then choose the supporting payments again. Saving the note makes it available to the case; a browser draft is not shared casework.
 
+If **Payments may have changed** appears while the comparison is open, select **Find matching payments** again. Your quotation, source and search settings remain. The earlier result, download and save controls are hidden until the new comparison finishes. Review the current result before saving your response. A previously saved finding or report is kept unchanged.
+
 ## Trace funds in one account
 
 Tracing asks how selected calculation rules allocate money under assumptions you supply. Begin only after checking the account's readings, dates and source coverage.

@@ -1,4 +1,5 @@
 import { ClaimComparisonDecision } from "./ClaimComparisonDecision"
+import { useAnalysisFreshness } from "../hooks/use-analysis-freshness"
 import { useFinancialDraft } from "../stores/financial-drafts"
 import { useState } from "react"
 import { useMutation } from "@tanstack/react-query"
@@ -53,6 +54,7 @@ function ClaimForm({
   caseId: string
   accountId: string
 }) {
+  const freshness = useAnalysisFreshness(caseId)
   const [source, setSource] = useFinancialDraft<{
     id: string
     label: string
@@ -85,6 +87,7 @@ function ClaimForm({
   const compare = useMutation({
     retry: false,
     mutationFn: async () => {
+      const assertCurrent = freshness.beginRead()
       if (!source) throw Error("Select the source of the claim.")
       const low = correctionMinor(fields.low, fields.currency),
         high = correctionMinor(fields.high, fields.currency),
@@ -118,7 +121,7 @@ function ClaimForm({
         materiality_floor_major_units: Number(fields.floor),
         population: fields.population,
       }
-      return verifyClaimComparison(
+      const result = await verifyClaimComparison(
         await fetchAPI(candidateUrl("claim-comparison", caseId), {
           method: "POST",
           body: request,
@@ -127,6 +130,8 @@ function ClaimForm({
         caseId,
         request
       )
+      assertCurrent()
+      return result
     },
   })
   const download = () => {
@@ -142,7 +147,8 @@ function ClaimForm({
     a.click()
     setTimeout(() => URL.revokeObjectURL(url), 1000)
   }
-  const result = compare.data?.value
+  const result =
+    !freshness.stale && !compare.isPending ? compare.data?.value : undefined
   const displayCandidates = orderClaimCandidates(
     result?.comparison.candidates ?? []
   )
@@ -300,6 +306,12 @@ function ClaimForm({
         }}
       />
       {compare.isError && <p role="alert">{compare.error.message}</p>}
+      {freshness.stale && (
+        <p role="status">
+          Payments may have changed. Select Find matching payments again before
+          saving this comparison. Your quotation and search settings are kept.
+        </p>
+      )}
       {result && (
         <section
           aria-label="Payment claim comparison result"
