@@ -272,7 +272,11 @@ export function LedgerRowBrowser({
               <span>{selection.length} payments selected</span>
               <Button
                 variant="outline"
-                disabled={!rows.length}
+                disabled={
+                  !rows.length ||
+                  selection.length >= 100 ||
+                  rows.every((row) => selection.includes(row.key))
+                }
                 onClick={() =>
                   setSelection((previous) =>
                     [

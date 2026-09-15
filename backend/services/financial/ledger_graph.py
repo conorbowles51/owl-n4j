@@ -17,7 +17,7 @@ def ledger_posting_graph(export, *, population='working'):
     totals = working_totals_from_readings(ledger) if population == 'working' else ledger
     readings = [r for r in ledger['readings'] if (r['exclusion_reason'] in (None, 'proof_class_not_included') if population == 'working' else r['included'])]
     if len(readings) > MAX_GRAPH_ROWS:
-        raise LedgerSummaryError('More than 1,000 current rows match. Narrow the account or dates; no partial graph was drawn.')
+        raise LedgerSummaryError('More than 1,000 payments match these filters. Choose an account or a shorter date range, then select Show connections again.')
     nodes, edges = {}, []
     for reading in readings:
         row = reading['row']; account = row['account_id']; label = row['counterparty_raw']
@@ -28,7 +28,7 @@ def ledger_posting_graph(export, *, population='working'):
             label=account_details.get('label') or ('Account ' + account[:8])))
         group_key = 'source-label:' + hashlib.sha256(json.dumps([account, row['currency'], label], ensure_ascii=False).encode()).hexdigest()
         nodes.setdefault(group_key, dict(id=group_key, kind='source_label', account_id=account,
-            label='Unspecified counterparties' if label is None else 'Blank source label' if not label else 'Source label: ' + label))
+            label='Name not recorded' if label is None else 'Blank name in statement' if not label else label))
         source, target = (account_key, group_key) if row['direction']=='debit' else (group_key, account_key)
         edges.append(dict(id=row['key'], source=source, target=target, transaction_id=row['key'],
             source_document_id=row['source_document_id'], currency=row['currency'], amount_minor=row['amount_minor'],

@@ -87,6 +87,13 @@ export function InvestigationTransactionTable({
     `${formatLedgerAmount(value, currency).text} ${currency}`
   return (
     <div className="overflow-x-auto rounded border">
+      {selected.length >= 100 && (
+        <p role="status" className="p-3 text-sm">
+          You have selected 100 payments, the limit for one saved selection.
+          Deselect a payment to choose another, or save this selection before
+          starting another.
+        </p>
+      )}
       <table className="w-full text-sm" aria-label="Investigation transactions">
         <thead className="bg-muted/40 text-left">
           <tr>
@@ -108,6 +115,9 @@ export function InvestigationTransactionTable({
                   type="checkbox"
                   aria-label={`Select ${row.description || row.ref_id} on ${row.ordering_date}`}
                   checked={selected.includes(row.key)}
+                  disabled={
+                    selected.length >= 100 && !selected.includes(row.key)
+                  }
                   onChange={(event) => onToggle(row, event.target.checked)}
                 />
               </td>

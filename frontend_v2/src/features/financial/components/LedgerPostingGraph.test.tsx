@@ -133,3 +133,50 @@ it("population changes remove the previous graph and source selection", async ()
     screen.queryByRole("button", { name: "Source amount 9007199254740993" })
   ).not.toBeInTheDocument()
 })
+
+it("focuses both graph and payments on a searched name and restores every connection", async () => {
+  mount({
+    ...data,
+    nodes: [
+      data.nodes[0],
+      { ...data.nodes[1], label: "Supplier one" },
+      { ...data.nodes[1], id: "c", label: "Supplier two" },
+    ],
+    edges: [
+      data.edges[0],
+      {
+        ...data.edges[0],
+        id: "other",
+        transaction_id: "other",
+        target: "c",
+        amount_minor: "2500",
+      },
+    ],
+  })
+  fireEvent.click(screen.getByRole("button", { name: "Show connections" }))
+  await screen.findByRole("button", { name: "Source amount 2500" })
+  fireEvent.change(screen.getByLabelText("Find an account or name"), {
+    target: { value: "supplier one" },
+  })
+  expect(
+    screen.queryByRole("option", { name: "Supplier two" })
+  ).not.toBeInTheDocument()
+  fireEvent.change(screen.getByLabelText("Choose an account or name"), {
+    target: { value: "b" },
+  })
+  expect(screen.getByRole("status")).toHaveTextContent(
+    "Showing 1 of 2 payments"
+  )
+  expect(
+    screen.queryByRole("button", { name: "Source amount 2500" })
+  ).not.toBeInTheDocument()
+  expect(screen.getByTestId("linked-payments")).toHaveTextContent("case/row")
+  fireEvent.click(screen.getByRole("button", { name: "Show all connections" }))
+  expect(
+    await screen.findByRole("button", { name: "Source amount 2500" })
+  ).toBeInTheDocument()
+  expect(screen.getByLabelText("Find an account or name")).toHaveValue("")
+  expect(screen.getByRole("status")).toHaveTextContent(
+    "Showing 2 of 2 payments"
+  )
+})

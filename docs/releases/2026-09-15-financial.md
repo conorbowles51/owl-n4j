@@ -63,6 +63,12 @@ The whole-case export completed in 1.6 seconds locally. Its 18 MB JSON keeps eve
 
 Focused verification: 44 statement checks, six browser-draft checks, 47 PDF/OCR/geometry checks plus six final worker checks, 65 summary/snapshot checks and 39 affected export checks. These are overlapping focused groups, not a newly repeated full suite. Private synthetic acceptance records and captures are retained locally.
 
+## Continued saved-work and graph checks
+
+Continued investigation checks: a selection of 100 payments across three accounts survived table pages, account filters, financial tabs and refresh. It saved in five seconds, reopened from Findings and produced a saved report with exact selected values and three unchanged original PDFs. The selection limit is now explained and further checkboxes are disabled until a payment is deselected.
+
+The large-case graph revealed that choosing a name narrowed its payment list but left the graph crowded. Choosing a name now focuses both. Search can find an account or name, and Show all connections restores the complete applied range. Large graphs hide small name labels until zoomed in. All 2,700 payments appear in monthly trends; a 900-payment graph and 62 exact same-day threshold groups passed local browser checks. Four focused graph tests, seven selection/table checks, two graph source/boundary checks, type checking and scoped lint passed. No broad suite repeated.
+
 ## Remaining acceptance
 
 Damaged scans can still require correction or a better source copy. The supplied-page checks and synthetic case journey do not establish independent extraction accuracy across all bank formats. The seven unique supplied PDFs have a retained prediction capture, but independent human reference reviews and an approved baseline have not been supplied. The application records those measurements as unavailable.

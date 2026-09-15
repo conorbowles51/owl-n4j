@@ -468,6 +468,8 @@ Unfinished note text stays in this browser tab when you close and reopen the det
 
 The saved selection keeps the payment values as they were when saved. Opening a linked payment shows its current record or correction history. A colleague with access to the case can read the saved note; your unfinished browser draft is not shared.
 
+At 100 selected payments, further checkboxes are disabled and the screen explains the limit. You can untick a selected payment and choose another. After saving, use **Clear selection** to start a separate group. Changing the account, table page or financial tab does not discard the selection. A refresh in the same browser tab restores it.
+
 ![Saved notes and payment selections](images/15-financial-findings.png)
 
 *Use Findings to return to investigation work. Each entry keeps its note and supporting records together.*
@@ -644,8 +646,16 @@ Name suggestions help find possible links. Check each suggestion's explanation a
 1. Open **More financial tools**, then **Payment graph**.
 2. Apply the account and dates you need.
 3. Select **Show connections** if they have not loaded.
-4. Select an account or name in the graph, or use **Choose an account or name**.
-5. Open its connected payments. Select individual payments to inspect their statements or save them with a note.
+4. If there are many names, type part of one under **Find an account or name**. Select the matching entry under **Choose an account or name**. You can also select an account or name directly in the graph.
+5. The graph now shows only the selected account or name and its connected payments. Read **Showing ... of ... payments** to check how much of the graph you are viewing. The search box only narrows the chooser until you select an entry.
+6. Select **View selected connections** below the graph. Open a payment to inspect its statement, or tick payments and save them with a note.
+7. Select **Show all connections** to return to every payment in the applied account and date range.
+
+The graph accepts up to 1,000 payments at a time. If more payments match, choose an account or a shorter date range and apply it, then select **Show connections** again. Large graphs hide most names until you zoom in; use the name search to focus on a connection without locating it among many circles.
+
+![A selected name and its payment in the graph](images/23-focused-payment-graph.png)
+
+*This synthetic example shows one selected payment out of 900. The account and recorded name remain connected to the payment list and its original statement.*
 
 Each arrow represents a recorded payment. The outgoing and incoming sides of a transfer can therefore appear separately. Use Transfers when you want to compare them as one movement.
 

@@ -17,7 +17,7 @@ def ledger_timeline(export, *, population="working"):
         if population == "working" else r["included"]
     )]
     if len(eligible) > MAX_TIMELINE_ROWS:
-        raise LedgerSummaryError("More than 1,000 current readings match. Narrow the account or ordering-date scope; no partial chronology was returned.")
+        raise LedgerSummaryError("More than 1,000 payments match these filters. Choose an account or a shorter date range, then run this check again.")
     rows = []
     for reading in eligible:
         row = reading["row"]

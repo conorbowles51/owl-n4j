@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState } from "react"
+import { lazy, Suspense, useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { fetchAPI } from "@/lib/api-client"
@@ -22,8 +22,8 @@ export function LedgerPostingGraph({ caseId }: { caseId: string | undefined }) {
       <h2 className="font-semibold">Payment connections</h2>
       <p>
         See which accounts paid or received money from each name. Select an
-        account or name to show its payments below the graph. Open a payment for
-        its statement, notes and corrections.
+        account or name to focus the graph and show its payments below. Open a
+        payment for its statement, notes and corrections.
       </p>
       <InvestigationFilters
         key={JSON.stringify(params)}
@@ -65,6 +65,7 @@ function GraphScope({
 }) {
   const [opened, setOpened] = useState(false),
     [node, setNode] = useState(""),
+    [search, setSearch] = useState(""),
     [source, setSource] = useState<string | null>(null)
   const account = params.accountId ?? null,
     start = params.startDate ?? null,
@@ -102,9 +103,25 @@ function GraphScope({
       return data
     },
   })
-  const edges =
-    query.data?.edges.filter(
-      (e) => !node || e.source === node || e.target === node
+  const focusedGraph = useMemo(() => {
+    if (!query.data) return null
+    const edges = query.data.edges.filter(
+      (edge) => !node || edge.source === node || edge.target === node
+    )
+    const connected = new Set(
+      edges.flatMap((edge) => [edge.source, edge.target])
+    )
+    return {
+      nodes: query.data.nodes.filter((item) => connected.has(item.id)),
+      edges,
+    }
+  }, [query.data, node])
+  const edges = focusedGraph?.edges ?? []
+  const matchingNodes =
+    query.data?.nodes.filter(
+      (item) =>
+        item.id === node ||
+        item.label.toLowerCase().includes(search.trim().toLowerCase())
     ) ?? []
   const selectNode = (id: string) => {
     setNode(id)
@@ -145,32 +162,64 @@ function GraphScope({
             </p>
           ) : (
             <>
+              <div className="flex flex-wrap items-end gap-3">
+                <label>
+                  Find an account or name
+                  <input
+                    className="block rounded border bg-background p-2"
+                    value={search}
+                    onChange={(event) => setSearch(event.target.value)}
+                    placeholder="Type part of the name"
+                  />
+                </label>
+                <label>
+                  Choose an account or name
+                  <select
+                    aria-label="Choose an account or name"
+                    className="block max-w-full rounded border bg-background p-2"
+                    value={node}
+                    onChange={(event) => selectNode(event.target.value)}
+                  >
+                    <option value="">All payments</option>
+                    {matchingNodes.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {node && (
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setNode("")
+                      setSearch("")
+                    }}
+                  >
+                    Show all connections
+                  </Button>
+                )}
+              </div>
+              {search.trim() && matchingNodes.length === 0 && (
+                <p>
+                  No account or name matches this search. Change or clear the
+                  text.
+                </p>
+              )}
+              <p role="status">
+                Showing {edges.length} of {query.data.edges.length} payments in
+                this graph.
+              </p>
               <Suspense
                 fallback={<p role="status">Drawing payment connections…</p>}
               >
                 <Canvas
-                  key={query.data.snapshot_sha256}
-                  data={query.data}
+                  key={query.data.snapshot_sha256 + ":" + node}
+                  data={focusedGraph!}
                   onNode={selectNode}
                   onSource={setSource}
                 />
               </Suspense>
-              <label>
-                Choose an account or name
-                <select
-                  aria-label="Choose an account or name"
-                  className="ml-2 max-w-full rounded border bg-background p-2"
-                  value={node}
-                  onChange={(e) => selectNode(e.target.value)}
-                >
-                  <option value="">All payments</option>
-                  {query.data.nodes.map((n) => (
-                    <option key={n.id} value={n.id}>
-                      {n.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
               <LinkedPayments
                 caseId={caseId}
                 ids={edges.map((e) => e.transaction_id)}

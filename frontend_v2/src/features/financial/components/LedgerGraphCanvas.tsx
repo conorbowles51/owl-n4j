@@ -20,7 +20,7 @@ export default function LedgerGraphCanvas({
   onNode,
   onSource,
   spreadAccounts,
-  instructions = "Drag to move; scroll to zoom. Select a node to list its postings, or an arrow to inspect its source.",
+  instructions = "Drag to move; scroll to zoom. Select an account or name to focus its payments, or an arrow to open the original statement.",
 }: {
   data: { nodes: Node[]; edges: Edge[] }
   onNode: (id: string) => void
@@ -103,6 +103,8 @@ export default function LedgerGraphCanvas({
         }}
         nodeCanvasObjectMode={() => "after"}
         nodeCanvasObject={(node, ctx, scale) => {
+          if (data.nodes.length > 50 && node.kind !== "account" && scale < 1.8)
+            return
           ctx.font = `${11 / scale}px sans-serif`
           ctx.fillStyle = "#e3e9f2"
           ctx.textAlign = "center"
