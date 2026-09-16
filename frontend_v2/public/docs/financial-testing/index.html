@@ -1,73 +1,279 @@
-<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Loupe financial team testing</title><style>body{font:17px/1.65 system-ui,sans-serif;color:#20252b;background:#f4f5f7;margin:0}main{max-width:900px;margin:24px auto;background:white;padding:32px}h1,h2{line-height:1.3}h2{margin-top:2.2em;border-top:1px solid #ddd;padding-top:1em}a{color:#a71330}li{margin:.5em 0}table{border-collapse:collapse;width:100%;font-size:.9em}th,td{padding:9px;border:1px solid #ccc;text-align:left}th{background:#f5f5f5}@media(max-width:640px){main{padding:18px;margin:0}table{display:block;overflow:auto}}@media print{body{background:white}main{margin:0;padding:0}h2{break-after:avoid}tr{break-inside:avoid}}</style><main><h1>Financial testing: a first investigation</h1>
-<p>Use this checklist for the first team test. Allow about 25 minutes. The two PDFs below contain invented accounts and payments, with known results you can check. After this exercise, try a copy of a real statement in a separate test case.</p>
-<h2>1. Download the two test statements</h2>
-<ul>
-<li><a href="checking.pdf">Checking account: six payments</a></li>
-<li><a href="savings.pdf">Savings account: two payments</a></li>
-<li><a href="financial-test-pack.zip">Download both statements and this checklist</a></li>
-</ul>
-<p>Create a new case with a name such as <strong>Financial test - your name - 16 September</strong>. Open its <strong>Financial</strong> view. Use a separate case for each tester so another person&#x27;s imports or corrections do not change your expected results.</p>
-<h2>2. Upload and check the statements</h2>
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Loupe financial testing guide</title><style>body{font:17px/1.65 system-ui,sans-serif;color:#20252b;background:#f4f5f7;margin:0}main{max-width:960px;margin:24px auto;background:white;padding:32px}h1,h2,h3{line-height:1.3}h2{margin-top:2.2em;border-top:1px solid #ddd;padding-top:1em}a{color:#a71330;overflow-wrap:anywhere}li{margin:.5em 0}img{max-width:100%;height:auto;border:1px solid #ccc;border-radius:6px}.table-scroll{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:.9em}th,td{padding:9px;border:1px solid #ccc;text-align:left;vertical-align:top}th{background:#f5f5f5}@media(max-width:640px){main{padding:18px;margin:0}th,td{min-width:110px}}@media print{body{background:white;font-size:10pt}main{margin:0;padding:0}.table-scroll{overflow:visible}h2,h3{break-after:avoid}tr,img{break-inside:avoid}}</style><main><link rel="preload" as="image" href="images/01-statement-check.png"/><link rel="preload" as="image" href="images/02-exclude-footer.png"/><link rel="preload" as="image" href="images/03-transactions.png"/><h1>Loupe financial testing guide</h1>
+<p>Follow this guide in order for your first test of Financial. It starts with two invented statements and ends with a saved report that a colleague can open. You do not need previous experience of Loupe.</p>
+<p><strong>Updated: 16 September 2026.</strong> Use the full <strong>User guide</strong> for detailed explanations of each tool. This testing guide tells you what to try and what result to check. A result is only a pass after you have checked it yourself.</p>
+<h2 id="contents">Contents</h2>
 <ol>
-<li>Open <strong>Statements</strong> and select <strong>Upload PDFs</strong>. Select both downloaded PDFs.</li>
-<li>Wait for each file to finish reading. Open the checking statement from the file list.</li>
-<li>Compare its original PDF with the extracted statement. Check the dates, descriptions, payment amounts and running balances under the headings printed on the PDF. Opening and closing balances must not be selected as payments.</li>
-<li>Confirm the checking import once. It should add <strong>six transactions</strong>.</li>
-<li>Open the savings file and confirm its <strong>two transactions</strong>.</li>
-<li>Open <strong>Transactions</strong>. Clear payment filters and choose all accounts with no date restriction.</li>
+<li><a href="#1-create-a-separate-test-case">Create a separate test case</a></li>
+<li><a href="#2-upload-both-statements">Upload both statements</a></li>
+<li><a href="#3-check-the-statement-and-exclude-its-footer">Check the statement and exclude its footer</a></li>
+<li><a href="#4-leave-the-review-and-return">Leave the review and return</a></li>
+<li><a href="#5-confirm-both-imports-and-check-the-totals">Confirm both imports and check the totals</a></li>
+<li><a href="#6-find-payments-and-open-their-originals">Find payments and open their originals</a></li>
+<li><a href="#7-correct-a-description-and-check-the-history">Correct a description and check the history</a></li>
+<li><a href="#8-compare-people-and-businesses">Compare people and businesses</a></li>
+<li><a href="#9-link-payments-to-a-name">Link payments to a name</a></li>
+<li><a href="#10-compare-a-transfer">Compare a transfer</a></li>
+<li><a href="#11-check-trends-and-the-payment-graph">Check trends and the payment graph</a></li>
+<li><a href="#12-run-the-pattern-and-case-event-checks">Run the pattern and case-event checks</a></li>
+<li><a href="#13-save-payments-and-an-investigation-note">Save payments and an investigation note</a></li>
+<li><a href="#14-build-save-and-download-a-report">Build, save and download a report</a></li>
+<li><a href="#15-reopen-the-work-with-a-colleague">Reopen the work with a colleague</a></li>
+<li><a href="#16-test-a-real-statement-and-a-longer-pdf">Test a real statement and a longer PDF</a></li>
+<li><a href="#17-further-tests-for-the-tools-you-use">Further tests for the tools you use</a></li>
+<li><a href="#18-check-the-current-size-limits">Check the current size limits</a></li>
+<li><a href="#19-record-results-and-report-a-problem">Record results and report a problem</a></li>
 </ol>
-<p>Expected results before making any corrections:</p>
-<table><thead><tr><th>Account</th><th style="text-align:right">Payments</th><th style="text-align:right">Money in</th><th style="text-align:right">Money out</th><th style="text-align:right">Closing balance printed on the PDF</th></tr></thead><tbody><tr><td>Checking, ending <code>/0040</code></td><td style="text-align:right">6</td><td style="text-align:right">USD 1,550.00</td><td style="text-align:right">USD 895.00</td><td style="text-align:right">USD 875.00</td></tr><tr><td>Savings, ending <code>/0000</code></td><td style="text-align:right">2</td><td style="text-align:right">USD 305.00</td><td style="text-align:right">USD 0.00</td><td style="text-align:right">USD 355.00</td></tr><tr><td>Both accounts</td><td style="text-align:right">8</td><td style="text-align:right">USD 1,855.00</td><td style="text-align:right">USD 895.00</td><td style="text-align:right">Check each account separately</td></tr></tbody></table>
-<p>The USD 300 transfer appears once leaving checking and once entering savings. Both are real entries on these invented statements, so both remain in the transaction table. The combined net movement is USD 960.00; it is not an account balance.</p>
-<h2>3. Find a payment and open its original</h2>
+<h2 id="1-create-a-separate-test-case">1. Create a separate test case</h2>
+<p>You need the Loupe address, your own sign-in details, and permission to create or use a test case and upload files. Ask the case owner to provide a test case if you cannot create one.</p>
 <ol>
-<li>Search Transactions for <strong>Example Supplies</strong>. There should be two payments: <strong>USD 120.00 on 5 July 2020</strong> and <strong>USD 75.00 on 16 July 2020</strong>.</li>
-<li>Open the USD 120 payment, then open its source file. Confirm that it is the matching row in the checking PDF.</li>
-<li>Close the source and payment details. Your search should still be present.</li>
-<li>Open another financial tab, return to Transactions, then refresh the browser. Check that your search and place are retained.</li>
+<li>Open Loupe and select <strong>Sign in</strong> after entering your username and password.</li>
+<li>Select <strong>Cases</strong> in the left sidebar, then <strong>New</strong>.</li>
+<li>In <strong>Case Title</strong>, enter <strong>Financial test - your name - today&#x27;s date</strong>.</li>
+<li>In <strong>Description</strong>, enter <strong>Invented statements for financial testing.</strong> Select <strong>Create Case</strong>.</li>
+<li>Open that case, then select <strong>Financial</strong> in the left sidebar. Check the case title at the top before uploading anything.</li>
+<li>Select <strong>Financial guide</strong>, then <strong>Testing guide</strong> to return here. <strong>Open testing guide in a separate tab</strong> lets you keep these instructions beside your case. Closing the guide returns you to the case underneath it.</li>
+<li>Download <a href="checking.pdf">checking.pdf</a> and <a href="savings.pdf">savings.pdf</a> to a folder you can find. Alternatively, <a href="financial-test-pack.zip">download the test pack</a> and extract its files first. Upload the PDFs, not the ZIP.</li>
 </ol>
-<p>Report it if the original is unavailable, the wrong row is highlighted, or changing tabs loses the search.</p>
-<h2>4. Make an explained correction</h2>
+<p><strong>Expected:</strong> you have a new empty case and the two PDFs. Use your own case so another tester&#x27;s changes do not alter your results. These PDFs contain no real customer or payment data.</p>
+<h2 id="2-upload-both-statements">2. Upload both statements</h2>
 <ol>
-<li>Open the USD 120 payment again and select <strong>Correct a value</strong>.</li>
-<li>For this test, change only its description to <strong>Payment to Example Supplies - test correction</strong>. Keep the date, amount and balance unchanged.</li>
-<li>Select <strong>Preview correction</strong>, enter <strong>Checking the correction workflow on synthetic data</strong> as the reason, then record the correction using the confirmation shown.</li>
-<li>Reopen the transaction. Check that the corrected description and the previous reading are available and that its original PDF has not changed.</li>
-<li>Check that there are still <strong>eight current transactions</strong> and the totals above are unchanged.</li>
+<li>Close the guide and open <strong>Statements</strong>.</li>
+<li>Select <strong>Statement files</strong>. A file list opens on the right.</li>
+<li>Select <strong>Upload PDFs</strong>. In your computer&#x27;s file chooser, select both <strong>checking.pdf</strong> and <strong>savings.pdf</strong>, then confirm the choice.</li>
+<li>Keep the browser tab open while the files upload and are read. Wait until each file says <strong>Ready to review</strong>.</li>
+<li>Select <strong>checking.pdf</strong> in that list.</li>
 </ol>
-<h2>5. Investigate the payments</h2>
+<p><strong>Expected:</strong> both filenames appear. The checking statement opens with its original PDF beside its extracted table. Uploading alone does not put payments into Transactions; you confirm each statement in step 5.</p>
+<p>If a file says <strong>Read statement</strong>, select that action. If it says <strong>Retry reading</strong>, use that action on the existing file. After a connection failure, select <strong>Refresh files</strong> and check whether it arrived before uploading it again.</p>
+<h2 id="3-check-the-statement-and-exclude-its-footer">3. Check the statement and exclude its footer</h2>
 <ol>
-<li>Open <strong>People and businesses</strong>. Open the payments behind <strong>Alpha Consulting</strong>. There should be two incoming payments, USD 900 and USD 650, totalling <strong>USD 1,550</strong>.</li>
-<li>Open the payments behind <strong>Example Supplies</strong>. The two outgoing payments total <strong>USD 195</strong>. Follow either one back to its original.</li>
-<li>In <strong>Transfers</strong>, use the July 2020 dates and compare the two accounts. Inspect the USD 300 leaving checking and arriving in savings on 3 July. Record a match only after opening both sources.</li>
-<li>Open <strong>More financial tools</strong>, then <strong>Payment graph</strong>. Load the connections and open the payments behind a name. Confirm that the payment list and source links work.</li>
+<li>In <strong>Review checking.pdf</strong>, compare the extracted table with the original. It should retain <strong>Date</strong>, <strong>Description</strong>, <strong>Credit</strong>, <strong>Debit</strong> and <strong>Balance</strong>, including blank cells.</li>
+<li>Select the printed <strong>900.00</strong> credit. The source viewer should locate that value in the original. If needed, use <strong>Fit source width</strong> to make the page readable.</li>
+<li>Check these details: holder <strong>EXAMPLE PERSON</strong>, checking account ending <strong>0040</strong>, currency <strong>USD</strong>, and period <strong>1 July to 31 July 2020</strong>. The opening balance is <strong>220.00</strong> and the closing balance is <strong>875.00</strong>.</li>
+<li>Find <strong>Rows needing a layout check</strong>. These sample files currently flag the line <strong>SYNTHETIC TEST DOCUMENT. No real customer or payment.</strong> It is the footer printed at the bottom of the PDF, not a payment.</li>
+<li>Beside that footer, select <strong>Review this row</strong>. The correction controls open at the matching row.</li>
+<li>Clear the checkbox in the <strong>Use</strong> column for that footer only.</li>
+<li>In its <strong>Reason for correction or decision</strong>, enter <strong>This is the test document footer, not a payment.</strong> Do not invent a date or amount for it.</li>
+<li>Check the import count. It should now say <strong>6 transactions</strong> and offer <strong>Confirm import of 6 transactions</strong>. Opening and closing balances must remain outside that count. Do not confirm yet; first try step 4.</li>
 </ol>
-<h2>6. Save work that a colleague can reopen</h2>
+<p><strong>Expected:</strong> the table still shows the original statement. The footer remains available as an excluded reading, with your explanation. The six actual payments remain selected. If the footer is already excluded in a later build, check that there are six payments and continue without changing it.</p>
+<p><img src="images/01-statement-check.png" alt="Checking statement beside the extracted table, with the footer flagged below it"/></p>
+<p><em>This is the checking PDF supplied with this guide. The flagged footer is separate from its payment table.</em></p>
+<p><img src="images/02-exclude-footer.png" alt="Correction controls used to exclude the test document footer"/></p>
+<p><em>Clear Use on the footer row and record why. The excluded footer must not become a seventh payment.</em></p>
+<p>For a wrong payment value, use <strong>Edit import values</strong> or <strong>Show corrections and import choices</strong>. Correct the field against the original and give a reason. For this exercise, leave the correct payment amounts unchanged. If any other line is flagged, inspect it before importing and record the unexpected result in your test notes.</p>
+<h2 id="4-leave-the-review-and-return">4. Leave the review and return</h2>
 <ol>
-<li>Return to Transactions and select the two Example Supplies payments.</li>
-<li>Select <strong>Save selection with a note</strong>. Name it <strong>Example supplier payments</strong> and explain that the two payments total USD 195.</li>
-<li>Open <strong>Findings</strong> and reopen the selection. Check that both payments and their source links are present.</li>
-<li>Create one more observation using <strong>Add note</strong> on the USD 300 transfer. Explain what you would investigate.</li>
-<li>In Findings, include both notes in a report. Build it, preview it and save it to the case.</li>
-<li>Reopen the saved report, include its supporting PDFs and download the package. Confirm that the notes, selected payments and original statement are included.</li>
-<li>Ask a colleague who has access to this test case to reopen the saved report. Your unsaved browser drafts are not shared, but the saved report must be.</li>
+<li>While the checking statement is still unconfirmed, open <strong>Transactions</strong>, then return to <strong>Statements</strong>.</li>
+<li>Reopen <strong>checking.pdf</strong> from <strong>Statement files</strong> if necessary.</li>
+<li>Check that the footer is still excluded and its reason remains.</li>
+<li>Refresh this same browser tab. Reopen the statement if needed and check the same two details again.</li>
+<li>Open <strong>savings.pdf</strong> from the file list, then return to <strong>checking.pdf</strong>. The checking review should still be present.</li>
 </ol>
-<h2>7. Try a real statement</h2>
-<p>Use a separate test case and keep the original file. Check the account, period, transaction count, dates, Credit/Debit or Amount columns, balances and page references. For a long PDF, check the first, middle and last pages, including any account change or continuation page.</p>
-<p>A flagged date, unreadable amount or missing page should lead to a visible correction, source or rereading action. Do not fill a value solely to make a warning disappear. A successful synthetic test does not prove that every real statement format will read correctly.</p>
-<h2>Working with a large case</h2>
-<p>Large imports, transaction lists, saved selections, payment graphs and reports are available. Three analysis tools still need a smaller selection of dates or accounts:</p>
-<table><thead><tr><th>Tool</th><th>Current limit for one check</th><th>What to do</th></tr></thead><tbody><tr><td>Transfers</td><td>500 payments across all accounts, and 1,000 possible pairs or reference comparisons</td><td>Enter a shorter <strong>From date</strong> and <strong>To date</strong>, then select <strong>Find possible transfers</strong>. Both sides of the transfer need to be within those dates.</td></tr><tr><td>More financial tools &gt; Payments and case events</td><td>1,000 payments</td><td>Choose an account or shorter dates, select <strong>Apply</strong>, then <strong>Load payments and case events</strong>.</td></tr><tr><td>Patterns</td><td>1,000 payments; further limits apply when there are many possible matches</td><td>Choose an account or shorter dates, select <strong>Apply</strong>, then <strong>Find patterns</strong>. If the message asks for a smaller range, narrow it again.</td></tr></tbody></table>
-<p>Pattern checks can also stop above 200 proposed matches, above 50 payments in a repeated-name group, or after examining 10,000 possible steps between accounts. When a limit is reached, the tool displays a message instead of returning an incomplete result. A failed or refused check does not mean that no matches exist.</p>
-<p>Dates follow you between investigation tabs. Check them before starting the next analysis. A result describes only the selected dates and accounts. Separate date ranges can miss a relationship that crosses their boundary, so these tools do not yet replace one complete analysis of a large case.</p>
-<h2>Report a problem</h2>
-<p>Send these details with each issue:</p>
-<ul>
-<li>The case name and the tab or button you were using.</li>
-<li>What you did immediately before the problem.</li>
-<li>What you expected and what actually happened.</li>
-<li>The filename, page and transaction involved, where relevant.</li>
-<li>A screenshot and the exact error message, if any.</li>
-<li>Whether refreshing changed the result.</li>
-</ul>
-<p>Keep private statement files and screenshots within your team&#x27;s approved channels. If an import appears to have stalled, reopen the statement and check its current status before uploading or importing it again.</p></main></html>
+<p><strong>Expected:</strong> changing financial tabs, switching files and refreshing the same browser tab do not lose your review. Closing the browser tab can discard unfinished drafts. A saved import, finding or report is kept with the case; an unfinished browser draft is not shared with colleagues.</p>
+<h2 id="5-confirm-both-imports-and-check-the-totals">5. Confirm both imports and check the totals</h2>
+<ol>
+<li>In the checking review, select <strong>Confirm import of 6 transactions</strong> once. Wait for the outcome. Its payments should become available in <strong>Transactions</strong>.</li>
+<li>Return to <strong>Statements</strong>, open <strong>Statement files</strong>, then select <strong>savings.pdf</strong>.</li>
+<li>Check its account ending <strong>0000</strong>, USD currency and July 2020 period. Its opening balance is <strong>50.00</strong> and closing balance is <strong>355.00</strong>.</li>
+<li>Exclude the same test document footer using step 3. Check that only the <strong>300.00</strong> transfer and <strong>5.00</strong> interest payment are selected.</li>
+<li>Select <strong>Confirm import of 2 transactions</strong> once.</li>
+<li>Open <strong>Transactions</strong>, choose <strong>Imported statement payments</strong>, select <strong>Reset</strong> in the account/date filter, then <strong>Clear payment filters</strong> beside the search controls. This removes earlier searches and restrictions.</li>
+<li>Check the total count and the figures below.</li>
+</ol>
+<div class="table-scroll"><table><thead><tr><th>Account</th><th style="text-align:right">Payments</th><th style="text-align:right">Money in</th><th style="text-align:right">Money out</th><th style="text-align:right">Opening balance</th><th style="text-align:right">Closing balance</th></tr></thead><tbody><tr><td>Checking, ending 0040</td><td style="text-align:right">6</td><td style="text-align:right">USD 1,550.00</td><td style="text-align:right">USD 895.00</td><td style="text-align:right">USD 220.00</td><td style="text-align:right">USD 875.00</td></tr><tr><td>Savings, ending 0000</td><td style="text-align:right">2</td><td style="text-align:right">USD 305.00</td><td style="text-align:right">USD 0.00</td><td style="text-align:right">USD 50.00</td><td style="text-align:right">USD 355.00</td></tr><tr><td>Both accounts</td><td style="text-align:right">8</td><td style="text-align:right">USD 1,855.00</td><td style="text-align:right">USD 895.00</td><td style="text-align:right">Check each account separately</td><td style="text-align:right">Check each account separately</td></tr></tbody></table></div>
+<p><strong>Expected:</strong> eight current transactions, with combined money in of <strong>USD 1,855.00</strong>, money out of <strong>USD 895.00</strong>, and difference of <strong>USD 960.00</strong>. The difference is money in minus money out, not a closing account balance. The transfer has one entry leaving checking and another entering savings.</p>
+<p>Select checking under <strong>Account</strong>, then <strong>Apply</strong> to check its six payments. Repeat for savings and its two payments. Select <strong>Reset</strong> afterwards to return to both accounts.</p>
+<p>If confirmation appears to fail, reopen the file and check its imported count before trying again. Do not repeatedly click confirmation or upload more copies to make the count change.</p>
+<p><img src="images/03-transactions.png" alt="Eight imported payments from the two supplied test statements"/></p>
+<p><em>Your new test case should contain these eight payments before any further test adds or excludes a transaction.</em></p>
+<h2 id="6-find-payments-and-open-their-originals">6. Find payments and open their originals</h2>
+<ol>
+<li>In <strong>Search payments</strong>, enter <strong>Example Supplies</strong>.</li>
+<li>Check that two outgoing payments remain: <strong>USD 120.00 on 5 July 2020</strong> and <strong>USD 75.00 on 16 July 2020</strong>. Together they total <strong>USD 195.00</strong>.</li>
+<li>Beside the USD 120 payment, select <strong>Open transaction</strong>. Check its date, amount, account and source filename.</li>
+<li>Select <strong>Open source file</strong>. Compare it with the USD 120 debit in checking.pdf. Close the source viewer and transaction details when finished.</li>
+<li>Open another financial tab, return to Transactions, then refresh the browser. Check that your <strong>Example Supplies</strong> search remains.</li>
+<li>Select <strong>Clear payment filters</strong>. Use <strong>More filters</strong>, choose USD if needed, and set both the minimum and maximum amount to <strong>120</strong>. Check that the USD 120 outgoing payment is the result. Clear the filters again afterwards.</li>
+</ol>
+<p><strong>Expected:</strong> each payment leads to the correct original file and value. Searching or changing tabs does not change the payment itself. If a value has no stored page position, the app must explain that rather than highlighting an unrelated location.</p>
+<h2 id="7-correct-a-description-and-check-the-history">7. Correct a description and check the history</h2>
+<p>This changes only wording, so the expected money totals remain the same.</p>
+<ol>
+<li>Find the USD 120 payment again and select <strong>Open transaction</strong>, then <strong>Correct a value</strong>.</li>
+<li>Change <strong>Description</strong> to <strong>Payment to Example Supplies - test correction</strong>. Leave every date, amount, direction and balance unchanged.</li>
+<li>Select <strong>Preview correction</strong>. Check that the proposed change is only the description.</li>
+<li>Enter <strong>Checking the correction workflow on synthetic data</strong> in <strong>Reason for correction</strong>.</li>
+<li>Select <strong>Record correction</strong> and wait for the result.</li>
+<li>Reopen the payment. Check the new description, its previous reading and its unchanged original PDF.</li>
+<li>Open <strong>More financial tools</strong>, then <strong>Change history</strong>. Find your correction and check its reason and before/after readings.</li>
+<li>Return to Transactions, reset the filters and confirm there are still eight current transactions with the totals from step 5.</li>
+</ol>
+<p><strong>Expected:</strong> the description changes, its history is retained, and the correction does not add a ninth current payment or change totals. A saved report made before a later correction retains its earlier captured values.</p>
+<h2 id="8-compare-people-and-businesses">8. Compare people and businesses</h2>
+<ol>
+<li>Open <strong>People and businesses</strong>. Choose all accounts and July 2020 if you have retained narrower filters, then select <strong>Apply</strong>.</li>
+<li>If necessary, open <strong>Analysis settings, statement coverage and downloads</strong> and choose <strong>All imported payments</strong>.</li>
+<li>Find <strong>Alpha Consulting</strong> and select its <strong>View payments</strong> button.</li>
+<li>Check that the payments are <strong>USD 900.00 on 2 July</strong> and <strong>USD 650.00 on 14 July</strong>, totalling <strong>USD 1,550.00 incoming</strong>.</li>
+<li>Open either payment and follow its source.</li>
+<li>Return to the names and inspect <strong>Example Supplies</strong>. Its two outgoing payments should still total <strong>USD 195.00</strong>.</li>
+</ol>
+<p><strong>Expected:</strong> the displayed totals can be explained by the individual payments you open. No amount is counted twice because you corrected a description.</p>
+<h2 id="9-link-payments-to-a-name">9. Link payments to a name</h2>
+<p>This checks the decision-saving controls. The invented statement already uses a consistent name; this is practice for cases with differing spellings.</p>
+<ol>
+<li>In People and businesses, open <strong>Link different names for the same person or business</strong>, then <strong>Open payment identity review</strong>.</li>
+<li>Search for <strong>Alpha Consulting</strong> under <strong>Find payment names, descriptions or references</strong>.</li>
+<li>Select the two matching payments. Check the count before continuing.</li>
+<li>Under <strong>Person or business</strong>, choose <strong>A new person or organisation</strong> and enter <strong>Alpha Consulting - test grouping</strong> in <strong>Name</strong>.</li>
+<li>In <strong>Why do these payments belong to this person or business?</strong>, enter <strong>Both invented statement descriptions name Alpha Consulting; testing a saved grouping.</strong></li>
+<li>Select <strong>Save payment identity links</strong>. Check the saved links and history.</li>
+<li>In the analysis, select <strong>Combine names I have linked to the same person or business</strong>. Check that your named group contains those two payments and USD 1,550.00 incoming.</li>
+<li>Expand <strong>Names printed on statements</strong> to check that Alpha Consulting remains recorded as the original name. Switch the grouping option off to return to the printed-name view.</li>
+</ol>
+<p><strong>Expected:</strong> the grouping is saved without rewriting the statement descriptions, original files or payment amounts. If a save response is lost, reload the current links and check whether it saved before retrying.</p>
+<h2 id="10-compare-a-transfer">10. Compare a transfer</h2>
+<ol>
+<li>Open <strong>Transfers</strong>. Set <strong>From date</strong> to <strong>1 July 2020</strong> and <strong>To date</strong> to <strong>31 July 2020</strong>.</li>
+<li>Choose <strong>All imported payments</strong> and leave <strong>Maximum days between payments</strong> at <strong>3 days</strong>.</li>
+<li>Select <strong>Find possible transfers</strong>.</li>
+<li>Find the pair for <strong>USD 300.00 on 3 July</strong>: outgoing from checking and incoming to savings. Open both source readings.</li>
+<li>Select that pair. Under <strong>Why do you think these payments are transfers?</strong>, enter <strong>The two invented statements show the same USD 300 transfer on 3 July between these accounts.</strong></li>
+<li>Select <strong>Compare totals using these transfers</strong>. Inspect the selected pair and the account comparison.</li>
+<li>Use <strong>Save this analysis with a note</strong> to keep it, with the name <strong>Test transfer between checking and savings</strong> and your observation.</li>
+</ol>
+<p><strong>Expected:</strong> the pair contains exactly the two USD 300 entries. The comparison and explanation can be reopened in Findings. Transactions still contains eight entries; saving a transfer comparison does not delete either side from the bank record.</p>
+<h2 id="11-check-trends-and-the-payment-graph">11. Check trends and the payment graph</h2>
+<ol>
+<li>Open <strong>Trends</strong>, select all accounts for July 2020 and select <strong>Apply</strong>.</li>
+<li>Under <strong>Group payments by</strong>, choose monthly. Select <strong>Show totals</strong> if necessary.</li>
+<li>Check July&#x27;s USD totals against step 5. Open the payments behind the period and inspect a source.</li>
+<li>Open <strong>More financial tools</strong>, then <strong>Payment graph</strong>. Apply the same account/date choice and select <strong>Show connections</strong> if needed.</li>
+<li>Search for <strong>Example Supplies</strong> under <strong>Find an account or name</strong>, then select the matching name under <strong>Choose an account or name</strong>.</li>
+<li>Select <strong>View selected connections</strong> and check its two payments. Open one to confirm its source.</li>
+<li>Select <strong>Show all connections</strong> to return to the complete selected account/date range.</li>
+</ol>
+<p><strong>Expected:</strong> the chart and graph lead to the payments that explain them. A line in the graph is not a new payment. Both recorded sides of a transfer remain available.</p>
+<h2 id="12-run-the-pattern-and-case-event-checks">12. Run the pattern and case-event checks</h2>
+<ol>
+<li>Open <strong>Patterns</strong>, then <strong>Review patterns</strong> if the payment-claim form is showing.</li>
+<li>Apply all accounts and July 2020. Choose <strong>All imported payments</strong>. Leave the optional split-payment amount blank and cross-account path checking off for this first run.</li>
+<li>Select <strong>Find patterns</strong>. Check the result or explicit no-result message. A small test set need not contain every type of pattern; do not mark a failure merely because a particular pattern is absent.</li>
+<li>If a result appears, open its supporting payments and check the stated dates and amounts.</li>
+<li>Open <strong>More financial tools</strong>, then <strong>Payments and case events</strong>. Apply all accounts and July 2020, then select <strong>Load payments and case events</strong>.</li>
+<li>Check that the eight payments are available. A new case with no events can legitimately show zero case events. Use the next-page control if needed to reach every payment.</li>
+</ol>
+<p><strong>Expected:</strong> the tools return results or explain a problem. A blank screen, endless loading indicator or unrelated payment is a failure. Case-event amounts must not increase transaction totals.</p>
+<h2 id="13-save-payments-and-an-investigation-note">13. Save payments and an investigation note</h2>
+<ol>
+<li>Return to Transactions. Clear earlier selections if present, then search for <strong>Example Supplies</strong>.</li>
+<li>Tick the two payments, or use <strong>Select all 2 matching payments</strong> and check that the selection count is two. <strong>Review selected payments</strong> lets you check what is included.</li>
+<li>Select <strong>Save selection with a note</strong>.</li>
+<li>In <strong>Name for this selection</strong>, enter <strong>Example supplier payments</strong>.</li>
+<li>In <strong>What did you notice?</strong>, enter <strong>Two payments to Example Supplies total USD 195. Request the invoices and check what was supplied.</strong></li>
+<li>Select <strong>Save payments and note</strong> and wait for <strong>Selection saved</strong>.</li>
+<li>Close the dialog, open <strong>Findings</strong>, and find <strong>Example supplier payments</strong>. Check its note, two linked payments and sources.</li>
+<li>Return to Transactions, clear the search and select <strong>Add note</strong> beside the outgoing USD 300 transfer.</li>
+<li>In <strong>Your transaction note</strong>, enter <strong>Check the corresponding USD 300 receipt in the savings account.</strong> Select <strong>Save investigation note</strong>.</li>
+<li>Check that this second note also appears in Findings. Refresh and reopen both notes.</li>
+</ol>
+<p><strong>Expected:</strong> both notes and their payment links remain after refresh. They are saved case work, not just text left in your browser.</p>
+<h2 id="14-build-save-and-download-a-report">14. Build, save and download a report</h2>
+<ol>
+<li>In Findings, tick <strong>Include in report</strong> for <strong>Example supplier payments</strong> and your transaction note from step 13.</li>
+<li>Select <strong>Build report</strong>. Check that it shows two selected notes.</li>
+<li>Enter <strong>First financial test report</strong> as <strong>Report title</strong>.</li>
+<li>In <strong>Introduction</strong>, enter <strong>Testing saved findings and original statement references using invented payments.</strong></li>
+<li>Use <strong>Move up</strong> or <strong>Move down</strong> to place the supplier note first. Select <strong>Preview report</strong> and read both notes and their linked payments.</li>
+<li>Select <strong>Save report to case</strong>. Wait for <strong>Report saved to this case</strong> before closing it.</li>
+<li>Refresh. In Findings, find your report and select <strong>Open financial report</strong>. It is also available under <strong>Reports</strong> in the main sidebar, in <strong>Financial reports</strong>.</li>
+<li>Select <strong>Download readable report</strong>. Open the HTML file in a browser and check its title, introduction, notes and payments. The browser&#x27;s Print command can save a PDF if you need one.</li>
+<li>Back in the saved report, expand <strong>Supporting file references</strong>. Tick <strong>Include the supporting PDFs in the download package</strong>, then select <strong>Download report package with PDFs</strong>.</li>
+<li>Extract the ZIP into one folder and open <strong>report.html</strong>. Follow its file links. Keep the other downloaded files with it.</li>
+</ol>
+<p><strong>Expected:</strong> the report reopens from the case and the downloaded copy contains both notes and the checking PDF referenced by their payments. Savings may be absent because these two notes concern checking transactions. A source used by both notes should be included once. The download must not report success while omitting a required file.</p>
+<p>A payment can appear in several notes. Do not add every note&#x27;s total together as if those were different payments. The case&#x27;s transaction totals remain the reference for money in and out.</p>
+<h2 id="15-reopen-the-work-with-a-colleague">15. Reopen the work with a colleague</h2>
+<ol>
+<li>Give a colleague who already has access to this test case its name and the report title. Do not share your password.</li>
+<li>Ask them to sign in with their own account, open the case, select Financial, then Findings.</li>
+<li>Ask them to open <strong>First financial test report</strong>, read both notes and open a linked payment&#x27;s source.</li>
+<li>Check that they see the saved descriptions and explanations. They should not need your browser tab or computer.</li>
+<li>If they have read-only access, check that they can inspect the records but cannot confirm imports, correct payments or save changes.</li>
+</ol>
+<p><strong>Expected:</strong> saved case work can be reopened by the authorised colleague. Your unfinished selections and form drafts are not shared. Mark this test <strong>Not run</strong> if no colleague is available; do not count your own second browser tab as another person&#x27;s access test.</p>
+<h2 id="16-test-a-real-statement-and-a-longer-pdf">16. Test a real statement and a longer PDF</h2>
+<p>Use a separate test case. Keep the invented eight-payment case unchanged for comparing results later.</p>
+<ol>
+<li>Before upload, note the real statement&#x27;s account, currency, dates, number of actual payments, opening balance and closing balance from the original. Keep those notes separate from Loupe&#x27;s extraction.</li>
+<li>Upload a copy through Statements. Compare the extracted table with the original, including blank columns, minus signs, refunds, balance-only rows and wrapped descriptions.</li>
+<li>For a document with several pages, use <strong>Next page</strong>, <strong>Previous page</strong> and the <strong>Page</strong> chooser. Check the first, middle and last pages. The viewer uses PDF page numbers; these can differ from numbers printed inside the document.</li>
+<li>If a file contains several statement periods or accounts, choose each recognised section separately. Check that edits made in one do not appear in another.</li>
+<li>Correct a flagged value only when you can read it in the source. If it remains unclear, try <strong>Read the statement again</strong> or record the unresolved issue. Do not use a guessed amount to make a warning disappear.</li>
+<li>Compare the proposed payment count with your own count. Inspect any difference, including duplicate pages and headings mistaken for payments, before confirming.</li>
+<li>After confirmation, select that account and date range in Transactions and compare its payments and totals with your notes. Open sources from the first, middle and last pages.</li>
+<li>Switch files and tabs, refresh, then reopen the statement and a payment.</li>
+</ol>
+<p><strong>Expected:</strong> every difference you find is explainable and every imported payment leads back to the correct original. Agreement on a closing balance alone does not prove that all payments were read correctly. Record uncertain or missing items even if the import completed.</p>
+<p>For a credit card, compare charges, credits and <strong>Opening amount owed / Closing amount owed</strong> separately from bank money in and out. For a wire report or deposit receipt, expect its own supporting-document review and a saved finding. Do not count the receipt as an extra bank payment merely because the corresponding statement was also uploaded.</p>
+<h2 id="17-further-tests-for-the-tools-you-use">17. Further tests for the tools you use</h2>
+<p>Do these in additional test cases or after recording the eight-payment baseline. Use the matching User guide chapter for the complete procedure. Record tests you did not attempt as <strong>Not run</strong>.</p>
+<h3>A. Exclude and restore a payment</h3>
+<ol>
+<li>Open an invented payment and select <strong>Exclude from totals</strong>. Enter a clear test reason and confirm the permitted action.</li>
+<li>Check that it leaves current totals and remains in <strong>More financial tools &gt; Excluded transactions</strong> with its source and explanation.</li>
+<li>Use its inclusion action to restore it, giving a second reason.</li>
+<li>Confirm that the eight-payment count and original totals return. Inspect Change history for both decisions.</li>
+</ol>
+<h3>B. Repeated copies and missing periods</h3>
+<ol>
+<li>In a separate case, upload two different copies of the same statement, such as a native PDF and a scan supplied for this test. Open their originals before treating them as duplicates.</li>
+<li>Follow <strong>Review duplicates</strong> in the User guide to compare them, explain a decision and check its effect on totals.</li>
+<li>Restore the decision and check that its history is retained. Do not delete the originals to make totals agree.</li>
+<li>In Statements, open <strong>Review accounts</strong>, choose the account and inspect its listed periods. Apply a requested period that extends beyond the statement you supplied.</li>
+<li>Check that unavailable coverage is described as missing or unknown, rather than as a period with no payments.</li>
+</ol>
+<h3>C. Trace funds</h3>
+<ol>
+<li>Open <strong>More financial tools &gt; Trace funds &gt; Trace one account</strong>. Choose the invented checking account and July dates, then <strong>Apply account and dates</strong> and <strong>Load tracing inputs</strong>.</li>
+<li>Enter its USD 220 opening amount and cite the invented statement as the basis. Attribute the USD 900 deposit to a claim labelled <strong>Training example</strong>, with an explanation that this is a hypothetical test.</li>
+<li>Check the movement order, explain it, select the methods to compare and select <strong>Calculate conditional scenario</strong>.</li>
+<li>Use <strong>Save this calculation in Findings</strong>, name it and select <strong>Save calculation and note</strong>.</li>
+<li>Reopen <strong>Open saved calculation</strong> in Findings. Check the opening amount, deposit attribution, assumptions and source links. Changing an input must require a new calculation before saving a revised result.</li>
+<li>To test the separate cross-account method, use <strong>Trace between accounts</strong> and the User guide&#x27;s complete procedure, supplying both opening balances and the two sides of the USD 300 transfer.</li>
+</ol>
+<h3>D. Payment claims and other financial records</h3>
+<ol>
+<li>Follow <strong>Compare a stated payment with the records</strong> in the User guide, using an invented claim that Alpha Consulting paid USD 900 on 2 July 2020 and a supporting test document. Keep this separate from the bank import.</li>
+<li>Run the comparison and check that the correct payment is available, with its date, amount, currency and source.</li>
+<li>Record your response with a reason and the supporting payment; reopen the saved note.</li>
+<li>If the case contains <strong>Other financial records</strong>, open a record and its original. Follow that guide chapter to test an explained amount correction. Check that its original amount and reason remain available and that it does not become a bank transaction.</li>
+</ol>
+<h3>E. Asset and indirect calculations</h3>
+<ol>
+<li>Open <strong>Trace funds</strong> and choose the relevant asset or indirect review method described in the User guide.</li>
+<li>Use invented amounts with written source explanations. Calculate the result and save it in Findings.</li>
+<li>Refresh and reopen the saved workpaper. Check every entered value and its source.</li>
+<li>Make a revised copy, change one amount, calculate again and save the revision. Check that the original saved calculation remains available.</li>
+<li>Include both versions in a report and explain why their results differ.</li>
+</ol>
+<h2 id="18-check-the-current-size-limits">18. Check the current size limits</h2>
+<p>A case can contain more payments than one analysis permits. These are separate limits, not a single maximum case size.</p>
+<div class="table-scroll"><table><thead><tr><th>Feature</th><th>Current behaviour</th><th>What to test</th></tr></thead><tbody><tr><td>Upload PDFs</td><td>Up to 20 files per selection</td><td>Confirm each file appears and can be opened separately.</td></tr><tr><td>Single statement review</td><td>Up to 25,000 possible transactions and 100,000 retained text rows</td><td>Use the correction-page controls; check first, middle and last payments before and after import.</td></tr><tr><td>Saved payment selections</td><td>No 100-payment count restriction; saved details must fit within 32 MB</td><td>Save a known selection across pages, refresh and reopen its first and last payments.</td></tr><tr><td>Payment graph</td><td>No 1,000-payment count restriction; 250 connections drawn per page</td><td>Check the total payment count and the underlying payments on later graph pages.</td></tr><tr><td>Combined reports</td><td>No 20-finding or 20-PDF count restriction; 32 MB saved report data and 64 MB supporting files</td><td>Include findings from several pages and check that the saved report and download retain all of them.</td></tr><tr><td>Transfers</td><td>500 payments per comparison, with 1,000 pair/reference comparisons</td><td>Narrow From date and To date, then select Find possible transfers.</td></tr><tr><td>Payments and case events</td><td>1,000 payments per check</td><td>Choose an account or shorter dates, select Apply, then Load payments and case events.</td></tr><tr><td>Patterns</td><td>1,000 input payments; also 200 proposed matches, 50 payments per repeated-name group, and 10,000 examined steps between accounts</td><td>Narrow the account/dates, select Apply and Find patterns again.</td></tr></tbody></table></div>
+<p>The larger imports, selections, graph and reports were checked locally with a 5,000-payment statement, a 2,700-payment case and a 50-finding report. These figures describe earlier development checks, not results your team has already obtained on the deployed server. General response and file-size bounds still apply.</p>
+<p>A refused check must explain why. It is not a finding that there are no matches. Each smaller date check covers only those dates; splitting a case into separate ranges can miss relationships crossing their boundaries. Whole-case transfer, timeline and pattern work beyond these limits remains unfinished.</p>
+<h2 id="19-record-results-and-report-a-problem">19. Record results and report a problem</h2>
+<p>Copy this table into your team&#x27;s test notes, or print this guide and fill it in. Use <strong>Pass</strong>, <strong>Fail</strong>, <strong>Blocked</strong> or <strong>Not run</strong>. Record the actual result; do not mark a pass just because a button could be clicked.</p>
+<p>Tester: __________  Date: __________  Case name: __________</p>
+<div class="table-scroll"><table><thead><tr><th>Test</th><th>Result</th><th>What differed or where the evidence is saved</th></tr></thead><tbody><tr><td>1. Separate case</td><td></td><td></td></tr><tr><td>2. Two files uploaded</td><td></td><td></td></tr><tr><td>3. Original comparison and footer exclusion</td><td></td><td></td></tr><tr><td>4. Draft kept through tabs, files and refresh</td><td></td><td></td></tr><tr><td>5. Eight imported payments and exact totals</td><td></td><td></td></tr><tr><td>6. Search, filters and original source</td><td></td><td></td></tr><tr><td>7. Correction and history, totals unchanged</td><td></td><td></td></tr><tr><td>8. People and business totals</td><td></td><td></td></tr><tr><td>9. Saved name links</td><td></td><td></td></tr><tr><td>10. Two sides of the USD 300 transfer</td><td></td><td></td></tr><tr><td>11. Trends and graph payment links</td><td></td><td></td></tr><tr><td>12. Patterns and case events</td><td></td><td></td></tr><tr><td>13. Saved selection and note</td><td></td><td></td></tr><tr><td>14. Saved report and original-file download</td><td></td><td></td></tr><tr><td>15. Colleague access</td><td></td><td></td></tr><tr><td>16. Real and multi-page statements</td><td></td><td></td></tr><tr><td>17. Further tools: name each one tested</td><td></td><td></td></tr><tr><td>18. Larger selections and known limits</td><td></td><td></td></tr></tbody></table></div>
+<p>For each failure, record:</p>
+<ol>
+<li>Case name, filename and page, and the affected payment if relevant.</li>
+<li>The numbered test above and the exact button or field used.</li>
+<li>What you expected and what actually appeared, including counts or amounts.</li>
+<li>A screenshot and the exact error message.</li>
+<li>Whether switching tabs or refreshing changed the result.</li>
+<li>Whether the action saved anything before showing the problem. Check the case before repeating an import or save.</li>
+</ol>
+<p>Keep private real statements and their screenshots within your team&#x27;s approved channels. A synthetic test passing does not establish extraction accuracy for every real statement. Keep your manually checked real-file notes so the team can compare them with the imported records.</p></main></html>

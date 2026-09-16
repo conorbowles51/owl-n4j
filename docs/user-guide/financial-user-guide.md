@@ -2,7 +2,7 @@
 
 Step-by-step instructions for reviewing financial records, investigating payments and preparing reports.
 
-**Edition: 16 September 2026.** This guide describes the financial screens in the local application. A server may show an older version until it is deployed. Screenshots use a development case with synthetic transactions. They illustrate the controls, not findings about a real person.
+**Edition: 16 September 2026, evening update.** This guide describes the current financial controls and their known limits. Screenshots use test cases with invented transactions. They illustrate the controls, not findings about a real person. The separate Testing guide supplies two PDFs and exact results for your first team test.
 
 ## Contents
 
@@ -37,7 +37,7 @@ Step-by-step instructions for reviewing financial records, investigating payment
 
 ### Open this guide while working
 
-Select **Financial guide** above the financial tabs. The button stays visible while you scroll a financial screen or switch tabs. The guide opens in a modal, which is a panel over your current screen. Select a contents link to jump to a procedure, or select **Guide contents** to return to the list. Select **Close** or press Escape to return to the case. Opening the guide does not save or discard the form underneath it.
+Select **Financial guide** above the financial tabs. The button stays visible while you scroll a financial screen or switch tabs. The guide opens in a modal, which is a panel over your current screen. Choose **User guide** for the full procedures or **Testing guide** for numbered exercises, sample files and expected results. Select a contents link to jump to a procedure, or select **Guide contents** to return to the list. Select **Close** or press Escape to return to the case. Opening or switching guides does not save or discard the form underneath them.
 
 ### What you need
 
@@ -53,7 +53,7 @@ You do not need an AI connection for the normal statement upload and review proc
 
 ### Your first complete task
 
-For a first team test, use the [short testing checklist and two invented statements](/docs/financial-testing/index.html). It gives exact payment counts and totals, then takes you through a correction, investigation and saved report in a separate test case.
+For a first team test, select **Testing guide** at the top of this panel, or [open the testing guide in a separate tab](/docs/financial-testing/index.html). Download its two invented statements and follow the numbered tests. The guide explains the flagged test footer, gives exact counts and totals, then takes you through a correction, investigation and saved report. It also provides a results table and further tests for real statements and specialist tools. Use a separate case for each tester.
 
 Practise with a test statement in a test case first. Follow sections 3 to 6: upload the PDF, inspect the extracted transactions, correct any flagged errors and confirm the import once. You can then investigate the payments directly in Transactions.
 
@@ -1078,7 +1078,7 @@ To resume a downloaded calculation file instead, open **Indirect review methods*
 Use this when you want to explain several observations together. Save the observations in **Findings** first. For example, select payments in Transactions and save them with a note, or save a calculation from Trace funds.
 
 1. Open **Financial**, then **Findings**.
-2. Find a note you want to include. Tick **Include in report** under its title. Repeat for the other notes. You can select up to 20 notes, including notes on different search results or pages.
+2. Find a note you want to include. Tick **Include in report** under its title. Repeat for the other notes, including notes on different search results or pages. There is no 20-note count restriction. Check the selected count before opening the builder.
 3. Select **Build report**. The number on the button is the number of selected notes.
 4. Enter a **Report title** that describes what the report covers.
 5. Enter an **Introduction** explaining why you chose these findings and what the reader should look at. This is your writing. Loupe does not generate a conclusion for you.
@@ -1131,7 +1131,7 @@ If saving is interrupted, your draft remains. Open **Reports** and check whether
 6. Extract the downloaded ZIP. Open `report.html`. Its source links open the originals in the `statements` folder. `references.json` records the note version and file references.
 7. Check the content before sharing. Each included PDF is the whole original file and may contain other statement periods.
 
-The PDF package supports up to 20 files and 64 MB in total. Loupe checks the downloaded file bytes against their recorded hashes and stops if a source has changed. A saved note's payment values describe the time it was saved. Open its linked payments in Loupe to inspect later corrections.
+The PDF package supports up to 64 MB of original files, with no 20-file count restriction. Loupe checks the downloaded file bytes against their recorded hashes and stops if a source has changed. A saved note's payment values describe the time it was saved. Open its linked payments in Loupe to inspect later corrections.
 
 For a saved tracing calculation, use **Open saved calculation**, then **Download readable tracing report**. The general note report does not replace the detailed tracing report.
 

@@ -30,7 +30,7 @@ const { chromium } = require(
     await page.getByRole("button", { name: "Sign in", exact: true }).click();
     await page.waitForURL((u) => !u.pathname.includes("login"));
     await page.goto(
-      "http://127.0.0.1:55174/cases/3dfbafe7-fa6b-4bdd-9af5-0e97975447b9/financial",
+      `http://127.0.0.1:55174/cases/${process.env.LOUPE_GUIDE_CASE_ID || "3dfbafe7-fa6b-4bdd-9af5-0e97975447b9"}/financial`,
     );
     const guide = page.getByRole("button", {
       name: "Financial guide",
@@ -107,6 +107,24 @@ const { chromium } = require(
       .getByRole("button", { name: "Guide contents", exact: true })
       .click();
     await page.screenshot({ path: "/tmp/loupe-guide-modal-desktop.png" });
+    // A failed guide download must offer a retry without changing the case form.
+    await page.route("**/docs/financial-testing/financial-team-checklist.md", route => route.fulfill({status:503,body:"Unavailable"}), {times:1});
+    await dialog.getByRole("button", {name:"Testing guide",exact:true}).click();
+    const testing = page.getByRole("dialog", {name:"Financial testing guide",exact:true});
+    await testing.getByRole("alert").waitFor();
+    await testing.getByRole("button", {name:"Retry loading guide",exact:true}).click();
+    await testing.getByRole("heading", {name:"Loupe financial testing guide",exact:true}).waitFor();
+    const brokenTestingLinks = await testing.locator('a[href^="#"]').evaluateAll(links => links.filter(a => !document.getElementById(a.hash.slice(1))).map(a => a.hash));
+    if (brokenTestingLinks.length) throw Error("Broken testing contents: "+brokenTestingLinks);
+    const testingImages = testing.locator("article img");
+    if (await testingImages.count() !== 3) throw Error("Missing walkthrough images");
+    for (const image of await testingImages.all()) await image.evaluate(async el => {el.loading="eager";await el.decode()});
+    const pdfLink=testing.getByRole("link",{name:"checking.pdf",exact:true});
+    if (await pdfLink.getAttribute("href") !== "/docs/financial-testing/checking.pdf") throw Error("Wrong sample PDF path");
+    if (await pdfLink.getAttribute("target") !== "_blank") throw Error("Sample would replace the case");
+    await testing.getByRole("link",{name:"Check the statement and exclude its footer",exact:true}).click();
+    await page.screenshot({path:"/tmp/loupe-testing-modal-desktop.png"});
+    await testing.getByRole("button",{name:"User guide",exact:true}).click();
     await page.keyboard.press("Escape");
     await dialog.waitFor({ state: "hidden" });
     if (
@@ -123,6 +141,11 @@ const { chromium } = require(
     await page.screenshot({ path: "/tmp/loupe-guide-modal-mobile.png" });
     if (await dialog.evaluate((el) => el.scrollWidth > el.clientWidth + 1))
       throw Error("Modal overflows");
+    await dialog.getByRole("button", {name:"Testing guide",exact:true}).click();
+    await testing.getByRole("heading", {name:"Loupe financial testing guide",exact:true}).waitFor();
+    if (await testing.evaluate(el => el.scrollWidth > el.clientWidth+1)) throw Error("Testing modal overflows");
+    await page.screenshot({path:"/tmp/loupe-testing-modal-mobile.png"});
+    await testing.getByRole("button",{name:"User guide",exact:true}).click();
     await dialog.getByRole("link", { name: "Add a PDF", exact: true }).click();
     const img = dialog.getByAltText("PDF upload and preparation controls");
     await img.scrollIntoViewIfNeeded();
@@ -149,6 +172,7 @@ const { chromium } = require(
         escape_focus_return: true,
         unsaved_form_preserved: true,
         case_writes: writes,
+        testing_guide: "contents, sample links, three images, narrow layout and failed-load retry passed",
       }),
     );
   } finally {

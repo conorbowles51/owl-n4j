@@ -4,6 +4,15 @@
 
 The finished workflow is: upload statements and supporting payment documents, check flagged readings beside the originals, confirm a statement once, investigate the imported transactions, save observations and calculations, and produce a report another authorised investigator can reopen and check.
 
+## Evening documentation request, 16 September
+
+- [x] Update the Financial guide with the current controls and corrected report limits, and retain the always-visible modal entry point.
+- [x] Add a Testing guide inside that modal with nineteen numbered sections, exact actions and expected outcomes, sample PDFs, current synthetic screenshots and a results sheet. Include further real-statement and specialist-tool exercises, plus the remaining analysis limits.
+- [x] Verify a fresh six-payment checking import and two-payment savings import against the guide's counts and totals. Document the required exclusion of their flagged synthetic footer. Preserve these fixtures without repeating successful imports.
+- [x] Check both guides across fourteen Financial tabs, failed-load recovery, preserved case forms, desktop/phone layout, the built standalone guide and the extracted offline pack. Scoped lint and production build passed. This is not a claim that the team has completed every testing exercise.
+
+This new request is separate from the completed daytime schedule. The schedule remains paused and the larger-case analysis items below remain open.
+
 ## 0. Larger-case work requested on 16 September
 
 - [x] Increase single-statement review capacity, page the correction controls, and verify complete import without losing headings, source locations or edits.
