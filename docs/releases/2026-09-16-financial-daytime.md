@@ -37,6 +37,10 @@ The exercise starts with eight payments in two accounts and gives exact expected
 
 ## Deployment and remaining acceptance
 
+The final-hour check of the existing 2,700-payment case confirmed complete totals/export, statement checks/coverage, payment graph and account-party reads. Transfers still refuse more than 500 payments, and Payments and case events plus Patterns still refuse more than 1,000. Transfer results have 1,000-pair/reference ceilings; patterns also stop above 200 matches, above 50 payments per repeated-name group, or after examining 10,000 path extensions. These separate limits were not removed by the day's import, selection, graph, report and linking work. Complete large-case analysis remains development work in the plan.
+
+An actual compiled-browser check verified all three refusal messages, then successfully reran each for 2 January 2024, containing 87 payments. Filters survived refresh, with no financial writes or JavaScript errors. A narrower date range can miss relationships crossing its boundaries, so this is recovery of a scoped check, not whole-case analysis acceptance. The public checklist and detailed guide explain the current limits and exact controls.
+
 The user authorizes verified daytime fixes to be pushed through the existing automatic deployment. Record the pushed commit and returned server identifier in the build state. A public frontend identifier and downloadable assets do not establish that an authenticated live case journey passed. Team UI acceptance and approved independent real-statement references remain separate outstanding acceptance work.
 
 Ten-minute continuation checks stay active through 18:00 Europe/Dublin. Stop starting optional changes at 17:00, finish any necessary fixes and deployment checks, and leave a clear evening handoff. Do not repeat successful imports or report saves to fill the schedule.

@@ -69,6 +69,20 @@ Use a separate test case and keep the original file. Check the account, period, 
 
 A flagged date, unreadable amount or missing page should lead to a visible correction, source or rereading action. Do not fill a value solely to make a warning disappear. A successful synthetic test does not prove that every real statement format will read correctly.
 
+## Working with a large case
+
+Large imports, transaction lists, saved selections, payment graphs and reports are available. Three analysis tools still need a smaller selection of dates or accounts:
+
+| Tool | Current limit for one check | What to do |
+| --- | --- | --- |
+| Transfers | 500 payments across all accounts, and 1,000 possible pairs or reference comparisons | Enter a shorter **From date** and **To date**, then select **Find possible transfers**. Both sides of the transfer need to be within those dates. |
+| More financial tools > Payments and case events | 1,000 payments | Choose an account or shorter dates, select **Apply**, then **Load payments and case events**. |
+| Patterns | 1,000 payments; further limits apply when there are many possible matches | Choose an account or shorter dates, select **Apply**, then **Find patterns**. If the message asks for a smaller range, narrow it again. |
+
+Pattern checks can also stop above 200 proposed matches, above 50 payments in a repeated-name group, or after examining 10,000 possible steps between accounts. When a limit is reached, the tool displays a message instead of returning an incomplete result. A failed or refused check does not mean that no matches exist.
+
+Dates follow you between investigation tabs. Check them before starting the next analysis. A result describes only the selected dates and accounts. Separate date ranges can miss a relationship that crosses their boundary, so these tools do not yet replace one complete analysis of a large case.
+
 ## Report a problem
 
 Send these details with each issue:

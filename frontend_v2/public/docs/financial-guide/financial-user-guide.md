@@ -810,6 +810,8 @@ Check Statements for missing periods before interpreting a peak or fall. A large
 
 Nearby dates do not prove a connection. Events with unusable dates may be absent from the ordered list. The timeline download retains those original records for inspection.
 
+One check can include up to 1,000 payments. If the screen asks for fewer, choose an account or shorter **From** and **To** dates, select **Apply**, then **Load payments and case events** again. This changes the payments being compared; it does not just shorten the display. Check the chosen dates before interpreting the result.
+
 ## Compare possible transfers
 
 ### Find and inspect possible pairs
@@ -822,6 +824,8 @@ Nearby dates do not prove a connection. Events with unusable dates may be absent
 6. Inspect each proposed outgoing and incoming pair. Open both source readings.
 7. Compare the amount, currency, account, actual date basis and any payment-reference evidence.
 8. Check whether the same outgoing payment could match more than one incoming payment before selecting a pair.
+
+One comparison can include up to 500 payments across all accounts, with up to 1,000 possible pairs or payment-reference comparisons. If a limit message appears, enter a shorter **From date** and **To date**, then select **Find possible transfers** again. No incomplete result is returned. Both sides of a transfer must fall within the selected dates; checking separate date ranges can miss a transfer that crosses their boundary.
 
 If **Payments may have changed** appears after another action in the case, select **Find possible transfers** again. The earlier result is hidden until you reload. Your explanation remains, and selected pairs return if the refreshed payment list matches. Check the selection and calculate again before saving. Existing saved findings are unchanged.
 
@@ -869,6 +873,8 @@ The working or verified selection follows you between Trends, People and busines
 7. Inspect every relevant candidate's source readings, timing and alternative explanations.
 8. To retain a theory, enter **Theory title** and **Reasoning and alternative explanations**, then select **Save explanation and supporting payments**.
 9. Select **Open Workspace** to confirm the theory and supporting attachments were saved.
+
+One pattern check can include up to 1,000 payments. It also stops above 200 proposed matches, above 50 payments in a repeated-name group, or after examining 10,000 possible steps between accounts. A limit message means the check was not completed, not that no patterns exist. Choose an account or shorter dates, select **Apply**, then **Find patterns** again. Each result covers only those accounts and dates; separate checks can miss relationships across date boundaries.
 
 If **Payments may have changed** appears, select **Find patterns** again before saving a result. This reruns the checks against the current payments; previously saved findings are kept.
 
