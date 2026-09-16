@@ -2,7 +2,7 @@
 
 Step-by-step instructions for reviewing financial records, investigating payments and preparing reports.
 
-**Edition: 15 September 2026.** This guide describes the financial screens in the local application. A server may show an older version until it is deployed. Screenshots use a development case with synthetic transactions. They illustrate the controls, not findings about a real person.
+**Edition: 16 September 2026.** This guide describes the financial screens in the local application. A server may show an older version until it is deployed. Screenshots use a development case with synthetic transactions. They illustrate the controls, not findings about a real person.
 
 ## Contents
 
@@ -267,7 +267,9 @@ If a file has not finished processing, wait for its status to complete. If readi
 
 ### Check the account and transaction count
 
-One statement review supports up to 1,000 possible transactions. Headings, page numbers and balance rows do not use that allowance. Unclear rows still count until checked. The complete review, including other page text, is limited to 10,000 rows. If a limit is reached, Loupe explains it and does not omit rows. Open a shorter statement period from the file list, or obtain statements for shorter periods.
+Correction controls show 50 rows at a time. Use **Review page**, **Previous review rows** and **Next review rows** to move through them. Changing page does not discard edits or change the import selection. The confirmation button always counts every selected transaction, including other pages. **Review this row** opens a flagged row directly.
+
+One statement review supports up to 25,000 possible transactions. Headings, page numbers and balance rows do not use that allowance. Unclear rows still count until checked. The complete review, including other page text, is limited to 100,000 rows. If a limit is reached, Loupe explains it and does not omit rows. Open a shorter statement period from the file list, or obtain statements for shorter periods.
 
 For scanned statements and statements without drawn table borders, Loupe compares the printed headings with the positions of the amounts across the table. This keeps blank credit, debit and balance cells in their correct columns, including when headings sit to the left and amounts sit to the right. The extracted table keeps the printed text. If the positions do not establish which column contains an amount, the row is flagged for a layout check. Inspect its PDF before entering the values.
 
@@ -545,8 +547,8 @@ Unfinished note text stays in this browser tab when you close and reopen the det
 
 ### Save several payments together
 
-1. Tick the checkbox beside each payment you want to discuss together. You can select up to 100.
-2. Alternatively, use **Select matching payments (up to 100)** after searching.
+1. Tick the checkbox beside each payment you want to discuss together. Your selection can span table pages, accounts and analysis results.
+2. Alternatively, use **Select all matching payments** after searching. The button shows how many payments match. It selects all matching payments, including later table pages. In an analysis payment list, **Select all linked payments** selects the whole result.
 3. Read the selected-payment totals. If selected payments fall outside the account/date range now displayed, the screen tells you how many will still be included.
 4. Select **Review selected payments** to see the chosen payments across all accounts and filters. The list shows each date, amount and original filename. Use **Previous selected payments** and **Next selected payments** for more than 20. **Remove from selection** removes only that entry from your unfinished selection.
 5. Close the review and select **Save selection with a note**.
@@ -554,6 +556,8 @@ Unfinished note text stays in this browser tab when you close and reopen the det
 7. Under **What did you notice?**, explain the question or observation.
 8. Select **Save payments and note**. Wait for the saved confirmation.
 9. Open **Findings** and find your title. Select a linked payment to inspect its source again.
+
+Saving checks the selected payments in batches and shows progress. A selection can contain thousands of payments; the saved payment details must fit within 32 MB. If that size is exceeded, keep the selection and save it in smaller parts. Reopen a large selection in Findings, expand its linked payments and use **Saved payment page** to reach later payments.
 
 If a selected payment was corrected or excluded, saving identifies the changed payment. Select **Review selected payments** in the message. Open the payment to inspect its history. For a corrected payment, **Open corrected transaction** shows the new version. Remove the old entry from your selection, then choose the corrected payment in Transactions if you want to include it. Your other selections and unfinished note are retained. No transaction is deleted by removing it from a selection.
 
@@ -773,7 +777,7 @@ Unfinished selections, the search, name and explanation are kept in this browser
 6. Select **View selected connections** below the graph. Open a payment to inspect its statement, or tick payments and save them with a note.
 7. Select **Show all connections** to return to every payment in the applied account and date range.
 
-The graph accepts up to 1,000 payments at a time. If more payments match, choose an account or a shorter date range and apply it, then select **Show connections** again. Large graphs hide most names until you zoom in; use the name search to focus on a connection without locating it among many circles.
+The graph includes all payments in the selected account and date range. Repeated payments between the same account and name share an arrow, separately by currency and money in or out. Select a combined arrow to show its payments below. Select an arrow for one payment to open its original statement. If there are more than 250 connections, use **Connection page**, **Previous connections** and **Next connections**. The payment list still covers every graph page. Use the name search to focus on a connection without locating it among many circles. Very large requests can reach the shared 100,000-row or 64 MB calculation limit; the screen asks for a narrower account/date range and does not return a partial graph.
 
 ![A selected name and its payment in the graph](images/23-focused-payment-graph.png)
 
@@ -1105,7 +1109,7 @@ If the report list could not be loaded, select **Try loading reports again**. Th
 
 *The saved report keeps its selected note versions. Downloads are separate from saving to the case.*
 
-Reports support up to 20 selected notes and 8 MB of saved report data. A package can include up to 20 PDFs and 64 MB of original files. If it is too large, select fewer findings or download the report without PDFs and obtain the required files from Evidence. If Loupe reports a changed or unavailable source, it stops the package download. Check the named source before trying again.
+There is no 20-finding or 20-PDF count restriction. Use **Next findings** and **Previous findings** to arrange more than 25 findings in the report builder. Every selected finding remains in the report regardless of the displayed page. Reports support up to 32 MB of saved report data, and packages support up to 64 MB of original files. If it is too large, select fewer findings or download the report without PDFs and obtain the required files from Evidence. If Loupe reports a changed or unavailable source, it stops the package download. Check the named source before trying again.
 
 If saving is interrupted, your draft remains. Open **Reports** and check whether the report was saved before trying to save again, to avoid creating a duplicate.
 

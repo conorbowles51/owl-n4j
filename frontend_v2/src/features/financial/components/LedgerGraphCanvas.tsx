@@ -14,17 +14,19 @@ type Edge = Pick<
   | "currency"
   | "ordering_date"
   | "description"
->
+> & { payment_ids?: string[] }
 export default function LedgerGraphCanvas({
   data,
   onNode,
   onSource,
+  onConnection,
   spreadAccounts,
   instructions = "Drag to move; scroll to zoom. Select an account or name to focus its payments, or an arrow to open the original statement.",
 }: {
   data: { nodes: Node[]; edges: Edge[] }
   onNode: (id: string) => void
   onSource: (id: string) => void
+  onConnection?: (ids: string[]) => void
   instructions?: string
   spreadAccounts?: boolean
 }) {
@@ -83,7 +85,9 @@ export default function LedgerGraphCanvas({
         nodeLabel={(n) => tooltip(n.label)}
         linkLabel={(e) =>
           tooltip(
-            `${correctionMoney(e.amount_minor, e.currency)} · ${e.ordering_date} · ${e.description ?? "No description"}`
+            e.payment_ids && e.payment_ids.length > 1
+              ? `${e.payment_ids.length} payments · ${correctionMoney(e.amount_minor, e.currency)}. Select to view the payments.`
+              : `${correctionMoney(e.amount_minor, e.currency)} · ${e.ordering_date} · ${e.description ?? "No description"}`
           )
         }
         nodeColor={(n) => (n.kind === "account" ? "#ef5269" : "#7abaf5")}
@@ -94,7 +98,11 @@ export default function LedgerGraphCanvas({
         linkCurvature={0.12}
         cooldownTicks={100}
         onNodeClick={(n) => onNode(n.id)}
-        onLinkClick={(e) => onSource(e.transaction_id)}
+        onLinkClick={(e) =>
+          e.payment_ids && e.payment_ids.length > 1 && onConnection
+            ? onConnection(e.payment_ids)
+            : onSource(e.transaction_id)
+        }
         onEngineStop={() => {
           if (!fitted.current) {
             fitted.current = true

@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { fetchAPI } from "@/lib/api-client"
 import { candidateUrl } from "../lib/candidate-contract"
+import { paymentConnections } from "../lib/graph-connections"
 import { postingGraph } from "../lib/ledger-graph"
 import { LinkedPayments } from "./LinkedPayments"
 import { InvestigationFilters } from "./InvestigationFilters"
@@ -63,6 +64,8 @@ function GraphScope({
   params: LedgerQueryParams
   population: "working" | "verified"
 }) {
+  const [connectionPage, setConnectionPage] = useState(0)
+  const [connectionIds, setConnectionIds] = useState<string[] | null>(null)
   const [opened, setOpened] = useState(false),
     [node, setNode] = useState(""),
     [search, setSearch] = useState(""),
@@ -117,6 +120,30 @@ function GraphScope({
     }
   }, [query.data, node])
   const edges = focusedGraph?.edges ?? []
+  const connections = useMemo(
+    () => paymentConnections(focusedGraph?.edges ?? []),
+    [focusedGraph]
+  )
+  const page = Math.min(
+    connectionPage,
+    Math.max(0, Math.ceil(connections.length / 250) - 1)
+  )
+  const canvasData = useMemo(() => {
+    const displayedConnections = connections.slice(page * 250, (page + 1) * 250)
+    const displayedNodeIds = new Set(
+      displayedConnections.flatMap((edge) => [edge.source, edge.target])
+    )
+    return {
+      nodes:
+        focusedGraph?.nodes.filter((node) => displayedNodeIds.has(node.id)) ??
+        [],
+      edges: displayedConnections,
+    }
+  }, [connections, focusedGraph, page])
+  const selectedConnectionIds = new Set(connectionIds)
+  const listedEdges = connectionIds
+    ? edges.filter((edge) => selectedConnectionIds.has(edge.transaction_id))
+    : edges
   const matchingNodes =
     query.data?.nodes.filter(
       (item) =>
@@ -125,6 +152,8 @@ function GraphScope({
     ) ?? []
   const selectNode = (id: string) => {
     setNode(id)
+    setConnectionPage(0)
+    setConnectionIds(null)
   }
   return (
     <div className="space-y-3">
@@ -192,7 +221,7 @@ function GraphScope({
                   <Button
                     variant="outline"
                     onClick={() => {
-                      setNode("")
+                      selectNode("")
                       setSearch("")
                     }}
                   >
@@ -207,22 +236,76 @@ function GraphScope({
                 </p>
               )}
               <p role="status">
-                Showing {edges.length} of {query.data.edges.length} payments in
-                this graph.
+                {edges.length} of {query.data.edges.length} payments
+                match this view. Repeated payments share an arrow. Every payment
+                is available in the list below.
               </p>
+              {connections.length > 250 && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    variant="outline"
+                    disabled={!page}
+                    onClick={() => setConnectionPage(page - 1)}
+                  >
+                    Previous connections
+                  </Button>
+                  <label>
+                    Connection page{" "}
+                    <select
+                      aria-label="Connection page"
+                      className="rounded border bg-background p-2"
+                      value={page}
+                      onChange={(event) =>
+                        setConnectionPage(Number(event.target.value))
+                      }
+                    >
+                      {Array.from(
+                        { length: Math.ceil(connections.length / 250) },
+                        (_, index) => (
+                          <option key={index} value={index}>
+                            {index + 1}
+                          </option>
+                        )
+                      )}
+                    </select>
+                  </label>
+                  <span>
+                    Drawing connections {page * 250 + 1} to{" "}
+                    {Math.min((page + 1) * 250, connections.length)} of{" "}
+                    {connections.length}. The payment list covers every page.
+                  </span>
+                  <Button
+                    variant="outline"
+                    disabled={(page + 1) * 250 >= connections.length}
+                    onClick={() => setConnectionPage(page + 1)}
+                  >
+                    Next connections
+                  </Button>
+                </div>
+              )}
               <Suspense
                 fallback={<p role="status">Drawing payment connections…</p>}
               >
                 <Canvas
-                  key={query.data.snapshot_sha256 + ":" + node}
-                  data={focusedGraph!}
+                  key={query.data.snapshot_sha256 + ":" + node + ":" + page}
+                  data={canvasData}
+                  instructions="Drag to move; scroll to zoom. Select a name to show its payments. An arrow opens one statement or the list of payments it combines."
+                  onConnection={setConnectionIds}
                   onNode={selectNode}
                   onSource={setSource}
                 />
               </Suspense>
+              {connectionIds && (
+                <Button
+                  variant="outline"
+                  onClick={() => setConnectionIds(null)}
+                >
+                  Show payments for all connections
+                </Button>
+              )}
               <LinkedPayments
                 caseId={caseId}
-                ids={edges.map((e) => e.transaction_id)}
+                ids={listedEdges.map((e) => e.transaction_id)}
                 label="View selected connections"
               />
             </>

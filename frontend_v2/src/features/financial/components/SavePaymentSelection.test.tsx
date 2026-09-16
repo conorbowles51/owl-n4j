@@ -37,14 +37,16 @@ const source = {
   limitation: "Stored citation",
 }
 beforeEach(() => {
-  mocks.fetch.mockReset().mockResolvedValue(source)
+  mocks.fetch
+    .mockReset()
+    .mockResolvedValue({ case_id: "case", sources: [source] })
   mocks.save.mockReset().mockResolvedValue({ id: "saved", case_id: "case" })
   useFinancialDraftStore.setState({ drafts: {} })
 })
-function mount() {
+function mount(ids = ["payment"]) {
   render(
     <QueryClientProvider client={new QueryClient()}>
-      <SavePaymentSelection caseId="case" ids={["payment"]} />
+      <SavePaymentSelection caseId="case" ids={ids} />
     </QueryClientProvider>
   )
   fireEvent.click(
@@ -89,7 +91,10 @@ it.each([
   { case_id: "another-case" },
   { ledger_status: "superseded", superseded_by_id: "replacement" },
 ])("refuses changed or foreign records before saving %j", async (change) => {
-  mocks.fetch.mockResolvedValue({ ...source, ...change })
+  mocks.fetch.mockResolvedValue({
+    case_id: "case",
+    sources: [{ ...source, ...change }],
+  })
   mount()
   await screen.findByRole("alert")
   expect(mocks.save).not.toHaveBeenCalled()
@@ -115,15 +120,20 @@ it("retains the note and prevents automatic retry after an uncertain save", asyn
 it("names a changed payment and opens selection review without losing the note", async () => {
   const review = vi.fn()
   mocks.fetch.mockResolvedValue({
-    ...source,
-    ledger_status: "superseded",
-    superseded_by_id: "replacement",
-    transaction: {
-      ...paymentFixture,
-      description: "Example Supplies",
-      ledger_status: "superseded",
-      superseded_by_id: "replacement",
-    },
+    case_id: "case",
+    sources: [
+      {
+        ...source,
+        ledger_status: "superseded",
+        superseded_by_id: "replacement",
+        transaction: {
+          ...paymentFixture,
+          description: "Example Supplies",
+          ledger_status: "superseded",
+          superseded_by_id: "replacement",
+        },
+      },
+    ],
   })
   render(
     <QueryClientProvider client={new QueryClient()}>
@@ -160,4 +170,43 @@ it("names a changed payment and opens selection review without losing the note",
     title: "Keep selected work",
     body: "Check original and correction",
   })
+})
+
+it("saves all 2700 payments in six bounded batches with their exact values and order", async () => {
+  const ids = Array.from({ length: 2700 }, (_, i) => `payment-${i}`)
+  mocks.fetch.mockImplementation(async (_url, options) => ({
+    case_id: "case",
+    sources: options.body.transaction_ids.map((id: string) => ({
+      ...source,
+      transaction_id: id,
+      ref_id: id,
+      transaction: { ...paymentFixture, key: id, ref_id: id },
+    })),
+  }))
+  mount(ids)
+  await screen.findByText(/Selection saved/)
+  expect(mocks.fetch).toHaveBeenCalledTimes(6)
+  const link = mocks.save.mock.calls[0][0].links[0]
+  expect(link.source_anchor.financial_transaction_ids).toEqual(ids)
+  expect(link.metadata.transactions).toHaveLength(2700)
+  expect(link.metadata.transactions.at(-1).amount_minor).toBe(
+    paymentFixture.amount_minor
+  )
+})
+it("refuses a missing final batch without saving a partial selection", async () => {
+  const ids = Array.from({ length: 501 }, (_, i) => `payment-${i}`)
+  mocks.fetch.mockImplementation(async (_url, options) => ({
+    case_id: "case",
+    sources:
+      options.body.transaction_ids.length === 1
+        ? []
+        : options.body.transaction_ids.map((id: string) => ({
+            ...source,
+            transaction_id: id,
+            transaction: { ...paymentFixture, key: id },
+          })),
+  }))
+  mount(ids)
+  await screen.findByRole("alert")
+  expect(mocks.save).not.toHaveBeenCalled()
 })

@@ -18,12 +18,21 @@ class LedgerGraphTests(LedgerTransferTests):
         self.assertEqual(edge['amount_minor'], '9007199254740993')
         self.assertEqual(edge['source_document_id'], str(debit.source_document_id))
         self.assertEqual(ledger_posting_graph(self.capture(), population='verified')['edges'], [])
-    def test_exclusion_and_row_limits_are_not_hidden(self):
+    def test_exclusion_is_not_hidden(self):
         debit, credit = self.pair()
         from postgres.models.enums import LedgerStatus
         credit.ledger_status = LedgerStatus.rejected; self.db.commit()
         graph = ledger_posting_graph(self.capture())
         self.assertEqual(len(graph['edges']), 1)
         self.assertEqual(graph['excluded_rows'], 1)
-        with patch('services.financial.ledger_graph.MAX_GRAPH_ROWS', 0):
-            with self.assertRaises(LedgerSummaryError): ledger_posting_graph(self.capture())
+        import json
+        from types import SimpleNamespace
+        captured = self.capture()
+        payload = json.loads(captured.snapshot.content)
+        included = next(r for r in payload['ledger']['readings'] if r['row']['key'] == str(debit.id))
+        payload['ledger']['readings'] = [dict(included, row=dict(included['row'], key=f'payment-{i}')) for i in range(25000)]
+        payload['ledger']['considered_rows'] = 25000
+        graph = ledger_posting_graph(SimpleNamespace(snapshot=SimpleNamespace(content=json.dumps(payload), sha256='a' * 64)))
+        self.assertEqual(len(graph['edges']), 25000)
+        self.assertEqual(graph['edges'][-1]['transaction_id'], 'payment-24999')
+        self.assertEqual(sum(int(e['amount_minor']) for e in graph['edges']), int(debit.amount_minor) * 25000)

@@ -1,8 +1,16 @@
 # Financial completion plan
 
-15 September 2026. User deadline: a usable financial application tonight, Europe/Dublin. Five-minute continuation checks stayed active through 23:59 and were then paused at the agreed cutoff. The user explicitly rejected stopping at the earlier local ready checkpoint, and development continued through the remaining workflow checks. Implementation and local verification are complete; user UI acceptance, independent extraction measurements and deployed-build verification remain open below. Earlier plans and their checked items remain as the development record. Completed work stays on this list.
+15 September 2026. User deadline: a usable financial application tonight, Europe/Dublin. Five-minute continuation checks stayed active through 23:59 and were then paused at the agreed cutoff. The user explicitly rejected stopping at the earlier local ready checkpoint, and development continued through the remaining workflow checks. The larger-case work requested on 16 September is recorded below. User UI acceptance, independent extraction measurements and deployed-build verification remain open below. Earlier plans and their checked items remain as the development record. Completed work stays on this list.
 
 The finished workflow is: upload statements and supporting payment documents, check flagged readings beside the originals, confirm a statement once, investigate the imported transactions, save observations and calculations, and produce a report another authorised investigator can reopen and check.
+
+## 0. Larger-case work requested on 16 September
+
+- [x] Increase single-statement review capacity, page the correction controls, and verify complete import without losing headings, source locations or edits.
+- [x] Remove the 100-payment named-selection restriction, read source details in batches, and verify saving and reopening a large selection.
+- [x] Remove the 1,000-payment graph restriction, combine repeated connections for drawing, and retain access to every underlying payment.
+- [x] Remove the 20-finding combined-report restriction, load findings with bounded concurrency, and verify complete saved reports and downloads.
+- [x] Verify the four paths together with large synthetic data, update the guide and record actual tested sizes and remaining resource bounds. One 167-page statement imported all 5,000 payments; one selection saved all 2,700 payments; the graph retained all 2,700; and a saved 50-finding report reopened and downloaded with every payment and three exact original PDFs. Focused checks cover the 25,000-transaction request boundary, 25,000 graph payments, 250 findings and 25 packaged PDFs. The compiled preview passed a read-only check with no JavaScript errors. See [the capacity release record](releases/2026-09-16-financial-capacity.md) for actual measurements and remaining size bounds.
 
 ## 1. Finish the supplied statement and receipt formats
 

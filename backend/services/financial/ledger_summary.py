@@ -12,7 +12,7 @@ from postgres.models.financial import FinancialTransaction, FinancialSourceDocum
 from services.financial.proof_class import DEFAULT_TOTAL_CLASSES, counts_toward_totals
 from services.financial.money import get_currency
 
-MAX_SUMMARY_ROWS = 10000
+MAX_SUMMARY_ROWS = 100000
 
 
 class LedgerSummaryError(ValueError):
@@ -60,7 +60,7 @@ def ledger_summary(session, *, case_id, account_id=None, start_date=None, end_da
     if grouping is not None:
         result.update(grouping=grouping, date_basis="ordering_date", points=[])
     if len(pairs) > MAX_SUMMARY_ROWS:
-        result['reason'] = 'More than 10000 rows match this scope. Narrow the account or dates; no partial total was calculated.'
+        result['reason'] = f'More than {MAX_SUMMARY_ROWS:,} rows match this scope. Narrow the account or dates; no partial total was calculated.'
         return result
     exclusions = {status.value: 0 for status in LedgerStatus if status.value != 'admitted'}
     exclusions.update(source_not_admitted=0, proof_class_not_included=0)

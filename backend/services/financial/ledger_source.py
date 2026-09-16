@@ -5,7 +5,7 @@ comparison checks recorded provenance; it does not reread evidence bytes.
 """
 import re
 from sqlalchemy import select
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import joinedload, load_only
 
 from postgres.models.evidence import EvidenceFile
 from postgres.models.financial import FinancialSourceDocument, FinancialTransaction
@@ -21,13 +21,42 @@ class LedgerSourceError(ValueError):
 
 
 def ledger_source(session, *, case_id, transaction_id):
-    source = session.execute(select(FinancialTransaction, FinancialSourceDocument, EvidenceFile).options(joinedload(FinancialTransaction.account))
+    source = session.execute(select(FinancialTransaction, FinancialSourceDocument, EvidenceFile).options(joinedload(FinancialTransaction.account),
+            load_only(FinancialSourceDocument.id, FinancialSourceDocument.sha256_at_ingestion, FinancialSourceDocument.page_count, raiseload=True),
+            load_only(EvidenceFile.id, EvidenceFile.original_filename, EvidenceFile.sha256, raiseload=True))
         .join(FinancialSourceDocument, FinancialTransaction.source_document_id == FinancialSourceDocument.id)
         .join(EvidenceFile, FinancialSourceDocument.evidence_file_id == EvidenceFile.id)
         .where(FinancialTransaction.id == transaction_id, FinancialTransaction.case_id == case_id,
                FinancialSourceDocument.case_id == case_id, EvidenceFile.case_id == case_id)).one_or_none()
     if source is None:
         raise LedgerSourceError("Ledger source not found in this case.", 404)
+    return _source_view(case_id, source)
+
+
+def ledger_sources(session, *, case_id, transaction_ids):
+    """Resolve a bounded transport batch in one query, preserving requested order.
+
+    A missing or cross-case record refuses the whole batch, never a partial save.
+    The batch size is not a selection limit; clients request successive batches.
+    """
+    ids = [str(value) for value in transaction_ids]
+    if not ids or len(ids) > 500 or len(set(ids)) != len(ids):
+        raise LedgerSourceError("Request between 1 and 500 distinct payment references per batch.", 422)
+    sources = session.execute(select(FinancialTransaction, FinancialSourceDocument, EvidenceFile)
+        .options(joinedload(FinancialTransaction.account),
+            load_only(FinancialSourceDocument.id, FinancialSourceDocument.sha256_at_ingestion, FinancialSourceDocument.page_count, raiseload=True),
+            load_only(EvidenceFile.id, EvidenceFile.original_filename, EvidenceFile.sha256, raiseload=True))
+        .join(FinancialSourceDocument, FinancialTransaction.source_document_id == FinancialSourceDocument.id)
+        .join(EvidenceFile, FinancialSourceDocument.evidence_file_id == EvidenceFile.id)
+        .where(FinancialTransaction.id.in_(transaction_ids), FinancialTransaction.case_id == case_id,
+               FinancialSourceDocument.case_id == case_id, EvidenceFile.case_id == case_id)).all()
+    by_id = {str(source[0].id): source for source in sources}
+    if set(by_id) != set(ids):
+        raise LedgerSourceError("One or more selected payments are unavailable in this case. Review your selection.", 404)
+    return {"case_id": str(case_id), "sources": [_source_view(case_id, by_id[key]) for key in ids]}
+
+
+def _source_view(case_id, source):
     row, document, evidence = source
     if (not isinstance(document.sha256_at_ingestion, str)
             or re.fullmatch(r"[a-f0-9]{64}", document.sha256_at_ingestion) is None

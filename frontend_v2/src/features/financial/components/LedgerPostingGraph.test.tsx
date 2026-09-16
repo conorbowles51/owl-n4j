@@ -180,3 +180,35 @@ it("focuses both graph and payments on a searched name and restores every connec
     "Showing 2 of 2 payments"
   )
 })
+
+it("pages 1201 distinct connections while retaining the complete payment list", async () => {
+  const nodes = [
+    data.nodes[0],
+    ...Array.from({ length: 1201 }, (_, i) => ({
+      ...data.nodes[1],
+      id: `name-${i}`,
+    })),
+  ]
+  const edges = Array.from({ length: 1201 }, (_, i) => ({
+    ...data.edges[0],
+    id: `payment-${i}`,
+    transaction_id: `payment-${i}`,
+    target: `name-${i}`,
+  }))
+  mount({ ...data, nodes, edges })
+  fireEvent.click(screen.getByRole("button", { name: "Show connections" }))
+  await screen.findByLabelText("Connection page")
+  expect(screen.getAllByRole("button", { name: /Source amount/ })).toHaveLength(
+    250
+  )
+  fireEvent.change(screen.getByLabelText("Connection page"), {
+    target: { value: "4" },
+  })
+  expect(screen.getAllByRole("button", { name: /Source amount/ })).toHaveLength(
+    201
+  )
+  expect(screen.getByTestId("linked-payments")).toHaveTextContent(
+    "payment-1200"
+  )
+  expect(screen.getByRole("status")).toHaveTextContent("1201 of 1201 payments")
+})

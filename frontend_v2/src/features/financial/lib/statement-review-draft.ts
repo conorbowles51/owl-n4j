@@ -17,8 +17,9 @@ const draftRow = z.object({
 })
 export const statementDraft = z.object({
   revision: z.string(),
-  // Matches the complete review envelope, including retained non-payment rows.
-  rows: z.array(draftRow).max(10000),
+  // New drafts retain only changes; older complete drafts remain readable.
+  row_mode: z.literal("changes").optional(),
+  rows: z.array(draftRow).max(100000),
   holder: z.string(),
   account: z.string(),
   institution: z.string(),

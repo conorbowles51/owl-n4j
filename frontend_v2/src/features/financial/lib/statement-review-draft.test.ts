@@ -42,7 +42,7 @@ it("restores all payments and retained headings from a long statement", () => {
   expect(
     saveStatementDraft("too-long", {
       ...longDraft,
-      rows: Array.from({ length: 10001 }, () => draft.rows[0]),
+      rows: Array.from({ length: 100001 }, () => draft.rows[0]),
     })
   ).toBe(false)
 })

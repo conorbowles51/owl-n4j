@@ -55,8 +55,8 @@ export async function verifiedFindingSources(
         .map((link) => link.target_id)
     ),
   ]
-  if (!ids.length || ids.length > 20)
-    throw Error("A report package needs between 1 and 20 supporting PDFs.")
+  if (!ids.length)
+    throw Error("A report package needs at least one supporting PDF.")
   if (Object.keys(sourceDigests).some((id) => !ids.includes(id)))
     throw Error("A saved calculation is missing a supporting file reference.")
   const files = []
@@ -102,34 +102,47 @@ export async function verifiedFindingSources(
           )
       ),
     ]
-    for (let offset = 0; offset < linkedIds.length; offset += 5)
-      await Promise.all(
-        linkedIds.slice(offset, offset + 5).map(async (id) => {
-          const citation = z
-            .object({
+    for (let offset = 0; offset < linkedIds.length; offset += 500) {
+      const ids = linkedIds.slice(offset, offset + 500)
+      const batch = z
+        .object({
+          case_id: z.string(),
+          sources: z.array(
+            z.object({
               case_id: z.string(),
               transaction_id: z.string(),
               evidence_file_id: z.string(),
               sha256_at_ingestion: z.string(),
               recorded_digest_matches: z.literal(true),
             })
-            .parse(
-              await fetchAPI(
-                `/api/financial/ledger/${encodeURIComponent(id)}/source?${new URLSearchParams({ case_id: caseId })}`,
-                { signal }
-              )
-            )
-          if (
-            citation.case_id !== caseId ||
-            citation.transaction_id !== id ||
-            citation.evidence_file_id !== file.id ||
-            citation.sha256_at_ingestion !== file.sha256
-          )
-            throw Error(
-              "A saved payment does not match its supporting PDF. No package was created."
-            )
+          ),
         })
-      )
+        .parse(
+          await fetchAPI(
+            `/api/financial/ledger/sources?${new URLSearchParams({ case_id: caseId })}`,
+            {
+              method: "POST",
+              body: { transaction_ids: ids },
+              signal,
+            }
+          )
+        )
+      if (batch.case_id !== caseId || batch.sources.length !== ids.length)
+        throw Error(
+          "Some supporting payment references are missing. No package was created."
+        )
+      batch.sources.forEach((citation, index) => {
+        if (
+          citation.case_id !== caseId ||
+          citation.transaction_id !== ids[index] ||
+          citation.evidence_file_id !== file.id ||
+          citation.sha256_at_ingestion !== file.sha256
+        )
+          throw Error(
+            "A saved payment does not match its supporting PDF. No package was created."
+          )
+      })
+    }
     const token = localStorage.getItem("authToken")
     const response = await fetch(
       `/api/evidence/${encodeURIComponent(file.id)}/file`,

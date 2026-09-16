@@ -2,7 +2,7 @@ import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { LedgerSourceDialog } from "./LedgerSourceDialog"
-import { readSelectedPayment } from "../lib/selected-payment-source"
+import { readSelectedPayments } from "../lib/selected-payment-source"
 import { useFinancialDraft } from "../stores/financial-drafts"
 import { useFinancialAccess } from "../hooks/use-financial-access"
 import { SelectedPaymentsReview } from "./SelectedPaymentsReview"
@@ -52,19 +52,10 @@ function PaymentList({ caseId, ids }: { caseId: string; ids: string[] }) {
   const query = useQuery({
     queryKey: ["financial-linked-payments", caseId, visible],
     retry: false,
-    queryFn: async ({ signal }) => {
-      const result = []
-      for (let i = 0; i < visible.length; i += 5) {
-        const batch = await Promise.all(
-          visible.slice(i, i + 5).map(async (id) => {
-            const data = await readSelectedPayment(caseId, id, signal)
-            return data.transaction
-          })
-        )
-        result.push(...batch)
-      }
-      return result
-    },
+    queryFn: async ({ signal }) =>
+      (await readSelectedPayments(caseId, visible, signal)).map(
+        (source) => source.transaction
+      ),
   })
   return (
     <div className="space-y-3">
@@ -81,16 +72,24 @@ function PaymentList({ caseId, ids }: { caseId: string; ids: string[] }) {
         <>
           <p className="text-sm">
             {ids.length} linked payments. Tick payments to add them to the same
-            selection you use in Transactions, up to 100 across all views. Open
-            a payment to inspect changes since this analysis.
+            selection you use in Transactions. Open a payment to inspect changes
+            since this analysis.
           </p>
+          <Button
+            variant="outline"
+            onClick={() =>
+              setSelected((previous) => [...new Set([...previous, ...ids])])
+            }
+          >
+            Select all {ids.length} linked payments
+          </Button>
           <InvestigationTransactionTable
             rows={query.data}
             selected={selected}
             onToggle={(row, checked) =>
               setSelected((previous) =>
                 checked
-                  ? [...new Set([...previous, row.key])].slice(0, 100)
+                  ? [...new Set([...previous, row.key])]
                   : previous.filter((id) => id !== row.key)
               )
             }

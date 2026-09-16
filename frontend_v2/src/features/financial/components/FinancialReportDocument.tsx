@@ -35,13 +35,18 @@ export function FinancialReportDocument({
           <strong>{report.data.notes.length} saved notes</strong> in the order
           shown below. Their saved payment values and calculations are included.
         </p>
-        <ol className="list-decimal pl-5">
-          {report.data.notes.map((note) => (
-            <li key={note.id}>
-              {note.title || "Untitled note"} · version {note.version}
-            </li>
-          ))}
-        </ol>
+        <details>
+          <summary className="cursor-pointer">
+            Included findings ({report.data.notes.length})
+          </summary>
+          <ol className="list-decimal pl-5 max-h-60 overflow-auto">
+            {report.data.notes.map((note) => (
+              <li key={note.id}>
+                {note.title || "Untitled note"} · version {note.version}
+              </li>
+            ))}
+          </ol>
+        </details>
         <p>
           A payment can appear in more than one note. Totals are provided per
           note, with accounts and currencies kept separate.
@@ -60,7 +65,7 @@ export function FinancialReportDocument({
           <input
             type="checkbox"
             checked={includePdfs}
-            disabled={busy || !report.files.length || report.files.length > 20}
+            disabled={busy || !report.files.length}
             onChange={(event) => setIncludePdfs(event.target.checked)}
           />
           Include the supporting PDFs in the download package
@@ -72,12 +77,7 @@ export function FinancialReportDocument({
             before download.
           </p>
         )}
-        {report.files.length > 20 && (
-          <p>
-            This report references more than 20 files. Download the report
-            without PDFs and obtain any required originals from Evidence.
-          </p>
-        )}
+
         <p>
           Saving keeps the report in this case. Downloading saves a copy to your
           computer.

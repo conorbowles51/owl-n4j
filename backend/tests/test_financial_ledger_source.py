@@ -6,7 +6,7 @@ from sqlalchemy import select
 
 from postgres.models.evidence import EvidenceFile
 from postgres.models.financial import FinancialTransaction
-from services.financial.ledger_source import LedgerSourceError, ledger_source
+from services.financial.ledger_source import LedgerSourceError, ledger_source, ledger_sources
 from services.financial.transactions import LOCATOR_PROVENANCE_KEY
 from tests.test_financial_duplicates import DuplicateTestCase
 from routers import financial_ledger
@@ -89,6 +89,34 @@ class LedgerSourceTests(DuplicateTestCase):
             result = self.read()
             self.assertIsNone(result["locator"])
             self.assertEqual(result["locator_state"], state)
+
+    def test_batch_preserves_order_and_refuses_partial_or_foreign_results(self):
+        from uuid import uuid4
+        other = self.make_copy()
+        second = self.db.scalar(select(FinancialTransaction).where(FinancialTransaction.source_document_id == other.id))
+        ids = [second.id, self.row.id]
+        from sqlalchemy import event
+        statements = []
+        case_id = self.case.id
+        def capture(connection, cursor, statement, parameters, context, executemany):
+            statements.append(statement)
+        with self.SessionLocal() as db:
+            event.listen(db.get_bind(), 'before_cursor_execute', capture)
+            try:
+                result = ledger_sources(db, case_id=case_id, transaction_ids=ids)
+            finally:
+                event.remove(db.get_bind(), 'before_cursor_execute', capture)
+        self.assertEqual(len(statements), 1)
+        self.assertNotIn('financial_source_documents.metadata', statements[0])
+        self.assertEqual([source['transaction_id'] for source in result['sources']], [str(key) for key in ids])
+        self.assertEqual(result['sources'][1], self.read())
+        for requested, case in ((ids + [uuid4()], self.case.id), (ids, self.other_case.id), ([self.row.id] * 2, self.case.id)):
+            with self.assertRaises(LedgerSourceError):
+                ledger_sources(self.db, case_id=case, transaction_ids=requested)
+        self.file.sha256 = 'b' * 64
+        self.db.commit()
+        with self.assertRaises(LedgerSourceError):
+            ledger_sources(self.db, case_id=self.case.id, transaction_ids=ids)
 
 
 class LedgerSourceRouterTests(unittest.IsolatedAsyncioTestCase):

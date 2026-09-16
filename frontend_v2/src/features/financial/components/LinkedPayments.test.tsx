@@ -40,7 +40,7 @@ const source = {
   limitation: "Stored citation",
 }
 beforeEach(() => {
-  api.mockReset().mockResolvedValue(source)
+  api.mockReset().mockResolvedValue({ case_id: "case", sources: [source] })
   useFinancialDraftStore.setState({ drafts: {} })
   useAuthStore.setState({ user: null })
 })
@@ -67,7 +67,10 @@ it.each([
   { transaction: { ...paymentFixture, key: "another" } },
   { source_document_id: "another-document" },
 ])("refuses mismatched payment details %j", async (change) => {
-  api.mockResolvedValue({ ...source, ...change })
+  api.mockResolvedValue({
+    case_id: "case",
+    sources: [{ ...source, ...change }],
+  })
   mount()
   fireEvent.click(screen.getByRole("button", { name: "View payments (1)" }))
   await screen.findByRole("alert")

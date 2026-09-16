@@ -1,4 +1,5 @@
 import { useFinancialAccess } from "../hooks/use-financial-access"
+import { boundedMap } from "../lib/bounded-map"
 import { useState } from "react"
 import { useMutation } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
@@ -17,7 +18,6 @@ import {
   reportDraftName,
   prepareFinancialReport,
   reportSaveInput,
-  MAX_REPORT_NOTES,
   type FinancialReportDraft,
 } from "../lib/financial-report"
 import { FinancialReportDocument } from "./FinancialReportDocument"
@@ -30,6 +30,7 @@ function FinancialReportBuilderForm({
   caseTitle: string
 }) {
   const [open, setOpen] = useState(false)
+  const [orderPage, setOrderPage] = useState(0)
   const [draft, setDraft] = useFinancialDraft<FinancialReportDraft>(
     caseId,
     reportDraftName,
@@ -40,10 +41,8 @@ function FinancialReportBuilderForm({
   const preview = useMutation({
     retry: false,
     mutationFn: async () => {
-      const notes = []
-      if (!draft.selected.length || draft.selected.length > MAX_REPORT_NOTES)
-        throw Error(`Choose between 1 and ${MAX_REPORT_NOTES} findings.`)
-      for (const selected of draft.selected) {
+      if (!draft.selected.length) throw Error("Choose at least one finding.")
+      const notes = await boundedMap(draft.selected, async (selected) => {
         const note = await caseworkAPI.get(caseId, selected.id)
         if (
           note.id !== selected.id ||
@@ -53,8 +52,8 @@ function FinancialReportBuilderForm({
           throw Error(
             "A selected note has changed. Use the latest selected notes, then preview the report again."
           )
-        notes.push(note)
-      }
+        return note
+      })
       return {
         signature,
         report: await prepareFinancialReport({
@@ -70,8 +69,7 @@ function FinancialReportBuilderForm({
   const latest = useMutation({
     retry: false,
     mutationFn: async () => {
-      const selected = []
-      for (const selection of draft.selected) {
+      return boundedMap(draft.selected, async (selection) => {
         const note = await caseworkAPI.get(caseId, selection.id)
         if (
           note.id !== selection.id ||
@@ -81,13 +79,12 @@ function FinancialReportBuilderForm({
           throw Error(
             "A selected note is no longer available. Remove it from the report."
           )
-        selected.push({
+        return {
           id: note.id,
           title: note.title || "Untitled note",
           version: note.version,
-        })
-      }
-      return selected
+        }
+      })
     },
     onSuccess: (selected) => {
       setDraft((current) => ({ ...current, selected }))
@@ -113,6 +110,10 @@ function FinancialReportBuilderForm({
         JSON.stringify(current) === savedSignature ? emptyReportDraft : current
       ),
   })
+  const currentOrderPage = Math.min(
+    orderPage,
+    Math.max(0, Math.ceil(draft.selected.length / 25) - 1)
+  )
   const busy = preview.isPending || latest.isPending || save.isPending
   const current =
     preview.data?.signature === signature ? preview.data.report : null
@@ -129,7 +130,7 @@ function FinancialReportBuilderForm({
       </Button>
       <p className="text-sm text-muted-foreground">
         Select Include in report on the notes below. You can choose notes across
-        search results and pages, up to {MAX_REPORT_NOTES} per report.
+        search results and pages. Every selected finding is included.
       </p>
       <Dialog
         open={open}
@@ -185,65 +186,98 @@ function FinancialReportBuilderForm({
                   />
                 </label>
                 <ol className="space-y-2" aria-label="Report finding order">
-                  {draft.selected.map((note, index) => (
-                    <li
-                      key={note.id}
-                      className="flex flex-wrap items-center gap-2 rounded border p-2"
-                    >
-                      <span className="flex-1">
-                        {index + 1}. {note.title} · version {note.version}
-                      </span>
-                      <Button
-                        variant="outline"
-                        disabled={index === 0}
-                        aria-label={`Move ${note.title} earlier`}
-                        onClick={() =>
-                          setDraft((current) => {
-                            const selected = [...current.selected]
-                            ;[selected[index - 1], selected[index]] = [
-                              selected[index],
-                              selected[index - 1],
-                            ]
-                            return { ...current, selected }
-                          })
-                        }
-                      >
-                        Move up
-                      </Button>
-                      <Button
-                        variant="outline"
-                        disabled={index === draft.selected.length - 1}
-                        aria-label={`Move ${note.title} later`}
-                        onClick={() =>
-                          setDraft((current) => {
-                            const selected = [...current.selected]
-                            ;[selected[index], selected[index + 1]] = [
-                              selected[index + 1],
-                              selected[index],
-                            ]
-                            return { ...current, selected }
-                          })
-                        }
-                      >
-                        Move down
-                      </Button>
-                      <Button
-                        variant="outline"
-                        aria-label={`Remove ${note.title} from report`}
-                        onClick={() =>
-                          setDraft((current) => ({
-                            ...current,
-                            selected: current.selected.filter(
-                              (item) => item.id !== note.id
-                            ),
-                          }))
-                        }
-                      >
-                        Remove
-                      </Button>
-                    </li>
-                  ))}
+                  {draft.selected
+                    .slice(currentOrderPage * 25, (currentOrderPage + 1) * 25)
+                    .map((note, offset) => {
+                      const index = currentOrderPage * 25 + offset
+                      return (
+                        <li
+                          key={note.id}
+                          className="flex flex-wrap items-center gap-2 rounded border p-2"
+                        >
+                          <span className="flex-1">
+                            {index + 1}. {note.title} · version {note.version}
+                          </span>
+                          <Button
+                            variant="outline"
+                            disabled={index === 0}
+                            aria-label={`Move ${note.title} earlier`}
+                            onClick={() =>
+                              setDraft((current) => {
+                                const selected = [...current.selected]
+                                ;[selected[index - 1], selected[index]] = [
+                                  selected[index],
+                                  selected[index - 1],
+                                ]
+                                return { ...current, selected }
+                              })
+                            }
+                          >
+                            Move up
+                          </Button>
+                          <Button
+                            variant="outline"
+                            disabled={index === draft.selected.length - 1}
+                            aria-label={`Move ${note.title} later`}
+                            onClick={() =>
+                              setDraft((current) => {
+                                const selected = [...current.selected]
+                                ;[selected[index], selected[index + 1]] = [
+                                  selected[index + 1],
+                                  selected[index],
+                                ]
+                                return { ...current, selected }
+                              })
+                            }
+                          >
+                            Move down
+                          </Button>
+                          <Button
+                            variant="outline"
+                            aria-label={`Remove ${note.title} from report`}
+                            onClick={() =>
+                              setDraft((current) => ({
+                                ...current,
+                                selected: current.selected.filter(
+                                  (item) => item.id !== note.id
+                                ),
+                              }))
+                            }
+                          >
+                            Remove
+                          </Button>
+                        </li>
+                      )
+                    })}
                 </ol>
+                {draft.selected.length > 25 && (
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      disabled={!currentOrderPage}
+                      onClick={() => setOrderPage(currentOrderPage - 1)}
+                    >
+                      Previous findings
+                    </Button>
+                    <span>
+                      Findings {currentOrderPage * 25 + 1} to{" "}
+                      {Math.min(
+                        (currentOrderPage + 1) * 25,
+                        draft.selected.length
+                      )}{" "}
+                      of {draft.selected.length}
+                    </span>
+                    <Button
+                      variant="outline"
+                      disabled={
+                        (currentOrderPage + 1) * 25 >= draft.selected.length
+                      }
+                      onClick={() => setOrderPage(currentOrderPage + 1)}
+                    >
+                      Next findings
+                    </Button>
+                  </div>
+                )}
                 <p className="text-sm text-muted-foreground">
                   Your report title, introduction and selections are kept in
                   this browser tab until you save. Changing the report clears

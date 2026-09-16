@@ -3,7 +3,7 @@ import { useFinancialAccess } from "../hooks/use-financial-access"
 import { reviewSelectionBalance } from "../lib/statement-review-balance"
 import { ReprocessStatement } from "./ReprocessStatement"
 import { newReviewId } from "../lib/statement-review-id"
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { z } from "zod"
 import { useAuthStore } from "@/features/auth/hooks/use-auth"
@@ -633,6 +633,7 @@ function EditableStatement({
   const [saved] = useState(() => readStatementDraft(draftKey, data.revision))
   const [draftSaved, setDraftSaved] = useState(!!saved)
   const [correctionsOpen, setCorrectionsOpen] = useState(false)
+  const [correctionPage, setCorrectionPage] = useState(0)
   const correctionControls = useRef<HTMLDivElement>(null)
   const pageKey = `${owner}:${caseId}:${fileId}:${data.revision}`
   const rememberedPage = useStatementWorkspace.getState().pages[pageKey]
@@ -641,7 +642,16 @@ function EditableStatement({
     : data.rows[0]?.page_number || data.page_numbers[0] || 1
   const [sourcePage, setSourcePage] = useState(initialPage)
   const client = useQueryClient()
-  const [rows, setRows] = useState(() => saved?.rows ?? initialRows(data)),
+  const baseline = useMemo(() => initialRows(data), [data])
+  const [rows, setRows] = useState(() => {
+      if (!saved) return baseline
+      if (saved.row_mode !== "changes") return saved.rows
+      const edits = new Map(saved.rows.map((row) => [row.id, row]))
+      return [
+        ...baseline.map((row) => edits.get(row.id) ?? row),
+        ...saved.rows.filter((row) => row.manual_page),
+      ]
+    }),
     [holder, setHolder] = useState(saved?.holder ?? data.metadata.holder),
     [account, setAccount] = useState(
       saved?.account ?? data.metadata.account_number
@@ -695,24 +705,30 @@ function EditableStatement({
     setRows((current) =>
       current.map((r) => (r.id === id ? { ...r, ...patch } : r))
     )
-  const initialById = new Map(initialRows(data).map((r) => [r.id, r]))
-  const changed = (r: Edit) => {
-    if (r.manual_page) return true
-    const initial = initialById.get(r.id)!
-    return (
-      JSON.stringify(r.date_values ?? {}) !==
-        JSON.stringify(initial.date_values ?? {}) ||
-      [
-        "excluded",
-        "date",
-        "description",
-        "counterparty",
-        "amount_minor",
-        "direction",
-        "balance_minor",
-      ].some((k) => r[k as keyof Edit] !== initial[k as keyof Edit])
-    )
-  }
+  const initialById = useMemo(
+    () => new Map(baseline.map((r) => [r.id, r])),
+    [baseline]
+  )
+  const changed = useCallback(
+    (r: Edit) => {
+      if (r.manual_page) return true
+      const initial = initialById.get(r.id)!
+      return (
+        JSON.stringify(r.date_values ?? {}) !==
+          JSON.stringify(initial.date_values ?? {}) ||
+        [
+          "excluded",
+          "date",
+          "description",
+          "counterparty",
+          "amount_minor",
+          "direction",
+          "balance_minor",
+        ].some((k) => r[k as keyof Edit] !== initial[k as keyof Edit])
+      )
+    },
+    [initialById]
+  )
   const requiresReason = (r: Edit) =>
     changed(r) || !!originals.get(r.id)?.issues.length
   const incomplete = rows.some(
@@ -810,7 +826,8 @@ function EditableStatement({
     }
     const draft = {
       revision: data.revision,
-      rows,
+      row_mode: "changes" as const,
+      rows: rows.filter((row) => changed(row) || row.reason),
       holder,
       account,
       institution,
@@ -840,6 +857,7 @@ function EditableStatement({
   }, [
     draftKey,
     data.revision,
+    changed,
     rows,
     holder,
     account,
@@ -862,6 +880,14 @@ function EditableStatement({
         originals.get(r.id)?.kind === "balance" ||
         requiresReason(r)) &&
       (!onlyIssues || originals.get(r.id)?.issues.length || changed(r))
+  )
+  const currentCorrectionPage = Math.min(
+    correctionPage,
+    Math.max(0, Math.ceil(visible.length / 50) - 1)
+  )
+  const correctionRows = visible.slice(
+    currentCorrectionPage * 50,
+    (currentCorrectionPage + 1) * 50
   )
   const focusedPage = z.object({ page: z.number() }).safeParse(focus?.locator)
   const currentPage = focusedPage.success ? focusedPage.data.page : sourcePage
@@ -890,6 +916,16 @@ function EditableStatement({
     const original = originals.get(id)
     if (!original) return
     setOnlyIssues(false)
+    const balanceRows = rows.filter(
+      (row) =>
+        showExcluded ||
+        !row.excluded ||
+        originals.get(row.id)?.kind === "balance" ||
+        requiresReason(row)
+    )
+    setCorrectionPage(
+      Math.floor(balanceRows.findIndex((row) => row.id === id) / 50)
+    )
     setFocus({ rowId: id, locator: balanceLocator(original) })
     setCorrectionsOpen(true)
     requestAnimationFrame(() => {
@@ -905,6 +941,7 @@ function EditableStatement({
     if (!original) return
     setOnlyIssues(false)
     setShowExcluded(true)
+    setCorrectionPage(Math.floor(rows.findIndex((row) => row.id === id) / 50))
     setFocus({
       rowId: id,
       locator: original.source_cells[0]?.locator ?? {
@@ -1059,7 +1096,10 @@ function EditableStatement({
                   <input
                     type="checkbox"
                     checked={onlyIssues}
-                    onChange={(e) => setOnlyIssues(e.target.checked)}
+                    onChange={(e) => {
+                      setOnlyIssues(e.target.checked)
+                      setCorrectionPage(0)
+                    }}
                   />{" "}
                   Show problems and edits only
                 </label>
@@ -1067,7 +1107,10 @@ function EditableStatement({
                   <input
                     type="checkbox"
                     checked={showExcluded}
-                    onChange={(e) => setShowExcluded(e.target.checked)}
+                    onChange={(e) => {
+                      setShowExcluded(e.target.checked)
+                      setCorrectionPage(0)
+                    }}
                   />{" "}
                   Show excluded rows
                 </label>
@@ -1106,7 +1149,7 @@ function EditableStatement({
                     </tr>
                   </thead>
                   <tbody>
-                    {visible.map((r) => {
+                    {correctionRows.map((r) => {
                       const original = originals.get(r.id)!
                       return (
                         <tr
@@ -1371,6 +1414,52 @@ function EditableStatement({
                   </tbody>
                 </table>
               </div>
+              {visible.length > 50 && (
+                <div className="flex flex-wrap items-center gap-2 my-3">
+                  <Button
+                    variant="outline"
+                    disabled={!currentCorrectionPage}
+                    onClick={() => setCorrectionPage(currentCorrectionPage - 1)}
+                  >
+                    Previous review rows
+                  </Button>
+                  <label>
+                    Review page{" "}
+                    <select
+                      aria-label="Review page"
+                      className="border rounded bg-background p-2"
+                      value={currentCorrectionPage}
+                      onChange={(event) =>
+                        setCorrectionPage(Number(event.target.value))
+                      }
+                    >
+                      {Array.from(
+                        { length: Math.ceil(visible.length / 50) },
+                        (_, index) => (
+                          <option key={index} value={index}>
+                            {index + 1}
+                          </option>
+                        )
+                      )}
+                    </select>
+                  </label>
+                  <span>
+                    Rows {currentCorrectionPage * 50 + 1} to{" "}
+                    {Math.min((currentCorrectionPage + 1) * 50, visible.length)}{" "}
+                    of {visible.length}. Import includes all {included.length}{" "}
+                    selected transactions.
+                  </span>
+                  <Button
+                    variant="outline"
+                    disabled={
+                      (currentCorrectionPage + 1) * 50 >= visible.length
+                    }
+                    onClick={() => setCorrectionPage(currentCorrectionPage + 1)}
+                  >
+                    Next review rows
+                  </Button>
+                </div>
+              )}
               {visible.length === 0 && (
                 <p className="p-4">No rows match these review filters.</p>
               )}
@@ -1601,6 +1690,9 @@ function EditableStatement({
               if (!page) return
               const id = `manual:${newReviewId()}`
               setCorrectionsOpen(true)
+              setOnlyIssues(false)
+              setShowExcluded(true)
+              setCorrectionPage(Math.floor(rows.length / 50))
               setRows((current) => [
                 ...current,
                 {

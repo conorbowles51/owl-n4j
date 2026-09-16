@@ -285,7 +285,7 @@ function TimelineScope({
                     onChange={(e) =>
                       setSelected((previous) =>
                         e.target.checked
-                          ? [...new Set([...previous, item.key])].slice(0, 100)
+                          ? [...new Set([...previous, item.key])]
                           : previous.filter((key) => key !== item.key)
                       )
                     }

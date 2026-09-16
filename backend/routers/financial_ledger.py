@@ -35,7 +35,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response,
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, ConfigDict, Field
 from services.financial.amount_assessment import AmountAssessmentError, assess_source_amount, read_amount_source_text
-from services.financial.ledger_source import LedgerSourceError, ledger_source, statement_source
+from services.financial.ledger_source import LedgerSourceError, ledger_source, ledger_sources, statement_source
 from services.financial.candidate_store import CandidateStoreError, read_candidate_mapping, list_candidate_mappings, list_candidate_accounts
 from services.financial.candidate_assessment import assess_candidate_amounts, assess_candidate_dates
 from services.financial.candidate_reviews import read_candidate_review
@@ -565,6 +565,22 @@ async def assess_saved_candidate(candidate_id: UUID, body: CandidateAmountAssess
     except Exception:
         logger.exception("Candidate amount assessment failed for case %s", case_id)
         raise HTTPException(status_code=500, detail="Candidate amount assessment could not be completed.")
+
+
+class LedgerSourcesRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    transaction_ids: list[UUID] = Field(min_length=1, max_length=500)
+
+
+@router.post("/ledger/sources")
+async def get_ledger_sources(body: LedgerSourcesRequest, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    try:
+        return ledger_sources(db, case_id=case_id, transaction_ids=body.transaction_ids)
+    except LedgerSourceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Ledger sources lookup failed for case %s", case_id)
+        raise HTTPException(status_code=500, detail="Selected payment sources could not be read.")
 
 
 @router.get("/ledger/{transaction_id}/source")

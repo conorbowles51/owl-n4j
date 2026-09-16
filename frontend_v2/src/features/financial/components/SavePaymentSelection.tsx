@@ -11,7 +11,7 @@ import { useMutation } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { useCreateCaseworkEntry } from "@/features/workspace/hooks/use-casework"
 import type { CaseworkLinkInput } from "@/features/workspace/casework-api"
-import { readSelectedPayment } from "../lib/selected-payment-source"
+import { readSelectedPayments } from "../lib/selected-payment-source"
 import { useFinancialDraft } from "../stores/financial-drafts"
 
 function SavePaymentSelectionForm({
@@ -28,6 +28,7 @@ function SavePaymentSelectionForm({
   onReviewSelection?: () => void
 }) {
   const [open, setOpen] = useState(false)
+  const [checked, setChecked] = useState(0)
   const [draft, setDraft, clear] = useFinancialDraft(
     caseId,
     analysis ? `analysis-note:${analysis.kind}` : "payment-selection-note",
@@ -37,25 +38,25 @@ function SavePaymentSelectionForm({
   const save = useMutation({
     retry: false,
     mutationFn: async () => {
-      if (!ids.length || ids.length > 100)
-        throw Error(
-          "Select between 1 and 100 payments for one saved selection."
-        )
+      if (!ids.length || new Set(ids).size !== ids.length)
+        throw Error("Choose distinct payments before saving this selection.")
+      setChecked(0)
       const links = new Map<string, CaseworkLinkInput>()
-      for (let offset = 0; offset < ids.length; offset += 5) {
-        const sources = await Promise.all(
-          ids.slice(offset, offset + 5).map(async (id) => {
-            const data = await readSelectedPayment(caseId, id)
-            if (
-              data.ledger_status !== "admitted" ||
-              data.superseded_by_id !== null
-            )
-              throw Error(
-                `${data.transaction.description || data.ref_id} (${data.transaction.ordering_date}) changed or is no longer included. Review your selected payments before saving.`
-              )
-            return data
-          })
+      for (let offset = 0; offset < ids.length; offset += 500) {
+        const sources = await readSelectedPayments(
+          caseId,
+          ids.slice(offset, offset + 500)
         )
+        for (const data of sources) {
+          if (
+            data.ledger_status !== "admitted" ||
+            data.superseded_by_id !== null
+          )
+            throw Error(
+              `${data.transaction.description || data.ref_id} (${data.transaction.ordering_date}) changed or is no longer included. Review your selected payments before saving.`
+            )
+        }
+        setChecked(offset + sources.length)
         for (const source of sources) {
           const link = links.get(source.evidence_file_id) ?? {
             target_type: "evidence",
@@ -84,6 +85,13 @@ function SavePaymentSelectionForm({
       const savedLinks = [...links.values()]
       if (analysis && savedLinks[0])
         savedLinks[0].metadata = { ...savedLinks[0].metadata, analysis }
+      if (
+        new TextEncoder().encode(JSON.stringify(savedLinks)).length >
+        32 * 1024 * 1024
+      )
+        throw Error(
+          "The selected payment details exceed 32 MB. Save a smaller selection. Your selection and note are retained."
+        )
       const entry = await create.mutateAsync({
         entry_type: "note",
         title: draft.title.trim(),
@@ -179,7 +187,7 @@ function SavePaymentSelectionForm({
                 onClick={() => save.mutate()}
               >
                 {save.isPending
-                  ? "Saving selection…"
+                  ? `Checking ${checked} of ${ids.length} payments and saving…`
                   : "Save payments and note"}
               </Button>
               {save.isError && (

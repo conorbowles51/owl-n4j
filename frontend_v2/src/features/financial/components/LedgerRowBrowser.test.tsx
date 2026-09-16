@@ -277,3 +277,29 @@ it("opens a named statement with fresh table filters and preserves other views a
     ]
   ).toMatchObject({ sourceDocumentId: "" })
 })
+
+it("selects every matching payment above the old limit while showing only one table page", () => {
+  const rows = Array.from({ length: 2700 }, (_, i) => row(String(i)))
+  render(
+    <LedgerRowBrowser
+      transactions={rows}
+      investigation
+      exportContext={{ caseId: "large", params: {} }}
+    />
+  )
+  fireEvent.click(
+    screen.getByRole("button", { name: "Select all 2700 matching payments" })
+  )
+  expect(
+    useFinancialDraftStore.getState().drafts[
+      "reviewer-a:large:selected-payments"
+    ]
+  ).toEqual(rows.map((row) => row.key))
+  expect(screen.getAllByRole("checkbox")).toHaveLength(50)
+  fireEvent.click(screen.getByRole("button", { name: "Next ledger rows" }))
+  expect(
+    screen
+      .getAllByRole("checkbox")
+      .every((input) => (input as HTMLInputElement).checked)
+  ).toBe(true)
+})

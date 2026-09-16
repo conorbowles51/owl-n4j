@@ -4,7 +4,6 @@ import json
 from services.financial.ledger_summary import LedgerSummaryError
 from services.financial.working_totals import working_totals_from_readings
 
-MAX_GRAPH_ROWS = 1000
 
 
 def ledger_posting_graph(export, *, population='working'):
@@ -16,8 +15,6 @@ def ledger_posting_graph(export, *, population='working'):
         raise LedgerSummaryError('A posting graph requires a consistent ledger and source history.')
     totals = working_totals_from_readings(ledger) if population == 'working' else ledger
     readings = [r for r in ledger['readings'] if (r['exclusion_reason'] in (None, 'proof_class_not_included') if population == 'working' else r['included'])]
-    if len(readings) > MAX_GRAPH_ROWS:
-        raise LedgerSummaryError('More than 1,000 payments match these filters. Choose an account or a shorter date range, then select Show connections again.')
     nodes, edges = {}, []
     for reading in readings:
         row = reading['row']; account = row['account_id']; label = row['counterparty_raw']

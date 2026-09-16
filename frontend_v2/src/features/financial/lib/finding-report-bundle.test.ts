@@ -44,10 +44,15 @@ async function setup(change: Record<string, unknown> = {}) {
     url.includes("/ledger/")
       ? {
           case_id: "case",
-          transaction_id: "payment",
-          evidence_file_id: id,
-          sha256_at_ingestion: sha,
-          recorded_digest_matches: true,
+          sources: [
+            {
+              case_id: "case",
+              transaction_id: "payment",
+              evidence_file_id: id,
+              sha256_at_ingestion: sha,
+              recorded_digest_matches: true,
+            },
+          ],
         }
       : {
           id,
@@ -94,7 +99,13 @@ it("refuses a payment citation pointing to a different file before downloading b
   api.mockImplementation(async (url) => {
     const result = await original(url)
     return url.includes("/ledger/")
-      ? { ...result, evidence_file_id: "another-file" }
+      ? {
+          ...result,
+          sources: result.sources.map((source: object) => ({
+            ...source,
+            evidence_file_id: "another-file",
+          })),
+        }
       : result
   })
   await expect(
@@ -114,4 +125,35 @@ it("requires the wire PDF to match the original retained with its saved review",
     findingReportBundle(note, "case", new AbortController().signal)
   ).rejects.toThrow("differs from the source recorded")
   expect(request).not.toHaveBeenCalled()
+})
+
+it("includes 25 distinct original PDFs without the former file-count restriction", async () => {
+  const { bytes, request } = await setup()
+  const sha256 = [
+    ...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)),
+  ]
+    .map((n) => n.toString(16).padStart(2, "0"))
+    .join("")
+  const note = structuredClone(entry)
+  note.links = Array.from({ length: 25 }, (_, i) => ({
+    ...note.links[0],
+    id: `link-${i}`,
+    target_id: `11111111-1111-4111-8111-${String(i).padStart(12, "0")}`,
+    source_anchor: {},
+  }))
+  api.mockImplementation(async (url) => ({
+    id: url.split("/").at(-1),
+    case_id: "case",
+    original_filename: "source.pdf",
+    size: bytes.length,
+    sha256,
+  }))
+  request.mockImplementation(async () => new Response(bytes))
+  const output = unzipSync(
+    await findingReportBundle(note, "case", new AbortController().signal)
+  )
+  expect(
+    Object.keys(output).filter((path) => path.endsWith(".pdf"))
+  ).toHaveLength(25)
+  expect(request).toHaveBeenCalledTimes(25)
 })

@@ -6,8 +6,8 @@ from services.financial.candidate_sources import read_candidate_source
 from services.financial.pdf_candidates import PdfMappingError, _digest
 from services.financial.statement_import_proposal import propose_table, VERSION
 
-MAX_STATEMENT_TRANSACTIONS = 1000
-MAX_STATEMENT_REVIEW_ROWS = 10000
+MAX_STATEMENT_TRANSACTIONS = 25000
+MAX_STATEMENT_REVIEW_ROWS = 100000
 
 
 def _imported_account_id(session, source_document_id):
@@ -21,9 +21,9 @@ def _check_review_size(rows):
     # Keep headings and balance controls available without making them consume
     # the payment allowance. Unknown rows still count until they are resolved.
     if len(rows) > MAX_STATEMENT_REVIEW_ROWS:
-        raise PdfMappingError('This statement exceeds the 10,000-row review limit, including headings and other page text. No rows were omitted.', 422)
+        raise PdfMappingError('This statement exceeds the 100,000-row review limit, including headings and other page text. No rows were omitted.', 422)
     if sum(not row['excluded'] for row in rows) > MAX_STATEMENT_TRANSACTIONS:
-        raise PdfMappingError('This statement has more than 1,000 possible transactions. Review a shorter statement period. No rows were omitted.', 422)
+        raise PdfMappingError('This statement has more than 25,000 possible transactions. Review a shorter statement period. No rows were omitted.', 422)
 
 
 def _label(content, labels):
@@ -420,7 +420,7 @@ class StatementImportRequest(_Contract):
     @model_validator(mode='after')
     def distinct_rows(self):
         if sum(not row.excluded for row in self.rows) > MAX_STATEMENT_TRANSACTIONS:
-            raise ValueError('A statement import can contain up to 1,000 transactions.')
+            raise ValueError('A statement import can contain up to 25,000 transactions.')
         if len({r.id for r in self.rows}) != len(self.rows):
             raise ValueError('A statement row cannot be included twice.')
         if bool(self.replaces_source_document_id) != bool(self.replacement_revision):

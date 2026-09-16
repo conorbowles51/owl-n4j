@@ -10,33 +10,29 @@ export const postingGraph = z
     applied: z.literal(false),
     limitation: z.string(),
     excluded_rows: z.number().int().nonnegative(),
-    nodes: z
-      .array(
-        z.object({
-          id: z.string(),
-          kind: z.enum(["account", "source_label"]),
-          account_id: z.string(),
-          label: z.string(),
-        })
-      )
-      .max(2000),
-    edges: z
-      .array(
-        z.object({
-          id: z.string(),
-          source: z.string(),
-          target: z.string(),
-          transaction_id: z.string(),
-          source_document_id: z.string(),
-          currency: z.string(),
-          amount_minor: z.string().regex(/^(0|[1-9][0-9]*)$/),
-          direction: z.enum(["credit", "debit"]),
-          ordering_date: z.string(),
-          description: z.string().nullable(),
-          proof_class: z.enum(["p0", "p1", "p2", "p3"]),
-        })
-      )
-      .max(1000),
+    nodes: z.array(
+      z.object({
+        id: z.string(),
+        kind: z.enum(["account", "source_label"]),
+        account_id: z.string(),
+        label: z.string(),
+      })
+    ),
+    edges: z.array(
+      z.object({
+        id: z.string(),
+        source: z.string(),
+        target: z.string(),
+        transaction_id: z.string(),
+        source_document_id: z.string(),
+        currency: z.string(),
+        amount_minor: z.string().regex(/^(0|[1-9][0-9]*)$/),
+        direction: z.enum(["credit", "debit"]),
+        ordering_date: z.string(),
+        description: z.string().nullable(),
+        proof_class: z.enum(["p0", "p1", "p2", "p3"]),
+      })
+    ),
   })
   .superRefine((data, ctx) => {
     const nodes = new Map(data.nodes.map((n) => [n.id, n]))

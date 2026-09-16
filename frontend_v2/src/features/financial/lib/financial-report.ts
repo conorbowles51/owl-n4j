@@ -17,8 +17,7 @@ import { transactionDetail } from "./transaction-detail"
 import { correctionMoney } from "./correction-contract"
 
 export const financialReportSchema = "loupe.financial.finding_report/1"
-export const MAX_REPORT_NOTES = 20
-const MAX_REPORT_BYTES = 8 * 1024 * 1024
+const MAX_REPORT_BYTES = 32 * 1024 * 1024
 const text = z.string()
 const record = z.record(text, z.unknown())
 const savedEntry = z.object({
@@ -37,36 +36,34 @@ const savedEntry = z.object({
   author_email: text.nullish(),
   created_at: text.nullish(),
   updated_at: text.nullish(),
-  links: z
-    .array(
-      z.object({
-        id: text,
-        entry_id: text,
-        case_id: text,
-        target_id: text,
-        target_type: z.enum([
-          "evidence",
-          "graph_entity",
-          "dossier",
-          "entry",
-          "task",
-          "deadline",
-          "timeline_event",
-          "agent_artifact",
-          "witness",
-        ]),
-        target_label: text.nullish(),
-        relationship: z.enum([
-          "unclassified",
-          "supports",
-          "contradicts",
-          "context",
-        ]),
-        source_anchor: record,
-        metadata: record,
-      })
-    )
-    .max(500),
+  links: z.array(
+    z.object({
+      id: text,
+      entry_id: text,
+      case_id: text,
+      target_id: text,
+      target_type: z.enum([
+        "evidence",
+        "graph_entity",
+        "dossier",
+        "entry",
+        "task",
+        "deadline",
+        "timeline_event",
+        "agent_artifact",
+        "witness",
+      ]),
+      target_label: text.nullish(),
+      relationship: z.enum([
+        "unclassified",
+        "supports",
+        "contradicts",
+        "context",
+      ]),
+      source_anchor: record,
+      metadata: record,
+    })
+  ),
 })
 const reportData = z.object({
   schema: z.literal(financialReportSchema),
@@ -75,7 +72,7 @@ const reportData = z.object({
   title: text.trim().min(1).max(255),
   introduction: text.max(8000),
   prepared_at: text.datetime(),
-  notes: z.array(savedEntry).min(1).max(MAX_REPORT_NOTES),
+  notes: z.array(savedEntry).min(1),
 })
 const envelopeSchema = z.object({
   schema: z.literal(financialReportSchema),
@@ -332,7 +329,7 @@ export async function prepareFinancialReport(input: {
   const bytes = strToU8(report_json)
   if (bytes.length > MAX_REPORT_BYTES)
     throw Error(
-      "These findings exceed the 8 MB report limit. Select fewer findings or download a large calculation separately."
+      "These findings exceed the 32 MB report limit. Select fewer findings or download a large calculation separately."
     )
   const envelope = {
     schema: financialReportSchema,

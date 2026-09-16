@@ -162,16 +162,24 @@ class StatementImportTests(TransactionPersistenceTestCase):
                 engine_job_id=job, payload=payload))
         self.db.commit()
 
-    def test_thousand_payments_keep_all_headings_and_confirmable_review_rows(self):
+    def test_five_thousand_payments_keep_all_headings_and_import_every_payment(self):
         from services.financial.statement_import import StatementImportRequest, check_import_request
-        self.prepare_long_statement(1000)
+        self.prepare_long_statement(5000)
         preview = self.preview()
-        self.assertEqual(preview['transaction_count'], 1000)
-        self.assertEqual(len(preview['rows']), 1240)
+        self.assertEqual(preview['transaction_count'], 5000)
+        self.assertEqual(len(preview['rows']), 6200)
         self.assertEqual(preview['needs_attention'], 0)
         request = StatementImportRequest.model_validate(self.request())
         check_import_request(preview, request)
-        self.assertEqual(len(request.rows), 1240)
+        self.assertEqual(len(request.rows), 6200)
+        result = self.confirm(request.model_dump(mode='json'))
+        self.assertEqual(result['transaction_count'], 5000)
+        with self.SessionLocal() as db:
+            payments = list(db.scalars(select(FinancialTransaction).where(
+                FinancialTransaction.source_document_id == UUID(result['source_document_id']))))
+            self.assertEqual(len(payments), 5000)
+            self.assertEqual({r.description for r in payments}, {f'Payment {i}' for i in range(5000)})
+            self.assertEqual(sum(r.amount_minor for r in payments), 500000)
         # Excluded text must still be accounted for, even in a long statement.
         request = request.model_copy(update={'rows': [r for r in request.rows if not r.excluded]})
         with self.assertRaisesRegex(PdfMappingError, 'every prepared row'):
@@ -180,15 +188,17 @@ class StatementImportTests(TransactionPersistenceTestCase):
     def test_long_statement_limits_count_payments_and_bound_all_review_text(self):
         from services.financial.statement_import import StatementImportRequest, _check_review_size
         from pydantic import ValidationError
-        self.prepare_long_statement(1001)
-        with self.assertRaisesRegex(PdfMappingError, '1,000 possible transactions'):
-            self.preview()
-        with self.assertRaisesRegex(PdfMappingError, '10,000-row review limit'):
-            _check_review_size([dict(excluded=True)] * 10001)
+        _check_review_size([dict(excluded=False)] * 25000)
+        with self.assertRaisesRegex(PdfMappingError, '25,000 possible transactions'):
+            _check_review_size([dict(excluded=False)] * 25001)
+        with self.assertRaisesRegex(PdfMappingError, '100,000-row review limit'):
+            _check_review_size([dict(excluded=True)] * 100001)
         request = dict(expected_revision='a' * 64, currency='EUR', holder='Example', account_number='123',
             rows=[dict(id=str(i), date='2024-01-01', description='Payment', amount_minor='100', direction='credit')
-                  for i in range(1001)])
-        with self.assertRaisesRegex(ValidationError, 'up to 1,000 transactions'):
+                  for i in range(25000)])
+        self.assertEqual(len(StatementImportRequest.model_validate(request).rows), 25000)
+        request['rows'].append({**request['rows'][-1], 'id': 'overflow'})
+        with self.assertRaisesRegex(ValidationError, 'up to 25,000 transactions'):
             StatementImportRequest.model_validate(request)
 
     def card_balance_request(self):

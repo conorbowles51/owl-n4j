@@ -402,7 +402,9 @@ it("saves the latest edit on page exit before the delayed save can run", async (
   fireEvent(window, new Event("pagehide"))
   const key = `loupe-statement-review:reviewer:case:file:${data.revision}`
   const saved = JSON.parse(sessionStorage.getItem(key)!)
-  expect(saved.rows[1]).toMatchObject({
+  expect(
+    saved.rows.find((row: { id: string }) => row.id === "1:0:1")
+  ).toMatchObject({
     amount_minor: "12550",
     reason: "Checked just before refreshing",
   })
@@ -910,4 +912,60 @@ it("opens a receipt separately from statement periods and returns to the same fi
     screen.getByRole("button", { name: "Choose another statement or receipt" })
   )
   await screen.findByText("Statements and receipts in this PDF")
+})
+
+it("pages 1200 correction rows, restores a late edit and submits every row", async () => {
+  useAuthStore.setState({
+    user: { id: "reviewer", username: "reviewer" } as never,
+  })
+  const originalRead = vi.mocked(fetchAPI).getMockImplementation()!
+  const large = {
+    ...data,
+    transaction_count: 1200,
+    rows: Array.from({ length: 1200 }, (_, i) => ({
+      ...data.rows[1],
+      id: `payment-${i}`,
+      page_number: Math.floor(i / 25) + 1,
+      fields: { ...data.rows[1].fields, description: `Payment ${i}` },
+      source_cells: [],
+    })),
+  }
+  vi.mocked(fetchAPI).mockImplementation(async (url, options) =>
+    String(url).includes("/statement-import/") &&
+    !String(url).includes("/confirm?")
+      ? (large as never)
+      : originalRead(url, options)
+  )
+  mount()
+  await open()
+  expect(screen.getAllByLabelText(/^Include row/)).toHaveLength(50)
+  fireEvent.change(screen.getByLabelText("Review page"), {
+    target: { value: "23" },
+  })
+  fireEvent.change(screen.getByLabelText("Description payment-1199"), {
+    target: { value: "Corrected last payment" },
+  })
+  fireEvent.change(screen.getByLabelText("Reason payment-1199"), {
+    target: { value: "Checked original" },
+  })
+  fireEvent(window, new Event("pagehide"))
+  const saved = JSON.parse(
+    sessionStorage.getItem(
+      `loupe-statement-review:reviewer:case:file:${data.revision}`
+    )!
+  )
+  expect(saved.row_mode).toBe("changes")
+  expect(saved.rows).toHaveLength(1)
+  fireEvent.click(screen.getByRole("button", { name: "Previous review rows" }))
+  fireEvent.click(screen.getByRole("button", { name: "Next review rows" }))
+  expect(screen.getByLabelText("Description payment-1199")).toHaveValue(
+    "Corrected last payment"
+  )
+  fireEvent.click(
+    screen.getByRole("button", { name: "Confirm import of 1200 transactions" })
+  )
+  await waitFor(() => expect(sent).toHaveLength(1))
+  const request = sent[0] as { rows: { description: string }[] }
+  expect(request.rows).toHaveLength(1200)
+  expect(request.rows[1199].description).toBe("Corrected last payment")
 })

@@ -59,11 +59,12 @@ export function LedgerRowBrowser({
     "selected-payments",
     []
   )
-  const selectedHere = transactions.filter((row) => selection.includes(row.key))
+  const selectedIds = new Set(selection)
+  const selectedHere = transactions.filter((row) => selectedIds.has(row.key))
   const toggle = (row: LedgerTransaction, checked: boolean) =>
     setSelection((previous) =>
       checked
-        ? [...new Set([...previous, row.key])].slice(0, 100)
+        ? [...new Set([...previous, row.key])]
         : previous.filter((id) => id !== row.key)
     )
   const query = search.trim().toLowerCase()
@@ -301,19 +302,15 @@ export function LedgerRowBrowser({
               <Button
                 variant="outline"
                 disabled={
-                  !rows.length ||
-                  selection.length >= 100 ||
-                  rows.every((row) => selection.includes(row.key))
+                  !rows.length || rows.every((row) => selectedIds.has(row.key))
                 }
                 onClick={() =>
-                  setSelection((previous) =>
-                    [
-                      ...new Set([...previous, ...rows.map((row) => row.key)]),
-                    ].slice(0, 100)
-                  )
+                  setSelection((previous) => [
+                    ...new Set([...previous, ...rows.map((row) => row.key)]),
+                  ])
                 }
               >
-                Select matching payments (up to 100)
+                Select all {rows.length} matching payments
               </Button>
               <Button
                 variant="ghost"

@@ -12,6 +12,14 @@ export async function readSelectedPayment(
       { signal }
     )
   )
+  return checkedSelectedPayment(data, caseId, id)
+}
+
+function checkedSelectedPayment(
+  data: ReturnType<typeof citationSchema.parse>,
+  caseId: string,
+  id: string
+) {
   if (
     data.case_id !== caseId ||
     data.transaction_id !== id ||
@@ -26,4 +34,28 @@ export async function readSelectedPayment(
       "The payment details did not match this selection. Reload its details before continuing."
     )
   return { ...data, transaction: data.transaction }
+}
+
+/** The transport batch is independent of the number of payments selected. */
+export async function readSelectedPayments(
+  caseId: string,
+  ids: string[],
+  signal?: AbortSignal
+) {
+  if (!ids.length) return []
+  const raw = await fetchAPI<{ case_id: string; sources: unknown[] }>(
+    `/api/financial/ledger/sources?${new URLSearchParams({ case_id: caseId })}`,
+    { method: "POST", body: { transaction_ids: ids }, signal }
+  )
+  if (
+    raw.case_id !== caseId ||
+    !Array.isArray(raw.sources) ||
+    raw.sources.length !== ids.length
+  )
+    throw Error(
+      "Some selected payment details are missing. No selection was saved."
+    )
+  return raw.sources.map((source, index) =>
+    checkedSelectedPayment(citationSchema.parse(source), caseId, ids[index])
+  )
 }

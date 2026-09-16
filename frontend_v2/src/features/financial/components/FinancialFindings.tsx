@@ -5,7 +5,6 @@ import { useFinancialDraft } from "../stores/financial-drafts"
 import {
   emptyReportDraft,
   reportDraftName,
-  MAX_REPORT_NOTES,
   type FinancialReportDraft,
 } from "../lib/financial-report"
 import { SavedIndirectFinding } from "./SavedIndirectFinding"
@@ -120,11 +119,7 @@ export function FinancialFindings({
                 checked={reportDraft.selected.some(
                   (note) => note.id === entry.id
                 )}
-                disabled={
-                  query.isPlaceholderData ||
-                  (!reportDraft.selected.some((note) => note.id === entry.id) &&
-                    reportDraft.selected.length >= MAX_REPORT_NOTES)
-                }
+                disabled={query.isPlaceholderData}
                 onChange={(event) =>
                   setReportDraft((current) => ({
                     ...current,
@@ -256,28 +251,13 @@ export function FinancialFindings({
                     </p>
                   )}
                 {ids.length > 0 && (
-                  <details open={ids.length <= 20}>
-                    <summary className="cursor-pointer text-sm">
-                      {ids.length} linked payments
-                    </summary>
-                    <div className="flex flex-wrap gap-2">
-                      {ids.map((id, index) => {
-                        const row = snapshots.find((row) => row.key === id)
-                        return (
-                          <Button
-                            key={id}
-                            className="h-auto whitespace-normal text-left justify-start"
-                            variant="outline"
-                            onClick={() => setSource(id)}
-                          >
-                            {row
-                              ? `${row.ordering_date} · ${row.description || "Payment"} · ${formatLedgerAmount(row.amount_minor, row.currency).text} ${row.currency}`
-                              : `Open transaction ${Array.isArray(link.source_anchor.financial_ref_ids) ? link.source_anchor.financial_ref_ids[index] || index + 1 : index + 1}`}
-                          </Button>
-                        )
-                      })}
-                    </div>
-                  </details>
+                  <SavedPaymentLinks
+                    key={entry.id + ":" + link.id + ":" + entry.version}
+                    ids={ids}
+                    snapshots={snapshots}
+                    refs={link.source_anchor.financial_ref_ids}
+                    onOpen={setSource}
+                  />
                 )}
               </div>
             )
@@ -364,5 +344,89 @@ export function FinancialFindings({
         />
       )}
     </section>
+  )
+}
+
+function SavedPaymentLinks({
+  ids,
+  snapshots,
+  refs,
+  onOpen,
+}: {
+  ids: string[]
+  snapshots: ReturnType<typeof transactionDetail.parse>[]
+  refs: unknown
+  onOpen: (id: string) => void
+}) {
+  const [page, setPage] = useState(0)
+  const [open, setOpen] = useState(ids.length <= 20)
+  const byId = new Map(snapshots.map((row) => [row.key, row]))
+  return (
+    <details
+      open={open}
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+    >
+      <summary className="cursor-pointer text-sm">
+        {ids.length} linked payments
+      </summary>
+      <div className="flex flex-wrap gap-2">
+        {ids.slice(page * 50, (page + 1) * 50).map((id, offset) => {
+          const row = byId.get(id),
+            index = page * 50 + offset
+          return (
+            <Button
+              key={id}
+              className="h-auto whitespace-normal text-left justify-start"
+              variant="outline"
+              onClick={() => onOpen(id)}
+            >
+              {row
+                ? `${row.ordering_date} · ${row.description || "Payment"} · ${formatLedgerAmount(row.amount_minor, row.currency).text} ${row.currency}`
+                : `Open transaction ${Array.isArray(refs) ? refs[index] || index + 1 : index + 1}`}
+            </Button>
+          )
+        })}
+      </div>
+      {ids.length > 50 && (
+        <div className="flex flex-wrap items-center gap-2 mt-2">
+          <Button
+            variant="outline"
+            disabled={!page}
+            onClick={() => setPage(page - 1)}
+          >
+            Previous saved payments
+          </Button>
+          <label>
+            Saved payment page{" "}
+            <select
+              aria-label="Saved payment page"
+              className="border rounded bg-background p-2"
+              value={page}
+              onChange={(event) => setPage(Number(event.target.value))}
+            >
+              {Array.from(
+                { length: Math.ceil(ids.length / 50) },
+                (_, index) => (
+                  <option key={index} value={index}>
+                    {index + 1}
+                  </option>
+                )
+              )}
+            </select>
+          </label>
+          <span>
+            {page * 50 + 1} to {Math.min((page + 1) * 50, ids.length)} of{" "}
+            {ids.length} payments
+          </span>
+          <Button
+            variant="outline"
+            disabled={(page + 1) * 50 >= ids.length}
+            onClick={() => setPage(page + 1)}
+          >
+            Next saved payments
+          </Button>
+        </div>
+      )}
+    </details>
   )
 }

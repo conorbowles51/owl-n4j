@@ -31,11 +31,12 @@ export function findingReport(
     const ids = Array.isArray(link.source_anchor.financial_transaction_ids)
       ? link.source_anchor.financial_transaction_ids
       : []
+    const linkedIds = new Set(ids)
     for (const value of Array.isArray(link.metadata.transactions)
       ? link.metadata.transactions
       : []) {
       const row = transactionDetail.parse(value)
-      if (row.case_id !== caseId || !ids.includes(row.key))
+      if (row.case_id !== caseId || !linkedIds.has(row.key))
         throw Error("A saved payment does not match its supporting link.")
       rows.set(row.key, { row, filename: link.target_label || "Statement" })
     }

@@ -215,10 +215,15 @@ it("includes a shared original PDF once and checks its bytes and payment referen
     url.includes("/ledger/")
       ? {
           case_id: "case",
-          transaction_id: "payment",
-          evidence_file_id: fileId,
-          sha256_at_ingestion: sha256,
-          recorded_digest_matches: true,
+          sources: [
+            {
+              case_id: "case",
+              transaction_id: "payment",
+              evidence_file_id: fileId,
+              sha256_at_ingestion: sha256,
+              recorded_digest_matches: true,
+            },
+          ],
         }
       : {
           id: fileId,
@@ -259,4 +264,21 @@ it("refuses a PDF replaced since a saved calculation was prepared", async () => 
     financialReportDownload(report, true, new AbortController().signal)
   ).rejects.toThrow("source recorded")
   expect(request).not.toHaveBeenCalled()
+})
+
+it("preserves all 250 findings in order through save, reopen and report download", async () => {
+  const notes = Array.from({ length: 250 }, (_, i) => note(`large-${i}`))
+  const report = await prepare(notes)
+  const reopened = await readSavedFinancialReport(saved(report), "case")
+  expect(reopened.data.notes.map((note) => note.id)).toEqual(
+    notes.map((note) => note.id)
+  )
+  const zip = unzipSync(
+    await financialReportDownload(reopened, false, new AbortController().signal)
+  )
+  expect(strFromU8(zip["report.html"])).toContain("Observation large-249")
+  expect(reopened.html).toContain("Observation large-249")
+  expect(reopened.data.notes[249].links[0].metadata.transactions).toEqual(
+    notes[249].links[0].metadata.transactions
+  )
 })
