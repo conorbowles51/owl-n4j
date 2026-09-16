@@ -1,4 +1,14 @@
-## Final verification, 16 September 2026, 17:20 Dublin
+## Evening handoff, 16 September 2026, 18:00 Dublin
+
+The daytime schedule is PAUSED at the agreed cutoff. The final public check at about 17:56 reports f3ba2df, and all six published guide/test assets match the checked local bytes. Application code remains 2898f70e plus the previously deployed capacity changes; f3ba2df3 adds the verified limits and testing instructions. Local development UI, compiled preview, API and evidence engine remain running. No new feedback or runtime failure arrived after the closing verification.
+
+Available for the team's test: larger statement imports and retained corrections, 2,700-payment selections and person/business linking, complete graph access, 50-finding saved reports with supporting PDFs, targeted v16 Andrews reading fixes, and the short synthetic exercise at /docs/financial-testing/index.html. Detailed measurements and resource bounds remain in the release records; these figures are demonstrated local checks, not promises at every maximum.
+
+Remaining development is explicit: transfer comparison above 500 payments and its pair/reference ceilings; case timelines above 1,000 payments; and larger pattern inputs, results and repeated-name groups. The narrower-date recovery was verified, but it can miss relationships across date boundaries. Authenticated deployed-case acceptance and independent human extraction measurements also remain open. Do not describe the entire financial application as finished or those analysis limits as fixed.
+
+This handoff record is a local documentation checkpoint. The deployed application and public guidance are already current. Avoid another deployment solely to record the successful deployment before team testing. Preserve private PDFs, unrelated untracked work and existing synthetic cases. Resume from actual user feedback or the unchecked development items when authorised; do not automatically restart or extend the paused daytime schedule.
+
+## Final verification, 16 September 2026, 17:24 Dublin
 
 No new user feedback arrived during the daytime continuation checks. The existing 10-minute schedule remains active through 18:00 Dublin; pause it at the closing handoff. Optional implementation stopped at 17:00. The deployed frontend was still afae084 at 17:09, with all five checklist assets matching local bytes and the branch matching its remote.
 
@@ -6,7 +16,9 @@ The final read-only runtime check found all services, schema and worker healthy.
 
 The actual compiled UI displayed each limit message and successfully reran all three tools for 2 January 2024, with 87 payments in that date range. Filters survived refresh, with no financial writes or JavaScript errors. Private daytime-final-scoped-analysis.json and daytime-final-scoped-browser.json retain the result. The failed whole-case local-check.latest.json is retained rather than overwritten with a smaller passing case. Smaller scopes can miss relationships across their boundaries; they are not whole-case acceptance.
 
-The team checklist and detailed guide now give the exact current limits, controls for rerunning a smaller scope and the meaning of a refused check. Generated guide/checklist copies and the synthetic ZIP were rebuilt. This documentation update needs one normal push and public-asset verification before the evening handoff. It changes no application logic and does not warrant another full suite or repeat imports. Preserve private sources, existing synthetic cases and unrelated untracked files. Authenticated deployed-case acceptance and independent human extraction references remain open.
+The team checklist and detailed guide now give the exact current limits, controls for rerunning a smaller scope and the meaning of a refused check. Generated guide/checklist copies and the synthetic ZIP were rebuilt and checked. Commit f3ba2df3 was pushed normally after fetching with no incoming changes. At 17:24 the server had restarted and reported f3ba2df; all six published guide/test assets match the checked local bytes. Private evening-deployed.json records the result. The underlying application logic is unchanged from 2898f70e; no full suite or imports were repeated.
+
+Keep the ten-minute continuation checks active through the agreed 18:00 cutoff, checking new feedback or actual runtime failures without starting optional work. At the final scheduled tick (approximately 17:58), record the evening handoff and pause continue-loupe-development using the automation tool; do not leave the schedule active merely because its recurrence expires. No further push is needed solely to record this successful deployment. Preserve private sources, existing synthetic cases and unrelated untracked files. Authenticated deployed-case acceptance, independent human extraction references and the three larger-case analysis improvements remain open.
 
 ## Daytime work, 16 September 2026, 08:07 Dublin checkpoint
 

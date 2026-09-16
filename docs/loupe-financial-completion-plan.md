@@ -22,8 +22,8 @@ Neil accepts daytime disruption so long as the application is ready again for th
 - [x] Investigate specific remaining failures in difficult supplied statement sections, using retained captures and originals. Fix readable information that is missed or wrongly placed; retain explicit uncertainty for damaged or absent source information. Do not claim independent human extraction accuracy.
 - [x] Prepare a short team testing checklist with expected outcomes, reporting instructions and known limitations, without replacing the detailed guide.
 - [x] Complete focused checks and the production build for changed code, then push coherent verified fixes. Commit 2898f70e was pushed normally after fetching with no incoming changes.
-- [x] Verify the deployed identifier and public assets after the automatic deployment poll. The server reports afae084; all five team-checklist assets match the checked local bytes. Authenticated live-case acceptance remains for the team.
-- [ ] Leave the app ready for evening testing, report completed work and remaining acceptance, and pause the daytime schedule at 18:00.
+- [x] Verify the deployed identifier and public assets after the automatic deployment poll. The daytime build reported afae084 with all five checklist assets matching. The final guide update reports f3ba2df at 17:24, with all six guide/test assets matching the checked local bytes. Authenticated live-case acceptance remains for the team.
+- [x] Leave the deployed app available for evening testing, report completed work and remaining limits/acceptance, and pause the daytime schedule at 18:00. Closing public verification confirms f3ba2df and six exact guide/test assets. The three larger-case analysis improvements below remain open; this handoff does not mark the whole financial application complete.
 
 Final-hour capacity finding: the existing 2,700-payment case passes totals, complete export, statement checks, coverage, graph and account-party reads. Unfiltered transfer, timeline and pattern reads refuse that scope under their separate existing analysis limits. The compiled UI shows each refusal and successfully reruns all three after selecting 2 January 2024 (87 payments). The filters survive refresh, with no financial writes or JavaScript errors. This does not prove whole-case transfer or pattern coverage. The testing checklist now describes the limits and steps.
 
@@ -122,7 +122,8 @@ Done when: every primary tab gives a recognisable investigation task, saved work
 - [x] Run type checking, scoped lint, the production build and migration/startup checks appropriate to the final diff.
 - [x] Review exact changed paths, preserve unrelated work and exclude private PDFs, local records and credentials.
 - [x] Commit with detailed explanations, record release notes and leave a verified build ready to push. The existing server deploys from the repository; there is no separate deployment implementation blocker.
-- [ ] Push only when explicitly requested, then verify the deployed build through the user-visible workflow where server access permits.
+- [x] Push only when explicitly requested. The authorised 16 September pushes are deployed through f3ba2df, with the public identifier and six guide/test assets verified.
+- [ ] Verify a signed-in case workflow on the deployed server. Public deployment and asset checks do not complete this acceptance step.
 
 Release evidence: [15 September release record](releases/2026-09-15-financial.md). One broad frontend run passed 1,146 tests. One broad backend run executed 4,583 tests and found missing package exports plus an ambiguous multi-period fixture; 43 affected tests passed after those fixes. Type checking, scoped lint, production build, clean backend startup and all fourteen local health/migration/case checks passed. The remote branch was fetched with no incoming changes. Private captures remain ignored and unrelated files remain untouched. The build is ready for the user's UI acceptance and an explicitly requested push. Independent human accuracy review and deployment acceptance remain unchecked.
 
