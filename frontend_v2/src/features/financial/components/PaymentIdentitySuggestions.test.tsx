@@ -20,14 +20,14 @@ const anchor = {
   party: { id: "party", name: "ACME reviewed" },
   decision_transaction_id: "anchor",
 }
-it("source inspection and selection are separate and selection is bounded", () => {
+it("source inspection stays separate and every suggested payment can be selected", () => {
   const onSelect = vi.fn(),
     onSource = vi.fn()
   render(
     <PaymentIdentitySuggestions
       readings={[
         anchor,
-        ...Array.from({ length: 101 }, (_, i) => ({
+        ...Array.from({ length: 2700 }, (_, i) => ({
           ...row,
           transaction_id: String(i),
         })),
@@ -47,16 +47,16 @@ it("source inspection and selection are separate and selection is bounded", () =
   expect(onSelect).not.toHaveBeenCalled()
   fireEvent.click(
     screen.getByRole("button", {
-      name: "Review 100 possible links to ACME reviewed",
+      name: "Review 2700 possible links to ACME reviewed",
     })
   )
   expect(onSelect.mock.calls[0]).toEqual([
-    Array.from({ length: 100 }, (_, i) => String(i)),
+    Array.from({ length: 2700 }, (_, i) => String(i)),
     "party",
   ])
   expect(
-    screen.getByText(/Remaining readings stay unselected/)
-  ).toBeInTheDocument()
+    screen.queryByText(/Remaining readings stay unselected/)
+  ).not.toBeInTheDocument()
 })
 it("keeps conflicting choices visible and refuses selection during saving", () => {
   const props = {

@@ -10,11 +10,15 @@ from postgres.models.enums import AdjudicationSubject, AdjudicationDecision
 from services.financial.decisions import record
 from services.financial.account_parties import AccountPartyError, _account_party_state
 
+MAX_PARTY_READINGS = 100000
+MAX_PARTY_EVENTS = 250000
+MAX_PARTY_BYTES = 64 * 1024 * 1024
+
 
 class CounterpartyPartyRequest(BaseModel):
     model_config=ConfigDict(extra='forbid')
     expected_revision:str=Field(pattern=r'^[a-f0-9]{64}$')
-    transaction_ids:list[UUID]=Field(min_length=1,max_length=100)
+    transaction_ids:list[UUID]=Field(min_length=1,max_length=MAX_PARTY_READINGS)
     party_id:UUID|None=None
     new_party_name:str|None=Field(default=None,min_length=1,max_length=255)
     clear:bool=Field(default=False,strict=True)
@@ -74,33 +78,43 @@ def payment_party_choices(session, *, case_id, known_parties=()):
         AdjudicationEvent.case_id==case_id,
         AdjudicationEvent.subject_type=='transaction',
         AdjudicationEvent.decision=='set_counterparty_party').order_by(
-            AdjudicationEvent.subject_id,AdjudicationEvent.subject_sequence).limit(10001)))
-    if len(events)>10000:
-        raise AccountPartyError('More than10000counterparty decisions; no partial party directory returned.')
-    subjects={event.subject_id for event in events}
+            AdjudicationEvent.subject_id,AdjudicationEvent.subject_sequence).limit(MAX_PARTY_EVENTS + 1)))
+    if len(events)>MAX_PARTY_EVENTS:
+        raise AccountPartyError(f'This case exceeds {MAX_PARTY_EVENTS:,} payment-link decisions. No incomplete directory was returned.')
+    subjects=select(AdjudicationEvent.subject_id).where(
+        AdjudicationEvent.case_id==case_id,
+        AdjudicationEvent.subject_type=='transaction',
+        AdjudicationEvent.decision=='set_counterparty_party')
     rows=list(session.scalars(select(FinancialTransaction).where(
         FinancialTransaction.case_id==case_id,
-        FinancialTransaction.id.in_(subjects)))) if subjects else []
+        FinancialTransaction.id.in_(subjects)))) if events else []
     _, parties, _ = _identity_state(rows,events,known_parties)
     return parties
 
 
 def counterparty_parties(session, *, case_id):
-    rows=list(session.scalars(select(FinancialTransaction).where(FinancialTransaction.case_id==case_id).order_by(FinancialTransaction.id).limit(5001).execution_options(populate_existing=True)))
-    if len(rows)>5000:raise AccountPartyError('More than5000historical readings; no partial counterparty directory returned.')
-    events=list(session.scalars(select(AdjudicationEvent).where(AdjudicationEvent.case_id==case_id,AdjudicationEvent.subject_type=='transaction',AdjudicationEvent.decision=='set_counterparty_party').order_by(AdjudicationEvent.subject_id,AdjudicationEvent.subject_sequence).limit(10001)))
-    if len(events)>10000:raise AccountPartyError('More than10000counterparty decisions; no partial history returned.')
+    rows=list(session.scalars(select(FinancialTransaction).where(FinancialTransaction.case_id==case_id).order_by(FinancialTransaction.id).limit(MAX_PARTY_READINGS + 1).execution_options(populate_existing=True)))
+    if len(rows)>MAX_PARTY_READINGS:raise AccountPartyError(f'This case exceeds {MAX_PARTY_READINGS:,} payment records, including earlier corrections. No incomplete directory was returned.')
+    events=list(session.scalars(select(AdjudicationEvent).where(AdjudicationEvent.case_id==case_id,AdjudicationEvent.subject_type=='transaction',AdjudicationEvent.decision=='set_counterparty_party').order_by(AdjudicationEvent.subject_id,AdjudicationEvent.subject_sequence).limit(MAX_PARTY_EVENTS + 1)))
+    if len(events)>MAX_PARTY_EVENTS:raise AccountPartyError(f'This case exceeds {MAX_PARTY_EVENTS:,} payment-link decisions. No incomplete history was returned.')
     readings,parties,history=_identity_state(rows,events,_account_party_state(session,case_id=case_id)["parties"])
     result=dict(case_id=str(case_id),readings=readings,parties=sorted(parties.values(),key=lambda p:(p['name'].casefold(),p['id'])),history=history,applied=False,
       limitation='Investigator identity links for selected readings only. Raw source names, amounts, eligibility and proof classes are unchanged. Equal names and future imports are not linked automatically. Corrections inherit a link only while account, currency and raw name remain identical; direct decisions override inheritance.')
-    result['revision']=hashlib.sha256(json.dumps(result,sort_keys=True,separators=(',',':')).encode()).hexdigest()
+    encoded=json.dumps(result,sort_keys=True,separators=(',',':')).encode()
+    if len(encoded)>MAX_PARTY_BYTES:raise AccountPartyError('The complete payment-link directory exceeds 64 MB. No incomplete result was returned.')
+    result['revision']=hashlib.sha256(encoded).hexdigest()
     return result
 
 
 def set_counterparty_party(session, *, case_id, request:CounterpartyPartyRequest, actor):
     try:
         if session.scalar(select(Case.id).where(Case.id==case_id).with_for_update()) is None:raise AccountPartyError('Case not found.',404)
-        locked={str(r.id):r for r in session.scalars(select(FinancialTransaction).where(FinancialTransaction.case_id==case_id,FinancialTransaction.id.in_(request.transaction_ids)).order_by(FinancialTransaction.id).with_for_update().execution_options(populate_existing=True))}
+        # The case lock keeps the entire decision atomic while smaller SQL
+        # batches avoid the database parameter ceiling for large selections.
+        locked={}
+        ordered_ids=sorted(request.transaction_ids,key=str)
+        for offset in range(0,len(ordered_ids),5000):
+            locked.update({str(r.id):r for r in session.scalars(select(FinancialTransaction).where(FinancialTransaction.case_id==case_id,FinancialTransaction.id.in_(ordered_ids[offset:offset+5000])).order_by(FinancialTransaction.id).with_for_update().execution_options(populate_existing=True))})
         if len(locked)!=len(request.transaction_ids):raise AccountPartyError('Selected reading not found in this case.',404)
         state=counterparty_parties(session,case_id=case_id)
         if state['revision']!=request.expected_revision:raise AccountPartyError('Counterparty links or source readings changed. Reload before saving.',409)
@@ -112,13 +126,14 @@ def set_counterparty_party(session, *, case_id, request:CounterpartyPartyRequest
             if party is None:raise AccountPartyError('Party not found in this case.',404)
         elif request.new_party_name is not None:party=dict(id=str(uuid4()),name=request.new_party_name.strip())
         event_ids=[]
-        for id in sorted(request.transaction_ids,key=str):
+        latest_direct={event['transaction_id']:event for event in state['history']}
+        for id in ordered_ids:
             selected=readings[str(id)]
             if selected['party']==party:continue
             row=locked[str(id)]
             if row is None or row.superseded_by_id is not None:raise AccountPartyError('Reading changed during identity review.',409)
-            direct=[h for h in state['history'] if h['transaction_id']==str(id)]
-            before=direct[-1]['after']['party'] if direct else None
+            direct=latest_direct.get(str(id))
+            before=direct['after']['party'] if direct else None
             event=record(session,case_id=case_id,subject=row,subject_type=AdjudicationSubject.transaction,decision=AdjudicationDecision.set_counterparty_party,actor=actor,reason=request.reason.strip(),before={'party':before,'override':bool(direct)},after={'party':party,'override':True})
             event_ids.append(str(event.id))
         if not event_ids:raise AccountPartyError('Selected links are unchanged.')
@@ -135,7 +150,7 @@ def counterparty_party_analysis(export, *, population='working'):
     if population not in ('working','verified'):raise LedgerSummaryError('Choose working or verified readings.')
     document=json.loads(export.snapshot.content);ledger=document['ledger']
     if not document.get('export_ready') or not ledger.get('history_captured') or not ledger.get('available'):raise LedgerSummaryError('Identity analysis requires a complete captured ledger and history.')
-    if len(ledger['readings'])>5000:raise LedgerSummaryError('More than5000historical readings; narrow the analysis scope.')
+    if len(ledger['readings'])>MAX_PARTY_READINGS:raise LedgerSummaryError(f'More than {MAX_PARTY_READINGS:,} payment records; choose a smaller account or date range.')
     rows=[SimpleNamespace(id=r['row']['key'],**{k:r['row'][k] for k in ('ref_id','account_id','currency','counterparty_raw','description','amount_minor','direction','superseded_by_id')}) for r in ledger['readings']]
     events=[SimpleNamespace(id=e['id'],subject_id=e['subject_id'],subject_sequence=e['subject_sequence'],before=e['before'],after=e['after'],reason=e['reason'],actor_email=e['actor_email'],created_at=datetime.fromisoformat(e['recorded_at'])) for e in document['decisions'] if e['decision']=='set_counterparty_party' and e['subject_type']=='transaction']
     effective,_,_=_identity_state(rows,events)

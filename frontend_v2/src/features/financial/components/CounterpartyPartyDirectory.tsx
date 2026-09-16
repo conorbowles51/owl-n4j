@@ -89,11 +89,14 @@ export function CounterpartyPartyDirectory({ caseId }: { caseId: string }) {
           },
         })
       )
+      const confirmed = new Map(
+        answer.readings.map((row) => [row.transaction_id, row])
+      )
       if (
         !answer.applied ||
         !answer.event_ids?.length ||
         selected.some((id) => {
-          const row = answer.readings.find((r) => r.transaction_id === id)
+          const row = confirmed.get(id)
           return (
             !row ||
             (party === "clear"
@@ -120,6 +123,11 @@ export function CounterpartyPartyDirectory({ caseId }: { caseId: string }) {
       }))
       await client.invalidateQueries({ queryKey: ["financial-ledger", caseId] })
     },
+    onError: async () => {
+      // A lost response can follow a committed decision. Reload before the
+      // retained draft can be retried against an older revision.
+      await client.invalidateQueries({ queryKey: ["financial-ledger", caseId] })
+    },
   })
   const state = query.data,
     needle = search.toLocaleLowerCase(),
@@ -133,6 +141,10 @@ export function CounterpartyPartyDirectory({ caseId }: { caseId: string }) {
     )
   const currentIds = new Set(
     state?.readings.map((row) => row.transaction_id) ?? []
+  )
+  const selectedIds = new Set(selected)
+  const readingsById = new Map(
+    state?.readings.map((row) => [row.transaction_id, row]) ?? []
   )
   const unavailableSelected = state
     ? selected.filter((id) => !currentIds.has(id))
@@ -266,8 +278,24 @@ export function CounterpartyPartyDirectory({ caseId }: { caseId: string }) {
               </label>
               <p>
                 {rows.length} payment records match; {selected.length} selected
-                across pages (maximum 100).
+                across pages.
               </p>
+              <Button
+                variant="outline"
+                disabled={!rows.length || save.isPending || query.isFetching}
+                onClick={() =>
+                  updateReview((current) => ({
+                    selected: [
+                      ...new Set([
+                        ...current.selected,
+                        ...rows.map((row) => row.transaction_id),
+                      ]),
+                    ],
+                  }))
+                }
+              >
+                Select all {rows.length} matching payments for linking
+              </Button>
               <p className="text-sm text-muted-foreground">
                 Unfinished selections, the name and your explanation are kept in
                 this browser tab after navigation or refresh. Save the links
@@ -282,11 +310,7 @@ export function CounterpartyPartyDirectory({ caseId }: { caseId: string }) {
                         <input
                           type="checkbox"
                           aria-label={`Link payment ${r.ref_id}`}
-                          checked={selected.includes(r.transaction_id)}
-                          disabled={
-                            !selected.includes(r.transaction_id) &&
-                            selected.length >= 100
-                          }
+                          checked={selectedIds.has(r.transaction_id)}
                           onChange={(e) =>
                             updateReview((current) => ({
                               selected: e.target.checked
@@ -332,6 +356,29 @@ export function CounterpartyPartyDirectory({ caseId }: { caseId: string }) {
                 >
                   Previous identity readings
                 </Button>
+                <label>
+                  Payment page{" "}
+                  <select
+                    aria-label="Payment identity page"
+                    className="rounded border bg-background p-2"
+                    value={visiblePage}
+                    onChange={(event) =>
+                      setDraft((current) => ({
+                        ...current,
+                        page: Number(event.target.value),
+                      }))
+                    }
+                  >
+                    {Array.from(
+                      { length: Math.max(1, Math.ceil(rows.length / 25)) },
+                      (_, index) => (
+                        <option key={index} value={index}>
+                          {index + 1}
+                        </option>
+                      )
+                    )}
+                  </select>
+                </label>
                 <Button
                   disabled={(visiblePage + 1) * 25 >= rows.length}
                   onClick={() =>
@@ -422,7 +469,9 @@ export function CounterpartyPartyDirectory({ caseId }: { caseId: string }) {
                         save.isPending
                       }
                     >
-                      Save payment identity links
+                      {save.isPending
+                        ? `Saving links for ${selected.length} payments…`
+                        : "Save payment identity links"}
                     </Button>
                   </fieldset>
                 </form>
@@ -451,9 +500,8 @@ export function CounterpartyPartyDirectory({ caseId }: { caseId: string }) {
                       >
                         <p>
                           Reading:{" "}
-                          {state.readings.find(
-                            (r) => r.transaction_id === h.transaction_id
-                          )?.ref_id ?? h.transaction_id}
+                          {readingsById.get(h.transaction_id)?.ref_id ??
+                            h.transaction_id}
                         </p>
                         <p>
                           Direct link:{" "}

@@ -26,7 +26,7 @@ def capture_ledger_snapshot(session, *, case_id, account_id=None, start_date=Non
     return LedgerSnapshot(content=content,sha256=hashlib.sha256(encoded).hexdigest(),byte_count=len(encoded))
 
 
-MAX_EXPORT_DECISIONS = 10000
+MAX_EXPORT_DECISIONS = 250000
 MAX_EXPORT_BYTES = 16 * 1024 * 1024
 # Complete ledger snapshots include both payment citations and the original
 # statement readings. A few thousand payments can legitimately exceed the
@@ -45,7 +45,7 @@ class LedgerExport:
 
 def _capture_history(session, document, *, case_id):
     from uuid import UUID
-    from sqlalchemy import select, and_, or_
+    from sqlalchemy import select
     from postgres.models.financial import AdjudicationEvent
     from services.financial.decision_log import to_record, _machine_actor_email
     scopes = {name:set() for name in ('transaction','source_document','statement_period','evidence_file','account')}
@@ -56,13 +56,21 @@ def _capture_history(session, document, *, case_id):
         scopes['source_document'].add(UUID(source['id']))
         if row['statement_period_id']:scopes['statement_period'].add(UUID(row['statement_period_id']))
         if source['evidence_file_id']:scopes['evidence_file'].add(UUID(source['evidence_file_id']))
-    predicates=[and_(AdjudicationEvent.subject_type==kind,AdjudicationEvent.subject_id.in_(ids))
-        for kind,ids in scopes.items() if ids]
     events=[]
-    if predicates:
-        events=list(session.scalars(select(AdjudicationEvent).where(AdjudicationEvent.case_id==case_id,or_(*predicates))
-            .order_by(AdjudicationEvent.subject_type,AdjudicationEvent.subject_id,AdjudicationEvent.subject_sequence)
-            .limit(MAX_EXPORT_DECISIONS+1)))
+    # A complete large case can exceed the driver's parameter limit. Read
+    # bounded subject batches inside the caller's repeatable-read transaction.
+    for kind,ids in scopes.items():
+        ordered_ids=sorted(ids,key=str)
+        for offset in range(0,len(ordered_ids),5000):
+            events.extend(session.scalars(select(AdjudicationEvent).where(
+                AdjudicationEvent.case_id==case_id,
+                AdjudicationEvent.subject_type==kind,
+                AdjudicationEvent.subject_id.in_(ordered_ids[offset:offset+5000]))
+                .order_by(AdjudicationEvent.subject_id,AdjudicationEvent.subject_sequence)
+                .limit(MAX_EXPORT_DECISIONS-len(events)+1)))
+            if len(events)>MAX_EXPORT_DECISIONS:
+                raise LedgerSummaryError('Too many relevant decisions for a complete export; no truncated export was produced.')
+    events.sort(key=lambda event:(event.subject_type,str(event.subject_id),event.subject_sequence))
     if len(events)>MAX_EXPORT_DECISIONS:
         raise LedgerSummaryError('Too many relevant decisions for a complete export; no truncated export was produced.')
     machine_email=_machine_actor_email()

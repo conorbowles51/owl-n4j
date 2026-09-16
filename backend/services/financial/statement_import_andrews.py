@@ -24,6 +24,11 @@ _SHARE = re.compile(r'^(\d{2}/\d{2}) ID (\d{4}) (BASE SHARE SAVINGS|FREE CHECKIN
 _SHARE_LABEL = re.compile(r'^\d{2}/\d{2} ID \S+ (BASE SHARE SAVINGS|FREE CHECKING|VISA PAYMENT)(?: |$)')
 
 _CLOSED = re.compile(r'^(\d{2}/\d{2}) ID (\d{4}) (BASE SHARE SAVINGS|FREE CHECKING|VISA PAYMENT) Closed$')
+_WITHDRAWAL = r'\s*'.join('Withdrawal')
+_DEPOSIT = r'\s*'.join('Deposit')
+_RECURRING = r'\s*'.join('Recurring')
+_PAYMENT = re.compile(r'^(\S+)(?: (\d{2}/\d{2}))? ((?:' + _RECURRING +
+                      r'\s+)?(' + _WITHDRAWAL + '|' + _DEPOSIT + r')\b.*)$')
 
 def _text(row):
     return ' '.join(c['expected_text'].strip() for c in row['cells']).strip()
@@ -277,10 +282,16 @@ def source_regions_overlap(current, previous):
     return overlapping
 
 
-def _amount(text, currency):
-    if not re.fullmatch(_SPACED_MONEY, text):
+def _amount(text, currency, *, separate_cell=False):
+    # OCR can insert spaces between digits in one measured money cell. Only
+    # join those spaces after geometry separates the amount from its balance.
+    # Never join adjacent numbers in a combined amount/balance text cell or
+    # replace letters, signs or decimal punctuation.
+    value = re.sub(r'\s+', '', text)
+    if not re.fullmatch(_SPACED_MONEY, text) and not (
+            separate_cell and re.fullmatch(_SPACED_MONEY, value)):
         raise ValueError('Check the amount in the PDF, including its sign and decimal point.')
-    return int(exact_amount(re.sub(r'\s+', '', text), currency))
+    return int(exact_amount(value, currency))
 
 
 def _money_cells(row, width):
@@ -330,7 +341,7 @@ def propose_andrews_statement(sources, currency, statement):
                 if money_cells:
                     fields['balance_column'] = str(money_cells[-1]['column_index'])
                 try:
-                    fields['balance'] = str(_amount(money, currency))
+                    fields['balance'] = str(_amount(money, currency, separate_cell=len(money_cells) == 1))
                 except ValueError:
                     item['issues'].append('Check this balance in the PDF. Its digits or decimal point could not be read.')
                 if opening:
@@ -341,7 +352,7 @@ def propose_andrews_statement(sources, currency, statement):
                 continue
             # Continuation references can also begin MM/DD; only a transaction
             # verb or a measured date + money row can begin another payment.
-            parsed = re.match(r'^(\S+)(?: (\d{2}/\d{2}))? ((?:Recurring )?(?:Withdrawal|Deposit)\b.*)$', body)
+            parsed = _PAYMENT.match(body)
             first_box = _box(cells[0]) if cells else None
             dated_money = (first_box and first_box[0] < page['width'] * .08 and money_cells
                            and re.match(r'^\S{4,7}(?: |$)', body))
@@ -368,12 +379,15 @@ def propose_andrews_statement(sources, currency, statement):
                         amount_text, balance_text = trailing[1], trailing[2]
                 if len(money_cells) == 2:
                     amount_text, balance_text = [c['expected_text'].strip() for c in money_cells]
+                separate_cells = (len(money_cells) == 2 and
+                                  _box(money_cells[0])[2] <= _box(money_cells[1])[0])
                 try:
-                    amount = _amount(amount_text, currency)
+                    amount = _amount(amount_text, currency, separate_cell=separate_cells)
                     fields.update(amount_minor=str(abs(amount)), amount_column=str(money_cells[0]['column_index']))
                     description = fields['description']
-                    conflict = (amount > 0 and 'Withdrawal' in description and 'Adjustment' not in description
-                                or amount < 0 and description.startswith('Deposit'))
+                    verb = re.sub(r'\s+', '', parsed[4]) if parsed else None
+                    conflict = (amount > 0 and verb == 'Withdrawal' and 'Adjustment' not in description
+                                or amount < 0 and verb == 'Deposit')
                     if conflict or not parsed:
                         item['issues'].append('Check whether money entered or left the account. The description and amount sign need review.')
                     else:
@@ -381,7 +395,7 @@ def propose_andrews_statement(sources, currency, statement):
                 except ValueError:
                     item['issues'].append('Check the transaction amount in the PDF. Its digits, sign or decimal point could not be read.')
                 try:
-                    fields['balance'] = str(_amount(balance_text, currency))
+                    fields['balance'] = str(_amount(balance_text, currency, separate_cell=separate_cells))
                     fields['balance_column'] = str(money_cells[-1]['column_index'])
                 except ValueError:
                     item['issues'].append('Check the running balance in the PDF. It could not be read separately from the transaction amount.')

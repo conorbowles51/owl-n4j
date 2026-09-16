@@ -278,3 +278,67 @@ it("retains a replaced payment in the draft until the user removes it explicitly
   )
   expect(screen.getByText(/0 selected across pages/)).toBeInTheDocument()
 })
+
+it("retains all 5001 matching payments across pages and a failed save without enabling an unsafe retry", async () => {
+  const readings = Array.from({ length: 5001 }, (_, index) => ({
+    ...state.readings[0],
+    transaction_id: `30000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+    ref_id: `PAY-${index + 1}`,
+  }))
+  let current = { ...state, readings }
+  vi.mocked(fetchAPI).mockImplementation(async (_url, options) => {
+    if (options?.method === "POST") {
+      current = { ...current, revision: "b".repeat(64) }
+      throw Error("The connection was interrupted. Reload before retrying.")
+    }
+    return current
+  })
+  const first = mount()
+  fireEvent.click(
+    await screen.findByRole("button", {
+      name: "Select all 5001 matching payments for linking",
+    })
+  )
+  fireEvent.change(screen.getByLabelText("Payment party name"), {
+    target: { value: "Checked supplier" },
+  })
+  fireEvent.change(screen.getByLabelText("Payment identity reason"), {
+    target: { value: "Checked the original references" },
+  })
+  expect(
+    screen.getAllByRole("checkbox", { name: /^Link payment/ })
+  ).toHaveLength(25)
+  fireEvent.change(screen.getByLabelText("Payment identity page"), {
+    target: { value: "200" },
+  })
+  expect(screen.getByLabelText("Link payment PAY-5001")).toBeChecked()
+  first.unmount()
+  mount()
+  expect(await screen.findByLabelText("Link payment PAY-5001")).toBeChecked()
+  expect(screen.getByText(/5001 selected across pages/)).toBeInTheDocument()
+  fireEvent.click(
+    screen.getByRole("button", { name: "Save payment identity links" })
+  )
+  await screen.findByText(/changed while this draft was open/)
+  expect(fetchAPI).toHaveBeenCalledWith(expect.any(String), {
+    method: "POST",
+    body: {
+      expected_revision: state.revision,
+      transaction_ids: readings.map((row) => row.transaction_id),
+      reason: "Checked the original references",
+      new_party_name: "Checked supplier",
+    },
+  })
+  expect(screen.getByLabelText("Payment identity reason")).toHaveValue(
+    "Checked the original references"
+  )
+  expect(screen.getByText(/5001 selected across pages/)).toBeInTheDocument()
+  expect(
+    screen.getByRole("button", { name: "Save payment identity links" })
+  ).toBeDisabled()
+  expect(
+    vi
+      .mocked(fetchAPI)
+      .mock.calls.filter(([, options]) => options?.method === "POST")
+  ).toHaveLength(1)
+})

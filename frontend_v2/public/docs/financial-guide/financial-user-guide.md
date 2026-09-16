@@ -53,6 +53,8 @@ You do not need an AI connection for the normal statement upload and review proc
 
 ### Your first complete task
 
+For a first team test, use the [short testing checklist and two invented statements](/docs/financial-testing/index.html). It gives exact payment counts and totals, then takes you through a correction, investigation and saved report in a separate test case.
+
 Practise with a test statement in a test case first. Follow sections 3 to 6: upload the PDF, inspect the extracted transactions, correct any flagged errors and confirm the import once. You can then investigate the payments directly in Transactions.
 
 The normal order of work is:
@@ -569,7 +571,7 @@ Payments chosen through **View payments** in People and businesses, Trends or Pa
 
 The saved selection keeps the payment values as they were when saved. Opening a linked payment shows its current record or correction history. A colleague with access to the case can read the saved note; your unfinished browser draft is not shared.
 
-At 100 selected payments, further checkboxes are disabled and the screen explains the limit. You can untick a selected payment and choose another. After saving, use **Clear selection** to start a separate group. Changing the account, table page or financial tab does not discard the selection. A refresh in the same browser tab restores it.
+After saving, use **Clear selection** to start a separate group. Changing the account, table page or financial tab does not discard the selection. A refresh in the same browser tab restores it.
 
 ![Saved notes and payment selections](images/15-financial-findings.png)
 
@@ -757,15 +759,15 @@ Your unfinished account selection, name and explanation survive navigation and r
 1. In **People and businesses**, open **Link different names for the same person or business**, then select **Open payment identity review**.
 2. Search names, descriptions or references under **Find payment names, descriptions or references**.
 3. Inspect the sources of the payments you want to link.
-4. Tick those payments. Selections are kept when you change the search or move between pages.
+4. Tick those payments, or select **Select all matching payments for linking** to include the full search result. The button shows the count, including later pages. Use **Payment page** to move directly to a later page. Selections are kept when you change the search or move between pages.
 5. Under **Person or business**, choose an existing name or **A new person or organisation**. Enter **Name** if you are adding a new one.
 6. Answer **Why do these payments belong to this person or business?** Explain the source information you checked.
 7. Select **Save payment identity links** and inspect the saved history.
 8. In counterparty analysis, select **Combine names I have linked to the same person or business** if you want totals grouped by those decisions.
 
-Name suggestions help find possible links. Check each suggestion's explanation and competing identities before selecting it. Links apply to the selected readings, not automatically to every future payment with a similar name. Use **Remove the selected links** with a reason when undoing them.
+Name suggestions help find possible links. Check each suggestion's explanation and competing identities before selecting it. Selecting a suggestion includes every payment shown in its count. Links apply to the selected readings, not automatically to every future payment with a similar name. Use **Remove the selected links** with a reason when undoing them. Large groups retain all their original names, payment values and individual link decisions. Expand **Names printed on statements** beneath a combined total to inspect the original names; use **Previous printed names** and **Next printed names** for a long list.
 
-Unfinished selections, the search, name and explanation are kept in this browser tab after refresh. **Reload payment identities** refreshes the current records without clearing that draft. If records or saved links changed, inspect them and select **Use latest payment records** before saving. A corrected payment may replace one you selected earlier. The screen identifies unavailable selections; remove them from the selection, then inspect and choose the replacement from Transactions. A failed or unconfirmed save keeps your explanation so you can check the saved links before retrying.
+Unfinished selections, the search, name and explanation are kept in this browser tab after refresh. **Reload payment identities** refreshes the current records without clearing that draft. If records or saved links changed, inspect them and select **Use latest payment records** before saving. A corrected payment may replace one you selected earlier. The screen identifies unavailable selections; remove them from the selection, then inspect and choose the replacement from Transactions. A failed or unconfirmed save keeps your explanation and reloads the current records. Check the saved links before retrying because the server may have saved them before the connection was interrupted.
 
 ### Inspect the payment graph
 
@@ -773,7 +775,7 @@ Unfinished selections, the search, name and explanation are kept in this browser
 2. Apply the account and dates you need.
 3. Select **Show connections** if they have not loaded.
 4. If there are many names, type part of one under **Find an account or name**. Select the matching entry under **Choose an account or name**. You can also select an account or name directly in the graph.
-5. The graph now shows only the selected account or name and its connected payments. Read **Showing ... of ... payments** to check how much of the graph you are viewing. The search box only narrows the chooser until you select an entry.
+5. The graph now shows only the selected account or name and its connected payments. Read the payment count above the graph to check how much of the graph you are viewing. The search box only narrows the chooser until you select an entry.
 6. Select **View selected connections** below the graph. Open a payment to inspect its statement, or tick payments and save them with a note.
 7. Select **Show all connections** to return to every payment in the applied account and date range.
 

@@ -148,6 +148,29 @@ it("pages label groups without changing their reconciled total", async () => {
   expect(screen.getByText(/Label 25 · GBP/)).toBeInTheDocument()
   expect(screen.queryByText(/Label 0 · GBP/)).not.toBeInTheDocument()
 })
+it("keeps a large group's printed names behind paged details without dropping its payments", async () => {
+  mount({
+    ...answer,
+    counterparties: [
+      {
+        ...answer.counterparties[0],
+        raw_labels: Array.from(
+          { length: 26 },
+          (_, index) => `Printed name ${index + 1}`
+        ),
+      },
+    ],
+  })
+  fireEvent.click(screen.getByRole("button", { name: "Show totals" }))
+  const summary = await screen.findByText("Names printed on statements (26)")
+  expect(summary.closest("details")).not.toHaveAttribute("open")
+  fireEvent.click(summary)
+  expect(screen.getByText('"Printed name 1"')).toBeInTheDocument()
+  expect(screen.queryByText('"Printed name 26"')).not.toBeInTheDocument()
+  fireEvent.click(screen.getByRole("button", { name: "Next printed names" }))
+  expect(screen.getByText('"Printed name 26"')).toBeInTheDocument()
+  expect(screen.getByTestId("linked-payments")).toHaveTextContent("case-a/tx-a")
+})
 it("refreshes after a ledger decision invalidates the shared cache", async () => {
   const { fetch, client } = mount()
   fireEvent.click(screen.getByRole("button", { name: "Show totals" }))

@@ -395,6 +395,9 @@ function Point({
   point: z.infer<typeof response>["counterparties"][number]
   caseId: string
 }) {
+  const [namePage, setNamePage] = useState(0)
+  const names = point.raw_labels ?? []
+  const page = Math.min(namePage, Math.max(0, Math.ceil(names.length / 25) - 1))
   return (
     <div className="space-y-1 rounded border p-2">
       <p>
@@ -411,14 +414,38 @@ function Point({
         Difference: {correctionMoney(point.net_minor, point.currency)}
       </p>
       {point.raw_labels && (
-        <p className="break-words">
-          Names printed on statements:{" "}
-          {point.raw_labels
-            .map((label) =>
-              label === null ? "Not recorded" : JSON.stringify(label)
-            )
-            .join(" · ")}
-        </p>
+        <details className="rounded border p-2">
+          <summary>Names printed on statements ({names.length})</summary>
+          <ul className="my-2 max-h-56 overflow-auto break-words list-disc pl-5">
+            {names.slice(page * 25, (page + 1) * 25).map((label, index) => (
+              <li key={index}>
+                {label === null ? "Not recorded" : JSON.stringify(label)}
+              </li>
+            ))}
+          </ul>
+          {names.length > 25 && (
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                disabled={!page}
+                onClick={() => setNamePage(page - 1)}
+              >
+                Previous printed names
+              </Button>
+              <span>
+                Names {page * 25 + 1} to{" "}
+                {Math.min((page + 1) * 25, names.length)} of {names.length}
+              </span>
+              <Button
+                variant="outline"
+                disabled={(page + 1) * 25 >= names.length}
+                onClick={() => setNamePage(page + 1)}
+              >
+                Next printed names
+              </Button>
+            </div>
+          )}
+        </details>
       )}
       <LinkedPayments caseId={caseId} ids={point.transaction_ids} />
     </div>

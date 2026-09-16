@@ -9,6 +9,59 @@ class CounterpartyPartyTests(LedgerSummaryTests):
         args=dict(expected_revision=self.state()['revision'],transaction_ids=[r.id for r in rows],new_party_name='Reviewed recipient',reason='Checked the original payment sources')
         args.update(changes)
         return set_counterparty_party(self.db,case_id=self.case.id,request=CounterpartyPartyRequest(**args),actor=self.actor)
+    def add_many(self,count):
+        from sqlalchemy import insert,select
+        from postgres.models.financial import FinancialTransaction
+        seed,_=self.add(123)
+        table=FinancialTransaction.__table__
+        original=dict(self.db.execute(select(table).where(table.c.id==seed.id)).mappings().one())
+        rows=[]
+        for index in range(1,count):
+            rows.append({**original,'id':uuid4(),'ref_id':f'large-party-{index}',
+                'row_index':index+1,'content_hash':f'{index+1:064d}'})
+        self.db.execute(insert(table),rows);self.db.commit()
+        return list(self.db.scalars(select(FinancialTransaction).where(FinancialTransaction.case_id==self.case.id)))
+
+    def test_large_directory_selection_clear_and_history_preserve_every_payment(self):
+        from services.financial.account_parties import account_parties
+        from services.financial.ledger_snapshot import capture_ledger_snapshot,_capture_history
+        from services.financial.counterparty_parties import counterparty_party_analysis
+        from types import SimpleNamespace
+        import json,hashlib
+        rows=self.add_many(5001)
+        before={str(row.id):(row.amount_minor,row.direction,row.counterparty_raw) for row in rows}
+        assigned=self.assign(rows)
+        party=assigned['parties'][0]
+        self.assertEqual(len(assigned['readings']),5001)
+        self.assertEqual(len(assigned['event_ids']),5001)
+        self.assertTrue(all(row['party']==party for row in assigned['readings']))
+        self.assertIn(party,account_parties(self.db,case_id=self.case.id)['parties'])
+        self.assign(rows,new_party_name=None,clear=True)
+        restored=self.assign(rows,new_party_name=None,party_id=party['id'])
+        self.assertEqual(len(restored['history']),15003)
+        self.assertTrue(all(row['party']==party for row in restored['readings']))
+        document=_capture_history(self.db,json.loads(capture_ledger_snapshot(self.db,case_id=self.case.id).content),case_id=self.case.id)
+        self.assertEqual(len(document['decisions']),15003)
+        content=json.dumps(document)
+        analysis=counterparty_party_analysis(SimpleNamespace(snapshot=SimpleNamespace(content=content,sha256=hashlib.sha256(content.encode()).hexdigest())))
+        self.assertEqual(analysis['counterparties'][0]['rows'],5001)
+        self.assertEqual(analysis['counterparties'][0]['credits_minor'],str(5001*123))
+        self.assertEqual({str(row.id):(row.amount_minor,row.direction,row.counterparty_raw) for row in rows},before)
+
+    def test_missing_member_refuses_all_of_a_large_selection(self):
+        rows=self.add_many(101)
+        with self.assertRaises(AccountPartyError):
+            self.assign(rows,transaction_ids=[row.id for row in rows]+[uuid4()])
+        self.assertEqual(self.state()['history'],[])
+
+    def test_result_size_refusal_rolls_back_every_new_link(self):
+        from unittest.mock import patch
+        import json
+        rows=self.add_many(101)
+        limit=len(json.dumps(self.state(),sort_keys=True,separators=(',',':')).encode())+100
+        with patch('services.financial.counterparty_parties.MAX_PARTY_BYTES',limit):
+            with self.assertRaises(AccountPartyError):self.assign(rows)
+        self.assertEqual(self.state()['history'],[])
     def test_selected_rows_only_unchanged_money_and_raw_name(self):
         a,_=self.add(100);b,_=self.add(200);c,_=self.add(300)
         for row in (a,b,c):row.counterparty_raw='SIMILAR NAME'

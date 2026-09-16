@@ -23,7 +23,7 @@ export const counterpartyParties = z
           decision_transaction_id: z.string().uuid().nullable(),
         })
       )
-      .max(5000),
+      .max(100000),
     history: z
       .array(
         z.object({
@@ -40,7 +40,7 @@ export const counterpartyParties = z
           recorded_at: z.string(),
         })
       )
-      .max(10000),
+      .max(250000),
   })
   .superRefine((value, ctx) => {
     const parties = new Map(value.parties.map((p) => [p.id, p.name]))

@@ -1,0 +1,68 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Loupe financial team testing</title><style>body{font:17px/1.65 system-ui,sans-serif;color:#20252b;background:#f4f5f7;margin:0}main{max-width:900px;margin:24px auto;background:white;padding:32px}h1,h2{line-height:1.3}h2{margin-top:2.2em;border-top:1px solid #ddd;padding-top:1em}a{color:#a71330}li{margin:.5em 0}table{border-collapse:collapse;width:100%;font-size:.9em}th,td{padding:9px;border:1px solid #ccc;text-align:left}th{background:#f5f5f5}@media(max-width:640px){main{padding:18px;margin:0}table{display:block;overflow:auto}}@media print{body{background:white}main{margin:0;padding:0}h2{break-after:avoid}tr{break-inside:avoid}}</style><main><h1>Financial testing: a first investigation</h1>
+<p>Use this checklist for the first team test. Allow about 25 minutes. The two PDFs below contain invented accounts and payments, with known results you can check. After this exercise, try a copy of a real statement in a separate test case.</p>
+<h2>1. Download the two test statements</h2>
+<ul>
+<li><a href="checking.pdf">Checking account: six payments</a></li>
+<li><a href="savings.pdf">Savings account: two payments</a></li>
+<li><a href="financial-test-pack.zip">Download both statements and this checklist</a></li>
+</ul>
+<p>Create a new case with a name such as <strong>Financial test - your name - 16 September</strong>. Open its <strong>Financial</strong> view. Use a separate case for each tester so another person&#x27;s imports or corrections do not change your expected results.</p>
+<h2>2. Upload and check the statements</h2>
+<ol>
+<li>Open <strong>Statements</strong> and select <strong>Upload PDFs</strong>. Select both downloaded PDFs.</li>
+<li>Wait for each file to finish reading. Open the checking statement from the file list.</li>
+<li>Compare its original PDF with the extracted statement. Check the dates, descriptions, payment amounts and running balances under the headings printed on the PDF. Opening and closing balances must not be selected as payments.</li>
+<li>Confirm the checking import once. It should add <strong>six transactions</strong>.</li>
+<li>Open the savings file and confirm its <strong>two transactions</strong>.</li>
+<li>Open <strong>Transactions</strong>. Clear payment filters and choose all accounts with no date restriction.</li>
+</ol>
+<p>Expected results before making any corrections:</p>
+<table><thead><tr><th>Account</th><th style="text-align:right">Payments</th><th style="text-align:right">Money in</th><th style="text-align:right">Money out</th><th style="text-align:right">Closing balance printed on the PDF</th></tr></thead><tbody><tr><td>Checking, ending <code>/0040</code></td><td style="text-align:right">6</td><td style="text-align:right">USD 1,550.00</td><td style="text-align:right">USD 895.00</td><td style="text-align:right">USD 875.00</td></tr><tr><td>Savings, ending <code>/0000</code></td><td style="text-align:right">2</td><td style="text-align:right">USD 305.00</td><td style="text-align:right">USD 0.00</td><td style="text-align:right">USD 355.00</td></tr><tr><td>Both accounts</td><td style="text-align:right">8</td><td style="text-align:right">USD 1,855.00</td><td style="text-align:right">USD 895.00</td><td style="text-align:right">Check each account separately</td></tr></tbody></table>
+<p>The USD 300 transfer appears once leaving checking and once entering savings. Both are real entries on these invented statements, so both remain in the transaction table. The combined net movement is USD 960.00; it is not an account balance.</p>
+<h2>3. Find a payment and open its original</h2>
+<ol>
+<li>Search Transactions for <strong>Example Supplies</strong>. There should be two payments: <strong>USD 120.00 on 5 July 2020</strong> and <strong>USD 75.00 on 16 July 2020</strong>.</li>
+<li>Open the USD 120 payment, then open its source file. Confirm that it is the matching row in the checking PDF.</li>
+<li>Close the source and payment details. Your search should still be present.</li>
+<li>Open another financial tab, return to Transactions, then refresh the browser. Check that your search and place are retained.</li>
+</ol>
+<p>Report it if the original is unavailable, the wrong row is highlighted, or changing tabs loses the search.</p>
+<h2>4. Make an explained correction</h2>
+<ol>
+<li>Open the USD 120 payment again and select <strong>Correct a value</strong>.</li>
+<li>For this test, change only its description to <strong>Payment to Example Supplies - test correction</strong>. Keep the date, amount and balance unchanged.</li>
+<li>Select <strong>Preview correction</strong>, enter <strong>Checking the correction workflow on synthetic data</strong> as the reason, then record the correction using the confirmation shown.</li>
+<li>Reopen the transaction. Check that the corrected description and the previous reading are available and that its original PDF has not changed.</li>
+<li>Check that there are still <strong>eight current transactions</strong> and the totals above are unchanged.</li>
+</ol>
+<h2>5. Investigate the payments</h2>
+<ol>
+<li>Open <strong>People and businesses</strong>. Open the payments behind <strong>Alpha Consulting</strong>. There should be two incoming payments, USD 900 and USD 650, totalling <strong>USD 1,550</strong>.</li>
+<li>Open the payments behind <strong>Example Supplies</strong>. The two outgoing payments total <strong>USD 195</strong>. Follow either one back to its original.</li>
+<li>In <strong>Transfers</strong>, use the July 2020 dates and compare the two accounts. Inspect the USD 300 leaving checking and arriving in savings on 3 July. Record a match only after opening both sources.</li>
+<li>Open <strong>More financial tools</strong>, then <strong>Payment graph</strong>. Load the connections and open the payments behind a name. Confirm that the payment list and source links work.</li>
+</ol>
+<h2>6. Save work that a colleague can reopen</h2>
+<ol>
+<li>Return to Transactions and select the two Example Supplies payments.</li>
+<li>Select <strong>Save selection with a note</strong>. Name it <strong>Example supplier payments</strong> and explain that the two payments total USD 195.</li>
+<li>Open <strong>Findings</strong> and reopen the selection. Check that both payments and their source links are present.</li>
+<li>Create one more observation using <strong>Add note</strong> on the USD 300 transfer. Explain what you would investigate.</li>
+<li>In Findings, include both notes in a report. Build it, preview it and save it to the case.</li>
+<li>Reopen the saved report, include its supporting PDFs and download the package. Confirm that the notes, selected payments and original statement are included.</li>
+<li>Ask a colleague who has access to this test case to reopen the saved report. Your unsaved browser drafts are not shared, but the saved report must be.</li>
+</ol>
+<h2>7. Try a real statement</h2>
+<p>Use a separate test case and keep the original file. Check the account, period, transaction count, dates, Credit/Debit or Amount columns, balances and page references. For a long PDF, check the first, middle and last pages, including any account change or continuation page.</p>
+<p>A flagged date, unreadable amount or missing page should lead to a visible correction, source or rereading action. Do not fill a value solely to make a warning disappear. A successful synthetic test does not prove that every real statement format will read correctly.</p>
+<h2>Report a problem</h2>
+<p>Send these details with each issue:</p>
+<ul>
+<li>The case name and the tab or button you were using.</li>
+<li>What you did immediately before the problem.</li>
+<li>What you expected and what actually happened.</li>
+<li>The filename, page and transaction involved, where relevant.</li>
+<li>A screenshot and the exact error message, if any.</li>
+<li>Whether refreshing changed the result.</li>
+</ul>
+<p>Keep private statement files and screenshots within your team&#x27;s approved channels. If an import appears to have stalled, reopen the statement and check its current status before uploading or importing it again.</p></main></html>

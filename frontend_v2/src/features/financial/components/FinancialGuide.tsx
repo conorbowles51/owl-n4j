@@ -110,6 +110,8 @@ export function FinancialGuide() {
                   ),
                   a: ({ href, children }) => (
                     <a
+                      target={href && !href.startsWith("#") ? "_blank" : undefined}
+                      rel={href && !href.startsWith("#") ? "noopener noreferrer" : undefined}
                       href={
                         href?.startsWith("#")
                           ? `#financial-guide-${href.slice(1)}`

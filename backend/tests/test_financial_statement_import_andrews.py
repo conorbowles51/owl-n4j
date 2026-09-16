@@ -46,6 +46,61 @@ def selected(sources, share='0040'):
 
 
 class AndrewsReaderTests(unittest.TestCase):
+    def test_spaces_inside_printed_payment_verbs_retain_source_and_sign_checks(self):
+        for description, amount, balance, direction in (
+                ('Wi thdrawal Debit Card', '-12.50', '87.50', 'debit'),
+                ('Re curring Wi thdrawal Debit Card', '-12.50', '87.50', 'debit'),
+                ('De posit Transfer', '12.50', '112.50', 'credit'),
+                ('Wi thdrawal Debit Card', '12.50', '112.50', None),
+                ('Re curring De posit Transfer', '-12.50', '87.50', None),
+                ('Withd rawal Adjustment', '12.50', '112.50', 'credit'),
+                ('Withdra walx Debit Card', '-12.50', '87.50', None),
+                ('Withdra\u03c9al Debit Card', '-12.50', '87.50', None)):
+            with self.subTest(description=description, amount=amount):
+                original = source([
+                    [(15, '06/01 ID 0040 FREE CHECKING Previous Balance'), (350, '100.00')],
+                    [(15, '06/03'), (75, description), (310, amount), (350, balance)],
+                    [(15, '06/30'), (75, 'Ending Balance'), (350, balance)],
+                ])
+                before = deepcopy(original)
+                _, proposal = selected([original])
+                payment = next(row for row in proposal['rows'] if not row['excluded'])
+                self.assertEqual(payment['fields']['description'], description)
+                self.assertEqual(payment['fields'].get('direction'), direction)
+                self.assertEqual(bool(payment['issues']), direction is None)
+                self.assertEqual(original, before)
+
+    def test_spaces_inside_separate_money_cells_preserve_digits_and_original_text(self):
+        original = source([
+            [(15, '06/01 ID 0040 FREE CHECKING Previous Balance'), (350, '1 00. 0 0')],
+            [(15, '06/03'), (75, 'Withdrawal Debit Card'), (310, '-1 2. 50'), (350, '8 7. 5 0')],
+            [(15, '06/30'), (75, 'Ending Balance'), (350, '8 7. 5 0')],
+        ])
+        before=deepcopy(original)
+        _, proposal=selected([original])
+        payment=next(row for row in proposal['rows'] if row['kind']=='transaction')
+        self.assertEqual(payment['fields']['amount_minor'],'1250')
+        self.assertEqual(payment['fields']['balance'],'8750')
+        self.assertEqual(payment['fields']['balance_difference_minor'],'0')
+        self.assertEqual(payment['issues'],[])
+        self.assertEqual(original,before)
+        self.assertEqual(payment['source_cells'][-1]['expected_text'],'8 7. 5 0')
+
+    def test_spacing_does_not_repair_damaged_digits_decimal_marks_or_joined_numbers(self):
+        from services.financial.statement_import_andrews import _amount
+        for text in ('8O.00','8:00','8-00','8.0','8.000','8 0.0O','80.00 90.00'):
+            with self.subTest(text=text), self.assertRaises(ValueError):
+                _amount(text,'USD',separate_cell=True)
+        with self.assertRaises(ValueError):_amount('8 0.00','USD')
+        original=source([
+            [(15,'06/01 ID 0040 FREE CHECKING Previous Balance'),(350,'100.00')],
+            [(15,'06/03'),(75,'Withdrawal Debit Card'),(310,'-1 2.50 87.50')],
+        ])
+        _,proposal=selected([original])
+        payment=next(row for row in proposal['rows'] if row['kind']=='transaction')
+        self.assertNotIn('amount_minor',payment['fields'])
+        self.assertTrue(payment['issues'])
+
     def test_savings_and_checking_stay_separate_with_original_cells(self):
         original = two_shares(); before = deepcopy(original)
         catalog = statement_catalog([original])

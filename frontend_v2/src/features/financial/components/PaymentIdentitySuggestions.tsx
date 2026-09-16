@@ -118,15 +118,13 @@ export function PaymentIdentitySuggestions({
                         disabled={disabled}
                         onClick={() =>
                           onSelect(
-                            group.readings
-                              .slice(0, 100)
-                              .map((r) => r.transaction_id),
+                            group.readings.map((r) => r.transaction_id),
                             alternative.party.id
                           )
                         }
                       >
-                        Review {Math.min(group.readings.length, 100)} possible
-                        links to {alternative.party.name}
+                        Review {group.readings.length} possible links to{" "}
+                        {alternative.party.name}
                       </Button>
                     </div>
                   </div>
@@ -138,12 +136,6 @@ export function PaymentIdentitySuggestions({
                 >
                   Inspect unlinked source {group.readings[0].ref_id}
                 </Button>
-                {group.readings.length > 100 && (
-                  <p>
-                    Only the first100readings will be selected. Remaining
-                    readings stay unselected for a later review.
-                  </p>
-                )}
               </div>
             ))}
           {suggestions.length > 10 && (
