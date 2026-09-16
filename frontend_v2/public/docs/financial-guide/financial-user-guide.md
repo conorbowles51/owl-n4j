@@ -2,7 +2,7 @@
 
 Step-by-step instructions for reviewing financial records, investigating payments and preparing reports.
 
-**Edition: 16 September 2026, evening update.** This guide describes the current financial controls and their known limits. Screenshots use test cases with invented transactions. They illustrate the controls, not findings about a real person. The separate Testing guide supplies two PDFs and exact results for your first team test.
+**Edition: 17 September 2026, investigator workspace.** This guide describes the current financial controls and their known limits. Screenshots use test cases with invented transactions. They illustrate the controls, not findings about a real person. The separate Testing guide supplies two PDFs and exact results for your first team test.
 
 ## Contents
 
@@ -83,20 +83,52 @@ Older manual reviews may use terms such as candidate, resolved reading or finali
 
 ![Transactions with filters, payment totals and investigation actions](images/14-investigation-transactions.png)
 
-*Each payment has an Open transaction button and an Add note action. The table contains imported payments; statement preparation has its own workspace.*
+*Select a payment description to open its details and original beside the table. Select several payments to compare them or create a finding.*
 
 | Main tab | What you can do |
 |---|---|
-| Transactions | Search payments, inspect original statements, correct values and save selected payments with a note. |
-| Statements | Upload one or several PDFs, check their readings, confirm imports and check account balances or missing periods. |
-| Findings | Reopen saved notes, payment selections and calculations. Download a note and its supporting records. |
-| People and businesses | Compare how much each name paid or received, open its payments and record name links. |
-| Transfers | Compare the outgoing and incoming sides of possible transfers and save your explanation. |
-| Patterns | Find repeated names or amounts, quick movements and smaller payments that add up to a chosen amount. |
-| Trends | Compare payments by day or month and open the payments behind a total. |
+| Overview | See the imported records, money movements, comparisons to examine and saved investigation work. |
+| Statements & accounts | Find every uploaded PDF in the main file register. Review extracted statements, confirm imports and check accounts or missing periods. |
+| Transactions | Search, filter and select payments. Open originals, compare entries, create findings, mark questions for follow-up and export a selection. |
+| People & businesses | Open a recorded name or account profile, inspect its payments and sources, and find linked findings. |
+| Follow money | Examine receipts followed by outgoing payments, and open transfer, pattern, graph, tracing and case-event tools. |
+| Trends | Compare amounts, counts and recorded balances on a calendar axis. Open a period's payments. |
+| Findings | Create and revise questions, observations and conclusions. Record next actions and build reports with their evidence. |
+
+### Start from Overview
+
+1. Check **Accounts and dates**. Open it to change the account or interval and select **Apply**.
+2. Read money in, money out and their difference. Different currencies and credit card entries remain separate. The difference is not an account balance.
+3. Under **Who paid in, and where payments went**, select a name or account to open the payments behind that connection.
+4. If Overview offers receipts followed by outgoing payments, select **Examine supporting payments**. **See each comparison** opens the dates, amounts and gaps in Follow money.
+5. Select **Check statement files** to review the uploaded records, or **Open Findings** to return to saved investigation work.
+
+A comparison uses adjacent dated payments in the same bank account and currency within seven days. Timing alone does not establish that the same funds moved onward. Unknown payment dates and credit card entries are not used in that comparison.
+
+![Overview of the invented checking and savings accounts](images/27-investigator-overview.png)
+
+### Compare payments and record a finding
+
+1. In Transactions, tick the payments you want to examine. The action bar shows **Compare payments**, **Create finding**, **Mark for follow-up** and **Export selected**.
+2. Select **Compare payments**. All selected payments appear in date order. Use **Next payments** for another page; the totals cover the complete selection.
+3. Select **View original** beside an entry. Its source opens beside the comparison. Open another entry to compare its original too.
+4. Select **Create finding from these payments**. Choose **Question**, **Observation** or **Conclusion** under **Type**.
+5. Enter a **Title** and **Explanation**. State what the records show and what remains unknown. Add a **Next action**, **Assigned to** name and **Progress** if useful. Assigned to is a recorded name, not a sent notification or a new task.
+6. Select **Review attached payments** to check the evidence. Then select **Save finding** once.
+7. After the saved confirmation, select **Open Findings**. The saved finding includes the payment values and statement references.
+8. Select **Edit finding** to revise the explanation, next action, owner or progress. The earlier cited payment versions are retained. The case records the edit history.
+9. Tick **Include in report** and use **Build report** when you want to share selected findings with their supporting records.
+
+**Mark for follow-up** opens the same editor with Question selected. Write what needs checking, then save it. The linked payment shows that a follow-up question exists. **Export selected** downloads the selected entries with dates, currency, direction, amounts, status and source references. This download does not create a saved finding.
+
+![Two selected payments with an original source beside the comparison](images/28-investigator-comparison.png)
+
+![A saved question with its next action and linked statement payments](images/29-investigator-findings.png)
 
 | Under More financial tools | What you can do |
 |---|---|
+| Compare transfers | Compare the outgoing and incoming sides of a possible transfer. |
+| Look for patterns | Search defined payment patterns and compare claims with records. |
 | Payment graph | See connections between accounts and recorded payment names. Open connected payments. |
 | Trace funds | Compare rules for allocating withdrawals to funds you have identified, or prepare an indirect financial calculation. |
 | Payments and case events | Compare payment dates with wider case events and save an observation linked to both. |
@@ -105,7 +137,7 @@ Older manual reviews may use terms such as candidate, resolved reading or finali
 | Processing history | Find statement-reading attempts and see why one stopped or failed. |
 | Change history | Read who changed a transaction, what changed and why. |
 
-**Imported statement payments** and **Other financial records** are separate sets of information. Use the first for the statement workflow in this guide. The second contains information extracted from other evidence. An amount mentioned in a letter or interview is not automatically a bank transaction. Use the payment-claim comparison in Patterns to compare such a statement with recorded payments.
+Open **Viewing imported statement payments** to switch datasets. **Imported statement payments** and **Other financial records** are separate sets of information. Use the first for the statement workflow in this guide. The second contains information extracted from other evidence. An amount mentioned in a letter or interview is not automatically a bank transaction. Use the payment-claim comparison in Patterns to compare such a statement with recorded payments.
 
 When you use **Other financial records**, refreshing retains that view. Your search, category, person, date and amount filters, sort order, table page and expanded records are kept for the same user and case in this browser tab. Opening another case starts with that case’s own filters. Use **Reset all** above the filters to clear the search and filters. To return to bank payments, select **Imported statement payments**.
 
@@ -128,7 +160,7 @@ If the current amount is missing or unreadable, **New Amount** starts empty. A r
 
 This tool changes amounts in **Other financial records**. It does not upload bank statements or change imported statement payments.
 
-1. Open **Transactions**, then **Other financial records**. Use the search and filters to show the records you want to work on.
+1. Open **Transactions**, expand **Viewing imported statement payments**, then choose **Other financial records**. Use the search and filters to show the records you want to work on.
 2. Select **Correct amounts from file**, then **Download correction template**. The template contains the record keys and current amounts in the displayed list. If there are more than 1,000 records, narrow the list first.
 3. Open the CSV. Keep only the rows you want to correct. Leave each **key** unchanged, enter the corrected **amount** and explain the correction in **reason**. Check each amount against its source evidence.
 4. Use up to two decimal places, such as **1250.50**. Do not include currency symbols or thousands separators. Each record keeps its existing currency. Every row needs a reason and a non-zero amount.
@@ -142,7 +174,7 @@ If a record's amount changes after your preview, Loupe refuses that correction. 
 
 ### Organise other financial records with categories
 
-1. Open **Transactions**, then **Other financial records**.
+1. Open **Transactions**, expand **Viewing imported statement payments**, then choose **Other financial records**.
 2. Select **Categories**. Enter **Category name**, choose a colour and select **Add Category**. For example, create a category named **Payments to check**.
 3. Wait for the saved message, then select **Close**. Creating a category does not assign records to it.
 4. In the record table, choose your category from the record's **Category** menu. Wait for the save to finish. A failed change displays an error beside the record; the menu returns to its saved category so you can retry.
@@ -163,7 +195,7 @@ The summary above the list groups the displayed records by their recorded curren
 
 ### Download other financial records
 
-1. Open **Transactions**, then **Other financial records**.
+1. Open **Transactions**, expand **Viewing imported statement payments**, then choose **Other financial records**.
 2. Use the search, category, date, sender, receiver or amount filters to select the records you need. Amount limits compare the size of an amount, so a limit of 100 to 250 includes both 150 and -150. Both dates are included. A record with a time on the final day is included too. Dates appear as year-month-day. Incomplete or impossible dates are marked **check date** and stay outside an active date filter; clear the dates to see those records.
 3. Select **Download report**. The button changes to **Preparing report...** while the report is created.
 4. Open the downloaded PDF. Check the case name, active filters and record count. The rows include the recorded amount and currency, available source details, original corrected amounts and the latest correction explanations.
@@ -175,14 +207,14 @@ A failed download displays an error and leaves your filters in place. Select **D
 
 ### Upload a bank or credit-card statement
 
-1. Open the correct case and select **Financial**. The **Transactions** tab opens first.
-2. Select **Add statements** to open Statements. Select **Import a statement** if the review is closed, then **Upload a statement**.
-3. Select **Choose PDF** and choose your statement from your computer. Use **Change PDF** if you picked the wrong file.
-4. Check its filename, then select **Upload and read statement** once.
-5. Wait for Loupe to read the pages. Scanned statements take longer because their letters and numbers must be read from images.
-6. The statement review opens when reading is complete. Loupe fills in the account details and transaction fields it can identify.
-7. If the PDF contains several statements, choose the account and period you want to import. The page numbers help you identify the right statement.
-8. If asked, choose the currency printed on the statement. Do not choose a currency merely because it is your usual working currency.
+1. Open the correct case and select **Financial**. A new case opens on Overview; returning to a case restores its last financial page in this browser tab.
+2. Select **Statements & accounts**. The main page lists the PDFs already uploaded to this case.
+3. Select **Upload PDFs** and choose one or more statements from your computer, up to 20 at once.
+4. Keep the browser tab open while the files upload and are read. Each file shows its own progress.
+5. When a file says **Ready to review**, select its filename. Its original PDF and extracted statement open together.
+6. If the PDF contains several statements, choose the account and period you want to import. The page numbers help identify the right statement.
+7. If asked, choose the currency printed on the statement. Do not choose a currency merely because it is your usual working currency.
+8. Use **Back to all statement files** to return to the register. **Continue last statement review** reopens where you were working.
 
 You do not need to assign columns, select every payment, save a batch or finalize readings in the normal import process. Those tasks happen within the system. Nothing enters the transaction totals until you confirm the import in section 6.
 
@@ -192,11 +224,11 @@ You do not need to assign columns, select every payment, save a batch or finaliz
 
 ### Upload several statements and switch between files
 
-1. In **Bank statements**, select **Statement files**. The right-hand panel opens on **Statements**.
+1. Open **Statements & accounts**, then **Statement files** if the accounts view is showing. The main page lists the files. While reviewing a statement, **Statement files** inside the review also opens a file switcher on the right.
 2. Select **Upload PDFs** and choose up to 20 PDFs in one selection.
 3. Keep the browser tab open while Loupe uploads them. Each file shows its own progress. A failed request stays visible; other files can continue.
 4. Wait for a file to show **Ready to review**, then select its filename. It opens in the main statement viewer.
-5. Select another filename to switch files. Use **Search filenames** to narrow the list. The added time and short identifier distinguish files with the same name.
+5. Select **Back to all statement files**, then another filename to switch files. Alternatively use the right-hand file switcher. Use **Search filenames** to narrow the list. The added time and short identifier distinguish files with the same name.
 6. Return to a file to continue its review. Changes are saved when you switch; its selected statement period and page are remembered during this session.
 7. Check and confirm each statement separately. Bulk upload does not automatically confirm transactions.
 
@@ -206,15 +238,15 @@ A file with saved imports shows its current imported payment count, account and 
 
 If a request fails, select **Refresh files** and inspect what arrived before uploading another copy. A connection failure can occur after the server received a file. Closing the browser tab can stop uploads that have not yet been sent. Refreshing the page clears the upload queue shown on screen. Uploaded files remain in the case. The open statement, period, page and saved review draft are restored in the same browser tab.
 
-![Statement file list, page controls and separate corrections using synthetic PDFs](images/13-statement-files.png)
+![Statement file list, page controls and separate corrections using synthetic PDFs](images/30-investigator-files.png)
 
-*Choose a ready filename on the right to open it. Edit import values opens the correction controls while the original PDF stays visible.*
+*The main file register shows filenames, import counts, accounts and periods. Select a file to open its review.*
 
 ### Review a deposit receipt
 
 A supported **Andrews Federal Credit Union** deposit receipt opens separately from bank statements. If one PDF contains both, select the receipt under **Statements and receipts in this PDF**. Its page number identifies which receipt you are opening.
 
-1. In **Statements**, open **Statement files** and choose the PDF. Select **Deposit receipt** for the required page.
+1. In **Statements & accounts**, open **Statement files** and choose the PDF. Select **Deposit receipt** for the required page.
 2. Compare **Deposit amount**, **Previous balance**, **New balance** and **Available balance** with the original. These are separate values. The available balance may differ from the new balance.
 3. Check **Effective date** and **Receipt date** separately. If a printed date has a two-digit year, enter the full date after checking supporting evidence and explain the check. Enter the currency only when the evidence establishes it.
 4. Keep **Account reference as printed** masked when the original is masked. Check handwriting directly in the PDF and record any observation in **Your observations**.
@@ -233,7 +265,7 @@ Use **Choose another statement or receipt** to switch within the PDF. Each recei
 
 Use this process for a supported, single-report **Wells Fargo Wire Transfer Detail Report** PDF. Other wire layouts are not automatically read yet. A wire report records payment instructions and parties; it does not provide an account statement's transaction history or balances.
 
-1. In **Statements**, open **Statement files** and select **Upload PDFs**. Choose the wire report. You can include it with other PDFs in the same upload.
+1. In **Statements & accounts**, open **Statement files** and select **Upload PDFs**. Choose the wire report. You can include it with other PDFs in the same upload.
 2. Wait for **Ready to review**, then select the filename. Loupe opens **Review wire report** with the original PDF beside its labelled details.
 3. Read the wire amount, currency and value date. Check each highlighted problem against the PDF. For example, if the currency was read as **USO**, enter **USD** only if the original supports that correction. The **USD equivalent amount** alone does not establish the wire's currency.
 4. Select **Show value in PDF** or **Show line in PDF** under a field to locate the original text. You can type directly into the field to correct it. The **Original reading** underneath remains unchanged.
@@ -438,7 +470,7 @@ Do not guess an unreadable year, amount or direction to make the button availabl
 3. Select **Confirm import of [number] transactions** once.
 4. Wait for the confirmation. Loupe records the statement, included transactions, original extraction and your corrections together.
 5. You return to **Transactions**, where the imported payments appear in the table and working totals.
-6. Use the account and date filters, open a transaction's source, or move to **People and businesses**, **Trends**, **Transfers** or **Patterns** to investigate.
+6. Use the account and date filters, open a transaction's source, or move to **People & businesses**, **Trends** or **Follow money** to investigate. **Follow money** also opens the existing transfer and pattern tools.
 
 ![Imported transactions ready for investigation](images/12-imported-transactions.png)
 
@@ -492,20 +524,20 @@ To correct a report, select **Correct this custody report**. Loupe fills in that
 
 ### Choose the records to examine
 
-1. Open **Transactions**.
+1. Open **Transactions**, then expand **Accounts and dates**.
 2. Choose an account in **Account**, or leave **All accounts** selected. Expand **Search accounts or check which dates are used** if the account you need is not listed.
 3. Enter **From** and **To** when restricting dates. Both endpoints are included.
 4. Select **Apply**, or **Reset** to return to all accounts and dates.
 5. The applied account and dates follow you between Transactions, People and businesses, Trends, Payment graph, Patterns and Payments and case events, including after a refresh in this browser tab. Read the scope displayed above the answer. Unsaved filter edits do not change the current result.
-6. Check working and verified totals separately, by currency.
+6. Read **Payments matching your filters** for the selected payments and currency. To inspect verification details, open **More financial tools**, then **Import review**.
 
 Searching the account chooser does not change the account already selected. Its name stays visible even when it falls outside the search results. If the lookup fails, your chosen account and dates are retained. Select **Try loading accounts again** to repeat that search, or use **Reset** to return to all accounts and dates.
 
 An ordering date is the date Loupe uses to place a reading in sequence. For some undated items it can be the statement end, not a known transaction date. Read the row's date basis before relying on exact timing.
 
-![Transactions in a synthetic case](images/12-imported-transactions.png)
+![Payments with selected rows and the original statement open beside them](images/14-investigation-transactions.png)
 
-*Use the table and population labels to understand which readings the view contains. Example amounts in this guide are synthetic.*
+*Select payment descriptions to inspect their originals. Select checkboxes to compare payments, create a finding or download the selection. Example amounts are synthetic.*
 
 ### Search and sort payments
 
@@ -527,12 +559,13 @@ The total labelled **Payments matching your filters** covers all matching table 
 
 ### Open a payment and its source
 
-1. Select a payment's description or **Open transaction**.
+1. Select a payment's underlined description in the table.
 2. Read its date, amount, recorded payer or payee and bank reference.
 3. Inspect the highlighted source value in the details when a location is available. Select **Open source file** to view the complete original PDF at that page.
 4. Use the arrows beside the page number to move through the PDF. The page count shows its length. Use **+**, **−** or **Fit page width** to change its size.
 5. Select **Close** at the top right to return to the transaction details. Use **Correct a value** if a recorded field is wrong, or **Add investigation note** to record a question or observation.
-6. Close the detail panel to return to the same payment list and search.
+6. To examine the surrounding activity, select **Show nearby payments**. Choose the number of days before and after the payment. The dates and account are displayed. Select **Compare nearby payments** to open those entries together. This can include payments outside the main table’s filters.
+7. Close the detail panel to return to the same payment list and search.
 
 If the transaction details fail to load, select **Try loading this transaction again** in the dialog. It retries the same payment. Closing the dialog returns you to the payment list and its search.
 
@@ -540,7 +573,7 @@ The arrow at the top right of the PDF viewer opens the original file in a separa
 
 ### Record an investigation note
 
-1. Select **Add note** beside a transaction, or **Add investigation note** in its details.
+1. Select the transaction description, then **Add investigation note** in its details.
 2. Type your observation in **Your transaction note**.
 3. Select **Save investigation note** and wait for **Note saved**.
 4. Open **Findings** to reopen it, or use the link to Workspace to edit it.
@@ -549,40 +582,25 @@ Unfinished note text stays in this browser tab when you close and reopen the det
 
 ### Save several payments together
 
-1. Tick the checkbox beside each payment you want to discuss together. Your selection can span table pages, accounts and analysis results.
-2. Alternatively, use **Select all matching payments** after searching. The button shows how many payments match. It selects all matching payments, including later table pages. In an analysis payment list, **Select all linked payments** selects the whole result.
-3. Read the selected-payment totals. If selected payments fall outside the account/date range now displayed, the screen tells you how many will still be included.
-4. Select **Review selected payments** to see the chosen payments across all accounts and filters. The list shows each date, amount and original filename. Use **Previous selected payments** and **Next selected payments** for more than 20. **Remove from selection** removes only that entry from your unfinished selection.
-5. Close the review and select **Save selection with a note**.
-6. Enter **Name for this selection**, such as “Payments to supplier in March”.
-7. Under **What did you notice?**, explain the question or observation.
-8. Select **Save payments and note**. Wait for the saved confirmation.
-9. Open **Findings** and find your title. Select a linked payment to inspect its source again.
+1. Tick the payments you want to discuss, or use **Select all [count] matching payments** after searching. This includes later table pages.
+2. If earlier selections are hidden by current filters, read the notice. **Review selected payments** shows everything that will be attached. Remove any entry you do not intend to include.
+3. Select **Compare payments** to inspect the entries and original sources together.
+4. Select **Create finding**, complete its title and explanation, and save. The procedure under **Compare payments and record a finding** explains the fields.
+5. Open **Findings** and check the saved payment links. Later corrections do not silently replace the values cited in the original finding.
+6. Use **Clear selection** before starting a separate group. Changing tabs or table pages does not clear the main transaction selection.
 
-Saving checks the selected payments in batches and shows progress. A selection can contain thousands of payments; the saved payment details must fit within 32 MB. If that size is exceeded, keep the selection and save it in smaller parts. Reopen a large selection in Findings, expand its linked payments and use **Saved payment page** to reach later payments.
+**Selected amounts and saved selections** contains the older **Save selection with a note** control. Existing saved selections and calculations remain available in Findings. They can still be included in reports.
 
-If a selected payment was corrected or excluded, saving identifies the changed payment. Select **Review selected payments** in the message. Open the payment to inspect its history. For a corrected payment, **Open corrected transaction** shows the new version. Remove the old entry from your selection, then choose the corrected payment in Transactions if you want to include it. Your other selections and unfinished note are retained. No transaction is deleted by removing it from a selection.
+Selections can contain thousands of payments. The saved evidence details must fit within 32 MB. A selected payment that changed or was excluded must be reviewed before saving it into a new finding. A failed payment check is not evidence that the transaction was excluded.
 
-![Two synthetic selected payments, including a corrected entry that can be removed separately](images/25-selected-payment-review.png)
-
-A failed payment check says that it could not be checked. Select **Retry payment check** to try again. A connection failure does not mean that a payment was excluded.
-
-Payments chosen through **View payments** in People and businesses, Trends or Payment graph join the same selection shown in Transactions. Hiding a result list, changing tabs or refreshing does not discard these choices. Each open result states how many selected payments lie outside it. **Save selection with a note** saves the whole selection, including those other payments. Use **Review selected payments** to check or remove individual entries before saving.
-
-The saved selection keeps the payment values as they were when saved. Opening a linked payment shows its current record or correction history. A colleague with access to the case can read the saved note; your unfinished browser draft is not shared.
-
-After saving, use **Clear selection** to start a separate group. Changing the account, table page or financial tab does not discard the selection. A refresh in the same browser tab restores it.
-
-![Saved notes and payment selections](images/15-financial-findings.png)
-
-*Use Findings to return to investigation work. Each entry keeps its note and supporting records together.*
+Profile and period lists operate on their displayed payments. With no boxes ticked, **Compare [count] payments** and **Create finding** use the whole displayed profile or period. Tick specific payments to limit those actions. The count beside Compare tells you which set will be used.
 
 ## Correct a reading or change its inclusion
 
 ### Correct a transaction
 
 1. Locate the payment in **Transactions**.
-2. Select **Open transaction** and compare it with its original statement.
+2. Select the payment’s underlined description and compare it with its original statement.
 3. Select **Correct a value**. Its current fields are filled in. Correct the printed date, description, counterparty, reference, transaction type, amount, direction or balance as needed. Leave an unprinted date or balance empty; at least one date is required.
 
    Unrecorded correction fields are kept in this browser tab. After a refresh, open the same transaction and select **Correct a value** again. Review a fresh preview before recording the correction. Closing the tab may discard unfinished edits.
@@ -611,13 +629,13 @@ An unfinished explanation stays in this browser tab for the same payment and inc
 
 ### Read the decision history
 
-Open **Change history**. Expand the relevant decision to inspect the reason, actor, time and affected records. For corrections, use **Original and replacement readings** and the available balance comparisons. Historical checks describe the records at that time; inspect current **Statements** for the latest checks.
+Open **Change history**. Expand the relevant decision to inspect the reason, actor, time and affected records. For corrections, use **Original and replacement readings** and the available balance comparisons. Historical checks describe the records at that time; inspect current **Statements & accounts** for the latest checks.
 
 ## Check statements and missing periods
 
 ### Open one account's statements
 
-1. Open **Statements** and select **Review accounts**. **Upload and review statements** returns to the file upload and import area.
+1. Open **Statements & accounts** and select **Review accounts**. **Statement files** returns to the main file register.
 2. Find the account by its holder, account number or bank. Enter part of those details in **Find an account**, then select **Find accounts**. **Show all accounts** clears that search.
 3. Check the holder, account number, bank and currency on the account card. Missing details are shown as **Not recorded**.
 4. Select **Review statements** on that account. The balance checks and date coverage now refer to that account only.
@@ -634,7 +652,7 @@ Open **Change history**. Expand the relevant decision to inspect the reason, act
 3. Read the result. **Balances agree** means the imported payments agree with the recorded balances. **Balance difference** means you need to compare the payments and balances with the original. **Missing balances** means a recorded opening or closing balance is missing. A missing value is not treated as zero.
 4. Select **Open statement and balances**. In the window, inspect any retained balance or date readings. Select an available reading to locate it on the original page. **Open statement file** opens the PDF. Use the page arrows to move through it, then select **Close** to return to the statement balances.
 5. Select **View transactions for these dates** to open that account's imported payments during the statement period. The date filter can include payments from overlapping statements. If both statement dates are not recorded, the button instead opens all account transactions.
-6. Open a payment to compare its source and correct an actual reading error. Return to **Statements**, then select **Refresh balance checks** to see the current result.
+6. Open a payment to compare its source and correct an actual reading error. Return to **Statements & accounts**, then select **Refresh balance checks** to see the current result.
 7. For more detail, expand **Calculation and further checks**. You can inspect the arithmetic, check running balances, compare printed totals where available, and inspect suggested causes of a difference. Suggestions are places to investigate, not automatic corrections. Internal signed balances may differ from a credit card's positive amount-owed display.
 8. Use **Previous statement checks** and **Next statement checks** to reach further periods. Each page contains up to 25 periods for this account. Scroll inside the statement list if there are several entries.
 9. To retain the displayed check results, expand **Save these check results and read calculation details**, then select **Download this page of statement checks**. The download contains this page only. Repeat for other pages you need.
@@ -679,7 +697,7 @@ Covered dates describe the statement periods you have, not a guarantee that ever
 
 If native bank-file records have been loaded through a supported ingestion process, expand **Additional file checks**, select **Recheck native bank-file controls**, and inspect the results under **Calculation and further checks**. These checks use the available native file. Ask the administrator about loading native formats; the PDF upload control is not a general bank-file importer.
 
-For a case-wide review, expand **Checks across all accounts** at the bottom of **Statements**, then select **Check statement balances** or **Check statement coverage**. Those lists include all accounts; use their pagination to reach further results.
+For a case-wide review, expand **Checks across all accounts** at the bottom of **Statements & accounts**, then select **Check statement balances** or **Check statement coverage**. Those lists include all accounts; use their pagination to reach further results.
 
 ## Review duplicates
 
@@ -731,18 +749,20 @@ A cross-case match does not merge cases or give access to restricted records. If
 
 ### Compare people and businesses
 
-1. Open **People and businesses**.
-2. Apply the account and dates for your question. The totals load for that selection.
-3. Read the totals and choose a currency for the chart if necessary.
-4. Select **View payments** beneath a name, or select that name's payment button in the chart.
-5. The payment list shows dates, descriptions and amounts. Open a payment to inspect its source or add a note.
-6. Select payments and use **Save selection with a note** to keep your observation in Findings.
+1. Open **People & businesses**. Use **Search names and accounts** to find a recorded name, or choose Accounts under **Show**.
+2. Use **Sort by** to order the directory by payment count, recent activity or name. Choose one currency and account type before sorting by total amount.
+3. Select a profile. Read its money totals, payment count, first and last known payment dates, accounts and source-document count.
+4. Review **Accounts and references in these payments** and any linked findings. The displayed name is taken from the records; it does not independently identify the ultimate recipient or establish ownership.
+5. Select a payment description to inspect its source. Use **Compare [count] payments** or **Create finding** to work with the profile's payments.
+6. Select **Back to names and accounts** to return to the directory.
 
-The same printed name can refer to different people. Different spellings can refer to the same person. Open **Link different names for the same person or business** when you have evidence for a link. Additional choices, including **Verified payments only**, are under **Analysis settings, statement coverage and downloads**.
+Use **Link recorded names to a person or business** for the existing identity-review tools. Within it, open **Link different names for the same person or business** when evidence supports a link. Original names remain separate until you record that decision.
+
+![A recorded-name profile and the payments supporting it](images/31-investigator-profile.png)
 
 ### Link accounts to a reviewed person or organisation
 
-1. In **Transfers**, load the comparison, scroll to **Money entering and leaving an account group** and select **Review account-to-party links**. This opens **People and organisations linked to accounts**.
+1. Open **Follow money**, then **Compare transfers**, and load the comparison, scroll to **Money entering and leaving an account group** and select **Review account-to-party links**. This opens **People and organisations linked to accounts**.
 2. Reload the links and inspect existing decisions.
 3. Select the accounts you intend to link.
 4. Choose an existing party or **A new person or organisation**.
@@ -756,7 +776,7 @@ Your unfinished account selection, name and explanation survive navigation and r
 
 ### Link payments to a person or business
 
-1. In **People and businesses**, open **Link different names for the same person or business**, then select **Open payment identity review**.
+1. In **People & businesses**, open **Link recorded names to a person or business**, then **Link different names for the same person or business**, then select **Open payment identity review**.
 2. Search names, descriptions or references under **Find payment names, descriptions or references**.
 3. Inspect the sources of the payments you want to link.
 4. Tick those payments, or select **Select all matching payments for linking** to include the full search result. The button shows the count, including later pages. Use **Payment page** to move directly to a later page. Selections are kept when you change the search or move between pages.
@@ -789,13 +809,17 @@ Each arrow represents a recorded payment. The outgoing and incoming sides of a t
 
 ### Read trends
 
-1. Open **Trends** and apply the account and date filters.
-2. Choose daily or monthly under **Group payments by**.
-3. Select **Show totals** if the results have not loaded.
-4. Compare credits and debits for the selected currency. Select a period's payment button in the chart to inspect that period.
-5. Open a payment, or select several and save a note explaining the change you want to investigate.
+1. Open **Trends**. Open **Accounts and dates** if you want to change the scope, then select **Apply**.
+2. Under **Amounts**, choose a currency and bank accounts or credit cards. Their conventions are kept separate.
+3. Choose **Monthly** or **Daily** under **Interval**. Under **Show**, choose amounts or payment count. Recorded balance is available for one account.
+4. Read the dates along the horizontal axis. Green shows money in and red shows money out. Card credits and charges are labelled separately.
+5. Select a date in the chart. Its payment list opens below. Read the statement-coverage message for that interval.
+6. Use **Compare with [previous period]** to open both sets of payments in date order. Open their originals and create a finding if you have an observation or question to record.
+7. Use **Earlier dates** and **Later dates** for long ranges. **Read the chart values as a table** provides the same displayed values as text.
 
-Check Statements for missing periods before interpreting a peak or fall. A large transfer can also change a period's totals without representing income or spending outside the account group.
+An empty interval means no imported payments. It does not prove inactivity. Statement dates are checked separately. A recorded-balance point uses the last printed balance in its interval; it is not calculated by adding accounts together. Payments without a known payment date are identified and left out of the time chart.
+
+![A selected interval and the payments behind it](images/32-investigator-trends.png)
 
 ### Compare payments with case events
 
@@ -816,7 +840,7 @@ One check can include up to 1,000 payments. If the screen asks for fewer, choose
 
 ### Find and inspect possible pairs
 
-1. Open **Transfers**.
+1. Open **Follow money**, then **Compare transfers**.
 2. Enter **From date** and **To date**.
 3. In **Payments to compare**, choose **All imported payments** or **Verified payments only**.
 4. Set **Maximum days between payments** to the number of days appropriate for the comparison you want to test.
@@ -864,7 +888,7 @@ The working or verified selection follows you between Trends, People and busines
 
 ### Screen patterns
 
-1. Open **Patterns**, then **Review patterns** if the claim comparison is showing.
+1. Open **Follow money**, then **Look for patterns** and **Review patterns** if the claim comparison is showing.
 2. Choose the population and apply the account/date scope.
 3. Set **Days between related payments**.
 4. For a split-payment check, enter **Threshold amount** and **Threshold currency**. Leave the amount blank to omit this check.
@@ -888,7 +912,7 @@ Repeated names, equal amounts, quick incoming/outgoing movements and split payme
 
 ### Compare a stated payment with the records
 
-1. In **Patterns**, select **Compare payment claim**.
+1. Open **Follow money**, then **Look for patterns** and select **Compare payment claim**.
 2. Find and select one account, then apply the account selection. The claim form supplies the date range for this comparison.
 3. Copy the person's exact words into **Original quotation**.
 4. Use the source picker to attach the document containing those words and its location.
@@ -1583,7 +1607,7 @@ These two saves are separate: one preserves the editor you are still filling in;
 8. Select **Finalize selected rows** once.
 9. Wait for the receipt. If the connection is interrupted, reload and inspect the saved receipt before repeating the action.
 10. Return to the ledger. Inspect the current working readings, totals and source links.
-11. Open **Statements** and inspect the resulting checks.
+11. Open **Statements & accounts** and inspect the resulting checks.
 
 Finalized manual PDF rows remain P3. Finalization does not certify complete extraction, identify every account holder or promote readings into verified totals. To change a written amount later, use a ledger correction. Do not attempt to reopen the original source selection as if it were an unsaved form.
 

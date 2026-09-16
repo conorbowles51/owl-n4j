@@ -12,15 +12,17 @@ import { Button } from "@/components/ui/button"
 import type { FinancialMainView } from "../stores/financial.store"
 
 const primary: [FinancialMainView, string][] = [
+  ["overview", "Overview"],
+  ["statements", "Statements & accounts"],
   ["transactions", "Transactions"],
-  ["statements", "Statements"],
-  ["findings", "Findings"],
-  ["counterparties", "People and businesses"],
-  ["transfers", "Transfers"],
-  ["patterns", "Patterns"],
+  ["counterparties", "People & businesses"],
+  ["follow-money", "Follow money"],
   ["trends", "Trends"],
+  ["findings", "Findings"],
 ]
 const analysis: [FinancialMainView, string][] = [
+  ["transfers", "Compare transfers"],
+  ["patterns", "Look for patterns"],
   ["posting-graph", "Payment graph"],
   ["tracing", "Trace funds"],
   ["case-context", "Payments and case events"],

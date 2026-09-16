@@ -1,6 +1,6 @@
 <!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Loupe financial testing guide</title><style>body{font:17px/1.65 system-ui,sans-serif;color:#20252b;background:#f4f5f7;margin:0}main{max-width:960px;margin:24px auto;background:white;padding:32px}h1,h2,h3{line-height:1.3}h2{margin-top:2.2em;border-top:1px solid #ddd;padding-top:1em}a{color:#a71330;overflow-wrap:anywhere}li{margin:.5em 0}img{max-width:100%;height:auto;border:1px solid #ccc;border-radius:6px}.table-scroll{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:.9em}th,td{padding:9px;border:1px solid #ccc;text-align:left;vertical-align:top}th{background:#f5f5f5}@media(max-width:640px){main{padding:18px;margin:0}th,td{min-width:110px}}@media print{body{background:white;font-size:10pt}main{margin:0;padding:0}.table-scroll{overflow:visible}h2,h3{break-after:avoid}tr,img{break-inside:avoid}}</style><main><link rel="preload" as="image" href="images/01-statement-check.png"/><link rel="preload" as="image" href="images/02-exclude-footer.png"/><link rel="preload" as="image" href="images/03-transactions.png"/><h1>Loupe financial testing guide</h1>
 <p>Follow this guide in order for your first test of Financial. It starts with two invented statements and ends with a saved report that a colleague can open. You do not need previous experience of Loupe.</p>
-<p><strong>Updated: 16 September 2026.</strong> Use the full <strong>User guide</strong> for detailed explanations of each tool. This testing guide tells you what to try and what result to check. A result is only a pass after you have checked it yourself.</p>
+<p><strong>Updated: 17 September 2026.</strong> Use the full <strong>User guide</strong> for detailed explanations of each tool. This testing guide tells you what to try and what result to check. A result is only a pass after you have checked it yourself.</p>
 <h2 id="contents">Contents</h2>
 <ol>
 <li><a href="#1-create-a-separate-test-case">Create a separate test case</a></li>
@@ -37,8 +37,8 @@
 <p><strong>Expected:</strong> you have a new empty case and the two PDFs. Use your own case so another tester&#x27;s changes do not alter your results. These PDFs contain no real customer or payment data.</p>
 <h2 id="2-upload-both-statements">2. Upload both statements</h2>
 <ol>
-<li>Close the guide and open <strong>Statements</strong>.</li>
-<li>Select <strong>Statement files</strong>. A file list opens on the right.</li>
+<li>Close the guide and open <strong>Statements &amp; accounts</strong>.</li>
+<li>Check <strong>Files in this case</strong> in the main page. Select <strong>Statement files</strong> if the account view is showing.</li>
 <li>Select <strong>Upload PDFs</strong>. In your computer&#x27;s file chooser, select both <strong>checking.pdf</strong> and <strong>savings.pdf</strong>, then confirm the choice.</li>
 <li>Keep the browser tab open while the files upload and are read. Wait until each file says <strong>Ready to review</strong>.</li>
 <li>Select <strong>checking.pdf</strong> in that list.</li>
@@ -64,7 +64,7 @@
 <p>For a wrong payment value, use <strong>Edit import values</strong> or <strong>Show corrections and import choices</strong>. Correct the field against the original and give a reason. For this exercise, leave the correct payment amounts unchanged. If any other line is flagged, inspect it before importing and record the unexpected result in your test notes.</p>
 <h2 id="4-leave-the-review-and-return">4. Leave the review and return</h2>
 <ol>
-<li>While the checking statement is still unconfirmed, open <strong>Transactions</strong>, then return to <strong>Statements</strong>.</li>
+<li>While the checking statement is still unconfirmed, open <strong>Transactions</strong>, then return to <strong>Statements &amp; accounts</strong>.</li>
 <li>Reopen <strong>checking.pdf</strong> from <strong>Statement files</strong> if necessary.</li>
 <li>Check that the footer is still excluded and its reason remains.</li>
 <li>Refresh this same browser tab. Reopen the statement if needed and check the same two details again.</li>
@@ -74,7 +74,7 @@
 <h2 id="5-confirm-both-imports-and-check-the-totals">5. Confirm both imports and check the totals</h2>
 <ol>
 <li>In the checking review, select <strong>Confirm import of 6 transactions</strong> once. Wait for the outcome. Its payments should become available in <strong>Transactions</strong>.</li>
-<li>Return to <strong>Statements</strong>, open <strong>Statement files</strong>, then select <strong>savings.pdf</strong>.</li>
+<li>Return to <strong>Statements &amp; accounts</strong>, open <strong>Statement files</strong>, then select <strong>savings.pdf</strong>.</li>
 <li>Check its account ending <strong>0000</strong>, USD currency and July 2020 period. Its opening balance is <strong>50.00</strong> and closing balance is <strong>355.00</strong>.</li>
 <li>Exclude the same test document footer using step 3. Check that only the <strong>300.00</strong> transfer and <strong>5.00</strong> interest payment are selected.</li>
 <li>Select <strong>Confirm import of 2 transactions</strong> once.</li>
@@ -112,18 +112,17 @@
 <p><strong>Expected:</strong> the description changes, its history is retained, and the correction does not add a ninth current payment or change totals. A saved report made before a later correction retains its earlier captured values.</p>
 <h2 id="8-compare-people-and-businesses">8. Compare people and businesses</h2>
 <ol>
-<li>Open <strong>People and businesses</strong>. Choose all accounts and July 2020 if you have retained narrower filters, then select <strong>Apply</strong>.</li>
-<li>If necessary, open <strong>Analysis settings, statement coverage and downloads</strong> and choose <strong>All imported payments</strong>.</li>
-<li>Find <strong>Alpha Consulting</strong> and select its <strong>View payments</strong> button.</li>
-<li>Check that the payments are <strong>USD 900.00 on 2 July</strong> and <strong>USD 650.00 on 14 July</strong>, totalling <strong>USD 1,550.00 incoming</strong>.</li>
-<li>Open either payment and follow its source.</li>
-<li>Return to the names and inspect <strong>Example Supplies</strong>. Its two outgoing payments should still total <strong>USD 195.00</strong>.</li>
+<li>Open <strong>People &amp; businesses</strong>. Under <strong>Accounts and dates</strong>, choose all accounts for July 2020 and apply.</li>
+<li>Search <strong>Alpha Consulting</strong> under <strong>Search names and accounts</strong> and open its profile.</li>
+<li>Check two payments and <strong>USD 1,550.00</strong> incoming. Open the two payment descriptions to inspect their original records.</li>
+<li>Select <strong>Compare 2 payments</strong>. Confirm 2 July and 14 July and their amounts. Close the comparison.</li>
+<li>Return to the directory and search <strong>Example Supplies</strong>. Its two outgoing payments should total <strong>USD 195.00</strong>.</li>
 </ol>
-<p><strong>Expected:</strong> the displayed totals can be explained by the individual payments you open. No amount is counted twice because you corrected a description.</p>
+<p><strong>Expected:</strong> each profile leads to actual payments and originals. A recorded name is not presented as an independently verified identity.</p>
 <h2 id="9-link-payments-to-a-name">9. Link payments to a name</h2>
 <p>This checks the decision-saving controls. The invented statement already uses a consistent name; this is practice for cases with differing spellings.</p>
 <ol>
-<li>In People and businesses, open <strong>Link different names for the same person or business</strong>, then <strong>Open payment identity review</strong>.</li>
+<li>In People &amp; businesses, open <strong>Link recorded names to a person or business</strong>, then <strong>Link different names for the same person or business</strong>, then <strong>Open payment identity review</strong>.</li>
 <li>Search for <strong>Alpha Consulting</strong> under <strong>Find payment names, descriptions or references</strong>.</li>
 <li>Select the two matching payments. Check the count before continuing.</li>
 <li>Under <strong>Person or business</strong>, choose <strong>A new person or organisation</strong> and enter <strong>Alpha Consulting - test grouping</strong> in <strong>Name</strong>.</li>
@@ -135,7 +134,7 @@
 <p><strong>Expected:</strong> the grouping is saved without rewriting the statement descriptions, original files or payment amounts. If a save response is lost, reload the current links and check whether it saved before retrying.</p>
 <h2 id="10-compare-a-transfer">10. Compare a transfer</h2>
 <ol>
-<li>Open <strong>Transfers</strong>. Set <strong>From date</strong> to <strong>1 July 2020</strong> and <strong>To date</strong> to <strong>31 July 2020</strong>.</li>
+<li>Open <strong>Follow money</strong>, then <strong>Compare transfers</strong>. Set <strong>From date</strong> to <strong>1 July 2020</strong> and <strong>To date</strong> to <strong>31 July 2020</strong>.</li>
 <li>Choose <strong>All imported payments</strong> and leave <strong>Maximum days between payments</strong> at <strong>3 days</strong>.</li>
 <li>Select <strong>Find possible transfers</strong>.</li>
 <li>Find the pair for <strong>USD 300.00 on 3 July</strong>: outgoing from checking and incoming to savings. Open both source readings.</li>
@@ -147,8 +146,8 @@
 <h2 id="11-check-trends-and-the-payment-graph">11. Check trends and the payment graph</h2>
 <ol>
 <li>Open <strong>Trends</strong>, select all accounts for July 2020 and select <strong>Apply</strong>.</li>
-<li>Under <strong>Group payments by</strong>, choose monthly. Select <strong>Show totals</strong> if necessary.</li>
-<li>Check July&#x27;s USD totals against step 5. Open the payments behind the period and inspect a source.</li>
+<li>Under <strong>Interval</strong>, choose <strong>Monthly</strong>. Under <strong>Show</strong>, choose <strong>Amounts</strong>. Check <strong>USD · bank accounts</strong> under <strong>Amounts</strong>.</li>
+<li>Select July in the chart. Check its eight payments and totals against step 5. Change Interval to Daily to see every July date, including dates with no imported payments. Open a payment and inspect its source.</li>
 <li>Open <strong>More financial tools</strong>, then <strong>Payment graph</strong>. Apply the same account/date choice and select <strong>Show connections</strong> if needed.</li>
 <li>Search for <strong>Example Supplies</strong> under <strong>Find an account or name</strong>, then select the matching name under <strong>Choose an account or name</strong>.</li>
 <li>Select <strong>View selected connections</strong> and check its two payments. Open one to confirm its source.</li>
@@ -157,7 +156,7 @@
 <p><strong>Expected:</strong> the chart and graph lead to the payments that explain them. A line in the graph is not a new payment. Both recorded sides of a transfer remain available.</p>
 <h2 id="12-run-the-pattern-and-case-event-checks">12. Run the pattern and case-event checks</h2>
 <ol>
-<li>Open <strong>Patterns</strong>, then <strong>Review patterns</strong> if the payment-claim form is showing.</li>
+<li>Open <strong>Follow money</strong>, then <strong>Look for repeated activity</strong>, then <strong>Review patterns</strong> if the payment-claim form is showing.</li>
 <li>Apply all accounts and July 2020. Choose <strong>All imported payments</strong>. Leave the optional split-payment amount blank and cross-account path checking off for this first run.</li>
 <li>Select <strong>Find patterns</strong>. Check the result or explicit no-result message. A small test set need not contain every type of pattern; do not mark a failure merely because a particular pattern is absent.</li>
 <li>If a result appears, open its supporting payments and check the stated dates and amounts.</li>
@@ -169,12 +168,12 @@
 <ol>
 <li>Return to Transactions. Clear earlier selections if present, then search for <strong>Example Supplies</strong>.</li>
 <li>Tick the two payments, or use <strong>Select all 2 matching payments</strong> and check that the selection count is two. <strong>Review selected payments</strong> lets you check what is included.</li>
-<li>Select <strong>Save selection with a note</strong>.</li>
-<li>In <strong>Name for this selection</strong>, enter <strong>Example supplier payments</strong>.</li>
-<li>In <strong>What did you notice?</strong>, enter <strong>Two payments to Example Supplies total USD 195. Request the invoices and check what was supplied.</strong></li>
-<li>Select <strong>Save payments and note</strong> and wait for <strong>Selection saved</strong>.</li>
-<li>Close the dialog, open <strong>Findings</strong>, and find <strong>Example supplier payments</strong>. Check its note, two linked payments and sources.</li>
-<li>Return to Transactions, clear the search and select <strong>Add note</strong> beside the outgoing USD 300 transfer.</li>
+<li>Select <strong>Create finding</strong> and choose <strong>Question</strong> under <strong>Type</strong>.</li>
+<li>Enter <strong>Example supplier payments</strong> as <strong>Title</strong>.</li>
+<li>In <strong>Explanation</strong>, enter <strong>Two payments to Example Supplies total USD 195.</strong> In <strong>Next action</strong>, enter <strong>Request the invoices and check what was supplied.</strong> Enter your name in <strong>Assigned to</strong> and leave <strong>Progress</strong> as Open.</li>
+<li>Select <strong>Review attached payments</strong> and confirm two entries. Close that review, select <strong>Save finding</strong> once and wait for the saved confirmation.</li>
+<li>Select <strong>Open Findings</strong>. Check your question, next action and two payment links. Select <strong>Edit finding</strong>, change Progress to In progress and save. Refresh and check that the change remains.</li>
+<li>Return to Transactions, clear the search and open the outgoing USD 300 transfer and select <strong>Add investigation note</strong>.</li>
 <li>In <strong>Your transaction note</strong>, enter <strong>Check the corresponding USD 300 receipt in the savings account.</strong> Select <strong>Save investigation note</strong>.</li>
 <li>Check that this second note also appears in Findings. Refresh and reopen both notes.</li>
 </ol>

@@ -75,7 +75,13 @@ export function InvestigationTransactionTable({
   onToggle,
   onOpen,
   onNote,
+  compact = false,
+  showAccount,
+  findings = [],
 }: {
+  findings?: { tags: string[]; payment_ids: string[] }[]
+  compact?: boolean
+  showAccount?: boolean
   rows: LedgerTransaction[]
   selected: string[]
   onToggle: (row: LedgerTransaction, checked: boolean) => void
@@ -83,6 +89,17 @@ export function InvestigationTransactionTable({
   onNote?: (row: LedgerTransaction) => void
 }) {
   const selectedIds = new Set(selected)
+  const notes = new Map<string, { count: number; followUp: boolean }>()
+  for (const finding of findings)
+    for (const id of finding.payment_ids) {
+      const value = notes.get(id) ?? { count: 0, followUp: false }
+      value.count++
+      value.followUp ||=
+        finding.tags.includes("financial-question") &&
+        !finding.tags.includes("financial-complete")
+      notes.set(id, value)
+    }
+  const multipleAccounts = new Set(rows.map((row) => row.account_id)).size > 1
   const cards = rows.some((row) => row.account_type === "credit_card")
   const money = (value: string | number, currency: string) =>
     `${formatLedgerAmount(value, currency).text} ${currency}`
@@ -128,6 +145,14 @@ export function InvestigationTransactionTable({
                 >
                   {row.description || "Open transaction"}
                 </button>
+                {notes.has(row.key) && (
+                  <p className="text-xs mt-1 text-primary">
+                    {notes.get(row.key)!.followUp
+                      ? "Follow-up question · "
+                      : ""}
+                    {notes.get(row.key)!.count} linked findings
+                  </p>
+                )}
                 {row.account_type === "credit_card" && (
                   <p className="text-xs">
                     Credit card:{" "}
@@ -136,34 +161,37 @@ export function InvestigationTransactionTable({
                       : "increases amount owed"}
                   </p>
                 )}
-                {row.counterparty_raw && (
+                {!compact && row.counterparty_raw && (
                   <p className="text-xs text-muted-foreground">
                     {row.counterparty_raw}
                   </p>
                 )}
-                {row.account_label && (
-                  <p className="text-xs text-muted-foreground break-words">
-                    Account: {row.account_label}
-                  </p>
-                )}
-                <div className="mt-1 flex flex-wrap gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => onOpen?.(row)}
-                  >
-                    Open transaction
-                  </Button>
-                  {onNote && (
+                {row.account_label &&
+                  (!compact || showAccount || multipleAccounts) && (
+                    <p className="text-xs text-muted-foreground break-words">
+                      Account: {row.account_label}
+                    </p>
+                  )}
+                {!compact && (
+                  <div className="mt-1 flex flex-wrap gap-2">
                     <Button
                       size="sm"
-                      variant="ghost"
-                      onClick={() => onNote(row)}
+                      variant="outline"
+                      onClick={() => onOpen?.(row)}
                     >
-                      Add note
+                      Open transaction
                     </Button>
-                  )}
-                </div>
+                    {onNote && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => onNote(row)}
+                      >
+                        Add note
+                      </Button>
+                    )}
+                  </div>
+                )}
               </td>
               <td className="p-2 text-right tabular-nums">
                 {row.direction === "credit"

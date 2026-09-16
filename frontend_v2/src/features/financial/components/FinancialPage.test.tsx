@@ -25,7 +25,7 @@ vi.mock("../hooks/use-financial-access", async (importOriginal) => ({
  */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { fireEvent, render, screen, within } from "@testing-library/react"
+import { act, fireEvent, render, screen, within } from "@testing-library/react"
 import { MemoryRouter, Route, Routes } from "react-router-dom"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
@@ -177,7 +177,7 @@ function makeLedgerRow(
 
 function ledgerEmpty() {
   ledger.useLedgerTransactions.mockReturnValue({
-    data: { transactions: [], total: 0 },
+    data: { case_id: "case-1", transactions: [], total: 0 },
     isPending: false,
     isError: false,
     error: null,
@@ -190,7 +190,7 @@ function ledgerEmpty() {
  */
 function ledgerWithRows(rows: LedgerTransaction[]) {
   ledger.useLedgerTransactions.mockReturnValue({
-    data: { transactions: rows, total: rows.length },
+    data: { case_id: "case-1", transactions: rows, total: rows.length },
     isPending: false,
     isError: false,
     error: null,
@@ -302,33 +302,19 @@ describe("FinancialPage", () => {
     adjudicationIdle()
   })
 
-  /**
-   * The order is load bearing. The first four tabs read Postgres and the last
-   * three read the graph, and the two stores are written independently, so
-   * which one is on screen is a fact about what you are looking at.
-   *
-   * "Excluded transactions" sits directly after "Ledger" because the two are one read
-   * against two populations: what this case's totals count, and what they
-   * leave out.
-   *
-   * "Change history" is last of the four because it is the only one that is not a
-   * view of the ledger's present contents. The three before it answer what the
-   * case holds now; it answers who moved any of it and on what grounds, and it
-   * outlives its subjects.
-   */
-  it("opens on transactions, with import history available alongside investigation tabs", () => {
+  it("opens on overview, with investigation pages and supporting tools available", () => {
     graphWithRows()
     renderPage()
 
     const tabs = screen.getAllByRole("tab")
     expect(tabs.map((t) => t.textContent)).toEqual([
+      "Overview",
+      "Statements & accounts",
       "Transactions",
-      "Statements",
-      "Findings",
-      "People and businesses",
-      "Transfers",
-      "Patterns",
+      "People & businesses",
+      "Follow money",
       "Trends",
+      "Findings",
     ])
     expect(tabs[0]).toHaveAttribute("aria-selected", "true")
   })
@@ -336,7 +322,7 @@ describe("FinancialPage", () => {
   it("opens statement checks and coverage without waiting for graph results", () => {
     graphLoading()
     renderPage()
-    selectTab("Statements")
+    selectTab("Statements & accounts")
     fireEvent.click(screen.getByText("Checks across all accounts"))
     expect(
       screen.getByRole("button", { name: "Check statement balances" })
@@ -348,14 +334,16 @@ describe("FinancialPage", () => {
       screen.queryByText(
         /No (?:admitted rows in the ledger|imported payments yet)/i
       )
-    ).not.toBeVisible()
+    ).not.toBeInTheDocument()
   })
 
   it("retains the selected PDF when switching financial tabs and transaction modes", () => {
     graphWithRows()
     renderPage()
-    selectTab("Statements")
-    fireEvent.click(screen.getByRole("button", { name: "Import a statement" }))
+    selectTab("Statements & accounts")
+    act(() =>
+      useStatementWorkspace.getState().setOpen("anonymous:case-1", true)
+    )
     fireEvent.click(screen.getByRole("button", { name: "Upload a statement" }))
     const input = screen.getByLabelText("PDF document") as HTMLInputElement
     const file = new File(["pdf"], "unfinished-statement.pdf", {
@@ -366,10 +354,12 @@ describe("FinancialPage", () => {
     expect(screen.getByText("unfinished-statement.pdf")).not.toBeVisible()
     selectTab("Transactions")
     expect(screen.getByText("unfinished-statement.pdf")).not.toBeVisible()
-    selectTab("Statements")
+    selectTab("Statements & accounts")
     fireEvent.click(
-      screen.getByRole("button", {
-        name: "Upload and review statements",
+      within(
+        screen.getByRole("group", { name: "Statement workspace" })
+      ).getByRole("button", {
+        name: "Statement files",
       })
     )
     expect(screen.getByLabelText("PDF document")).toBe(input)
@@ -381,10 +371,12 @@ describe("FinancialPage", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "Imported statement payments" })
     )
-    selectTab("Statements")
+    selectTab("Statements & accounts")
     fireEvent.click(
-      screen.getByRole("button", {
-        name: "Upload and review statements",
+      within(
+        screen.getByRole("group", { name: "Statement workspace" })
+      ).getByRole("button", {
+        name: "Statement files",
       })
     )
     expect(screen.getByLabelText("PDF document")).toBe(input)
@@ -394,6 +386,7 @@ describe("FinancialPage", () => {
   it("mounts the ledger panel in the ledger tab", () => {
     graphWithRows()
     renderPage()
+    selectTab("Transactions")
 
     expect(ledger.useLedgerTransactions).toHaveBeenCalledWith("case-1", {})
     expect(
@@ -427,10 +420,7 @@ describe("FinancialPage", () => {
   it("opens the source-linked pattern review screen", () => {
     graphEmpty()
     renderPage()
-    fireEvent.mouseDown(screen.getByRole("tab", { name: "Patterns" }), {
-      button: 0,
-      ctrlKey: false,
-    })
+    selectTab("Look for patterns")
     expect(
       screen.getByRole("heading", { name: "Patterns to investigate" })
     ).toBeInTheDocument()
@@ -439,6 +429,7 @@ describe("FinancialPage", () => {
   it("still reaches the ledger when the graph has no rows", () => {
     graphEmpty()
     renderPage()
+    selectTab("Transactions")
 
     expect(screen.getAllByRole("tab")).toHaveLength(7)
     expect(
@@ -451,6 +442,7 @@ describe("FinancialPage", () => {
   it("still reaches the ledger while the graph query is in flight", () => {
     graphLoading()
     renderPage()
+    selectTab("Transactions")
 
     expect(screen.getAllByRole("tab")).toHaveLength(7)
     expect(
@@ -739,7 +731,11 @@ describe("FinancialPage, the row adjudication dialog", () => {
     ledgerWithRows([makeLedgerRow({ key: "txn-9" })])
     renderPage()
 
-    if (useFinancialStore.getState().mainView === "transactions")
+    if (
+      ["transactions", "overview"].includes(
+        useFinancialStore.getState().mainView
+      )
+    )
       selectTab("Import review")
     fireEvent.click(
       within(screen.getByRole("tabpanel")).getByTestId("ledger-row-action")
@@ -763,7 +759,11 @@ describe("FinancialPage, the row adjudication dialog", () => {
     renderPage()
 
     selectTab("Excluded transactions")
-    if (useFinancialStore.getState().mainView === "transactions")
+    if (
+      ["transactions", "overview"].includes(
+        useFinancialStore.getState().mainView
+      )
+    )
       selectTab("Import review")
     fireEvent.click(
       within(screen.getByRole("tabpanel")).getByTestId("ledger-row-action")
@@ -790,7 +790,11 @@ describe("FinancialPage, the row adjudication dialog", () => {
     const { rerender } = renderPage()
 
     selectTab("Excluded transactions")
-    if (useFinancialStore.getState().mainView === "transactions")
+    if (
+      ["transactions", "overview"].includes(
+        useFinancialStore.getState().mainView
+      )
+    )
       selectTab("Import review")
     fireEvent.click(
       within(screen.getByRole("tabpanel")).getByTestId("ledger-row-action")
@@ -825,7 +829,11 @@ describe("FinancialPage, the row adjudication dialog", () => {
     ledgerWithRows([makeLedgerRow({ key: "txn-9" })])
     const { rerender } = renderPage()
 
-    if (useFinancialStore.getState().mainView === "transactions")
+    if (
+      ["transactions", "overview"].includes(
+        useFinancialStore.getState().mainView
+      )
+    )
       selectTab("Import review")
     fireEvent.click(
       within(screen.getByRole("tabpanel")).getByTestId("ledger-row-action")
@@ -851,7 +859,11 @@ describe("FinancialPage, the row adjudication dialog", () => {
     ledgerWithRows([makeLedgerRow({ key: "txn-9" })])
     renderPage()
 
-    if (useFinancialStore.getState().mainView === "transactions")
+    if (
+      ["transactions", "overview"].includes(
+        useFinancialStore.getState().mainView
+      )
+    )
       selectTab("Import review")
     fireEvent.click(
       within(screen.getByRole("tabpanel")).getByTestId("ledger-row-action")
@@ -904,10 +916,10 @@ describe("FinancialPage authoritative Trends", () => {
       renderPage()
       selectTab("Trends")
       expect(
-        screen.getByRole("region", { name: "Authoritative ledger trends" })
+        screen.getByRole("heading", { name: "Trends" })
       ).toBeInTheDocument()
       expect(
-        screen.getByRole("region", { name: "Working ledger totals" })
+        screen.getByText(/No dated payments in this scope/)
       ).toBeInTheDocument()
       expect(
         screen.queryByPlaceholderText(GRAPH_SEARCH)
@@ -923,7 +935,7 @@ describe("FinancialPage authoritative Trends", () => {
       screen.getByRole("button", { name: "Other financial records" })
     )
     expect(
-      screen.queryByRole("region", { name: "Authoritative ledger trends" })
+      screen.queryByRole("heading", { name: "Trends" })
     ).not.toBeInTheDocument()
     expect(
       within(screen.getByRole("tabpanel")).getByText(
@@ -933,9 +945,7 @@ describe("FinancialPage authoritative Trends", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "Imported statement payments" })
     )
-    expect(
-      screen.getByRole("region", { name: "Authoritative ledger trends" })
-    ).toBeInTheDocument()
+    expect(screen.getByRole("heading", { name: "Trends" })).toBeInTheDocument()
   })
 })
 
@@ -1015,14 +1025,12 @@ describe("FinancialPage authoritative Counterparties", () => {
       else if (state === "loading") graphLoading()
       else graphWithRows()
       renderPage()
-      selectTab("People and businesses")
+      selectTab("People & businesses")
       expect(
-        screen.getByRole("region", {
-          name: "Authoritative ledger counterparties",
-        })
+        screen.getByRole("heading", { name: "People & businesses" })
       ).toBeInTheDocument()
       expect(
-        screen.getByRole("region", { name: "Working ledger totals" })
+        screen.getByText("No imported payments in this scope")
       ).toBeInTheDocument()
       expect(
         screen.queryByPlaceholderText(GRAPH_SEARCH)
@@ -1033,14 +1041,12 @@ describe("FinancialPage authoritative Counterparties", () => {
   it("returns from intelligence to current ledger readings", () => {
     graphEmpty()
     renderPage()
-    selectTab("People and businesses")
+    selectTab("People & businesses")
     fireEvent.click(
       screen.getByRole("button", { name: "Other financial records" })
     )
     expect(
-      screen.queryByRole("region", {
-        name: "Authoritative ledger counterparties",
-      })
+      screen.queryByRole("heading", { name: "People & businesses" })
     ).not.toBeInTheDocument()
     expect(
       within(screen.getByRole("tabpanel")).getByText(
@@ -1051,9 +1057,7 @@ describe("FinancialPage authoritative Counterparties", () => {
       screen.getByRole("button", { name: "Imported statement payments" })
     )
     expect(
-      screen.getByRole("region", {
-        name: "Authoritative ledger counterparties",
-      })
+      screen.getByRole("heading", { name: "People & businesses" })
     ).toBeInTheDocument()
   })
 })

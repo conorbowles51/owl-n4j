@@ -1,3 +1,6 @@
+import { useMediaQuery } from "@/hooks/use-media-query"
+import { useFinancialDraft } from "../stores/financial-drafts"
+import { WorkspaceScope } from "./InvestigationWorkspaceParts"
 import { useFinancialAccess } from "../hooks/use-financial-access"
 import { useState } from "react"
 import { useInvestigationScope } from "../stores/investigation-scope"
@@ -40,22 +43,31 @@ function CorrectableLedgerContent({
   const { canEdit } = useFinancialAccess()
   const [params, setParams] = useInvestigationScope(caseId)
   const [selected, setSelected] = useState<LedgerTransaction | null>(null)
-  const [source, setSource] = useState<{
+  const wide = useMediaQuery("(min-width: 1280px)")
+  const [source, setSource] = useFinancialDraft<{
     caseId: string
     transactionId: string
     note?: boolean
-  } | null>(null)
+  } | null>(
+    caseId || "none",
+    `open-payment:${heldOut ? "excluded" : investigation ? "investigation" : "ledger"}`,
+    null
+  )
   const Panel = heldOut ? QuarantinePanel : LedgerPanel
   return (
     <div className="space-y-3">
       {caseId && !heldOut && (
         <>
-          <InvestigationFilters
-            key={JSON.stringify(params)}
-            caseId={caseId}
-            initialParams={params}
-            onApply={setParams}
-          />
+          {investigation ? (
+            <WorkspaceScope caseId={caseId} />
+          ) : (
+            <InvestigationFilters
+              key={JSON.stringify(params)}
+              caseId={caseId}
+              initialParams={params}
+              onApply={setParams}
+            />
+          )}
           {!investigation && (
             <LedgerSummaryPanel
               caseId={caseId}
@@ -65,16 +77,6 @@ function CorrectableLedgerContent({
             />
           )}
         </>
-      )}
-      {source && source.caseId === caseId && (
-        <LedgerSourceDialog
-          key={`${source.caseId}:${source.transactionId}`}
-          caseId={source.caseId}
-          transactionId={source.transactionId}
-          initialNoteOpen={source.note}
-          onAdjudicate={canEdit ? onAdjudicate : undefined}
-          onClose={() => setSource(null)}
-        />
       )}
       {selected && caseId && (
         <CorrectionForm
@@ -87,24 +89,45 @@ function CorrectableLedgerContent({
           onClose={() => setSelected(null)}
         />
       )}
-      <Panel
-        splitAmounts
-        investigation={investigation}
-        caseId={caseId}
-        params={heldOut ? undefined : params}
-        onAdjudicate={canEdit ? onAdjudicate : undefined}
-        onCorrect={!canEdit || selected ? undefined : setSelected}
-        onNote={
-          canEdit
-            ? (row) =>
-                caseId &&
-                setSource({ caseId, transactionId: row.key, note: true })
-            : undefined
+      <div
+        className={
+          source && investigation && wide
+            ? "grid grid-cols-[minmax(0,1.2fr)_minmax(370px,0.8fr)] gap-4 items-start"
+            : ""
         }
-        onSource={(row) =>
-          caseId && setSource({ caseId, transactionId: row.key })
-        }
-      />
+      >
+        <div className="min-w-0">
+          <Panel
+            splitAmounts
+            investigation={investigation}
+            caseId={caseId}
+            params={heldOut ? undefined : params}
+            onAdjudicate={canEdit ? onAdjudicate : undefined}
+            onCorrect={!canEdit || selected ? undefined : setSelected}
+            onNote={
+              canEdit
+                ? (row) =>
+                    caseId &&
+                    setSource({ caseId, transactionId: row.key, note: true })
+                : undefined
+            }
+            onSource={(row) =>
+              caseId && setSource({ caseId, transactionId: row.key })
+            }
+          />
+        </div>
+        {source && source.caseId === caseId && (
+          <LedgerSourceDialog
+            inline={investigation && wide}
+            key={`${source.caseId}:${source.transactionId}`}
+            caseId={source.caseId}
+            transactionId={source.transactionId}
+            initialNoteOpen={source.note}
+            onAdjudicate={canEdit ? onAdjudicate : undefined}
+            onClose={() => setSource(null)}
+          />
+        )}
+      </div>
       {caseId && !heldOut && (
         <details className="rounded border p-3">
           <summary className="cursor-pointer font-medium">

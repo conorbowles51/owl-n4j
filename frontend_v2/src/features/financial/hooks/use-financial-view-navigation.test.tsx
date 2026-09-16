@@ -1,3 +1,7 @@
+import {
+  useFinancialDraftStore,
+  financialDraftKey,
+} from "../stores/financial-drafts"
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { beforeEach, expect, it } from "vitest"
 import {
@@ -48,7 +52,10 @@ function setup(path = "/cases/first/financial") {
     </MemoryRouter>
   )
 }
-beforeEach(() => useFinancialStore.getState().reset())
+beforeEach(() => {
+  useFinancialStore.getState().reset()
+  useFinancialDraftStore.setState({ drafts: {} })
+})
 it("retains a requested tab across an outside route and browser Back", async () => {
   setup("/cases/first/financial?view=findings")
   expect(screen.getByLabelText("Financial tab")).toHaveTextContent("findings")
@@ -86,23 +93,19 @@ it("writes tab changes from any financial control while preserving unrelated que
     "posting-graph"
   )
 })
-it("opens a different unqualified case on Transactions instead of retaining the first case's tab", async () => {
+it("opens a different unqualified case on Overview instead of retaining the first case's tab", async () => {
   setup("/cases/first/financial?view=tracing")
   fireEvent.click(screen.getByRole("link", { name: "Another case" }))
   await waitFor(() =>
-    expect(screen.getByLabelText("Financial tab")).toHaveTextContent(
-      "transactions"
-    )
+    expect(screen.getByLabelText("Financial tab")).toHaveTextContent("overview")
   )
   expect(screen.getByLabelText("Location").textContent).toBe(
     "/cases/second/financial"
   )
 })
-it("falls back to Transactions for an unsupported tab", () => {
+it("falls back to Overview for an unsupported tab", () => {
   setup("/cases/first/financial?view=unknown")
-  expect(screen.getByLabelText("Financial tab")).toHaveTextContent(
-    "transactions"
-  )
+  expect(screen.getByLabelText("Financial tab")).toHaveTextContent("overview")
 })
 it("retains Other financial records in the URL across refresh and tab changes", async () => {
   const first = setup()
@@ -141,4 +144,24 @@ it("does not carry the other-records dataset to a fresh case URL", async () => {
   await waitFor(() =>
     expect(useFinancialStore.getState().mode).toBe("transactions")
   )
+})
+
+it("restores the last page for this case without leaking another case's page", () => {
+  useFinancialDraftStore
+    .getState()
+    .put(financialDraftKey("first", "last-view"), "counterparties")
+  useFinancialDraftStore
+    .getState()
+    .put(financialDraftKey("second", "last-view"), "trends")
+  setup("/cases/first/financial")
+  expect(screen.getByLabelText("Financial tab")).toHaveTextContent(
+    "counterparties"
+  )
+})
+it("honours an explicit page over the remembered page", () => {
+  useFinancialDraftStore
+    .getState()
+    .put(financialDraftKey("first", "last-view"), "counterparties")
+  setup("/cases/first/financial?view=statements")
+  expect(screen.getByLabelText("Financial tab")).toHaveTextContent("statements")
 })

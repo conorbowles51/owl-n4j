@@ -1,3 +1,5 @@
+import { NearbyPaymentSearch } from "./NearbyPaymentSearch"
+import { useFinancialFindingIndex } from "../hooks/use-financial-finding-index"
 import { useFinancialAccess } from "../hooks/use-financial-access"
 import type { LedgerTransaction } from "../api"
 import { citationSchema } from "../lib/source-citation"
@@ -5,7 +7,7 @@ import { formatLedgerAmount } from "../lib/ledger-format"
 import { CorrectionForm } from "./CorrectionForm"
 import { TransactionNote } from "./TransactionNote"
 import { SourceCustodyPanel } from "./SourceCustodyPanel"
-import { useState } from "react"
+import { useState, type ReactNode } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { fetchAPI } from "@/lib/api-client"
 import {
@@ -28,14 +30,23 @@ export function LedgerSourceDialog({
   onClose,
   initialNoteOpen = false,
   onAdjudicate,
+  inline = false,
+  allowNearby = true,
 }: {
   caseId: string
   transactionId: string
   onClose: () => void
+  inline?: boolean
+  allowNearby?: boolean
   initialNoteOpen?: boolean
   onAdjudicate?: (row: LedgerTransaction) => void
 }) {
   const { canEdit } = useFinancialAccess()
+  const findingIndex = useFinancialFindingIndex(caseId)
+  const linkedFindings =
+    findingIndex.data?.filter((entry) =>
+      entry.payment_ids.includes(transactionId)
+    ) ?? []
   const [replacement, setReplacement] = useState<string | null>(null)
   const [viewFile, setViewFile] = useState(false)
   const [assessAmount, setAssessAmount] = useState(false)
@@ -76,6 +87,8 @@ export function LedgerSourceDialog({
   if (replacement)
     return (
       <LedgerSourceDialog
+        inline={inline}
+        allowNearby={allowNearby}
         key={replacement}
         caseId={caseId}
         transactionId={replacement}
@@ -85,11 +98,19 @@ export function LedgerSourceDialog({
     )
   return (
     <>
-      <Dialog
+      <SourceFrame
+        inline={inline}
         open={!viewFile || source.isError}
-        onOpenChange={(open) => !open && onClose()}
+        onClose={onClose}
       >
-        <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-auto">
+        {inline ? (
+          <header className="flex justify-between items-center gap-2">
+            <h2 className="font-semibold">Transaction details</h2>
+            <Button variant="ghost" size="sm" onClick={onClose}>
+              Close details
+            </Button>
+          </header>
+        ) : (
           <DialogHeader>
             <DialogTitle>Transaction details</DialogTitle>
             <DialogDescription>
@@ -98,208 +119,230 @@ export function LedgerSourceDialog({
                 : "Check the payment against its original statement."}
             </DialogDescription>
           </DialogHeader>
-          {source.isPending && (
-            <p role="status">Loading transaction details…</p>
-          )}
-          {source.isError && (
-            <div role="alert" className="space-y-2">
-              <p>
-                Transaction details could not be loaded. {source.error.message}
-              </p>
-              <Button
-                variant="outline"
-                disabled={source.isFetching}
-                onClick={() => void source.refetch()}
-              >
-                {source.isFetching
-                  ? "Retrying transaction…"
-                  : "Try loading this transaction again"}
-              </Button>
-            </div>
-          )}
-          {data && !source.isError && (
-            <>
-              {data.transaction && (
-                <section
-                  className="rounded border p-3 space-y-2"
-                  aria-label="Payment details"
+        )}
+        {source.isPending && <p role="status">Loading transaction details…</p>}
+        {source.isError && (
+          <div role="alert" className="space-y-2">
+            <p>
+              Transaction details could not be loaded. {source.error.message}
+            </p>
+            <Button
+              variant="outline"
+              disabled={source.isFetching}
+              onClick={() => void source.refetch()}
+            >
+              {source.isFetching
+                ? "Retrying transaction…"
+                : "Try loading this transaction again"}
+            </Button>
+          </div>
+        )}
+        {data && !source.isError && (
+          <>
+            {findingIndex.isError && (
+              <p role="alert" className="text-sm">
+                Saved finding links could not be loaded.{" "}
+                <button
+                  className="underline"
+                  onClick={() => void findingIndex.refetch()}
                 >
-                  {data.transaction.account_label && (
-                    <p className="text-sm">{data.transaction.account_label}</p>
-                  )}
-                  <h3 className="font-semibold">
-                    {data.transaction.description || "No description recorded"}
-                  </h3>
-                  <dl className="grid grid-cols-2 gap-3 text-sm">
-                    <div>
-                      <dt>Date</dt>
-                      <dd>{data.transaction.ordering_date}</dd>
-                    </div>
-                    <div>
-                      <dt>
-                        {data.transaction.account_type === "credit_card"
-                          ? data.transaction.direction === "credit"
-                            ? "Card credit (reduces amount owed)"
-                            : "Card charge (increases amount owed)"
-                          : data.transaction.direction === "credit"
-                            ? "Money in"
-                            : "Money out"}
-                      </dt>
-                      <dd className="font-semibold">
-                        {
-                          formatLedgerAmount(
-                            data.transaction.amount_minor,
-                            data.transaction.currency
-                          ).text
-                        }{" "}
-                        {data.transaction.currency}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>Paid by / paid to</dt>
-                      <dd>
-                        {data.transaction.counterparty_raw || "Not recorded"}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>Bank reference</dt>
-                      <dd>
-                        {data.transaction.bank_reference || "Not recorded"}
-                      </dd>
-                    </div>
-                  </dl>
-                  {data.transaction.ordering_date_context ===
-                    "statement_end_ordering_only" && (
-                    <p>
-                      The statement end date is shown because a transaction date
-                      was not recorded.
-                    </p>
-                  )}
-                  {canEdit &&
-                    onAdjudicate &&
-                    data.ledger_status === "admitted" &&
-                    data.superseded_by_id === null && (
-                      <Button
-                        variant="outline"
-                        onClick={() => {
-                          if (data.transaction) {
-                            onClose()
-                            onAdjudicate(data.transaction)
-                          }
-                        }}
-                      >
-                        Exclude from totals
-                      </Button>
-                    )}
-                  {canEdit && !correcting && (
-                    <Button
-                      variant="outline"
-                      disabled={
-                        data.ledger_status !== "admitted" ||
-                        data.superseded_by_id !== null
-                      }
-                      onClick={() => setCorrecting(true)}
-                    >
-                      Correct a value
-                    </Button>
-                  )}
-                  {correcting && (
-                    <CorrectionForm
-                      caseId={caseId}
-                      transactionId={transactionId}
-                      currency={data.transaction.currency}
-                      initialRow={data.transaction}
-                      initialDirection={
-                        data.transaction.direction === "debit"
-                          ? "debit"
-                          : "credit"
-                      }
-                      onClose={() => {
-                        setCorrecting(false)
-                        void source.refetch()
-                      }}
-                    />
-                  )}
-                </section>
-              )}
-              <TransactionNote
-                caseId={caseId}
-                transactionId={transactionId}
-                refId={data.ref_id}
-                fileId={data.evidence_file_id}
-                filename={data.filename}
-                locator={data.locator}
-                initialOpen={initialNoteOpen}
-                transaction={data.transaction}
-              />
-              <details>
-                <summary>File history and technical details</summary>
-                <SourceCustodyPanel
-                  caseId={caseId}
-                  fileId={data.evidence_file_id}
-                />
-                <p className="text-sm text-muted-foreground">
-                  {data.limitation}
-                </p>
-              </details>
-              <p className="font-medium">
-                {data.ref_id} · {data.filename}
+                  Reload finding links
+                </button>
               </p>
-              {data.ledger_status === "superseded" && (
-                <div className="space-y-2">
-                  <p>This is the original transaction before correction.</p>
-                  {data.superseded_by_id && (
+            )}
+            {!!linkedFindings.length && (
+              <section className="rounded border bg-muted/20 p-3 space-y-2">
+                <h3 className="font-semibold">
+                  Findings linked to this payment
+                </h3>
+                {linkedFindings.map((entry) => (
+                  <a
+                    key={entry.id}
+                    className="block text-sm underline"
+                    href={`/cases/${caseId}/workspace?view=casework&entry=${entry.id}`}
+                  >
+                    {entry.title || "Untitled finding"}
+                  </a>
+                ))}
+              </section>
+            )}
+            {data.transaction && (
+              <section
+                className="rounded border p-3 space-y-2"
+                aria-label="Payment details"
+              >
+                {data.transaction.account_label && (
+                  <p className="text-sm">{data.transaction.account_label}</p>
+                )}
+                <h3 className="font-semibold">
+                  {data.transaction.description || "No description recorded"}
+                </h3>
+                <dl className="grid grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <dt>Date</dt>
+                    <dd>{data.transaction.ordering_date}</dd>
+                  </div>
+                  <div>
+                    <dt>
+                      {data.transaction.account_type === "credit_card"
+                        ? data.transaction.direction === "credit"
+                          ? "Card credit (reduces amount owed)"
+                          : "Card charge (increases amount owed)"
+                        : data.transaction.direction === "credit"
+                          ? "Money in"
+                          : "Money out"}
+                    </dt>
+                    <dd className="font-semibold">
+                      {
+                        formatLedgerAmount(
+                          data.transaction.amount_minor,
+                          data.transaction.currency
+                        ).text
+                      }{" "}
+                      {data.transaction.currency}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Paid by / paid to</dt>
+                    <dd>
+                      {data.transaction.counterparty_raw || "Not recorded"}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Bank reference</dt>
+                    <dd>{data.transaction.bank_reference || "Not recorded"}</dd>
+                  </div>
+                </dl>
+                {data.transaction.ordering_date_context ===
+                  "statement_end_ordering_only" && (
+                  <p>
+                    The statement end date is shown because a transaction date
+                    was not recorded.
+                  </p>
+                )}
+                {allowNearby && (
+                  <NearbyPaymentSearch caseId={caseId} row={data.transaction} />
+                )}
+                {canEdit &&
+                  onAdjudicate &&
+                  data.ledger_status === "admitted" &&
+                  data.superseded_by_id === null && (
                     <Button
                       variant="outline"
-                      onClick={() => setReplacement(data.superseded_by_id)}
+                      onClick={() => {
+                        if (data.transaction) {
+                          onClose()
+                          onAdjudicate(data.transaction)
+                        }
+                      }}
                     >
-                      Open corrected transaction
+                      Exclude from totals
                     </Button>
                   )}
-                </div>
-              )}
-              {data.locator_state === "missing" && (
-                <p>
-                  No location was stored for this row. You can open the source
-                  file.
-                </p>
-              )}
-              {data.locator_state === "invalid" && (
-                <p>
-                  The stored location could not be read. You can open the source
-                  file without a highlight.
-                </p>
-              )}
-              {data.locator_state === "stored" && (
-                <TransactionSourceHighlight
-                  locatorPayload={data.locator}
-                  sourceDocumentId={
-                    data.filename.toLowerCase().endsWith(".pdf")
-                      ? data.evidence_file_id
-                      : undefined
-                  }
-                  valueLabel={data.ref_id}
-                />
-              )}
-              <Button onClick={() => setViewFile(true)}>
-                Open source file
+                {canEdit && !correcting && (
+                  <Button
+                    variant="outline"
+                    disabled={
+                      data.ledger_status !== "admitted" ||
+                      data.superseded_by_id !== null
+                    }
+                    onClick={() => setCorrecting(true)}
+                  >
+                    Correct a value
+                  </Button>
+                )}
+                {correcting && (
+                  <CorrectionForm
+                    caseId={caseId}
+                    transactionId={transactionId}
+                    currency={data.transaction.currency}
+                    initialRow={data.transaction}
+                    initialDirection={
+                      data.transaction.direction === "debit"
+                        ? "debit"
+                        : "credit"
+                    }
+                    onClose={() => {
+                      setCorrecting(false)
+                      void source.refetch()
+                    }}
+                  />
+                )}
+              </section>
+            )}
+            <TransactionNote
+              caseId={caseId}
+              transactionId={transactionId}
+              refId={data.ref_id}
+              fileId={data.evidence_file_id}
+              filename={data.filename}
+              locator={data.locator}
+              initialOpen={initialNoteOpen}
+              transaction={data.transaction}
+            />
+            <details>
+              <summary>File history and technical details</summary>
+              <SourceCustodyPanel
+                caseId={caseId}
+                fileId={data.evidence_file_id}
+              />
+              <p className="text-sm text-muted-foreground">{data.limitation}</p>
+            </details>
+            <p className="font-medium">
+              {data.ref_id} · {data.filename}
+            </p>
+            {data.ledger_status === "superseded" && (
+              <div className="space-y-2">
+                <p>This is the original transaction before correction.</p>
+                {data.superseded_by_id && (
+                  <Button
+                    variant="outline"
+                    onClick={() => setReplacement(data.superseded_by_id)}
+                  >
+                    Open corrected transaction
+                  </Button>
+                )}
+              </div>
+            )}
+            {data.locator_state === "missing" && (
+              <p>
+                No location was stored for this row. You can open the source
+                file.
+              </p>
+            )}
+            {data.locator_state === "invalid" && (
+              <p>
+                The stored location could not be read. You can open the source
+                file without a highlight.
+              </p>
+            )}
+            {data.locator_state === "stored" && (
+              <TransactionSourceHighlight
+                locatorPayload={data.locator}
+                sourceDocumentId={
+                  data.filename.toLowerCase().endsWith(".pdf")
+                    ? data.evidence_file_id
+                    : undefined
+                }
+                valueLabel={data.ref_id}
+              />
+            )}
+            <Button onClick={() => setViewFile(true)}>Open source file</Button>
+            {assessAmount ? (
+              <SourceAmountPanel
+                key={`${caseId}:${data.evidence_file_id}`}
+                caseId={caseId}
+                evidenceId={data.evidence_file_id}
+                onClose={() => setAssessAmount(false)}
+              />
+            ) : (
+              <Button variant="outline" onClick={() => setAssessAmount(true)}>
+                Assess an amount in source text
               </Button>
-              {assessAmount ? (
-                <SourceAmountPanel
-                  key={`${caseId}:${data.evidence_file_id}`}
-                  caseId={caseId}
-                  evidenceId={data.evidence_file_id}
-                  onClose={() => setAssessAmount(false)}
-                />
-              ) : (
-                <Button variant="outline" onClick={() => setAssessAmount(true)}>
-                  Assess an amount in source text
-                </Button>
-              )}
-            </>
-          )}
-        </DialogContent>
-      </Dialog>
+            )}
+          </>
+        )}
+      </SourceFrame>
       {data && !source.isError && (
         <DocumentViewer
           caseId={caseId}
@@ -313,5 +356,32 @@ export function LedgerSourceDialog({
         />
       )}
     </>
+  )
+}
+
+function SourceFrame({
+  inline,
+  open,
+  onClose,
+  children,
+}: {
+  inline: boolean
+  open: boolean
+  onClose: () => void
+  children: ReactNode
+}) {
+  return inline ? (
+    <aside
+      aria-label="Selected payment and original source"
+      className="rounded-lg border bg-card p-4 space-y-4 min-w-0"
+    >
+      {children}
+    </aside>
+  ) : (
+    <Dialog open={open} onOpenChange={(value) => !value && onClose()}>
+      <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-auto">
+        {children}
+      </DialogContent>
+    </Dialog>
   )
 }

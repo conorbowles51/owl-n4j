@@ -1,13 +1,28 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import type { ReactNode } from "react"
 import {
   paymentTableDraftName,
   resetPaymentTableView,
 } from "../lib/payment-table-draft"
-import { act, render, screen, fireEvent } from "@testing-library/react"
+import {
+  act,
+  render as originalRender,
+  screen,
+  fireEvent,
+} from "@testing-library/react"
 import { beforeEach, expect, it, vi } from "vitest"
 import { useAuthStore } from "@/features/auth/hooks/use-auth"
 import { useFinancialDraftStore } from "../stores/financial-drafts"
 import { LedgerRowBrowser } from "./LedgerRowBrowser"
 import type { LedgerTransaction } from "../api"
+function render(children: ReactNode) {
+  const client = new QueryClient()
+  return originalRender(children, {
+    wrapper: ({ children }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    ),
+  })
+}
 vi.mock("./LedgerTable", () => ({
   LedgerTable: ({
     transactions,

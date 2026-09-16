@@ -1,3 +1,8 @@
+import { useFinancialFindingIndex } from "../hooks/use-financial-finding-index"
+import { ExportSelectedPayments } from "./ExportSelectedPayments"
+import { PaymentComparison } from "./PaymentComparison"
+import { InvestigatorFindingEditor } from "./InvestigatorFindingEditor"
+import { useFinancialAccess } from "../hooks/use-financial-access"
 import { SelectedPaymentsReview } from "./SelectedPaymentsReview"
 import {
   emptyPaymentTableView as emptyView,
@@ -31,6 +36,14 @@ export function LedgerRowBrowser({
   investigation?: boolean
   exportContext?: { caseId: string; params: LedgerQueryParams }
 }) {
+  const { canEdit } = useFinancialAccess()
+  const findings = useFinancialFindingIndex(
+    investigation ? exportContext?.caseId : undefined
+  )
+  const [compare, setCompare] = useState(false)
+  const [finding, setFinding] = useState<"question" | "observation" | null>(
+    null
+  )
   const [reviewSelection, setReviewSelection] = useState(false)
   const [localView, setLocalView] = useState(emptyView)
   const [savedView, setSavedView] = useFinancialDraft(
@@ -87,6 +100,7 @@ export function LedgerRowBrowser({
       (!proof || row.proof_class === proof) &&
       (!query ||
         [
+          row.ordering_date,
           row.description,
           row.counterparty_raw,
           row.bank_reference,
@@ -322,10 +336,69 @@ export function LedgerRowBrowser({
             </div>
             {selection.length > 0 && (
               <>
-                <PaymentTotals
-                  rows={selectedHere}
-                  label="Selected payments in this account/date range"
-                />
+                <div className="flex flex-wrap items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 p-3">
+                  <Button variant="outline" onClick={() => setCompare(true)}>
+                    Compare payments
+                  </Button>
+                  {canEdit && (
+                    <>
+                      <Button onClick={() => setFinding("observation")}>
+                        Create finding
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => setFinding("question")}
+                      >
+                        Mark for follow-up
+                      </Button>
+                    </>
+                  )}
+                  <ExportSelectedPayments
+                    caseId={exportContext.caseId}
+                    ids={selection}
+                  />
+                </div>
+                {compare && (
+                  <PaymentComparison
+                    caseId={exportContext.caseId}
+                    ids={selection}
+                    onClose={() => setCompare(false)}
+                  />
+                )}
+                {finding && (
+                  <InvestigatorFindingEditor
+                    caseId={exportContext.caseId}
+                    ids={selection}
+                    initial={{ kind: finding }}
+                    onClose={() => setFinding(null)}
+                  />
+                )}
+                <details className="text-sm">
+                  <summary className="cursor-pointer">
+                    Selected amounts and saved selections
+                  </summary>
+                  <div className="space-y-3 pt-2">
+                    <PaymentTotals
+                      rows={selectedHere}
+                      label="Selected payments in this account/date range"
+                    />
+                    <SavePaymentSelection
+                      onReviewSelection={() => setReviewSelection(true)}
+                      caseId={exportContext.caseId}
+                      ids={selection}
+                    />
+                  </div>
+                </details>
+                {selection.length >
+                  rows.filter((row) => selectedIds.has(row.key)).length && (
+                  <p className="text-sm rounded border p-2">
+                    {selection.length -
+                      rows.filter((row) => selectedIds.has(row.key))
+                        .length}{" "}
+                    selected payments are hidden by the current filters. Compare
+                    or review the selection to see every attached payment.
+                  </p>
+                )}
                 {selection.length > selectedHere.length && (
                   <p>
                     {selection.length - selectedHere.length} selected payments
@@ -353,15 +426,18 @@ export function LedgerRowBrowser({
                     onClose={() => setReviewSelection(false)}
                   />
                 )}
-                <SavePaymentSelection
-                  onReviewSelection={() => setReviewSelection(true)}
-                  caseId={exportContext.caseId}
-                  ids={selection}
-                />
               </>
             )}
           </div>
         </>
+      )}
+      {investigation && findings.isError && (
+        <p role="alert" className="text-sm">
+          Saved finding links could not be loaded.{" "}
+          <button className="underline" onClick={() => void findings.refetch()}>
+            Reload finding links
+          </button>
+        </p>
       )}
       {!rows.length ? (
         <p>
@@ -370,6 +446,9 @@ export function LedgerRowBrowser({
         </p>
       ) : investigation && exportContext ? (
         <InvestigationTransactionTable
+          compact
+          showAccount={new Set(rows.map((row) => row.account_id)).size > 1}
+          findings={findings.data}
           rows={rows.slice(index * 50, index * 50 + 50)}
           selected={selection}
           onToggle={toggle}

@@ -1,3 +1,6 @@
+vi.mock("../hooks/use-financial-finding-index", () => ({
+  useFinancialFindingIndex: () => ({ data: [] }),
+}))
 // This existing workflow fixture has case editing and upload access.
 vi.mock("../hooks/use-financial-access", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../hooks/use-financial-access")>()),

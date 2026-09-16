@@ -1,9 +1,9 @@
+import { useStatementRegister } from "../hooks/use-statement-register"
 import { useFinancialAccess } from "../hooks/use-financial-access"
 import { useRef, useState } from "react"
-import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { useQueryClient } from "@tanstack/react-query"
 import { z } from "zod"
 import { Button } from "@/components/ui/button"
-import { fetchAPI } from "@/lib/api-client"
 import { evidenceAPI } from "@/features/evidence/api"
 import { useAuthStore } from "@/features/auth/hooks/use-auth"
 import { useFinancialStore } from "../stores/financial.store"
@@ -13,41 +13,15 @@ import {
   useStatementUploads,
 } from "../stores/statement-upload-queue"
 
-const listing = z.object({
-  files: z.array(
-    z.object({
-      id: z.string(),
-      case_id: z.string(),
-      original_filename: z.string(),
-      status: z.string(),
-      created_at: z.string().optional(),
-    })
-  ),
-})
-const importStates = z.object({
-  case_id: z.string(),
-  truncated: z.boolean(),
-  files: z.array(
-    z.object({
-      evidence_file_id: z.string(),
-      current_transactions: z.number().int().nonnegative(),
-      receipt_review_count: z.number().int().nonnegative().default(0),
-      wire_review_count: z.number().int().nonnegative().default(0),
-      periods: z.array(
-        z.object({
-          id: z.string(),
-          account_id: z.string(),
-          account_label: z.string(),
-          start: z.string().nullable(),
-          end: z.string().nullable(),
-          source_status: z.string(),
-        })
-      ),
-    })
-  ),
-})
-
-export function StatementFilesPanel({ caseId }: { caseId: string }) {
+export function StatementFilesPanel({
+  caseId,
+  register = false,
+  onOpen,
+}: {
+  caseId: string
+  register?: boolean
+  onOpen?: () => void
+}) {
   const { canUpload } = useFinancialAccess()
   const owner = useAuthStore(
     (state) => state.user?.id || state.user?.username || "anonymous"
@@ -56,53 +30,20 @@ export function StatementFilesPanel({ caseId }: { caseId: string }) {
   const client = useQueryClient()
   const input = useRef<HTMLInputElement>(null)
   const [search, setSearch] = useState("")
+  const [status, setStatus] = useState("all")
   const [error, setError] = useState("")
   const [reading, setReading] = useState<Record<string, boolean>>({})
   const queue = useStatementUploads((state) => state.queues[scope])
   const selected = useStatementWorkspace(
     (state) => state.selections[scope]?.fileId
   )
-  const files = useQuery({
-    queryKey: ["statement-import-files", caseId],
-    queryFn: async () => {
-      const result = listing.parse(
-        await fetchAPI(
-          `/api/evidence?${new URLSearchParams({ case_id: caseId })}`
-        )
-      )
-      if (result.files.some((file) => file.case_id !== caseId))
-        throw Error("The returned file list belongs to another case.")
-      return result.files.filter((file) =>
-        file.original_filename.toLowerCase().endsWith(".pdf")
-      )
-    },
-    refetchInterval: (query) =>
-      queue?.running ||
-      query.state.data?.some(
-        (file) =>
-          ["processing", "queued"].includes(file.status) ||
-          (file.status === "unprocessed" &&
-            queue?.items.some(
-              (item) =>
-                item.fileId === file.id && item.status === "Reading queued"
-            ))
-      )
-        ? 3000
-        : false,
-  })
-  const imports = useQuery({
-    queryKey: ["statement-import-status", caseId],
-    queryFn: async () => {
-      const result = importStates.parse(
-        await fetchAPI(
-          `/api/financial/statement-import/files?${new URLSearchParams({ case_id: caseId })}`
-        )
-      )
-      if (result.case_id !== caseId)
-        throw Error("The import status belongs to another case.")
-      return result
-    },
-  })
+  const { files, imports } = useStatementRegister(
+    caseId,
+    !!queue?.running,
+    queue?.items.flatMap((item) =>
+      item.status === "Reading queued" && item.fileId ? [item.fileId] : []
+    ) ?? []
+  )
   const refresh = () => {
     void client.invalidateQueries({
       queryKey: ["statement-import-files", caseId],
@@ -127,12 +68,34 @@ export function StatementFilesPanel({ caseId }: { caseId: string }) {
       setReading((current) => ({ ...current, [fileId]: false }))
     }
   }
+  const visibleFiles =
+    files.data
+      ?.filter((file) =>
+        file.original_filename.toLowerCase().includes(search.toLowerCase())
+      )
+      .filter((file) => {
+        const saved = imports.data?.files.find(
+          (item) => item.evidence_file_id === file.id
+        )
+        return (
+          status === "all" ||
+          (status === "imported" && !!saved?.current_transactions) ||
+          (status === "review" &&
+            imports.data &&
+            !imports.data.truncated &&
+            !saved?.current_transactions) ||
+          (status === "attention" &&
+            ["failed", "unprocessed"].includes(file.status))
+        )
+      }) ?? []
   return (
     <section
       aria-label="Statement files"
-      className="h-full overflow-auto p-3 space-y-3"
+      className={register ? "space-y-4" : "h-full overflow-auto p-3 space-y-3"}
     >
-      <h2 className="font-semibold">Statement files</h2>
+      <h2 className="font-semibold">
+        {register ? "Files in this case" : "Statement files"}
+      </h2>
       <p className="text-sm text-muted-foreground">
         {canUpload
           ? "Upload PDFs together, then select a ready file to open it in the statement viewer."
@@ -217,44 +180,73 @@ export function StatementFilesPanel({ caseId }: { caseId: string }) {
         value={search}
         onChange={(event) => setSearch(event.target.value)}
       />
+      {register && (
+        <div className="flex flex-wrap items-center gap-3 text-sm">
+          <label>
+            Show files{" "}
+            <select
+              className="rounded border bg-background p-2"
+              value={status}
+              onChange={(e) => setStatus(e.target.value)}
+            >
+              <option value="all">All files</option>
+              <option value="imported">With imported payments</option>
+              <option value="review">Without imported payments</option>
+              <option value="attention">Reading failed or not started</option>
+            </select>
+          </label>
+          {files.data && (
+            <span>
+              {files.data.length} uploaded PDFs ·{" "}
+              {imports.data?.files.filter(
+                (file) => file.current_transactions > 0
+              ).length ?? "…"}{" "}
+              with imported payments
+            </span>
+          )}
+        </div>
+      )}
       {files.isPending && <p role="status">Loading statement files…</p>}
       {files.isError && <p role="alert">{files.error.message}</p>}
-      {files.data
-        ?.filter((file) =>
-          file.original_filename.toLowerCase().includes(search.toLowerCase())
+      {visibleFiles.map((file) => {
+        const saved = imports.data?.files.find(
+          (item) => item.evidence_file_id === file.id
         )
-        .map((file) => {
-          const saved = imports.data?.files.find(
-            (item) => item.evidence_file_id === file.id
-          )
-          return (
-            <div key={file.id} className="space-y-1">
-              <button
-                type="button"
-                aria-pressed={selected === file.id}
-                disabled={file.status !== "processed"}
-                className="block w-full rounded border p-3 text-left text-sm hover:bg-accent aria-pressed:border-primary aria-pressed:bg-accent disabled:opacity-60"
-                onClick={() => {
-                  useStatementWorkspace.getState().select(scope, file.id)
-                  useFinancialStore.getState().setMainView("statements")
-                  useFinancialStore.getState().setMode("transactions")
-                }}
-              >
-                <span className="block break-words font-medium">
-                  {file.original_filename}
-                </span>
-                <span className="block text-xs">
-                  {saved?.wire_review_count
-                    ? `${saved.wire_review_count} saved wire ${saved.wire_review_count === 1 ? "review" : "reviews"}`
-                    : saved
-                      ? `${saved.current_transactions} imported payments · ${saved.periods.length} recorded periods`
-                      : file.status === "processed"
-                        ? imports.data && !imports.data.truncated
-                          ? "Ready to review"
-                          : "Ready to open"
-                        : file.status}
-                </span>
-                {saved?.periods.slice(0, 3).map((period) => (
+        return (
+          <div key={file.id} className="space-y-1">
+            <button
+              type="button"
+              aria-pressed={selected === file.id}
+              disabled={file.status !== "processed"}
+              className={
+                register
+                  ? "grid w-full gap-3 rounded-lg border bg-card p-4 text-left text-sm hover:bg-accent aria-pressed:border-primary disabled:opacity-60 md:grid-cols-[minmax(220px,1fr)_minmax(220px,1fr)]"
+                  : "block w-full rounded border p-3 text-left text-sm hover:bg-accent aria-pressed:border-primary aria-pressed:bg-accent disabled:opacity-60"
+              }
+              onClick={() => {
+                useStatementWorkspace.getState().select(scope, file.id)
+                useFinancialStore.getState().setMainView("statements")
+                useFinancialStore.getState().setMode("transactions")
+                onOpen?.()
+              }}
+            >
+              <span className="block break-words font-medium">
+                {file.original_filename}
+              </span>
+              <span className="block text-xs">
+                {saved?.wire_review_count
+                  ? `${saved.wire_review_count} saved wire ${saved.wire_review_count === 1 ? "review" : "reviews"}`
+                  : saved
+                    ? `${saved.current_transactions} imported payments · ${saved.periods.length} recorded periods`
+                    : file.status === "processed"
+                      ? imports.data && !imports.data.truncated
+                        ? "Ready to review"
+                        : "Ready to open"
+                      : file.status}
+              </span>
+              {saved?.periods
+                .slice(0, register ? undefined : 3)
+                .map((period) => (
                   <span key={period.id} className="block text-xs mt-1">
                     {period.account_label} ·{" "}
                     {period.start || "Start not recorded"} to{" "}
@@ -264,61 +256,73 @@ export function StatementFilesPanel({ caseId }: { caseId: string }) {
                       : ""}
                   </span>
                 ))}
-                {!!saved?.receipt_review_count && (
-                  <p>
-                    {saved.receipt_review_count} saved receipt{" "}
-                    {saved.receipt_review_count === 1 ? "review" : "reviews"}
-                  </p>
-                )}
-                {saved && !saved.wire_review_count && (
-                  <span className="block text-xs mt-1">
-                    Open to review this file and any other statement periods.
-                  </span>
-                )}
-                {file.created_at && (
-                  <span className="block text-xs text-muted-foreground">
-                    Added {new Date(file.created_at).toLocaleString()} ·{" "}
-                    {file.id.slice(-6)}
-                  </span>
-                )}
-              </button>
-              {!!saved?.wire_review_count && (
-                <a
-                  className="inline-block underline text-sm"
-                  href={`/cases/${caseId}/financial?view=findings`}
-                >
-                  Open saved wire reviews in Findings
-                </a>
-              )}
               {!!saved?.receipt_review_count && (
-                <a
-                  className="inline-block underline text-sm"
-                  href={`/cases/${caseId}/financial?view=findings`}
-                >
-                  Open saved receipt reviews in Findings
-                </a>
+                <p>
+                  {saved.receipt_review_count} saved receipt{" "}
+                  {saved.receipt_review_count === 1 ? "review" : "reviews"}
+                </p>
               )}
-              {canUpload && ["unprocessed", "failed"].includes(file.status) && (
-                <Button
-                  variant="outline"
-                  disabled={reading[file.id] || queue?.running}
-                  aria-label={`${file.status === "failed" ? "Retry reading" : "Read statement"}: ${file.original_filename}`}
-                  onClick={() => void readStatement(file.id)}
-                >
-                  {reading[file.id]
-                    ? "Starting reading…"
-                    : file.status === "failed"
-                      ? "Retry reading"
-                      : "Read statement"}
-                </Button>
+              {saved && !saved.wire_review_count && (
+                <span className="block text-xs mt-1">
+                  Open to review this file and any other statement periods.
+                </span>
               )}
-            </div>
-          )
-        })}
+              {file.created_at && (
+                <span className="block text-xs text-muted-foreground">
+                  Added {new Date(file.created_at).toLocaleString()} ·{" "}
+                  {file.id.slice(-6)}
+                </span>
+              )}
+            </button>
+            {!!saved?.wire_review_count && (
+              <a
+                className="inline-block underline text-sm"
+                href={`/cases/${caseId}/financial?view=findings`}
+              >
+                Open saved wire reviews in Findings
+              </a>
+            )}
+            {!!saved?.receipt_review_count && (
+              <a
+                className="inline-block underline text-sm"
+                href={`/cases/${caseId}/financial?view=findings`}
+              >
+                Open saved receipt reviews in Findings
+              </a>
+            )}
+            {canUpload && ["unprocessed", "failed"].includes(file.status) && (
+              <Button
+                variant="outline"
+                disabled={reading[file.id] || queue?.running}
+                aria-label={`${file.status === "failed" ? "Retry reading" : "Read statement"}: ${file.original_filename}`}
+                onClick={() => void readStatement(file.id)}
+              >
+                {reading[file.id]
+                  ? "Starting reading…"
+                  : file.status === "failed"
+                    ? "Retry reading"
+                    : "Read statement"}
+              </Button>
+            )}
+          </div>
+        )
+      })}
+      {register && imports.data?.truncated && (
+        <p role="alert">
+          Import status is incomplete. Open individual files to check every
+          recorded period.
+        </p>
+      )}
       {imports.isError && (
         <p className="text-xs">
           Import status could not be loaded. Open a file to check its saved
           import.
+        </p>
+      )}
+      {!files.isError && !!files.data?.length && visibleFiles.length === 0 && (
+        <p>
+          No files match these filters. Clear the filename search or choose All
+          files.
         </p>
       )}
       {files.data?.length === 0 && (

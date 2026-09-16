@@ -27,6 +27,7 @@ from services.workspace_entry_service import (
     create_entry,
     get_entry,
     list_entries,
+    list_financial_payment_links,
     list_entry_authors,
     remove_entry_link,
     restore_entry,
@@ -280,6 +281,16 @@ def list_case_entries(
         limit=limit,
         offset=offset,
     )
+
+
+@router.get("/{case_id}/financial-payment-links", dependencies=[Depends(require_case_view)])
+def financial_payment_links(
+    case_id: UUID,
+    limit: int = Query(200, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+):
+    return list_financial_payment_links(db, case_id=case_id, limit=limit, offset=offset)
 
 
 @router.get(

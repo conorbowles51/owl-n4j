@@ -1,3 +1,4 @@
+import { useUIStore } from "@/stores/ui.store"
 import { resetPaymentTableView } from "../lib/payment-table-draft"
 import { useFinancialDraft } from "../stores/financial-drafts"
 import { useOtherRecordsView } from "../hooks/use-other-records-view"
@@ -26,12 +27,21 @@ import { FinancialCaseTimeline } from "./FinancialCaseTimeline"
 import { LedgerPostingGraph } from "./LedgerPostingGraph"
 import { LedgerTransfersWorkbench } from "./LedgerTransfersWorkbench"
 import { LedgerTracingWorkbench } from "./LedgerTracingWorkbench"
-import { LedgerCounterpartiesAnalysis } from "./LedgerCounterpartiesAnalysis"
-import { useCallback, useMemo, useState, type ReactNode } from "react"
+import { InvestigatorPeople } from "./InvestigatorPeople"
+import { InvestigatorOverview } from "./InvestigatorOverview"
+import { InvestigatorFollowMoney } from "./InvestigatorFollowMoney"
+import { InvestigatorTrends } from "./InvestigatorTrends"
+import { StatementRegister } from "./StatementRegister"
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react"
 import { useParams } from "react-router-dom"
 import { BarChart3, DollarSign, Users } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { LedgerAnalysis } from "./LedgerAnalysis"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { EmptyState } from "@/components/ui/empty-state"
 import { ErrorBoundary } from "@/components/ui/error-boundary"
@@ -115,6 +125,11 @@ function FinancialPageContent() {
     null
   )
   const reviewingAccounts = !!caseId && accountReviewCase === caseId
+  useEffect(() => {
+    const panel = useUIStore.getState()
+    if (store.mainView !== "statements" && panel.graphPanelTab === "detail")
+      panel.setGraphPanelCollapsed(true)
+  }, [caseId, store.mainView])
   const { data: transactionsResponse, isLoading } = useTransactions(caseId, {
     mode: store.mode,
   })
@@ -581,6 +596,24 @@ function FinancialPageContent() {
           onChange={store.setMainView}
         />
 
+        <RetainedFinancialTab
+          value="overview"
+          active={store.mainView === "overview"}
+          className="min-h-0 flex-1 overflow-auto"
+        >
+          <ErrorBoundary level="section">
+            {caseId && <InvestigatorOverview caseId={caseId} />}
+          </ErrorBoundary>
+        </RetainedFinancialTab>
+        <RetainedFinancialTab
+          value="follow-money"
+          active={store.mainView === "follow-money"}
+          className="min-h-0 flex-1 overflow-auto"
+        >
+          <ErrorBoundary level="section">
+            {caseId && <InvestigatorFollowMoney caseId={caseId} />}
+          </ErrorBoundary>
+        </RetainedFinancialTab>
         {/*
           The ledger tab reads Postgres and shares nothing with the three graph
           tabs: not the query, not the filters, not the counts. It deliberately
@@ -641,7 +674,7 @@ function FinancialPageContent() {
         >
           <div className="min-h-0 flex-1 space-y-4 overflow-auto p-4">
             <header className="space-y-1">
-              <h2 className="text-lg font-semibold">Statements</h2>
+              <h2 className="text-2xl font-semibold">Statements & accounts</h2>
               <p className="text-sm text-muted-foreground">
                 {canEdit
                   ? "Upload and check statements here. After confirmation, their payments are available in Transactions."
@@ -658,7 +691,7 @@ function FinancialPageContent() {
                 aria-pressed={!reviewingAccounts}
                 onClick={() => setAccountReviewCase(null)}
               >
-                {canEdit ? "Upload and review statements" : "Open statements"}
+                Statement files
               </Button>
               <Button
                 variant={reviewingAccounts ? "primary" : "outline"}
@@ -695,23 +728,27 @@ function FinancialPageContent() {
               </ErrorBoundary>
             </div>
             <div hidden={reviewingAccounts}>
-              <StatementImportPanel
-                key={caseId}
-                caseId={caseId}
-                onImported={(result) => {
-                  if (result) setImportReceipt(result)
-                  const scope = { accountId: result?.account_id }
-                  if (caseId) resetPaymentTableView(caseId, scope, result)
-                  applyInvestigationScope(scope)
-                  store.setMode("transactions")
-                  if (result?.transaction_count === 0) {
-                    setAccountReviewCase(caseId ?? null)
-                    store.setMainView("statements")
-                  } else {
-                    store.setMainView("transactions")
-                  }
-                }}
-              />
+              {caseId && (
+                <StatementRegister caseId={caseId}>
+                  <StatementImportPanel
+                    key={caseId}
+                    caseId={caseId}
+                    onImported={(result) => {
+                      if (result) setImportReceipt(result)
+                      const scope = { accountId: result?.account_id }
+                      if (caseId) resetPaymentTableView(caseId, scope, result)
+                      applyInvestigationScope(scope)
+                      store.setMode("transactions")
+                      if (result?.transaction_count === 0) {
+                        setAccountReviewCase(caseId ?? null)
+                        store.setMainView("statements")
+                      } else {
+                        store.setMainView("transactions")
+                      }
+                    }}
+                  />
+                </StatementRegister>
+              )}
             </div>
             <details className="rounded border p-3 space-y-3">
               <summary className="cursor-pointer font-medium">
@@ -833,20 +870,27 @@ function FinancialPageContent() {
           className="flex min-h-0 flex-1 flex-col data-[state=inactive]:hidden"
           active={store.mainView === "transactions"}
         >
-          <div className="flex items-center gap-2 border-b p-3">
-            <Button
-              variant={isTransactionsMode ? "secondary" : "outline"}
-              onClick={() => handleModeChange("transactions")}
-            >
-              Imported statement payments
-            </Button>
-            <Button
-              variant={!isTransactionsMode ? "secondary" : "outline"}
-              onClick={() => handleModeChange("intelligence")}
-            >
-              Other financial records
-            </Button>
-          </div>
+          <details className="px-4 py-1 border-b text-xs">
+            <summary className="cursor-pointer text-muted-foreground">
+              {isTransactionsMode
+                ? "Viewing imported statement payments"
+                : "Viewing other financial records"}
+            </summary>
+            <div className="flex items-center gap-2 py-2">
+              <Button
+                variant={isTransactionsMode ? "secondary" : "outline"}
+                onClick={() => handleModeChange("transactions")}
+              >
+                Imported statement payments
+              </Button>
+              <Button
+                variant={!isTransactionsMode ? "secondary" : "outline"}
+                onClick={() => handleModeChange("intelligence")}
+              >
+                Other financial records
+              </Button>
+            </div>
+          </details>
           <div
             className="min-h-0 flex-1 space-y-4 overflow-auto p-4"
             style={!isTransactionsMode ? { display: "none" } : undefined}
@@ -966,24 +1010,31 @@ function FinancialPageContent() {
           className="flex min-h-0 flex-1 flex-col"
           active={store.mainView === "counterparties"}
         >
-          <div className="flex items-center gap-2 border-b p-3">
-            <Button
-              variant={isTransactionsMode ? "secondary" : "outline"}
-              onClick={() => handleModeChange("transactions")}
-            >
-              Imported statement payments
-            </Button>
-            <Button
-              variant={!isTransactionsMode ? "secondary" : "outline"}
-              onClick={() => handleModeChange("intelligence")}
-            >
-              Other financial records
-            </Button>
-          </div>
+          <details className="px-4 py-1 border-b text-xs">
+            <summary className="cursor-pointer text-muted-foreground">
+              {isTransactionsMode
+                ? "Viewing imported statement payments"
+                : "Viewing other financial records"}
+            </summary>
+            <div className="flex items-center gap-2 py-2">
+              <Button
+                variant={isTransactionsMode ? "secondary" : "outline"}
+                onClick={() => handleModeChange("transactions")}
+              >
+                Imported statement payments
+              </Button>
+              <Button
+                variant={!isTransactionsMode ? "secondary" : "outline"}
+                onClick={() => handleModeChange("intelligence")}
+              >
+                Other financial records
+              </Button>
+            </div>
+          </details>
           {isTransactionsMode ? (
             <div className="min-h-0 flex-1 overflow-auto">
               <ErrorBoundary level="section">
-                <LedgerCounterpartiesAnalysis key={caseId} caseId={caseId} />
+                {caseId && <InvestigatorPeople key={caseId} caseId={caseId} />}
               </ErrorBoundary>
             </div>
           ) : (
@@ -1063,24 +1114,31 @@ function FinancialPageContent() {
           className="flex min-h-0 flex-1 flex-col"
           active={store.mainView === "trends"}
         >
-          <div className="flex items-center gap-2 border-b p-3">
-            <Button
-              variant={isTransactionsMode ? "secondary" : "outline"}
-              onClick={() => handleModeChange("transactions")}
-            >
-              Imported statement payments
-            </Button>
-            <Button
-              variant={!isTransactionsMode ? "secondary" : "outline"}
-              onClick={() => handleModeChange("intelligence")}
-            >
-              Other financial records
-            </Button>
-          </div>
+          <details className="px-4 py-1 border-b text-xs">
+            <summary className="cursor-pointer text-muted-foreground">
+              {isTransactionsMode
+                ? "Viewing imported statement payments"
+                : "Viewing other financial records"}
+            </summary>
+            <div className="flex items-center gap-2 py-2">
+              <Button
+                variant={isTransactionsMode ? "secondary" : "outline"}
+                onClick={() => handleModeChange("transactions")}
+              >
+                Imported statement payments
+              </Button>
+              <Button
+                variant={!isTransactionsMode ? "secondary" : "outline"}
+                onClick={() => handleModeChange("intelligence")}
+              >
+                Other financial records
+              </Button>
+            </div>
+          </details>
           {isTransactionsMode ? (
             <div className="min-h-0 flex-1 overflow-auto">
               <ErrorBoundary level="section">
-                <LedgerAnalysis key={caseId} caseId={caseId} />
+                {caseId && <InvestigatorTrends key={caseId} caseId={caseId} />}
               </ErrorBoundary>
             </div>
           ) : (

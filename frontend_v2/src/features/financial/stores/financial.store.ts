@@ -10,6 +10,8 @@ export interface SortColumn {
 // The URL records the active financial tab. Global preferences exclude it so
 // a fresh case URL opens Transactions rather than a different case's last tab.
 export const financialMainViews = [
+  "overview",
+  "follow-money",
   "findings",
   "patterns",
   "case-context",
@@ -117,7 +119,7 @@ const initialState: FinancialStoreState = {
   checkedKeys: new Set<string>(),
   lastClickedKey: null,
   filterPanelOpen: true,
-  mainView: "transactions",
+  mainView: "overview",
   chartGrouping: "auto",
   expandedRowKeys: new Set<string>(),
 }

@@ -53,6 +53,30 @@ ENTRY_TABLES = [
 
 
 class WorkspaceEntryServiceTests(unittest.TestCase):
+    def test_financial_payment_index_is_scoped_paged_and_excludes_deleted_entries(self):
+        from services.workspace_entry_service import list_financial_payment_links
+        with self.SessionLocal() as db:
+            notes = []
+            for case, tags in [(self.case_id, ["financial"]), (self.case_id, ["financial"]),
+                               (self.case_id, ["other"]), (self.other_case_id, ["financial"])]:
+                notes.append(create_entry(db, case_id=case, current_user=self._user(db),
+                                          entry_type="note", title="Question", body="Sensitive long explanation", tags=tags))
+            entry_id = UUID(notes[0]["id"])
+            db.add(WorkspaceEntryLink(entry_id=entry_id, case_id=self.case_id, target_type="evidence",
+                                      target_id="original", source_anchor={"financial_transaction_ids": ["p2", "p1", "p1", 7]},
+                                      link_metadata={"transactions": [{"private": "large snapshot"}]}))
+            db.commit()
+            first = list_financial_payment_links(db, case_id=self.case_id, limit=1)
+            second = list_financial_payment_links(db, case_id=self.case_id, limit=1, offset=1)
+            self.assertEqual(first["total"], 2)
+            self.assertEqual(first["case_id"], str(self.case_id))
+            entries = first["entries"] + second["entries"]
+            self.assertEqual({e["id"] for e in entries}, {n["id"] for n in notes[:2]})
+            self.assertEqual(next(e for e in entries if e["id"] == notes[0]["id"])["payment_ids"], ["p1", "p2"])
+            self.assertTrue(all(set(e) == {"id", "title", "tags", "payment_ids"} for e in entries))
+            soft_delete_entry(db, case_id=self.case_id, entry_id=entry_id, current_user=self._user(db), expected_version=1)
+            self.assertEqual(list_financial_payment_links(db, case_id=self.case_id)["total"], 1)
+
     def test_financial_tag_filters_before_pagination_and_keeps_case_scope(self):
         from services.workspace_entry_service import list_entries
         with self.SessionLocal() as db:

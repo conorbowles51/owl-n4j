@@ -2,7 +2,7 @@
 
 Follow this guide in order for your first test of Financial. It starts with two invented statements and ends with a saved report that a colleague can open. You do not need previous experience of Loupe.
 
-**Updated: 16 September 2026.** Use the full **User guide** for detailed explanations of each tool. This testing guide tells you what to try and what result to check. A result is only a pass after you have checked it yourself.
+**Updated: 17 September 2026.** Use the full **User guide** for detailed explanations of each tool. This testing guide tells you what to try and what result to check. A result is only a pass after you have checked it yourself.
 
 ## Contents
 
@@ -42,8 +42,8 @@ You need the Loupe address, your own sign-in details, and permission to create o
 
 ## 2. Upload both statements
 
-1. Close the guide and open **Statements**.
-2. Select **Statement files**. A file list opens on the right.
+1. Close the guide and open **Statements & accounts**.
+2. Check **Files in this case** in the main page. Select **Statement files** if the account view is showing.
 3. Select **Upload PDFs**. In your computer's file chooser, select both **checking.pdf** and **savings.pdf**, then confirm the choice.
 4. Keep the browser tab open while the files upload and are read. Wait until each file says **Ready to review**.
 5. Select **checking.pdf** in that list.
@@ -77,7 +77,7 @@ For a wrong payment value, use **Edit import values** or **Show corrections and 
 
 ## 4. Leave the review and return
 
-1. While the checking statement is still unconfirmed, open **Transactions**, then return to **Statements**.
+1. While the checking statement is still unconfirmed, open **Transactions**, then return to **Statements & accounts**.
 2. Reopen **checking.pdf** from **Statement files** if necessary.
 3. Check that the footer is still excluded and its reason remains.
 4. Refresh this same browser tab. Reopen the statement if needed and check the same two details again.
@@ -88,7 +88,7 @@ For a wrong payment value, use **Edit import values** or **Show corrections and 
 ## 5. Confirm both imports and check the totals
 
 1. In the checking review, select **Confirm import of 6 transactions** once. Wait for the outcome. Its payments should become available in **Transactions**.
-2. Return to **Statements**, open **Statement files**, then select **savings.pdf**.
+2. Return to **Statements & accounts**, open **Statement files**, then select **savings.pdf**.
 3. Check its account ending **0000**, USD currency and July 2020 period. Its opening balance is **50.00** and closing balance is **355.00**.
 4. Exclude the same test document footer using step 3. Check that only the **300.00** transfer and **5.00** interest payment are selected.
 5. Select **Confirm import of 2 transactions** once.
@@ -139,20 +139,19 @@ This changes only wording, so the expected money totals remain the same.
 
 ## 8. Compare people and businesses
 
-1. Open **People and businesses**. Choose all accounts and July 2020 if you have retained narrower filters, then select **Apply**.
-2. If necessary, open **Analysis settings, statement coverage and downloads** and choose **All imported payments**.
-3. Find **Alpha Consulting** and select its **View payments** button.
-4. Check that the payments are **USD 900.00 on 2 July** and **USD 650.00 on 14 July**, totalling **USD 1,550.00 incoming**.
-5. Open either payment and follow its source.
-6. Return to the names and inspect **Example Supplies**. Its two outgoing payments should still total **USD 195.00**.
+1. Open **People & businesses**. Under **Accounts and dates**, choose all accounts for July 2020 and apply.
+2. Search **Alpha Consulting** under **Search names and accounts** and open its profile.
+3. Check two payments and **USD 1,550.00** incoming. Open the two payment descriptions to inspect their original records.
+4. Select **Compare 2 payments**. Confirm 2 July and 14 July and their amounts. Close the comparison.
+5. Return to the directory and search **Example Supplies**. Its two outgoing payments should total **USD 195.00**.
 
-**Expected:** the displayed totals can be explained by the individual payments you open. No amount is counted twice because you corrected a description.
+**Expected:** each profile leads to actual payments and originals. A recorded name is not presented as an independently verified identity.
 
 ## 9. Link payments to a name
 
 This checks the decision-saving controls. The invented statement already uses a consistent name; this is practice for cases with differing spellings.
 
-1. In People and businesses, open **Link different names for the same person or business**, then **Open payment identity review**.
+1. In People & businesses, open **Link recorded names to a person or business**, then **Link different names for the same person or business**, then **Open payment identity review**.
 2. Search for **Alpha Consulting** under **Find payment names, descriptions or references**.
 3. Select the two matching payments. Check the count before continuing.
 4. Under **Person or business**, choose **A new person or organisation** and enter **Alpha Consulting - test grouping** in **Name**.
@@ -165,7 +164,7 @@ This checks the decision-saving controls. The invented statement already uses a 
 
 ## 10. Compare a transfer
 
-1. Open **Transfers**. Set **From date** to **1 July 2020** and **To date** to **31 July 2020**.
+1. Open **Follow money**, then **Compare transfers**. Set **From date** to **1 July 2020** and **To date** to **31 July 2020**.
 2. Choose **All imported payments** and leave **Maximum days between payments** at **3 days**.
 3. Select **Find possible transfers**.
 4. Find the pair for **USD 300.00 on 3 July**: outgoing from checking and incoming to savings. Open both source readings.
@@ -178,8 +177,8 @@ This checks the decision-saving controls. The invented statement already uses a 
 ## 11. Check trends and the payment graph
 
 1. Open **Trends**, select all accounts for July 2020 and select **Apply**.
-2. Under **Group payments by**, choose monthly. Select **Show totals** if necessary.
-3. Check July's USD totals against step 5. Open the payments behind the period and inspect a source.
+2. Under **Interval**, choose **Monthly**. Under **Show**, choose **Amounts**. Check **USD · bank accounts** under **Amounts**.
+3. Select July in the chart. Check its eight payments and totals against step 5. Change Interval to Daily to see every July date, including dates with no imported payments. Open a payment and inspect its source.
 4. Open **More financial tools**, then **Payment graph**. Apply the same account/date choice and select **Show connections** if needed.
 5. Search for **Example Supplies** under **Find an account or name**, then select the matching name under **Choose an account or name**.
 6. Select **View selected connections** and check its two payments. Open one to confirm its source.
@@ -189,7 +188,7 @@ This checks the decision-saving controls. The invented statement already uses a 
 
 ## 12. Run the pattern and case-event checks
 
-1. Open **Patterns**, then **Review patterns** if the payment-claim form is showing.
+1. Open **Follow money**, then **Look for repeated activity**, then **Review patterns** if the payment-claim form is showing.
 2. Apply all accounts and July 2020. Choose **All imported payments**. Leave the optional split-payment amount blank and cross-account path checking off for this first run.
 3. Select **Find patterns**. Check the result or explicit no-result message. A small test set need not contain every type of pattern; do not mark a failure merely because a particular pattern is absent.
 4. If a result appears, open its supporting payments and check the stated dates and amounts.
@@ -202,12 +201,12 @@ This checks the decision-saving controls. The invented statement already uses a 
 
 1. Return to Transactions. Clear earlier selections if present, then search for **Example Supplies**.
 2. Tick the two payments, or use **Select all 2 matching payments** and check that the selection count is two. **Review selected payments** lets you check what is included.
-3. Select **Save selection with a note**.
-4. In **Name for this selection**, enter **Example supplier payments**.
-5. In **What did you notice?**, enter **Two payments to Example Supplies total USD 195. Request the invoices and check what was supplied.**
-6. Select **Save payments and note** and wait for **Selection saved**.
-7. Close the dialog, open **Findings**, and find **Example supplier payments**. Check its note, two linked payments and sources.
-8. Return to Transactions, clear the search and select **Add note** beside the outgoing USD 300 transfer.
+3. Select **Create finding** and choose **Question** under **Type**.
+4. Enter **Example supplier payments** as **Title**.
+5. In **Explanation**, enter **Two payments to Example Supplies total USD 195.** In **Next action**, enter **Request the invoices and check what was supplied.** Enter your name in **Assigned to** and leave **Progress** as Open.
+6. Select **Review attached payments** and confirm two entries. Close that review, select **Save finding** once and wait for the saved confirmation.
+7. Select **Open Findings**. Check your question, next action and two payment links. Select **Edit finding**, change Progress to In progress and save. Refresh and check that the change remains.
+8. Return to Transactions, clear the search and open the outgoing USD 300 transfer and select **Add investigation note**.
 9. In **Your transaction note**, enter **Check the corresponding USD 300 receipt in the savings account.** Select **Save investigation note**.
 10. Check that this second note also appears in Findings. Refresh and reopen both notes.
 

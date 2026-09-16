@@ -1,3 +1,7 @@
+import {
+  financialDraftKey,
+  useFinancialDraftStore,
+} from "../stores/financial-drafts"
 import { useLayoutEffect } from "react"
 import { useSearchParams } from "react-router-dom"
 import {
@@ -12,10 +16,14 @@ export function useFinancialViewNavigation(caseId: string | undefined) {
   const [params, setParams] = useSearchParams()
   useLayoutEffect(() => {
     if (!caseId) return
-    const requested = params.get("view")
+    const requested =
+      params.get("view") ||
+      (useFinancialDraftStore.getState().drafts[
+        financialDraftKey(caseId, "last-view")
+      ] as string | undefined)
     const view = financialMainViews.includes(requested as FinancialMainView)
       ? (requested as FinancialMainView)
-      : "transactions"
+      : "overview"
     useFinancialStore.getState().setMainView(view)
     const mode =
       params.get("dataset") === "other-records"
@@ -26,6 +34,9 @@ export function useFinancialViewNavigation(caseId: string | undefined) {
     return useFinancialStore.subscribe((state, previous) => {
       if (state.mainView === previous.mainView && state.mode === previous.mode)
         return
+      useFinancialDraftStore
+        .getState()
+        .put(financialDraftKey(caseId, "last-view"), state.mainView)
       setParams(
         (current) => {
           const next = new URLSearchParams(current)

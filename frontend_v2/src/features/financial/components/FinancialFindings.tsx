@@ -1,3 +1,7 @@
+import type { CaseworkEntry } from "@/features/workspace/casework-api"
+import { InvestigatorFindingEditor } from "./InvestigatorFindingEditor"
+import { findingDraft, findingPaymentIds } from "../lib/investigator-finding"
+import { useFinancialStore } from "../stores/financial.store"
 import { useFinancialAccess } from "../hooks/use-financial-access"
 import { FinancialReportBuilder } from "./FinancialReportBuilder"
 import { SavedFinancialReport } from "./SavedFinancialReport"
@@ -45,10 +49,18 @@ export function FinancialFindings({
   const { search, page } = view
   const setPage = (page: number) => setView((current) => ({ ...current, page }))
   const { canEdit } = useFinancialAccess()
+  const [editing, setEditing] = useState<CaseworkEntry | "new" | null>(null)
+  const [kind, setKind] = useState("financial")
+  const [progress, setProgress] = useState("all")
   const [error, setError] = useState("")
   const [source, setSource] = useState<string | null>(null)
   const query = useCaseworkEntries(caseId, {
-    tag: "financial",
+    tag:
+      progress === "all" || kind === "financial-report"
+        ? kind
+        : kind === "financial"
+          ? `financial-${progress}`
+          : `${kind}-${progress}`,
     q: search,
     limit: 25,
     offset: page * 25,
@@ -63,13 +75,56 @@ export function FinancialFindings({
       className="space-y-4 p-4"
       aria-label="Financial findings and notes"
     >
-      <header>
-        <h2 className="text-lg font-semibold">Findings and notes</h2>
-        <p>
-          Reopen observations, saved payment selections and analysis notes.
-          These are also available in Workspace.
-        </p>
+      <header className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-2xl font-semibold">Findings</h2>
+          <p className="text-sm text-muted-foreground mt-1">
+            Record what the evidence shows, what remains unknown and what needs
+            to happen next.
+          </p>
+        </div>
+        {canEdit && (
+          <Button onClick={() => setEditing("new")}>Create finding</Button>
+        )}
       </header>
+      <div className="flex gap-3 flex-wrap">
+        <label className="text-sm">
+          Type
+          <select
+            aria-label="Finding type"
+            className="block rounded border bg-card p-2"
+            value={kind}
+            onChange={(e) => {
+              setKind(e.target.value)
+              setPage(0)
+            }}
+          >
+            <option value="financial">All saved work</option>
+            <option value="financial-question">Questions</option>
+            <option value="financial-observation">Observations</option>
+            <option value="financial-conclusion">Conclusions</option>
+            <option value="financial-report">Reports</option>
+          </select>
+        </label>
+        <label className="text-sm">
+          Progress
+          <select
+            aria-label="Progress"
+            className="block rounded border bg-card p-2"
+            value={progress}
+            disabled={kind === "financial-report"}
+            onChange={(e) => {
+              setProgress(e.target.value)
+              setPage(0)
+            }}
+          >
+            <option value="all">All progress</option>
+            <option value="open">Open</option>
+            <option value="in-progress">In progress</option>
+            <option value="complete">Complete</option>
+          </select>
+        </label>
+      </div>
       <FinancialReportBuilder
         key={caseId}
         caseId={caseId}
@@ -99,10 +154,26 @@ export function FinancialFindings({
         </div>
       )}
       {!query.isPending && !query.isError && !entries.length && (
-        <p>
-          No financial notes match this view. Open a transaction to add a note,
-          or select payments and save them together.
-        </p>
+        <section className="rounded-xl border bg-card p-8 space-y-3">
+          <h3 className="text-lg font-semibold">
+            {search || kind !== "financial"
+              ? "No saved work matches these filters"
+              : "Build the investigation record"}
+          </h3>
+          <p className="text-sm text-muted-foreground">
+            Create a question to follow up, record an observation, or select
+            payments to support a conclusion. Saved findings can be revised and
+            included in a report.
+          </p>
+          <Button
+            variant="outline"
+            onClick={() =>
+              useFinancialStore.getState().setMainView("transactions")
+            }
+          >
+            Choose payments to investigate
+          </Button>
+        </section>
       )}
       {error && <p role="alert">{error}</p>}
       {entries.map((entry) => (
@@ -110,7 +181,32 @@ export function FinancialFindings({
           key={entry.id}
           className="rounded border bg-card p-4 space-y-3"
         >
-          <h3 className="font-semibold">{entry.title || "Untitled note"}</h3>
+          <div className="flex justify-between items-start gap-3">
+            <div>
+              <p className="text-xs text-muted-foreground capitalize">
+                {entry.tags.includes("financial-workspace")
+                  ? `${findingDraft(entry).kind} · ${findingDraft(entry).progress.replace("-", " ")}`
+                  : entry.tags.includes("financial-report")
+                    ? "Saved report"
+                    : "Saved note or analysis"}
+                {findingPaymentIds(entry).length
+                  ? ` · ${findingPaymentIds(entry).length} supporting payments`
+                  : ""}
+              </p>
+              <h3 className="font-semibold text-lg mt-1">
+                {entry.title || "Untitled note"}
+              </h3>
+            </div>
+            {canEdit && !entry.tags.includes("financial-report") && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setEditing(entry)}
+              >
+                Edit finding
+              </Button>
+            )}
+          </div>
           {canEdit && !entry.tags.includes("financial-report") && (
             <label className="flex gap-2 items-center text-sm">
               <input
@@ -164,6 +260,28 @@ export function FinancialFindings({
               </summary>
               <p className="whitespace-pre-wrap mt-2">{entry.body}</p>
             </details>
+          ) : entry.tags.includes("financial-workspace") ? (
+            <div className="space-y-3 text-sm">
+              <p className="whitespace-pre-wrap">
+                {findingDraft(entry).explanation}
+              </p>
+              {(findingDraft(entry).nextAction ||
+                findingDraft(entry).owner) && (
+                <div className="rounded border bg-muted/20 p-3">
+                  {findingDraft(entry).nextAction && (
+                    <h4 className="font-medium">Next action</h4>
+                  )}
+                  <p className="whitespace-pre-wrap">
+                    {findingDraft(entry).nextAction}
+                  </p>
+                  {findingDraft(entry).owner && (
+                    <p className="mt-2 text-muted-foreground">
+                      Assigned to {findingDraft(entry).owner}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
           ) : (
             <p className="whitespace-pre-wrap">{entry.body}</p>
           )}
@@ -334,6 +452,14 @@ export function FinancialFindings({
             Next notes
           </Button>
         </div>
+      )}
+      {editing && (
+        <InvestigatorFindingEditor
+          key={editing === "new" ? "new" : `${editing.id}:${editing.version}`}
+          caseId={caseId}
+          entry={editing === "new" ? undefined : editing}
+          onClose={() => setEditing(null)}
+        />
       )}
       {source && (
         <LedgerSourceDialog

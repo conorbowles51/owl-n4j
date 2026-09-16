@@ -20,7 +20,7 @@ export function SelectedPaymentsReview({
 }: {
   caseId: string
   ids: string[]
-  onRemove: (id: string) => void
+  onRemove?: (id: string) => void
   onClose: () => void
 }) {
   const [requestedPage, setPage] = useState(0)
@@ -60,8 +60,9 @@ export function SelectedPaymentsReview({
             <DialogTitle>Review selected payments</DialogTitle>
             <DialogDescription>
               Review payments you chose across all accounts and filters.
-              Removing an entry here does not change the transaction or any
-              saved finding.
+              {onRemove
+                ? "Removing an entry here does not change the transaction or any saved finding."
+                : "Existing findings retain the payment versions cited when they were saved."}
             </DialogDescription>
           </DialogHeader>
           {query.isFetching && <p role="status">Checking selected payments…</p>}
@@ -135,9 +136,11 @@ export function SelectedPaymentsReview({
                           Retry payment check
                         </Button>
                       )}
-                      <Button variant="outline" onClick={() => onRemove(id)}>
-                        Remove from selection
-                      </Button>
+                      {onRemove && (
+                        <Button variant="outline" onClick={() => onRemove(id)}>
+                          Remove from selection
+                        </Button>
+                      )}
                     </div>
                   </li>
                 )

@@ -882,6 +882,46 @@ def get_entry(
     )
 
 
+def list_financial_payment_links(
+    db: Session, *, case_id: UUID, limit: int = 200, offset: int = 0
+) -> dict[str, Any]:
+    """Small navigation index; do not load saved report bodies or payment snapshots."""
+    query = db.query(WorkspaceEntry.id, WorkspaceEntry.title, WorkspaceEntry.tags).filter(
+        WorkspaceEntry.case_id == case_id, WorkspaceEntry.deleted_at.is_(None)
+    )
+    if db.get_bind().dialect.name == "postgresql":
+        from sqlalchemy.dialects.postgresql import JSONB
+        query = query.filter(cast(WorkspaceEntry.tags, JSONB).contains(["financial"]))
+    else:
+        values = func.json_each(WorkspaceEntry.tags).table_valued("value")
+        query = query.filter(exists(select(1).select_from(values).where(values.c.value == "financial")))
+    total = query.count()
+    entries = query.order_by(WorkspaceEntry.id).offset(offset).limit(limit).all()
+    by_entry: dict[UUID, set[str]] = {entry.id: set() for entry in entries}
+    if by_entry:
+        links = db.query(WorkspaceEntryLink.entry_id, WorkspaceEntryLink.source_anchor).filter(
+            WorkspaceEntryLink.case_id == case_id,
+            WorkspaceEntryLink.entry_id.in_(list(by_entry)),
+        ).all()
+        for entry_id, anchor in links:
+            if not isinstance(anchor, dict):
+                continue
+            ids = anchor.get("financial_transaction_ids", [])
+            if isinstance(ids, list):
+                by_entry[entry_id].update(value for value in ids if isinstance(value, str))
+            single = anchor.get("financial_transaction_id")
+            if isinstance(single, str):
+                by_entry[entry_id].add(single)
+    return {
+        "case_id": str(case_id), "total": total,
+        "entries": [
+            {"id": str(entry.id), "title": entry.title, "tags": entry.tags,
+             "payment_ids": sorted(by_entry[entry.id])}
+            for entry in entries
+        ],
+    }
+
+
 def list_entry_authors(db: Session, *, case_id: UUID) -> list[dict[str, Any]]:
     """Return the bounded set of authors represented in a case's authored work."""
 

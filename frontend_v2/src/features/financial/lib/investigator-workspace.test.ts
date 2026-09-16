@@ -1,0 +1,168 @@
+import { describe, expect, it } from "vitest"
+import {
+  nearbyPayments,
+  paymentDay,
+  paymentPeriods,
+  paymentProfiles,
+  chartRatio,
+} from "./investigator-workspace"
+import {
+  findingBody,
+  findingDraft,
+  findingTags,
+  emptyFinding,
+} from "./investigator-finding"
+import { paymentFixture } from "./payment-fixture.test-support"
+import type { LedgerTransaction } from "../api"
+import type { CaseworkEntry } from "@/features/workspace/casework-api"
+
+const row = (
+  key: string,
+  date: string,
+  direction: string,
+  account = "a",
+  currency = "EUR"
+): LedgerTransaction => ({
+  ...paymentFixture,
+  key,
+  account_id: account,
+  direction,
+  currency,
+  ordering_date: date,
+  amount_minor: "12500000",
+  ledger_status: "admitted",
+})
+
+describe("investigator comparisons and charts", () => {
+  it("compares adjacent dated bank payments within the same account and currency", () => {
+    const incoming = row("in", "2023-03-18", "credit")
+    const outgoing = {
+      ...row("out", "2023-03-20", "debit"),
+      amount_minor: "12000000",
+    }
+    const noise = [
+      row("other-account", "2023-03-19", "debit", "b"),
+      row("other-currency", "2023-03-19", "debit", "a", "USD"),
+      {
+        ...row("unknown-date", "2023-03-19", "debit"),
+        ordering_date_context: "statement_end_ordering_only" as const,
+      },
+    ]
+    const pairs = nearbyPayments([outgoing, ...noise, incoming])
+    expect(pairs).toHaveLength(1)
+    expect(pairs[0]).toMatchObject({
+      incoming,
+      outgoing,
+      days: 2,
+      difference: 500000n,
+    })
+    expect(nearbyPayments([incoming, outgoing], 1)).toEqual([])
+    expect(
+      nearbyPayments([
+        { ...incoming, account_type: "credit_card" },
+        { ...outgoing, account_type: "credit_card" },
+      ])
+    ).toEqual([])
+  })
+  it("fills all calendar months without inventing payments, preserving exact large amounts", () => {
+    const periods = paymentPeriods(
+      [
+        {
+          ...row("large", "2023-03-18", "credit"),
+          amount_minor: "9007199254740993",
+        },
+      ],
+      "month",
+      "2023-01-01",
+      "2023-12-31"
+    )
+    expect(periods).toHaveLength(12)
+    expect(periods[0]).toMatchObject({
+      date: "2023-01-01",
+      end: "2023-01-31",
+      rows: [],
+      credit: 0n,
+    })
+    expect(periods[2].credit).toBe(9007199254740993n)
+    expect(periods[11].end).toBe("2023-12-31")
+    expect(chartRatio(9007199254740993n, 9007199254740993n)).toBe(1)
+  })
+  it("does not chart invalid dates or statement-end substitutes and flags unreadable amounts", () => {
+    expect(paymentDay(row("bad", "2023-02-29", "credit"))).toBe(null)
+    expect(
+      paymentDay({
+        ...row("unknown", "2023-03-31", "credit"),
+        ordering_date_context: "statement_end_ordering_only",
+      })
+    ).toBe(null)
+    const periods = paymentPeriods(
+      [
+        {
+          ...row("unsafe", "2024-02-29", "credit"),
+          amount_minor: Number.MAX_SAFE_INTEGER + 1,
+        },
+      ],
+      "day",
+      "2024-02-28",
+      "2024-03-01"
+    )
+    expect(periods).toHaveLength(3)
+    expect(periods[1]).toMatchObject({ credit: 0n, unreadable: 1 })
+  })
+  it("keeps different printed names separate and dates unknown where necessary", () => {
+    const profiles = paymentProfiles([
+      {
+        ...row("one", "2023-01-01", "credit"),
+        counterparty_raw: "Example Ltd",
+      },
+      {
+        ...row("two", "2023-01-01", "credit"),
+        counterparty_raw: "EXAMPLE LTD",
+      },
+      {
+        ...row("three", "2023-01-01", "debit"),
+        counterparty_raw: null,
+        ordering_date_context: "statement_end_ordering_only",
+      },
+    ])
+    expect(profiles.filter((profile) => profile.kind === "name")).toHaveLength(
+      3
+    )
+    expect(
+      profiles.find((profile) => profile.name === "Name not recorded")
+    ).toMatchObject({ first: null, last: null })
+    expect(
+      profiles.find((profile) => profile.kind === "account")?.rows
+    ).toHaveLength(3)
+  })
+  it("preserves finding text including literal section headings across edits", () => {
+    const draft = {
+      ...emptyFinding,
+      title: "Question",
+      explanation:
+        "Check this.\n\n## Next action\nLiteral explanation heading\n\\## Assigned to\nLiteral",
+      nextAction: "Obtain records.\n## Assigned to\nIn quoted text",
+      owner: "Alex",
+      progress: "in-progress" as const,
+    }
+    const entry = {
+      title: draft.title,
+      body: findingBody(draft),
+      tags: findingTags(draft),
+      links: [],
+    } as unknown as CaseworkEntry
+    expect(findingDraft(entry)).toEqual(draft)
+    expect(
+      findingTags(
+        { ...draft, kind: "conclusion", progress: "complete" },
+        entry.tags
+      )
+    ).not.toContain("financial-question")
+    expect(
+      findingTags(
+        { ...draft, kind: "conclusion", progress: "complete" },
+        entry.tags
+      )
+    ).not.toContain("financial-in-progress")
+  })
+})
