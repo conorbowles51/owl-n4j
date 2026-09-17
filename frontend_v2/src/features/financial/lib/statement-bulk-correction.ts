@@ -43,7 +43,10 @@ export function previewCorrections(
         patch = { excluded: true }
         break
       case "date":
-        patch = { date: value }
+        patch = {
+          date: value,
+          ...(row.date_unprinted ? { date_unprinted: false } : {}),
+        }
         break
       case "counterparty":
         patch = { counterparty: value.trim() }
@@ -91,6 +94,6 @@ export function correctionValue(row: ReviewEdit, action: CorrectionAction) {
         ? "Debit"
         : "Not set"
   return action === "date"
-    ? row.date || "Not set"
+    ? row.date || (row.date_unprinted ? "Not printed" : "Not set")
     : row.counterparty || "Not set"
 }

@@ -76,6 +76,12 @@ def preview_amount_correction(session, *, case_id: uuid.UUID, transaction_id: uu
     except ValueError as exc:
         raise CorrectionPreviewError(str(exc)) from exc
     changes = {key: value for key, value in changes.items() if value != getattr(row, key)}
+    if ((row.provenance or {}).get('date_basis') == 'statement_end_ordering_only'
+            and any(changes.get(key) is not None for key in DATE_FIELDS - {'effective_date'})
+            and 'effective_date' not in changes):
+        # A newly supplied printed date replaces the former sorting fallback.
+        # Include this removal in the preview and the recorded correction.
+        changes['effective_date'] = None
     if amount_minor == row.amount_minor and direction == row.direction and not changes:
         raise CorrectionPreviewError("The proposed reading is unchanged.")
     original = to_view(row).to_json()

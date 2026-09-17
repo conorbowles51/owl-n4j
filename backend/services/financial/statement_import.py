@@ -379,6 +379,9 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
             current_import['transaction_count'] = 0
     snapshot = dict(version=VERSION, source_sha256=file.sha256, sources=sources,
                     metadata=metadata, currency=chosen_currency, statement_id=statement_id)
+    undated_charges = [row['id'] for row in rows if row['fields'].get('date_basis') == 'statement_end_ordering_only']
+    if undated_charges:
+        snapshot['undated_statement_charges_v1'] = undated_charges
     if reading_failure:
         snapshot['reading_failure'] = 'unseparated-statement-periods-v1'
     if row_addresses is not None:
@@ -432,6 +435,7 @@ class DraftImportRow(_Contract):
     excluded: bool = False
     manual_page: Annotated[int | None, Field(ge=1, le=500)] = None
     date: Annotated[str, Field(max_length=32)] = ''
+    date_unprinted: bool = False
     date_values: dict[Literal['date', 'booking_date', 'value_date'], Annotated[str, Field(max_length=32)]] = Field(default_factory=dict)
     description: Annotated[str, Field(max_length=4096)] = ''
     counterparty: Annotated[str, Field(max_length=4096)] = ''
@@ -455,7 +459,10 @@ class ImportRow(DraftImportRow):
         if not self.excluded:
             if self.direction is None:
                 raise ValueError('Choose Credit or Debit for this transaction.')
-            if date.fromisoformat(self.date).isoformat() != self.date:
+            if self.date_unprinted:
+                if self.date or any(self.date_values.values()):
+                    raise ValueError('A transaction with a printed date cannot also be marked date not printed.')
+            elif date.fromisoformat(self.date).isoformat() != self.date:
                 raise ValueError('A complete transaction date is required.')
             if not self.description.strip():
                 raise ValueError('A transaction description is required.')
@@ -547,6 +554,9 @@ def check_import_request(proposal, request):
     for row in request.rows:
         original = originals[row.id]
         fields = original['fields']
+        originally_undated = fields.get('date_basis') == 'statement_end_ordering_only'
+        if row.date_unprinted and (not originally_undated or (not row.excluded and not request.period_end)):
+            raise PdfMappingError('Only a recognised undated statement charge with a complete statement period can be imported without a transaction date.', 422)
         additional_roles = set(_date_roles(fields)) - {_primary_date_role(fields)}
         if not set(row.date_values) <= additional_roles:
             raise PdfMappingError('Only separately identified source dates can be corrected here. Reload the statement.', 422)
@@ -566,6 +576,7 @@ def check_import_request(proposal, request):
             or row.amount_minor != fields.get('amount_minor')
             or row.direction != fields.get('direction'))) or row.balance_minor != fields.get('balance')
         changed = changed or any(value != fields.get(key, '') for key, value in row.date_values.items())
+        changed = changed or (not row.excluded and row.date_unprinted != originally_undated)
         if (changed or original['issues']) and not row.reason.strip():
             raise PdfMappingError(f"Explain the correction or decision for row {row.id}.", 422)
     return originals
@@ -713,11 +724,14 @@ def confirm_statement_import(*, session_factory, case_id, evidence_file_id, requ
                             x1=max(r.x1 for r in rectangles), y1=max(r.y1 for r in rectangles)))
                     drafts.append(TransactionDraft(row_index=len(drafts), account_id=account.id, locator=locator, statement_period_id=period.id,
                         reading=RowReading(currency=request.currency, amount_minor=int(row.amount_minor),
-                            direction=TransactionDirection(row.direction), **_reading_dates(original['fields'], row.date, row.date_values),
+                            direction=TransactionDirection(row.direction), **(
+                                {'effective_date': date.fromisoformat(request.period_end)} if row.date_unprinted
+                                else _reading_dates(original['fields'], row.date, row.date_values)),
                             description=row.description, counterparty_raw=row.counterparty or None,
                             bank_reference=original['fields'].get('bank_reference'),
                             running_balance_minor=balance_sign * int(row.balance_minor) if row.balance_minor is not None else None), provenance=dict(statement_import_original=original,
                                 statement_import_review=row.model_dump(mode='json'),
+                                **(dict(date_basis='statement_end_ordering_only', statement_end_date=request.period_end) if row.date_unprinted else {}),
                                 confirmed_by=dict(user_id=str(actor.user_id), name=actor.name, email=actor.email))))
                 transactions = record_transactions(session, run, document, drafts, retain_prior_versions=shares_source_references)
                 from services.financial.reconcile import reconcile_period

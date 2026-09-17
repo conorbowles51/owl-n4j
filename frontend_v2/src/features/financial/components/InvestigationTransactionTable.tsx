@@ -138,17 +138,19 @@ export function InvestigationTransactionTable({
               <td className="p-2">
                 <input
                   type="checkbox"
-                  aria-label={`Select ${row.description || row.ref_id} on ${row.ordering_date}`}
+                  aria-label={`Select ${row.description || row.ref_id} ${row.ordering_date_context === "statement_end_ordering_only" ? `with no printed date, statement ending ${row.ordering_date}` : `on ${row.ordering_date}`}`}
                   checked={selectedIds.has(row.key)}
                   onChange={(event) => onToggle(row, event.target.checked)}
                 />
               </td>
               <td className="p-2 whitespace-nowrap">
-                {row.ordering_date}
+                {row.ordering_date_context === "statement_end_ordering_only"
+                  ? "Date not printed"
+                  : row.ordering_date}
                 {row.ordering_date_context ===
                   "statement_end_ordering_only" && (
                   <p className="text-xs whitespace-normal">
-                    Statement end date
+                    Statement ends {row.ordering_date}
                   </p>
                 )}
               </td>

@@ -34,7 +34,7 @@ Private local records are in the ignored `data/local-runtime/capital-inspection/
 ## Remaining work
 
 - One transaction predates its billing period without a separate posting date and still needs review.
-- Twenty-nine interest charges have no printed transaction date. Their amounts are readable and used in balance comparisons, but import still requires a recorded date decision. Do not silently call the closing date a printed transaction date.
+- Twenty-nine interest charges have no printed transaction date. They now import without a date decision, retain blank printed dates and use explicit statement-end ordering context. The table labels them **Date not printed**. Generic missing dates still require review.
 - One period still lacks sufficient opening/closing controls for that arithmetic check.
 - Independent transcription of all payments and checks of other supplied statement formats remain outstanding.
 - These are local changes. Deployment and team acceptance have not been verified.
@@ -42,3 +42,9 @@ Private local records are in the ignored `data/local-runtime/capital-inspection/
 ## Focused verification
 
 Synthetic tests cover split descriptions, exact amount locations, side advertisements, unreadable amounts, absent or conflicting geometry, separate transaction/posting dates, year boundaries, unsupported dates and fees. A database import regression checks that the corrected dates, amount, complete description and original source cells survive import and that a repeated confirmation creates no second import. The layout context view explains the date basis while retaining separate source links.
+
+## Undated-interest follow-up
+
+The next read-only comparison kept all 52 periods, 301 entries, amounts, original cells, inclusion choices and printed dates unchanged. It removed only the unnecessary date flags on 29 clearly labelled interest charges, including two on interest-only continuation pages. Periods with flagged rows fell from 29 to 1. Opening/closing results stayed at 51 matching and one unavailable. The remaining row has a transaction before its billing cycle with no separately printed posting date. These counts concern row flags, not a claim that every account detail or statement has passed user acceptance.
+
+The original undated charges stay undated. When imported, the existing statement-end sorting context is retained explicitly; it cannot establish the exact day of a payment. A later printed-date correction removes that fallback from the new version and preserves the earlier reading and source link. Focused tests exercise both individual and background bulk imports, rejection of an ordinary missing date disguised as an undated charge, and later date correction. Private reproduction records: `undated-before.json`, `undated-after.json`, `check-undated.py`.

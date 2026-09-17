@@ -62,10 +62,12 @@ def correct_transaction(session, *, case_id, transaction_id, amount_minor, direc
         values.update(id=replacement_id, amount_minor=amount_minor, direction=direction,
                       ref_id=reference, content_hash=digest, superseded_by_id=None)
         values.update(changes)
+        replaces_ordering_fallback = ((original.provenance or {}).get('date_basis') == 'statement_end_ordering_only'
+                                     and bool(DATE_FIELDS.intersection(changes)))
         if DATE_FIELDS.intersection(changes):
             original_date_field = next((attribute for source, attribute in ORDERING_PRECEDENCE
                                         if source.value == original.ordering_date_source), None)
-            if original_date_field and getattr(reading, original_date_field) is not None:
+            if not replaces_ordering_fallback and original_date_field and getattr(reading, original_date_field) is not None:
                 values['ordering_date'] = getattr(reading, original_date_field)
             else:
                 ordering_date, ordering_source = choose_ordering_date(reading)
@@ -73,6 +75,9 @@ def correct_transaction(session, *, case_id, transaction_id, amount_minor, direc
         values["provenance"] = {**values["provenance"], "correction": {
             "previous_transaction_id": str(original.id), "previous_ref_id": original.ref_id,
             "occurrence": occurrence, "version": 1}}
+        if replaces_ordering_fallback:
+            values['provenance'].pop('date_basis', None)
+            values['provenance'].pop('statement_end_date', None)
         replacement = FinancialTransaction(**values)
         event = record(session, case_id=case_id, subject=original,
                        subject_type=AdjudicationSubject.transaction,

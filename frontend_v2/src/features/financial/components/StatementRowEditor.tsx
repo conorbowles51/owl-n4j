@@ -5,6 +5,7 @@ type Edit = StatementDraft["rows"][number]
 export function StatementRowEditor({
   row,
   kind,
+  statementEnd,
   problems,
   update,
   amount,
@@ -14,6 +15,7 @@ export function StatementRowEditor({
 }: {
   row: Edit
   kind: string
+  statementEnd?: string
   problems: string[]
   update: (patch: Partial<Edit>) => void
   amount: (direction: "credit" | "debit", value: string) => void
@@ -53,6 +55,13 @@ export function StatementRowEditor({
         <div className="grid gap-3 sm:grid-cols-2">
           <label>
             Transaction date
+            {row.date_unprinted && (
+              <span className="block text-xs text-muted-foreground">
+                Date not printed. This interest charge belongs to the statement
+                ending {statementEnd || "on the date entered below"}. Leave the
+                date blank unless you find a date in the source.
+              </span>
+            )}
             <input
               aria-label="Corrected transaction date"
               type="date"

@@ -220,10 +220,72 @@ class StatementImportTests(TransactionPersistenceTestCase):
             **{key:p['metadata'][key] for key in ('holder', 'account_number', 'institution', 'period_start', 'period_end')}, rows=[])
         for r in p['rows']:
             fields = r['fields']
-            request['rows'].append(dict(id=r['id'], excluded=r['excluded'], date=fields.get('date', p['metadata']['period_end'] if r['issues'] else ''),
+            request['rows'].append(dict(id=r['id'], excluded=r['excluded'], date=fields.get('date', ''),
+                date_unprinted=fields.get('date_basis') == 'statement_end_ordering_only',
                 description=fields.get('description', ''), amount_minor=fields.get('amount_minor', '0'), direction=fields.get('direction', 'credit'),
-                balance_minor=fields.get('balance'), reason='Synthetic interest date assigned for this test.' if r['issues'] else ''))
+                balance_minor=fields.get('balance'), reason=''))
         return p, request
+
+    def test_undated_interest_bulk_readiness_import_and_later_printed_date_correction(self):
+        from datetime import date
+        from services.financial.import_batches import assess
+        from services.financial.transaction_query import to_view
+        from services.financial.correction_preview import preview_amount_correction
+        from services.financial.corrections import correct_transaction
+        from services.financial.duplicate_decisions import duplicate_revision
+        p, request = self.card_balance_request()
+        status, summary = assess(p)
+        self.assertEqual((status, summary['problems']), ('ready', []))
+        result = self.confirm(request)
+        self.db.expire_all()
+        row = self.db.scalar(select(FinancialTransaction).where(
+            FinancialTransaction.source_document_id == UUID(result['source_document_id']),
+            FinancialTransaction.description == 'Interest Charge on Purchases'))
+        original_id = row.id
+        self.assertIsNone(row.transaction_date)
+        self.assertIsNone(row.posted_date)
+        self.assertIsNone(row.value_date)
+        self.assertEqual(row.effective_date, date(2020, 6, 11))
+        self.assertEqual(to_view(row).to_json()['ordering_date_context'], 'statement_end_ordering_only')
+        self.assertEqual(row.provenance['statement_import_review']['date'], '')
+        self.assertFalse(self.confirm(request)['created'])
+        args = dict(case_id=self.case.id, transaction_id=row.id, amount_minor=row.amount_minor,
+                    direction=row.direction, fields={'transaction_date': '2020-06-10'})
+        preview = preview_amount_correction(self.db, **args)
+        self.assertEqual(preview['field_changes'], {'transaction_date': '2020-06-10', 'effective_date': None})
+        document = self.db.get(FinancialSourceDocument, row.source_document_id)
+        correct_transaction(self.db, **args, expected_revision=duplicate_revision(self.db, document),
+                            actor=self.actor, reason='Synthetic example: date found in the source.')
+        self.db.expire_all()
+        original = self.db.get(FinancialTransaction, original_id)
+        corrected = self.db.get(FinancialTransaction, original.superseded_by_id)
+        self.assertIsNone(original.transaction_date)
+        self.assertEqual(corrected.transaction_date, date(2020, 6, 10))
+        self.assertIsNone(corrected.effective_date)
+        self.assertEqual(corrected.ordering_date, date(2020, 6, 10))
+        self.assertEqual(corrected.ordering_date_source, 'transaction')
+        self.assertIsNone(to_view(corrected).to_json().get('ordering_date_context'))
+        self.assertEqual(corrected.provenance['locator'], original.provenance['locator'])
+
+    def test_missing_transaction_date_cannot_be_disguised_as_undated_interest(self):
+        from services.financial.statement_import import StatementImportRequest, check_import_request
+        from pydantic import ValidationError
+        p, request = self.card_balance_request()
+        charge = next(r for r in request['rows'] if r['date_unprinted'])
+        dated = next(r for r in request['rows'] if not r['excluded'] and r['date'])
+        dated.update(date='', date_unprinted=True, reason='Must not bypass a missing date')
+        with self.assertRaisesRegex(PdfMappingError, 'recognised undated'):
+            check_import_request(p, StatementImportRequest.model_validate(request))
+        dated['date_unprinted'] = False
+        with self.assertRaises(ValidationError):
+            StatementImportRequest.model_validate(request)
+        dated.update(date='2020-05-30', reason='')
+        request.update(period_start='', period_end='', details_reason='Removed dates')
+        with self.assertRaisesRegex(PdfMappingError, 'complete statement period'):
+            check_import_request(p, StatementImportRequest.model_validate(request))
+        charge['date'] = '2020-06-11'
+        with self.assertRaisesRegex(ValidationError, 'printed date'):
+            StatementImportRequest.model_validate(request)
 
     def test_card_balances_import_as_owed_and_reopen_the_exact_summary_cells(self):
         from tests.test_financial_statement_import_card import summary_source

@@ -10,10 +10,11 @@ def check_statement_rows(rows, *, liability=False):
         invalid = bool(row.get('issues'))
         if not row['excluded']:
             value = fields.get('date') or fields.get('booking_date') or fields.get('value_date') or ''
-            try:
-                invalid |= date.fromisoformat(value).isoformat() != value
-            except ValueError:
-                invalid = True
+            if value or fields.get('date_basis') != 'statement_end_ordering_only':
+                try:
+                    invalid |= date.fromisoformat(value).isoformat() != value
+                except ValueError:
+                    invalid = True
             invalid |= not fields.get('description', '').strip()
             invalid |= fields.get('direction') not in ('credit', 'debit')
             amount = fields.get('amount_minor', '')

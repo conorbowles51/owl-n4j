@@ -370,7 +370,11 @@ To check or correct a balance before import:
 4. Check the recalculated difference. A balance stays outside the transaction count.
 5. Confirm the statement import when its transactions and any flagged dates are ready. The original printed balance and your correction are both retained.
 
-An unreadable or conflicting summary value needs review. Loupe leaves it unresolved rather than choosing the payment coupon or treating it as zero. A card interest charge without a printed transaction date also remains flagged; check and record the date separately.
+An unreadable or conflicting summary value needs review. Loupe leaves it unresolved rather than choosing the payment coupon or treating it as zero. A recognised Capital One interest charge can have a clear amount but no printed transaction date. Loupe includes that charge with its statement and shows **Date not printed** in Transactions. It uses the statement end only to place the charge in date order. Leave the date blank unless you find a printed date in the source. Unreadable dates on ordinary payments still need correction.
+
+![Undated interest in Transactions, with the statement end shown separately and the original PDF beside it](images/39-undated-interest.png)
+
+*Artificial card-statement example in light mode. The interest charge is included in card charges without claiming it happened on the statement end date.*
 
 If the review finds more than one opening or closing balance, it shows a link for each original page. Open each reading and compare the copies. Clear a repeated balance in the correction table and give a reason. Check for repeated payments too. Clearing a balance does not exclude any transactions.
 
@@ -378,7 +382,7 @@ If a previously prepared Capital One file has transactions but no account-summar
 
 A manually added transaction has a page citation but does not establish its position among the printed rows. Loupe therefore explains when it cannot perform the sequential running-balance check. Check that payment against the PDF and compare the statement totals.
 
-Capital One fee tables can have either **Date** or separate **Trans Date** and **Post Date** columns. Loupe reads the fee row and keeps those dates separate. **Total Fees for This Period** is a total, so it is not added as another payment. An interest charge without a printed date still needs your review.
+Capital One fee tables can have either **Date** or separate **Trans Date** and **Post Date** columns. Loupe reads the fee row and keeps those dates separate. **Total Fees for This Period** is a total, so it is not added as another payment. A clearly recognised undated interest charge uses the statement period as described above; it does not need an invented transaction date.
 
 A purchase can happen just before a billing period and appear on that statement because it was posted later. Where both dates are readable, Loupe keeps the purchase date and posting date separately. It does not change the purchase date to make it fall inside the period. A description split into several extracted cells is joined only where the printed column positions identify the description and amount clearly. The original cells remain available beside the PDF.
 

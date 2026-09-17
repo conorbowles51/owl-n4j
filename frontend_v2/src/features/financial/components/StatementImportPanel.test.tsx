@@ -160,6 +160,54 @@ beforeEach(() => {
     return data as never
   })
 })
+it("imports recognised undated interest without inventing a date and supports a later date correction", async () => {
+  const base = vi.mocked(fetchAPI).getMockImplementation()!
+  const charge = structuredClone(data)
+  Object.assign(charge.rows[1], {
+    fields: {
+      date_basis: "statement_end_ordering_only",
+      description: "Interest Charge on Purchases",
+      amount_minor: "12500",
+      direction: "debit",
+    },
+    source_cells: [
+      {
+        column_index: 0,
+        expected_text: "Interest Charge on Purchases",
+        locator: {},
+      },
+      { column_index: 1, expected_text: "125.00", locator: {} },
+    ],
+  })
+  vi.mocked(fetchAPI).mockImplementation((url, options) =>
+    String(url).includes("/statement-import/file?")
+      ? Promise.resolve(charge as never)
+      : base(url, options)
+  )
+  mount()
+  await open()
+  expect(screen.getByText("Date not printed")).toBeInTheDocument()
+  const confirm = screen.getByRole("button", {
+    name: "Confirm import of 1 transactions",
+  })
+  expect(confirm).toBeEnabled()
+  fireEvent.change(screen.getByLabelText("Date 1:0:1"), {
+    target: { value: "2023-01-30" },
+  })
+  expect(screen.queryByText("Date not printed")).not.toBeInTheDocument()
+  expect(confirm).toBeDisabled()
+  fireEvent.change(screen.getByLabelText("Date 1:0:1"), {
+    target: { value: "" },
+  })
+  expect(confirm).toBeEnabled()
+  fireEvent.click(confirm)
+  await waitFor(() => expect(sent).toHaveLength(1))
+  expect((sent[0] as { rows: unknown[] }).rows[1]).toMatchObject({
+    date: "",
+    date_unprinted: true,
+    reason: "",
+  })
+})
 it("saves an incomplete individual review to the case and restores it without browser storage", async () => {
   const base = vi.mocked(fetchAPI).getMockImplementation()!
   let progress: Record<string, unknown> | null = null

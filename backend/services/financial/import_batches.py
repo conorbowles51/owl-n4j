@@ -52,6 +52,7 @@ def initial_request(proposal):
         currency=proposal['currency'], holder=metadata.get('holder',''), account_number=metadata.get('account_number',''),
         institution=metadata.get('institution',''), period_start=metadata.get('period_start',''), period_end=metadata.get('period_end',''),
         rows=[dict(id=r['id'], excluded=r['excluded'], date=r['fields'].get('date') or r['fields'].get('booking_date') or r['fields'].get('value_date') or '',
+            date_unprinted=r['fields'].get('date_basis') == 'statement_end_ordering_only',
             date_values={role:r['fields'].get(role,'') for role in _date_roles(r['fields']) if role != _primary_date_role(r['fields'])},
             description=r['fields'].get('description',''), counterparty=r['fields'].get('counterparty',''),
             amount_minor=r['fields'].get('amount_minor') or ('0' if r['excluded'] else ''), direction=r['fields'].get('direction'),

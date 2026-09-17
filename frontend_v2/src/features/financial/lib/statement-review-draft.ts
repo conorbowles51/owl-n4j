@@ -5,6 +5,7 @@ const draftRow = z.object({
   excluded: z.boolean(),
   manual_page: z.number().int().positive().nullable().optional(),
   date: z.string(),
+  date_unprinted: z.boolean().optional(),
   date_values: z
     .partialRecord(z.enum(["date", "booking_date", "value_date"]), z.string())
     .optional(),

@@ -185,6 +185,7 @@ type Edit = {
   excluded: boolean
   manual_page?: number | null
   date: string
+  date_unprinted?: boolean
   date_values?: Partial<Record<DateRole, string>>
   description: string
   counterparty: string
@@ -211,6 +212,7 @@ function initialRows(data: Proposal): Edit[] {
     id: r.id,
     excluded: r.excluded,
     date: r.fields.date || r.fields.booking_date || r.fields.value_date || "",
+    date_unprinted: r.fields.date_basis === "statement_end_ordering_only",
     date_values: additionalDateValues(r.fields),
     description: r.fields.description || "",
     counterparty: r.fields.counterparty || "",
@@ -915,7 +917,22 @@ function EditableStatement({
     })
   const update = (id: string, patch: Partial<Edit>) =>
     setRows((current) =>
-      current.map((r) => (r.id === id ? { ...r, ...patch } : r))
+      current.map((r) =>
+        r.id === id
+          ? {
+              ...r,
+              ...patch,
+              ...(patch.date !== undefined
+                ? {
+                    date_unprinted:
+                      !patch.date &&
+                      originals.get(id)?.fields.date_basis ===
+                        "statement_end_ordering_only",
+                  }
+                : {}),
+            }
+          : r
+      )
     )
   const initialById = useMemo(
     () => new Map(baseline.map((r) => [r.id, r])),
@@ -926,6 +943,7 @@ function EditableStatement({
       if (r.manual_page) return true
       const initial = initialById.get(r.id)!
       return (
+        Boolean(r.date_unprinted) !== Boolean(initial.date_unprinted) ||
         JSON.stringify(r.date_values ?? {}) !==
           JSON.stringify(initial.date_values ?? {}) ||
         [
@@ -960,7 +978,20 @@ function EditableStatement({
         "Enter a valid printed balance, or clear it if none is printed."
       )
     if (!r.excluded) {
-      if (!validDate(r.date)) problems.push("Enter the transaction date.")
+      if (r.date_unprinted) {
+        if (
+          r.date ||
+          Object.values(r.date_values ?? {}).some(Boolean) ||
+          originals.get(r.id)?.fields.date_basis !==
+            "statement_end_ordering_only"
+        )
+          problems.push("Check this transaction's date against the PDF.")
+        if (!validDate(periodEnd))
+          problems.push(
+            "Enter the statement end date for this undated interest charge."
+          )
+      } else if (!validDate(r.date))
+        problems.push("Enter the transaction date.")
       if (
         Object.values(r.date_values ?? {}).some(
           (value) => value && !validDate(value)
@@ -1213,6 +1244,7 @@ function EditableStatement({
       excluded: r.excluded,
       manual_page: r.manual_page ?? null,
       date: r.date,
+      date_unprinted: Boolean(r.date_unprinted),
       description: r.description,
       amount_minor: r.amount_minor,
       direction: r.direction || null,
@@ -1425,6 +1457,7 @@ function EditableStatement({
     return (
       <StatementRowEditor
         row={edit}
+        statementEnd={periodEnd}
         kind={original.kind}
         problems={rowProblems(edit)}
         update={(patch) => update(id, patch)}
@@ -2070,6 +2103,11 @@ function EditableStatement({
                                 {dateLabels[primaryDateRole(original.fields)]}
                               </span>
                             )}
+                            {r.date_unprinted && (
+                              <span className="block text-xs mb-1">
+                                Date not printed
+                              </span>
+                            )}
                             <input
                               aria-label={`Date ${r.id}`}
                               type="date"
@@ -2525,6 +2563,13 @@ function EditableStatement({
             </strong>
           </span>
         </div>
+        {included.some((row) => row.date_unprinted) && (
+          <p className="text-sm text-muted-foreground">
+            {included.filter((row) => row.date_unprinted).length} interest
+            charges have no printed transaction date. They will be included with
+            this statement and labelled “Date not printed” in Transactions.
+          </p>
+        )}
         {included.some(
           (r) => !r.direction || !/^\d+$/.test(r.amount_minor)
         ) && (

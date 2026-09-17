@@ -2,7 +2,7 @@
 
 Printed card references remain masked. Purchase debits increase card debt;
 payment credits reduce it. No bank-to-card transfer or counterparty identity is
-inferred. Undated interest charges remain explicit review exceptions.
+inferred. Recognised undated interest charges retain the absence of a date.
 """
 import re
 from services.financial.statement_import_proposal import exact_amount
@@ -96,7 +96,15 @@ def propose_card_table(source, currency, statement):
                 if int(amount) == 0:
                     item.update(kind='zero_charge', excluded=True)
                 else:
-                    item['issues'].append('This interest charge has no printed transaction date. Check and record its date before importing.')
+                    start = date.fromisoformat(statement.get('period_start', ''))
+                    end = date.fromisoformat(statement.get('period_end', ''))
+                    if (len(texts) != 2 or start > end or statement.get('date_conflict')
+                            or not (context or statement.get('layout_id') == 'capital-one-card')):
+                        item['issues'].append('Check this interest charge and its statement period against the PDF.')
+                    else:
+                        # The period date orders this charge only. It is not a
+                        # printed transaction date and must never become one.
+                        item['fields']['date_basis'] = 'statement_end_ordering_only'
             except ValueError as exc:
                 item['issues'].append(str(exc))
         elif any(re.fullmatch(r'(?:\d{4}-\d{2}-\d{2}|\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?|[A-Za-z]{3,9}\.?\s+\d{1,2}(?:,?\s+\d{4})?)', text) for text in texts):

@@ -82,6 +82,30 @@ class BatchImportTests(TestCase):
         changed['rows'].append(dict(id='end',kind='balance',excluded=True,issues=[],page_number=1,fields=dict(description='Closing balance',balance='1')))
         self.assertEqual(service.assess(changed)[0],'attention')
 
+    def test_bulk_worker_imports_undated_interest_with_its_period_and_no_printed_date(self):
+        self.f.card_balance_request()
+        import hashlib
+        from postgres.models.evidence import EvidenceDocumentText
+        text = self.f.db.get(EvidenceDocumentText, self.f.file.id)
+        text.content = text.content.replace('Currency: EUR', 'Currency: USD')
+        text.content_sha256 = hashlib.sha256(text.content.encode()).hexdigest()
+        self.f.db.commit()
+        batch = self.create()
+        self.advance(batch)
+        before = self.status(batch)
+        self.assertEqual(before['counts']['ready'], 1, before)
+        with self.f.SessionLocal() as db:
+            service.queue_import(db, case_id=self.f.case.id, batch_id=batch,
+                                 expected_revision=before['ready_revision'], actor=self.f.actor)
+        self.advance(batch)
+        self.assertEqual(self.status(batch)['counts']['imported'], 1)
+        with self.f.SessionLocal() as db:
+            rows = list(db.scalars(select(FinancialTransaction)))
+            self.assertEqual(len(rows), 3)
+            charge = next(r for r in rows if r.description == 'Interest Charge on Purchases')
+            self.assertIsNone(charge.transaction_date)
+            self.assertEqual(charge.provenance['date_basis'], 'statement_end_ordering_only')
+
     def test_confirmation_only_queues_the_ready_snapshot_and_cases_are_isolated(self):
         f=self.f;batch=self.create();self.advance(batch)
         before=self.status(batch)

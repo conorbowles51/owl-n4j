@@ -28,6 +28,14 @@ const draft: StatementDraft = {
   amountText: { "1:0:2": "12." },
 }
 beforeEach(() => sessionStorage.clear())
+it("retains a recognised undated charge when the review is reopened", () => {
+  const undated = {
+    ...draft,
+    rows: [{ ...draft.rows[0], date_unprinted: true }],
+  }
+  expect(saveStatementDraft("undated", undated)).toBe(true)
+  expect(readStatementDraft("undated", "first")).toEqual(undated)
+})
 it("restores all payments and retained headings from a long statement", () => {
   const longDraft: StatementDraft = {
     ...draft,

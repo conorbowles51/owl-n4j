@@ -4,7 +4,7 @@
 
 The main statement register now shows imported-date gaps, overlapping periods and unknown dates. Account review opens the relevant originals and requested date range; duplicate exclusion and restoration update the register. This is browser-verified on synthetic January/March statements with a repeated March copy. Pre-import duplicate warnings remain open.
 
-Latest difficult-file audit: six split-description amounts and fifteen posting-anchored transaction dates are corrected in the supplied Capital One collection. Its 52 periods and 301 proposed entries are unchanged; 51 opening/closing checks now match and one is unavailable. A separate visual sample of 27 entries on four original pages matches counts and totals. Twenty-nine undated interest charges and one earlier transaction without a separate posting date still need a date decision. The [audit record](financial-card-extraction-audit-2026-09-17.md) distinguishes that sample from full-document accuracy. This remains local and does not close the outstanding D/E items below.
+Latest difficult-file audit: six split-description amounts and fifteen posting-anchored transaction dates are corrected in the supplied Capital One collection. Its 52 periods and 301 proposed entries are unchanged; 51 opening/closing checks now match and one is unavailable. A separate visual sample of 27 entries on four original pages matches counts and totals. Twenty-nine clearly labelled interest charges now retain no printed date and can import without an invented date. Only one earlier transaction without a separate posting date still needs a date review. The [audit record](financial-card-extraction-audit-2026-09-17.md) distinguishes that sample from full-document accuracy. This remains local and does not close the outstanding D/E items below.
 
 The continuation schedule is active every 10 minutes. The latest local implementation adds shared server-side checks to individual and batch review, recalculates edited values, compares running balances beyond 1,000 rows, and supports explicit printed credit/debit totals where recognised. A genuine printed discrepancy can be retained with an explanation tied to the exact values checked. It is never relabelled a match.
 
@@ -37,7 +37,7 @@ I read DocuClipper's public product pages and detailed documentation for extract
 
 No Loupe documents were uploaded to DocuClipper. The demo cannot establish extraction accuracy, processing speed on the user's files, persistence of edits, or behaviour at case scale. Statements below distinguish documented capabilities from observations and recommendations.
 
-For Loupe, I inspected the current local source and the running-state record. The latest intake, batch and review work is local and unpushed. Previously recorded local browser checks are evidence about those particular journeys, not deployed acceptance or a general accuracy measurement.
+For Loupe, I inspected the current local source and the running-state record. The intake, batch and review work through commit `23039a67` was pushed on 17 September. Later work remains local until the complete task is ready, as the user requested while Alex tests the platform. Previously recorded local browser checks are evidence about those particular journeys, not deployed acceptance or a general accuracy measurement.
 
 ## What makes the processing experience useful
 

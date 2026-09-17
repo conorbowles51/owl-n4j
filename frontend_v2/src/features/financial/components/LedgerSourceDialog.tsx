@@ -180,7 +180,12 @@ export function LedgerSourceDialog({
                 <dl className="grid grid-cols-2 gap-3 text-sm">
                   <div>
                     <dt>Date</dt>
-                    <dd>{data.transaction.ordering_date}</dd>
+                    <dd>
+                      {data.transaction.ordering_date_context ===
+                      "statement_end_ordering_only"
+                        ? "Date not printed"
+                        : data.transaction.ordering_date}
+                    </dd>
                   </div>
                   <div>
                     <dt>
@@ -216,8 +221,9 @@ export function LedgerSourceDialog({
                 {data.transaction.ordering_date_context ===
                   "statement_end_ordering_only" && (
                   <p>
-                    The statement end date is shown because a transaction date
-                    was not recorded.
+                    Statement ends {data.transaction.ordering_date}. This date
+                    is used to place the charge in order; no transaction date
+                    was printed.
                   </p>
                 )}
                 {allowNearby && (

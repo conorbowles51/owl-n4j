@@ -17,6 +17,21 @@ const makeRow = (id: string): ReviewEdit => ({
   excluded: false,
   reason: "Earlier correction",
 })
+it("removes the undated marker when a printed date is supplied to selected rows", () => {
+  const row = { ...makeRow("interest"), date: "", date_unprinted: true }
+  const changes = previewCorrections(
+    [row],
+    new Set([row.id]),
+    "date",
+    "2020-01-20",
+    "Date found in source"
+  )
+  expect(changes[0].after).toMatchObject({
+    date: "2020-01-20",
+    date_unprinted: false,
+  })
+  expect(row).toMatchObject({ date: "", date_unprinted: true })
+})
 
 it("previews and applies all selected pages without changing originals or replacing earlier reasons", () => {
   const rows = Array.from({ length: 75 }, (_, index) => makeRow(String(index)))

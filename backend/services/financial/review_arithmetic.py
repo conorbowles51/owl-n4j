@@ -122,7 +122,8 @@ def check_proposed_rows(proposal, edits):
             'issues': [] if edit.get('reason', '').strip() else original.get('issues', []),
             'fields': {**fields, **{k: edit[k] for k in ('date', 'description', 'direction', 'amount_minor')
                                   if k in edit and not (k == 'description' and original['kind'] in ('balance', 'statement_total'))},
-                       'balance': edit.get('balance_minor', fields.get('balance'))}})
+                       'balance': edit.get('balance_minor', fields.get('balance')),
+                       'date_basis': fields.get('date_basis') if edit.get('date_unprinted') else None}})
     for row in edits:
         if row['id'] not in originals:
             if not row['id'].startswith('manual:') or row.get('manual_page') not in proposal.get('page_numbers', []):
@@ -133,7 +134,7 @@ def check_proposed_rows(proposal, edits):
     result = check_statement_rows(effective, liability=proposal['metadata'].get('balance_convention') == 'liability_owed')
     result['checks_revision'] = _digest(dict(version='statement-checks-v1', source_revision=proposal['revision'], rows=[
         dict(id=r['id'], excluded=r['excluded'], fields={k:r['fields'].get(k) for k in
-             ('date', 'booking_date', 'value_date', 'amount_minor', 'direction', 'balance')}) for r in effective]))
+             ('date', 'booking_date', 'value_date', 'date_basis', 'amount_minor', 'direction', 'balance')}) for r in effective]))
     return result
 
 

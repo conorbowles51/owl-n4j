@@ -356,4 +356,13 @@
 <li>Download <strong>this table view</strong>. Check that its recorded row list and batch source list agree with the displayed filter. Other case payments must not enter that recorded table selection.</li>
 <li>Select <strong>Clear batch filter</strong>, then widen the account/date range if needed. The other statement&#x27;s payments should become available again.</li>
 <li>If the batch gains another imported statement after you opened its transactions, try the old download. Expect an instruction to reopen the batch&#x27;s transactions so the displayed and downloaded statement lists agree.</li>
+</ol>
+<h3>Undated card interest</h3>
+<ol>
+<li>Use a synthetic Capital One statement containing purchases, a payment and a nonzero <strong>Interest Charge on Purchases</strong> with no date beside it.</li>
+<li>Send it to Financial. If the other fields and checks are clear, confirm that this charge alone does not put the statement in <strong>Needs attention</strong>.</li>
+<li>Open the review. Check the interest amount against the PDF. The date should remain blank and the review should explain that it was not printed. Do not enter the closing date as its transaction date.</li>
+<li>Import the ready statement. In Transactions, find the interest charge. Expect <strong>Date not printed</strong> and the statement end shown separately. Check that the charge is included in the totals.</li>
+<li>In a disposable test case, record a date correction using a known source date and a reason. Expect the corrected transaction to use that date, with the earlier undated reading retained in its history.</li>
+<li>Confirm that an ordinary payment with an unreadable date still needs attention. The interest handling must not clear that error.</li>
 </ol></main></html>

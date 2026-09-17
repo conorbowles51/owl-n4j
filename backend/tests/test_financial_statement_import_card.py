@@ -162,8 +162,36 @@ class CardStatementImportTests(unittest.TestCase):
         self.assertEqual(included[1]['fields']['direction'],'debit')
         self.assertEqual(included[1]['fields']['amount_minor'],'6162')
         self.assertNotIn('date',included[2]['fields'])
-        self.assertTrue(included[2]['issues'])
+        self.assertEqual(included[2]['issues'], [])
+        self.assertEqual(included[2]['fields']['date_basis'], 'statement_end_ordering_only')
         self.assertEqual(included[2]['fields']['amount_minor'],'5616')
+
+    def test_undated_interest_requires_a_clear_amount_and_identified_period(self):
+        for damage in ('missing-period', 'conflicting-period', 'ambiguous-cells', 'unreadable-amount'):
+            data = card_source()
+            statement = dict(period_start='2020-05-12', period_end='2020-06-11', account_reference='****1234')
+            if damage == 'missing-period':
+                statement.pop('period_end')
+            elif damage == 'conflicting-period':
+                statement['date_conflict'] = True
+            elif damage == 'ambiguous-cells':
+                data['rows'][11]['cells'].insert(1, dict(column_index=3, expected_text='Other text', locator={}))
+            else:
+                data['rows'][11]['cells'][-1]['expected_text'] = '$5?.16'
+            row = propose_card_table(data, 'USD', statement)['rows'][11]
+            with self.subTest(damage=damage):
+                self.assertFalse(row['excluded'])
+                self.assertTrue(row['issues'])
+                self.assertNotIn('date_basis', row['fields'])
+
+    def test_interest_only_continuation_page_uses_its_recognised_statement_period(self):
+        data = source([['Interest Charged'], ['Interest Charge on Purchases', '$56.16']])
+        result = propose_card_table(data, 'USD', dict(layout_id='capital-one-card',
+            period_start='2020-05-12', period_end='2020-06-11', account_reference='****1234'))
+        row = result['rows'][1]
+        self.assertEqual(row['issues'], [])
+        self.assertEqual(row['fields']['date_basis'], 'statement_end_ordering_only')
+        self.assertNotIn('date', row['fields'])
 
     def test_an_unrecognised_dated_row_stays_visible_for_review(self):
         data=card_source()

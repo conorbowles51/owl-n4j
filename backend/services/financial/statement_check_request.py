@@ -10,6 +10,7 @@ class CheckRow(_Contract):
     excluded: bool
     manual_page: Annotated[int | None, Field(ge=1, le=500)] = None
     date: Annotated[str, Field(max_length=32)] = ''
+    date_unprinted: bool = False
     description: Annotated[str, Field(max_length=4096)] = ''
     amount_minor: Annotated[str, Field(max_length=32)] = ''
     direction: Literal['credit', 'debit'] | None = None
