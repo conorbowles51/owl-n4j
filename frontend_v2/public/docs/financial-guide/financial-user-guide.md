@@ -643,6 +643,8 @@ Use this when extraction missed or misread substantial parts of a PDF. For a sin
 8. Confirm the replacement import once.
 9. Check **Transactions**. The earlier version remains in history, but the replacement supplies the current transaction totals. The two versions should not be counted together.
 
+For supported Merrick statements, **Read from page images** also takes another look at unclear date areas. This can reduce the dates you need to correct. A date stays flagged if the reader cannot obtain a complete, consistent reading. This does not clear an unreadable amount, a missing credit sign or a balance difference. Open those remaining problems beside the PDF and correct the fields you can read there.
+
 If you refresh the page while processing, reopen the same uploaded statement in the same browser tab. Loupe checks the saved processing job. Select **Open new reading** when it is ready. If the request was interrupted before a response arrived, select **Reprocess statement** to resume the same request. Closing the browser tab can discard this saved progress.
 
 ### Recover saved corrections after reprocessing

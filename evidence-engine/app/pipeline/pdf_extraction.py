@@ -66,6 +66,7 @@ class _PageResult:
     ocr_dpi: int | None = None
     ocr_language: str | None = None
     ocr_geometry_status: str | None = None
+    ocr_refinements: list[dict] = field(default_factory=list)
 
 
 _semaphore_loop: asyncio.AbstractEventLoop | None = None
@@ -490,7 +491,7 @@ def _ocr_at_rotation(
         oriented_image.close()
 
 
-def _ocr_page(page: fitz.Page) -> tuple[str, float | None, int, list | None]:
+def _ocr_page(page: fitz.Page) -> tuple[str, float | None, int, list | None, list[dict]]:
     deadline = time.monotonic() + max(
         1,
         int(settings.pdf_ocr_page_timeout_seconds),
@@ -591,6 +592,18 @@ def _ocr_page(page: fitz.Page) -> tuple[str, float | None, int, list | None]:
                 break
     finally:
         image.close()
+    refinements = []
+    try:
+        from app.pipeline.financial_date_ocr import reread_financial_dates
+        refined_data, comparisons = reread_financial_dates(page, best_data,
+            rotation=best_rotation, image_width=pixmap.width, image_height=pixmap.height,
+            reader=_load_table_reader(), deadline=deadline, language=settings.tesseract_lang)
+        if comparisons:
+            new_text, new_confidence = _text_and_confidence_from_tesseract(refined_data)
+            best_data, refinements = refined_data, comparisons
+            text, confidence = new_text, new_confidence
+    except Exception:
+        logger.warning('Optional date-region OCR unavailable; retaining the page reading', exc_info=True)
     from app.pipeline.ocr_geometry import project_ocr_words
     try:
         words = project_ocr_words(best_data, rotation=best_rotation,
@@ -599,7 +612,7 @@ def _ocr_page(page: fitz.Page) -> tuple[str, float | None, int, list | None]:
     except ValueError:
         logger.warning("OCR word geometry unavailable; retaining recovered text only")
         words = None
-    return text, confidence, dpi, words
+    return text, confidence, dpi, words, refinements
 
 
 def _page_span(page_result: _PageResult, start_char: int) -> dict:
@@ -623,6 +636,7 @@ def _page_span(page_result: _PageResult, start_char: int) -> dict:
                 "ocr_dpi": page_result.ocr_dpi,
                 "ocr_language": page_result.ocr_language,
                 "ocr_geometry_status": page_result.ocr_geometry_status,
+                "ocr_refinements": page_result.ocr_refinements,
             }
         )
     return span
@@ -696,7 +710,8 @@ def _extract_pdf_sync(
         for completed, page_index in enumerate(ocr_indexes, start=1):
             page_result = pages[page_index]
             try:
-                text, confidence, dpi, words = _ocr_page(document[page_index])
+                text, confidence, dpi, words, refinements = _ocr_page(document[page_index])
+                page_result.ocr_refinements = refinements
             except PdfOcrError as exc:
                 logger.error(
                     "PDF OCR failed page=%d reason=%s",

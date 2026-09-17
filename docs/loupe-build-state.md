@@ -2,6 +2,18 @@
 
 **Latest instruction supersedes the release window below:** hold off on the 1–2 hour deployment because Alex is working on the platform. Continue the whole remaining task and deploy only when the complete work is ready. The ACTIVE ten-minute heartbeat has been updated to remove the intermediate push and preserve continued local development. The earlier immediate push `23039a67` remains complete. No further push has occurred. The current Loupe URL question remains pending; local work continues.
 
+## Targeted date rereading verified locally, 17 September 2026
+
+After `72ec6a90`, a bounded engine helper rereads unclear dates only on recognised Merrick OCR pages. A complete primary line reading and agreement from another visual reading are required. Conflicting valid dates and fragments stay unresolved. Old/new text, source rectangles and attempted readings survive in page provenance; canonical text and table geometry use the same accepted words. Existing readable dates, amounts, descriptions, signs and balances stay unchanged. Other document types bypass the extra pass. No real case changes or external processing.
+
+Final whole-file result: 56 pages, 42 sections, 59 accepted date rereads across 18 pages, 230 entries and 101 flagged rows versus 235/153 for the same image-reading baseline. The five removed unresolved entries are identified zero-charge lines; all row addresses and non-date fields are identical. All accepted readings belong to the visually checked crop set. An intermediate attempt's wrong 10/11-to-10/14 result was caught by visual inspection and rejected; the regression remains tested. The helper does not replace the retained older PDF reading automatically.
+
+A 33-entry visual sample on pages 9 and 13 found two valid-looking, individually unflagged amount errors on page 9. After filling only genuinely unreadable fields in memory, the shared closing check reports the resulting 2.20 difference; page 13 matches. No real edits/imports saved. These limits are recorded in `docs/financial-information-page-audit-2026-09-17.md`, not concealed as successful extraction. D remains open.
+
+The 24-page Andrews reread is complete: 14 sections, 296 entries and 104 flags, unchanged from the retained reading. Do not repeat that whole-file experiment. Both original hashes are unchanged. All diagnostic commands have finished. Private records remain under ignored `context-audit-final`.
+
+Validation: final 19 date-region cases pass; 28 combined affected date/extraction/provenance checks and 11 existing canonical-text/manifest checks passed during this checkpoint. Guides rebuilt with source-comparison steps. No full suite, production build, server restart, push or deployment. Next concrete work: reduce repeated date-year decisions when a single statement-date heading is wrong, and address specific Andrews field problems; then combined workflow/build validation. Deployment remains held while Alex uses the platform. Last pushed is still `23039a67`.
+
 ## Information-page and payment-boundary checkpoint, 17 September 2026
 
 Follow-up after local commit `496fc103`: Andrews extra dates on the same row no longer require a decision solely because of their layout. The first printed date is unchanged; the additional raw date is retained with no invented role. Invalid, later or more distant extra dates remain flagged. Read-only comparison removes 116 unnecessary date decisions; flagged rows are now 104 in each Andrews collection, with identical payment fields and source cells. A synthetic database import/retry and focused UI test pass. The editor identifies the extra date.

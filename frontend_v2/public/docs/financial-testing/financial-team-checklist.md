@@ -260,6 +260,16 @@ Use a separate test case. Keep the invented eight-payment case unchanged for com
 
 For a credit card, compare charges, credits and **Opening amount owed / Closing amount owed** separately from bank money in and out. For a wire report or deposit receipt, expect its own supporting-document review and a saved finding. Do not count the receipt as an extra bank payment merely because the corresponding statement was also uploaded.
 
+### Compare a new reading with an unclear scan
+
+1. Keep your original count and field notes from the steps above. In the test case, open **Read the statement again**, choose **Read from page images**, then select **Reprocess statement**.
+2. Open the new reading. Check that the earlier file and any saved reviews remain available. Compare both versions with the original PDF before replacing an import.
+3. On a supported Merrick statement with damaged date text, compare the newly read dates with their original locations. Some dates may be recovered automatically. A date the reader still cannot resolve should remain a problem to correct.
+4. Check remaining amounts, credit signs and balances. Fixing a date must not clear a separate amount problem. If a number looks valid but differs from the original, record that difference even if there is no warning on that row.
+5. After correcting known field errors, inspect the balance result. A remaining difference must stay visible and must not be called a match. Record the amount and the source page for investigation.
+
+**Expected:** a new reading retains the source and earlier work. It does not silently replace an existing import. Fewer warnings alone are not a passing result; the checked fields must agree with the original.
+
 ## 17. Further tests for the tools you use
 
 Do these in additional test cases or after recording the eight-payment baseline. Use the matching User guide chapter for the complete procedure. Record tests you did not attempt as **Not run**.

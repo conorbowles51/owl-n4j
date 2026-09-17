@@ -741,7 +741,7 @@ async def test_requested_image_reading_bypasses_embedded_text_and_records_method
     read_pages = []
     def fresh_read(page):
         read_pages.append(page.number)
-        return ['New Balance $114.00', 'Statement Date: 04/25/21'][page.number], 95.0, 300, None
+        return ['New Balance $114.00', 'Statement Date: 04/25/21'][page.number], 95.0, 300, None, []
     monkeypatch.setattr(pdf_extraction, '_ocr_page', fresh_read)
     def no_native_tables(*args):
         raise AssertionError('Image reading must not retain damaged native tables')

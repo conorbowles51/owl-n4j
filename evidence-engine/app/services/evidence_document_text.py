@@ -69,6 +69,7 @@ def build_canonical_document_text(doc: ExtractedDocument) -> CanonicalDocumentTe
                 "detection_reason",
                 "ocr_status",
                 "ocr_confidence",
+                "ocr_refinements",
                 "ocr_low_confidence",
                 "ocr_dpi",
                 "ocr_language",
