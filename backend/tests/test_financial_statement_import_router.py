@@ -76,6 +76,22 @@ class StatementImportAuthorizationTests(unittest.TestCase):
             self.assertEqual(self.client.put(self.endpoint('/progress'), json={}).status_code, 403)
             save.assert_not_called()
 
+    def test_previous_reviews_require_case_view_and_comparison_requires_edit(self):
+        with patch.object(module, 'previous_review_detail', return_value={'found': True}) as read, patch.object(module, 'acknowledge_recovery') as write:
+            endpoint = self.endpoint('/previous-reviews/' + 'a' * 64)
+            compare = self.endpoint('/previous-reviews/compare')
+            self.assertEqual(self.client.get(endpoint).status_code, 401)
+            self.assertEqual(self.client.post(compare, json={}).status_code, 401)
+            self.user(None)
+            self.assertEqual(self.client.get(endpoint).status_code, 403)
+            self.assertEqual(self.client.post(compare, json={}).status_code, 403)
+            read.assert_not_called()
+            self.user({'case': {'view': True, 'edit': False}})
+            self.assertEqual(self.client.get(endpoint).status_code, 200)
+            self.assertEqual(read.call_args.kwargs['case_id'], self.db.case.id)
+            self.assertEqual(self.client.post(compare, json={'expected_revision': 'a' * 64}).status_code, 403)
+            write.assert_not_called()
+
     def test_case_edit_does_not_grant_evidence_upload_permission(self):
         self.user({'case':{'view':True,'edit':True},'evidence':{'upload':False}})
         with patch.object(module,'create_statement_version') as version:

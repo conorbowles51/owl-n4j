@@ -332,5 +332,14 @@
 <li>Open <strong>Correct several rows</strong>. Select two rows, choose <strong>Switch credit and debit</strong>, add a reason and select <strong>Preview corrections</strong>. Expect only those two rows in the preview, with their current and proposed columns.</li>
 <li>Apply the changes. Expect new balance differences where the switched values no longer match the statement. Switch the same rows back with a reason, then save. Expect the original values to remain visible in the printed table throughout.</li>
 <li>If two authorised reviewers open the same saved review, save a change from one and then attempt to save the older review from the other. Expect a conflict message; the later attempt must not overwrite the first saved review.</li>
-<li>If reprocessing changes a reading with an earlier saved review, inspect <strong>Previous saved review</strong>. Expect the earlier corrected values to remain available for comparison, rather than being copied onto different source rows.</li>
+<li>If reprocessing changes a reading with an earlier saved review, open <strong>Earlier saved reviews</strong> and <strong>Compare earlier values</strong>. Expect individual and bulk corrections, including changed periods, to remain available. Compare them, tick the comparison box and select <strong>Save comparison for this file</strong>. Reload to check that the comparison remains saved. It must not add payments.</li>
+</ol>
+<h3>Check the link from a completed batch to Transactions</h3>
+<ol>
+<li>Use a synthetic case with an imported batch and another imported statement outside that batch.</li>
+<li>From the batch, select <strong>Open imported transactions</strong>. Expect the batch notice, the dates of those payments, and only that batch&#x27;s imported payments in the table.</li>
+<li>Check a batch with more than 100 periods if available. Its table filter must include every imported period, not just the visible batch page.</li>
+<li>Download <strong>this table view</strong>. Check that its recorded row list and batch source list agree with the displayed filter. Other case payments must not enter that recorded table selection.</li>
+<li>Select <strong>Clear batch filter</strong>, then widen the account/date range if needed. The other statement&#x27;s payments should become available again.</li>
+<li>If the batch gains another imported statement after you opened its transactions, try the old download. Expect an instruction to reopen the batch&#x27;s transactions so the displayed and downloaded statement lists agree.</li>
 </ol></main></html>

@@ -1,5 +1,7 @@
 export interface LedgerTableView {
   source_document_id?: string
+  import_batch_id?: string
+  import_batch_revision?: string
   search: string
   currency: string
   direction: string

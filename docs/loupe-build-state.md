@@ -1,3 +1,27 @@
+## Reprocessing recovery and exact batch investigation scope, 17 September 2026
+
+The ten-minute **Complete Loupe financial processing** heartbeat is ACTIVE and was verified in its saved configuration. User asked for continued development and then a plain-English status. That status was given while development continued. No push requested; last pushed remains `97e1624d`, prior local checkpoint is `466b7585`. This checkpoint adds recovery and import-to-investigation improvements, not completion of the whole benchmark.
+
+Completed and retained in the A-E checklist:
+
+- [x] Reprocessed files expose saved individual and bulk reviews from their explicitly linked ancestors, including changed or unmatched statement IDs. Equivalent saved requests are deduplicated; conflicting alternatives remain separate. Old rows are never assigned to new locations by guessing. The comparison lists account/period, original filename, dates, credit/debit, balance, inclusion and reasons, with server pagination.
+- [x] Case-scoped viewing and edit-only comparison acknowledgement. A file-wide acknowledgement binds the current source reading and saved review versions, records actor/time and history, and becomes invalid when earlier reviews change. Import checks enforce it on the server. Saving the comparison recalculates unchanged ready/attention items for that file so the user need not open every period. Existing source files and imports are retained. In-place changes to an individually saved reading still require comparison and Save progress before import; bulk preparation cannot silently discard that draft.
+- [x] Completed batches open exactly their imported sources, including periods beyond the 100-item list page. Account (when singular) and actual payment dates are selected; an explicit batch notice and Clear batch filter are shown. Downloads record the same batch revision and source list, and refuse a changed batch until reopened. Previous batch items without receipts are resolved only by one exact file/period source; ambiguity produces a clear error. Reprocessed items may correctly refer to a source from an earlier file version.
+- [x] Guides and team-testing steps cover recovery and batch filtering. Screenshot 36 uses only synthetic data in light mode.
+
+Verification: 39 focused backend checks passed across recovery, batch scope, table export, durable batches, saved progress and route permissions; the existing reprocessing/replacement preservation regression passed separately. Sixteen targeted frontend checks passed, as did TypeScript, scoped ESLint and production build. The final small guard against skipping in-place saved reviews passed the two affected progress/batch regressions; TypeScript and scoped ESLint passed again after that change. No full financial suite was run.
+
+Browser evidence: synthetic recovery case `ca93ba34-62ec-48a6-9d7e-68df0f1d67a9` retains an unmatched bulk correction and its reason, saves comparison, and restores that acknowledgement on refresh. The compiled app shows the same recovery list; no imports or JavaScript errors. Ignored record `financial-recovery-browser.json`, screenshot `financial-earlier-review.png`. The existing synthetic case `c008b0ad-461a-4a36-9278-5b99db893ad9`, batch `46887499-a8be-47c7-a8a1-65ddff70a612`, opened its exact 3 source statements and 36 payments, downloaded the table package and cleared its filter. The downloaded JSON was independently read back: 36 matching row IDs and the identical 3 source IDs and batch revision. No repeated imports. Ignored records `financial-batch-scope-browser.json` and `.zip`.
+
+Local API was restarted with the final changes in exec session 95764 on port 58002, log `data/local-runtime/financial-recovery-api.log`. UI 55174, compiled preview 55175, engine 58003. The compiled preview predates only the final own-draft guard and final guide additions; use the development UI for those until the next significant build. Do not dump entire API logs. Preserve all unrelated untracked business files, archives, PDFs and backup files.
+
+Next work, without routine questions:
+1. Selected-row account/period reassignment with source retention, audit, preserved drafts and checks recalculated in both periods. This is still missing; changing all statement metadata is not the requested row operation.
+2. Read-only real-file flag/omission review, especially summaries versus uncertain transaction rows. The 52-period/301-row Capital One result is not independent ground truth.
+3. Integrate existing missing-period, overlap and duplicate services into the main Statements & accounts register.
+4. Surface payment-linked account references without supplied statements and save those investigation questions to Findings.
+5. Complete wording consistency and affected-path verification, then deployment checks after a future authorised push. Never push only because the timer fired.
+
 ## Saved progress and selected-row corrections, 17 September 2026
 
 The ten-minute **Complete Loupe financial processing** heartbeat remains active. This is a further local implementation checkpoint, not completion of the A-E benchmark or a deployment. No push was requested in this turn. The full checklist remains in `docs/docuclipper-benchmark-2026-09-17.md` with completed items retained.

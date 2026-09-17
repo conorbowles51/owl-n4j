@@ -6,6 +6,7 @@ from postgres.models.evidence import EvidenceFile
 from postgres.models.financial import FinancialTransaction
 from services.financial.statement_progress import save_progress, previous_review_progress
 from services.financial.statement_import import StatementReviewDraft
+from services.financial.statement_import import StatementImportRequest, check_import_request
 from services.financial.pdf_candidates import PdfMappingError
 from tests.test_financial_statement_import import StatementImportTests as Fixture
 
@@ -63,6 +64,8 @@ class StatementProgressTests(TestCase):
             metadata['financial_review_progress']['']['request']['expected_revision'] = 'a'*64
             file.metadata_ = metadata
             db.commit()
+        with self.assertRaisesRegex(PdfMappingError, 'Save progress before importing'):
+            check_import_request(self.f.preview(), StatementImportRequest.model_validate(raw))
         self.save(raw, saved['review_revision'])
         with self.f.SessionLocal() as db:
             history = db.get(EvidenceFile, self.f.file.id).metadata_['financial_review_history']

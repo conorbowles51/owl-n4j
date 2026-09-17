@@ -195,6 +195,7 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
     catalog = cache[catalog_key]
     from services.financial.deposit_receipt_proposal import deposit_receipt_choices
     choices = catalog['statements'] + deposit_receipt_choices(all_sources)
+    from services.financial.review_recovery import recovery_state
     from services.financial.statement_review_checks import add_period_checks
     checks_key = ('checks', source_key, chosen_currency)
     if _include_period_checks:
@@ -208,10 +209,13 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
         selected = choices[0]
         statement_id = selected['id']
     if len(choices) > 1 and selected is None:
+        recovery, _ = recovery_state(session, file, sources=all_sources, choices=choices,
+            statement_id=None, revision=None, cache=cache)
         return dict(case_id=str(case_id), evidence_file_id=str(evidence_file_id), filename=file.original_filename,
                     metadata=metadata, currency=chosen_currency, rows=[], sources=[], issues=[],
                     transaction_count=0, needs_attention=0, revision=_digest(dict(catalog=catalog, choices=choices)),
-                    statement_choices=choices, statement_id=None, page_numbers=[p.page_number for p in pages], applied=False)
+                    statement_choices=choices, statement_id=None, page_numbers=[p.page_number for p in pages], applied=False,
+                    review_recovery=recovery)
     if selected and selected.get('document_kind'):
         document = payment_document_response(file, all_sources, case_id=case_id, document_id=selected['id'])
         if document is None:
@@ -272,10 +276,13 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
     unassigned_pages = sorted({s['page_number'] for s in catalog['unclassified_sources']} | (set(all_page_numbers) - recognised_pages))
     rows = []
     if not chosen_currency:
+        recovery, _ = recovery_state(session, file, sources=all_sources, choices=choices,
+            statement_id=statement_id, revision=None, cache=cache)
         return dict(case_id=str(case_id), evidence_file_id=str(evidence_file_id), filename=file.original_filename,
                     metadata=metadata, currency='', rows=[], sources=[], issues=issues + ['Choose the statement currency to read its amounts.'],
                     statement_choices=choices, statement_id=statement_id,
-                    transaction_count=0, needs_attention=1, revision=_digest(dict(file=str(file.id), text=text.content_sha256, version=VERSION)), applied=False)
+                    transaction_count=0, needs_attention=1, revision=_digest(dict(file=str(file.id), text=text.content_sha256, version=VERSION)), applied=False,
+                    review_recovery=recovery)
     from services.financial.money import get_currency, MoneyError
     try:
         get_currency(chosen_currency)
@@ -376,11 +383,14 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
                         and not any(not row['excluded'] for row in rows)
                         and any(row['kind'] == 'balance' and row['fields'].get('description') == 'Opening Balance'
                                 and 'balance' in row['fields'] for row in rows))
-    from services.financial.statement_progress import review_progress, previous_review_progress
+    from services.financial.statement_progress import review_progress
+    revision = _digest(snapshot)
+    recovery, previous_review = recovery_state(session, file, sources=all_sources, choices=choices,
+        statement_id=statement_id, revision=revision, cache=cache)
     return dict(case_id=str(case_id), evidence_file_id=str(evidence_file_id), filename=file.original_filename,
                 metadata=metadata, currency=chosen_currency, rows=[] if reading_failure else rows, sources=sources, issues=issues,
                 saved_review=review_progress(file, statement_id),
-                previous_saved_review=previous_review_progress(session, file, statement_id),
+                previous_saved_review=previous_review, review_recovery=recovery,
                 reading_failure=reading_failure,
                 can_record_account_closure=closure_only,
                 can_import_balances=balance_only,
@@ -393,7 +403,7 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
                 statement_source_regions=source_regions,
                 transaction_count=0 if reading_failure else sum(not row['excluded'] for row in rows),
                 needs_attention=sum(bool(row['issues']) for row in rows) + len(issues),
-                revision=_digest(snapshot), current_import=current_import, applied=False)
+                revision=revision, current_import=current_import, applied=False)
 
 # A single confirmation carries all reviewed rows. The original proposal stays
 # separate from edits in the stored source record.
@@ -488,6 +498,12 @@ class StatementImportRequest(StatementReviewDraft):
 
 
 def check_import_request(proposal, request):
+    saved = proposal.get('saved_review')
+    if saved and saved['request'].get('expected_revision') != proposal['revision']:
+        raise PdfMappingError('The saved corrections belong to an older reading. Compare them and use Save progress before importing.', 422)
+    recovery = proposal.get('review_recovery')
+    if recovery and recovery['required'] and not recovery['acknowledged']:
+        raise PdfMappingError('Compare the earlier saved reviews for this file before importing. Saved corrections may belong to different statement periods in the new reading.', 422)
     if proposal.get('reading_failure'):
         raise PdfMappingError(proposal['reading_failure'], 422)
     if proposal.get("statement_id") != request.statement_id:

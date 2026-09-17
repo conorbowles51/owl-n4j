@@ -26,6 +26,8 @@ import { TransactionSourceHighlight } from "./TransactionSourceHighlight"
 import { StatementRowEditor } from "./StatementRowEditor"
 import { StatementBulkCorrections } from "./StatementBulkCorrections"
 import { SavedReviewConflict } from "./SavedReviewConflict"
+import { PreviousStatementReviews } from "./PreviousStatementReviews"
+import { reviewRecoverySchema } from "../lib/review-recovery"
 import { PrintedStatementTable } from "./PrintedStatementTable"
 import { PaymentDocumentReview } from "./PaymentDocumentReview"
 import { paymentDocumentProposal } from "../lib/payment-document"
@@ -63,6 +65,7 @@ const proposalSchema = z.object({
   filename: z.string(),
   currency: z.string(),
   revision: z.string(),
+  review_recovery: reviewRecoverySchema.nullish(),
   saved_review: z
     .object({
       review_revision: z.string(),
@@ -729,6 +732,10 @@ function EditableStatement({
   const [progressRevision, setProgressRevision] = useState(
     data.saved_review?.review_revision ?? "initial"
   )
+  const [comparedRevision, setComparedRevision] = useState("")
+  const recoveryCompared =
+    !!data.review_recovery?.acknowledged ||
+    comparedRevision === data.review_recovery?.revision
   const saveBatchReview = useMutation({
     retry: false,
     mutationFn: async (_mode: "progress" | "done" | "next" | "previous") => {
@@ -799,7 +806,10 @@ function EditableStatement({
           : null)
   )
   const savedReadingChanged =
-    !batchReview && !!recovered && recovered.revision !== data.revision
+    !batchReview &&
+    !!recovered &&
+    recovered.revision !== data.revision &&
+    (!data.review_recovery || !!data.saved_review)
   const [previousReviewChecked, setPreviousReviewChecked] = useState(false)
   const [draftSaved, setDraftSaved] = useState(!!saved)
   const [correctionsOpen, setCorrectionsOpen] = useState(false)
@@ -986,11 +996,21 @@ function EditableStatement({
     emptyStatementBalances[0].balance_minor ===
       emptyStatementBalances[1].balance_minor
   const detailProblems: { message: string; field?: string }[] = []
+  if (data.review_recovery?.required && !recoveryCompared)
+    detailProblems.push({
+      message:
+        "Compare the earlier saved reviews for this file before importing. Open Earlier saved reviews above.",
+    })
   if (savedReadingChanged && !previousReviewChecked)
     detailProblems.push({
       message:
         "The reading changed after your saved corrections. Compare your previous saved values before confirming.",
       field: "I have compared the previous saved review",
+    })
+  if (savedReadingChanged && previousReviewChecked && data.saved_review)
+    detailProblems.push({
+      message:
+        "Use Save progress to keep your compared values before importing this new reading.",
     })
   if (!caseCanEdit)
     detailProblems.push({
@@ -1458,6 +1478,36 @@ function EditableStatement({
             }
             checked={previousReviewChecked}
             onChecked={setPreviousReviewChecked}
+          />
+        )}
+        {data.review_recovery && (
+          <PreviousStatementReviews
+            caseId={caseId}
+            fileId={fileId}
+            canEdit={canEdit}
+            recovery={{
+              ...data.review_recovery,
+              acknowledged: recoveryCompared,
+            }}
+            onCompared={(revision) => {
+              setComparedRevision(revision)
+              void client.invalidateQueries({
+                queryKey: ["financial-batch", caseId],
+              })
+              client.setQueriesData<Proposal>(
+                { queryKey: ["statement-import", caseId, fileId] },
+                (cached) =>
+                  cached?.review_recovery?.revision === revision
+                    ? {
+                        ...cached,
+                        review_recovery: {
+                          ...cached.review_recovery,
+                          acknowledged: true,
+                        },
+                      }
+                    : cached
+              )
+            }}
           />
         )}
         {!batchReview &&

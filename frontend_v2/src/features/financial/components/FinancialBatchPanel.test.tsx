@@ -5,6 +5,13 @@ import { beforeEach, expect, it, vi } from "vitest"
 import { fetchAPI } from "@/lib/api-client"
 import { FinancialBatchPanel } from "./FinancialBatchPanel"
 import { useBatchReview } from "../lib/batch-review-context"
+import { useInvestigationScopeStore } from "../stores/investigation-scope"
+import {
+  useFinancialDraftStore,
+  financialDraftKey,
+} from "../stores/financial-drafts"
+import { paymentTableDraftName } from "../lib/payment-table-draft"
+import { useFinancialStore } from "../stores/financial.store"
 vi.mock("@/lib/api-client", () => ({ fetchAPI: vi.fn() }))
 vi.mock("../hooks/use-financial-access", () => ({
   useFinancialAccess: () => ({ canEdit: true }),
@@ -166,4 +173,57 @@ it("refuses a response for a different case", async () => {
   expect(
     screen.queryByRole("button", { name: "Import 2 ready statements" })
   ).not.toBeInTheDocument()
+})
+
+it("opens the exact imported sources across the whole batch with their accounts and dates", async () => {
+  const sources = Array.from({ length: 101 }, (_, n) => `source-${n}`)
+  vi.mocked(fetchAPI).mockImplementation(async (url) =>
+    url.includes("/imported-transactions")
+      ? {
+          case_id: "case",
+          batch_id: "batch",
+          revision: "d".repeat(64),
+          source_document_ids: sources,
+          account_ids: ["one-account"],
+          statement_count: 101,
+          transaction_count: 303,
+          start_date: "2020-01-01",
+          end_date: "2024-12-31",
+        }
+      : {
+          ...batch,
+          counts: { imported: 101 },
+          items: [{ ...item, status: "imported" }],
+        }
+  )
+  mount()
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Open imported transactions" })
+  )
+  await waitFor(() =>
+    expect(screen.getByLabelText("Location")).toHaveTextContent(
+      "view=transactions"
+    )
+  )
+  const scope = {
+    accountId: "one-account",
+    startDate: "2020-01-01",
+    endDate: "2024-12-31",
+  }
+  expect(
+    Object.values(useInvestigationScopeStore.getState().scopes)
+  ).toContainEqual(scope)
+  expect(
+    useFinancialDraftStore.getState().drafts[
+      financialDraftKey("case", paymentTableDraftName(scope, true))
+    ]
+  ).toMatchObject({
+    importBatchId: "batch",
+    importBatchRevision: "d".repeat(64),
+    importSourceIds: sources,
+    importStatementCount: 101,
+    sourceDocumentId: "",
+    search: "",
+  })
+  expect(useFinancialStore.getState().mode).toBe("transactions")
 })

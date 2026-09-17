@@ -64,6 +64,10 @@ export function LedgerRowBrowser({
     page,
     sourceDocumentId = "",
     sourceFilename = "",
+    importBatchId = "",
+    importBatchRevision = "",
+    importSourceIds = [],
+    importStatementCount = 0,
   } = view
   const changeView = (changes: Partial<typeof emptyView>) =>
     setView((previous) => ({ ...previous, page: 0, ...changes }))
@@ -87,10 +91,12 @@ export function LedgerRowBrowser({
     minMinor === null ||
     maxMinor === null ||
     (!!minMinor && !!maxMinor && BigInt(minMinor) > BigInt(maxMinor))
+  const batchSources = new Set(importSourceIds)
   const rows = transactions.filter(
     (row) =>
       !invalidRange &&
       (!sourceDocumentId || row.source_document_id === sourceDocumentId) &&
+      (!importBatchId || batchSources.has(row.source_document_id)) &&
       (!minMinor ||
         (exactAmount(row) !== null && exactAmount(row)! >= BigInt(minMinor))) &&
       (!maxMinor ||
@@ -130,6 +136,42 @@ export function LedgerRowBrowser({
   const index = Math.min(page, Math.max(0, Math.ceil(rows.length / 50) - 1))
   return (
     <section aria-label="Browse ledger rows" className="space-y-3">
+      {importBatchId && (
+        <div
+          className="flex flex-wrap items-center justify-between gap-3 rounded border bg-card p-3"
+          role="region"
+          aria-label="Imported batch transactions"
+        >
+          <p>
+            Payments from{" "}
+            <strong>{importStatementCount} imported statements</strong> in this
+            batch. Account, date and payment filters also apply.
+          </p>
+          <div className="flex gap-3 items-center">
+            {exportContext && (
+              <a
+                className="underline"
+                href={`/cases/${exportContext.caseId}/financial?view=statements&batch=${importBatchId}`}
+              >
+                Open import batch
+              </a>
+            )}
+            <Button
+              variant="outline"
+              onClick={() =>
+                changeView({
+                  importBatchId: "",
+                  importBatchRevision: "",
+                  importSourceIds: [],
+                  importStatementCount: 0,
+                })
+              }
+            >
+              Clear batch filter
+            </Button>
+          </div>
+        </div>
+      )}
       {sourceDocumentId && (
         <div
           className="flex flex-wrap items-center justify-between gap-3 rounded border bg-card p-3"
@@ -473,6 +515,12 @@ export function LedgerRowBrowser({
               search,
               ...(sourceDocumentId
                 ? { source_document_id: sourceDocumentId }
+                : {}),
+              ...(importBatchId
+                ? {
+                    import_batch_id: importBatchId,
+                    import_batch_revision: importBatchRevision,
+                  }
                 : {}),
               currency,
               direction,

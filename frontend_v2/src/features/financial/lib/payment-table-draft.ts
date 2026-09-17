@@ -15,6 +15,10 @@ export const emptyPaymentTableView = {
   page: 0,
   sourceDocumentId: "",
   sourceFilename: "",
+  importBatchId: "",
+  importBatchRevision: "",
+  importSourceIds: [] as string[],
+  importStatementCount: 0,
 }
 export function paymentTableDraftName(
   params: LedgerQueryParams = {},
@@ -31,7 +35,14 @@ export function paymentTableDraftName(
 export function resetPaymentTableView(
   caseId: string,
   params: LedgerQueryParams,
-  statement?: { source_document_id?: string; filename?: string }
+  statement?: {
+    source_document_id?: string
+    filename?: string
+    batch_id?: string
+    revision?: string
+    source_document_ids?: string[]
+    statement_count?: number
+  }
 ) {
   useFinancialDraftStore
     .getState()
@@ -39,5 +50,9 @@ export function resetPaymentTableView(
       ...emptyPaymentTableView,
       sourceDocumentId: statement?.source_document_id || "",
       sourceFilename: statement?.filename || "",
+      importBatchId: statement?.batch_id || "",
+      importBatchRevision: statement?.revision || "",
+      importSourceIds: statement?.source_document_ids || [],
+      importStatementCount: statement?.statement_count || 0,
     })
 }

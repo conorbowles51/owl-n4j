@@ -68,6 +68,9 @@ def assess(proposal, request=None):
         problems.append(dict(message='This is a receipt or payment document. Open its document review.', row_id=None))
     if proposal.get('reading_failure'):
         problems.append(dict(message=proposal['reading_failure'], row_id=None))
+    recovery = proposal.get('review_recovery')
+    if recovery and recovery['required'] and not recovery['acknowledged']:
+        problems.append(dict(message='Compare the earlier saved reviews for this file before importing. Saved corrections may belong to different statement periods in the new reading.', row_id=None))
     if not proposal['currency']:
         problems.append(dict(message='Choose the currency printed on these statements.', row_id=None))
     try:
@@ -113,7 +116,8 @@ def assess(proposal, request=None):
         balance_status=balance['balance_status'], checks=balance['checks'],
         balance_exception=accepted_difference(balance, raw), problems=problems[:50], problem_count=len(problems))
     if current:
-        summary.update(transaction_count=current['transaction_count'], problems=[], problem_count=0)
+        summary.update(transaction_count=current['transaction_count'], problems=[], problem_count=0,
+            source_document_id=current['source_document_id'], account_id=current['account_id'])
         return 'imported', summary
     return ('attention' if problems else 'ready'), summary
 
@@ -152,7 +156,11 @@ def prepare_reviews(session, batch, file):
         progress = proposal.get('saved_review') or proposal.get('previous_saved_review')
         draft = progress.get('request') if progress else None
         if draft and draft.get('expected_revision') != proposal['revision']:
-            raise PdfMappingError('This file has saved corrections from an earlier reading. Open its individual statement review to compare them before adding it to bulk import.', 409)
+            if proposal.get('saved_review'):
+                raise PdfMappingError('This file has saved corrections from an earlier reading. Open its individual statement review, compare them and save progress before adding it to bulk import.', 409)
+            # Keep the new reading editable while earlier values stay in the
+            # recovery panel. Assessment holds import until comparison is saved.
+            draft = None
         status,summary = assess(proposal, draft)
         summary.update(filename=file['filename'], currency=currency, source_id=file['source_id'])
         if existing:
@@ -342,7 +350,8 @@ def _import_item(factory,case_id,batch_id,item_id,resolve_path):
             request=StatementImportRequest.model_validate(raw)
             actor=item.summary['import_actor'];actor=Actor(**{**actor,'user_id':UUID(actor['user_id'])})
             receipt=confirm_statement_import(session_factory=factory,case_id=case_id,evidence_file_id=item.file_id,request=request,actor=actor,resolve_path=resolve_path)
-            item.status='imported';item.summary={**item.summary,'transaction_count':receipt['transaction_count'],'problems':[]}
+            item.status='imported';item.summary={**item.summary,'transaction_count':receipt['transaction_count'],'problems':[],
+                'source_document_id':receipt['source_document_id'],'account_id':receipt['account_id']}
         except Exception as error:
             log.exception('Financial batch import failed')
             item.status='attention';item.summary={**item.summary,'problems':[dict(message=str(error) if isinstance(error,PdfMappingError) else 'Import could not be confirmed. Open this statement to check its current import before retrying.',row_id=None)]}

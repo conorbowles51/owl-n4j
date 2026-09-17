@@ -55,3 +55,21 @@ class LedgerTableViewTests(TestCase):
         for value in ['prefix', a_id + 'extra', None, 42]:
             with self.subTest(value=value), self.assertRaises(LedgerSummaryError):
                 capture_table_view(ledger, {'source_document_id': value})
+
+    def test_batch_export_is_bound_to_the_exact_imported_sources_and_refuses_stale_scope(self):
+        from copy import deepcopy
+        batch_id = '00000000-0000-4000-8000-000000000001'
+        ledger = {'readings': [self.row('a', source_document_id='source-a'), self.row('b', source_document_id='source-b'), self.row('other', source_document_id='source-other')]}
+        original = deepcopy(ledger)
+        filters = {'import_batch_id': batch_id, 'import_batch_revision': 'a'*64}
+        scope = {'batch_id': batch_id, 'revision': 'a'*64, 'source_document_ids': ['source-a', 'source-b']}
+        view = capture_table_view(ledger, filters, batch_scope=scope)
+        self.assertEqual(view['row_ids'], ['a', 'b'])
+        self.assertEqual(view['imported_source_document_ids'], scope['source_document_ids'])
+        self.assertEqual(ledger, original)
+        self.assertEqual(capture_table_view(ledger, filters, batch_scope={**scope, 'source_document_ids': []})['row_ids'], [])
+        for invalid in (None, {**scope, 'revision': 'b'*64}, {**scope, 'batch_id': 'another'}):
+            with self.subTest(invalid=invalid), self.assertRaises(LedgerSummaryError):
+                capture_table_view(ledger, filters, batch_scope=invalid)
+        with self.assertRaises(LedgerSummaryError):
+            capture_table_view(ledger, {'import_batch_id': batch_id}, batch_scope=scope)

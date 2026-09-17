@@ -10,6 +10,9 @@ import { useFinancialAccess } from "../hooks/use-financial-access"
 import { StatementImportPanel } from "./StatementImportPanel"
 import { statementDraft } from "../lib/statement-review-draft"
 import { BatchReviewContext } from "../lib/batch-review-context"
+import { resetPaymentTableView } from "../lib/payment-table-draft"
+import { useInvestigationScopeStore } from "../stores/investigation-scope"
+import { useFinancialStore } from "../stores/financial.store"
 const itemSchema = z.object({
   id: z.string(),
   file_id: z.string(),
@@ -152,6 +155,42 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
       }),
     onSuccess: refresh,
   })
+  const openImported = useMutation({
+    mutationFn: async () => {
+      const result = z
+        .object({
+          case_id: z.string(),
+          batch_id: z.string(),
+          revision: z.string(),
+          source_document_ids: z.array(z.string()),
+          account_ids: z.array(z.string()),
+          statement_count: z.number(),
+          transaction_count: z.number(),
+          start_date: z.string().nullable(),
+          end_date: z.string().nullable(),
+        })
+        .parse(
+          await fetchAPI(
+            `${prefix}/${batchId}/imported-transactions?case_id=${caseId}`
+          )
+        )
+      if (result.case_id !== caseId || result.batch_id !== batchId)
+        throw Error("The imported payments belong to another batch.")
+      return result
+    },
+    onSuccess: (result) => {
+      const scope = {
+        accountId:
+          result.account_ids.length === 1 ? result.account_ids[0] : undefined,
+        startDate: result.start_date || undefined,
+        endDate: result.end_date || undefined,
+      }
+      resetPaymentTableView(caseId, scope, result)
+      useInvestigationScopeStore.getState().apply(caseId, scope)
+      useFinancialStore.getState().setMode("transactions")
+      setParams({ view: "transactions" })
+    },
+  })
   if (!batchId)
     return (
       <section
@@ -220,8 +259,13 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
         </div>
         <div className="flex gap-2">
           {importedCount > 0 && (
-            <Button onClick={() => setParams({ view: "transactions" })}>
-              Open imported transactions
+            <Button
+              disabled={openImported.isPending}
+              onClick={() => openImported.mutate()}
+            >
+              {openImported.isPending
+                ? "Opening imported payments…"
+                : "Open imported transactions"}
             </Button>
           )}
           <Button variant="outline" onClick={() => change(null)}>
@@ -229,6 +273,7 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
           </Button>
         </div>
       </div>
+      {openImported.isError && <p role="alert">{openImported.error.message}</p>}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[
           [
@@ -659,7 +704,13 @@ function BatchStatementReview({
         >
           <StatementImportPanel
             caseId={caseId}
-            onImported={() => setParams({ view: "transactions" })}
+            onImported={(receipt) => {
+              const scope = { accountId: receipt?.account_id }
+              resetPaymentTableView(caseId, scope, receipt)
+              useInvestigationScopeStore.getState().apply(caseId, scope)
+              useFinancialStore.getState().setMode("transactions")
+              setParams({ view: "transactions" })
+            }}
           />
         </BatchReviewContext.Provider>
       )}

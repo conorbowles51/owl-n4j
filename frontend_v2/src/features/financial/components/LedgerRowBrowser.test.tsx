@@ -318,3 +318,44 @@ it("selects every matching payment above the old limit while showing only one ta
       .every((input) => (input as HTMLInputElement).checked)
   ).toBe(true)
 })
+
+it("shows only the imported batch sources and lets the investigator clear that scope", () => {
+  const params = { startDate: "2020-01-01", endDate: "2026-12-31" }
+  resetPaymentTableView("case", params, {
+    batch_id: "batch",
+    revision: "a".repeat(64),
+    source_document_ids: ["source-a", "source-b"],
+    statement_count: 2,
+  })
+  render(
+    <LedgerRowBrowser
+      investigation
+      exportContext={{ caseId: "case", params }}
+      transactions={[
+        row("a", { source_document_id: "source-a" }),
+        row("b", { source_document_id: "source-b" }),
+        row("c", { source_document_id: "unrelated" }),
+      ]}
+    />
+  )
+  expect(
+    screen.getByRole("region", { name: "Imported batch transactions" })
+  ).toHaveTextContent("2 imported statements")
+  expect(
+    screen
+      .getByRole("table", { name: "Investigation transactions" })
+      .querySelectorAll("tbody tr")
+  ).toHaveLength(2)
+  expect(
+    screen.getByRole("link", { name: "Open import batch" })
+  ).toHaveAttribute("href", "/cases/case/financial?view=statements&batch=batch")
+  fireEvent.click(screen.getByRole("button", { name: "Clear batch filter" }))
+  expect(
+    screen
+      .getByRole("table", { name: "Investigation transactions" })
+      .querySelectorAll("tbody tr")
+  ).toHaveLength(3)
+  expect(
+    screen.queryByRole("region", { name: "Imported batch transactions" })
+  ).not.toBeInTheDocument()
+})

@@ -98,6 +98,34 @@ def confirm(evidence_file_id: UUID, body: StatementImportRequest, case_id: UUID 
 from pydantic import BaseModel, ConfigDict
 from pydantic import Field
 from services.financial.statement_progress import save_progress
+from services.financial.review_recovery import previous_review_detail, acknowledge_recovery
+
+
+@router.get('/{evidence_file_id}/previous-reviews/{review_id}')
+def previous_statement_review(evidence_file_id: UUID, review_id: str, case_id: UUID = Query(...),
+                              offset: int = Query(0, ge=0), limit: int = Query(30, ge=1, le=100),
+                              db: Session = Depends(get_db)):
+    try:
+        return previous_review_detail(db, case_id=case_id, evidence_file_id=evidence_file_id,
+            review_id=review_id, offset=offset, limit=limit)
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+class ReviewComparisonRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    expected_revision: str = Field(pattern=r'^[a-f0-9]{64}$')
+
+
+@router.post('/{evidence_file_id}/previous-reviews/compare', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
+def compare_previous_reviews(evidence_file_id: UUID, body: ReviewComparisonRequest, case_id: UUID = Query(...),
+                             user=Depends(get_current_db_user), db: Session = Depends(get_db)):
+    try:
+        return acknowledge_recovery(db, case_id=case_id, evidence_file_id=evidence_file_id,
+            expected_revision=body.expected_revision, actor=actor_from_user(user))
+    except PdfMappingError as exc:
+        db.rollback()
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 from services.financial.file_visibility import set_financial_file_visibility
 from services.financial.evidence_intake import resolve_financial_selection, prepare_existing_financial_file
 from services.financial.statement_reprocessing import create_statement_version
@@ -258,6 +286,15 @@ def confirm_financial_batch(batch_id: UUID,body: ConfirmFinancialBatch,case_id: 
         return import_batches.queue_import(db,case_id=case_id,batch_id=batch_id,expected_revision=body.expected_ready_revision,actor=actor_from_user(user))
     except PdfMappingError as exc:
         db.rollback();raise HTTPException(status_code=exc.status_code,detail=str(exc)) from exc
+
+
+@router.get('/batches/{batch_id}/imported-transactions')
+def imported_financial_batch_scope(batch_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    from services.financial.batch_transaction_scope import imported_batch_scope
+    try:
+        return imported_batch_scope(db, case_id=case_id, batch_id=batch_id)
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
 
 class SaveFinancialBatchReview(BaseModel):

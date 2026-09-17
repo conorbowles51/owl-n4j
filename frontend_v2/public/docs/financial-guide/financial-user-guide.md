@@ -600,6 +600,23 @@ Use this when extraction missed or misread substantial parts of a PDF. For a sin
 
 If you refresh the page while processing, reopen the same uploaded statement in the same browser tab. Loupe checks the saved processing job. Select **Open new reading** when it is ready. If the request was interrupted before a response arrived, select **Reprocess statement** to resume the same request. Closing the browser tab can discard this saved progress.
 
+### Recover saved corrections after reprocessing
+
+The new reading keeps access to earlier individual and bulk reviews. If its accounts, periods or source references differ, those earlier corrections are shown separately so you can compare them with the new reading.
+
+1. Open **Earlier saved reviews**, then **Compare earlier values**.
+2. Choose an **Earlier review** by account and period. **Period changed** identifies a review that could not be matched to the new period list. The filename and saved date identify its source.
+3. Compare the saved dates, descriptions, names, amounts, balances and correction reasons with the new reading and original PDF. Use **Next saved rows** for a longer review. Excluded rows and balance controls remain visible in this comparison.
+4. Apply any still-needed corrections to the new statement using **Edit this row** or **Correct several rows**. An earlier row is not automatically assigned to a different account or period.
+5. Once you have compared the earlier reviews for this file, tick **I have compared the earlier saved reviews with the new reading** and select **Save comparison for this file**.
+6. Use **Save progress** to keep your current corrections, or confirm the import when its checks are complete. In a bulk review, unchanged periods are checked again after the comparison is saved. Periods with remaining errors stay under **Needs attention**.
+
+![Earlier bulk review retained beside a new reading, using synthetic data in light mode](images/36-earlier-saved-reviews.png)
+
+*Open the earlier account and period to see saved corrections and their reasons. Saving the comparison does not add transactions.*
+
+The comparison is saved in the case. It does not import payments. If an earlier saved review or the new extraction changes afterwards, compare the changed versions again. Multiple conflicting saved reviews remain separately available; Loupe does not choose one based only on its save time.
+
 Do not repeatedly reprocess without checking the result. OCR can repeat the same error; correcting a readable value against the source may be the appropriate next step.
 
 The older page-by-page review tools remain available under **Import review** for existing batches and exceptional layouts. They are described in the [advanced manual review appendix](#advanced-manual-review). They are not required for a normal statement import.
@@ -623,6 +640,15 @@ Custody records describe how a source came into the case and any reported transf
 Your unfinished fields and selected certification stay in this browser tab when you close the source or refresh. Reopen the same source and **Source custody records** to continue. They are not saved to the case until the recorded confirmation appears. If a save is interrupted, reload the history before changing the draft. Submitting the unchanged report again uses the same request, so an already saved report is returned without adding another copy.
 
 To correct a report, select **Correct this custody report**. Loupe fills in that report's existing details. Change the incorrect fields, enter a new **Details and reason** explaining the correction, then save. Your selected report and edits also survive refresh. If the registered source changed, check the current original before choosing **Use details for the current source**. The correction adds a record; it does not erase the earlier one. “No custody reports recorded” means earlier custody is unknown, not that custody was verified or uninterrupted.
+
+### Open the payments from a completed batch
+
+1. Open the processing batch and select **Open imported transactions**.
+2. Read the **Payments from [number] imported statements** notice above the table. It limits the table to that batch's imported source statements, including statements on other pages of the batch list.
+3. The date range covers the imported payments. If they belong to one account, that account is selected. If several accounts are involved, their payments are shown together.
+4. Search, open a payment or add a finding using the usual transaction controls. **Open import batch** returns to the batch list.
+5. To include other statement sources within the selected account and dates, select **Clear batch filter**. Adjust the account and date controls if you want a wider range.
+6. To download the displayed results, expand **Download these transactions** and select **Download this table view**. Its recorded table selection uses the same batch and payment filters. The enclosing ledger record also retains the applied account/date history. If another import changes the batch's statement list, reopen **Open imported transactions** before downloading again.
 
 ## Read and filter transactions
 

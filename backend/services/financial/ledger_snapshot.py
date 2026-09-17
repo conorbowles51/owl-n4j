@@ -128,7 +128,16 @@ def capture_ledger_export(engine, *, case_id, account_id=None, start_date=None, 
                 document['investigation_notes']=capture_transaction_notes(session,case_id=case_id,readings=document['ledger']['readings'])
                 if table_view is not None:
                     from services.financial.ledger_table_view import capture_table_view
-                    document['table_view'] = capture_table_view(document['ledger'], table_view)
+                    batch_scope = None
+                    if table_view.get('import_batch_id'):
+                        from uuid import UUID
+                        from services.financial.batch_transaction_scope import imported_batch_scope
+                        from services.financial.pdf_candidates import PdfMappingError
+                        try:
+                            batch_scope = imported_batch_scope(session, case_id=case_id, batch_id=UUID(table_view['import_batch_id']))
+                        except (PdfMappingError, ValueError) as exc:
+                            raise LedgerSummaryError('The import batch could not be resolved for this case. Reopen its transactions before downloading.') from exc
+                    document['table_view'] = capture_table_view(document['ledger'], table_view, batch_scope=batch_scope)
                 from services.financial.ledger_exhibits import capture_ledger_exhibits
                 document["exhibit_assessment"] = capture_ledger_exhibits(document)
                 if include_source_files:

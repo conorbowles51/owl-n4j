@@ -165,14 +165,14 @@ Retain completed work in this checklist. Checked items include the local impleme
 - [ ] Distinguish uncertain transaction fields from harmless contextual text.
 - [x] Offer selected-row correction for repetitive errors with a before/after preview, selection across pages, source links and a reason retained on every changed row. Checks recalculate after applying.
 - [ ] Permit account/period reassignment where detection was wrong, retaining source and correction history.
-- [ ] Finish reprocessing recovery for unmatched period boundaries and batch-only drafts. Individual saved reviews now carry forward from the explicit parent period only when the extraction revision matches; a changed revision shows earlier values for comparison. Current imports and earlier source versions remain retained.
+- [x] Recover individual and bulk saved reviews through earlier file versions, including unmatched periods and conflicting alternatives. Show old values separately; record a file-wide comparison before importing a changed reading, invalidate it when saved inputs change, and recheck unchanged batch periods. Current imports and original files remain retained.
 - [ ] Present probable duplicate coverage for a deliberate decision; keep originals in Evidence.
 
 **Done when:** the supplied multi-statement files produce a manageable, justified set of review tasks. A cleaner screen alone cannot close this item. Every false flag and missed transaction found in the benchmark must be recorded.
 
 ### E. Connect import to investigation
 
-- [ ] Open the imported transactions with the relevant accounts and dates selected.
+- [x] Open the imported transactions with their account/date range and exact batch source filter. Include all imported periods across list pages, provide a clear reset, and bind table downloads to the same source list. Reopening a single imported statement also retains its source filter.
 - [ ] Bring missing-period and overlapping-period checks into the main statement register.
 - [ ] Add an actionable list of account references without supplied statements, linked to the payments that mention them.
 - [ ] Allow those questions and selected payments to be saved in Findings without copying text between screens.

@@ -420,4 +420,13 @@ Record the filename, account, period, action, expected result and actual result 
 3. Open **Correct several rows**. Select two rows, choose **Switch credit and debit**, add a reason and select **Preview corrections**. Expect only those two rows in the preview, with their current and proposed columns.
 4. Apply the changes. Expect new balance differences where the switched values no longer match the statement. Switch the same rows back with a reason, then save. Expect the original values to remain visible in the printed table throughout.
 5. If two authorised reviewers open the same saved review, save a change from one and then attempt to save the older review from the other. Expect a conflict message; the later attempt must not overwrite the first saved review.
-6. If reprocessing changes a reading with an earlier saved review, inspect **Previous saved review**. Expect the earlier corrected values to remain available for comparison, rather than being copied onto different source rows.
+6. If reprocessing changes a reading with an earlier saved review, open **Earlier saved reviews** and **Compare earlier values**. Expect individual and bulk corrections, including changed periods, to remain available. Compare them, tick the comparison box and select **Save comparison for this file**. Reload to check that the comparison remains saved. It must not add payments.
+
+### Check the link from a completed batch to Transactions
+
+1. Use a synthetic case with an imported batch and another imported statement outside that batch.
+2. From the batch, select **Open imported transactions**. Expect the batch notice, the dates of those payments, and only that batch's imported payments in the table.
+3. Check a batch with more than 100 periods if available. Its table filter must include every imported period, not just the visible batch page.
+4. Download **this table view**. Check that its recorded row list and batch source list agree with the displayed filter. Other case payments must not enter that recorded table selection.
+5. Select **Clear batch filter**, then widen the account/date range if needed. The other statement's payments should become available again.
+6. If the batch gains another imported statement after you opened its transactions, try the old download. Expect an instruction to reopen the batch's transactions so the displayed and downloaded statement lists agree.
