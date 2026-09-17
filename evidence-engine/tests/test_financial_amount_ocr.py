@@ -45,7 +45,9 @@ class Reader:
         return [SimpleNamespace(to_json=lambda:dict(table=dict(values=values)))]
 
 
-def run(data,monkeypatch,replies,deadline=None):
+def run(data,monkeypatch,replies,deadline=None,cleaned=False):
+    if not cleaned:
+        monkeypatch.setattr(retry,'_cleaned_line_readings',lambda *a:[])
     calls=[]
     def read(image,**kwargs):
         calls.append(kwargs);value=next(replies,'')
@@ -181,3 +183,52 @@ def test_page_text_geometry_and_saved_provenance_agree(monkeypatch):
     canonical=build_canonical_document_text(SimpleNamespace(text=text,tables=[],metadata=dict(file_type='pdf',page_spans=[pdf_extraction._page_span(result,0)])))
     assert canonical.source_locations[0]['ocr_refinements']==records
     assert records[0]['method']=='tesseract_amount_crop_consensus'
+
+
+def test_cleaned_single_line_profile_requires_both_sizes_and_keeps_provenance(monkeypatch):
+    data=fixture();before=deepcopy(data)
+    result,records,calls=run(data,monkeypatch,iter(['-12.00']*6),cleaned=True)
+    assert result['text'][5]=='-12.00' and data==before and len(calls)==6
+    assert all('--psm 7 ' in c['config'] for c in calls)
+    assert records[0]['profile']=='cleaned_single_line' and records[0]['segmentation_modes']==[7]
+    assert [o['threshold'] for o in records[0]['observations']]==[150,190,220,150,190,220]
+    assert [o['dpi'] for o in records[0]['observations']]==[300]*3+[450]*3
+    assert records[0]['original_words'][0]['text']=='~12.00'
+    assert result['text'][:5]+result['text'][6:]==data['text'][:5]+data['text'][6:]
+
+
+@pytest.mark.parametrize('replies',[
+    ['-12.00']*5+['12.00'], ['-12.00']*5+['-12.01'],
+    ['12.00']*6, ['12']+['-12.00']*5,
+    ['-12.00']*3+['12']*3,
+    ['-12.00']*5+[RuntimeError('deadline')],
+])
+def test_cleaned_profile_never_votes_away_digits_signs_or_incomplete_primary(monkeypatch,replies):
+    data=fixture();result,records,_=run(data,monkeypatch,iter(replies),cleaned=True)
+    assert result is data and not records
+
+
+def test_cleaned_profile_allows_nonreadable_attempts_but_requires_four_complete_matches(monkeypatch):
+    result,records,calls=run(fixture(),monkeypatch,iter(['-12.00','-12.00','12','-12.00','12','-12.00']),cleaned=True)
+    assert result['text'][5]=='-12.00' and len(calls)==6
+    assert len(records[0]['observations'])==6
+
+
+def test_legacy_fallback_cannot_override_a_complete_cleaned_reading(monkeypatch):
+    data=fixture();result,records,_=run(data,monkeypatch,iter(['12']*5+['-13.00']+['-12.00']*2),cleaned=True)
+    assert result is data and not records
+
+
+def test_legacy_fallback_can_confirm_an_incomplete_cleaned_profile(monkeypatch):
+    result,records,calls=run(fixture(),monkeypatch,iter(['12']*5+['-12.00']+['-12.00']*2),cleaned=True)
+    assert result['text'][5]=='-12.00' and len(calls)==8
+    assert len(records[0]['observations'])==8 and records[0]['profile']=='original_or_compact'
+
+
+def test_cleaned_credit_adjustment_keeps_the_positive_sign_and_deposit_cannot_be_negative(monkeypatch):
+    data=fixture();data['text'][4]='Withdrawal Adjustment Credit Voucher'
+    result,records,_=run(data,monkeypatch,iter(['12.00']*6),cleaned=True)
+    assert result['text'][5]=='12.00' and records[0]['profile']=='cleaned_single_line'
+    data=fixture();data['text'][4]='Deposit Transfer'
+    result,records,_=run(data,monkeypatch,iter(['-12.00']*6),cleaned=True)
+    assert result is data and not records

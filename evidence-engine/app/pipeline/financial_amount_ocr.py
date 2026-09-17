@@ -84,6 +84,41 @@ def _candidates(tables, words, width, height):
     return candidates[:40]
 
 
+def _cleaned_line_readings(page, rect, rotation, deadline, language):
+    """Read a measured money line at two sizes and three ink thresholds.
+
+    Raw-line mode misreads signs on these small scanned cells. Use ordinary
+    single-line segmentation for this profile; retain every result and refuse
+    disagreement rather than taking a majority or calculating from balances.
+    """
+    clip = (fitz.Rect([v / 1000 for v in rect]) + (-3, -1, 3, 1)) & page.rect
+    observations = []
+    for dpi in (300, 450):
+        if deadline - time.monotonic() < 2:
+            break
+        pix = page.get_pixmap(matrix=fitz.Matrix(dpi / 72, dpi / 72), clip=clip,
+            colorspace=fitz.csRGB, alpha=False, annots=True)
+        with Image.frombytes('RGB', (pix.width, pix.height), pix.samples) as raw:
+            with raw.convert('L') as grey:
+                for threshold in (150, 190, 220):
+                    remaining = deadline - time.monotonic()
+                    if remaining < 1:
+                        break
+                    with grey.point(lambda value: 255 if value >= threshold else 0) as ink:
+                        with ImageOps.expand(ink, border=15, fill=255) as bordered:
+                            oriented = bordered.rotate(-rotation, expand=True, fillcolor=255) if rotation else bordered
+                            try:
+                                value = pytesseract.image_to_string(oriented, lang=language,
+                                    config=f'--oem 1 --psm 7 --dpi {dpi} -c tessedit_char_whitelist=0123456789.,-+',
+                                    timeout=min(5, remaining)).strip()
+                            finally:
+                                if oriented is not bordered:
+                                    oriented.close()
+                    observations.append(dict(dpi=dpi, segmentation_mode=7, text=value,
+                        threshold=threshold, profile='cleaned_single_line'))
+    return observations
+
+
 def reread_financial_amounts(page, data, *, rotation, image_width, image_height,
                              reader, deadline, language):
     page_text = ' '.join(text.strip() for text in data['text'] if text.strip())
@@ -107,68 +142,85 @@ def reread_financial_amounts(page, data, *, rotation, image_width, image_height,
             continue
         observations = []
         try:
-            for dpi in (720, 600):
-                if dpi == 600:
-                    valid = [o['text'] for o in observations if _money(o['text'])]
-                    if len(valid) != 1 or not _money(observations[0]['text']):
-                        break
-                pix = page.get_pixmap(matrix=fitz.Matrix(dpi/72,dpi/72), clip=clip,
-                    colorspace=fitz.csRGB, alpha=False, annots=True)
-                image = Image.frombytes('RGB', (pix.width,pix.height),pix.samples)
-                try:
-                    if rotation:
-                        oriented = image.rotate(-rotation,expand=True,fillcolor='white')
-                        image.close()
-                        image = oriented
-                    for mode in (7,13):
-                        remaining = deadline-time.monotonic()
-                        if remaining < 1:
+            cleaned = _cleaned_line_readings(page, b, rotation, deadline, language)
+            clean_valid = [o for o in cleaned if _money(o['text'])]
+            if len({o['text'] for o in clean_valid}) > 1:
+                continue
+            clean_agrees = (len(cleaned) == 6 and _money(cleaned[0]['text'])
+                and len(clean_valid) >= 4 and len({o['dpi'] for o in clean_valid}) == 2)
+            if clean_agrees:
+                observations = cleaned
+                valid = [o['text'] for o in clean_valid]
+                original_agrees = False
+            else:
+                for dpi in (720, 600):
+                    if dpi == 600:
+                        valid = [o['text'] for o in observations if _money(o['text'])]
+                        if len(valid) != 1 or not _money(observations[0]['text']):
                             break
-                        text = pytesseract.image_to_string(image,lang=language,
-                            config=f'--oem 1 --psm {mode} --dpi {dpi} -c tessedit_char_whitelist=0123456789.,-+',
-                            timeout=min(10,remaining)).strip()
-                        observations.append(dict(dpi=dpi,segmentation_mode=mode,text=text))
-                finally:
-                    image.close()
-            valid = [o['text'] for o in observations if _money(o['text'])]
-            original_agrees = (bool(observations) and _money(observations[0]['text'])
-                               and len(valid) >= 2 and len(set(valid)) == 1)
-            if not original_agrees:
-                if len(set(valid)) > 1:
-                    continue
-                # Oversized glyphs can fragment on small scanned money cells.
-                # Try a compact crop with a white border. Keep every earlier
-                # valid reading: no alternate profile can outvote a conflict.
-                compact = []
-                compact_clip = (fitz.Rect([v/1000 for v in b])+(-2,-1,2,1)) & page.rect
-                for dpi in (300,450):
-                    if deadline-time.monotonic() < 2:
-                        break
-                    pix = page.get_pixmap(matrix=fitz.Matrix(dpi/72,dpi/72),clip=compact_clip,
-                        colorspace=fitz.csRGB,alpha=False,annots=True)
-                    with Image.frombytes('RGB',(pix.width,pix.height),pix.samples) as raw:
-                        with ImageOps.expand(raw,border=10,fill='white') as image:
-                            if rotation:
-                                oriented=image.rotate(-rotation,expand=True,fillcolor='white')
-                            else:
-                                oriented=image
-                            try:
-                                for mode in (7,13):
-                                    remaining=deadline-time.monotonic()
-                                    if remaining < 1:
-                                        break
-                                    value=pytesseract.image_to_string(oriented,lang=language,
-                                        config=f'--oem 1 --psm {mode} --dpi {dpi} -c tessedit_char_whitelist=0123456789.,-+',
-                                        timeout=min(10,remaining)).strip()
-                                    compact.append(dict(dpi=dpi,segmentation_mode=mode,text=value,profile='compact_white_border'))
-                            finally:
-                                if oriented is not image:
-                                    oriented.close()
-                observations.extend(compact)
-                compact_valid=[o['text'] for o in compact if _money(o['text'])]
-                valid=[o['text'] for o in observations if _money(o['text'])]
-                if (len(compact) != 4 or not _money(compact[0]['text'])
-                        or len(compact_valid) < 2 or len(set(valid)) != 1):
+                    pix = page.get_pixmap(matrix=fitz.Matrix(dpi/72,dpi/72), clip=clip,
+                        colorspace=fitz.csRGB, alpha=False, annots=True)
+                    image = Image.frombytes('RGB', (pix.width,pix.height),pix.samples)
+                    try:
+                        if rotation:
+                            oriented = image.rotate(-rotation,expand=True,fillcolor='white')
+                            image.close()
+                            image = oriented
+                        for mode in (7,13):
+                            remaining = deadline-time.monotonic()
+                            if remaining < 1:
+                                break
+                            text = pytesseract.image_to_string(image,lang=language,
+                                config=f'--oem 1 --psm {mode} --dpi {dpi} -c tessedit_char_whitelist=0123456789.,-+',
+                                timeout=min(10,remaining)).strip()
+                            observations.append(dict(dpi=dpi,segmentation_mode=mode,text=text))
+                    finally:
+                        image.close()
+                valid = [o['text'] for o in observations if _money(o['text'])]
+                original_agrees = (bool(observations) and _money(observations[0]['text'])
+                                   and len(valid) >= 2 and len(set(valid)) == 1)
+                if not original_agrees:
+                    if len(set(valid)) > 1:
+                        continue
+                    # Oversized glyphs can fragment on small scanned money cells.
+                    # Try a compact crop with a white border. Keep every earlier
+                    # valid reading: no alternate profile can outvote a conflict.
+                    compact = []
+                    compact_clip = (fitz.Rect([v/1000 for v in b])+(-2,-1,2,1)) & page.rect
+                    for dpi in (300,450):
+                        if deadline-time.monotonic() < 2:
+                            break
+                        pix = page.get_pixmap(matrix=fitz.Matrix(dpi/72,dpi/72),clip=compact_clip,
+                            colorspace=fitz.csRGB,alpha=False,annots=True)
+                        with Image.frombytes('RGB',(pix.width,pix.height),pix.samples) as raw:
+                            with ImageOps.expand(raw,border=10,fill='white') as image:
+                                if rotation:
+                                    oriented=image.rotate(-rotation,expand=True,fillcolor='white')
+                                else:
+                                    oriented=image
+                                try:
+                                    for mode in (7,13):
+                                        remaining=deadline-time.monotonic()
+                                        if remaining < 1:
+                                            break
+                                        value=pytesseract.image_to_string(oriented,lang=language,
+                                            config=f'--oem 1 --psm {mode} --dpi {dpi} -c tessedit_char_whitelist=0123456789.,-+',
+                                            timeout=min(10,remaining)).strip()
+                                        compact.append(dict(dpi=dpi,segmentation_mode=mode,text=value,profile='compact_white_border'))
+                                finally:
+                                    if oriented is not image:
+                                        oriented.close()
+                    observations.extend(compact)
+                    compact_valid=[o['text'] for o in compact if _money(o['text'])]
+                    valid=[o['text'] for o in observations if _money(o['text'])]
+                    if (len(compact) != 4 or not _money(compact[0]['text'])
+                            or len(compact_valid) < 2 or len(set(valid)) != 1):
+                        continue
+                # Older crop profiles may help an incomplete line reading,
+                # but cannot override any complete result from that reading.
+                observations = cleaned + observations
+                valid = [o['text'] for o in observations if _money(o['text'])]
+                if len(set(valid)) != 1:
                     continue
             text = valid[0]
             # An image reading that loses a withdrawal sign is not acceptable.
@@ -194,7 +246,9 @@ def reread_financial_amounts(page, data, *, rotation, image_width, image_height,
             records.append(dict(method='tesseract_amount_crop_consensus',page=page.number+1,
                 rect=b,field=candidate['field'],original_text=candidate['text'],text=text,
                 original_words=[dict(text=w[4],rect=[round(v*1000) for v in w[:4]]) for w in original_words],
-                dpi=720 if original_agrees else 300,segmentation_modes=[7,13],
+                dpi=720 if original_agrees else 300,
+                segmentation_modes=[7] if clean_agrees else [7,13],
+                profile='cleaned_single_line' if clean_agrees else 'original_or_compact',
                 character_set='0123456789.,-+',observations=observations))
         except (RuntimeError,pytesseract.TesseractError):
             continue
