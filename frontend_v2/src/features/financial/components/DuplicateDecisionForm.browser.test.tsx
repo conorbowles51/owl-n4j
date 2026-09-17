@@ -3,6 +3,7 @@ import { fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, expect, it, vi } from "vitest"
 import { duplicateCandidates } from "@/test/duplicate-fixture"
 import { DuplicateCandidatesPanel } from "./DuplicateCandidatesPanel"
+import { FinancialAccessContext } from "../hooks/use-financial-access"
 
 afterEach(() => vi.restoreAllMocks())
 it("excludes then restores a reviewed copy through the connected controls", async () => {
@@ -38,7 +39,11 @@ it("excludes then restores a reviewed copy through the connected controls", asyn
   })
   render(
     <QueryClientProvider client={new QueryClient()}>
-      <DuplicateCandidatesPanel caseId="case-1" />
+      <FinancialAccessContext.Provider
+        value={{ canEdit: true, canUpload: false, ready: true, error: false }}
+      >
+        <DuplicateCandidatesPanel caseId="case-1" />
+      </FinancialAccessContext.Provider>
     </QueryClientProvider>
   )
   fireEvent.click(screen.getByRole("button", { name: "Compare documents" }))
@@ -53,7 +58,7 @@ it("excludes then restores a reviewed copy through the connected controls", asyn
   })
   fireEvent.click(screen.getByRole("button", { name: "Record decision" }))
   expect(
-    await screen.findByText("Decision recorded. 2 rows excluded.")
+    await screen.findByText("Decision recorded. 2 payments excluded.")
   ).toBeVisible()
   fireEvent.click(screen.getByRole("button", { name: "Close decision" }))
   fireEvent.click(await screen.findByText("Excluded documents (1)"))
@@ -63,7 +68,7 @@ it("excludes then restores a reviewed copy through the connected controls", asyn
   })
   fireEvent.click(screen.getByRole("button", { name: "Record decision" }))
   expect(
-    await screen.findByText("Decision recorded. 2 rows restored.")
+    await screen.findByText("Decision recorded. 2 payments restored.")
   ).toBeVisible()
   expect(writes).toEqual(["exclude", "restore"])
 })

@@ -2,6 +2,8 @@
 
 ## Local implementation checkpoint, 17 September 2026
 
+The main statement register now shows imported-date gaps, overlapping periods and unknown dates. Account review opens the relevant originals and requested date range; duplicate exclusion and restoration update the register. This is browser-verified on synthetic January/March statements with a repeated March copy. Pre-import duplicate warnings remain open.
+
 Latest difficult-file audit: six split-description amounts and fifteen posting-anchored transaction dates are corrected in the supplied Capital One collection. Its 52 periods and 301 proposed entries are unchanged; 51 opening/closing checks now match and one is unavailable. A separate visual sample of 27 entries on four original pages matches counts and totals. Twenty-nine undated interest charges and one earlier transaction without a separate posting date still need a date decision. The [audit record](financial-card-extraction-audit-2026-09-17.md) distinguishes that sample from full-document accuracy. This remains local and does not close the outstanding D/E items below.
 
 The continuation schedule is active every 10 minutes. The latest local implementation adds shared server-side checks to individual and batch review, recalculates edited values, compares running balances beyond 1,000 rows, and supports explicit printed credit/debit totals where recognised. A genuine printed discrepancy can be retained with an explanation tied to the exact values checked. It is never relabelled a match.
@@ -175,7 +177,7 @@ Retain completed work in this checklist. Checked items include the local impleme
 ### E. Connect import to investigation
 
 - [x] Open the imported transactions with their account/date range and exact batch source filter. Include all imported periods across list pages, provide a clear reset, and bind table downloads to the same source list. Reopening a single imported statement also retains its source filter.
-- [ ] Bring missing-period and overlapping-period checks into the main statement register.
+- [x] Bring missing-period and overlapping-period checks into the main statement register. Show account details, unknown dates and per-page counts; open account-scoped coverage, requested dates, original statements and transactions. Duplicate comparison opens here and exclusion/restore refreshes the register. Browser-verified with synthetic January/March statements and a repeated March copy. This is post-import comparison; the separate pre-import duplicate task remains open.
 - [ ] Add an actionable list of account references without supplied statements, linked to the payments that mention them.
 - [ ] Allow those questions and selected payments to be saved in Findings without copying text between screens.
 

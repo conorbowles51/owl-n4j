@@ -110,7 +110,9 @@ it("sends one decision with reviewed revisions and invalidates its original case
       })
     )
   )
-  expect(await screen.findByRole("status")).toHaveTextContent("2 rows excluded")
+  expect(await screen.findByRole("status")).toHaveTextContent(
+    "2 payments excluded"
+  )
   expect(screen.queryByRole("button", { name: "Record decision" })).toBeNull()
   expect(invalidate).toHaveBeenCalledWith({
     queryKey: ["financial-decisions", "original-case"],

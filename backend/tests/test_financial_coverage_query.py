@@ -31,6 +31,22 @@ class CoverageArithmeticTests(unittest.TestCase):
 
 class CoverageQueryTests(fixture.DuplicateTestCase):
     def read(self,**updates):return list_statement_coverage(self.db,**{**dict(case_id=self.case.id),**updates})
+    def test_register_account_details_and_filenames_stay_case_scoped(self):
+        from postgres.models.evidence import EvidenceFile
+        document = self.make_copy()
+        file = self.db.get(EvidenceFile, document.evidence_file_id)
+        self.account.holder_name = 'Example Holder'
+        self.account.institution_name = 'Example Bank'
+        self.db.commit()
+        item = self.read(account_id=self.account.id)['items'][0]
+        self.assertEqual(item['holder'], 'Example Holder')
+        self.assertEqual(item['institution'], 'Example Bank')
+        self.assertEqual(item['identifier'], self.account.identifier_as_printed)
+        self.assertEqual(item['periods'][0]['filename'], file.original_filename)
+        self.assertFalse(self.db.new or self.db.dirty)
+        file.case_id = self.other_case.id
+        self.db.commit()
+        self.assertIsNone(self.read(account_id=self.account.id)['items'][0]['periods'][0]['filename'])
     def test_scoped_read_retains_exclusions_and_no_writes(self):
         first=self.make_copy()
         other=self.make_copy(bounds=PeriodBounds.printed(date(2026,3,1),date(2026,3,31)))

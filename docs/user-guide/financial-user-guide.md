@@ -785,6 +785,20 @@ Open **Change history**. Expand the relevant decision to inspect the reason, act
 
 ## Check statements and missing periods
 
+### See missing dates from the statement register
+
+1. Open **Statements & accounts**. Under **Do you have all the statements?**, read the counts of accounts with gaps, overlapping dates or dates still to check.
+2. Find the account below those counts. Its card lists the dates of imported statements and any missing dates between them. Files still waiting for review or import do not count in this check.
+3. Select **Review dates & statements** on that account. The window shows its date coverage first, with the original statements and balance checks available below.
+4. To check dates before the first imported statement or after the last one, enter the full date range you need and select **Check date range**. Follow the steps below to open the originals or the account's payments.
+5. If dates overlap, select **Check duplicate imports** in the register. Compare the originals before excluding a repeated copy. An overlap can also mean that one statement contains additional records.
+
+Up to 25 accounts appear on each register page. If **Next accounts** is available, continue through the remaining pages. The summary counts refer to the current page. A statement with unknown dates is listed as needing a check; it is not treated as covering the missing dates.
+
+![The statement register shows a missing February period and two overlapping March statements for a synthetic account](images/38-statement-date-checks.png)
+
+*Review dates & statements opens this account's originals and date-range check. Check duplicate imports lets you compare the repeated March records.*
+
 ### Open one account's statements
 
 1. Open **Statements & accounts** and select **Review accounts**. **Statement files** returns to the main file register.
@@ -821,11 +835,11 @@ New supported Andrews imports also retain their opening and closing balances wit
 
 ### Find missing dates and overlapping statements
 
-1. Below the balance checks, read **Statement coverage**. It uses the dates recorded from the statements, separately for each currency.
+1. Read **Statement coverage** in the account review. It uses the dates recorded from the statements, separately for each currency. When opened from the register's **Review dates & statements** button, this section appears before the balance checks.
 2. Read any **Missing statement dates**. For example, January and March statements can leave February uncovered.
 3. Read any overlap count. Two statements covering the same dates may be duplicates, or one may include extra information. Open the originals before deciding.
 4. Select a bar in the statement timeline, then use its source button to open that statement. Solid bars contribute to covered dates. Dashed bars are left out because their source or dates need review.
-5. Expand **Statements included or left out** to see the reason for excluding a date range and open its source.
+5. Expand **Statements included or left out** to see each filename and the reason for leaving a date range out. Select **Open statement and dates**, then **Open statement file** to read the original.
 6. If you need dates before the first statement or after the last one, use the date range check below. A message saying there are no gaps between existing statements does not check those earlier or later dates.
 
 ### Check the full date range you need
@@ -836,7 +850,7 @@ New supported Andrews imports also retain their opening and closing balances wit
 4. If coverage could not be established, inspect the source dates. Missing, excluded or unconfirmed dates do not count as covered days.
 5. Expand **Open the statements used in this check** to inspect individual sources.
 6. Select **View transactions in the checked date range** to investigate the account's payments for those dates. An empty result does not prove that no payments occurred.
-7. You can switch financial tabs and return without losing this account review or its date range. Selecting a different account starts a separate date check. A full browser refresh clears this temporary view.
+7. In the **Review accounts** page, you can switch financial tabs and return without losing this account review or its date range. Closing the register's account-review window, selecting a different account or refreshing clears the temporary date-range view. Imported statements and saved decisions remain available.
 8. If you edit **From** or **To**, select **Check date range** again. Until then, the results and transaction button still refer to the previously checked dates, which remain displayed above the result.
 
 ![A date range check identifies January 2024 after the synthetic statement ends](images/16-account-date-check.png)
@@ -855,12 +869,12 @@ For a case-wide review, expand **Checks across all accounts** at the bottom of *
 
 ### Compare documents in this case
 
-1. On **Import review**, find **Duplicate candidates** and select **Compare documents**.
+1. Open **Statements & accounts**, then select **Check duplicate imports**. The comparison loads when the window opens. Select **Refresh comparison** if you have imported or changed statements since opening it.
 2. Open a **Candidate group**. Read the filenames and the explanation beneath each file. Matching accounts and dates identify possible copies; they do not automatically remove a statement.
 3. Select **View source** on the first file, then **Open source file**. Check the account, statement dates, transactions and balances. Close the document and its details, then repeat for the other file. These controls also open a copy that was previously excluded.
 4. Check whether either original contains extra information. A native PDF and a scanned copy can show the same transactions even though their files differ. Files with matching contents but different recorded accounts or dates are shown separately; those matches alone do not offer an exclusion.
 5. If both files contain the same payments, select **Exclude this copy; retain [filename]** on the copy you want to remove from totals. Check the retained filename, enter your reason in **Reason for this decision**, then select **Record decision**.
-6. Read the confirmation and its number of excluded rows. Return to **Transactions** and check the totals. The original files and decision history remain available.
+6. Read the confirmation and its number of excluded payments. Close the window and check the register's updated statement dates. Return to **Transactions** to check the totals. The original files and decision history remain available.
 
 You can exclude a duplicate after confirming its PDF import. This does not change the recorded verification status. If the system says to keep the verified copy instead, close the decision and retain that copy. If the retained file has payments already corrected or set aside, review those differences before deciding which document to keep.
 
@@ -878,7 +892,7 @@ For an individual duplicate decision, an unfinished reason stays in this browser
 
 ### Restore a duplicate exclusion
 
-1. On **Import review**, select **Compare documents**.
+1. Open **Statements & accounts**, then select **Check duplicate imports**.
 2. Expand **Excluded documents** and select **Restore [filename]** for the copy you need.
 3. Read which payments can return, enter your explanation in **Reason for this decision**, then select **Record decision**.
 4. Return to **Transactions** and check the totals. Both copies can count after restoration.
@@ -889,7 +903,7 @@ If you reopen an excluded PDF from the statement file list, the viewer says **Th
 
 ### Compare with another case
 
-1. Expand **Compare with another case**.
+1. Open **More financial tools > Import review**, find **Duplicate candidates**, then expand **Compare with another case**.
 2. Select **Choose comparison case**, then choose a different case you can view.
 3. Run the comparison using the offered control.
 4. Inspect matching sources and recorded coverage in each case.

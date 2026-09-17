@@ -12,14 +12,18 @@ import { duplicateMatchLabel } from "../lib/duplicate-format"
 
 export function DuplicateCandidatesPanel({
   caseId,
+  autoLoad = false,
+  showCrossCase = true,
 }: {
   caseId: string | undefined
+  autoLoad?: boolean
+  showCrossCase?: boolean
 }) {
   const { canEdit, ready } = useFinancialAccess()
   const [sourceId, setSourceId] = useState<string | null>(null)
   const [groupPage, setGroupPage] = useState(0)
   const [hashPage, setHashPage] = useState(0)
-  const [opened, setOpened] = useState(false)
+  const [opened, setOpened] = useState(autoLoad)
   const [selection, setSelection] = useState<DuplicateSelection | null>(null)
   const { data, isPending, isError, error, isFetching, refetch } =
     useDuplicateCandidates(caseId, opened)
@@ -70,7 +74,9 @@ export function DuplicateCandidatesPanel({
           {opened ? "Refresh comparison" : "Compare documents"}
         </Button>
       )}
-      {caseId && <CrossCaseDuplicatePanel key={caseId} caseId={caseId} />}
+      {caseId && showCrossCase && (
+        <CrossCaseDuplicatePanel key={caseId} caseId={caseId} />
+      )}
       {sourceId && caseId && (
         <LedgerSourceDialog
           caseId={caseId}

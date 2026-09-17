@@ -128,15 +128,15 @@ function DuplicateDecisionFormForm({
       <p className="text-sm">{selection.document.filename}</p>
       {selection.primary ? (
         <p className="text-sm">
-          Retain: {selection.primary.filename}. Admitted rows in the excluded
-          copy will be removed from ledger totals. The source and decision
-          history stay available.
+          Keep: {selection.primary.filename}. Payments in the excluded copy will
+          no longer count in Transactions or totals. Both original files and
+          your reason stay available.
         </p>
       ) : (
         <p className="text-sm">
-          Only rows recorded by this exclusion will return to the ledger.
-          Corrected or otherwise held-out rows will not be readmitted. Both
-          copies may then count.
+          Only payments removed by this duplicate decision will return to
+          Transactions. Payments replaced by corrections or excluded for other
+          reasons stay out. Both copies may then count.
         </p>
       )}
       <label className="block text-sm">
@@ -160,7 +160,7 @@ function DuplicateDecisionFormForm({
       )}
       {mutation.isSuccess && (
         <p role="status">
-          Decision recorded. {mutation.data.changed_rows} rows{" "}
+          Decision recorded. {mutation.data.changed_rows} payments{" "}
           {action === "exclude" ? "excluded" : "restored"}.
         </p>
       )}

@@ -730,7 +730,16 @@ function FinancialPageContent() {
             </div>
             <div hidden={reviewingAccounts}>
               {caseId && (
-                <StatementRegister caseId={caseId}>
+                <StatementRegister
+                  caseId={caseId}
+                  onOpenTransactions={(accountId, dates) => {
+                    const scope = { accountId, ...dates }
+                    resetPaymentTableView(caseId, scope)
+                    applyInvestigationScope(scope)
+                    store.setMode("transactions")
+                    store.setMainView("transactions")
+                  }}
+                >
                   <StatementImportPanel
                     key={caseId}
                     caseId={caseId}

@@ -274,10 +274,12 @@ Do these in additional test cases or after recording the eight-payment baseline.
 ### B. Repeated copies and missing periods
 
 1. In a separate case, upload two different copies of the same statement, such as a native PDF and a scan supplied for this test. Open their originals before treating them as duplicates.
-2. Follow **Review duplicates** in the User guide to compare them, explain a decision and check its effect on totals.
-3. Restore the decision and check that its history is retained. Do not delete the originals to make totals agree.
-4. In Statements, open **Review accounts**, choose the account and inspect its listed periods. Apply a requested period that extends beyond the statement you supplied.
-5. Check that unavailable coverage is described as missing or unknown, rather than as a period with no payments.
+2. Open **Statements & accounts**. In **Do you have all the statements?**, check that overlapping dates are shown for the imported copies. Select **Check duplicate imports**, open their originals, then follow **Review duplicates** in the User guide to record which copy to retain.
+3. Close the comparison. Check that the register no longer counts the excluded copy in its date coverage, and that Transactions totals change accordingly. Restore the decision and check that both the history and the overlap return. Do not delete the originals to make totals agree.
+4. On the account card, select **Review dates & statements**. Check the listed filenames and open an original using **Open statement and dates**. Apply a requested date range that extends beyond the statement you supplied. Use **View transactions in the checked date range** and confirm that the correct account and dates are selected.
+5. If January and March statements for the same account are available, import them and check that the missing February dates are listed in the register. Files awaiting review must not count as imported date coverage. Check that dates which cannot be established are described as unknown or needing attention, rather than as a period with no payments. If there are more than 25 accounts, check subsequent pages as well.
+
+**Expected:** the register leads directly to the missing or repeated records, exclusions and restorations update the date checks, and every listed statement can be opened without reuploading it.
 
 ### C. Trace funds
 

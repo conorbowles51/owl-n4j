@@ -5,13 +5,17 @@ import { useAuthStore } from "@/features/auth/hooks/use-auth"
 import { useStatementWorkspace } from "../stores/statement-workspace"
 import { StatementFilesPanel } from "./StatementFilesPanel"
 import type { ReactNode } from "react"
+import { StatementRegisterChecks } from "./StatementRegisterChecks"
+import type { AccountReviewDates } from "./AccountStatementReview"
 
 export function StatementRegister({
   caseId,
   children,
+  onOpenTransactions,
 }: {
   caseId: string
   children: ReactNode
+  onOpenTransactions: (accountId: string, dates?: AccountReviewDates) => void
 }) {
   const [params] = useSearchParams()
   const owner = useAuthStore(
@@ -24,6 +28,13 @@ export function StatementRegister({
   return (
     <div className="space-y-4">
       {!open && <FinancialBatchPanel caseId={caseId} />}
+      {!open && (
+        <StatementRegisterChecks
+          key={caseId}
+          caseId={caseId}
+          onOpenTransactions={onOpenTransactions}
+        />
+      )}
       <div hidden={open}>
         <StatementFilesPanel caseId={caseId} register />
       </div>

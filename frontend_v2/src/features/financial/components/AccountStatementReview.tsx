@@ -19,6 +19,7 @@ export function AccountStatementReview({
   account,
   onBack,
   onOpenTransactions,
+  datesFirst = false,
 }: {
   caseId: string
   account: {
@@ -30,6 +31,7 @@ export function AccountStatementReview({
   }
   onBack: () => void
   onOpenTransactions: (dates?: AccountReviewDates) => void
+  datesFirst?: boolean
 }) {
   const [start, setStart] = useState("")
   const [end, setEnd] = useState("")
@@ -42,6 +44,18 @@ export function AccountStatementReview({
   const label =
     [account.holder, account.identifier].filter(Boolean).join(" · ") ||
     "Account details not recorded"
+  const balanceChecks = (
+    <StatementChecksPanel
+      caseId={caseId}
+      accountId={account.id}
+      autoLoad
+      onOpenTransactions={(startDate, endDate) =>
+        onOpenTransactions(
+          startDate && endDate ? { startDate, endDate } : undefined
+        )
+      }
+    />
+  )
   return (
     <section aria-label="Account statement review" className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -64,16 +78,7 @@ export function AccountStatementReview({
           needed.
         </p>
       </header>
-      <StatementChecksPanel
-        caseId={caseId}
-        accountId={account.id}
-        autoLoad
-        onOpenTransactions={(startDate, endDate) =>
-          onOpenTransactions(
-            startDate && endDate ? { startDate, endDate } : undefined
-          )
-        }
-      />
+      {!datesFirst && balanceChecks}
       <StatementCoveragePanel caseId={caseId} accountId={account.id} autoLoad />
       <section
         aria-label="Check a date range"
@@ -145,6 +150,7 @@ export function AccountStatementReview({
           </>
         )}
       </section>
+      {datesFirst && balanceChecks}
     </section>
   )
 }

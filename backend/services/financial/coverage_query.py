@@ -1,6 +1,7 @@
 """Case-scoped printed-period coverage, not a claim of complete transactions."""
 from datetime import date
 from sqlalchemy import select
+from postgres.models.evidence import EvidenceFile
 from postgres.models.financial import FinancialAccount, FinancialStatementPeriod, FinancialSourceDocument
 from services.financial.continuity import _bounds_are_printed
 
@@ -30,6 +31,8 @@ def list_statement_coverage(session, *, case_id, offset=0, limit=25, account_id=
             .order_by(FinancialStatementPeriod.id).limit(501)))
         item=dict(account_id=str(account.id), label=(account.metadata_ or {}).get("display_label") or
             account.identifier_as_printed or account.holder_name or "Unidentified account",
+            holder=account.holder_name, identifier=account.identifier_as_printed,
+            institution=account.institution_name, currency=account.currency,
             available=True, reason=None, periods=[], currencies=[])
         items.append(item)
         if len(pairs)>500:
@@ -38,6 +41,9 @@ def list_statement_coverage(session, *, case_id, offset=0, limit=25, account_id=
         if any(document is None or document.case_id != case_id for _,document in pairs):
             item.update(available=False,reason="Statement source ownership is inconsistent; coverage was not calculated.")
             continue
+        filenames = dict(session.execute(select(EvidenceFile.id, EvidenceFile.original_filename).where(
+            EvidenceFile.case_id == case_id,
+            EvidenceFile.id.in_([document.evidence_file_id for _, document in pairs if document.evidence_file_id]))).all())
         groups={}
         for period, document in pairs:
             reason=None
@@ -47,6 +53,7 @@ def list_statement_coverage(session, *, case_id, offset=0, limit=25, account_id=
             elif period.period_end < period.period_start:reason="invalid_date_range"
             record=dict(period_id=str(period.id),source_document_id=str(document.id),
                 evidence_file_id=str(document.evidence_file_id) if document.evidence_file_id else None,
+                filename=filenames.get(document.evidence_file_id),
                 currency=period.currency, start=period.period_start.isoformat() if period.period_start else None,
                 end=period.period_end.isoformat() if period.period_end else None,
                 included=reason is None, exclusion_reason=reason)
