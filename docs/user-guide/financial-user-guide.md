@@ -377,6 +377,8 @@ On Merrick statements, a minus sign after the amount marks a credit. Loupe reads
 
 Merrick transaction amounts should show a decimal point and two digits after it. If OCR reads `2.75` as `275`, Loupe flags the amount instead of treating it as 275.00. Check the original and enter the value you can read there. Totals are marked incomplete while any included amount or credit/debit choice is unresolved.
 
+A clearly labelled Merrick interest line showing `0.00` is retained in the original view without being added as a payment. You do not need to correct its date just to import the statement. An unreadable amount or a nonzero interest charge still needs the usual checks.
+
 Opening a balance correction shows the balance rows and transactions. It does not open all the page headings as empty fields. Select **Show excluded rows** only when you need to inspect an omitted row or bring it into the import.
 
 To check or correct a balance before import:

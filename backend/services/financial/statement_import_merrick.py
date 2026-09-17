@@ -260,7 +260,15 @@ def propose_merrick_table(source, currency, statement):
                     item['issues'].append('This row describes a card payment, but no minus sign was read. Check the original amount and enter it under Credit or Debit.')
                 else:
                     fields['direction'] = 'credit' if value < 0 else 'debit'
-                if value == 0 and match:
+                # A clearly labelled, positioned zero-interest line records
+                # no charge. Its damaged date need not become an import task.
+                # Unfamiliar zero-value rows still require their normal review.
+                zero_interest = (
+                    re.fullmatch(r'Interest Charge on (?:Purchases|Cash Advances):?',
+                                 fields['description'], re.IGNORECASE)
+                    and _matches_transaction_columns(cells, header, source['page_number'])
+                )
+                if value == 0 and (match or zero_interest):
                     item.update(excluded=True,kind='zero_charge')
                     item['issues']=[]
             except ValueError as exc:

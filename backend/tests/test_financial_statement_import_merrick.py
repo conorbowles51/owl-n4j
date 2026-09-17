@@ -66,6 +66,33 @@ def measured_statement():
 
 
 class MerrickStatementTests(unittest.TestCase):
+    def test_unreadable_date_on_measured_zero_interest_needs_no_payment_correction(self):
+        for label in ('Interest Charge on Purchases', 'Interest Charge on Cash Advances',
+                      'Interest Charge on Purchases:'):
+            data = measured_statement()
+            row = data['rows'][11]
+            row['cells'][0]['expected_text'] = 'O4/25'
+            row['cells'][1]['expected_text'] = label
+            for cell, (x, width) in zip(row['cells'], ((30,35), (270,150), (490,35))):
+                cell['locator'] = rectangle(290, x=x, width=width)
+            original = deepcopy(data)
+            result = propose_merrick_table(data, 'USD', merrick_statement(data))['rows'][11]
+            self.assertTrue(result['excluded'])
+            self.assertEqual(result['kind'], 'zero_charge')
+            self.assertEqual(result['issues'], [])
+            self.assertEqual(result['source_cells'], row['cells'])
+            self.assertNotIn('date', result['fields'])
+            self.assertEqual(data, original)
+            for amount in ('0.01', 'O.00', '000', ''):
+                row['cells'][2]['expected_text'] = amount
+                check = propose_merrick_table(data, 'USD', merrick_statement(data))['rows'][11]
+                self.assertFalse(check['excluded'])
+                self.assertTrue(check['issues'])
+            row['cells'][2]['expected_text'] = '0.00'
+            row['cells'][2]['locator']['rect'][0] += 60_000
+            row['cells'][2]['locator']['rect'][2] += 60_000
+            self.assertFalse(propose_merrick_table(data, 'USD', merrick_statement(data))['rows'][11]['excluded'])
+
     def test_damaged_heading_uses_two_readable_positioned_dates_without_repairing_a_payment_date(self):
         data = measured_statement()
         data['rows'][5]['cells'][0]['expected_text'] = 'TransDfla'

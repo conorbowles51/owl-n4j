@@ -2,6 +2,12 @@
 
 **Latest instruction supersedes the release window below:** hold off on the 1–2 hour deployment because Alex is working on the platform. Continue the whole remaining task and deploy only when the complete work is ready. The ACTIVE ten-minute heartbeat has been updated to remove the intermediate push and preserve continued local development. The earlier immediate push `23039a67` remains complete. No further push has occurred. The current Loupe URL question remains pending; local work continues.
 
+## Zero-interest date tasks removed after source checks, 17 September 2026
+
+After local `3dc0addf`, six remaining flagged Merrick rows were confirmed visually as labelled, positioned 0.00 interest lines. They now follow zero-charge exclusion even when their date is unreadable. Unknown descriptions, unreadable/nonzero amounts and ambiguous positions remain review tasks. Original cells and parsed fields are unchanged. Proposal v22 retains 42 sections, 224 included entries and 64 flagged entries. Only those six exclusion/kind/issues fields change. All 23 focused Merrick tests pass; guides updated. Private comparison/crops: `merrick-zero-interest-*` under ignored `context-audit-final/`.
+
+Two read-only date-profile experiments were rejected: thresholded compact crops accepted none of 42 date regions, and an unrestricted reader sample remained inconsistent. No new OCR profile was adopted. Diagnostics are complete, no process is still running, no real case changes or external uploads occurred. D acceptance remains open with genuine unreadable fields and the two payment-history pages retained. Last pushed is `23039a67`; deployment remains held while Alex works.
+
 ## Merrick supporting pages retained without spurious review tasks, 17 September 2026
 
 Following local `e10ad7dc`, all 14 remaining unassigned Merrick original pages were visually inspected. Twelve cover/application/notice/interest-calculation/records-request pages now receive a recognised information purpose, while genuine payment-history pages 51/52 stay reviewable. Guards inspect all tables on each physical page for payment headings or dated amounts. All original figures/pages remain accessible. Proposal revision is v21.
