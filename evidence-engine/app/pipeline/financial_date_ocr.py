@@ -27,6 +27,60 @@ def _date_text(text):
         return False
 
 
+def _full_date(text):
+    if not re.fullmatch(r'\d{2}/\d{2}/(?:20)?\d{2}', text) or not _date_text(text):
+        return None
+    month, day, year = map(int, text.split('/'))
+    return date(year + 2000 if year < 100 else year, month, day)
+
+
+def _andrews_candidates(tables, words, width, height):
+    """Only the measured full-period heading, beside one readable date."""
+    candidates = {}
+    for table in tables:
+        values = table.to_json().get('table', {}).get('values', [])
+        top = [c for c in values if len(c.get('locator', {}).get('rect', [])) == 4
+               and c['locator']['rect'][3] < height * 200]
+        marks = [c for c in top if c['text'].strip() == 'Andrews'
+                 and c['locator']['rect'][0] < width * 400 and c['locator']['rect'][3] < height * 150]
+        titles = [c for c in top if re.sub(r'\s+', '', c['text']) == 'AccountStatement'
+                  and c['locator']['rect'][0] > width * 400 and c['locator']['rect'][3] < height * 150]
+        accounts = [c for c in top if re.fullmatch(r'\d{9}', c['text'].strip())
+                    and c['locator']['rect'][0] > width * 400]
+        if len(marks) != 1 or len(titles) != 1 or len(accounts) != 1:
+            continue
+        rows = {}
+        for cell in top:
+            rows.setdefault(cell['row'], []).append(cell)
+        pairs = []
+        for cells in rows.values():
+            cells.sort(key=lambda c: c['column'])
+            if len(cells) != 2:
+                continue
+            boxes = [c['locator']['rect'] for c in cells]
+            texts = [c['text'].strip() for c in cells]
+            if (any(b[0] <= width * 400 or b[1] <= accounts[0]['locator']['rect'][3] for b in boxes)
+                    or boxes[0][2] >= boxes[1][0]
+                    or max(b[1] for b in boxes) >= min(b[3] for b in boxes)
+                    or any(not re.fullmatch(r'[^\s/]{2}/[^\s/]{2}/(?:20)?\d{2}', t) for t in texts)):
+                continue
+            pairs.append((texts, boxes))
+        # More than one period-like heading cannot be repaired unambiguously.
+        if len(pairs) != 1:
+            continue
+        texts, boxes = pairs[0]
+        for side in (0, 1):
+            if _date_text(texts[side]) or not _full_date(texts[1-side]):
+                continue
+            box = boxes[side]
+            matches = [i for i, w in enumerate(words) if w[4] == texts[side]
+                       and w[0]*1000 >= box[0]-1000 and w[1]*1000 >= box[1]-1000
+                       and w[2]*1000 <= box[2]+1000 and w[3]*1000 <= box[3]+1000]
+            if len(matches) == 1:
+                candidates[matches[0]] = (side, _full_date(texts[1-side]))
+    return candidates
+
+
 def _candidates(tables, words):
     """Use measured cells under all three exact Merrick column headings."""
     found = set()
@@ -91,16 +145,21 @@ def reread_financial_dates(page, data, *, rotation, image_width, image_height,
     if reader is None:
         return data, []
     page_text = ' '.join(text.strip() for text in data['text'] if text.strip())
-    if ('MERRICK BANK' not in page_text or 'Transactions, Payments and Credits' not in page_text
-            or deadline - time.monotonic() < 2):
+    merrick = 'MERRICK BANK' in page_text and 'Transactions, Payments and Credits' in page_text
+    andrews = 'Andrews' in page_text and 'AccountStatement' in re.sub(r'\s+', '', page_text)
+    if (not merrick and not andrews) or deadline - time.monotonic() < 2:
         return data, []
     words = project_ocr_words(data, rotation=rotation, image_width=image_width,
         image_height=image_height, page_width=page.rect.width, page_height=page.rect.height)
     tables = reader.read_positioned_ocr_words(words, page_number=page.number + 1,
         page_width=page.rect.width, page_height=page.rect.height)
+    periods = _andrews_candidates(tables, words, page.rect.width, page.rect.height) if andrews else {}
+    candidates = _candidates(tables, words) if merrick else sorted(periods)
+    if not merrick:
+        deadline = min(deadline, time.monotonic() + 15)
     indices = [i for i, text in enumerate(data['text']) if text.strip()]
     result, records = data, []
-    for index in _candidates(tables, words):
+    for index in candidates:
         if deadline - time.monotonic() < 2:
             break
         word = words[index]
@@ -109,7 +168,8 @@ def reread_financial_dates(page, data, *, rotation, image_width, image_height,
             continue
         image = None
         try:
-            pix = page.get_pixmap(matrix=fitz.Matrix(10, 10), clip=clip,
+            resolutions = (600, 450) if index in periods else (720, 600)
+            pix = page.get_pixmap(matrix=fitz.Matrix(resolutions[0]/72, resolutions[0]/72), clip=clip,
                                  colorspace=fitz.csRGB, alpha=False, annots=True)
             image = Image.frombytes('RGB', (pix.width, pix.height), pix.samples)
             if rotation:
@@ -117,8 +177,8 @@ def reread_financial_dates(page, data, *, rotation, image_width, image_height,
                 image.close()
                 image = oriented
             observations = []
-            for dpi in (720, 600):
-                if dpi == 600:
+            for dpi in resolutions:
+                if dpi != resolutions[0]:
                     # A complete primary line reading can be checked again at
                     # another resolution. Raw-line mode (13) may corroborate
                     # it, but cannot originate a date when mode 7 only reads
@@ -147,12 +207,20 @@ def reread_financial_dates(page, data, *, rotation, image_width, image_height,
             if (not observations or not _date_text(observations[0]['text'])
                     or len(readings) < 2 or len(set(readings)) != 1):
                 continue
+            if index in periods:
+                side, other = periods[index]
+                value = _full_date(readings[0])
+                if value is None:
+                    continue
+                start, end = (value, other) if side == 0 else (other, value)
+                if not 0 <= (end-start).days <= 62:
+                    continue
             if result is data:
                 result = deepcopy(data)
             result['text'][indices[index]] = readings[0]
             records.append(dict(method='tesseract_date_crop_consensus',
                 page=page.number + 1, rect=[round(v * 1000) for v in word[:4]],
-                original_text=word[4], text=readings[0], dpi=720, segmentation_modes=[7, 13],
+                original_text=word[4], text=readings[0], dpi=resolutions[0], segmentation_modes=[7, 13],
                 character_set='0123456789/', observations=observations))
         except (RuntimeError, pytesseract.TesseractError):
             # An optional retry cannot discard a completed page reading.

@@ -46,6 +46,60 @@ def selected(sources, share='0040'):
 
 
 class AndrewsReaderTests(unittest.TestCase):
+    def test_split_damaged_date_is_a_separate_payment_not_a_description_continuation(self):
+        data = source([
+            [(15,'06/01 ID 0040 FREE CHECKING Previous Balance'),(350,'100.00')],
+            [(15,'06/02'),(75,'Withdrawal Debit Card'),(310,'-20.00'),(350,'80.00')],
+            [(15,'O6 /O3'),(75,'Withdrawal Debit Card'),(310,'-10.00'),(350,'70.00')],
+            [(75,'EXAMPLE SHOP')],
+            [(15,'06/30'),(75,'Ending Balance'),(350,'70.00')]])
+        _, proposal = selected([data])
+        rows = [r for r in proposal['rows'] if not r['excluded']]
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0]['fields']['description'], 'Withdrawal Debit Card')
+        self.assertEqual(rows[1]['fields']['description'], 'Withdrawal Debit Card\nEXAMPLE SHOP')
+        self.assertNotIn('date', rows[1]['fields'])
+        self.assertEqual(rows[1]['fields']['amount_minor'], '1000')
+        self.assertEqual(rows[1]['fields']['direction'], 'debit')
+        self.assertEqual(rows[1]['fields']['balance_difference_minor'], '0')
+        self.assertEqual(rows[1]['issues'], ['Check the full date in the PDF. It could not be read within this statement period.'])
+        self.assertEqual(rows[1]['source_cells'][0]['expected_text'], 'O6 /O3')
+        # A secondary reference in the description column cannot begin a new
+        # payment just because it happens to mention Withdrawal.
+        data['rows'][11]['cells'][0]['locator']['rect'][0] = 75000
+        _, proposal = selected([data])
+        self.assertEqual(sum(not r['excluded'] for r in proposal['rows']), 1)
+
+    def test_unreadable_opening_logo_requires_adjacent_matching_branded_page_two(self):
+        first = source([
+            [(15, '06/01 ID 0040 FREE CHECKING Previous Balance'), (350, '100.00')],
+            [(15, '06/03'), (75, 'Withdrawal Debit Card'), (310, '-20.00'), (350, '80.00')],
+            [(15, '--- Continued on following page ---')]], printed_page='E')
+        first['rows'][1]['cells'][0]['expected_text'] = 'Unreadable logo'
+        second = source([
+            [(15, '06/04'), (75, 'Deposit Transfer'), (310, '10.00'), (350, '90.00')],
+            [(15, '06/30'), (75, 'Ending Balance'), (350, '90.00')]], page=2, printed_page=2, names=False)
+        original = deepcopy([first, second])
+        st, result = selected([first, second])
+        self.assertEqual(st['page_numbers'], [1, 2])
+        self.assertEqual(sum(not r['excluded'] for r in result['rows']), 2)
+        self.assertFalse(any(r['issues'] for r in result['rows']))
+        self.assertEqual([first, second], original)
+        self.assertFalse(statement_catalog([first])['statements'])
+        for kind in ('gap', 'table', 'logo', 'account', 'period', 'page', 'missing_notice', 'opening_number', 'missing_share'):
+            a, b = deepcopy(original)
+            if kind == 'gap': b['page_number'] = 3
+            elif kind == 'table': b['table_index'] = 1
+            elif kind == 'logo': b['rows'][1]['cells'][0]['expected_text'] = 'Unreadable logo'
+            elif kind == 'account': b['rows'][2]['cells'][0]['expected_text'] = '987654321'
+            elif kind == 'period': b['rows'][3]['cells'][0]['expected_text'] = '07/01/20 07/31/20'
+            elif kind == 'page': b['rows'][4]['cells'][0]['expected_text'] = '3'
+            elif kind == 'missing_notice': a['rows'] = a['rows'][:-1]
+            elif kind == 'opening_number': a['rows'][4]['cells'][0]['expected_text'] = '3'
+            elif kind == 'missing_share': a['rows'] = [r for r in a['rows'] if r['row_index'] != 9]
+            with self.subTest(kind=kind):
+                self.assertFalse(statement_catalog([a, b])['statements'])
+
     def test_spaces_inside_printed_payment_verbs_retain_source_and_sign_checks(self):
         for description, amount, balance, direction in (
                 ('Wi thdrawal Debit Card', '-12.50', '87.50', 'debit'),

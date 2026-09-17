@@ -664,6 +664,10 @@ For supported Merrick statements, **Read from page images** also takes another l
 
 For supported Andrews statements, the image-reading method also rereads damaged amount and running-balance cells. Complete, matching readings are required. A conflicting digit or sign stays flagged. Recovered balances can reveal another payment that does not add up, so check the updated problems before importing. The original PDF and earlier reading remain available.
 
+If an Andrews page was left outside its statement because the period heading was misread, **Read from page images** can recover that heading. Check the account and period selectors after processing. A page with an unreadable logo can also join a statement when its printed account and dates match the next branded page. Account-opening forms, agreements and fee-only pages remain available under **Inspect another page of the original PDF**. They do not become payments.
+
+A broken date can make a transaction look like a continuation of the line above. Loupe keeps recognised payment lines separate and flags the unreadable date. Reprocessing can therefore increase the transaction count and the number of problems. Compare those newly separated rows with the PDF before importing.
+
 If you refresh the page while processing, reopen the same uploaded statement in the same browser tab. Loupe checks the saved processing job. Select **Open new reading** when it is ready. If the request was interrupted before a response arrived, select **Reprocess statement** to resume the same request. Closing the browser tab can discard this saved progress.
 
 ### Recover saved corrections after reprocessing

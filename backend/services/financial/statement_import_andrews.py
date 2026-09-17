@@ -29,6 +29,8 @@ _DEPOSIT = r'\s*'.join('Deposit')
 _RECURRING = r'\s*'.join('Recurring')
 _PAYMENT = re.compile(r'^(\S+)(?: (\d{2}/\d{2}))? ((?:' + _RECURRING +
                       r'\s+)?(' + _WITHDRAWAL + '|' + _DEPOSIT + r')\b.*)$')
+_DAMAGED_DATE_PAYMENT = re.compile(r'^(.{1,12}?) ((?:' + _RECURRING +
+                                 r'\s+)?(' + _WITHDRAWAL + '|' + _DEPOSIT + r')\b.*)$')
 
 def _text(row):
     return ' '.join(c['expected_text'].strip() for c in row['cells']).strip()
@@ -50,11 +52,18 @@ def is_andrews_fee_summary(source):
         return False
     body = [row for row in source['rows'] if row['row_index'] >= page['body_start']]
     labels = {_text(row) for row in body}
-    firsts = {row['cells'][0]['expected_text'].strip() for row in body if row['cells']}
+    def first(row):
+        return row['cells'][0]['expected_text'].strip(' |[]') if row['cells'] else ''
+    firsts = {first(row) for row in body}
     summary_labels = {'Total Returned Item Fees', 'Total Overdraft Fees',
                       'Dividends Paid Year to Date', 'Total Dividends Paid Year to Date'}
-    if any(row['cells'] and row['cells'][0]['expected_text'].strip() not in summary_labels
+    def divider(row):
+        text = _text(row)
+        return (re.match(r'^[|\[]\s*-{3,}', text) and text.endswith('|')
+                and not re.search(r'\d[,.]\d{2}\b|\d{1,2}/\d{1,2}|Withdrawal|Deposit|Recurring', text))
+    if any(row['cells'] and first(row) not in summary_labels
            and re.search(r'\d', _text(row))
+           and not divider(row)
            and not (len(row['cells']) == 1 and re.fullmatch(r'[\d,. ]+', _text(row))) for row in body):
         return False
     return ({'Total Returned Item Fees', 'Total Overdraft Fees'} <= firsts
@@ -178,13 +187,27 @@ def _reading_order(sources):
     yield from emit()
 
 
+def _opening_corroborated_by_next_page(source, page, following):
+    """An unreadable logo needs the next branded, matching printed page 2."""
+    if (following is None or page['printed_page'] not in (None, 1)
+            or following['page_number'] != source['page_number'] + 1
+            or following['table_index'] != source['table_index']
+            or not any(_SHARE.match(_text(r)) for r in source['rows'] if r['row_index'] >= page['body_start'])
+            or not any('Continued on following page' in _text(r) for r in source['rows'])):
+        return False
+    next_page = andrews_page(following)
+    return (next_page is not None and next_page['printed_page'] == 2
+            and all(next_page[k] == page[k] for k in ('account', 'start', 'end')))
+
+
 def andrews_catalog(sources):
     groups = {}
     handled = set()
     incomplete = set()
     previous = None
     active = None
-    for source, order_group in _reading_order(sources):
+    ordered = list(_reading_order(sources))
+    for index, (source, order_group) in enumerate(ordered):
         page = andrews_page(source, allow_unbranded=True)
         key = (source['page_number'], source['table_index'])
         if page is None:
@@ -199,9 +222,10 @@ def andrews_catalog(sources):
                      and (page['printed_page'] is None or previous['printed_page'] is None
                           or page['printed_page'] == previous['printed_page'] + 1)
                      and page['printed_page'] != 1)
-        # A missing logo can be tolerated only within an already identified
-        # statement, never as the start of an otherwise anonymous document.
-        if not page['branded'] and not continues:
+        following = ordered[index + 1][0] if index + 1 < len(ordered) else None
+        # Exact printed account/period details and a branded next page can
+        # establish an opening whose logo OCR missed. Never infer its dates.
+        if not page['branded'] and not continues and not _opening_corroborated_by_next_page(source, page, following):
             active = None
             previous = None
             continue
@@ -400,19 +424,21 @@ def propose_andrews_statement(sources, currency, statement):
             # verb or a measured date + money row can begin another payment.
             parsed = _PAYMENT.match(body)
             first_box = _box(cells[0]) if cells else None
+            damaged_date_payment = (_DAMAGED_DATE_PAYMENT.match(body)
+                                    if not parsed and first_box and first_box[0] < page['width'] * .08 else None)
             dated_money = (first_box and first_box[0] < page['width'] * .08 and money_cells
                            and re.match(r'^\S{4,7}(?: |$)', body))
-            if parsed or dated_money:
+            if parsed or damaged_date_payment or dated_money:
                 item.update(excluded=False, kind='transaction' if parsed else 'unresolved')
                 fields = item['fields']
-                date_text = parsed[1] if parsed else body.split(' ', 1)[0]
+                date_text = parsed[1] if parsed else damaged_date_payment[1] if damaged_date_payment else body.split(' ', 1)[0]
                 value = _period_date(date_text, statement)
                 if value:
                     fields['date'] = value
                 else:
                     item['issues'].append('Check the full date in the PDF. It could not be read within this statement period.')
                 fields['date_column'] = str(cells[0]['column_index'])
-                fields['description'] = parsed[3] if parsed else body.partition(' ')[2]
+                fields['description'] = parsed[3] if parsed else damaged_date_payment[2] if damaged_date_payment else body.partition(' ')[2]
                 fields['counterparty'] = ''
                 if parsed and parsed[2]:
                     fields['additional_printed_date'] = parsed[2]
@@ -436,10 +462,10 @@ def propose_andrews_statement(sources, currency, statement):
                     amount = _amount(amount_text, currency, separate_cell=separate_cells)
                     fields.update(amount_minor=str(abs(amount)), amount_column=str(money_cells[0]['column_index']))
                     description = fields['description']
-                    verb = re.sub(r'\s+', '', parsed[4]) if parsed else None
+                    verb = re.sub(r'\s+', '', parsed[4] if parsed else damaged_date_payment[3]) if parsed or damaged_date_payment else None
                     conflict = (amount > 0 and verb == 'Withdrawal' and 'Adjustment' not in description
                                 or amount < 0 and verb == 'Deposit')
-                    if conflict or not parsed:
+                    if conflict or verb is None:
                         item['issues'].append('Check whether money entered or left the account. The description and amount sign need review.')
                     else:
                         fields['direction'] = 'credit' if amount >= 0 else 'debit'

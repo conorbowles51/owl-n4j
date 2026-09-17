@@ -2777,9 +2777,9 @@ function EditableStatement({
           {data.information_pages.length > 0 && (
             <p className="text-muted-foreground mt-2">
               {data.information_pages.length} information pages contain
-              recognised card terms, privacy notices, fee summaries or
-              advertisements. They remain available below and have not been
-              added as transactions.
+              recognised account forms, agreements, card terms, privacy notices,
+              fee summaries or advertisements. They remain available below and
+              have not been added as transactions.
             </p>
           )}
           <label className="block mt-2">

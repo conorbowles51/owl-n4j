@@ -40,6 +40,56 @@ class Reader:
         return [SimpleNamespace(to_json=lambda: dict(table=dict(values=values)))]
 
 
+def andrews_fixture():
+    data = dict(text=[''], left=[0], top=[0], width=[0], height=[0], conf=[-1])
+    for text, x, y, width in [('Account Statement',430,22,128), ('Andrews',40,34,70),
+                             ('123456789',300,65,40), ('LI/GL/20',300,94,33), ('11/30/20',345,94,33),
+                             ('LI/GL/20',20,260,33)]:
+        for key, value in dict(text=text,left=x,top=y,width=width,height=7,conf=80).items():
+            data[key].append(value)
+    return data
+
+
+def test_andrews_period_reread_preserves_readable_date_and_unrelated_identical_text(monkeypatch):
+    data = andrews_fixture(); before = deepcopy(data)
+    result, records, calls = run(data, monkeypatch, iter(['11/01/20','11/01/20']))
+    assert result['text'][4] == '11/01/20'
+    assert result['text'][5:] == ['11/30/20','LI/GL/20']
+    assert data == before and len(records) == 1 and len(calls) == 2
+    assert records[0]['original_text'] == 'LI/GL/20'
+    assert records[0]['dpi'] == 600 and '--dpi 600' in calls[0]['config']
+    data['text'][4] = '11/01/20'; data['text'][5] = 'II/3O/20'
+    result, records, _ = run(data, monkeypatch, iter(['11/30/20','11/30/20']))
+    assert result['text'][5] == '11/30/20' and len(records) == 1
+    data['text'][5] = '11/30/20'
+    result, records, calls = run(data, monkeypatch, iter([]))
+    assert result is data and not records and not calls
+
+
+@pytest.mark.parametrize('damage', ['bank','title','account','body','overlap','baseline','both_dates','other_period'])
+def test_andrews_header_reread_requires_one_measured_unambiguous_period(monkeypatch, damage):
+    data = andrews_fixture()
+    if damage == 'bank': data['text'][2] = 'Different Bank'
+    elif damage == 'title': data['text'][1] = 'Other report'
+    elif damage == 'account': data['text'][3] = '1234'
+    elif damage == 'body': data['top'][4] = 300
+    elif damage == 'overlap': data['left'][5] = 310
+    elif damage == 'baseline': data['top'][5] = 110
+    elif damage == 'both_dates': data['text'][5] = 'II/3O/20'
+    elif damage == 'other_period':
+        for i in (4,5):
+            for key in data: data[key].append(data[key][i] + 30 if key == 'top' else data[key][i])
+    result, records, calls = run(data, monkeypatch, iter(['11/01/20','11/01/20']))
+    assert result is data and not records and not calls
+
+
+@pytest.mark.parametrize('text', ['11/01', '12/01/20', '08/01/20', '11/01/21'])
+def test_andrews_retry_cannot_return_a_partial_inverted_or_overlong_period(monkeypatch, text):
+    data = andrews_fixture()
+    result, records, calls = run(data, monkeypatch, iter([text,text]))
+    assert result is data and not records
+
+
 def run(data, monkeypatch, replies, *, deadline=None, reader=None):
     calls = []
     def read(image, **kwargs):

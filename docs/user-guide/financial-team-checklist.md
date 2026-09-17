@@ -444,6 +444,16 @@ Record the filename, account, period, action, expected result and actual result 
 
 **Expected:** specific damaged money cells can improve without hiding unresolved values or replacing previous imports automatically. A lower warning count alone is not a successful test; record any wrong or missing value found against the PDF.
 
+### Check missing Andrews pages and broken dates
+
+1. Use an artificial statement whose first-page logo is unreadable in the extracted text. Its printed account and dates must match the next branded page, numbered **2**, and the first page must contain an account opening and a continuation notice. Expect both pages under the same account and period. A conflicting account, different dates or missing intervening page must prevent that automatic grouping.
+2. In a scanned statement with a damaged full-period date, use **Read from page images**. Compare the recovered date with the PDF. If the local readings disagree, it must stay unresolved. An existing readable date must remain unchanged.
+3. Check a payment with a broken date such as **O6 /O3**. Expect its own transaction row and a date problem. Its description and money must not be appended to the preceding payment. Correct the date beside the PDF and save.
+4. Open the PDF page selector. Recognised account applications, account agreements and fee-only pages should remain accessible as information pages. A page that also contains payments must not be dismissed as information.
+5. Compare transaction counts and balances before and after processing. Additional genuine payments can raise the problem count. Verify each newly found payment, and keep earlier saved corrections available for comparison.
+
+**Expected:** missing statement pages and damaged-date payments are recovered where the source supports them. Existing dates, amounts, signs and balances are preserved. No real imports are replaced automatically.
+
 ### Check several missing transaction years
 
 Use an artificial Merrick statement with readable numeric month/day values and an unreadable closing-date reading. Keep its original PDF legible.

@@ -12,6 +12,35 @@ from tests.test_financial_statement_import_andrews import source as andrews_sour
 from tests.test_financial_pdf_geometry_candidates import rectangle
 
 class StatementInformationTests(TestCase):
+    def test_account_forms_are_information_only_when_no_payment_table_shares_the_page(self):
+        for lines, kind in [
+            (['Andrews Federal Credit Union', 'MEMBERSHIP APPLICATION AND SIGNATURE CARD', 'SECTION 1 - MINOR INFORMATION'], 'account_application'),
+            (['Andrews Federal Credit Union', 'MEMBERSHIP APPLICATION AND SIGNATURE CARD', 'SECTION 4 - BENEFICIARIES'], 'account_application'),
+            (['Andrews Federal Credit Union', 'Guaranty and Indemnification Agreement', 'RECITALS'], 'account_agreement'),
+            (['Andrews', 'Right to Proceed Directly Against the Guarantor', 'Waiver', 'Amendments', 'Severability'], 'account_agreement')]:
+            original = source([[line] for line in lines]); before = deepcopy(original)
+            self.assertEqual(statement_catalog([original])['information_sources'], [dict(page_number=1,table_index=0,kind=kind)])
+            self.assertEqual(original, before)
+            for row in ([['Date','Description','Amount']], [['06/02','SHOP','12.00']], [['Account Statement']], [['O6/02','Withdrawal','12.00']]):
+                mixed = source(row); mixed['table_index'] = 1
+                self.assertFalse(statement_catalog([original, mixed])['information_sources'])
+            original['rows'][0]['cells'][0]['expected_text'] = 'Other bank'
+            self.assertFalse(statement_catalog([original])['information_sources'])
+
+    def test_fee_summary_with_scanned_borders_keeps_all_original_cells(self):
+        data = andrews_source([
+            [(15, '| Total Returned Item Fees'), (210, '|'), (250, '0.00 |'), (310, '0.00 |')],
+            [(15, '| --- 222 2o nnn eee --- |')],
+            [(15, '| Total Overdraft Fees'), (210, '|'), (250, '0.00 |'), (310, '0.00 |')],
+            [(75, 'Total Dividends Paid Year to Date'), (350, '0.22')],
+            [(15, '55,901')], [(540, '000463')]], printed_page=3, names=False)
+        original = deepcopy(data)
+        self.assertEqual(statement_catalog([data])['information_sources'], [dict(page_number=1,table_index=0,kind='fee_summary')])
+        self.assertEqual(data, original)
+        for text in ('| --- Withdrawal 12.00 |', '| --- 06/02 SHOP 12.00 |', 'Unknown payment 12.00'):
+            data['rows'][6]['cells'][0]['expected_text'] = text
+            self.assertFalse(statement_catalog([data])['information_sources'])
+
     def test_complete_notices_are_retained_as_information_not_unassigned_statements(self):
         for lines, kind in [
             (['Capital One', 'WHAT DOES CAPITAL ONE DO WITH YOUR PERSONAL INFORMATION?', 'Financial companies choose how they share your personal information.', 'To limit our sharing'], 'privacy_notice'),

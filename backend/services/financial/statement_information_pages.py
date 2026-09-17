@@ -2,6 +2,31 @@
 import re
 
 
+def andrews_information_kind(rows):
+    texts = [cell['expected_text'].strip() for row in rows for cell in row['cells']]
+    content = ' '.join(texts).lower()
+    if 'andrews' not in content:
+        return None
+    # Check every table on the physical page before classifying a form.
+    if any(re.sub(r'\s+', '', text).lower() == 'accountstatement'
+           or text.lower() in ('transaction date', 'transactions', 'amount')
+           or re.search(r'(?i)previous\s*balance|ending\s*balance', text) for text in texts):
+        return None
+    if any(re.match(r'(?i)^\S{4,10}\s+(?:ID|Withdrawal|Deposit|Recurring)\b', ' '.join(c['expected_text'] for c in row['cells']))
+           or (len(row['cells']) >= 2
+               and re.match(r'^\d{1,4}[/-]\d{1,2}', row['cells'][0]['expected_text'])
+               and any(re.search(r'\d[,.]\d{2}\b', c['expected_text']) for c in row['cells'][1:])) for row in rows):
+        return None
+    if ('andrews federal credit union' in content
+            and 'membership application and signature card' in content
+            and ('section 1 - minor information' in content or 'section 4 - beneficiaries' in content)):
+        return 'account_application'
+    if (all(text in content for text in ('andrews federal credit union', 'guaranty and indemnification agreement', 'recitals'))
+            or all(text in content for text in ('right to proceed directly against the guarantor', 'waiver', 'amendments', 'severability'))):
+        return 'account_agreement'
+    return None
+
+
 def capital_information_kind(rows):
     texts = [cell['expected_text'].strip() for row in rows for cell in row['cells']]
     content = ' '.join(texts).lower()
