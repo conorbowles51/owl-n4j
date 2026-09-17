@@ -58,7 +58,7 @@ it("uploads then explicitly requests local preparation and opens prepared rows",
     screen.getByRole("button", { name: "Prepare PDF for review" })
   )
   fireEvent.click(
-    await screen.findByRole("button", { name: "Review prepared statement" })
+    await screen.findByRole("button", { name: "Open PDF review" })
   )
   expect(ready).toHaveBeenCalledOnce()
   expect(
@@ -94,7 +94,7 @@ it("uses an existing uploaded PDF without uploading again", async () => {
   fireEvent.click(
     screen.getByRole("button", { name: "Prepare PDF for review" })
   )
-  await screen.findByText(/Preparation failed/)
+  await screen.findByText(/The PDF could not be read/)
   expect(
     vi
       .mocked(fetchAPI)
@@ -126,6 +126,6 @@ it("does not show another case's preparation as ready", async () => {
     expect(screen.getByRole("alert")).toHaveTextContent("does not match")
   )
   expect(
-    screen.queryByRole("button", { name: "Review prepared statement" })
+    screen.queryByRole("button", { name: "Open PDF review" })
   ).not.toBeInTheDocument()
 })

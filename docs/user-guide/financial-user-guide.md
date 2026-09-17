@@ -484,6 +484,10 @@ Use **Previous transaction** and **Next transaction** to move through the select
 
 A Capital One PDF can contain many statements. Each statement can start with an account summary and terms before the transaction pages. Summary balances belong to that statement's account checks. Repayment examples, terms and year-to-date totals are not extra transactions. Check the selected account and period before importing.
 
+Recognised privacy notices, billing-cycle notices and advertisements stay in the original PDF without becoming transactions or pages needing a coverage check. To view one, open **Inspect another page of the original PDF**, choose a page labelled **information page**, then select **Show selected page**. A page with a payment table is still checked even when it also contains an advertisement. An unfamiliar page remains marked **needs coverage check** until you inspect it.
+
+If a payment's date is unreadable, Loupe retains its readable description and amount and flags the missing date. Select the flagged row, compare it with the PDF and enter the date you can read there. Do not enter an estimated date merely to enable import. If a whole field was lost during reading, the row appears under **Rows needing a layout check** so you can recover it from the original.
+
 If the review says **The statements need to be separated before import**, the saved reading has not connected the pages to their statement periods. Later transaction amounts can still be readable. Select **Reprocess statement** with **Use the PDF text where available** to prepare separate reviews. Do not enter dates and amounts for thousands of summary or information lines. The original file and existing imports remain available. If another reading still cannot separate the periods, report that problem with the filename and page numbers.
 
 Refreshing in the same browser tab restores your selected file, statement period, currency and PDF page. Unfinished corrections restore for the same source reading. Another account period or file has its own draft. Closing statement review remains your choice; a refresh does not reopen it after you explicitly close it.
@@ -499,6 +503,8 @@ Refreshing in the same browser tab restores your selected file, statement period
 7. Confirm the transactions for this section. Return with **Choose another statement period** to review the other account section. Importing savings does not also import checking.
 
 The reader can follow a continuation page whose logo was not read when its account number, dates and preceding page agree. It can also recognise extra spaces inside the fixed **Account Statement** and **Previous Balance** labels, and spaces around a decimal point or amount sign. Letters in place of digits and conflicting values remain flagged for you to check. Original text stays visible beside the PDF.
+
+An **Ending Balance** line is used for the balance check, not imported as a payment. If only its printed date was misread, the balance still belongs to the selected statement period; Loupe does not invent a corrected date. The separate period and year-to-date fee summary is also kept out of payment rows. You can inspect its original page through **Inspect another page of the original PDF**. Actual dated fees remain transactions.
 
 If a complete set of pages has unique printed page numbers but is stored out of order in the PDF, Loupe reads its payments in the printed order. Review starts on the first statement page. **Previous page** and **Next page** still move through the original PDF file, so use a transaction's source link to go directly to its page. Loupe only rearranges a block with consecutive, unique printed page numbers. It does not invent missing page numbers.
 

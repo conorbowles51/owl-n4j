@@ -1,5 +1,6 @@
 """Source-bound recognition of Merrick card statement pages and entries."""
 import re
+from difflib import SequenceMatcher
 from datetime import date
 from services.financial.pdf_candidates import _digest
 from services.financial.statement_import_proposal import exact_amount
@@ -152,12 +153,31 @@ def _matches_transaction_columns(cells, header, page):
                and box.x1 < amount.x0 for box in boxes[1:amount_index])
 
 
+def _section_heading(row, following):
+    """A damaged standalone heading needs its nearby, explicit section total.
+
+    Never repair transaction characters or suppress a dated/amount-bearing row.
+    This only keeps short heading text out of the payment correction queue.
+    """
+    cells = row['cells']
+    if len(cells) != 1 or re.search(r'\d', cells[0]['expected_text']):
+        return False
+    label = re.sub(r'[^a-z]', '', cells[0]['expected_text'].lower())
+    for heading, total in (('fees', 'TOTAL FEES FOR THIS PERIOD'),
+                           ('interestcharged', 'TOTAL INTEREST FOR THIS PERIOD')):
+        if SequenceMatcher(None, label, heading).ratio() < 0.72:
+            continue
+        if any(r['cells'] and r['cells'][0]['expected_text'].strip() == total for r in following[:4]):
+            return True
+    return False
+
+
 def propose_merrick_table(source, currency, statement):
     active = False
     header = None
     result = []
     balances, issues = merrick_summary_balances(source, currency)
-    for row in source['rows']:
+    for index, row in enumerate(source['rows']):
         cells = row['cells']
         texts = [c['expected_text'].strip() for c in cells]
         item = dict(id=f"{source['page_number']}:{source['table_index']}:{row['row_index']}",
@@ -170,6 +190,9 @@ def propose_merrick_table(source, currency, statement):
             header = _transaction_header(cells, source['page_number'])
         if any(re.fullmatch(r'20\d{2} Totals Year-to-Date', text) or text == 'Interest Charge Calculation' for text in texts):
             active = False
+        if active and _section_heading(row, source['rows'][index+1:index+5]):
+            result.append(item)
+            continue
         match = re.fullmatch(r'(\d{1,2})/(\d{1,2})', texts[0]) if texts else None
         if active and len(texts) >= 3 and (match or _matches_transaction_columns(cells, header, source['page_number'])):
             item.update(excluded=False,kind='transaction' if match else 'unresolved')

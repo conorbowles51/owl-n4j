@@ -34,6 +34,34 @@ def _text(row):
     return ' '.join(c['expected_text'].strip() for c in row['cells']).strip()
 
 
+def _ending_balance(row, width):
+    """Recognise the label without substituting characters in its date."""
+    cells = row['cells']
+    if len(cells) < 2 or cells[1]['expected_text'].strip() != 'Ending Balance':
+        return None
+    box = _box(cells[0])
+    return (re.fullmatch(r'\S{4,7}', cells[0]['expected_text'].strip())
+            if box and box[0] < width * .08 else None)
+
+
+def is_andrews_fee_summary(source):
+    page = andrews_page(source, allow_unbranded=True)
+    if not page:
+        return False
+    body = [row for row in source['rows'] if row['row_index'] >= page['body_start']]
+    labels = {_text(row) for row in body}
+    firsts = {row['cells'][0]['expected_text'].strip() for row in body if row['cells']}
+    summary_labels = {'Total Returned Item Fees', 'Total Overdraft Fees',
+                      'Dividends Paid Year to Date', 'Total Dividends Paid Year to Date'}
+    if any(row['cells'] and row['cells'][0]['expected_text'].strip() not in summary_labels
+           and re.search(r'\d', _text(row))
+           and not (len(row['cells']) == 1 and re.fullmatch(r'[\d,. ]+', _text(row))) for row in body):
+        return False
+    return ({'Total Returned Item Fees', 'Total Overdraft Fees'} <= firsts
+            and not any(re.match(r'^\S{4,7}\s+(?:ID|Withdrawal|Deposit|Recurring)\b', text)
+                        or re.match(r'^\d{2}/\d{2}\b', text) for text in labels))
+
+
 def _box(cell):
     value = cell.get('locator', {})
     rect = value.get('rect')
@@ -225,7 +253,7 @@ def andrews_catalog(sources):
                 else:
                     unknown = True
                 active = None
-            if re.match(r'^\d{2}/\d{2} Ending Balance(?: |$)', text):
+            if re.match(r'^\d{2}/\d{2} Ending Balance(?: |$)', text) or _ending_balance(row, page['width']):
                 active = None
         if addressed:
             handled.add(key)
@@ -321,6 +349,11 @@ def propose_andrews_statement(sources, currency, statement):
             if index not in scope['row_indices']:
                 continue
             item['fields']['statement_layout'] = _LAYOUT
+            # The period/year-to-date fee summary is not a second set of fee
+            # payments, even when it follows an account's continuation page.
+            if (cells and cells[0]['expected_text'].strip() in
+                    ('Total Returned Item Fees', 'Total Overdraft Fees') and len(cells) == 3):
+                continue
             if 'Continued on following page' in text:
                 continue
             closure = statement.get('account_closure')
@@ -333,11 +366,12 @@ def propose_andrews_statement(sources, currency, statement):
             body = ' '.join(c['expected_text'].strip() for c in cells if c not in money_cells)
             opening = _SHARE.match(body)
             closing = re.fullmatch(r'(\d{2}/\d{2}) Ending Balance', body)
-            if opening or closing:
+            damaged_closing = not closing and _ending_balance(row, page['width'])
+            if opening or closing or damaged_closing:
                 item.update(kind='balance')
                 fields = item['fields']
                 fields['description'] = 'Opening Balance' if opening else 'Closing Balance'
-                fields['date'] = _period_date((opening or closing)[1], statement) or ''
+                fields['date'] = (_period_date((opening or closing)[1], statement) or '') if opening or closing else ''
                 if money_cells:
                     fields['balance_column'] = str(money_cells[-1]['column_index'])
                 try:

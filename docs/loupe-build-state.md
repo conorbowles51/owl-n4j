@@ -2,6 +2,20 @@
 
 **Latest instruction supersedes the release window below:** hold off on the 1–2 hour deployment because Alex is working on the platform. Continue the whole remaining task and deploy only when the complete work is ready. The ACTIVE ten-minute heartbeat has been updated to remove the intermediate push and preserve continued local development. The earlier immediate push `23039a67` remains complete. No further push has occurred. The current Loupe URL question remains pending; local work continues.
 
+## Information-page and payment-boundary checkpoint, 17 September 2026
+
+Local only, following `b06d87fc`. The difficult-file acceptance items remain open: the older Merrick and Andrews readings still contain many genuine or ambiguous field problems. A fresh local page-image reading of Merrick is being compared before claiming this work complete. Do not push this intermediate checkpoint while Alex uses the deployed platform.
+
+- [x] Recognise complete Capital One notices and Andrews fee-summary pages, retain the original pages and label them in the page selector. Mixed payment pages and unfamiliar content remain reviewable.
+- [x] Preserve readable fields on damaged Capital One payment dates; retain measured rows with a missing field instead of silently dropping them.
+- [x] Keep seven damaged Merrick section headings and two Andrews fee-summary rows out of transactions. Recognise one damaged-date Ending Balance line as a control and stop the following summary from joining its description. Dates and original text are not repaired by guessing.
+- [x] Seven-file read-only comparison: every retained payment's fields and source cells are identical. Review-choice IDs are unchanged. First Capital One collection remains 52 periods/301 entries with one flagged payment and gains 13 recognised information pages. Merrick changes 260/142 candidates/flagged to 253/135. First Andrews changes 2,044/200 to 2,041/197. Other entry counts are unchanged. The complete report and limitations are in `docs/financial-information-page-audit-2026-09-17.md`.
+- [x] Intake wording now names PDF reading, ready statement review and where to inspect processing failures. User and testing guides regenerated with information-page and damaged-field steps.
+
+Validation: six new backend regression tests, affected Andrews tests (24 together), earlier card/catalog and Merrick checks, the information-page and previous/next-page UI checks, four intake/picker tests, TypeScript and scoped ESLint pass. No full suite or production build was repeated. The private audit uses a read-only database transaction and ignored files under `data/local-runtime/context-audit-final/`; no real imports or evidence writes occurred.
+
+Next: finish the fresh local Merrick page-image comparison, address justified remaining unnecessary work, then complete combined workflow/build checks. A local OCR diagnostic is running from `data/local-runtime/check-merrick-image-reading.py` with progress in `context-audit-final/merrick-image-progress.log`. The current API still predates this checkpoint and needs a targeted restart before browser validation. The compiled preview also predates these local changes. Keep the deployed-URL question pending and never send credentials to the unrelated old IP.
+
 ## Account references connected to Findings, 17 September 2026
 
 Local development only. Deployment remains held until the whole task is ready. Last pushed is `23039a67`; the preceding overlap checkpoint is local commit `803216b2`.

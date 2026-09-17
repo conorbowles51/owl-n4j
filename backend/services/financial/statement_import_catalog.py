@@ -7,6 +7,7 @@ complete statement.
 """
 from services.financial.pdf_candidates import _digest
 from services.financial.statement_layout_context import _cycle, CAPITAL_ONE_CARD_HEADING
+from services.financial.statement_information_pages import capital_information_kind
 
 
 def _capital_page_contexts(sources):
@@ -22,11 +23,9 @@ def _capital_page_contexts(sources):
     candidates, established, information = {}, set(), {}
     for page, rows in pages.items():
         cells = [c for row in rows for c in row['cells']]
-        content = ' '.join(c['expected_text'] for c in cells)
-        if ('How can I Avoid Paying Interest Charges?' in content and
-            'How can I Close My Account?' in content and 'Billing Rights Summary' in content and
-            not any(c['expected_text'].strip() in ('Trans Date', 'Transaction Date', 'Date') for c in cells)):
-            information[page] = 'card_terms'
+        kind = capital_information_kind(rows)
+        if kind:
+            information[page] = kind
         cycles = set()
         for row in rows:
             for index, cell in enumerate(row['cells']):
@@ -49,7 +48,7 @@ def _capital_page_contexts(sources):
 
 
 def statement_catalog(sources):
-    from services.financial.statement_import_andrews import andrews_catalog
+    from services.financial.statement_import_andrews import andrews_catalog, is_andrews_fee_summary
     andrews, handled, incomplete = andrews_catalog(sources)
     groups = {statement['id']: statement for statement in andrews}
     unclassified = []
@@ -61,6 +60,9 @@ def statement_catalog(sources):
         if address in handled:
             if address in incomplete:
                 unclassified.append(dict(page_number=address[0], table_index=address[1]))
+            continue
+        if is_andrews_fee_summary(source):
+            information.append(dict(page_number=address[0], table_index=address[1], kind='fee_summary'))
             continue
         merrick = merrick_statement(source)
         if merrick is not None:

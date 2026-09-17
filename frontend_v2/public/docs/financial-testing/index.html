@@ -389,4 +389,15 @@
 <li>If the test case includes a matching account statement, tick <strong>Include references with a possible statement match</strong>. Open that account&#x27;s statements. Expect a possible match, not a claim that the number proves the account owner&#x27;s identity.</li>
 <li>Check a payment containing only a telephone number, an amount or an unlabelled trace number. It should not create an account-reference entry.</li>
 </ol>
-<p>Expected result: the investigator can follow the reference to its evidence and record what needs to be obtained, without copying payment IDs or descriptions between screens.</p></main></html>
+<p>Expected result: the investigator can follow the reference to its evidence and record what needs to be obtained, without copying payment IDs or descriptions between screens.</p>
+<h3>Information pages and damaged payment fields</h3>
+<p>Use a test collection with known transactions and separate notices. Record the expected transaction count before processing it.</p>
+<ol>
+<li>Open a recognised Capital One collection with privacy notices, billing-cycle notices or advertisements. Check that those pages do not create transactions or unnecessary coverage warnings.</li>
+<li>Open <strong>Inspect another page of the original PDF</strong>. Choose a page labelled <strong>information page</strong> and select <strong>Show selected page</strong>. The original notice must still be available.</li>
+<li>Check a transaction page with an advertisement beside its table. Its payments must remain present, and the advertising text must not become part of their descriptions.</li>
+<li>Check a payment with a damaged date or missing extracted field. It must remain flagged with a source link. Readable amounts and descriptions should remain available; the system must not silently discard the payment or invent its date.</li>
+<li>In an Andrews test statement, inspect an <strong>Ending Balance</strong> line and the period/year-to-date fee summary. Neither should be an extra payment. Actual dated fees must remain in the transaction list. A misread date on the ending balance must not cause the following summary text to join a payment description.</li>
+<li>Include a page the reader does not recognise. Expect <strong>needs coverage check</strong>, then inspect it for missed payments. It must not be labelled harmless solely because it has no detected transactions.</li>
+</ol>
+<p>Expected result: recognised information stays available without adding review tasks, while uncertain payments stay visible and require a decision.</p></main></html>

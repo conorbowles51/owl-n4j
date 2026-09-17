@@ -2,6 +2,27 @@
 from services.financial.locators import Locator, LocatorError
 
 
+def has_unmapped_card_amount(cells, headers):
+    """Flag a measured payment line when one of its expected cells is lost."""
+    if len(cells) < 2:
+        return False
+    try:
+        amount = Locator.from_json(headers['Amount']['locator']).rectangle
+        description = Locator.from_json(headers['Description']['locator']).rectangle
+        boxes = [Locator.from_json(cell['locator']).rectangle for cell in cells]
+    except (LocatorError, ValueError, TypeError, KeyError):
+        return False
+    if any(box is None for box in [amount, description, *boxes]):
+        return False
+    if len({(b.page_number, b.page_width, b.page_height) for b in [amount, description, *boxes]}) != 1:
+        return False
+    if min(b.y0 for b in boxes) <= max(amount.y1, description.y1) or max(b.y0 for b in boxes) >= min(b.y1 for b in boxes):
+        return False
+    tolerance = amount.page_width // 100
+    return (any(abs(b.x1 - amount.x1) <= tolerance and b.x0 > description.x1 for b in boxes)
+            and any(abs(b.x0 - description.x0) <= tolerance for b in boxes))
+
+
 def card_row_columns(cells, headers):
     """Use exact columns, or measured positions for an over-split row.
 

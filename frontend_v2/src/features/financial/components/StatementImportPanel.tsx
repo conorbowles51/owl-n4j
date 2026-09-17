@@ -122,6 +122,9 @@ const proposalSchema = z.object({
   needs_attention: z.number(),
   page_numbers: z.array(z.number()).default([]),
   unassigned_page_numbers: z.array(z.number()).default([]),
+  information_pages: z
+    .array(z.object({ page_number: z.number(), kind: z.string() }))
+    .default([]),
   statement_id: z.string().nullable().optional(),
   statement_choices: z
     .array(
@@ -2739,10 +2742,18 @@ function EditableStatement({
           {data.unassigned_page_numbers.length > 0 && (
             <p>
               These pages were not assigned to a statement or recognised as
-              standard card terms. Check them for missed transactions before
+              information pages. Check them for missed transactions before
               relying on complete coverage.
               {!excludedCopy &&
                 " Use Add a missed transaction if you find one for this account and period."}
+            </p>
+          )}
+          {data.information_pages.length > 0 && (
+            <p className="text-muted-foreground mt-2">
+              {data.information_pages.length} information pages contain
+              recognised card terms, privacy notices, fee summaries or
+              advertisements. They remain available below and have not been
+              added as transactions.
             </p>
           )}
           <label className="block mt-2">
@@ -2768,7 +2779,11 @@ function EditableStatement({
                   Page {page}
                   {data.unassigned_page_numbers.includes(page)
                     ? " · needs coverage check"
-                    : ""}
+                    : data.information_pages.some(
+                          (item) => item.page_number === page
+                        )
+                      ? " · information page"
+                      : ""}
                 </option>
               ))}
             </select>

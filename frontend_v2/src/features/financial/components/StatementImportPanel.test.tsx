@@ -760,6 +760,36 @@ it("keeps repeated statement balances editable instead of calling them missing",
   })
 })
 
+it("keeps recognised information pages available without asking to correct them as payments", async () => {
+  const base = vi.mocked(fetchAPI).getMockImplementation()!
+  vi.mocked(fetchAPI).mockImplementation((url, options) =>
+    String(url).includes("/statement-import/file?")
+      ? Promise.resolve({
+          ...data,
+          page_numbers: [1, 2],
+          information_pages: [{ page_number: 2, kind: "privacy_notice" }],
+        } as never)
+      : base(url, options)
+  )
+  mount()
+  await open()
+  fireEvent.click(screen.getByText("Inspect another page of the original PDF"))
+  expect(screen.getByText(/information pages contain recognised/)).toBeVisible()
+  expect(
+    screen.getByRole("option", { name: "Page 2 · information page" })
+  ).toBeInTheDocument()
+  expect(
+    screen.queryByText(/pages need a coverage check/)
+  ).not.toBeInTheDocument()
+  expect(
+    screen.getByRole("button", { name: "Confirm import of 1 transactions" })
+  ).toBeEnabled()
+  fireEvent.change(screen.getByLabelText("Original PDF page"), {
+    target: { value: "2" },
+  })
+  expect(screen.getByLabelText("Original PDF page")).toHaveValue("2")
+})
+
 it("changes the printed page with next and previous controls", async () => {
   vi.mocked(fetchAPI).mockImplementation(async (url) =>
     String(url).startsWith("/api/evidence?")

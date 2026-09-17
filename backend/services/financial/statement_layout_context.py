@@ -7,7 +7,7 @@ It neither interprets credit-account signs nor creates account identities.
 import re
 from datetime import date, timedelta
 from services.financial.source_dates import assess_date_text
-from services.financial.card_table_columns import card_row_columns
+from services.financial.card_table_columns import card_row_columns, has_unmapped_card_amount
 
 _MONTHS = {name.lower(): index for index, names in enumerate((
     ('Jan', 'January'), ('Feb', 'February'), ('Mar', 'March'), ('Apr', 'April'),
@@ -98,7 +98,7 @@ def statement_layout_context(rows):
     cycle_row, cycle_cell, (start,end), count_cell = cycles[0]
     def citation(row, cell):
         return dict(row_index=row, **cell)
-    context=[];section=None;columns=None;header_row=None;header_cells=None
+    context=[];unresolved=[];section=None;columns=None;header_row=None;header_cells=None
     for row in rows:
         if row['row_index'] <= max(cycle_row, marks[0][0], cards[0][0]):
             continue
@@ -130,6 +130,8 @@ def statement_layout_context(rows):
             continue
         mapped = card_row_columns(cells, header_cells)
         if mapped is None:
+            if has_unmapped_card_amount(cells, header_cells):
+                unresolved.append(row['row_index'])
             continue
         mapped_columns, descriptions = mapped
         date_label='Date' if 'Date' in columns else 'Trans Date'
@@ -137,7 +139,10 @@ def statement_layout_context(rows):
         posting_cell=mapped_columns.get('Post Date')
         reading, possible, postings, basis = card_row_dates(date_cell['expected_text'],
             posting_cell['expected_text'] if posting_cell else None, start, end)
-        if not reading['proposals']:
+        # Printed columns and the account section can identify a payment even
+        # when OCR loses its date. Keep its other fields and flag the date.
+        if not reading['proposals'] and not (mapped_columns['Amount']['expected_text'].strip()
+                and any(cell['expected_text'].strip() for cell in descriptions)):
             continue
         section_row, section_cell, match = section
         context.append(dict(row_index=row['row_index'],card_ending=match[2],
@@ -155,5 +160,5 @@ def statement_layout_context(rows):
         institution_source=citation(*marks[0]),printed_card_source=citation(*cards[0]),
         cycle_source=citation(cycle_row,cycle_cell),
         cycle_count_source=citation(cycle_row,count_cell) if count_cell else None,start_date=start.isoformat(),end_date=end.isoformat(),
-        rows=context,applied=False,
+        rows=context,unresolved_rows=unresolved,applied=False,
         limitation='Printed sections and possible dates only. A transaction just before this cycle can use its separately printed posting date to identify the year, up to 31 days earlier. Both dates and all source cells are retained. A four-digit ending is a partial account reference. No transactions are imported by this layout view.')

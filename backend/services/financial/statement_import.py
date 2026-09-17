@@ -407,6 +407,8 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
                 can_import_balances=balance_only,
                 page_numbers=all_page_numbers,
                 unassigned_page_numbers=unassigned_pages if selected else [],
+                information_pages=[dict(page_number=number, kind=kind) for number, kind in sorted(
+                    {(item['page_number'], item['kind']) for item in catalog['information_sources']})],
                 statement_page_numbers=(selected['page_numbers'] if selected and selected.get('uses_printed_page_order')
                                         else sorted({source['page_number'] for source in sources})),
                 statement_choices=choices, statement_id=statement_id,

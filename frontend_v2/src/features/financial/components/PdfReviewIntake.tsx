@@ -244,7 +244,7 @@ function PdfReviewIntakeForm({
       {showExisting && (
         <p>
           {automaticReview
-            ? "Open a processed PDF using Choose a statement below. Files still being processed are shown in Evidence."
+            ? "Open a processed PDF from Statement files. Files still being processed are shown in Evidence."
             : "Already processed files can be opened through Choose PDF rows. Active processing is shown in Evidence."}
         </p>
       )}
@@ -253,7 +253,7 @@ function PdfReviewIntakeForm({
       )}
       {jobId && (
         <p role="status">
-          Preparation:{" "}
+          Reading the PDF:{" "}
           {job.isPending
             ? "checking progress"
             : (job.data?.status.replaceAll("_", " ") ?? "status unavailable")}
@@ -268,23 +268,24 @@ function PdfReviewIntakeForm({
       )}
       {job.isError && (
         <Button variant="outline" onClick={() => void job.refetch()}>
-          Check preparation again
+          Check progress again
         </Button>
       )}
       {job.data?.status === "failed" && (
         <p role="alert">
-          Preparation failed. Check the file and processing details in Evidence.
-          No transactions were admitted.
+          The PDF could not be read. Open its processing details in Evidence. No
+          transactions were imported.
         </p>
       )}
       {ready && (
         <>
           <p>
-            Source ready for review. Some pages may have no selectable table;
-            this does not mean they contain no transactions.
+            {automaticReview
+              ? "The PDF is ready to review. Check any highlighted problems before confirming its import."
+              : "The PDF is ready. Open the review to select the transaction rows and compare them with the original."}
           </p>
           <Button onClick={() => onReady(fileId ?? undefined)}>
-            Review prepared statement
+            {automaticReview ? "Open statement review" : "Open PDF review"}
           </Button>
         </>
       )}

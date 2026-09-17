@@ -107,6 +107,9 @@ def propose_card_table(source, currency, statement):
                         item['fields']['date_basis'] = 'statement_end_ordering_only'
             except ValueError as exc:
                 item['issues'].append(str(exc))
+        elif row['row_index'] in (context or {}).get('unresolved_rows', []):
+            item.update(kind='unresolved', excluded=False)
+            item['issues'].append('A payment line has a missing or unreadable field. Compare this row with the PDF and enter the missing values.')
         elif any(re.fullmatch(r'(?:\d{4}-\d{2}-\d{2}|\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?|[A-Za-z]{3,9}\.?\s+\d{1,2}(?:,?\s+\d{4})?)', text) for text in texts):
             item.update(kind='unresolved', excluded=False)
             item['issues'].append('This dated row was not recognised in a transaction section. Check it against the PDF.')

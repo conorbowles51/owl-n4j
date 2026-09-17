@@ -43,9 +43,9 @@ export function EvidenceFinancialPicker({
           <DialogTitle>Send existing evidence to Financial</DialogTitle>
           <DialogDescription>
             Select PDFs or folders from this case. Folders include their
-            subfolders. Other file types are skipped. Existing readings are
-            reused where possible. Financial opens automatically to check the
-            statements and prepare them for bulk import.
+            subfolders. Other file types are skipped. Previously processed PDFs
+            are reused where possible. Financial opens automatically to check
+            the statements and prepare them for bulk import.
           </DialogDescription>
           {open && (
             <EvidenceBrowser

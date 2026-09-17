@@ -484,3 +484,16 @@ Use a synthetic statement whose payment descriptions contain an explicit referen
 7. Check a payment containing only a telephone number, an amount or an unlabelled trace number. It should not create an account-reference entry.
 
 Expected result: the investigator can follow the reference to its evidence and record what needs to be obtained, without copying payment IDs or descriptions between screens.
+
+### Information pages and damaged payment fields
+
+Use a test collection with known transactions and separate notices. Record the expected transaction count before processing it.
+
+1. Open a recognised Capital One collection with privacy notices, billing-cycle notices or advertisements. Check that those pages do not create transactions or unnecessary coverage warnings.
+2. Open **Inspect another page of the original PDF**. Choose a page labelled **information page** and select **Show selected page**. The original notice must still be available.
+3. Check a transaction page with an advertisement beside its table. Its payments must remain present, and the advertising text must not become part of their descriptions.
+4. Check a payment with a damaged date or missing extracted field. It must remain flagged with a source link. Readable amounts and descriptions should remain available; the system must not silently discard the payment or invent its date.
+5. In an Andrews test statement, inspect an **Ending Balance** line and the period/year-to-date fee summary. Neither should be an extra payment. Actual dated fees must remain in the transaction list. A misread date on the ending balance must not cause the following summary text to join a payment description.
+6. Include a page the reader does not recognise. Expect **needs coverage check**, then inspect it for missed payments. It must not be labelled harmless solely because it has no detected transactions.
+
+Expected result: recognised information stays available without adding review tasks, while uncertain payments stay visible and require a decision.

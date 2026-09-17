@@ -135,7 +135,7 @@ Retain completed work in this checklist. Checked items include the local impleme
 - [x] Process batches on the server and retain per-period status.
 - [x] Confirm a ready batch once and preserve successful imports on retry.
 - [x] Open a flagged row beside its PDF and save a batch correction on the server.
-- [ ] Apply the same clear progress, save and result language throughout the journey.
+- [x] Apply the same clear progress, save and result language throughout the journey. Upload controls describe PDF reading, point ready files to the statement review and direct failures to processing details; saved drafts and batch imports retain their explicit state messages.
 - [ ] Verify the deployed workflow after the local batch changes are published.
 
 **Done when:** a user selects a parent folder, leaves the page, returns, imports the ready periods once and can see which records remain unresolved. Repeating an action must not add duplicate payments.
@@ -167,6 +167,8 @@ Retain completed work in this checklist. Checked items include the local impleme
 
 - [ ] Exclude recognised summary, disclosure and marketing sections from transaction candidates while retaining their source pages and useful totals.
 - [ ] Distinguish uncertain transaction fields from harmless contextual text.
+
+Local progress on these two open items: recognised Capital One notices and Andrews fee-summary pages remain available without unnecessary coverage tasks. Seven misread Merrick headings and three Andrews non-payment rows no longer enter payment review. Damaged payment dates and missing fields remain flagged with readable fields retained. The seven-file comparison preserves every remaining payment's fields and original cells. The difficult Merrick/Andrews readings still have substantial flags, so the overall acceptance item remains open. See [the recorded comparison](financial-information-page-audit-2026-09-17.md).
 - [x] Offer selected-row correction for repetitive errors with a before/after preview, selection across pages, source links and a reason retained on every changed row. Checks recalculate after applying.
 - [x] Permit selected extracted-row reassignment between recognised accounts/periods in the same PDF before import. Preview both statements, preserve source locations and each saved review's corrections, record reasons, refuse stale previews or imported periods, and recalculate both sets of checks. Creating new undetected periods and moving already imported payments are not offered by this control.
 - [x] Recover individual and bulk saved reviews through earlier file versions, including unmatched periods and conflicting alternatives. Show old values separately; record a file-wide comparison before importing a changed reading, invalidate it when saved inputs change, and recheck unchanged batch periods. Current imports and original files remain retained.
