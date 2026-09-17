@@ -238,7 +238,7 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
         sources = [source for source in all_sources if (source['page_number'], source['table_index']) in addresses]
         metadata.update(account_type=selected.get('account_type', 'credit_card'), institution=selected['institution'], account_number=selected['account_reference'],
                         period_start=selected['period_start'], period_end=selected['period_end'],
-                        period=(selected['period_start'] + ' - ' + selected['period_end']) if selected['period_start'] else selected.get('printed_statement_date', ''))
+                        period=(selected['period_start'] + ' - ' + selected['period_end']) if selected['period_start'] else selected.get('printed_statement_date') or selected.get('printed_closing_date', ''))
         if selected.get('layout_id') in ('capital-one-card', 'merrick-card'):
             metadata['balance_convention'] = 'liability_owed'
         # A selected account must not inherit a name from a different section

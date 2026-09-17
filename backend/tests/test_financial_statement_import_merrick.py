@@ -324,3 +324,56 @@ class MerrickStatementTests(unittest.TestCase):
         self.assertIsNone(group['date_year'])
         rows=[r for r in propose_merrick_table(data,'USD',group)['rows'] if not r['excluded']]
         self.assertTrue(all('date' not in r['fields'] for r in rows))
+
+
+class MerrickClosingDateFallbackTests(unittest.TestCase):
+    def example(self):
+        data=statement()
+        data['rows'][0]['cells'][0]['expected_text']='Statement heading unreadable'
+        extra=source([['Billing Cycle Closing Date','04/25/21']])['rows'][0]
+        extra['row_index']=100
+        data['rows'].append(extra)
+        return data
+
+    def test_unique_labelled_closing_date_and_full_ytd_year_supply_context_without_rewriting_header(self):
+        data=self.example();before=deepcopy(data);group=merrick_statement(data)
+        self.assertEqual(group['statement_date'],'2021-04-25')
+        self.assertEqual(group['printed_statement_date'],'')
+        self.assertEqual(group['printed_closing_date'],'04/25/21')
+        self.assertEqual(group['statement_date_basis'],'billing_cycle_closing_date')
+        self.assertEqual((group['period_start'],group['period_end']),('',''))
+        rows=[r for r in propose_merrick_table(data,'USD',group)['rows'] if not r['excluded']]
+        self.assertEqual([r['fields']['date'] for r in rows],['2021-04-22','2021-04-23'])
+        self.assertTrue(all('closing date' in r['fields']['date_context'] for r in rows))
+        self.assertEqual([r['fields']['amount_minor'] for r in rows],['1400','10000'])
+        self.assertEqual(data,before)
+
+    def test_missing_conflicting_invalid_or_unlabelled_context_cannot_create_dates(self):
+        for change in ('year','no_year','invalid','duplicate','unlabelled','present_heading'):
+            data=self.example()
+            if change=='year':data['rows'][-2]['cells'][0]['expected_text']='2022 Totals Year-to-Date'
+            elif change=='no_year':data['rows'][-2]['cells'][0]['expected_text']='Totals Year-to-Date'
+            elif change=='invalid':data['rows'][-1]['cells'][1]['expected_text']='04/35/21'
+            elif change=='duplicate':data['rows'].extend(source([['Billing Cycle Closing Date','04/26/21']])['rows'])
+            elif change=='unlabelled':data['rows'][-1]['cells'][0]['expected_text']='Date'
+            elif change=='present_heading':data['rows'][0]['cells'][0]['expected_text']='Statement Date: 04/25/24'
+            with self.subTest(change=change):
+                group=merrick_statement(data)
+                self.assertNotIn('statement_date_basis',group)
+                self.assertIsNone(group['date_year'])
+                rows=[r for r in propose_merrick_table(data,'USD',group)['rows'] if not r['excluded']]
+                self.assertTrue(all('date' not in r['fields'] for r in rows))
+
+    def test_interest_date_difference_is_flagged_without_changing_the_printed_day_or_month(self):
+        data=self.example()
+        data['rows'][11]['cells'][-1]['expected_text']='2.50'
+        group=merrick_statement(data)
+        row=propose_merrick_table(data,'USD',group)['rows'][11]
+        self.assertEqual(row['fields']['date'],'2021-04-25')
+        self.assertFalse(row['issues'])
+        data['rows'][11]['cells'][0]['expected_text']='03/25'
+        row=propose_merrick_table(data,'USD',group)['rows'][11]
+        self.assertEqual(row['fields']['date'],'2021-03-25')
+        self.assertEqual(row['fields']['amount_minor'],'250')
+        self.assertTrue(any('interest-charge date differs' in issue for issue in row['issues']))
+        self.assertEqual(row['source_cells'][0]['expected_text'],'03/25')

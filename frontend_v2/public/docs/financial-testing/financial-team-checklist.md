@@ -454,6 +454,17 @@ Record the filename, account, period, action, expected result and actual result 
 
 **Expected:** missing statement pages and damaged-date payments are recovered where the source supports them. Existing dates, amounts, signs and balances are preserved. No real imports are replaced automatically.
 
+### Check repeated statement dates
+
+1. Use a Merrick test statement whose closing-date reading differs from its **Statement Date**. Keep a note of the printed dates and transaction count.
+2. Choose **Read from page images** under **Read the statement again**, then **Reprocess statement**.
+3. Compare any corrected closing date with both printed dates and the year-to-date heading. A remaining disagreement must still be flagged. Transaction amounts and descriptions must not change because a date was reread.
+4. In a statement where the statement-date heading was not recognised, check the separately labelled **Billing Cycle Closing Date**. A unique, readable closing date with a matching year-to-date year can supply missing transaction years. It must not fill the statement's coverage dates or replace an existing conflicting heading.
+5. Check any interest-charge date warning. Confirm the printed month and day against the closing date. The warning must not silently change the transaction date to make them agree.
+6. Reopen any earlier saved review and compare it before importing a changed reading.
+
+**Expected:** repeated printed dates reduce unnecessary year corrections. Conflicting dates and unreadable transaction days remain visible. Record any apparently valid date that differs from the PDF.
+
 ### Check several missing transaction years
 
 Use an artificial Merrick statement with readable numeric month/day values and an unreadable closing-date reading. Keep its original PDF legible.

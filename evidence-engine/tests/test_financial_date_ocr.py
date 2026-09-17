@@ -233,3 +233,54 @@ def test_page_text_geometry_and_saved_provenance_use_the_same_rereading(monkeypa
         metadata=dict(file_type='pdf',page_spans=[pdf_extraction._page_span(result,0)])))
     assert canonical.source_locations[0]['ocr_refinements'] == comparisons
     assert canonical.source_locations[0]['text_origin'] == 'recognised_glyphs'
+
+
+def repeated_heading_fixture():
+    data=dict(text=[''],left=[0],top=[0],width=[0],height=[0],conf=[-1])
+    for text,x,y,width in [
+        ('Statement Date: 09/24/21',420,15,100), ('MERRICK BANK',40,50,100),
+        ('Billing Cycle Closing Date',200,230,115), ('09/24/24',340,230,50),
+        ('Transactions, Payments and Credits',90,280,250), ('2021 Totals Year-to-Date',90,600,200),
+        ('09/24/24',90,630,50),
+    ]:
+        for key,value in dict(text=text,left=x,top=y,width=width,height=8,conf=80).items():data[key].append(value)
+    return data
+
+
+def test_repeated_closing_date_requires_two_visual_sizes_and_two_printed_anchors(monkeypatch):
+    data=repeated_heading_fixture();before=deepcopy(data)
+    result,records,calls=run(data,monkeypatch,iter(['/24/21','09/24/21','9/24/21','09/24/21']))
+    assert data==before and result['text'][4]=='09/24/21' and len(calls)==4
+    assert result['text'][:4]+result['text'][5:]==data['text'][:4]+data['text'][5:]
+    assert records[0]['original_text']=='09/24/24'
+    assert records[0]['agreement_with']==dict(statement_date='09/24/21',statement_date_rect=[420000,15000,520000,23000],year_to_date_year=2021)
+
+
+@pytest.mark.parametrize('replies',[
+    ['09/24/21']*3+['09/24/24'],
+    ['09/24/21']*3+['9/24/24'],
+    ['09/24/21']*2+['24/21']*2,
+    ['24/21','09/24/21','24/21','24/21'],
+    ['09/23/21']*4,
+    ['09/24']*4,
+    ['09/24/21',RuntimeError('timeout')],
+])
+def test_repeated_closing_date_cannot_outvote_a_complete_date_or_replace_missing_visual_evidence(monkeypatch,replies):
+    data=repeated_heading_fixture();result,records,_=run(data,monkeypatch,iter(replies))
+    assert result is data and not records
+
+
+@pytest.mark.parametrize('damage',['year','missing_year','heading','heading_position','different_line','overlap','duplicate','readable'])
+def test_valid_looking_closing_date_is_not_reread_without_unique_measured_anchors(monkeypatch,damage):
+    data=repeated_heading_fixture()
+    if damage=='year':data['text'][6]='2024 Totals Year-to-Date'
+    elif damage=='missing_year':data['text'][6]='Totals Year-to-Date'
+    elif damage=='heading':data['text'][1]='Statement Date: O9/24/21'
+    elif damage=='heading_position':data['top'][1]=400
+    elif damage=='different_line':data['top'][4]=250
+    elif damage=='overlap':data['left'][4]=250
+    elif damage=='duplicate':
+        for k in data:data[k].append(data[k][4])
+    elif damage=='readable':data['text'][4]='09/24/21'
+    result,records,calls=run(data,monkeypatch,iter(['09/24/21']*4))
+    assert result is data and not records and not calls

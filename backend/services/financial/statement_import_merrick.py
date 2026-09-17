@@ -49,10 +49,20 @@ def merrick_statement(source):
         for i, text in enumerate(values):
             if text == 'Billing Cycle Closing Date' and i + 1 < len(values):
                 closing_dates.add(values[i + 1])
+    printed_statement_date = raw_date
+    year = next(iter(years)) if len(years) == 1 else None
+    closing_fallback = ''
+    # A missing statement-date label does not erase a separately labelled
+    # closing date. Use it only when unique and corroborated by the full YTD
+    # year. A present but damaged or conflicting heading still needs review.
+    if not dates and len(closing_dates) == 1 and year is not None:
+        candidate = next(iter(closing_dates))
+        parsed_closing = _printed_date(candidate)
+        if parsed_closing is not None and parsed_closing.year == year:
+            closing_fallback = raw_date = candidate
     date_conflict = bool(raw_date and closing_dates and
                          any(_printed_date(value) is None or _printed_date(value) != _printed_date(raw_date)
                              for value in closing_dates))
-    year = next(iter(years)) if len(years) == 1 else None
     if year is not None and (not raw_date.endswith(str(year)[-2:]) or date_conflict):
         year = None
     closing = None
@@ -72,9 +82,11 @@ def merrick_statement(source):
             holder = values[1]
     identity = dict(layout_id='merrick-card', institution='Merrick Bank',
                     account_reference=next(iter(accounts)) if len(accounts) == 1 else '',
-                    statement_date=closing or '', printed_statement_date=raw_date,
+                    statement_date=closing or '', printed_statement_date=printed_statement_date,
                     period_start='', period_end='', holder=holder,
                     date_year=year, date_month=int(month[1]) if month else None)
+    if closing_fallback:
+        identity.update(printed_closing_date=closing_fallback, statement_date_basis='billing_cycle_closing_date')
     identity['id'] = _digest(dict(**identity, source_page=source['page_number']))
     return dict(**identity, date_conflict=date_conflict,
                 sources=[dict(page_number=source['page_number'],table_index=source['table_index'],source_revision=source['source_revision'])],page_numbers=[source['page_number']])
@@ -229,9 +241,15 @@ def propose_merrick_table(source, currency, statement):
             if match and year and closing_month and month in (closing_month, (closing_month-2)%12+1):
                 try:
                     fields['date']=date(year-1 if closing_month==1 and month==12 else year,month,day).isoformat()
-                    fields['date_context']='Year constrained by printed statement month and full year-to-date heading.'
+                    fields['date_context']=('Year constrained by printed billing cycle closing date and full year-to-date heading.'
+                        if statement.get('statement_date_basis') == 'billing_cycle_closing_date'
+                        else 'Year constrained by printed statement month and full year-to-date heading.')
                 except ValueError:
                     pass
+            if (fields.get('date') and statement.get('statement_date')
+                    and re.match(r'^Interest Charge\b', fields['description'], re.IGNORECASE)
+                    and fields['date'] != statement['statement_date']):
+                item['issues'].append('The interest-charge date differs from the printed closing date. Check both dates in the PDF.')
             if 'date' not in fields:
                 item['issues'].append('Check the full date in the PDF. Its characters could not be read. The other recognised fields have been kept.' if match is None
                                       else 'Check the full date. The printed statement context could not resolve its year.')
