@@ -251,8 +251,16 @@ def propose_merrick_table(source, currency, statement):
                     and fields['date'] != statement['statement_date']):
                 item['issues'].append('The interest-charge date differs from the printed closing date. Check both dates in the PDF.')
             if 'date' not in fields:
-                item['issues'].append('Check the full date in the PDF. Its characters could not be read. The other recognised fields have been kept.' if match is None
-                                      else 'Check the full date. The printed statement context could not resolve its year.')
+                calendar_year = year - 1 if year and closing_month == 1 and month == 12 else year or 2000
+                if match is None:
+                    date_issue = 'Check the full date in the PDF. Its characters could not be read. The other recognised fields have been kept.'
+                elif _printed_date(f'{month:02}/{day:02}/{calendar_year}') is None:
+                    date_issue = 'This date has an invalid month or day. Check the date in the PDF.'
+                elif year and closing_month and month not in (closing_month, (closing_month-2)%12+1):
+                    date_issue = 'This date is outside the closing month and previous month. Check the date and the selected statement.'
+                else:
+                    date_issue = 'Check the full date. The printed statement context could not resolve its year.'
+                item['issues'].append(date_issue)
             try:
                 value, amount_index = _transaction_amount(cells, source, currency)
                 fields.update(amount_minor=str(abs(value)), amount_column=str(cells[amount_index]['column_index']))

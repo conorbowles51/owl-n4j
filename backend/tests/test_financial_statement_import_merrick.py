@@ -66,6 +66,29 @@ def measured_statement():
 
 
 class MerrickStatementTests(unittest.TestCase):
+    def test_date_warning_distinguishes_invalid_characters_calendar_and_missing_context(self):
+        for text, message in [('O4/22', 'characters could not be read'),
+                              ('04/44', 'invalid month or day'),
+                              ('14/22', 'invalid month or day'),
+                              ('02/30', 'invalid month or day'),
+                              ('02/22', 'outside the closing month')]:
+            data = measured_statement()
+            data['rows'][0]['cells'][0]['expected_text'] = 'Statement Date: 04/25/21'
+            data['rows'][6]['cells'][0]['expected_text'] = text
+            row = propose_merrick_table(data, 'USD', merrick_statement(data))['rows'][6]
+            self.assertFalse(row['excluded'])
+            self.assertNotIn('date', row['fields'])
+            self.assertTrue(any(message in issue for issue in row['issues']))
+            self.assertEqual(row['fields']['amount_minor'], '1400')
+        data = measured_statement()
+        data['rows'][0]['cells'][0]['expected_text'] = 'Statement Date: unreadable'
+        row = propose_merrick_table(data, 'USD', merrick_statement(data))['rows'][6]
+        self.assertTrue(any('could not resolve its year' in issue for issue in row['issues']))
+        data['rows'][0]['cells'][0]['expected_text'] = 'Statement Date: 03/25/21'
+        data['rows'][6]['cells'][0]['expected_text'] = '02/29'
+        row = propose_merrick_table(data, 'USD', merrick_statement(data))['rows'][6]
+        self.assertTrue(any('invalid month or day' in issue for issue in row['issues']))
+
     def test_unreadable_date_on_measured_zero_interest_needs_no_payment_correction(self):
         for label in ('Interest Charge on Purchases', 'Interest Charge on Cash Advances',
                       'Interest Charge on Purchases:'):

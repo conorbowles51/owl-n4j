@@ -466,7 +466,7 @@ def propose_andrews_statement(sources, currency, statement):
                     conflict = (amount > 0 and verb == 'Withdrawal' and 'Adjustment' not in description
                                 or amount < 0 and verb == 'Deposit')
                     if conflict or verb is None:
-                        item['issues'].append('Check whether money entered or left the account. The description and amount sign need review.')
+                        item['issues'].append('Check the amount and whether money entered or left the account. The number or its minus sign may have been read incorrectly.')
                     else:
                         fields['direction'] = 'credit' if amount >= 0 else 'debit'
                 except ValueError:

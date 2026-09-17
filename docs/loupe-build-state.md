@@ -1,3 +1,13 @@
+## Remaining-field audit and larger-file comparison, 18 September 2026
+
+All 64 remaining flagged Merrick rows and 49 flagged rows in the smaller Andrews image reading were compared visually with original line crops. These are real payments or nonzero charges. No additional heading or zero-charge false candidate was observed in this set. Some correctly read rows have a running-balance warning caused by the preceding row's incorrect balance. This is a flagged-row audit, not an independent transcription or completeness measurement of either entire file.
+
+Warnings now distinguish an invalid calendar month/day, an out-of-context date, unreadable characters and a missing year. Andrews sign warnings explicitly ask users to compare the amount as well as its sign: an unread minus can become an extra digit. Proposal revision is v23. All 47 focused Merrick/Andrews backend tests pass. Guides were regenerated. Private crops use `merrick-remaining-flags-*`, `andrews-remaining-flags-*` and `merrick-missing-sign-crops.png`; every sheet was inspected. An 18-region Merrick money experiment accepted no values and was not adopted.
+
+The 99-page Andrews optional whole-image reading completed in 888.7 seconds, with the original hash unchanged. It finds 41 sections, 1,418 entries, 254 flagged rows and 36 unassigned physical pages. The retained PDF-text reading produces 44 sections, 2,065 entries, 113 flagged rows and six unassigned pages with current code. The image result is worse and has not replaced any source, saved review or import. Records: `andrews-large-current-*` and `andrews-large-retained-text-comparison.json`. Do not rerun the unchanged whole-file image pass or recommend it as an improvement for this input.
+
+All diagnostics are finished. Continue targeted recovery and the remaining D acceptance work. A three-crop Andrews sign-conflict experiment has two fully agreed negative readings and one conflicting result; it is not implemented yet. No push or server restart. The deployment hold and ten-minute continuation remain active; last pushed is `23039a67`.
+
 ## Deployment timing changed by user, 17 September 2026
 
 **Latest instruction supersedes the release window below:** hold off on the 1–2 hour deployment because Alex is working on the platform. Continue the whole remaining task and deploy only when the complete work is ready. The ACTIVE ten-minute heartbeat has been updated to remove the intermediate push and preserve continued local development. The earlier immediate push `23039a67` remains complete. No further push has occurred. The current Loupe URL question remains pending; local work continues.
