@@ -450,6 +450,8 @@ Record the filename, account, period, action, expected result and actual result 
 2. In a scanned statement with a damaged full-period date, use **Read from page images**. Compare the recovered date with the PDF. If the local readings disagree, it must stay unresolved. An existing readable date must remain unchanged.
 3. Check a payment with a broken date such as **O6 /O3**. Expect its own transaction row and a date problem. Its description and money must not be appended to the preceding payment. Correct the date beside the PDF and save.
 4. Open the PDF page selector. Recognised account applications, account agreements and fee-only pages should remain accessible as information pages. A page that also contains payments must not be dismissed as information.
+
+For a Merrick collection, also check recognised cover letters, application continuations, cardholder notices, separate interest-calculation pages and records-request paperwork. Open their original pages from the page selector. A payment-history list must remain available for financial review, even when it shares a page with familiar notice text. Check for payments already recorded in the monthly statements before adding anything from that list.
 5. Compare transaction counts and balances before and after processing. Additional genuine payments can raise the problem count. Verify each newly found payment, and keep earlier saved corrections available for comparison.
 
 **Expected:** missing statement pages and damaged-date payments are recovered where the source supports them. Existing dates, amounts, signs and balances are preserved. No real imports are replaced automatically.

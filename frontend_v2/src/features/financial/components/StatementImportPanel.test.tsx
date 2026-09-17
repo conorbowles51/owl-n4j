@@ -865,7 +865,7 @@ it("keeps recognised information pages available without asking to correct them 
   mount()
   await open()
   fireEvent.click(screen.getByText("Inspect another page of the original PDF"))
-  expect(screen.getByText(/information pages contain recognised/)).toBeVisible()
+  expect(screen.getByText(/information pages contain supporting material/)).toBeVisible()
   expect(
     screen.getByRole("option", { name: "Page 2 · information page" })
   ).toBeInTheDocument()

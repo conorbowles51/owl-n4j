@@ -61,3 +61,51 @@ def capital_information_kind(rows):
     if all(phrase in content for phrase in ('referfriendsnow', 'earn a bonus', 'refer')):
         return 'advertisement'
     return None
+
+
+def merrick_information_kind(rows):
+    """Recognise supporting paperwork without clearing payment-history pages."""
+    texts = [cell['expected_text'].strip() for row in rows for cell in row['cells']]
+    content = ' '.join(texts).lower().replace('’', "'")
+    # Apply these checks across every table on the physical page. Account
+    # summaries and payment lists must retain their separate review path.
+    if any(phrase in content for phrase in ('transactions, payments and credits',
+            'payment history', 'summary of account activity')):
+        return None
+    if any(text.lower() in ('trans date', 'transaction date', 'item description',
+                            'amount', 'from account', 'previous balance', 'new balance') for text in texts):
+        return None
+    for row in rows:
+        cells = row['cells']
+        if (len(cells) >= 2
+                and re.match(r'^(?:\d{1,4}[/-]\d{1,2}|[A-Za-z]{3}\.?\s+\d{1,2})', cells[0]['expected_text'])
+                and any(re.search(r'\d[,.]\d{2}\b', c['expected_text']) for c in cells[1:])):
+            return None
+    branded = 'merrick bank' in content or 'merrickbank.com' in content
+    if branded and all(phrase in content for phrase in (
+            'in response to the request received', 'copies of the monthly billing statements',
+            'copies of the payments made on the account')):
+        return 'records_cover_letter'
+    if branded and all(phrase in content for phrase in ('original application information', 'applicant', 'auth user')):
+        return 'account_application'
+    if all(phrase in content for phrase in ('app info', 'app received date', 'solicitation number',
+                                          'applicant signature', 'original app employment')):
+        return 'account_application'
+    if branded and all(phrase in content for phrase in ('cardholder news', 'cardholder center', 'enroll')):
+        return 'cardholder_notice'
+    if branded and all(phrase in content for phrase in ('interest charge calculation',
+            'your annual percentage rate (apr)', 'type of balance', 'purchases', 'cash advances')):
+        return 'interest_calculation'
+    if branded and all(phrase in content for phrase in ("state's attorney's subpoena",
+            'obtaining documents', 'certification from custodian of records')):
+        return 'records_request'
+    if all(phrase in content for phrase in ('any surveillance video and pictures of access',
+            'all account reviews from', 'correspondences to or from the account holder', 'not just received')):
+        return 'records_request'
+    if all(phrase in content for phrase in ('certificate of service', "state's attorney's subpoena",
+                                          'postage prepaid', 'financial institutions')):
+        return 'records_request_service'
+    if branded and all(phrase in content for phrase in ('certification of custodian of records',
+            'or other qualified individual', 'true and correct copies')):
+        return 'records_certification'
+    return None

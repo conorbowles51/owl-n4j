@@ -2,6 +2,14 @@
 
 **Latest instruction supersedes the release window below:** hold off on the 1–2 hour deployment because Alex is working on the platform. Continue the whole remaining task and deploy only when the complete work is ready. The ACTIVE ten-minute heartbeat has been updated to remove the intermediate push and preserve continued local development. The earlier immediate push `23039a67` remains complete. No further push has occurred. The current Loupe URL question remains pending; local work continues.
 
+## Merrick supporting pages retained without spurious review tasks, 17 September 2026
+
+Following local `e10ad7dc`, all 14 remaining unassigned Merrick original pages were visually inspected. Twelve cover/application/notice/interest-calculation/records-request pages now receive a recognised information purpose, while genuine payment-history pages 51/52 stay reviewable. Guards inspect all tables on each physical page for payment headings or dated amounts. All original figures/pages remain accessible. Proposal revision is v21.
+
+Read-only comparison preserves all 42 section objects, 230 entry objects and 70 flagged rows exactly, with source cells unchanged. Page 26's original confirms the newly flagged 09/25-to-08/25 OCR error, matching the separately inspected page 46 finding. No case or PDF writes. Private comparison and four inspected sheets use `merrick-supporting-pages-*` under ignored `context-audit-final/`. 40 focused backend checks and the information-page UI check pass. An initial command used the wrong catalog test-module name; the correct eight catalog tests passed on rerun. Guides regenerated and retained light-mode images. No full suite, build, server restart or push.
+
+D remains open: the two payment-history pages contain 33 payments with no explicit currency/receiving-account identity on that list and may overlap monthly statements. Remaining damaged scan values still require useful review. Continue focused improvements and completion acceptance, not another unchanged whole-file OCR run. Last pushed remains `23039a67`; Alex's deployment hold and the ten-minute continuation schedule remain active.
+
 ## Repeated Merrick dates checked against originals, 17 September 2026
 
 After local `2c0892a4`, a conflicting Merrick closing-date cell can be reread against the independently printed full Statement Date and YTD year. Two complete visual readings at different resolutions must agree with those anchors, with no conflicting full date. Partial readings cannot originate a transaction date through this rule. Provenance retains both anchors and all crop observations. A missing statement-date heading may instead use a unique, labelled closing date with a matching YTD year; its distinct source is retained and coverage dates stay blank. Proposal revision is v20.

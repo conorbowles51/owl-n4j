@@ -7,7 +7,7 @@ complete statement.
 """
 from services.financial.pdf_candidates import _digest
 from services.financial.statement_layout_context import _cycle, CAPITAL_ONE_CARD_HEADING
-from services.financial.statement_information_pages import capital_information_kind, andrews_information_kind
+from services.financial.statement_information_pages import capital_information_kind, andrews_information_kind, merrick_information_kind
 
 
 def _capital_page_contexts(sources):
@@ -23,7 +23,7 @@ def _capital_page_contexts(sources):
     candidates, established, information = {}, set(), {}
     for page, rows in pages.items():
         cells = [c for row in rows for c in row['cells']]
-        kind = capital_information_kind(rows) or andrews_information_kind(rows)
+        kind = capital_information_kind(rows) or andrews_information_kind(rows) or merrick_information_kind(rows)
         if kind:
             information[page] = kind
         cycles = set()

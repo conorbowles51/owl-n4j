@@ -146,3 +146,42 @@ class StatementInformationTests(TestCase):
         # An unknown amount-bearing row prevents classifying the whole page.
         summary['rows'].append(dict(row_index=99,cells=[dict(column_index=0,expected_text='Unclear transaction 100.00',locator={})]))
         self.assertFalse(statement_catalog([first,summary])['information_sources'])
+
+    def test_merrick_supporting_pages_keep_sources_and_never_absorb_a_payment_table(self):
+        examples=[
+            (['Merrick Bank', 'In response to the request received', 'Copies of the monthly billing statements', 'Copies of the payments made on the account'], 'records_cover_letter'),
+            (['Merrick Bank', 'Original Application Information', 'Applicant', 'Auth User'], 'account_application'),
+            (['App Info', 'App Received Date', 'Solicitation Number', 'Applicant Signature?', 'Original App Employment'], 'account_application'),
+            (['merrickbank.com', 'Cardholder News', 'Cardholder Center', 'Enroll'], 'cardholder_notice'),
+            (['Merrick Bank', 'Interest Charge Calculation', 'Your Annual Percentage Rate (APR)', 'Type of Balance', 'Purchases', 'Cash Advances'], 'interest_calculation'),
+            (['Merrick Bank', "State's Attorney's Subpoena", 'obtaining documents', 'Certification from Custodian of Records'], 'records_request'),
+            (['Any surveillance video and pictures of access', 'All account reviews from', 'Correspondences to or from the account holder', 'not just received'], 'records_request'),
+            (['Certificate of Service', 'State’s Attorney’s Subpoena', 'postage prepaid', 'Financial Institutions'], 'records_request_service'),
+            (['Merrick Bank', 'Certification of Custodian of Records', 'or other qualified individual', 'true and correct copies'], 'records_certification'),
+        ]
+        for lines,kind in examples:
+            with self.subTest(kind=kind):
+                data=source([[line] for line in lines]);before=deepcopy(data)
+                catalog=statement_catalog([data])
+                self.assertEqual(catalog['information_sources'],[dict(page_number=1,table_index=0,kind=kind)])
+                self.assertFalse(catalog['unclassified_sources'])
+                self.assertEqual(data,before)
+                for grid in ([['Payment History']], [['Trans Date','Item Description','Amount']],
+                             [['09/20/2024','EXAMPLE SHOP','14.00']], [['Sep 20','EXAMPLE SHOP','$14.00']],
+                             [['Summary of Account Activity']], [['Previous Balance','100.00']]):
+                    payments=source(grid);payments['table_index']=1
+                    mixed=statement_catalog([data,payments])
+                    self.assertFalse(mixed['information_sources'])
+                    self.assertEqual(len(mixed['unclassified_sources']),2)
+                # Remove a required phrase. Unfamiliar or incomplete notices
+                # cannot be marked as understood based on the title alone.
+                data['rows'].pop()
+                self.assertFalse(statement_catalog([data])['information_sources'])
+
+    def test_merrick_payment_history_remains_financial_review_even_without_a_statement_heading(self):
+        data=source([['Payment History'],['Date','From Account','Amount','Fee','Status'],
+            ['10/02/2024','EXAMPLE CREDIT UNION /123456789','500.00','0.00','Posted']])
+        catalog=statement_catalog([data])
+        self.assertEqual(catalog['unclassified_sources'],[dict(page_number=1,table_index=0)])
+        self.assertFalse(catalog['information_sources'])
+        self.assertFalse(catalog['statements'])
