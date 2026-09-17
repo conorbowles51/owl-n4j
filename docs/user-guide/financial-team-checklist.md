@@ -4,6 +4,8 @@ Follow this guide in order for your first test of Financial. It starts with two 
 
 **Updated: 17 September 2026.** Use the full **User guide** for detailed explanations of each tool. This testing guide tells you what to try and what result to check. A result is only a pass after you have checked it yourself.
 
+Screenshots show light mode using the supplied test statements. The controls are the same in dark mode.
+
 ## Contents
 
 1. [Create a separate test case](#1-create-a-separate-test-case)

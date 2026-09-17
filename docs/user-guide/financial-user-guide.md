@@ -2,7 +2,7 @@
 
 Step-by-step instructions for reviewing financial records, investigating payments and preparing reports.
 
-**Edition: 17 September 2026, investigator workspace.** This guide describes the current financial controls and their known limits. Screenshots use test cases with invented transactions. They illustrate the controls, not findings about a real person. The separate Testing guide supplies two PDFs and exact results for your first team test.
+**Edition: 17 September 2026, investigator workspace.** This guide describes the current financial controls and their known limits. Screenshots show light mode and use test cases with invented transactions. The controls are the same in dark mode. These examples illustrate the controls, not findings about a real person. The separate Testing guide supplies two PDFs and exact results for your first team test.
 
 ## Contents
 
@@ -154,7 +154,9 @@ To correct an amount in **Other financial records**, select its amount to open *
 
 If the current amount is missing or unreadable, **New Amount** starts empty. A record already identified as financial stays in this list even when no amount was saved. Check the original file, enter the amount and explain the correction. The original text is retained after saving. Where no original amount was saved, the history continues to say **Not recorded**, including after a later correction. If another change has replaced the value you reviewed, reload the record before correcting it. Reports include the original text and your latest explanation.
 
-![Correcting a deliberately unreadable amount against a synthetic receipt](images/25-unreadable-amount-correction.png)
+![The amount correction form for a synthetic receipt, retaining its original unreadable text](images/25-unreadable-amount-correction.png)
+
+*This example has already been corrected to USD 120.00. The original text, "not stated", and the previous explanation remain visible when the correction form is reopened.*
 
 ### Correct several amounts from a file
 
@@ -238,7 +240,7 @@ A file with saved imports shows its current imported payment count, account and 
 
 If a request fails, select **Refresh files** and inspect what arrived before uploading another copy. A connection failure can occur after the server received a file. Closing the browser tab can stop uploads that have not yet been sent. Refreshing the page clears the upload queue shown on screen. Uploaded files remain in the case. The open statement, period, page and saved review draft are restored in the same browser tab.
 
-![Statement file list, page controls and separate corrections using synthetic PDFs](images/30-investigator-files.png)
+![The main statement file register with two synthetic PDFs and their imported payment counts](images/30-investigator-files.png)
 
 *The main file register shows filenames, import counts, accounts and periods. Select a file to open its review.*
 
@@ -275,7 +277,7 @@ Use this process for a supported, single-report **Wells Fargo Wire Transfer Deta
 8. Select **Open Findings**. In the saved note, select **Compare the saved values with their original readings** to inspect corrections, or **Open original wire report** to see the PDF. Any linked payment remains available with its own original statement.
 9. To share the result, open **Create a report from this note**. The downloaded report includes the original readings, saved values, correction reasons and any linked payment. Use the supporting-PDF download option when the recipient also needs the original documents. You can include this note in a report with other findings.
 
-![Wire review with an original PDF, editable details and a recorded currency correction](images/20-wire-report-review.png)
+![Wire review with an original PDF, editable details and a currency correction ready to save](images/20-wire-report-review.png)
 
 *This synthetic wire report contains a deliberate currency-reading error. The correction is shown with its reason while the original reading remains visible.*
 
@@ -716,7 +718,7 @@ The comparison labels each copy **Included in Transactions** or **Excluded from 
 
 If your case is read-only, you can compare files and open both originals. Exclusion and restore buttons are available only to members with permission to edit the case.
 
-![Duplicate comparison with one included file, one excluded copy and source buttons available to a read-only member](images/26-duplicate-copy-review.png)
+![Duplicate comparison with one included file, one excluded copy and buttons to open their originals](images/26-duplicate-copy-review.png)
 
 *This synthetic example shows the same six payments in a native PDF and a scanned copy. The scanned copy is excluded from Transactions, but its original remains available through View source.*
 
@@ -801,9 +803,9 @@ Unfinished selections, the search, name and explanation are kept in this browser
 
 The graph includes all payments in the selected account and date range. Repeated payments between the same account and name share an arrow, separately by currency and money in or out. Select a combined arrow to show its payments below. Select an arrow for one payment to open its original statement. If there are more than 250 connections, use **Connection page**, **Previous connections** and **Next connections**. The payment list still covers every graph page. Use the name search to focus on a connection without locating it among many circles. Very large requests can reach the shared 100,000-row or 64 MB calculation limit; the screen asks for a narrower account/date range and does not return a partial graph.
 
-![A selected name and its payment in the graph](images/23-focused-payment-graph.png)
+![A selected name and its two payments in the graph](images/23-focused-payment-graph.png)
 
-*This synthetic example shows one selected payment out of 900. The account and recorded name remain connected to the payment list and its original statement.*
+*This synthetic example selects Example Supplies and shows its two payments out of eight. Select View selected connections to open the supporting payment list and original statements.*
 
 Each arrow represents a recorded payment. The outgoing and incoming sides of a transfer can therefore appear separately. Use Transfers when you want to compare them as one movement.
 
@@ -812,7 +814,7 @@ Each arrow represents a recorded payment. The outgoing and incoming sides of a t
 1. Open **Trends**. Open **Accounts and dates** if you want to change the scope, then select **Apply**.
 2. Under **Amounts**, choose a currency and bank accounts or credit cards. Their conventions are kept separate.
 3. Choose **Monthly** or **Daily** under **Interval**. Under **Show**, choose amounts or payment count. Recorded balance is available for one account.
-4. Read the dates along the horizontal axis. Green shows money in and red shows money out. Card credits and charges are labelled separately.
+4. Read the dates along the horizontal axis. Teal shows money in and rose shows money out. Read the labels alongside the colours. Card credits and charges are labelled separately.
 5. Select a date in the chart. Its payment list opens below. Read the statement-coverage message for that interval.
 6. Use **Compare with [previous period]** to open both sets of payments in date order. Open their originals and create a finding if you have an observation or question to record.
 7. Use **Earlier dates** and **Later dates** for long ranges. **Read the chart values as a table** provides the same displayed values as text.
