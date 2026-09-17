@@ -88,6 +88,38 @@ def test_second_resolution_may_confirm_but_never_outvote(monkeypatch):
     assert [o['dpi'] for o in records[0]['observations']]==[720,720,600,600]
 
 
+def test_compact_crop_recovers_a_fragmented_amount_and_retains_every_observation(monkeypatch):
+    data=fixture();before=deepcopy(data)
+    result,records,calls=run(data,monkeypatch,iter(['12','1200','-12.00','-12.00','-12.00','-12.00']))
+    assert result['text'][5]=='-12.00' and data==before
+    assert records[0]['dpi']==300
+    assert [o['dpi'] for o in records[0]['observations']]==[720,720,300,300,450,450]
+    assert records[0]['observations'][2]['profile']=='compact_white_border'
+    assert len(calls)==6
+
+
+@pytest.mark.parametrize('replies',[
+    ['12','-13.00','-12.00','-12.00','-12.00','-12.00'],
+    ['12','1200','12.00','12.00','12.00','12.00'],
+    ['12','1200','12','-12.00','-12.00','-12.00'],
+    ['12','1200','-12.00','-12.00','-12.01','-12.00'],
+])
+def test_compact_profile_cannot_outvote_prior_or_later_digits_drop_sign_or_use_fragmented_primary(monkeypatch,replies):
+    data=fixture();result,records,_=run(data,monkeypatch,iter(replies))
+    assert result is data and not records
+
+
+def test_separate_fragments_in_one_money_column_and_damaged_date_keep_other_fields(monkeypatch):
+    data=fixture();data['text'][3]='Lif 23';data['text'][5]='~1';data['width'][5]=10
+    for key,value in dict(text='2.00',left=325,top=220,width=10,height=7,conf=70).items():
+        data[key].append(value)
+    result,records,_=run(data,monkeypatch,iter(['-12.00','-12.00']))
+    assert result['text'][5]=='-12.00' and result['text'][-1]==''
+    assert result['text'][3]=='Lif 23' and result['text'][6]=='300.00'
+    assert [w['text'] for w in records[0]['original_words']]==['~1','2.00']
+    assert result['left'][5]==312 and result['width'][5]==23
+
+
 @pytest.mark.parametrize('damage',['bank','title','date_position','description','amount_position','overlap','baseline','readable'])
 def test_uncertain_context_and_existing_valid_money_are_unchanged(monkeypatch,damage):
     data=fixture()

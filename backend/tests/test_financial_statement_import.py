@@ -845,6 +845,39 @@ class StatementImportTests(TransactionPersistenceTestCase):
         self.assertEqual(read_opening(period).amount.minor_units, 10000)
         self.assertEqual(read_closing(period).amount.minor_units, 10000)
 
+    def test_recovered_damaged_date_payment_requires_correction_and_imports_once(self):
+        from pydantic import ValidationError
+        from tests.test_financial_statement_import_andrews import source
+        grid = source([
+            [(15,'06/01 ID 0040 FREE CHECKING Previous Balance'),(350,'100.00')],
+            [(15,'06/03'),(75,'Withdrawal Debit Card'),(310,'-20.00'),(350,'80.00')],
+            [(15,'O6 /O4'),(75,'Withdrawal Debit Card'),(310,'-10.00'),(350,'70.00')],
+            [(15,'06/30'),(75,'Ending Balance'),(350,'70.00')]])
+        self.db.get(EvidenceTableGeometry,(self.file.id,1)).payload = [dict(
+            table_source='text_alignment',geometry_source='cell_rectangles',
+            table=dict(page=1,table=rectangle(0,x=0,width=600,height=800),unlocated_values=0,
+                values=[dict(row=r['row_index'],column=c['column_index'],text=c['expected_text'],locator=c['locator'])
+                        for r in grid['rows'] for c in r['cells']]))]
+        self.db.commit()
+        proposal, request = self.andrews_request('0040')
+        rows = [r for r in proposal['rows'] if not r['excluded']]
+        self.assertEqual(len(rows),2)
+        damaged = next(r for r in rows if r['source_cells'][0]['expected_text']=='O6 /O4')
+        self.assertTrue(damaged['issues'])
+        with self.assertRaises(ValidationError):
+            self.confirm(request)
+        correction = next(r for r in request['rows'] if r['id']==damaged['id'])
+        correction.update(date='2020-06-04',reason='Date checked against the original PDF')
+        result = self.confirm(request)
+        self.assertEqual(result['transaction_count'],2)
+        self.assertFalse(self.confirm(request)['created'])
+        self.db.expire_all()
+        transactions = self.db.scalars(select(FinancialTransaction).where(
+            FinancialTransaction.source_document_id==UUID(result['source_document_id']))).all()
+        self.assertEqual(len(transactions),2)
+        changed = next(t for t in transactions if str(t.transaction_date)=='2020-06-04')
+        self.assertEqual(changed.provenance['statement_import_original']['source_cells'][0]['expected_text'],'O6 /O4')
+
     def test_balance_only_cannot_hide_transactions_or_record_unexplained_movement(self):
         p, request = self.andrews_request('0000', install=True)
         self.assertFalse(p['can_import_balances'])
