@@ -111,10 +111,16 @@ def _transaction_amount(cells, source, currency):
     return int(exact_amount(signed, currency)), amount_index
 
 
-def _transaction_header(cells, page):
-    """Require the issuer's printed columns before reading a damaged date row."""
+def _transaction_header(cells, page, following=()):
+    """Require printed columns and extra row evidence for a damaged heading."""
     names = ('Trans Date', 'Item Description', 'Amount')
     matches = [[cell for cell in cells if cell['expected_text'].strip() == name] for name in names]
+    damaged_heading = not matches[0]
+    if damaged_heading and len(cells) == 3 and all(len(values) == 1 for values in matches[1:]):
+        label = re.sub(r'[^a-z]', '', cells[0]['expected_text'].lower())
+        if (not re.search(r'\d', cells[0]['expected_text']) and label.startswith('trans')
+                and SequenceMatcher(None, label, 'transdate').ratio() >= .72):
+            matches[0] = [cells[0]]
     if any(len(values) != 1 for values in matches):
         return None
     boxes = [_rectangle(values[0], page) for values in matches]
@@ -123,6 +129,20 @@ def _transaction_header(cells, page):
             or not boxes[0].x1 < boxes[1].x0 < boxes[1].x1 < boxes[2].x0
             or min(box.y1 for box in boxes) <= max(box.y0 for box in boxes)):
         return None
+    if damaged_heading:
+        # Two other readable, positioned payment dates establish this column.
+        # Similar heading text alone cannot fill a damaged payment's fields.
+        supporters = 0
+        for row in following:
+            values = [c['expected_text'].strip() for c in row['cells']]
+            if values and (values[0] in ('Fees', 'Interest Charged', 'Interest Charge Calculation')
+                           or values[0].upper().startswith('TOTAL ')):
+                break
+            if (values and _printed_date(values[0] + '/2000')
+                    and _matches_transaction_columns(row['cells'], boxes, page)):
+                supporters += 1
+        if supporters < 2:
+            return None
     return boxes
 
 
@@ -187,7 +207,7 @@ def propose_merrick_table(source, currency, statement):
             active = True
             header = None
         if active and 'Item Description' in texts and 'Amount' in texts:
-            header = _transaction_header(cells, source['page_number'])
+            header = _transaction_header(cells, source['page_number'], source['rows'][index + 1:])
         if any(re.fullmatch(r'20\d{2} Totals Year-to-Date', text) or text == 'Interest Charge Calculation' for text in texts):
             active = False
         if active and _section_heading(row, source['rows'][index+1:index+5]):

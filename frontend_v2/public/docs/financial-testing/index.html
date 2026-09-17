@@ -400,4 +400,12 @@
 <li>In an Andrews test statement, inspect an <strong>Ending Balance</strong> line and the period/year-to-date fee summary. Neither should be an extra payment. Actual dated fees must remain in the transaction list. A misread date on the ending balance must not cause the following summary text to join a payment description.</li>
 <li>Include a page the reader does not recognise. Expect <strong>needs coverage check</strong>, then inspect it for missed payments. It must not be labelled harmless solely because it has no detected transactions.</li>
 </ol>
-<p>Expected result: recognised information stays available without adding review tasks, while uncertain payments stay visible and require a decision.</p></main></html>
+<p>Expected result: recognised information stays available without adding review tasks, while uncertain payments stay visible and require a decision.</p>
+<h3>Additional dates beside Andrews payments</h3>
+<ol>
+<li>Use an Andrews-style test row with a first date of <strong>06/03</strong> and an additional date of <strong>06/02</strong>, with readable amounts and a matching balance.</li>
+<li>Open its import values. Expect the first date to be used and the additional printed date to be identified beside it. It should not require a reason merely because the second date is present.</li>
+<li>Confirm the import and open its original source. Both printed dates must remain available. The extra date must not be labelled as a value date or posting date without source support.</li>
+<li>Compare a row whose additional date is invalid or later than the first date. That row should still need attention. A missing minus sign, unreadable amount or balance difference must also remain flagged even when both dates are readable.</li>
+</ol>
+<p>Expected result: ordinary extra date text does not require repetitive approval, and unrelated payment errors remain visible.</p></main></html>

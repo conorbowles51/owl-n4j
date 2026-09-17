@@ -801,6 +801,32 @@ class StatementImportTests(TransactionPersistenceTestCase):
         self.assertTrue(saved['statement_row_addresses'])
         self.assertEqual(next(r for r in saved['rows'] if not r['excluded'])['continuation_sources'][0]['source_cells'][0]['expected_text'], 'Funds Transfer via Mobile')
 
+    def test_andrews_additional_date_import_keeps_first_date_and_original_without_row_decision(self):
+        from copy import deepcopy
+        self.andrews_request('0040', install=True)
+        geometry = self.db.get(EvidenceTableGeometry, (self.file.id, 1))
+        payload = deepcopy(geometry.payload)
+        cell = next(c for c in payload[0]['table']['values'] if c['row'] == 14 and c['column'] == 0)
+        cell['text'] = '06/03 06/02'
+        cell['locator']['rect'][2] = 65000
+        geometry.payload = payload
+        self.db.commit()
+        proposal, request = self.andrews_request('0040')
+        original = next(r for r in proposal['rows'] if not r['excluded'])
+        self.assertEqual(original['issues'], [])
+        self.assertTrue(all(not row['reason'] for row in request['rows']))
+        receipt = self.confirm(request)
+        self.assertFalse(self.confirm(request)['created'])
+        self.db.expire_all()
+        transaction = self.db.scalar(select(FinancialTransaction).where(
+            FinancialTransaction.source_document_id == UUID(receipt['source_document_id'])))
+        self.assertEqual(str(transaction.transaction_date), '2020-06-03')
+        self.assertIsNone(transaction.posted_date)
+        self.assertIsNone(transaction.value_date)
+        saved = transaction.provenance['statement_import_original']
+        self.assertEqual(saved['fields']['additional_printed_date'], '06/02')
+        self.assertEqual(saved['source_cells'][0]['expected_text'], '06/03 06/02')
+
     def test_andrews_statement_without_payments_saves_matching_balances(self):
         from postgres.models.financial import FinancialStatementPeriod
         from services.financial.periods import read_opening, read_closing

@@ -4,6 +4,12 @@
 
 ## Information-page and payment-boundary checkpoint, 17 September 2026
 
+Follow-up after local commit `496fc103`: Andrews extra dates on the same row no longer require a decision solely because of their layout. The first printed date is unchanged; the additional raw date is retained with no invented role. Invalid, later or more distant extra dates remain flagged. Read-only comparison removes 116 unnecessary date decisions; flagged rows are now 104 in each Andrews collection, with identical payment fields and source cells. A synthetic database import/retry and focused UI test pass. The editor identifies the extra date.
+
+Merrick can recover a damaged date-column heading only with both other exact headings, measured layout and two other readable dates in the same section. Eighteen rows gain their readable descriptions; 16 gain amounts. None gains an invented date, and previously recognised fields remain identical. Targeted positive/negative tests pass. Proposal revision is v18.
+
+The whole-file Merrick page-image experiment finished: 42 sections, 235 candidates and 153 flags, taking about 234 seconds. It was not adopted or written into the case because dates worsened even while amounts improved. A read-only crop experiment recovered several damaged dates through two Tesseract segmentation modes; this is only a diagnostic so far, not shipped behaviour. Next investigate a bounded, source-preserving second OCR pass for unreadable dates, retaining uncertainty when readings disagree, before claiming difficult-file acceptance. Local scripts/results are under ignored `context-audit-final`. No external provider or real import was used. No push occurred.
+
 Local only, following `b06d87fc`. The difficult-file acceptance items remain open: the older Merrick and Andrews readings still contain many genuine or ambiguous field problems. A fresh local page-image reading of Merrick is being compared before claiming this work complete. Do not push this intermediate checkpoint while Alex uses the deployed platform.
 
 - [x] Recognise complete Capital One notices and Andrews fee-summary pages, retain the original pages and label them in the page selector. Mixed payment pages and unfamiliar content remain reviewable.

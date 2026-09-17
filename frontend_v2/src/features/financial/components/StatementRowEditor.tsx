@@ -6,6 +6,7 @@ export function StatementRowEditor({
   row,
   kind,
   statementEnd,
+  additionalPrintedDate,
   problems,
   update,
   amount,
@@ -16,6 +17,7 @@ export function StatementRowEditor({
   row: Edit
   kind: string
   statementEnd?: string
+  additionalPrintedDate?: string
   problems: string[]
   update: (patch: Partial<Edit>) => void
   amount: (direction: "credit" | "debit", value: string) => void
@@ -55,6 +57,13 @@ export function StatementRowEditor({
         <div className="grid gap-3 sm:grid-cols-2">
           <label>
             Transaction date
+            {additionalPrintedDate && (
+              <span className="block text-xs text-muted-foreground">
+                Uses the first date on the printed row. The additional date{" "}
+                {additionalPrintedDate} is retained in the original; its meaning
+                is not labelled.
+              </span>
+            )}
             {row.date_unprinted && (
               <span className="block text-xs text-muted-foreground">
                 Date not printed. This interest charge belongs to the statement

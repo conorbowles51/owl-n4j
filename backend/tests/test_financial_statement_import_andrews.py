@@ -188,13 +188,42 @@ class AndrewsReaderTests(unittest.TestCase):
             self.assertEqual(r['source_cells'][-1]['expected_text'], money)
             if date_text != '06/03': self.assertNotIn('date', r['fields'])
 
-    def test_missing_minus_and_two_unlabelled_dates_are_flagged(self):
+    def test_additional_date_does_not_hide_a_missing_minus(self):
         a = source([[(15, '06/01 ID 0040 FREE CHECKING Previous Balance'), (350, '100.00')],
                     [(15, '06/03 06/02 Withdrawal Debit Card'), (310, '20.00 80.00')]])
         _, p = selected([a]); r = next(r for r in p['rows'] if not r['excluded'])
         self.assertNotIn('direction', r['fields'])
         self.assertEqual(r['fields']['additional_printed_date'], '06/02')
-        self.assertEqual(len(r['issues']), 2)
+        self.assertEqual(len(r['issues']), 1)
+        self.assertIn('money entered or left', r['issues'][0])
+
+    def test_additional_date_retains_first_row_date_without_inventing_another_role(self):
+        for second in ('06/03', '06/02', '05/31'):
+            a = source([[(15, '06/01 ID 0040 FREE CHECKING Previous Balance'), (350, '100.00')],
+                        [(15, f'06/03 {second} Withdrawal Debit Card'), (310, '-20.00 80.00')]])
+            before = deepcopy(a)
+            _, p = selected([a]); r = next(r for r in p['rows'] if not r['excluded'])
+            self.assertEqual(r['fields']['date'], '2020-06-03')
+            self.assertEqual(r['fields']['additional_printed_date'], second)
+            self.assertEqual(r['issues'], [])
+            self.assertNotIn('booking_date', r['fields'])
+            self.assertNotIn('value_date', r['fields'])
+            self.assertEqual(a, before)
+
+    def test_unusual_or_invalid_additional_dates_remain_flagged(self):
+        for first, second in [('06/03', '06/04'), ('06/03', '05/01'), ('06/03', '06/32'), ('O6/03', '06/02')]:
+            a = source([[(15, '06/01 ID 0040 FREE CHECKING Previous Balance'), (350, '100.00')],
+                        [(15, f'{first} {second} Withdrawal Debit Card'), (310, '-20.00 80.00')]])
+            _, p = selected([a]); r = next(r for r in p['rows'] if not r['excluded'])
+            self.assertEqual(r['fields']['additional_printed_date'], second)
+            self.assertTrue(any('additional date' in issue for issue in r['issues']))
+
+    def test_additional_date_can_cross_new_year_without_becoming_a_separate_typed_date(self):
+        from services.financial.statement_import_andrews import _ordinary_additional_date
+        self.assertTrue(_ordinary_additional_date('12/31', '2021-01-02'))
+        self.assertFalse(_ordinary_additional_date('01/03', '2021-01-02'))
+        self.assertFalse(_ordinary_additional_date('11/30', '2021-01-02'))
+        self.assertFalse(_ordinary_additional_date('02/29', '2021-03-02'))
 
     def test_refund_is_credit_and_balance_mismatch_is_reported(self):
         a = source([[(15, '06/01 ID 0040 FREE CHECKING Previous Balance'), (350, '100.00')],

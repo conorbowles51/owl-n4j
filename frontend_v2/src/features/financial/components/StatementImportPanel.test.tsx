@@ -173,6 +173,30 @@ beforeEach(() => {
     return data as never
   })
 })
+it("retains an additional printed date without requiring a per-row decision", async () => {
+  const base = vi.mocked(fetchAPI).getMockImplementation()!
+  const proposal = structuredClone(data)
+  Object.assign(proposal.rows[1].fields, { additional_printed_date: "01/01" })
+  vi.mocked(fetchAPI).mockImplementation(async (url, options) =>
+    String(url).includes("/statement-import/file?")
+      ? (proposal as never)
+      : base(url, options)
+  )
+  mount()
+  await open()
+  expect(screen.getByText(/Also printed: 01\/01/)).toBeInTheDocument()
+  expect(screen.getByLabelText("Date 1:0:1")).toHaveValue("2023-01-02")
+  fireEvent.click(
+    screen.getByRole("button", { name: "Confirm import of 1 transactions" })
+  )
+  await waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0]).toMatchObject({
+    rows: expect.arrayContaining([
+      expect.objectContaining({ id: "1:0:1", date: "2023-01-02", reason: "" }),
+    ]),
+  })
+})
+
 it("imports recognised undated interest without inventing a date and supports a later date correction", async () => {
   const base = vi.mocked(fetchAPI).getMockImplementation()!
   const charge = structuredClone(data)

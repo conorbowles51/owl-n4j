@@ -1506,6 +1506,7 @@ function EditableStatement({
       <StatementRowEditor
         row={edit}
         statementEnd={periodEnd}
+        additionalPrintedDate={original.fields.additional_printed_date}
         kind={original.kind}
         problems={rowProblems(edit)}
         update={(patch) => update(id, patch)}
@@ -2154,6 +2155,13 @@ function EditableStatement({
                             {r.date_unprinted && (
                               <span className="block text-xs mb-1">
                                 Date not printed
+                              </span>
+                            )}
+                            {original.fields.additional_printed_date && (
+                              <span className="block text-xs mb-1">
+                                Also printed:{" "}
+                                {original.fields.additional_printed_date}. The
+                                first date on the row is used here.
                               </span>
                             )}
                             <input

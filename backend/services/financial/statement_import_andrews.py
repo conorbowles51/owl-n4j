@@ -276,6 +276,18 @@ def _period_date(text, statement):
     return next(iter(options)) if len(options) == 1 else None
 
 
+def _ordinary_additional_date(printed, primary):
+    """Recognise nearby date text without assigning it a transaction-date role."""
+    if not primary or not re.fullmatch(_DATE, printed):
+        return False
+    first = date.fromisoformat(primary)
+    for year in (first.year - 1, first.year):
+        additional = _full_date(printed + '/' + str(year))
+        if additional and 0 <= (first - additional).days <= 31:
+            return True
+    return False
+
+
 def andrews_source_regions(sources, statement):
     """Physical account sections remain comparable when OCR renumbers rows."""
     lookup = {(s['page_number'], s['table_index']): s for s in sources}
@@ -404,7 +416,12 @@ def propose_andrews_statement(sources, currency, statement):
                 fields['counterparty'] = ''
                 if parsed and parsed[2]:
                     fields['additional_printed_date'] = parsed[2]
-                    item['issues'].append('This line prints a second date without a heading. Check which date belongs to the transaction.')
+                    # The first printed date remains the row date, just as on
+                    # adjacent rows with secondary date text on a continuation
+                    # line. Retain the other text without calling it a posting,
+                    # value or transaction date. Unusual dates still need review.
+                    if not _ordinary_additional_date(parsed[2], value):
+                        item['issues'].append('Check the additional date printed beside this payment. It is unreadable, later than the row date or more than 31 days earlier.')
                 pair = re.fullmatch(r'(' + _SPACED_MONEY + r')\s+(.+)', money)
                 amount_text, balance_text = (pair[1], pair[2]) if pair else ('', '')
                 if pair is None:

@@ -66,6 +66,28 @@ def measured_statement():
 
 
 class MerrickStatementTests(unittest.TestCase):
+    def test_damaged_heading_uses_two_readable_positioned_dates_without_repairing_a_payment_date(self):
+        data = measured_statement()
+        data['rows'][5]['cells'][0]['expected_text'] = 'TransDfla'
+        extra = deepcopy(data['rows'][6])
+        extra['row_index'] = 99
+        extra['cells'][0]['expected_text'] = '04/24'
+        for cell in extra['cells']:
+            cell['locator']['rect'][1] += 45_000
+            cell['locator']['rect'][3] += 45_000
+        data['rows'].insert(8, extra)
+        data['rows'][6]['cells'][0]['expected_text'] = 'O4/22'
+        original = deepcopy(data)
+        result = propose_merrick_table(data, 'USD', merrick_statement(data))['rows'][6]
+        self.assertEqual(result['fields']['amount_minor'], '1400')
+        self.assertEqual(result['fields']['description'], 'EXAMPLE SHOP')
+        self.assertNotIn('date', result['fields'])
+        self.assertEqual(len(result['issues']), 1)
+        self.assertEqual(data, original)
+        for bad_heading in ('Unknown', 'Trans 2020', 'Trans Date 2020', 'Settlement'):
+            data['rows'][5]['cells'][0]['expected_text'] = bad_heading
+            self.assertEqual(propose_merrick_table(data, 'USD', merrick_statement(data))['rows'][6]['fields'], {})
+
     def test_damaged_date_keeps_measured_description_reference_and_amount_without_guessing(self):
         data = measured_statement()
         data['rows'][6]['cells'][0]['expected_text'] = 'O4/22'

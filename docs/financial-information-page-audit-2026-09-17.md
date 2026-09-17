@@ -40,3 +40,15 @@ Independent transcription of all payments, deployed checks and team acceptance h
 Private baseline and current records are under ignored `data/local-runtime/context-audit/`, `context-audit-after/` and `context-audit-final/`. The final `result.json` contains aggregate counts; `preservation.json` records the exact candidate changes. Original PDFs and private fields must not be committed with this report.
 
 Six focused classification tests cover complete versus mixed information pages, missing card cells, unreadable dates, damaged section headings, fee-summary exclusion and damaged closing dates. The affected Andrews suite passes with the six new cases, 24 tests in total. The page-selector test checks that information pages remain reachable. Intake tests check the updated file-selection and processing messages.
+
+## Follow-up: extra dates and damaged headings
+
+Visual inspection of Andrews page 6 confirmed that extra dates appear beside payment rows and on continuation lines. The earlier reader demanded a decision only for the same-line layout. The first printed row date now stays in use consistently. A readable additional date on or up to 31 days before it is retained without inventing a posting-date or value-date role. Invalid, later or more distant additional dates still require review. The row editor explains which date is used.
+
+The first Andrews collection retains 2,041 entries; its flagged rows fall from 197 to 104. The second retains 296 entries; flags fall from 116 to 104. All 116 additional printed dates, all primary dates, amounts, descriptions and source cells are unchanged. The remaining flags concern other fields or checks. A database regression confirms import without a per-row reason, original-date retention and an idempotent repeated confirmation.
+
+On Merrick, a damaged date-column heading can be recognised only with the other two exact headings, consistent measured columns and at least two other readable payment dates in that section. This recovers descriptions for 18 previously unresolved rows and readable amounts for 16 of them. It does not repair or invent any transaction date. Existing recognised fields, inclusion choices and source cells are unchanged.
+
+A separate local Tesseract reading of all 56 Merrick page images took approximately 234 seconds. It recognised 42 review sections and 235 proposed entries with 153 flagged rows, compared with 253 entries and 135 flags in the retained reading. Some amounts improved while dates worsened. These differing counts require source comparison; the new reading was not substituted into the case or treated as successful extraction. A small private date-crop experiment recovered several readable date strings but was not adopted as an automatic repair rule.
+
+This comparison does not close the remaining difficult-file acceptance work. Its private records are `andrews-additional-date-comparison.json`, `merrick-layout-comparison.json` and `merrick-image-comparison.json` under the ignored final-audit directory.

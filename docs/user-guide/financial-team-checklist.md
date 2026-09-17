@@ -497,3 +497,12 @@ Use a test collection with known transactions and separate notices. Record the e
 6. Include a page the reader does not recognise. Expect **needs coverage check**, then inspect it for missed payments. It must not be labelled harmless solely because it has no detected transactions.
 
 Expected result: recognised information stays available without adding review tasks, while uncertain payments stay visible and require a decision.
+
+### Additional dates beside Andrews payments
+
+1. Use an Andrews-style test row with a first date of **06/03** and an additional date of **06/02**, with readable amounts and a matching balance.
+2. Open its import values. Expect the first date to be used and the additional printed date to be identified beside it. It should not require a reason merely because the second date is present.
+3. Confirm the import and open its original source. Both printed dates must remain available. The extra date must not be labelled as a value date or posting date without source support.
+4. Compare a row whose additional date is invalid or later than the first date. That row should still need attention. A missing minus sign, unreadable amount or balance difference must also remain flagged even when both dates are readable.
+
+Expected result: ordinary extra date text does not require repetitive approval, and unrelated payment errors remain visible.
