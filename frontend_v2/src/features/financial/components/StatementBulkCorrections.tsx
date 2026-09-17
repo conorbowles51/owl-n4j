@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { useMemo, useState, type ReactNode } from "react"
 import { Button } from "@/components/ui/button"
 import {
   correctionValue,
@@ -11,15 +11,17 @@ export function StatementBulkCorrections({
   rows,
   apply,
   inspect,
+  reassign,
 }: {
   rows: ReviewEdit[]
   apply: (changes: ReturnType<typeof previewCorrections>) => void
   inspect: (id: string) => void
+  reassign?: (rowIds: string[], reason: string) => ReactNode
 }) {
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState("")
   const [selected, setSelected] = useState<Set<string>>(new Set())
-  const [action, setAction] = useState<CorrectionAction>("exclude")
+  const [action, setAction] = useState<CorrectionAction | "reassign">("exclude")
   const [value, setValue] = useState("")
   const [reason, setReason] = useState("")
   const [page, setPage] = useState(0)
@@ -116,10 +118,11 @@ export function StatementBulkCorrections({
             <label>
               Correction
               <select
+                aria-label="Correction"
                 className="block border rounded bg-background p-2 mt-1"
                 value={action}
                 onChange={(event) => {
-                  setAction(event.target.value as CorrectionAction)
+                  setAction(event.target.value as CorrectionAction | "reassign")
                   setValue("")
                   resetPreview()
                 }}
@@ -129,6 +132,11 @@ export function StatementBulkCorrections({
                 <option value="switch">Switch credit and debit</option>
                 <option value="date">Set transaction date</option>
                 <option value="counterparty">Set paid by / paid to</option>
+                {reassign && (
+                  <option value="reassign">
+                    Move to another account or period
+                  </option>
+                )}
               </select>
             </label>
             {(action === "date" || action === "counterparty") && (
@@ -157,24 +165,26 @@ export function StatementBulkCorrections({
                 }}
               />
             </label>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={!selected.size}
-              onClick={() => {
-                try {
-                  setPreview(
-                    previewCorrections(rows, selected, action, value, reason)
-                  )
-                  setPage(0)
-                  setError("")
-                } catch (err) {
-                  setError((err as Error).message)
-                }
-              }}
-            >
-              Preview corrections
-            </Button>
+            {action !== "reassign" && (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={!selected.size}
+                onClick={() => {
+                  try {
+                    setPreview(
+                      previewCorrections(rows, selected, action, value, reason)
+                    )
+                    setPage(0)
+                    setError("")
+                  } catch (err) {
+                    setError((err as Error).message)
+                  }
+                }}
+              >
+                Preview corrections
+              </Button>
+            )}
           </div>
           {error && (
             <p role="alert" className="text-sm">
@@ -220,10 +230,16 @@ export function StatementBulkCorrections({
                           <td className="p-2">{before.date}</td>
                           <td className="p-2">{before.description}</td>
                           <td className="p-2">
-                            {correctionValue(before, action)}
+                            {correctionValue(
+                              before,
+                              action === "reassign" ? "date" : action
+                            )}
                           </td>
                           <td className="p-2 font-medium">
-                            {correctionValue(after, action)}
+                            {correctionValue(
+                              after,
+                              action === "reassign" ? "date" : action
+                            )}
                           </td>
                           <td>
                             <Button
@@ -258,7 +274,12 @@ export function StatementBulkCorrections({
                         <td className="p-2">
                           {row.date} · {row.description}
                         </td>
-                        <td className="p-2">{correctionValue(row, action)}</td>
+                        <td className="p-2">
+                          {correctionValue(
+                            row,
+                            action === "reassign" ? "date" : action
+                          )}
+                        </td>
                         <td>
                           <Button
                             size="sm"
@@ -296,6 +317,7 @@ export function StatementBulkCorrections({
               </Button>
             </div>
           )}
+          {action === "reassign" && reassign?.([...selected], reason)}
           {preview && (
             <div className="space-y-2">
               <p className="text-sm">

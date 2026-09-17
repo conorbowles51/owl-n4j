@@ -25,6 +25,7 @@ import { PdfReviewIntake } from "./PdfReviewIntake"
 import { TransactionSourceHighlight } from "./TransactionSourceHighlight"
 import { StatementRowEditor } from "./StatementRowEditor"
 import { StatementBulkCorrections } from "./StatementBulkCorrections"
+import { StatementRowAssignment } from "./StatementRowAssignment"
 import { SavedReviewConflict } from "./SavedReviewConflict"
 import { PreviousStatementReviews } from "./PreviousStatementReviews"
 import { reviewRecoverySchema } from "../lib/review-recovery"
@@ -66,6 +67,15 @@ const proposalSchema = z.object({
   currency: z.string(),
   revision: z.string(),
   review_recovery: reviewRecoverySchema.nullish(),
+  row_assignments: z
+    .array(
+      z.object({
+        row_id: z.string(),
+        original_statement_id: z.string(),
+        target_statement_id: z.string(),
+      })
+    )
+    .default([]),
   saved_review: z
     .object({
       review_revision: z.string(),
@@ -647,7 +657,7 @@ function StatementReview({
           <h3 className="font-semibold">Original extraction</h3>
         )}
         <EditableStatement
-          key={query.data.revision}
+          key={`${query.data.revision}:${batchReview?.draftRevision ?? "individual"}`}
           data={query.data}
           caseId={caseId}
           fileId={fileId}
@@ -733,6 +743,7 @@ function EditableStatement({
     data.saved_review?.review_revision ?? "initial"
   )
   const [comparedRevision, setComparedRevision] = useState("")
+  const [assignmentSaving, setAssignmentSaving] = useState(false)
   const recoveryCompared =
     !!data.review_recovery?.acknowledged ||
     comparedRevision === data.review_recovery?.revision
@@ -1535,6 +1546,7 @@ function EditableStatement({
             <Button
               variant="outline"
               disabled={
+                assignmentSaving ||
                 saveBatchReview.isPending ||
                 confirm.isPending ||
                 (savedReadingChanged && !previousReviewChecked)
@@ -1546,7 +1558,11 @@ function EditableStatement({
             {batchReview?.previousProblem && (
               <Button
                 variant="outline"
-                disabled={saveBatchReview.isPending || confirm.isPending}
+                disabled={
+                  assignmentSaving ||
+                  saveBatchReview.isPending ||
+                  confirm.isPending
+                }
                 onClick={() => saveBatchReview.mutate("previous")}
               >
                 Save and open previous problem
@@ -1555,7 +1571,11 @@ function EditableStatement({
             {batchReview?.nextProblem && (
               <Button
                 variant="outline"
-                disabled={saveBatchReview.isPending || confirm.isPending}
+                disabled={
+                  assignmentSaving ||
+                  saveBatchReview.isPending ||
+                  confirm.isPending
+                }
                 onClick={() => saveBatchReview.mutate("next")}
               >
                 Save and open next problem
@@ -1831,7 +1851,10 @@ function EditableStatement({
       </div>
       <fieldset
         disabled={
-          confirm.isPending || confirm.isSuccess || saveBatchReview.isPending
+          assignmentSaving ||
+          confirm.isPending ||
+          confirm.isSuccess ||
+          saveBatchReview.isPending
         }
         className="space-y-4"
       >
@@ -1875,6 +1898,49 @@ function EditableStatement({
             />
             {canEdit && (!data.current_import || replacePrevious) && (
               <StatementBulkCorrections
+                reassign={
+                  !data.current_import &&
+                  data.statement_choices.some(
+                    (choice) =>
+                      choice.id !== data.statement_id && !choice.document_kind
+                  )
+                    ? (rowIds, reason) => (
+                        <StatementRowAssignment
+                          caseId={caseId}
+                          fileId={fileId}
+                          choices={data.statement_choices.filter(
+                            (choice) =>
+                              choice.id !== data.statement_id &&
+                              !choice.document_kind
+                          )}
+                          request={importRequest()}
+                          rowIds={rowIds}
+                          reason={reason}
+                          reviewRevision={
+                            batchReview?.draftRevision ?? progressRevision
+                          }
+                          batchId={batchReview?.batchId}
+                          onBusy={setAssignmentSaving}
+                          onApplied={async () => {
+                            try {
+                              if (draftKey) sessionStorage.removeItem(draftKey)
+                            } catch {
+                              // The server has saved the move even if browser storage is unavailable.
+                            }
+                            await client.invalidateQueries({
+                              queryKey: ["financial-batch-item", caseId],
+                            })
+                            await client.invalidateQueries({
+                              queryKey: ["financial-batch", caseId],
+                            })
+                            await client.invalidateQueries({
+                              queryKey: ["statement-import", caseId, fileId],
+                            })
+                          }}
+                        />
+                      )
+                    : undefined
+                }
                 rows={rows.filter(
                   (row) =>
                     row.manual_page ||
@@ -1892,6 +1958,13 @@ function EditableStatement({
                   )
                 }}
               />
+            )}
+            {!!data.row_assignments.length && (
+              <p className="text-sm my-3">
+                Transactions have been reassigned between statements in this
+                PDF. Moved transactions keep their original page locations and
+                the reason for the move in their corrections.
+              </p>
             )}
             {!data.rows.some((row) => row.page_number === currentPage) && (
               <p className="my-3 text-sm">

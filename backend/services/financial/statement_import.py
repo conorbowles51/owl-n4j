@@ -114,6 +114,11 @@ def _existing_statement(session, case_id, file, statement_id, addresses=(), row_
         if metadata.get('statement_import_statement_id') in (None, statement_id):
             matches.append(item)
             continue
+        if (item.evidence_file_id == file.id and statement_id in
+                metadata.get('statement_import_original', {}).get('assigned_period_ids', [])):
+            # Explicitly assigned periods in this same reading may share a PDF
+            # table. A neighbouring period is not a duplicate of this one.
+            continue
         previous = metadata.get('statement_import_original', {}).get('sources', [])
         previous_addresses = {(source['page_number'], source['table_index']) for source in previous}
         previous_rows = metadata.get('statement_import_original', {}).get('statement_row_addresses')
@@ -141,7 +146,7 @@ def _existing_statement(session, case_id, file, statement_id, addresses=(), row_
     return matches[0] if matches else None
 
 
-def read_statement_import(session, *, case_id, evidence_file_id, currency=None, statement_id=None, _cache=None, _include_period_checks=True):
+def read_statement_import(session, *, case_id, evidence_file_id, currency=None, statement_id=None, _cache=None, _include_period_checks=True, _apply_assignments=True):
     file = session.scalar(select(EvidenceFile).where(EvidenceFile.id == evidence_file_id,
                                                     EvidenceFile.case_id == case_id))
     if file is None:
@@ -202,6 +207,9 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
         if checks_key not in cache:
             cache[checks_key] = add_period_checks(choices, all_sources, chosen_currency)
         choices = cache[checks_key]
+        if _apply_assignments:
+            from services.financial.statement_row_assignment import assignment_choices
+            choices = assignment_choices(session, file, choices, chosen_currency, cache)
     selected = next((item for item in choices if item['id'] == statement_id), None)
     if statement_id and selected is None:
         raise PdfMappingError('This statement period is no longer available. Reload the document.', 409)
@@ -387,7 +395,7 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
     revision = _digest(snapshot)
     recovery, previous_review = recovery_state(session, file, sources=all_sources, choices=choices,
         statement_id=statement_id, revision=revision, cache=cache)
-    return dict(case_id=str(case_id), evidence_file_id=str(evidence_file_id), filename=file.original_filename,
+    result = dict(case_id=str(case_id), evidence_file_id=str(evidence_file_id), filename=file.original_filename,
                 metadata=metadata, currency=chosen_currency, rows=[] if reading_failure else rows, sources=sources, issues=issues,
                 saved_review=review_progress(file, statement_id),
                 previous_saved_review=previous_review, review_recovery=recovery,
@@ -404,6 +412,10 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
                 transaction_count=0 if reading_failure else sum(not row['excluded'] for row in rows),
                 needs_attention=sum(bool(row['issues']) for row in rows) + len(issues),
                 revision=revision, current_import=current_import, applied=False)
+    if _apply_assignments:
+        from services.financial.statement_row_assignment import assigned_proposal
+        return assigned_proposal(session, file, result, cache)
+    return result
 
 # A single confirmation carries all reviewed rows. The original proposal stays
 # separate from edits in the stored source record.

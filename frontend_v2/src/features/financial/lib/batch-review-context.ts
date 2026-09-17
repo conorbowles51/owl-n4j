@@ -1,5 +1,6 @@
 import { createContext, useContext } from "react"
 export const BatchReviewContext = createContext<{
+  batchId?: string
   rowId?: string
   draftRevision?: string
   draft?: import("./statement-review-draft").StatementDraft

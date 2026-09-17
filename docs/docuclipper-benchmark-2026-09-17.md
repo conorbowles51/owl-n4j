@@ -144,7 +144,7 @@ Retain completed work in this checklist. Checked items include the local impleme
 - [x] Identify the relevant rows or source totals for each difference.
 - [x] Show unavailable checks without labelling them successful or creating an imaginary error.
 - [x] Remove or safely replace the current 1,000-row running-balance diagnostic limit.
-- [ ] Recalculate after an edit, exclusion, restored row or reassignment. Edits, exclusions and restoration are complete; account/period reassignment remains part of D.
+- [x] Recalculate after an edit, exclusion, restored row or reassignment. Moving selected extracted rows between recognised account/period reviews checks both statements and updates their saved bulk-review status.
 
 **Done when:** the same proposed import produces the same status and figures in every view. Equal and opposite missing amounts must be caught where printed gross totals or running balances expose them, even when the final net balance matches.
 
@@ -164,7 +164,7 @@ Retain completed work in this checklist. Checked items include the local impleme
 - [ ] Exclude recognised summary, disclosure and marketing sections from transaction candidates while retaining their source pages and useful totals.
 - [ ] Distinguish uncertain transaction fields from harmless contextual text.
 - [x] Offer selected-row correction for repetitive errors with a before/after preview, selection across pages, source links and a reason retained on every changed row. Checks recalculate after applying.
-- [ ] Permit account/period reassignment where detection was wrong, retaining source and correction history.
+- [x] Permit selected extracted-row reassignment between recognised accounts/periods in the same PDF before import. Preview both statements, preserve source locations and each saved review's corrections, record reasons, refuse stale previews or imported periods, and recalculate both sets of checks. Creating new undetected periods and moving already imported payments are not offered by this control.
 - [x] Recover individual and bulk saved reviews through earlier file versions, including unmatched periods and conflicting alternatives. Show old values separately; record a file-wide comparison before importing a changed reading, invalidate it when saved inputs change, and recheck unchanged batch periods. Current imports and original files remain retained.
 - [ ] Present probable duplicate coverage for a deliberate decision; keep originals in Evidence.
 

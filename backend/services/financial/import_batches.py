@@ -55,7 +55,7 @@ def initial_request(proposal):
             date_values={role:r['fields'].get(role,'') for role in _date_roles(r['fields']) if role != _primary_date_role(r['fields'])},
             description=r['fields'].get('description',''), counterparty=r['fields'].get('counterparty',''),
             amount_minor=r['fields'].get('amount_minor') or ('0' if r['excluded'] else ''), direction=r['fields'].get('direction'),
-            balance_minor=r['fields'].get('balance'), reason='') for r in proposal['rows']])
+            balance_minor=r['fields'].get('balance'), reason=r.get('assignment_reason', '')) for r in proposal['rows']])
 
 
 def assess(proposal, request=None):
@@ -141,6 +141,8 @@ def inferred_currency(session, file_id, proposal):
 def prepare_reviews(session, batch, file):
     cache = {}
     fid = UUID(file['file_id'])
+    session.execute(select(EvidenceFile).where(EvidenceFile.id == fid,
+        EvidenceFile.case_id == batch.case_id).with_for_update().execution_options(populate_existing=True)).all()
     first = read_statement_import(session,case_id=batch.case_id,evidence_file_id=fid,currency=file.get('currency'),_cache=cache)
     currency = file.get('currency') or inferred_currency(session,fid,first)
     choices = first.get('statement_choices',[])
@@ -210,6 +212,10 @@ def batch_status(session, *, case_id, batch_id, offset=0, limit=100, only_proble
 
 def save_review(session, *, case_id, batch_id, item_id, request, expected_review_revision):
     batch=batch_for(session,case_id,batch_id,True)
+    file_id = session.scalar(select(Item.file_id).where(Item.id == item_id, Item.batch_id == batch.id))
+    if file_id is not None:
+        session.execute(select(EvidenceFile).where(EvidenceFile.id == file_id,
+            EvidenceFile.case_id == case_id).with_for_update().execution_options(populate_existing=True)).all()
     item=session.scalar(select(Item).where(Item.id==item_id,Item.batch_id==batch.id).with_for_update())
     if item is None: raise PdfMappingError('Statement not found in this batch.',404)
     if _digest(item.review_request or {}) != expected_review_revision:

@@ -99,6 +99,34 @@ from pydantic import BaseModel, ConfigDict
 from pydantic import Field
 from services.financial.statement_progress import save_progress
 from services.financial.review_recovery import previous_review_detail, acknowledge_recovery
+from services.financial.statement_row_assignment import RowAssignmentRequest, reassign_rows
+
+
+@router.post('/{evidence_file_id}/row-assignment/preview', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
+def preview_row_assignment(evidence_file_id: UUID, body: RowAssignmentRequest, case_id: UUID = Query(...),
+                           user=Depends(get_current_db_user), db: Session = Depends(get_db)):
+    try:
+        return reassign_rows(db, case_id=case_id, evidence_file_id=evidence_file_id,
+            body=body, actor=actor_from_user(user))
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    finally:
+        db.rollback()  # Preview never persists a review or assignment.
+
+
+@router.post('/{evidence_file_id}/row-assignment/apply', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
+def apply_row_assignment(evidence_file_id: UUID, body: RowAssignmentRequest, case_id: UUID = Query(...),
+                         user=Depends(get_current_db_user), db: Session = Depends(get_db)):
+    try:
+        return reassign_rows(db, case_id=case_id, evidence_file_id=evidence_file_id,
+            body=body, actor=actor_from_user(user), apply=True)
+    except PdfMappingError as exc:
+        db.rollback()
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception:
+        db.rollback()
+        logger.exception('Statement rows could not be reassigned')
+        raise HTTPException(status_code=500, detail='The move could not be confirmed. Reopen the statements to check the saved result before trying again.')
 
 
 @router.get('/{evidence_file_id}/previous-reviews/{review_id}')

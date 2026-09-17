@@ -693,6 +693,7 @@ function BatchStatementReview({
       ) : (
         <BatchReviewContext.Provider
           value={{
+            batchId,
             rowId,
             draftRevision: item.review_revision,
             save,

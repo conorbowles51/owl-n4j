@@ -76,6 +76,17 @@ class StatementImportAuthorizationTests(unittest.TestCase):
             self.assertEqual(self.client.put(self.endpoint('/progress'), json={}).status_code, 403)
             save.assert_not_called()
 
+    def test_row_assignment_preview_and_apply_require_case_edit(self):
+        with patch.object(module, 'reassign_rows') as move:
+            for suffix in ('/row-assignment/preview', '/row-assignment/apply'):
+                self.app.dependency_overrides.clear()
+                self.assertEqual(self.client.post(self.endpoint(suffix), json={}).status_code, 401)
+                self.user(None)
+                self.assertEqual(self.client.post(self.endpoint(suffix), json={}).status_code, 403)
+                self.user({'case': {'view': True, 'edit': False}})
+                self.assertEqual(self.client.post(self.endpoint(suffix), json={}).status_code, 403)
+            move.assert_not_called()
+
     def test_previous_reviews_require_case_view_and_comparison_requires_edit(self):
         with patch.object(module, 'previous_review_detail', return_value={'found': True}) as read, patch.object(module, 'acknowledge_recovery') as write:
             endpoint = self.endpoint('/previous-reviews/' + 'a' * 64)

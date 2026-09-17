@@ -411,6 +411,26 @@ If any selected value changes after the preview, Loupe requires a fresh preview 
 
 *Check the current and proposed values before applying the correction. This example uses artificial statement data.*
 
+#### Move transactions to the correct account or period
+
+Use this before import if a transaction was assigned to the wrong recognised account or statement period within the same PDF.
+
+1. Open the statement that currently contains the transaction. Select **Correct several rows** and tick the transactions to move.
+2. Under **Correction**, choose **Move to another account or period**.
+3. Enter the reason. For example, explain that the printed account heading belongs to another account section.
+4. Under **Move to account and period**, select the receiving statement. For long collections, use **Find an account or period** first.
+5. Select **Preview move**. Check the account and dates under **From** and **To**, the transaction counts before and after, and the changes to each balance check.
+6. Select **Save move** when the destination is correct. This saves the move and your current corrections in the case. It does not import payments.
+7. Open the receiving statement using the account and period controls, or return to its bulk review. Select the moved row to inspect its original PDF location. Check any new balance differences before importing.
+
+The original document and the original extracted values are retained. Earlier row explanations remain with the moved transaction, and the reason for the move is added. Existing individual and bulk reviews keep their respective corrections. You can move a transaction back by selecting it in its new statement and following the same steps.
+
+If either review changes after the preview, preview again. A move cannot proceed while either statement is being imported or has already been imported. This control moves extracted transaction rows between recognised statements in the same file; it does not move printed balances, statement totals or manually added rows. For an already imported payment, use its transaction correction controls.
+
+![Checking both statement reviews before moving a transaction](images/37-statement-row-move.png)
+
+*Artificial data in light mode. The preview shows both accounts and the effect on transaction counts. This example has no printed balance controls, so those checks are shown as unavailable.*
+
 
 
 ![Correcting a synthetic statement row beside its PDF](images/34-statement-row-correction.png)

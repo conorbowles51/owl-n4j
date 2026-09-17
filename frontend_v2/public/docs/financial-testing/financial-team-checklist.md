@@ -422,6 +422,20 @@ Record the filename, account, period, action, expected result and actual result 
 5. If two authorised reviewers open the same saved review, save a change from one and then attempt to save the older review from the other. Expect a conflict message; the later attempt must not overwrite the first saved review.
 6. If reprocessing changes a reading with an earlier saved review, open **Earlier saved reviews** and **Compare earlier values**. Expect individual and bulk corrections, including changed periods, to remain available. Compare them, tick the comparison box and select **Save comparison for this file**. Reload to check that the comparison remains saved. It must not add payments.
 
+### Check a transaction assigned to the wrong statement
+
+Use an artificial PDF with two recognised accounts or periods, before importing either statement.
+
+1. Save a correction in the receiving statement, such as a description with a reason.
+2. In the source statement, open **Correct several rows**, tick a transaction and choose **Move to another account or period**.
+3. Enter the reason, choose the receiving statement and select **Preview move**. Expect both accounts and periods, before/after transaction counts, and the balance checks for both statements. Preview alone must not save anything.
+4. Select **Save move**. Expect the transaction to leave the source review and appear once in the receiving review. Existing corrections in both reviews must remain.
+5. Refresh and reopen both statements. In the receiving statement, use **View original** on the moved transaction. Expect its original PDF page and location, not a new or invented source.
+6. Check the bulk list when the file also belongs to a processing batch. Its transaction counts and checks must reflect the move. A balance difference must stay under **Needs attention** until corrected or explained.
+7. Move the transaction back with a reason. Expect the original counts and both move reasons to remain in the saved history.
+8. With two authorised reviewers, preview a move, then save a change to either affected statement from the other reviewer. Attempt the original move. Expect a conflict and a request to preview again, with neither saved review overwritten.
+9. Import both corrected statements. Expect each transaction once. The moved transaction must retain its original source and the reason for reassignment. Moving between these reviews after import must be refused.
+
 ### Check the link from a completed batch to Transactions
 
 1. Use a synthetic case with an imported batch and another imported statement outside that batch.
