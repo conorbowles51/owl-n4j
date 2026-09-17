@@ -434,6 +434,18 @@ Record the filename, account, period, action, expected result and actual result 
 5. If two authorised reviewers open the same saved review, save a change from one and then attempt to save the older review from the other. Expect a conflict message; the later attempt must not overwrite the first saved review.
 6. If reprocessing changes a reading with an earlier saved review, open **Earlier saved reviews** and **Compare earlier values**. Expect individual and bulk corrections, including changed periods, to remain available. Compare them, tick the comparison box and select **Save comparison for this file**. Reload to check that the comparison remains saved. It must not add payments.
 
+### Check several missing transaction years
+
+Use an artificial Merrick statement with readable numeric month/day values and an unreadable closing-date reading. Keep its original PDF legible.
+
+1. Open **Correct several rows** and choose **Complete missing years**. Enter the closing date from the PDF and a reason.
+2. Use **Select readable dates missing a year**, then **Preview corrections**. Expect the printed month/day beside each proposed full date. Check December transactions against a January closing date: their year must be the previous year.
+3. Include a row with an unreadable day or a date outside the closing month and previous month. Expect a message directing you to check it individually. No correction should apply from an invalid preview.
+4. Apply a valid preview. Expect amounts, descriptions, existing complete dates and undated charges to remain unchanged. Original printed date cells must remain available.
+5. Select **Save progress**, reopen the review and refresh. Expect both the completed dates and the reason to remain. Import the ready statement once and check the same dates in Transactions.
+
+**Expected:** one checked closing date completes only the missing years of eligible rows, with a preview and a retained explanation. It must not replace unclear days or invent statement-period coverage.
+
 ### Check a transaction assigned to the wrong statement
 
 Use an artificial PDF with two recognised accounts or periods, before importing either statement.

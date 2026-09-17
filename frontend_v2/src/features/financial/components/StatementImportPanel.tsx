@@ -131,6 +131,7 @@ const proposalSchema = z.object({
       z.object({
         id: z.string(),
         institution: z.string(),
+        layout_id: z.string().optional(),
         account_reference: z.string(),
         account_label: z.string().optional(),
         document_kind: z.literal("deposit_receipt").optional(),
@@ -850,6 +851,22 @@ function EditableStatement({
   const [sourcePage, setSourcePage] = useState(initialPage)
   const client = useQueryClient()
   const baseline = useMemo(() => initialRows(data), [data])
+  const printedDates = useMemo(() => {
+    if (
+      data.statement_choices.find((choice) => choice.id === data.statement_id)
+        ?.layout_id !== "merrick-card"
+    )
+      return undefined
+    return new Map(
+      data.rows.flatMap((row) => {
+        const printed = row.source_cells[0]?.expected_text.trim() || ""
+        return ["transaction", "unresolved"].includes(row.kind) &&
+          /^\d{1,2}\/\d{1,2}$/.test(printed)
+          ? [[row.id, printed] as const]
+          : []
+      })
+    )
+  }, [data])
   const [rows, setRows] = useState(() => {
       if (!saved) return baseline
       if (saved.row_mode !== "changes") return saved.rows
@@ -1980,6 +1997,7 @@ function EditableStatement({
             />
             {canEdit && (!data.current_import || replacePrevious) && (
               <StatementBulkCorrections
+                printedDates={printedDates}
                 reassign={
                   !data.current_import &&
                   data.statement_choices.some(

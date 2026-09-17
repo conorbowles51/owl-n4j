@@ -2,6 +2,14 @@
 
 **Latest instruction supersedes the release window below:** hold off on the 1–2 hour deployment because Alex is working on the platform. Continue the whole remaining task and deploy only when the complete work is ready. The ACTIVE ten-minute heartbeat has been updated to remove the intermediate push and preserve continued local development. The earlier immediate push `23039a67` remains complete. No further push has occurred. The current Loupe URL question remains pending; local work continues.
 
+## Missing transaction years completed together, 17 September 2026
+
+A recognised Merrick review now offers **Complete missing years** in **Correct several rows**. The user checks the printed closing date once and sees original month/day values beside full proposed dates. Only blank transaction dates with a readable numeric month/day in the closing month or previous month are eligible. Year rollover and calendar validity are checked. Existing complete dates, undated charges, amounts, descriptions and source cells stay unchanged. A changed draft or source reading invalidates the preview. The reason and checked closing date are recorded on every changed row. Statement-period metadata is not invented by this action.
+
+Validation: six focused unit/integration checks pass, TypeScript and scoped ESLint pass. A fresh synthetic browser case completed two missing years, saved the review, cleared browser storage, restored both dates from the server and bulk imported exactly two payments. Refresh retained the dates and no JavaScript errors occurred. This writer is complete and must not be repeated. Case `2c59d469-ca0a-4b4a-845e-c0c97eaae5e1`, batch `44e5d5af-ab84-4194-93aa-77c12fdbf378`, ignored record `data/local-runtime/missing-year-browser.json`. Light-mode guide screenshot 41 uses only artificial data. User and testing guides regenerated.
+
+API 58002 was restarted to include local code for this browser check (log `data/local-runtime/financial-year-review-api.log`). The compiled preview still predates local changes. No full suite or production build was repeated. No push or deployment; last pushed remains `23039a67`. Next: specific Andrews field problems, then combined acceptance and build. The open D items remain open.
+
 ## Targeted date rereading verified locally, 17 September 2026
 
 After `72ec6a90`, a bounded engine helper rereads unclear dates only on recognised Merrick OCR pages. A complete primary line reading and agreement from another visual reading are required. Conflicting valid dates and fragments stay unresolved. Old/new text, source rectangles and attempted readings survive in page provenance; canonical text and table geometry use the same accepted words. Existing readable dates, amounts, descriptions, signs and balances stay unchanged. Other document types bypass the extra pass. No real case changes or external processing.

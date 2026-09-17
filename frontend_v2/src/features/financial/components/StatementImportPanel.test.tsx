@@ -173,6 +173,73 @@ beforeEach(() => {
     return data as never
   })
 })
+it("imports completed Merrick years through the normal recorded correction request", async () => {
+  const base = vi.mocked(fetchAPI).getMockImplementation()!
+  const proposal = {
+    ...structuredClone(data),
+    statement_id: "m".repeat(64),
+    statement_choices: [
+      {
+        id: "m".repeat(64),
+        institution: "Merrick Bank",
+        layout_id: "merrick-card",
+        account_reference: "12345",
+        period_start: "",
+        period_end: "",
+        page_numbers: [1],
+      },
+    ],
+  }
+  proposal.rows[1].fields.date = ""
+  proposal.rows[1].source_cells[0].expected_text = "01/02"
+  proposal.rows[1].issues = [
+    "Check the full date. The printed statement context could not resolve its year.",
+  ]
+  vi.mocked(fetchAPI).mockImplementation(async (url, options) =>
+    String(url).includes("/statement-import/file?")
+      ? (proposal as never)
+      : base(url, options)
+  )
+  mount()
+  await open()
+  fireEvent.click(screen.getByRole("button", { name: "Correct several rows" }))
+  fireEvent.change(screen.getByLabelText("Correction"), {
+    target: { value: "date_year" },
+  })
+  fireEvent.change(screen.getByLabelText("Printed statement closing date"), {
+    target: { value: "2023-01-25" },
+  })
+  fireEvent.change(screen.getByLabelText("Reason for these corrections"), {
+    target: { value: "Year checked against statement heading" },
+  })
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: "Select 1 readable dates missing a year",
+    })
+  )
+  fireEvent.click(screen.getByRole("button", { name: "Preview corrections" }))
+  fireEvent.click(
+    screen.getByRole("button", { name: "Apply corrections to 1 rows" })
+  )
+  expect(screen.getByLabelText("Date 1:0:1")).toHaveValue("2023-01-02")
+  fireEvent.click(
+    screen.getByRole("button", { name: "Confirm import of 1 transactions" })
+  )
+  await waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0]).toMatchObject({
+    rows: expect.arrayContaining([
+      expect.objectContaining({
+        id: "1:0:1",
+        date: "2023-01-02",
+        reason: expect.stringContaining(
+          "closing date 2023-01-25; printed day/month 01/02"
+        ),
+      }),
+    ]),
+  })
+  expect(proposal.rows[1].fields.date).toBe("")
+})
+
 it("retains an additional printed date without requiring a per-row decision", async () => {
   const base = vi.mocked(fetchAPI).getMockImplementation()!
   const proposal = structuredClone(data)

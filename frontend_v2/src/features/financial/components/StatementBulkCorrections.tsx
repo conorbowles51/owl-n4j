@@ -12,11 +12,13 @@ export function StatementBulkCorrections({
   apply,
   inspect,
   reassign,
+  printedDates,
 }: {
   rows: ReviewEdit[]
   apply: (changes: ReturnType<typeof previewCorrections>) => void
   inspect: (id: string) => void
   reassign?: (rowIds: string[], reason: string) => ReactNode
+  printedDates?: ReadonlyMap<string, string>
 }) {
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState("")
@@ -52,7 +54,15 @@ export function StatementBulkCorrections({
   const byId = useMemo(() => new Map(rows.map((row) => [row.id, row])), [rows])
   const stale =
     !!preview &&
-    preview.some((change) => byId.get(change.before.id) !== change.before)
+    preview.some(
+      (change) =>
+        byId.get(change.before.id) !== change.before ||
+        (action === "date_year" &&
+          change.printedDate !== printedDates?.get(change.before.id))
+    )
+  const datesWithoutYear = filtered.filter(
+    (row) => !row.date && !row.date_unprinted && printedDates?.has(row.id)
+  )
   const resetPreview = () => {
     setPreview(null)
     setError("")
@@ -131,6 +141,9 @@ export function StatementBulkCorrections({
                 <option value="include">Include in import</option>
                 <option value="switch">Switch credit and debit</option>
                 <option value="date">Set transaction date</option>
+                {printedDates && (
+                  <option value="date_year">Complete missing years</option>
+                )}
                 <option value="counterparty">Set paid by / paid to</option>
                 {reassign && (
                   <option value="reassign">
@@ -139,11 +152,17 @@ export function StatementBulkCorrections({
                 )}
               </select>
             </label>
-            {(action === "date" || action === "counterparty") && (
+            {(action === "date" ||
+              action === "date_year" ||
+              action === "counterparty") && (
               <label>
-                {action === "date" ? "Correct date" : "Correct name"}
+                {action === "date_year"
+                  ? "Printed statement closing date"
+                  : action === "date"
+                    ? "Correct date"
+                    : "Correct name"}
                 <input
-                  type={action === "date" ? "date" : "text"}
+                  type={action === "counterparty" ? "text" : "date"}
                   className="block border rounded bg-background p-2 mt-1"
                   value={value}
                   onChange={(event) => {
@@ -173,7 +192,14 @@ export function StatementBulkCorrections({
                 onClick={() => {
                   try {
                     setPreview(
-                      previewCorrections(rows, selected, action, value, reason)
+                      previewCorrections(
+                        rows,
+                        selected,
+                        action,
+                        value,
+                        reason,
+                        printedDates
+                      )
                     )
                     setPage(0)
                     setError("")
@@ -186,6 +212,32 @@ export function StatementBulkCorrections({
               </Button>
             )}
           </div>
+          {action === "date_year" && (
+            <div className="space-y-2 text-sm">
+              <p>
+                Check the statement closing date in the PDF, then preview the
+                completed dates. Each printed day and month stays the same.
+                Dates already entered and charges with no printed date stay
+                unchanged.
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={!datesWithoutYear.length}
+                onClick={() => {
+                  setSelected(new Set(datesWithoutYear.map((row) => row.id)))
+                  resetPreview()
+                }}
+              >
+                Select {datesWithoutYear.length} readable dates missing a year
+              </Button>
+              <p>
+                Unclear days or months still need an individual correction. Only
+                dates in the closing month or the month before it can be
+                completed here.
+              </p>
+            </div>
+          )}
           {error && (
             <p role="alert" className="text-sm">
               {error}
@@ -232,13 +284,15 @@ export function StatementBulkCorrections({
                           <td className="p-2">
                             {correctionValue(
                               before,
-                              action === "reassign" ? "date" : action
+                              action === "reassign" ? "date" : action,
+                              printedDates
                             )}
                           </td>
                           <td className="p-2 font-medium">
                             {correctionValue(
                               after,
-                              action === "reassign" ? "date" : action
+                              action === "reassign" ? "date" : action,
+                              printedDates
                             )}
                           </td>
                           <td>
@@ -277,7 +331,8 @@ export function StatementBulkCorrections({
                         <td className="p-2">
                           {correctionValue(
                             row,
-                            action === "reassign" ? "date" : action
+                            action === "reassign" ? "date" : action,
+                            printedDates
                           )}
                         </td>
                         <td>
@@ -322,9 +377,11 @@ export function StatementBulkCorrections({
             <div className="space-y-2">
               <p className="text-sm">
                 {preview.length} rows will change.{" "}
-                {selected.size - preview.length} selected rows already have the
-                requested value. The statement will be checked again after
-                applying.
+                {selected.size - preview.length} selected rows{" "}
+                {action === "date_year"
+                  ? "keep their existing date or no-printed-date status"
+                  : "already have the requested value"}
+                . The statement will be checked again after applying.
               </p>
               <Button
                 disabled={stale}

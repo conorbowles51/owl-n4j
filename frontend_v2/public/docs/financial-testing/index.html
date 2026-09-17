@@ -344,6 +344,16 @@
 <li>If two authorised reviewers open the same saved review, save a change from one and then attempt to save the older review from the other. Expect a conflict message; the later attempt must not overwrite the first saved review.</li>
 <li>If reprocessing changes a reading with an earlier saved review, open <strong>Earlier saved reviews</strong> and <strong>Compare earlier values</strong>. Expect individual and bulk corrections, including changed periods, to remain available. Compare them, tick the comparison box and select <strong>Save comparison for this file</strong>. Reload to check that the comparison remains saved. It must not add payments.</li>
 </ol>
+<h3>Check several missing transaction years</h3>
+<p>Use an artificial Merrick statement with readable numeric month/day values and an unreadable closing-date reading. Keep its original PDF legible.</p>
+<ol>
+<li>Open <strong>Correct several rows</strong> and choose <strong>Complete missing years</strong>. Enter the closing date from the PDF and a reason.</li>
+<li>Use <strong>Select readable dates missing a year</strong>, then <strong>Preview corrections</strong>. Expect the printed month/day beside each proposed full date. Check December transactions against a January closing date: their year must be the previous year.</li>
+<li>Include a row with an unreadable day or a date outside the closing month and previous month. Expect a message directing you to check it individually. No correction should apply from an invalid preview.</li>
+<li>Apply a valid preview. Expect amounts, descriptions, existing complete dates and undated charges to remain unchanged. Original printed date cells must remain available.</li>
+<li>Select <strong>Save progress</strong>, reopen the review and refresh. Expect both the completed dates and the reason to remain. Import the ready statement once and check the same dates in Transactions.</li>
+</ol>
+<p><strong>Expected:</strong> one checked closing date completes only the missing years of eligible rows, with a preview and a retained explanation. It must not replace unclear days or invent statement-period coverage.</p>
 <h3>Check a transaction assigned to the wrong statement</h3>
 <p>Use an artificial PDF with two recognised accounts or periods, before importing either statement.</p>
 <ol>

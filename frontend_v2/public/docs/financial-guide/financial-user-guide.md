@@ -430,6 +430,23 @@ If any selected value changes after the preview, Loupe requires a fresh preview 
 
 *Check the current and proposed values before applying the correction. This example uses artificial statement data.*
 
+#### Complete missing years on a Merrick statement
+
+If a Merrick statement's closing date was unreadable, several transactions may have a readable month and day but no year. Check the closing date once, then preview the affected dates together.
+
+1. Open the statement and find its printed closing date in the original PDF.
+2. Select **Correct several rows**, then choose **Complete missing years** under **Correction**.
+3. Enter the full date under **Printed statement closing date** and explain where you checked it under **Reason for these corrections**.
+4. Select **Select readable dates missing a year**. The button shows how many eligible rows it will select. You can change that selection with the row checkboxes.
+5. Select **Preview corrections**. Check each original month/day against the proposed full date. For example, a printed `12/28` with a January 2022 closing date becomes `2021-12-28`.
+6. Select **Apply corrections**, then **Save progress**. The dates and explanation are saved with the review. Return to the batch to import ready statements when the remaining problems are resolved.
+
+This option appears on recognised Merrick statements. It fills only the year for a readable numeric month/day in the closing month or the month before it. Dates already entered and charges with no printed date stay unchanged. An unreadable day, an invalid date or a date outside that range needs an individual correction. This action does not fill the account's statement-period dates; check those separately when they are missing.
+
+![Two missing transaction years previewed beside an artificial Merrick statement](images/41-missing-transaction-years.png)
+
+*The printed day and month are retained. Review the completed dates before applying them.*
+
 #### Move transactions to the correct account or period
 
 Use this before import if a transaction was assigned to the wrong recognised account or statement period within the same PDF.
