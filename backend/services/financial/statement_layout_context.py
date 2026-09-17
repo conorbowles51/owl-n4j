@@ -5,8 +5,9 @@ section/card references and possible full dates from the exact printed cycle.
 It neither interprets credit-account signs nor creates account identities.
 """
 import re
-from datetime import date
+from datetime import date, timedelta
 from services.financial.source_dates import assess_date_text
+from services.financial.card_table_columns import card_row_columns
 
 _MONTHS = {name.lower(): index for index, names in enumerate((
     ('Jan', 'January'), ('Feb', 'February'), ('Mar', 'March'), ('Apr', 'April'),
@@ -49,6 +50,27 @@ def _dates_within(text, start, end):
                 except ValueError:continue
                 if start<=value<=end:possible.add(value.isoformat())
     return reading, sorted(possible)
+
+
+def card_row_dates(text, posting_text, start, end):
+    """Keep both printed dates; a valid posting can anchor a recent purchase.
+
+    A purchase shortly before the cycle can post inside it. Resolve its printed
+    month/day against that posting date, at most 31 days earlier. More distant,
+    invalid, ambiguous or reversed dates still need review.
+    """
+    reading, possible = _dates_within(text, start, end)
+    postings = _dates_within(posting_text, start, end)[1] if posting_text else []
+    basis = 'printed_cycle'
+    if len(postings) == 1:
+        posted = date.fromisoformat(postings[0])
+        if possible:
+            possible = [value for value in possible if value <= posted.isoformat()]
+        else:
+            possible = _dates_within(text, posted - timedelta(days=31), min(start - timedelta(days=1), posted))[1]
+            if possible:
+                basis = 'printed_posting_date'
+    return reading, possible, postings, basis
 
 
 def statement_layout_context(rows):
@@ -106,29 +128,32 @@ def statement_layout_context(rows):
             continue
         if columns is None:
             continue
-        by_column={c['column_index']:c for c in cells}
-        if len(by_column)!=len(cells) or not all(c in by_column for c in columns.values()):
+        mapped = card_row_columns(cells, header_cells)
+        if mapped is None:
             continue
+        mapped_columns, descriptions = mapped
         date_label='Date' if 'Date' in columns else 'Trans Date'
-        date_cell=by_column[columns[date_label]]
-        posting_cell=by_column[columns['Post Date']] if 'Post Date' in columns else None
-        reading, possible = _dates_within(date_cell['expected_text'],start,end)
+        date_cell=mapped_columns[date_label]
+        posting_cell=mapped_columns.get('Post Date')
+        reading, possible, postings, basis = card_row_dates(date_cell['expected_text'],
+            posting_cell['expected_text'] if posting_cell else None, start, end)
         if not reading['proposals']:
             continue
         section_row, section_cell, match = section
         context.append(dict(row_index=row['row_index'],card_ending=match[2],
             printed_section=match[3],section_source=citation(section_row,section_cell),
-            date_source=citation(row['row_index'],date_cell),date_proposals=possible,
+            date_source=citation(row['row_index'],date_cell),date_proposals=possible,date_basis=basis,
             date_label=date_label,date_header_source=citation(header_row,header_cells[date_label]),
             posting_date_source=citation(row['row_index'],posting_cell) if posting_cell else None,
-            posting_date_proposals=_dates_within(posting_cell['expected_text'],start,end)[1] if posting_cell else [],
+            posting_date_proposals=postings,
             posting_date_header_source=citation(header_row,header_cells['Post Date']) if posting_cell else None,
-            description_source=citation(row['row_index'],by_column[columns['Description']]),
-            amount_source=citation(row['row_index'],by_column[columns['Amount']]),
+            description_source=citation(row['row_index'],mapped_columns['Description']),
+            description_sources=[citation(row['row_index'],cell) for cell in descriptions],
+            amount_source=citation(row['row_index'],mapped_columns['Amount']),
             direction=None,requires_source_review=True))
     return dict(layout_id='capital-one-platinum-card-sections',version=1,
         institution_source=citation(*marks[0]),printed_card_source=citation(*cards[0]),
         cycle_source=citation(cycle_row,cycle_cell),
         cycle_count_source=citation(cycle_row,count_cell) if count_cell else None,start_date=start.isoformat(),end_date=end.isoformat(),
         rows=context,applied=False,
-        limitation='Printed section/card-ending context and possible dates only. A four-digit ending does not establish account identity. Date proposals assume the transaction belongs to the printed cycle; out-of-cycle dates remain unresolved. Amount, currency and credit-account direction require review. No fields are filled or transactions admitted.')
+        limitation='Printed sections and possible dates only. A transaction just before this cycle can use its separately printed posting date to identify the year, up to 31 days earlier. Both dates and all source cells are retained. A four-digit ending is a partial account reference. No transactions are imported by this layout view.')

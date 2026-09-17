@@ -73,3 +73,31 @@ it("does not invent a year for a date outside the printed cycle", () => {
   )
   expect(screen.getByText(/date remains unresolved/)).toBeTruthy()
 })
+
+it("explains posting-anchored years and keeps both description source cells", () => {
+  const context = fixture()
+  Object.assign(context.rows[0], {
+    date_source: cite("May 11", 9),
+    date_proposals: ["2020-05-11"],
+    date_basis: "printed_posting_date",
+    posting_date_source: cite("May 12", 9),
+    posting_date_proposals: ["2020-05-12"],
+    description_source: cite("EXAMPLE", 9),
+    description_sources: [cite("EXAMPLE", 9), cite("SHOP 555-0100", 9)],
+  })
+  const onSource = vi.fn()
+  render(<StatementLayoutContextPanel context={context} onSource={onSource} />)
+  fireEvent.click(
+    screen.getByRole("button", { name: "Inspect printed statement context" })
+  )
+  expect(screen.getByText(/The purchase preceded this cycle/)).toBeTruthy()
+  expect(screen.getByText(/Description: EXAMPLE SHOP 555-0100/)).toBeTruthy()
+  fireEvent.click(
+    screen.getByRole("button", { name: "Inspect date for row 10" })
+  )
+  expect(onSource).toHaveBeenLastCalledWith(context.rows[0].date_source)
+  fireEvent.click(
+    screen.getByRole("button", { name: "Inspect posting date for row 10" })
+  )
+  expect(onSource).toHaveBeenLastCalledWith(context.rows[0].posting_date_source)
+})

@@ -380,6 +380,8 @@ A manually added transaction has a page citation but does not establish its posi
 
 Capital One fee tables can have either **Date** or separate **Trans Date** and **Post Date** columns. Loupe reads the fee row and keeps those dates separate. **Total Fees for This Period** is a total, so it is not added as another payment. An interest charge without a printed date still needs your review.
 
+A purchase can happen just before a billing period and appear on that statement because it was posted later. Where both dates are readable, Loupe keeps the purchase date and posting date separately. It does not change the purchase date to make it fall inside the period. A description split into several extracted cells is joined only where the printed column positions identify the description and amount clearly. The original cells remain available beside the PDF.
+
 An opening balance, closing balance, column heading or disclosure paragraph is not a payment. Loupe excludes recognised examples from the proposed transaction count. Their source text remains available in the printed table or under **Other extracted page text**. To inspect their import treatment, open **Show corrections and import choices**, then select **Show excluded rows**.
 
 ### Correct a value beside its original

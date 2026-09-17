@@ -34,8 +34,12 @@ export const layoutContext = z.object({
           .max(2)
           .default([]),
         description_source: citation,
+        description_sources: z.array(citation).optional(),
         amount_source: citation,
         date_proposals: z.array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).max(2),
+        date_basis: z
+          .enum(["printed_cycle", "printed_posting_date"])
+          .optional(),
         direction: z.null(),
         requires_source_review: z.literal(true),
       })

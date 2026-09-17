@@ -6,7 +6,8 @@ inferred. Undated interest charges remain explicit review exceptions.
 """
 import re
 from services.financial.statement_import_proposal import exact_amount
-from services.financial.statement_layout_context import _cycle, _dates_within
+from services.financial.statement_layout_context import _cycle, card_row_dates
+from services.financial.card_table_columns import card_row_columns
 from datetime import date
 from services.financial.statement_import_card_balances import summary_balances
 
@@ -42,25 +43,26 @@ def propose_card_table(source, currency, statement):
         header_options = [('Date', 'Description', 'Amount'), ('Trans Date', 'Post Date', 'Description', 'Amount')]
         matched_headers = [names for names in header_options if all(texts.count(name) == 1 for name in names)]
         if fees and (any(name in texts for name in ('Date', 'Trans Date', 'Post Date')) or all(name in texts for name in ('Description', 'Amount'))):
-            fee_columns = ({name: next(c['column_index'] for c in row['cells'] if c['expected_text'].strip() == name)
+            fee_columns = ({name: next(c for c in row['cells'] if c['expected_text'].strip() == name)
                             for name in matched_headers[0]} if len(matched_headers) == 1 else None)
         elif fees and fee_columns:
-            columns = {c['column_index']: c for c in row['cells']}
+            mapped = card_row_columns(row['cells'], fee_columns)
             date_label = 'Date' if 'Date' in fee_columns else 'Trans Date'
-            if len(columns) == len(row['cells']) and all(index in columns for index in fee_columns.values()):
-                date_source = columns[fee_columns[date_label]]
-                posting_source = columns[fee_columns['Post Date']] if 'Post Date' in fee_columns else None
-                dates = _dates_within(date_source['expected_text'],
-                                     date.fromisoformat(statement['period_start']), date.fromisoformat(statement['period_end']))[1]
+            if mapped:
+                columns, descriptions = mapped
+                date_source = columns[date_label]
+                posting_source = columns.get('Post Date')
+                _, dates, postings, basis = card_row_dates(date_source['expected_text'],
+                    posting_source['expected_text'] if posting_source else None,
+                    date.fromisoformat(statement['period_start']), date.fromisoformat(statement['period_end']))
                 candidate = dict(date_proposals=dates, date_source=date_source, posting_date_source=posting_source,
-                    posting_date_proposals=_dates_within(posting_source['expected_text'], date.fromisoformat(statement['period_start']),
-                                                       date.fromisoformat(statement['period_end']))[1] if posting_source else [],
-                    description_source=columns[fee_columns['Description']], amount_source=columns[fee_columns['Amount']],
+                    posting_date_proposals=postings, date_basis=basis,
+                    description_source=columns['Description'], description_sources=descriptions, amount_source=columns['Amount'],
                     printed_section='Fees', card_ending=statement['account_reference'][-4:])
         if candidate:
             item.update(excluded=False, kind='transaction')
             fields = item['fields']
-            fields.update(description=candidate['description_source']['expected_text'], counterparty='',
+            fields.update(description=' '.join(cell['expected_text'] for cell in candidate.get('description_sources', [candidate['description_source']])), counterparty='',
                           card_ending=candidate['card_ending'], printed_section=candidate['printed_section'])
             fields['date_column'] = str(candidate['date_source']['column_index'])
             if len(candidate['date_proposals']) == 1:

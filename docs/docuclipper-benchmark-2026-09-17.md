@@ -2,11 +2,13 @@
 
 ## Local implementation checkpoint, 17 September 2026
 
+Latest difficult-file audit: six split-description amounts and fifteen posting-anchored transaction dates are corrected in the supplied Capital One collection. Its 52 periods and 301 proposed entries are unchanged; 51 opening/closing checks now match and one is unavailable. A separate visual sample of 27 entries on four original pages matches counts and totals. Twenty-nine undated interest charges and one earlier transaction without a separate posting date still need a date decision. The [audit record](financial-card-extraction-audit-2026-09-17.md) distinguishes that sample from full-document accuracy. This remains local and does not close the outstanding D/E items below.
+
 The continuation schedule is active every 10 minutes. The latest local implementation adds shared server-side checks to individual and batch review, recalculates edited values, compares running balances beyond 1,000 rows, and supports explicit printed credit/debit totals where recognised. A genuine printed discrepancy can be retained with an explanation tied to the exact values checked. It is never relabelled a match.
 
 Account and period controls are separate. Corrections open immediately under the selected printed row with the PDF alongside it. Batch reviews can save incomplete progress to the server, restore it after browser storage is cleared, and save before opening the next or previous statement needing attention. Original printed cells are retained.
 
-A new synthetic local case verified saved mismatches, incomplete dates, server recovery, navigation across files and bulk import of 36 transactions from three statements. A read-only rerun against the supplied Capital One extraction still finds 52 periods and 301 proposed transactions, with 45 closing-balance matches and 7 unavailable checks. This is regression evidence, not an independent accuracy measurement. Other recovery, reassignment, selected-row correction and investigation connections remain on the checklist below. Nothing here claims deployment.
+A new synthetic local case verified saved mismatches, incomplete dates, server recovery, navigation across files and bulk import of 36 transactions from three statements. The initial read-only Capital One baseline found 52 periods and 301 proposed transactions, with 45 closing-balance matches and 7 unavailable checks. The later audit above improves those results. Recovery, reassignment and selected-row corrections are now checked below; remaining investigation connections are still open. Nothing here claims deployment.
 
 Research date: 17 September 2026.
 

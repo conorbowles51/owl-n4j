@@ -72,7 +72,9 @@ export function StatementLayoutContextPanel({
                 {row.date_label === "Trans Date" ? "transaction date" : "date"}:{" "}
                 {row.date_source.expected_text}.{" "}
                 {row.date_proposals.length
-                  ? `Possible date within this cycle: ${row.date_proposals.join(" or ")}. Confirm against the original.`
+                  ? row.date_basis === "printed_posting_date"
+                    ? `Transaction date: ${row.date_proposals.join(" or ")}. The purchase preceded this cycle; its separate posting date identifies the year.`
+                    : `Possible date within this cycle: ${row.date_proposals.join(" or ")}. Confirm against the original.`
                   : "No supported date falls within the printed cycle; date remains unresolved."}
               </p>
               {row.posting_date_source && (
@@ -84,9 +86,12 @@ export function StatementLayoutContextPanel({
                 </p>
               )}
               <p>
-                Description: {row.description_source.expected_text} · Amount
-                text: {row.amount_source.expected_text}. This layout aid does
-                not determine money direction.
+                Description:{" "}
+                {(row.description_sources ?? [row.description_source])
+                  .map((cell) => cell.expected_text)
+                  .join(" ")}{" "}
+                · Amount text: {row.amount_source.expected_text}. This layout
+                aid does not determine money direction.
               </p>
               <div className="flex flex-wrap gap-2">
                 <Button

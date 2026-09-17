@@ -333,6 +333,39 @@ class StatementImportTests(TransactionPersistenceTestCase):
         self.assertEqual(payment.amount_minor,2500)
         self.assertEqual(payment.provenance['statement_import_original']['fields']['booking_date'],'2022-03-09')
 
+    def test_split_card_description_and_prior_cycle_transaction_import_with_source_dates(self):
+        from tests.test_financial_card_split_columns import split_card
+        data = split_card()
+        data['rows'][11]['cells'][1]['expected_text'] = '$0.00'
+        for row in data['rows']:
+            for cell in row['cells']:
+                if cell['locator'].get('kind') != 'page_rectangle':
+                    cell['locator'] = rectangle(row['row_index']*20, x=10+cell['column_index']*180, width=170)
+        self.db.get(EvidenceTableGeometry, (self.file.id, 1)).payload = [dict(
+            table_source='drawn_geometry', geometry_source='cell_rectangles',
+            table=dict(page=1, table=rectangle(0, x=0, width=600, height=800), unlocated_values=0,
+                values=[dict(row=r['row_index'], column=c['column_index'], text=c['expected_text'], locator=c['locator'])
+                        for r in data['rows'] for c in r['cells']]))]
+        self.db.commit()
+        with self.SessionLocal() as db:
+            proposal = read_statement_import(db, case_id=self.case.id, evidence_file_id=self.file.id, currency='USD')
+        request = dict(expected_revision=proposal['revision'], statement_id=proposal['statement_id'], currency='USD',
+            **{k:proposal['metadata'][k] for k in ('holder', 'account_number', 'institution', 'period_start', 'period_end')},
+            rows=[dict(id=r['id'], excluded=r['excluded'], date=r['fields'].get('date', ''),
+                description=r['fields'].get('description', ''), amount_minor=r['fields'].get('amount_minor', '0'),
+                direction=r['fields'].get('direction'), reason='') for r in proposal['rows']])
+        result = self.confirm(request)
+        self.assertEqual(result['transaction_count'], 2)
+        self.db.expire_all()
+        payment = self.db.scalar(select(FinancialTransaction).where(
+            FinancialTransaction.source_document_id == UUID(result['source_document_id']), FinancialTransaction.amount_minor == 3179))
+        self.assertEqual(payment.description, 'EXAMPLE SHOP 555-0100')
+        self.assertEqual((str(payment.transaction_date), str(payment.posted_date)), ('2020-05-11', '2020-05-12'))
+        original = payment.provenance['statement_import_original']
+        self.assertEqual(original['layout_context']['amount_source']['column_index'], 4)
+        self.assertEqual(original['source_cells'], data['rows'][8]['cells'])
+        self.assertFalse(self.confirm(request)['created'])
+
     def test_correcting_posting_and_value_dates_keeps_transaction_date_and_originals(self):
         from datetime import date
         request = self.multi_date_request()
