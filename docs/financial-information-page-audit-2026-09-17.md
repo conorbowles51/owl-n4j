@@ -68,3 +68,16 @@ An image reread of the smaller 24-page Andrews collection took about 148 seconds
 Focused validation: 19 date-region cases, affected extraction/provenance checks, and existing canonical-text/runtime-manifest checks pass. The guides include the rereading and original-comparison steps. The difficult-file acceptance items remain open. The compiled app and deployed workflow have not yet been updated for this checkpoint.
 
 Private records are under `data/local-runtime/context-audit-final/`: `merrick-refined-image-comparison.json`, `merrick-date-reread-preservation.json`, `merrick-visual-payment-sample.json`, the retained rejected intermediate readings and `andrews-second-image-comparison.json`. Original PDFs and case evidence were unchanged, and no external processing service was used.
+
+
+## Bounded rereading of damaged Andrews money cells
+
+A second local image-reading pass now examines damaged amount and running-balance cells on recognised Andrews payment rows. It requires the printed bank/title, measured row and column positions, and agreement from complete visual readings. It never fills an amount by calculating from a balance. Different valid digits or signs remain unresolved. A positive rereading of an ordinary withdrawal is rejected rather than adding a missing minus sign. The retry is capped at 40 cells and 30 seconds per page, within the page's existing deadline.
+
+In the smaller supplied collection, a read-only whole-file run took 165 seconds. It retains all 14 section identities, all 296 transactions, every row address, inclusion choice and existing payment value. Twenty-two damaged cells on ten pages gained readings: ten amounts and twelve balances. All 22 were visually compared with the original crops. Flags decrease from 104 to 89. The newly readable balances also expose three additional running-balance differences, retained for review. No real evidence or imports were changed.
+
+An earlier crop experiment obtained a matching positive reading for a printed negative amount. Visual inspection caught the missing sign. The final rule refuses that result, and the regression is tested. Conflicting or incomplete readings are not outvoted. This is an improvement to image rereading, not a claim that 296 transactions were independently transcribed or that the difficult-file acceptance target is complete.
+
+The remaining 89 flagged rows include 57 amount problems, 14 unreadable balances, 14 date problems, 9 running-balance differences and 3 direction problems. Categories overlap. The larger Andrews collection has not been reread with this helper yet. Existing stored readings are not silently replaced. Original money text, source rectangles, attempted readings and accepted values survive in page provenance, and the runtime record includes the helper's code fingerprint.
+
+Validation: 22 focused money-region and provenance tests pass. The affected PDF/geometry/text-origin/manifest checks also pass: 52 passed initially, and the one expected-response fixture missing the new empty refinement list passed after correction. Private diagnostic records are `andrews-refined-image-reading.json`, `andrews-refined-image-comparison.json`, `andrews-money-preservation.json` and the two visual comparison sheets under the ignored final-audit directory. No external OCR provider was used.

@@ -434,6 +434,16 @@ Record the filename, account, period, action, expected result and actual result 
 5. If two authorised reviewers open the same saved review, save a change from one and then attempt to save the older review from the other. Expect a conflict message; the later attempt must not overwrite the first saved review.
 6. If reprocessing changes a reading with an earlier saved review, open **Earlier saved reviews** and **Compare earlier values**. Expect individual and bulk corrections, including changed periods, to remain available. Compare them, tick the comparison box and select **Save comparison for this file**. Reload to check that the comparison remains saved. It must not add payments.
 
+### Check an Andrews image reread
+
+1. Use an Andrews test statement with a damaged amount or balance reading. Record its account sections and transaction count before reprocessing.
+2. Choose **Read from page images** under **Read the statement again**, then **Reprocess statement**.
+3. Compare recovered values with the original PDF, including decimal points and minus signs. Existing readable values and account assignments should remain unchanged. Dates and descriptions must not change because a money cell was reread.
+4. Check the remaining problems and balance differences. A newly readable balance can reveal a mismatch in another payment. Neither that mismatch nor a conflicting visual reading should be marked as resolved automatically.
+5. Open any earlier saved review and compare its corrections before importing a changed reading. Confirm only the statements whose remaining problems you have resolved.
+
+**Expected:** specific damaged money cells can improve without hiding unresolved values or replacing previous imports automatically. A lower warning count alone is not a successful test; record any wrong or missing value found against the PDF.
+
 ### Check several missing transaction years
 
 Use an artificial Merrick statement with readable numeric month/day values and an unreadable closing-date reading. Keep its original PDF legible.

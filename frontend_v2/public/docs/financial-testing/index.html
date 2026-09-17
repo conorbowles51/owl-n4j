@@ -344,6 +344,15 @@
 <li>If two authorised reviewers open the same saved review, save a change from one and then attempt to save the older review from the other. Expect a conflict message; the later attempt must not overwrite the first saved review.</li>
 <li>If reprocessing changes a reading with an earlier saved review, open <strong>Earlier saved reviews</strong> and <strong>Compare earlier values</strong>. Expect individual and bulk corrections, including changed periods, to remain available. Compare them, tick the comparison box and select <strong>Save comparison for this file</strong>. Reload to check that the comparison remains saved. It must not add payments.</li>
 </ol>
+<h3>Check an Andrews image reread</h3>
+<ol>
+<li>Use an Andrews test statement with a damaged amount or balance reading. Record its account sections and transaction count before reprocessing.</li>
+<li>Choose <strong>Read from page images</strong> under <strong>Read the statement again</strong>, then <strong>Reprocess statement</strong>.</li>
+<li>Compare recovered values with the original PDF, including decimal points and minus signs. Existing readable values and account assignments should remain unchanged. Dates and descriptions must not change because a money cell was reread.</li>
+<li>Check the remaining problems and balance differences. A newly readable balance can reveal a mismatch in another payment. Neither that mismatch nor a conflicting visual reading should be marked as resolved automatically.</li>
+<li>Open any earlier saved review and compare its corrections before importing a changed reading. Confirm only the statements whose remaining problems you have resolved.</li>
+</ol>
+<p><strong>Expected:</strong> specific damaged money cells can improve without hiding unresolved values or replacing previous imports automatically. A lower warning count alone is not a successful test; record any wrong or missing value found against the PDF.</p>
 <h3>Check several missing transaction years</h3>
 <p>Use an artificial Merrick statement with readable numeric month/day values and an unreadable closing-date reading. Keep its original PDF legible.</p>
 <ol>

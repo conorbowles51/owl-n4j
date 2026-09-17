@@ -187,6 +187,7 @@ async def test_image_only_pdf_is_ocrd_and_replaces_missing_native_text(
         "ocr_dpi": 300,
         "ocr_language": "eng",
         "ocr_geometry_status": "unavailable",
+        "ocr_refinements": [],
     }
 
 

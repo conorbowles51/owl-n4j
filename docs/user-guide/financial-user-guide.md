@@ -662,6 +662,8 @@ Use this when extraction missed or misread substantial parts of a PDF. For a sin
 
 For supported Merrick statements, **Read from page images** also takes another look at unclear date areas. This can reduce the dates you need to correct. A date stays flagged if the reader cannot obtain a complete, consistent reading. This does not clear an unreadable amount, a missing credit sign or a balance difference. Open those remaining problems beside the PDF and correct the fields you can read there.
 
+For supported Andrews statements, the image-reading method also rereads damaged amount and running-balance cells. Complete, matching readings are required. A conflicting digit or sign stays flagged. Recovered balances can reveal another payment that does not add up, so check the updated problems before importing. The original PDF and earlier reading remain available.
+
 If you refresh the page while processing, reopen the same uploaded statement in the same browser tab. Loupe checks the saved processing job. Select **Open new reading** when it is ready. If the request was interrupted before a response arrived, select **Reprocess statement** to resume the same request. Closing the browser tab can discard this saved progress.
 
 ### Recover saved corrections after reprocessing
