@@ -83,8 +83,11 @@ export function InvestigatorOverview({ caseId }: { caseId: string }) {
               </section>
             )}
             {!!comparisons.length && (
-              <section className="rounded-xl border border-primary/25 bg-card p-5 space-y-4">
-                <p className="text-xs font-medium uppercase tracking-wide text-primary">
+              <section
+                className="finance-panel rounded-xl border p-5 space-y-4"
+                data-finance-tone="review"
+              >
+                <p className="finance-eyebrow text-xs font-medium uppercase tracking-wide">
                   Comparison to investigate
                 </p>
                 <h3 className="text-xl font-semibold">
@@ -124,7 +127,10 @@ export function InvestigatorOverview({ caseId }: { caseId: string }) {
                 </div>
               </section>
             )}
-            <section className="rounded-xl border bg-card p-5 space-y-3">
+            <section
+              className="finance-panel rounded-xl border p-5 space-y-3"
+              data-finance-tone="work"
+            >
               <div className="flex items-center justify-between gap-2">
                 <h3 className="font-semibold text-lg">
                   Saved investigation work
@@ -182,9 +188,12 @@ export function InvestigatorOverview({ caseId }: { caseId: string }) {
             </section>
           </div>
           <aside className="space-y-4">
-            <section className="rounded-xl border bg-card p-5 space-y-4">
+            <section
+              className="finance-panel rounded-xl border p-5 space-y-4"
+              data-finance-tone="review"
+            >
               <div className="flex gap-2 items-center">
-                <BookOpenCheck size={19} className="text-primary" />
+                <BookOpenCheck size={19} className="finance-icon" />
                 <h3 className="font-semibold">Records to check</h3>
               </div>
               {register.files.isError || register.imports.isError ? (
@@ -237,8 +246,11 @@ export function InvestigatorOverview({ caseId }: { caseId: string }) {
                 Check statement files
               </Button>
             </section>
-            <section className="rounded-xl border bg-card p-5 space-y-3">
-              <WalletCards size={20} className="text-primary" />
+            <section
+              className="finance-panel rounded-xl border p-5 space-y-3"
+              data-finance-tone="info"
+            >
+              <WalletCards size={20} className="finance-icon" />
               <h3 className="font-semibold">
                 {new Set(data.rows.map((row) => row.account_id)).size} accounts
                 with payments in this scope
@@ -251,7 +263,10 @@ export function InvestigatorOverview({ caseId }: { caseId: string }) {
                 Review accounts and coverage
               </Button>
             </section>
-            <section className="rounded-xl border bg-card p-5 space-y-3">
+            <section
+              className="finance-panel rounded-xl border p-5 space-y-3"
+              data-finance-tone="info"
+            >
               <h3 className="font-semibold">Explore activity over time</h3>
               <p className="text-sm text-muted-foreground">
                 Compare periods, open the entries behind a change and save your

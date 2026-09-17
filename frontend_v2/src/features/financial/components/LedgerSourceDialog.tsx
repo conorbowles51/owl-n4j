@@ -373,13 +373,17 @@ function SourceFrame({
   return inline ? (
     <aside
       aria-label="Selected payment and original source"
-      className="rounded-lg border bg-card p-4 space-y-4 min-w-0"
+      className="finance-panel rounded-lg border p-4 space-y-4 min-w-0"
+      data-finance-tone="info"
     >
       {children}
     </aside>
   ) : (
     <Dialog open={open} onOpenChange={(value) => !value && onClose()}>
-      <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-auto">
+      <DialogContent
+        className="finance-panel sm:max-w-3xl max-h-[90vh] overflow-auto"
+        data-finance-tone="info"
+      >
         {children}
       </DialogContent>
     </Dialog>

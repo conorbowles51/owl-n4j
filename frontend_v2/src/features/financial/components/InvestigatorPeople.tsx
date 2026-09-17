@@ -91,10 +91,13 @@ export function InvestigatorPeople({ caseId }: { caseId: string }) {
             >
               Back to names and accounts
             </Button>
-            <div className="rounded-xl border bg-card p-5 space-y-4">
+            <div
+              className="finance-panel rounded-xl border p-5 space-y-4"
+              data-finance-tone={selected.kind === "account" ? "info" : "work"}
+            >
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                  <p className="finance-badge">
                     {selected.kind === "account"
                       ? "Account in these records"
                       : "Name as recorded in payments"}
@@ -301,9 +304,12 @@ export function InvestigatorPeople({ caseId }: { caseId: string }) {
                   onClick={() =>
                     setView((current) => ({ ...current, selected: profile.id }))
                   }
-                  className="rounded-xl border bg-card p-4 text-left hover:border-primary focus-visible:outline-primary space-y-3"
+                  className="finance-panel rounded-xl border p-4 text-left hover:border-primary focus-visible:outline-primary space-y-3"
+                  data-finance-tone={
+                    profile.kind === "account" ? "info" : "work"
+                  }
                 >
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                  <p className="finance-badge">
                     {profile.kind === "account"
                       ? "Account"
                       : "Recorded payment name"}

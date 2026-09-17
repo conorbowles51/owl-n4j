@@ -130,7 +130,7 @@ The report builder collects selected findings, ordered by the investigator. Prev
 - [x] Keep transfer comparison, pattern searches, graph, tracing, case-event comparisons and history available through Follow money and More financial tools.
 - [x] Update the in-application guide and testing pack with the actual screens and synthetic-only screenshots.
 - [ ] Obtain the user's acceptance of the implemented application, including the specific live-case examples below.
-- [ ] Verify this redesign after deployment and with a separate authorised colleague account. No push has occurred for this work.
+- [ ] Verify this redesign after deployment and with a separate authorised colleague account. The redesign was pushed as `27aa3f1f` on 17 September; deployed verification remains separate.
 
 These checks do not measure extraction accuracy on new statement layouts. The separate larger-analysis capacities for Transfers, case-event comparison and Patterns are still recorded as unfinished; this UI work does not mark them complete. No new PDFs were uploaded or imported for this implementation's browser checks. Existing synthetic fixtures were reused.
 
@@ -158,3 +158,9 @@ Implementation is accepted only after these tasks succeed in the actual product.
 5. Update user documentation/screenshots only after the actual investigator journey is accepted. Preserve previous guides as needed until the deployed screens change.
 
 The interactive design uses the twelve synthetic Nexus payments shown in the conversation. It illustrates selection, comparison, source references, profiles, periods and a locally saved example finding. It does not read or change the live case. Its recreated statement excerpt is explicitly marked and is not the original PDF.
+
+## Financial colour treatment, 17 September 2026
+
+The user accepted the implemented layout and requested more colour to make dense pages easier to read. Colours may extend beyond the existing Loupe palette when they feel consistent with it. Keep Loupe carmine for main actions, selection and navigation. Use teal for incoming payments/card credits, muted rose for outgoing payments/card charges, blue for accounts and source information, amber for questions and records awaiting review, and muted purple for saved work and recorded-name profiles. These colours repeat across totals, tables, charts and payment comparisons. Keep labels visible; colour never establishes a transaction's accuracy or a person's identity.
+
+Use soft fills, small accents and coloured labels instead of filling entire pages with strong colours. Original statement images retain their printed colours. The financial stylesheet defines separate light and dark palettes without changing other case views. The new coloured text on its matching fill has measured contrast of at least 5.69:1 in light mode and 7.72:1 in dark mode. Source and comparison dialogs inherit the same palette when rendered outside the page. The narrow navigation wraps without overlapping page content.

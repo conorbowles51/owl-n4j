@@ -1,3 +1,4 @@
+import "../financial-workspace.css"
 import { useUIStore } from "@/stores/ui.store"
 import { resetPaymentTableView } from "../lib/payment-table-draft"
 import { useFinancialDraft } from "../stores/financial-drafts"

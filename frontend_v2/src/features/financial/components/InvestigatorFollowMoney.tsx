@@ -116,12 +116,13 @@ export function MoneyConnections({
                         `Payments from ${profile.name}`
                       )
                     }
-                    className="block w-full rounded-lg border border-emerald-600/25 bg-emerald-600/5 p-3 text-left hover:border-emerald-600"
+                    className="finance-tint block w-full rounded-lg border p-3 text-left"
+                    data-finance-tone="credit"
                   >
                     <strong className="block text-sm break-words">
                       {profile.name}
                     </strong>
-                    <span className="text-xs text-muted-foreground">
+                    <span className="finance-amount text-xs">
                       {payments.length} payments · {totalLabel(payments)}
                     </span>
                   </button>
@@ -143,7 +144,10 @@ export function MoneyConnections({
             className="text-muted-foreground hidden lg:block"
             aria-hidden="true"
           />
-          <div className="rounded-lg border-2 bg-muted/20 p-4 space-y-2">
+          <div
+            className="finance-tint rounded-lg border-2 p-4 space-y-2"
+            data-finance-tone="info"
+          >
             <p className="text-xs uppercase tracking-wide text-muted-foreground">
               Accounts in the case
             </p>
@@ -191,12 +195,13 @@ export function MoneyConnections({
                         `Payments to ${profile.name}`
                       )
                     }
-                    className="block w-full rounded-lg border border-rose-600/25 bg-rose-600/5 p-3 text-left hover:border-rose-600"
+                    className="finance-tint block w-full rounded-lg border p-3 text-left"
+                    data-finance-tone="debit"
                   >
                     <strong className="block text-sm break-words">
                       {profile.name}
                     </strong>
-                    <span className="text-xs text-muted-foreground">
+                    <span className="finance-amount text-xs">
                       {payments.length} payments · {totalLabel(payments)}
                     </span>
                   </button>
@@ -333,7 +338,7 @@ export function InvestigatorFollowMoney({ caseId }: { caseId: string }) {
           )}
           <div className="overflow-x-auto">
             <table
-              className="w-full text-sm"
+              className="finance-table w-full text-sm"
               aria-label="Receipts and subsequent payments"
             >
               <thead className="text-left bg-muted/30">
@@ -352,7 +357,10 @@ export function InvestigatorFollowMoney({ caseId }: { caseId: string }) {
                     className="border-t align-top"
                   >
                     <td className="p-3">
-                      <strong>
+                      <strong
+                        className="finance-amount"
+                        data-finance-tone="credit"
+                      >
                         {
                           formatLedgerAmount(
                             pair.incoming.amount_minor,
@@ -368,7 +376,10 @@ export function InvestigatorFollowMoney({ caseId }: { caseId: string }) {
                       </p>
                     </td>
                     <td className="p-3">
-                      <strong>
+                      <strong
+                        className="finance-amount"
+                        data-finance-tone="debit"
+                      >
                         {
                           formatLedgerAmount(
                             pair.outgoing.amount_minor,

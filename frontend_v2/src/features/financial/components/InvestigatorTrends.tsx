@@ -144,7 +144,10 @@ export function InvestigatorTrends({ caseId }: { caseId: string }) {
       />
       <WorkspaceScope caseId={caseId} />
       <InvestigationReadState data={data}>
-        <div className="rounded-xl border bg-card p-5 space-y-4">
+        <div
+          className="finance-panel rounded-xl border p-5 space-y-4"
+          data-finance-tone="info"
+        >
           <div className="flex flex-wrap justify-between items-end gap-4">
             <div>
               <h3 className="font-semibold text-lg">
@@ -279,10 +282,10 @@ export function InvestigatorTrends({ caseId }: { caseId: string }) {
                           height="232"
                           fill={
                             selected?.date === period.date
-                              ? "currentColor"
+                              ? "var(--finance-info)"
                               : "transparent"
                           }
-                          opacity="0.05"
+                          opacity="0.15"
                         />
                         {metric === "balance"
                           ? values[index][0] !== null && (
@@ -291,7 +294,7 @@ export function InvestigatorTrends({ caseId }: { caseId: string }) {
                                   cx={x}
                                   cy={y(values[index][0]!)}
                                   r="5"
-                                  fill="currentColor"
+                                  fill="var(--finance-info)"
                                 />
                                 {index > 0 && values[index - 1][0] !== null && (
                                   <line
@@ -299,7 +302,7 @@ export function InvestigatorTrends({ caseId }: { caseId: string }) {
                                     x2={x}
                                     y1={y(values[index - 1][0]!)}
                                     y2={y(values[index][0]!)}
-                                    stroke="currentColor"
+                                    stroke="var(--finance-info)"
                                     strokeWidth="2"
                                   />
                                 )}
@@ -317,7 +320,11 @@ export function InvestigatorTrends({ caseId }: { caseId: string }) {
                                   baseline - y(value ?? 0n)
                                 )}
                                 rx="2"
-                                fill={direction ? "#ba495c" : "#23897c"}
+                                fill={
+                                  direction
+                                    ? "var(--finance-debit)"
+                                    : "var(--finance-credit)"
+                                }
                               >
                                 <title>{`${label(period.date)}: ${direction ? "debit" : "credit"} ${amount(value ?? 0n)}`}</title>
                               </rect>
@@ -356,11 +363,11 @@ export function InvestigatorTrends({ caseId }: { caseId: string }) {
                 ) : (
                   <>
                     <span className="flex items-center gap-2">
-                      <i className="w-3 h-3 rounded-sm bg-[#23897c]" />
+                      <i className="w-3 h-3 rounded-sm bg-[var(--finance-credit)]" />
                       {kind === "card" ? "Card credits" : "Money in"}
                     </span>
                     <span className="flex items-center gap-2">
-                      <i className="w-3 h-3 rounded-sm bg-[#ba495c]" />
+                      <i className="w-3 h-3 rounded-sm bg-[var(--finance-debit)]" />
                       {kind === "card" ? "Card charges" : "Money out"}
                     </span>
                   </>

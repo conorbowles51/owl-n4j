@@ -37,13 +37,20 @@ export function PaymentTotals({
       {[...totals].map(([group, total]) => {
         const [currency, kind] = group.split(":")
         return (
-          <dl key={group} className="grid grid-cols-3 gap-3 text-sm">
+          <dl
+            key={group}
+            className="finance-metrics grid grid-cols-3 gap-3 text-sm"
+          >
             {[
               [kind === "card" ? "Card credits" : "Money in", total.credit],
               [kind === "card" ? "Card charges" : "Money out", total.debit],
               ["Difference", total.credit - total.debit],
-            ].map(([title, amount]) => (
-              <div key={String(title)}>
+            ].map(([title, amount], index) => (
+              <div
+                key={String(title)}
+                className="finance-metric"
+                data-finance-tone={["credit", "debit", "info"][index]}
+              >
                 <dt className="text-muted-foreground">{String(title)}</dt>
                 <dd className="font-semibold">
                   {formatLedgerAmount(String(amount), currency).text} {currency}
@@ -105,7 +112,10 @@ export function InvestigationTransactionTable({
     `${formatLedgerAmount(value, currency).text} ${currency}`
   return (
     <div className="overflow-x-auto rounded border">
-      <table className="w-full text-sm" aria-label="Investigation transactions">
+      <table
+        className="finance-table w-full text-sm"
+        aria-label="Investigation transactions"
+      >
         <thead className="bg-muted/40 text-left">
           <tr>
             <th className="p-2">
@@ -120,7 +130,11 @@ export function InvestigationTransactionTable({
         </thead>
         <tbody>
           {rows.map((row) => (
-            <tr key={row.key} className="border-t align-top hover:bg-muted/20">
+            <tr
+              key={row.key}
+              data-selected={selectedIds.has(row.key)}
+              className="border-t align-top"
+            >
               <td className="p-2">
                 <input
                   type="checkbox"
@@ -146,7 +160,12 @@ export function InvestigationTransactionTable({
                   {row.description || "Open transaction"}
                 </button>
                 {notes.has(row.key) && (
-                  <p className="text-xs mt-1 text-primary">
+                  <p
+                    className="finance-badge mt-1"
+                    data-finance-tone={
+                      notes.get(row.key)!.followUp ? "review" : "work"
+                    }
+                  >
                     {notes.get(row.key)!.followUp
                       ? "Follow-up question · "
                       : ""}
@@ -193,12 +212,18 @@ export function InvestigationTransactionTable({
                   </div>
                 )}
               </td>
-              <td className="p-2 text-right tabular-nums">
+              <td
+                className="finance-amount p-2 text-right tabular-nums"
+                data-finance-tone="credit"
+              >
                 {row.direction === "credit"
                   ? money(row.amount_minor, row.currency)
                   : ""}
               </td>
-              <td className="p-2 text-right tabular-nums">
+              <td
+                className="finance-amount p-2 text-right tabular-nums"
+                data-finance-tone="debit"
+              >
                 {row.direction === "debit"
                   ? money(row.amount_minor, row.currency)
                   : ""}

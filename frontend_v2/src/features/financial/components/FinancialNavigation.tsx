@@ -42,18 +42,18 @@ export function FinancialNavigation({
 }) {
   const extra = [...analysis, ...history].find(([key]) => key === value)
   return (
-    <div className="flex flex-wrap items-center gap-2 border-b bg-card px-3">
+    <div className="flex shrink-0 flex-wrap items-center gap-2 border-b bg-card px-3">
       <TabsList
         variant="line"
-        className="h-auto min-h-10 flex-wrap justify-start"
+        className="group-data-[orientation=horizontal]/tabs:h-auto min-h-10 flex-wrap justify-start"
       >
         {primary.map(([key, label]) => (
-          <TabsTrigger key={key} value={key} className="min-h-10">
+          <TabsTrigger key={key} value={key} className="h-10">
             {label}
           </TabsTrigger>
         ))}
         {extra && (
-          <TabsTrigger value={extra[0]} className="min-h-10">
+          <TabsTrigger value={extra[0]} className="h-10">
             {extra[1]}
           </TabsTrigger>
         )}

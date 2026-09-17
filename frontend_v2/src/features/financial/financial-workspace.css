@@ -1,0 +1,152 @@
+/* Financial colours complement Loupe carmine without changing other case views.
+   Keep these variables available to source and comparison dialogs in portals. */
+:root {
+  --finance-credit: #207969;
+  --finance-credit-ink: #176354;
+  --finance-credit-soft: #eaf6f2;
+  --finance-credit-border: #b5d9cf;
+  --finance-debit: #b3455d;
+  --finance-debit-ink: #a3354e;
+  --finance-debit-soft: #fbeef1;
+  --finance-debit-border: #e7bec8;
+  --finance-info: #4e73ac;
+  --finance-info-ink: #365c95;
+  --finance-info-soft: #edf3fc;
+  --finance-info-border: #c0d1ea;
+  --finance-review: #a77425;
+  --finance-review-ink: #805619;
+  --finance-review-soft: #fff5e3;
+  --finance-review-border: #e8cea2;
+  --finance-work: #8562a5;
+  --finance-work-ink: #70508f;
+  --finance-work-soft: #f3eef9;
+  --finance-work-border: #d5c5e5;
+}
+
+.dark {
+  --finance-credit: #69bfa8;
+  --finance-credit-ink: #88d2be;
+  --finance-credit-soft: #162b27;
+  --finance-credit-border: #315b50;
+  --finance-debit: #df8397;
+  --finance-debit-ink: #efa0b1;
+  --finance-debit-soft: #321d25;
+  --finance-debit-border: #633746;
+  --finance-info: #87a8da;
+  --finance-info-ink: #a6c1eb;
+  --finance-info-soft: #1b2639;
+  --finance-info-border: #3a506f;
+  --finance-review: #d4ac64;
+  --finance-review-ink: #e4c084;
+  --finance-review-soft: #30271b;
+  --finance-review-border: #675231;
+  --finance-work: #b89cd1;
+  --finance-work-ink: #ceb3e5;
+  --finance-work-soft: #2a2234;
+  --finance-work-border: #584466;
+}
+
+[data-finance-tone="credit"] {
+  --finance-tone: var(--finance-credit);
+  --finance-ink: var(--finance-credit-ink);
+  --finance-soft: var(--finance-credit-soft);
+  --finance-edge: var(--finance-credit-border);
+}
+[data-finance-tone="debit"] {
+  --finance-tone: var(--finance-debit);
+  --finance-ink: var(--finance-debit-ink);
+  --finance-soft: var(--finance-debit-soft);
+  --finance-edge: var(--finance-debit-border);
+}
+[data-finance-tone="info"] {
+  --finance-tone: var(--finance-info);
+  --finance-ink: var(--finance-info-ink);
+  --finance-soft: var(--finance-info-soft);
+  --finance-edge: var(--finance-info-border);
+}
+[data-finance-tone="review"] {
+  --finance-tone: var(--finance-review);
+  --finance-ink: var(--finance-review-ink);
+  --finance-soft: var(--finance-review-soft);
+  --finance-edge: var(--finance-review-border);
+}
+[data-finance-tone="work"] {
+  --finance-tone: var(--finance-work);
+  --finance-ink: var(--finance-work-ink);
+  --finance-soft: var(--finance-work-soft);
+  --finance-edge: var(--finance-work-border);
+}
+
+.finance-panel {
+  border-top: 3px solid var(--finance-tone);
+  background-color: hsl(var(--card));
+  background-image: linear-gradient(var(--finance-soft), transparent);
+  background-size: 100% 125px;
+  background-repeat: no-repeat;
+}
+.finance-metric {
+  min-width: 0;
+  padding: 0.75rem;
+  border: 1px solid var(--finance-edge);
+  border-top: 3px solid var(--finance-tone);
+  border-radius: 0.5rem;
+  background-color: var(--finance-soft);
+  overflow-wrap: anywhere;
+}
+.finance-metric dt,
+.finance-amount,
+.finance-eyebrow {
+  color: var(--finance-ink);
+}
+.finance-metric dd {
+  margin-top: 0.25rem;
+  font-variant-numeric: tabular-nums;
+}
+.finance-badge {
+  display: inline-block;
+  width: fit-content;
+  align-self: start;
+  padding: 0.2rem 0.5rem;
+  border: 1px solid var(--finance-edge);
+  border-radius: 0.375rem;
+  background-color: var(--finance-soft);
+  color: var(--finance-ink);
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+.finance-icon {
+  box-sizing: content-box;
+  padding: 0.5rem;
+  border-radius: 0.625rem;
+  background-color: var(--finance-soft);
+  color: var(--finance-ink);
+}
+.finance-tint {
+  border-color: var(--finance-edge);
+  background-color: var(--finance-soft);
+}
+button.finance-tint:hover {
+  border-color: var(--finance-tone);
+}
+.finance-table thead {
+  background-color: var(--finance-info-soft);
+}
+.finance-table .finance-badge {
+  display: block;
+}
+.finance-table tbody tr:nth-child(even) {
+  background-color: hsl(var(--muted) / 0.25);
+}
+.finance-table tbody tr:hover {
+  background-color: hsl(var(--muted) / 0.65);
+}
+.finance-table tbody tr[data-selected="true"] {
+  background-color: hsl(var(--accent));
+  box-shadow: inset 3px 0 hsl(var(--primary));
+}
+
+@media (max-width: 480px) {
+  .finance-metrics {
+    grid-template-columns: 1fr;
+  }
+}

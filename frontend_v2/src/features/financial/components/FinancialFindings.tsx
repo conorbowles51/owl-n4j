@@ -179,11 +179,17 @@ export function FinancialFindings({
       {entries.map((entry) => (
         <article
           key={entry.id}
-          className="rounded border bg-card p-4 space-y-3"
+          className="finance-panel rounded border p-4 space-y-3"
+          data-finance-tone={
+            entry.tags.includes("financial-workspace") &&
+            findingDraft(entry).kind === "question"
+              ? "review"
+              : "work"
+          }
         >
           <div className="flex justify-between items-start gap-3">
             <div>
-              <p className="text-xs text-muted-foreground capitalize">
+              <p className="finance-badge capitalize">
                 {entry.tags.includes("financial-workspace")
                   ? `${findingDraft(entry).kind} · ${findingDraft(entry).progress.replace("-", " ")}`
                   : entry.tags.includes("financial-report")
@@ -267,7 +273,10 @@ export function FinancialFindings({
               </p>
               {(findingDraft(entry).nextAction ||
                 findingDraft(entry).owner) && (
-                <div className="rounded border bg-muted/20 p-3">
+                <div
+                  className="finance-tint rounded border p-3"
+                  data-finance-tone="review"
+                >
                   {findingDraft(entry).nextAction && (
                     <h4 className="font-medium">Next action</h4>
                   )}

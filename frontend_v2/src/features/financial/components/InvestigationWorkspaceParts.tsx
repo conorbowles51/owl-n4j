@@ -51,7 +51,10 @@ export function WorkspaceScope({ caseId }: { caseId: string }) {
     (row) => row.account_id === params.accountId
   )?.account_label
   return (
-    <details className="rounded-lg border bg-card px-4 py-3 text-sm">
+    <details
+      className="finance-tint rounded-lg border px-4 py-3 text-sm"
+      data-finance-tone="info"
+    >
       <summary className="cursor-pointer font-medium">
         Accounts and dates{" "}
         <span className="ml-2 font-normal text-muted-foreground">

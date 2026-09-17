@@ -233,7 +233,16 @@ export function StatementFilesPanel({
               <span className="block break-words font-medium">
                 {file.original_filename}
               </span>
-              <span className="block text-xs">
+              <span
+                className="finance-badge"
+                data-finance-tone={
+                  file.status === "failed"
+                    ? "debit"
+                    : saved?.current_transactions || saved?.wire_review_count
+                      ? "info"
+                      : "review"
+                }
+              >
                 {saved?.wire_review_count
                   ? `${saved.wire_review_count} saved wire ${saved.wire_review_count === 1 ? "review" : "reviews"}`
                   : saved

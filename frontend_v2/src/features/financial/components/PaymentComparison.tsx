@@ -149,7 +149,14 @@ export function PaymentComparison({
                                   <p className="text-xs">{item.filename}</p>
                                 </td>
                                 <td className="p-2 text-right whitespace-nowrap">
-                                  <p className="font-semibold">
+                                  <p
+                                    className="finance-amount font-semibold"
+                                    data-finance-tone={
+                                      row.direction === "credit"
+                                        ? "credit"
+                                        : "debit"
+                                    }
+                                  >
                                     {
                                       formatLedgerAmount(
                                         row.amount_minor,
