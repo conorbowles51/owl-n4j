@@ -2,6 +2,20 @@
 
 **Latest instruction supersedes the release window below:** hold off on the 1–2 hour deployment because Alex is working on the platform. Continue the whole remaining task and deploy only when the complete work is ready. The ACTIVE ten-minute heartbeat has been updated to remove the intermediate push and preserve continued local development. The earlier immediate push `23039a67` remains complete. No further push has occurred. The current Loupe URL question remains pending; local work continues.
 
+## Compare overlapping statements before import, 17 September 2026
+
+Local development only. The user cancelled the intermediate deployment while Alex works on the platform. Last pushed remains `23039a67`; recognised undated-interest work is committed locally as `d4a3bf09`.
+
+- [x] Individual and bulk imports compare bank/account identity, currency and printed dates with imported statements and pending batch reviews. Matching dates require comparison, not automatic exclusion. Reprocessed versions and repeated membership of the same statement do not create self-warnings.
+- [x] A reason is bound to the statement reading, current account/dates and overlapping sources. Saving and reopening a bulk review retains it. Changed account/dates or a new source invalidate the comparison; an unchanged peer becoming imported does not. Confirmation checks again under the existing case import lock.
+- [x] Leave unimported and Restore to review retain reasons, history, corrections and original files. Skipped reviews do not offer save actions. Skipping a copy releases the retained statement when other checks pass.
+- [x] Earlier summaries recover missing bank metadata. Comparison data loads once per batch check without imported documents' full extraction payloads. Earlier successful requests remain idempotent when additive fields are absent.
+- [x] Actual local browser: synthetic case `9e9539f1-0065-45c6-a7b9-62730940ad9e`, batch `98d3a4b2-f798-4dd1-b483-700903c4e72f`. Both files needed overlap review. The other PDF opened. One copy was left unimported; the retained statement imported. Transactions showed exactly three payments. Final state: one imported, one skipped, no browser errors. Import complete; do not repeat the writer. Record: `data/local-runtime/overlap-browser.json`; light-mode captures `overlap-*.png`.
+
+Validation: six dedicated backend cases cover comparisons, saved reasons, skip/restore, old batches, case isolation, scope changes and retry. Existing batch checks and a post-import duplicate regression also ran; one artificial navigation fixture had inconsistent ready rows with problem messages and was corrected. Focused frontend checks cover stale responses, retry, reasons, undated-interest regression, skip/restore, navigation and drafts. A browser assertion initially read transitional status; final API/table verification confirmed completion without another import. No full suite run.
+
+Both guides describe these choices and generated copies are rebuilt. Local API: port 58002, exec session 12415, `data/local-runtime/financial-overlap-api.log`. Continue referenced accounts without statements, Findings links, difficult-file exception measurements and final wording/acceptance. Do not push until the entire task is ready.
+
 ## Recognised undated card interest, 17 September 2026
 
 - [x] Clearly labelled nonzero Capital One interest charges with usable amounts and a known statement period now import with no transaction/posting/value date. The existing `statement_end_ordering_only` context supplies ordering only. Generic missing dates, conflicting periods, unreadable amounts and ambiguous cells still require review. Interest-only continuation pages use the recognised parent period.

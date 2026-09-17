@@ -365,4 +365,16 @@
 <li>Import the ready statement. In Transactions, find the interest charge. Expect <strong>Date not printed</strong> and the statement end shown separately. Check that the charge is included in the totals.</li>
 <li>In a disposable test case, record a date correction using a known source date and a reason. Expect the corrected transaction to use that date, with the earlier undated reading retained in its history.</li>
 <li>Confirm that an ordinary payment with an unreadable date still needs attention. The interest handling must not clear that error.</li>
-</ol></main></html>
+</ol>
+<h3>Compare possible copies before a bulk import</h3>
+<p>Use synthetic copies in a separate test case. Do not create duplicate live case payments for this test.</p>
+<ol>
+<li>Send two different PDFs for the same bank, account and overlapping dates from Evidence to Financial. Both should need attention, with the other filename and dates identified.</li>
+<li>Open one review and select <strong>Compare original PDF</strong>. Confirm the other file opens, then close it and check that your current review is still present.</li>
+<li>Return to the batch. On the copy, select <strong>Leave unimported</strong>, give a reason and confirm. The original should become ready if it has no other problems. The copy should remain listed with its reason and <strong>Restore to review</strong>.</li>
+<li>Import the ready statement. Open its transactions and check the expected count and totals. Refresh the batch and confirm that only one statement was imported.</li>
+<li>Select <strong>Restore to review</strong> on the copy and record a reason. Its saved corrections must remain available, and its overlap with the imported statement must be flagged again.</li>
+<li>Open the copy, tick the comparison checkbox and enter a reason. Save progress, leave the page and return. Check that the decision was saved. Change its period dates and check that the old comparison no longer authorises import.</li>
+<li>Leave the copy unimported when finished. Check that both original PDFs remain in Evidence.</li>
+</ol>
+<p>Expected result: no duplicate payments are added without a deliberate comparison. A skipped statement can be restored without losing its source or saved work.</p></main></html>

@@ -227,3 +227,62 @@ it("opens the exact imported sources across the whole batch with their accounts 
   })
   expect(useFinancialStore.getState().mode).toBe("transactions")
 })
+
+it("leaves a statement unimported with a reason and restores it without removing the file", async () => {
+  let skipped = false
+  const choices: unknown[] = []
+  vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
+    if (url.includes("/import-choice?")) {
+      choices.push(options?.body)
+      skipped = !skipped
+      return { applied: true } as never
+    }
+    return {
+      ...batch,
+      counts: { ...batch.counts, skipped: skipped ? 1 : 0 },
+      items: [
+        {
+          ...item,
+          status: skipped ? "skipped" : "ready",
+          disposition_revision: "d".repeat(64),
+          import_decision: skipped
+            ? { action: "skip", reason: "Duplicate copy" }
+            : undefined,
+        },
+      ],
+    } as never
+  })
+  mount()
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Leave unimported" })
+  )
+  fireEvent.change(screen.getByLabelText("Reason to leave unimported"), {
+    target: { value: "Duplicate copy" },
+  })
+  fireEvent.click(screen.getByRole("button", { name: "Leave unimported" }))
+  const restore = await screen.findByRole("button", {
+    name: "Restore to review",
+  })
+  expect(
+    screen.getByRole("heading", { name: "Checking.pdf" })
+  ).toBeVisible()
+  expect(screen.getByText("Left unimported: Duplicate copy")).toBeVisible()
+  fireEvent.click(restore)
+  fireEvent.change(screen.getByLabelText("Reason to restore to review"), {
+    target: { value: "Additional records" },
+  })
+  fireEvent.click(screen.getByRole("button", { name: "Restore to review" }))
+  await screen.findByRole("button", { name: "Leave unimported" })
+  expect(choices).toEqual([
+    {
+      action: "skip",
+      reason: "Duplicate copy",
+      expected_revision: "d".repeat(64),
+    },
+    {
+      action: "restore",
+      reason: "Additional records",
+      expected_revision: "d".repeat(64),
+    },
+  ])
+})

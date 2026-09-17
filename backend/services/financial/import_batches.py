@@ -5,6 +5,7 @@ import re
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4, uuid5
+from types import SimpleNamespace
 from sqlalchemy import select
 from pydantic import ValidationError
 from postgres.models.financial_import_batches import FinancialImportBatch as Batch, FinancialImportBatchItem as Item
@@ -112,8 +113,8 @@ def assess(proposal, request=None):
         elif problem not in combined:
             combined.append(problem)
     problems=combined
-    summary = dict(revision=proposal['revision'], transaction_count=sum(not r['excluded'] for r in raw['rows']), currency=proposal['currency'],
-        holder=raw.get('holder',''), account=raw.get('account_number',''), period_start=raw.get('period_start',''),period_end=raw.get('period_end',''),
+    summary = dict(revision=proposal['revision'], page_number=min((r.get('page_number', 1) for r in rows if not r['excluded']), default=min(proposal.get('page_numbers') or [1])), transaction_count=sum(not r['excluded'] for r in raw['rows']), currency=proposal['currency'],
+        holder=raw.get('holder',''), institution=raw.get('institution',''), account=raw.get('account_number',''), period_start=raw.get('period_start',''),period_end=raw.get('period_end',''),
         balance_status=balance['balance_status'], checks=balance['checks'],
         balance_exception=accepted_difference(balance, raw), problems=problems[:50], problem_count=len(problems))
     if current:
@@ -154,7 +155,7 @@ def prepare_reviews(session, batch, file):
         key = statement_id or proposal.get('statement_id') or ''
         identifier = uuid5(batch.id, str(fid)+':'+key)
         existing = session.get(Item,identifier)
-        if existing and (existing.review_request or existing.status in ('imported','pending_import')):
+        if existing and (existing.review_request or existing.status in ('imported','pending_import','skipped')):
             continue
         progress = proposal.get('saved_review') or proposal.get('previous_saved_review')
         draft = progress.get('request') if progress else None
@@ -179,12 +180,43 @@ def prepare_reviews(session, batch, file):
 
 
 def ready_revision(items):
-    return _digest(sorted((str(i.id),i.summary['revision'],_digest(i.review_request or {})) for i in items if i.status=='ready'))
+    return _digest(sorted((str(i.id),i.summary['revision'],_digest(i.review_request or {}),
+                          (i.summary.get('coverage_review') or {}).get('revision')) for i in items if i.status=='ready'))
+
+
+def checked_batch_items(session, case_id, items):
+    """Project current coverage concerns without making a GET write changes."""
+    from services.financial.statement_import_overlap import coverage_review, summary_request, requires_decision, comparison_sources
+    pending = session.execute(select(Item, EvidenceFile).join(Batch, Batch.id == Item.batch_id)
+        .join(EvidenceFile, EvidenceFile.id == Item.file_id).where(Batch.case_id == case_id,
+        EvidenceFile.case_id == case_id, Item.status.in_(('ready','attention','pending_import')))).all()
+    sources, prepared = comparison_sources(session, case_id, pending)
+    result = []
+    for item in items:
+        summary = deepcopy(item.summary)
+        state = item.status
+        if state in ('ready', 'attention'):
+            raw = {**prepared.get(item.id, item.review_request or summary_request(summary)), 'statement_id': item.statement_key or None}
+            review = coverage_review(session, case_id=case_id, file_id=item.file_id, request=raw, sources=sources)
+            problems = [p for p in summary.get('problems', []) if p.get('kind') not in ('coverage', 'coverage_load')]
+            extra_count = max(0, summary.get('problem_count', 0) - len(summary.get('problems', [])))
+            if raw.get('_coverage_error'):
+                problems.append(dict(kind='coverage_load', row_id=None, message=raw['_coverage_error']))
+            if requires_decision(review, raw):
+                problems.append(dict(kind='coverage', row_id=None,
+                    message='Another statement covers some of these dates. Compare the files before importing both.'))
+            summary.update(coverage_review=review, problems=problems, problem_count=len(problems) + extra_count)
+            state = 'attention' if problems else 'ready'
+        summary['disposition_revision'] = _digest(dict(status=item.status, request=item.review_request,
+            decision=item.summary.get('import_decision')))
+        result.append(SimpleNamespace(id=item.id, file_id=item.file_id, statement_key=item.statement_key,
+            status=state, summary=summary, review_request=item.review_request))
+    return result
 
 
 def next_problem(session, *, case_id, batch_id, item_id, direction="next"):
     batch_for(session, case_id, batch_id)
-    items = list(session.scalars(select(Item).where(Item.batch_id == batch_id)))
+    items = checked_batch_items(session, case_id, list(session.scalars(select(Item).where(Item.batch_id == batch_id))))
     items.sort(key=lambda i: (i.summary.get('filename',''), i.summary.get('account',''), i.summary.get('period_start',''), str(i.id)))
     index = next((n for n, item in enumerate(items) if item.id == item_id), None)
     if index is None:
@@ -202,9 +234,10 @@ def next_problem(session, *, case_id, batch_id, item_id, direction="next"):
 def batch_status(session, *, case_id, batch_id, offset=0, limit=100, only_problems=False):
     batch = batch_for(session,case_id,batch_id)
     items=list(session.scalars(select(Item).where(Item.batch_id==batch.id).order_by(Item.file_id,Item.statement_key)))
+    items=checked_batch_items(session, case_id, items)
     items.sort(key=lambda i: (i.summary.get('filename',''),i.summary.get('account',''),i.summary.get('period_start',''),str(i.id)))
     shown=[i for i in items if not only_problems or i.status=='attention']
-    counts={state:sum(i.status==state for i in items) for state in ('ready','attention','pending_import','imported')}
+    counts={state:sum(i.status==state for i in items) for state in ('ready','attention','pending_import','imported','skipped')}
     return dict(id=str(batch.id),case_id=str(case_id),status=batch.status,files=batch.files,counts=counts,
         ready_transactions=sum(i.summary.get('transaction_count',0) for i in items if i.status=='ready'),
         ready_revision=ready_revision(items),total=len(shown),offset=offset,
@@ -222,6 +255,7 @@ def save_review(session, *, case_id, batch_id, item_id, request, expected_review
     if _digest(item.review_request or {}) != expected_review_revision:
         raise PdfMappingError('Another user saved changes to this review. Reopen it from the batch before saving.',409)
     if item.status in ('pending_import','imported'): raise PdfMappingError('This statement is already being imported or was imported.',409)
+    if item.status == 'skipped': raise PdfMappingError('Restore this statement to review from the batch before saving further changes.',409)
     if request.statement_id != (item.statement_key or None): raise PdfMappingError('Open this statement period from the batch again.',409)
     if request.replaces_source_document_id: raise PdfMappingError('Replace a previous import through its individual review, not bulk import.',422)
     proposal=read_statement_import(session,case_id=case_id,evidence_file_id=item.file_id,currency=request.currency,statement_id=request.statement_id)
@@ -232,16 +266,21 @@ def save_review(session, *, case_id, batch_id, item_id, request, expected_review
     check_proposed_rows(proposal, [r.model_dump() for r in request.rows])
     status,summary=assess(proposal,request.model_dump(mode='json'))
     summary.update(filename=item.summary['filename'],source_id=item.summary['source_id'])
+    for key in ('import_decision','import_decision_history'):
+        if key in item.summary: summary[key] = item.summary[key]
     item.status=status;item.summary=summary;item.review_request=request.model_dump(mode='json')
+    checked = checked_batch_items(session, case_id, [item])[0]
     session.commit()
-    return dict(status=status, review_revision=_digest(item.review_request))
+    return dict(status=checked.status, review_revision=_digest(item.review_request))
 
 
 def queue_import(session, *, case_id,batch_id,expected_revision,actor):
     batch=batch_for(session,case_id,batch_id,True)
     items=list(session.scalars(select(Item).where(Item.batch_id==batch.id).with_for_update()))
-    if ready_revision(items)!=expected_revision: raise PdfMappingError('The ready statements changed. Refresh the batch before confirming.',409)
-    ready=[i for i in items if i.status=='ready']
+    checked=checked_batch_items(session, case_id, items)
+    if ready_revision(checked)!=expected_revision: raise PdfMappingError('The ready statements changed. Refresh the batch before confirming.',409)
+    ready_ids={i.id for i in checked if i.status=='ready'}
+    ready=[i for i in items if i.id in ready_ids]
     if not ready: raise PdfMappingError('There are no ready statements to import.',422)
     for item in ready:
         item.status='pending_import'
@@ -249,6 +288,35 @@ def queue_import(session, *, case_id,batch_id,expected_revision,actor):
     batch.status='preparing'
     session.commit()
     return dict(queued=len(ready))
+
+
+def leave_unimported(session, *, case_id, batch_id, item_id, action, reason, expected_revision, actor):
+    batch_for(session, case_id, batch_id, True)
+    item = session.scalar(select(Item).where(Item.id == item_id, Item.batch_id == batch_id).with_for_update())
+    if item is None:
+        raise PdfMappingError('Statement not found in this batch.', 404)
+    revision = _digest(dict(status=item.status, request=item.review_request, decision=item.summary.get('import_decision')))
+    if revision != expected_revision or item.status in ('imported','pending_import'):
+        raise PdfMappingError('The statement changed. Refresh the batch before changing its import choice.', 409)
+    if (action == 'restore' and item.status != 'skipped') or (action == 'skip' and item.status == 'skipped'):
+        raise PdfMappingError('The import choice has already changed. Refresh the batch.', 409)
+    if action not in ('skip','restore') or not reason.strip():
+        raise PdfMappingError('Choose whether to leave this statement unimported and record the reason.', 422)
+    history = list(item.summary.get('import_decision_history', []))
+    decision = dict(action=action, reason=reason.strip(), actor=dict(user_id=str(actor.user_id), name=actor.name),
+                    at=datetime.now(timezone.utc).isoformat())
+    history.append(decision)
+    item.summary = {**item.summary, 'import_decision': decision, 'import_decision_history': history}
+    if action == 'skip':
+        item.status = 'skipped'
+    else:
+        proposal = read_statement_import(session, case_id=case_id, evidence_file_id=item.file_id,
+            currency=item.summary.get('currency'), statement_id=item.statement_key or None)
+        state, summary = assess(proposal, item.review_request)
+        item.status = state
+        item.summary = {**item.summary, **summary}
+    session.commit()
+    return dict(applied=True, status=item.status)
 
 
 def choose_currency(session, *, case_id,batch_id,source_id,currency):

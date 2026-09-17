@@ -43,6 +43,34 @@ from sqlalchemy.orm import sessionmaker
 from routers.evidence import _resolve_stored_path
 from services.financial.quarantine_row import actor_from_user
 from services.financial.statement_import import StatementImportRequest, StatementReviewDraft, confirm_statement_import
+from services.financial.pdf_candidates import _Contract, _Digest
+from pydantic import Field
+
+
+class StatementCoverageRequest(_Contract):
+    expected_revision: _Digest
+    statement_id: _Digest | None = None
+    replaces_source_document_id: UUID | None = None
+    currency: str = Field(pattern=r'^[A-Z]{3}$')
+    institution: str = Field(default='', max_length=128)
+    account_number: str = Field(default='', max_length=128)
+    period_start: str = Field(default='', max_length=32)
+    period_end: str = Field(default='', max_length=32)
+
+
+@router.post('/{evidence_file_id}/coverage-check')
+def check_import_coverage(evidence_file_id: UUID, body: StatementCoverageRequest, case_id: UUID = Query(...),
+                          db: Session = Depends(get_db)):
+    from services.financial.statement_import_overlap import coverage_review
+    try:
+        proposal = read_statement_import(db, case_id=case_id, evidence_file_id=evidence_file_id,
+            currency=body.currency, statement_id=body.statement_id, _include_period_checks=False)
+        if proposal['revision'] != body.expected_revision:
+            raise PdfMappingError('The statement reading changed. Reopen it before comparing dates.', 409)
+        return dict(case_id=str(case_id), evidence_file_id=str(evidence_file_id),
+                    **coverage_review(db, case_id=case_id, file_id=evidence_file_id, request=body.model_dump(mode='json')))
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
 
 @router.post('/{evidence_file_id}/checks')
@@ -356,7 +384,25 @@ def get_financial_batch_item(batch_id: UUID,item_id: UUID,case_id: UUID=Query(..
         import_batches.batch_for(db,case_id,batch_id)
         item=db.scalar(select(FinancialImportBatchItem).where(FinancialImportBatchItem.batch_id==batch_id,FinancialImportBatchItem.id==item_id))
         if item is None: raise PdfMappingError('Statement not found in this batch.',404)
+        item=import_batches.checked_batch_items(db,case_id,[item])[0]
         return dict(id=str(item.id),file_id=str(item.file_id),statement_id=item.statement_key or None,status=item.status,review_request=item.review_request,review_revision=import_batches._digest(item.review_request or {}),**item.summary)
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code,detail=str(exc)) from exc
+
+
+class BatchImportChoice(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    action: Literal['skip','restore']
+    reason: str = Field(min_length=1, max_length=2000)
+    expected_revision: str = Field(pattern=r'^[a-f0-9]{64}$')
+
+
+@router.post('/batches/{batch_id}/items/{item_id}/import-choice', dependencies=[Depends(case_access_dependency(lambda request,payload: ('case','edit')))])
+def choose_batch_import(batch_id: UUID, item_id: UUID, body: BatchImportChoice,
+                        case_id: UUID = Query(...), user=Depends(get_current_db_user), db: Session = Depends(get_db)):
+    try:
+        return import_batches.leave_unimported(db, case_id=case_id, batch_id=batch_id, item_id=item_id,
+            action=body.action, reason=body.reason, expected_revision=body.expected_revision, actor=actor_from_user(user))
     except PdfMappingError as exc:
         raise HTTPException(status_code=exc.status_code,detail=str(exc)) from exc
 

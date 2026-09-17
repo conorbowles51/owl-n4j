@@ -1,3 +1,10 @@
+import { useStatementCoverageReview } from "../hooks/use-statement-coverage-review"
+vi.mock("../hooks/use-statement-coverage-review", async (original) => ({
+  ...(await original<
+    typeof import("../hooks/use-statement-coverage-review")
+  >()),
+  useStatementCoverageReview: vi.fn(),
+}))
 // This existing workflow fixture has case editing and upload access.
 vi.mock("../hooks/use-financial-access", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../hooks/use-financial-access")>()),
@@ -117,6 +124,12 @@ async function open() {
   )
 }
 beforeEach(() => {
+  vi.mocked(useStatementCoverageReview).mockReturnValue({
+    data: { available: true, candidates: [], revision: "d".repeat(64) },
+    pending: false,
+    error: undefined,
+    retry: vi.fn(),
+  })
   vi.mocked(useStatementChecks).mockReturnValue({
     checks: [],
     pending: false,
@@ -1577,4 +1590,51 @@ it("edits beside a printed row, preserves its source text and uses the correctio
       reason: "Checked the printed day.",
     })
   )
+})
+
+it("requires a reason to import overlapping statements and retains it in the import", async () => {
+  vi.mocked(useStatementCoverageReview).mockReturnValue({
+    data: {
+      available: true,
+      revision: "d".repeat(64),
+      candidates: [
+        {
+          file_id: "other-file",
+          filename: "Other statement.pdf",
+          statement_id: null,
+          source_document_id: "other-source",
+          status: "imported",
+          period_start: "2023-01-01",
+          period_end: "2023-01-31",
+        },
+      ],
+    },
+    pending: false,
+    error: undefined,
+    retry: vi.fn(),
+  })
+  mount()
+  await open()
+  const confirm = screen.getByRole("button", {
+    name: "Confirm import of 1 transactions",
+  })
+  expect(confirm).toBeDisabled()
+  expect(screen.getByText("Other statement.pdf")).toBeVisible()
+  fireEvent.click(
+    screen.getByRole("checkbox", {
+      name: "I have compared these files and need to import this statement too",
+    })
+  )
+  expect(confirm).toBeDisabled()
+  fireEvent.change(
+    screen.getByLabelText("Reason for importing overlapping statements"),
+    { target: { value: "Additional records in this statement." } }
+  )
+  expect(confirm).toBeEnabled()
+  fireEvent.click(confirm)
+  await waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0]).toMatchObject({
+    coverage_review_reason: "Additional records in this statement.",
+    coverage_review_revision: "d".repeat(64),
+  })
 })

@@ -1,5 +1,6 @@
 import { createContext, useContext } from "react"
 export const BatchReviewContext = createContext<{
+  readOnly?: boolean
   batchId?: string
   rowId?: string
   draftRevision?: string

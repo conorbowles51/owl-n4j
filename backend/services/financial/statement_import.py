@@ -485,6 +485,8 @@ class StatementReviewDraft(_Contract):
     details_reason: Annotated[str, Field(max_length=4096)] = ''
     balance_exception_reason: Annotated[str, Field(max_length=4096)] = ''
     balance_exception_revision: _Digest | None = None
+    coverage_review_reason: Annotated[str, Field(max_length=4096)] = ''
+    coverage_review_revision: _Digest | None = None
     rows: Annotated[list[DraftImportRow], Field(min_length=1, max_length=MAX_STATEMENT_REVIEW_ROWS)]
 
 
@@ -582,6 +584,21 @@ def check_import_request(proposal, request):
     return originals
 
 
+def _same_import_request(document, request, request_hash):
+    metadata = document.metadata_ or {}
+    if metadata.get('statement_import_request_sha256') == request_hash:
+        return True
+    # Additive fields default to no decision/no unprinted date. A retry of an
+    # older successful request must still return its receipt, not import again.
+    previous = metadata.get('statement_import_request')
+    if not previous or _digest(previous) != metadata.get('statement_import_request_sha256'):
+        return False
+    try:
+        return StatementImportRequest.model_validate(previous).model_dump(mode='json') == request.model_dump(mode='json')
+    except ValueError:
+        return False
+
+
 def confirm_statement_import(*, session_factory, case_id, evidence_file_id, request, actor, resolve_path):
     """One transaction writes the account, source and all money rows, or none."""
     import hashlib
@@ -629,7 +646,7 @@ def confirm_statement_import(*, session_factory, case_id, evidence_file_id, requ
                         raise PdfMappingError('The current statement changed. Reload the review.', 409)
                 replacing = None
                 if existing is not None:
-                    if (existing.metadata_ or {}).get('statement_import_request_sha256') == request_hash:
+                    if _same_import_request(existing, request, request_hash):
                         imported_count = sum(not row['excluded'] for row in existing.metadata_['statement_import_request']['rows'])
                         return dict(case_id=str(case_id), evidence_file_id=str(evidence_file_id), source_document_id=str(existing.id), account_id=_imported_account_id(session, existing.id), transaction_count=imported_count, account_closed_on=((existing.metadata_.get('statement_import_original', {}).get('metadata', {}).get('account_closure')) or {}).get('date'), created=False, applied=True)
                     from services.financial.duplicate_decisions import duplicate_revision
@@ -650,6 +667,9 @@ def confirm_statement_import(*, session_factory, case_id, evidence_file_id, requ
                 elif request.replaces_source_document_id is not None:
                     raise PdfMappingError('The import selected for replacement is no longer current.', 409)
                 originals = check_import_request(proposal, request)
+                from services.financial.statement_import_overlap import require_coverage_decision
+                require_coverage_decision(session, case_id=case_id, file_id=evidence_file_id,
+                                          request=request.model_dump(mode='json'))
                 from services.financial.review_arithmetic import check_proposed_rows, arithmetic_problems, accepted_difference
                 arithmetic = check_proposed_rows(proposal, [r.model_dump() for r in request.rows])
                 problems = arithmetic_problems(arithmetic)

@@ -262,9 +262,22 @@ If a request fails, select **Refresh files** and inspect what arrived before upl
 
 *The bulk-import button names the ready statement count. The flagged statement stays outside the import and has a direct link to its date correction.*
 
-A statement is ready when its required fields can be used, its flagged rows have been resolved and any available opening/closing balance check agrees. If readable balances are missing, the entry says that the automatic balance check is unavailable. Missing balances do not by themselves stop an otherwise usable statement from being imported. Review that statement if you need to establish its balance before proceeding.
+A statement is ready when its required fields can be used, its flagged rows have been resolved, overlapping statements have been compared where needed, and its available arithmetic checks agree or a remaining difference has a recorded explanation. If readable balances are missing, the entry says that the automatic balance check is unavailable. Missing balances do not by themselves stop an otherwise usable statement from being imported. Review that statement if you need to establish its balance before proceeding.
 
 If **File processing** shows an error, read the message. Use **Open file review** to inspect it or **Retry this file** after the current processing finishes. Successful imports remain saved when another statement fails. Use **Refresh batch** to check the outcome before retrying an uncertain import. You can select up to 10,000 existing files in one group; send larger folders in smaller groups. Receipts and payment documents use their own document review and are not bulk-imported as account statements.
+
+### Compare overlapping statements before import
+
+If another file covers some of the same dates for the same bank and account reference, Loupe keeps the statement under **Need attention**. The other file may already be imported or may be waiting in a batch. Overlapping dates alone do not tell you whether the payments are duplicates.
+
+1. Select **Review problems** on the affected statement. Find **Another statement covers these dates** near the import controls.
+2. Read the other filename, dates and import status. Select **Compare original PDF** to open it. Close the PDF window to return to your current review.
+3. If one file is a copy you do not need to import, select **Back to bulk import**. On that file, select **Leave unimported**, enter the reason and select **Leave unimported** again. Its original PDF and saved corrections stay available. This choice applies to this batch.
+4. Check the updated **Ready to import** count. When no other problems remain, the statement you are retaining becomes ready. Import the ready group once.
+5. If you need both statements, tick **I have compared these files and need to import this statement too** in each affected review. Enter why both are needed, then select **Save for bulk import**. In an individual review, use **Confirm import** instead.
+6. To revisit a file you left unimported, select **Restore to review** on its batch entry and record why. Loupe checks the statement again and restores its saved corrections. If the other copy was imported, the overlap is shown again before another import.
+
+Changing the account or dates, or adding another overlapping statement, can require a new comparison. Loupe does not remove a file or exclude imported payments solely because its dates overlap. For copies already imported, use [Review duplicates](#review-duplicates).
 
 ### Remove a PDF that does not belong in Financial
 

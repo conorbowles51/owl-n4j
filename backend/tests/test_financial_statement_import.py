@@ -87,6 +87,11 @@ class StatementImportTests(TransactionPersistenceTestCase):
         self.file = copied
         request = self.request()
         request.update(institution='Synthetic Bank', details_reason='Bank checked against the test source.')
+        from services.financial.statement_import_overlap import coverage_review
+        with self.SessionLocal() as db:
+            compared = coverage_review(db, case_id=self.case.id, file_id=copied.id, request=request)
+        request.update(coverage_review_revision=compared['revision'],
+                       coverage_review_reason='Retain both synthetic imports to test subsequent duplicate exclusion.')
         duplicate = self.confirm(request)
         with self.SessionLocal() as db:
             source = db.get(FinancialSourceDocument, UUID(duplicate['source_document_id']))

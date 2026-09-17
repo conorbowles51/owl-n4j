@@ -111,7 +111,7 @@ class BatchImportTests(TestCase):
         before=self.status(batch)
         with f.SessionLocal() as db:
             original=db.scalar(select(Item).where(Item.batch_id==batch))
-            flagged=Item(id=uuid4(),batch_id=batch,file_id=f.file.id,statement_key='other-period',status='attention',summary={**original.summary,'problems':[{'message':'Check an amount.','row_id':'1:0:1'}]})
+            flagged=Item(id=uuid4(),batch_id=batch,file_id=f.file.id,statement_key='other-period',status='attention',summary={**original.summary,'period_start':'2024-01-01','period_end':'2024-12-31','problems':[{'message':'Check an amount.','row_id':'1:0:1'}]})
             db.add(flagged);db.commit()
             # An unrelated attention item does not alter the approved ready list.
             service.queue_import(db,case_id=f.case.id,batch_id=batch,expected_revision=before['ready_revision'],actor=f.actor)
@@ -195,7 +195,7 @@ class BatchImportTests(TestCase):
                 if n == 128: target=identity
                 db.add(Item(id=identity, batch_id=batch, file_id=f.file.id, statement_key=f'synthetic-{n}',
                     status='attention' if n == 128 else 'ready',
-                    summary={**original, 'filename':f'Z synthetic {n:03d}', 'problems':[dict(row_id='3:0:4', message='Check date')]}))
+                    summary={**original, 'filename':f'Z synthetic {n:03d}', 'account':f'TEST{n+1000}', 'problems':[dict(row_id='3:0:4', message='Check date')] if n == 128 else []}))
             db.commit()
             result=service.next_problem(db, case_id=f.case.id, batch_id=batch, item_id=UUID(original['id']))
             self.assertEqual(result['item_id'], str(target))

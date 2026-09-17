@@ -455,3 +455,18 @@ Use an artificial PDF with two recognised accounts or periods, before importing 
 4. Import the ready statement. In Transactions, find the interest charge. Expect **Date not printed** and the statement end shown separately. Check that the charge is included in the totals.
 5. In a disposable test case, record a date correction using a known source date and a reason. Expect the corrected transaction to use that date, with the earlier undated reading retained in its history.
 6. Confirm that an ordinary payment with an unreadable date still needs attention. The interest handling must not clear that error.
+
+
+### Compare possible copies before a bulk import
+
+Use synthetic copies in a separate test case. Do not create duplicate live case payments for this test.
+
+1. Send two different PDFs for the same bank, account and overlapping dates from Evidence to Financial. Both should need attention, with the other filename and dates identified.
+2. Open one review and select **Compare original PDF**. Confirm the other file opens, then close it and check that your current review is still present.
+3. Return to the batch. On the copy, select **Leave unimported**, give a reason and confirm. The original should become ready if it has no other problems. The copy should remain listed with its reason and **Restore to review**.
+4. Import the ready statement. Open its transactions and check the expected count and totals. Refresh the batch and confirm that only one statement was imported.
+5. Select **Restore to review** on the copy and record a reason. Its saved corrections must remain available, and its overlap with the imported statement must be flagged again.
+6. Open the copy, tick the comparison checkbox and enter a reason. Save progress, leave the page and return. Check that the decision was saved. Change its period dates and check that the old comparison no longer authorises import.
+7. Leave the copy unimported when finished. Check that both original PDFs remain in Evidence.
+
+Expected result: no duplicate payments are added without a deliberate comparison. A skipped statement can be restored without losing its source or saved work.

@@ -1,3 +1,5 @@
+import { BatchStatementImportChoice } from "./BatchStatementImportChoice"
+import { coverageReview } from "../hooks/use-statement-coverage-review"
 import { useEffect, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useSearchParams } from "react-router-dom"
@@ -8,7 +10,7 @@ import { useAuthStore } from "@/features/auth/hooks/use-auth"
 import { useStatementWorkspace } from "../stores/statement-workspace"
 import { useFinancialAccess } from "../hooks/use-financial-access"
 import { StatementImportPanel } from "./StatementImportPanel"
-import { statementDraft } from "../lib/statement-review-draft"
+import { serverStatementDraft } from "../lib/statement-review-draft"
 import { BatchReviewContext } from "../lib/batch-review-context"
 import { resetPaymentTableView } from "../lib/payment-table-draft"
 import { useInvestigationScopeStore } from "../stores/investigation-scope"
@@ -29,6 +31,11 @@ const itemSchema = z.object({
   balance_exception: z.boolean().optional(),
   source_id: z.string(),
   review_revision: z.string().optional(),
+  disposition_revision: z.string().optional(),
+  coverage_review: coverageReview.optional(),
+  import_decision: z
+    .object({ action: z.string(), reason: z.string() })
+    .optional(),
   review_request: z.record(z.string(), z.unknown()).nullish(),
   problems: z.array(
     z.object({
@@ -73,6 +80,7 @@ const labels: Record<string, string> = {
   attention: "Needs attention",
   pending_import: "Importing",
   imported: "Imported",
+  skipped: "Left unimported",
 }
 
 export function FinancialBatchPanel({ caseId }: { caseId: string }) {
@@ -293,6 +301,12 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
           </div>
         ))}
       </div>
+      {!!batch.counts.skipped && (
+        <p className="text-sm">
+          {batch.counts.skipped} statements left unimported. Their files and
+          saved reviews are retained below.
+        </p>
+      )}
       <div className="rounded border bg-card p-4 flex flex-wrap gap-3 items-center justify-between">
         <div>
           <p className="font-medium">
@@ -506,6 +520,38 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
                 Not enough readable balances for an automatic balance check.
               </p>
             )}
+            {!!item.coverage_review?.candidates.length && (
+              <p className="text-sm">
+                Overlapping dates:{" "}
+                {item.coverage_review.candidates
+                  .map(
+                    (other) =>
+                      `${other.filename} (${other.period_start} to ${other.period_end})`
+                  )
+                  .join("; ")}
+                . Open this statement to compare the originals.
+              </p>
+            )}
+            {item.import_decision && (
+              <p className="text-sm">
+                {item.import_decision.action === "skip"
+                  ? "Left unimported"
+                  : "Restored to review"}
+                : {item.import_decision.reason}
+              </p>
+            )}
+            {canEdit &&
+              item.disposition_revision &&
+              !["imported", "pending_import"].includes(item.status) && (
+                <BatchStatementImportChoice
+                  caseId={caseId}
+                  batchId={batchId}
+                  itemId={item.id}
+                  revision={item.disposition_revision}
+                  skipped={item.status === "skipped"}
+                  refresh={refresh}
+                />
+              )}
             {item.problems.map((problem, index) => (
               <div
                 className="flex flex-wrap items-center gap-2 text-sm"
@@ -661,30 +707,18 @@ function BatchStatementReview({
     return result
   }
   const raw = item?.review_request
-  const draft = raw
-    ? statementDraft.safeParse({
-        revision: raw.expected_revision,
-        rows: Array.isArray(raw.rows)
-          ? raw.rows.map((r) => ({ ...r, direction: r.direction || "" }))
-          : [],
-        holder: raw.holder,
-        account: raw.account_number,
-        institution: raw.institution,
-        periodStart: raw.period_start,
-        periodEnd: raw.period_end,
-        detailsReason: raw.details_reason || "",
-        balanceException: {
-          revision: raw.balance_exception_revision || "",
-          reason: raw.balance_exception_reason || "",
-        },
-        amountText: {},
-      })
-    : null
+  const draft = serverStatementDraft(raw ?? undefined)
   return (
     <div className="space-y-3">
       <Button variant="outline" onClick={onBack}>
         Back to bulk import
       </Button>
+      {item?.status === "skipped" && (
+        <p className="rounded border p-3">
+          This statement was left unimported. Return to the batch and choose
+          Restore to review to edit or import it. {item.import_decision?.reason}
+        </p>
+      )}
       {navigationError && <p role="alert">{navigationError}</p>}
       {query.isError ? (
         <p role="alert">{query.error.message}</p>
@@ -700,7 +734,9 @@ function BatchStatementReview({
             saved: onBack,
             nextProblem,
             previousProblem: () => nextProblem("previous"),
-            draft: draft?.success ? draft.data : undefined,
+            draft: draft ?? undefined,
+            readOnly:
+              item.status === "skipped" || item.status === "pending_import",
           }}
         >
           <StatementImportPanel

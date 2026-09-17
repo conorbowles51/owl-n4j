@@ -1,3 +1,5 @@
+import { useStatementCoverageReview } from "../hooks/use-statement-coverage-review"
+import { StatementCoverageReview } from "./StatementCoverageReview"
 import { useBatchReview } from "../lib/batch-review-context"
 import { useStatementFiles } from "../hooks/use-statement-register"
 import {
@@ -797,7 +799,10 @@ function EditableStatement({
   const { canEdit: caseCanEdit } = useFinancialAccess()
   const excludedCopy = !!data.current_import?.excluded_as_duplicate
   const canEdit =
-    caseCanEdit && !excludedCopy && !(batchReview && data.current_import)
+    caseCanEdit &&
+    !excludedCopy &&
+    !batchReview?.readOnly &&
+    !(batchReview && data.current_import)
   const owner = useAuthStore((state) => state.user?.id || state.user?.username)
   const draftKey = owner
     ? `loupe-statement-review:${owner}:${caseId}:${fileId}:${data.revision}${batchReview ? `:batch:${batchReview.draftRevision || "initial"}` : progressRevision !== "initial" ? `:saved:${progressRevision}` : ""}`
@@ -888,7 +893,33 @@ function EditableStatement({
   const [balanceException, setBalanceException] = useState(
     saved?.balanceException ?? { revision: "", reason: "" }
   )
+  const [coverageDecision, setCoverageDecision] = useState(
+    saved?.coverageDecision ?? { revision: "", reason: "" }
+  )
   const [replacePrevious, setReplacePrevious] = useState(false)
+  const coverage = useStatementCoverageReview(
+    caseId,
+    fileId,
+    {
+      expected_revision: data.revision,
+      statement_id: data.statement_id ?? null,
+      currency: data.currency,
+      institution,
+      account_number: account,
+      period_start: periodStart,
+      period_end: periodEnd,
+      ...(replacePrevious && data.current_import
+        ? {
+            replaces_source_document_id: data.current_import.source_document_id,
+          }
+        : {}),
+    },
+    !data.current_import || replacePrevious
+  )
+  const coverageBlocked =
+    !!coverage.data?.candidates.length &&
+    (coverageDecision.revision !== coverage.data.revision ||
+      !coverageDecision.reason.trim())
   const detailsChanged =
     institution !== data.metadata.institution ||
     holder !== data.metadata.holder ||
@@ -1038,6 +1069,15 @@ function EditableStatement({
     emptyStatementBalances[0].balance_minor ===
       emptyStatementBalances[1].balance_minor
   const detailProblems: { message: string; field?: string }[] = []
+  if (coverageBlocked)
+    detailProblems.push({
+      message:
+        "Open Compare overlapping statements. Record why both are needed, or leave this statement unimported.",
+      field:
+        coverageDecision.revision === coverage.data?.revision
+          ? "Reason for importing overlapping statements"
+          : "I have compared these files and need to import this statement too",
+    })
   if (data.review_recovery?.required && !recoveryCompared)
     detailProblems.push({
       message:
@@ -1117,8 +1157,9 @@ function EditableStatement({
   }
   const focusDetail = (field: string) => {
     const input = Array.from(
-      statementControls.current?.querySelectorAll<HTMLInputElement>("input") ??
-        []
+      statementControls.current?.querySelectorAll<
+        HTMLInputElement | HTMLTextAreaElement
+      >("input,textarea") ?? []
     ).find((element) => element.getAttribute("aria-label") === field)
     input?.focus({ preventScroll: true })
     input?.scrollIntoView({ block: "center", behavior: "smooth" })
@@ -1144,6 +1185,8 @@ function EditableStatement({
     period_start: periodStart,
     period_end: periodEnd,
     details_reason: detailsReason,
+    coverage_review_reason: coverageDecision.reason,
+    coverage_review_revision: coverageDecision.revision || null,
     balance_exception_reason: balanceException.reason,
     balance_exception_revision: balanceException.revision || null,
     rows: rows.map((r) => ({
@@ -1200,6 +1243,7 @@ function EditableStatement({
       periodEnd,
       detailsReason,
       balanceException,
+      coverageDecision,
       amountText,
     }
     const timer = window.setTimeout(
@@ -1232,6 +1276,7 @@ function EditableStatement({
     periodEnd,
     detailsReason,
     balanceException,
+    coverageDecision,
     amountText,
     confirm.isSuccess,
   ])
@@ -2749,6 +2794,29 @@ function EditableStatement({
             ref={confirmationControls}
             className="rounded border bg-muted/30 p-3 space-y-2"
           >
+            {coverage.data && (
+              <StatementCoverageReview
+                caseId={caseId}
+                review={coverage.data}
+                decision={coverageDecision}
+                change={setCoverageDecision}
+                canEdit={canEdit}
+                inBatch={!!batchReview}
+              />
+            )}
+            {coverage.pending && (
+              <p role="status">
+                Checking for other statements covering these dates…
+              </p>
+            )}
+            {coverage.error && (
+              <div role="alert">
+                <p>{coverage.error}</p>
+                <Button variant="outline" onClick={coverage.retry}>
+                  Retry overlap check
+                </Button>
+              </div>
+            )}
             {data.metadata.account_closure && (
               <div className="space-y-2">
                 <p>
@@ -2787,6 +2855,8 @@ function EditableStatement({
                 saveBatchReview.isPending ||
                 blockedRows.length > 0 ||
                 detailProblems.length > 0 ||
+                coverage.pending ||
+                !!coverage.error ||
                 serverChecks.pending ||
                 !!serverChecks.error ||
                 unresolvedDifference

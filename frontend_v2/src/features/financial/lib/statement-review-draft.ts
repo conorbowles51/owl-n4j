@@ -30,6 +30,9 @@ export const statementDraft = z.object({
   balanceException: z
     .object({ revision: z.string(), reason: z.string() })
     .optional(),
+  coverageDecision: z
+    .object({ revision: z.string(), reason: z.string() })
+    .optional(),
   amountText: z.record(z.string(), z.string()),
 })
 export type StatementDraft = z.infer<typeof statementDraft>
@@ -50,6 +53,10 @@ export function serverStatementDraft(raw: Record<string, unknown> | undefined) {
     balanceException: {
       revision: raw.balance_exception_revision || "",
       reason: raw.balance_exception_reason || "",
+    },
+    coverageDecision: {
+      revision: raw.coverage_review_revision || "",
+      reason: raw.coverage_review_reason || "",
     },
     amountText: {},
   })

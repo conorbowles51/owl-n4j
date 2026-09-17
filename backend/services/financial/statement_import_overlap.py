@@ -1,0 +1,132 @@
+"""Compare statement dates before import without excluding any evidence.
+
+A matching account reference and overlapping period are a reason to compare
+sources, not a determination that the payments or account holders are identical.
+"""
+from datetime import date
+from sqlalchemy import select
+from postgres.models.evidence import EvidenceFile
+from postgres.models.financial import FinancialAccount, FinancialSourceDocument, FinancialStatementPeriod
+from postgres.models.financial_import_batches import FinancialImportBatch as Batch, FinancialImportBatchItem as Item
+from services.financial.accounts import AccountDraft, AccountError
+from services.financial.pdf_candidates import _digest, PdfMappingError
+
+
+def scope(raw):
+    try:
+        start, end = date.fromisoformat(raw.get('period_start', '')), date.fromisoformat(raw.get('period_end', ''))
+        if start > end:
+            return None
+        identity = AccountDraft.observed(institution_name=raw.get('institution') or None,
+            identifier_as_printed=raw.get('account_number'), currency=raw.get('currency')).identity()
+    except (ValueError, TypeError, AccountError):
+        return None
+    return dict(identity=identity.key, currency=raw.get('currency'), start=start.isoformat(), end=end.isoformat())
+
+
+def overlaps(left, right):
+    return bool(left and right and left['identity'] == right['identity'] and left['currency'] == right['currency']
+                and left['start'] <= right['end'] and right['start'] <= left['end'])
+
+
+def summary_request(summary):
+    return dict(expected_revision=summary.get('revision'), statement_id=summary.get('statement_id'),
+        currency=summary.get('currency'), institution=summary.get('institution', ''),
+        account_number=summary.get('account', ''), holder=summary.get('holder', ''),
+        period_start=summary.get('period_start', ''), period_end=summary.get('period_end', ''))
+
+
+def comparison_sources(session, case_id, pending=None):
+    """Load a case once per batch check, without loading imported PDF readings."""
+    imported = session.execute(select(
+        FinancialAccount.identity_key, FinancialStatementPeriod.currency,
+        FinancialStatementPeriod.period_start, FinancialStatementPeriod.period_end,
+        FinancialSourceDocument.id,
+        FinancialSourceDocument.metadata_['statement_import_statement_id'].as_string(),
+        FinancialSourceDocument.metadata_['statement_import_original']['rows'][0]['page_number'].as_integer(),
+        EvidenceFile.id, EvidenceFile.original_filename,
+        EvidenceFile.metadata_['statement_root_evidence_id'].as_string())
+        .select_from(FinancialStatementPeriod)
+        .join(FinancialSourceDocument, FinancialSourceDocument.id == FinancialStatementPeriod.source_document_id)
+        .join(FinancialAccount, FinancialAccount.id == FinancialStatementPeriod.account_id)
+        .join(EvidenceFile, EvidenceFile.id == FinancialSourceDocument.evidence_file_id)
+        .where(FinancialStatementPeriod.case_id == case_id, FinancialSourceDocument.case_id == case_id,
+               FinancialAccount.case_id == case_id, EvidenceFile.case_id == case_id,
+               FinancialSourceDocument.status == 'admitted')).all()
+    if pending is None:
+        pending = session.execute(select(Item, EvidenceFile).join(Batch, Batch.id == Item.batch_id)
+            .join(EvidenceFile, EvidenceFile.id == Item.file_id)
+            .where(Batch.case_id == case_id, EvidenceFile.case_id == case_id,
+                   Item.status.in_(('ready', 'attention', 'pending_import')))).all()
+    entries, prepared, cache = {}, {}, {}
+    def add(identity, currency, value):
+        entries.setdefault((identity, currency), []).append(value)
+    for identity, currency, start, end, document_id, statement_id, page_number, file_id, filename, root in imported:
+        if start is None or end is None:
+            continue
+        add(identity, currency, dict(key=(root or str(file_id), statement_id or ''),
+            file_id=str(file_id), statement_id=statement_id, source_document_id=str(document_id),
+            filename=filename, status='imported', page_number=page_number or 1, period_start=start.isoformat(), period_end=end.isoformat()))
+    for item, file in pending:
+        raw = item.review_request or summary_request(item.summary)
+        # Batches prepared before coverage checking did not save the bank in
+        # their summaries. Recover that field from the same reading, preserving
+        # every saved correction. Source geometry/catalogue is cached per PDF.
+        if not item.review_request and 'institution' not in item.summary:
+            from services.financial.statement_import import read_statement_import
+            try:
+                proposal = read_statement_import(session, case_id=case_id, evidence_file_id=file.id,
+                    currency=item.summary.get('currency'), statement_id=item.statement_key or None,
+                    _cache=cache, _include_period_checks=False)
+                raw = {**raw, 'institution': proposal['metadata'].get('institution', '')}
+            except PdfMappingError:
+                raw = {**raw, '_coverage_error': 'Reopen this older review to check its current bank, account and statement dates.'}
+        prepared[item.id] = raw
+        own = scope(raw)
+        if own is None:
+            continue
+        add(own['identity'], own['currency'], dict(
+            key=((file.metadata_ or {}).get('statement_root_evidence_id') or str(file.id), item.statement_key or ''),
+            file_id=str(file.id), statement_id=item.statement_key or None, source_document_id=None,
+            filename=file.original_filename, status='awaiting_import', page_number=item.summary.get('page_number', 1),
+            period_start=own['start'], period_end=own['end']))
+    return entries, prepared
+
+
+def coverage_review(session, *, case_id, file_id, request, sources=None):
+    file = session.scalar(select(EvidenceFile).where(EvidenceFile.id == file_id, EvidenceFile.case_id == case_id))
+    if file is None:
+        raise PdfMappingError('Statement not found in this case.', 404)
+    own = scope(request)
+    if own is None:
+        return dict(available=False, candidates=[], revision=None,
+                    reason='A bank, account reference and complete statement dates are needed to compare coverage.')
+    sources = sources if sources is not None else comparison_sources(session, case_id)[0]
+    own_key = ((file.metadata_ or {}).get('statement_root_evidence_id') or str(file.id), request.get('statement_id') or '')
+    candidates = {}
+    for other in sources.get((own['identity'], own['currency']), []):
+        identifier = other['key']
+        if identifier == own_key or (other['source_document_id'] and other['source_document_id'] == str(request.get('replaces_source_document_id', ''))):
+            continue
+        if own['start'] > other['period_end'] or other['period_start'] > own['end']:
+            continue
+        # Prefer the imported record if the same source is in another batch.
+        if identifier not in candidates or other['status'] == 'imported':
+            candidates[identifier] = {k: v for k, v in other.items() if k != 'key'}
+    ordered = sorted(candidates.items())
+    revision = _digest(dict(version='statement-coverage-review-v1', scope=own,
+        reading=request.get('expected_revision'), candidates=[dict(key=k, start=v['period_start'], end=v['period_end']) for k,v in ordered]))
+    return dict(available=True, revision=revision, candidates=[v for _,v in ordered])
+
+
+def requires_decision(review, request):
+    return bool(review['candidates'] and not (
+        request.get('coverage_review_revision') == review['revision']
+        and request.get('coverage_review_reason', '').strip()))
+
+
+def require_coverage_decision(session, *, case_id, file_id, request):
+    review = coverage_review(session, case_id=case_id, file_id=file_id, request=request)
+    if requires_decision(review, request):
+        raise PdfMappingError('Another statement covers some of these dates for the same account reference. Compare the files and record why this statement should also be imported, or leave this copy unimported.', 409)
+    return review
