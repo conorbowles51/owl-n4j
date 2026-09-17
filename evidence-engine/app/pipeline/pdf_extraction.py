@@ -605,6 +605,17 @@ def _ocr_page(page: fitz.Page) -> tuple[str, float | None, int, list | None, lis
     except Exception:
         logger.warning('Optional date-region OCR unavailable; retaining the page reading', exc_info=True)
     try:
+        from app.pipeline.financial_transaction_date_ocr import reread_financial_transaction_dates
+        refined_data, comparisons = reread_financial_transaction_dates(page, best_data,
+            rotation=best_rotation,image_width=pixmap.width,image_height=pixmap.height,
+            reader=_load_table_reader(),deadline=deadline,language=settings.tesseract_lang)
+        if comparisons:
+            text, confidence = _text_and_confidence_from_tesseract(refined_data)
+            best_data = refined_data
+            refinements.extend(comparisons)
+    except Exception:
+        logger.warning('Optional transaction-date OCR unavailable; retaining the page reading', exc_info=True)
+    try:
         from app.pipeline.financial_amount_ocr import reread_financial_amounts
         refined_data, comparisons = reread_financial_amounts(page, best_data,
             rotation=best_rotation, image_width=pixmap.width, image_height=pixmap.height,

@@ -34,9 +34,8 @@ def _full_date(text):
     return date(year + 2000 if year < 100 else year, month, day)
 
 
-def _andrews_candidates(tables, words, width, height):
-    """Only the measured full-period heading, beside one readable date."""
-    candidates = {}
+def _andrews_headings(tables, width, height):
+    """Yield one measured account/period heading under the printed bank/title."""
     for table in tables:
         values = table.to_json().get('table', {}).get('values', [])
         top = [c for c in values if len(c.get('locator', {}).get('rect', [])) == 4
@@ -69,6 +68,13 @@ def _andrews_candidates(tables, words, width, height):
         if len(pairs) != 1:
             continue
         texts, boxes = pairs[0]
+        yield values, texts, boxes
+
+
+def _andrews_candidates(tables, words, width, height):
+    """Only the measured full-period heading, beside one readable date."""
+    candidates = {}
+    for _, texts, boxes in _andrews_headings(tables, width, height):
         for side in (0, 1):
             if _date_text(texts[side]) or not _full_date(texts[1-side]):
                 continue

@@ -2,6 +2,14 @@
 
 **Latest instruction supersedes the release window below:** hold off on the 1–2 hour deployment because Alex is working on the platform. Continue the whole remaining task and deploy only when the complete work is ready. The ACTIVE ten-minute heartbeat has been updated to remove the intermediate push and preserve continued local development. The earlier immediate push `23039a67` remains complete. No further push has occurred. The current Loupe URL question remains pending; local work continues.
 
+## Andrews transaction-date crops verified, 17 September 2026
+
+The local image reader now rereads damaged Andrews transaction dates only in measured payment rows under a unique, readable account/period heading. Four compact crop attempts must finish, the primary must contain a complete date and at least two must agree without another valid date conflicting. The date must fall within the printed period. Existing readable dates, two-date fields and unrelated cells remain unchanged. Original words, rectangles, all observations and the period context survive in provenance. The helper is fingerprinted and capped at 20 candidate cells/15 seconds per page within the page deadline.
+
+Eight affected pages were reread locally and compared with the previous whole-file reading. All 16 sections and 383 entry IDs remain; 12 previously unresolved dates were recovered. Every accepted crop was visually checked. Existing amounts, balances, directions and descriptions are unchanged. Flags fall 116 to 111, with date issues falling 28 to 16; the remaining categories still overlap. The final amount/balance geometry guard was checked against every accepted source row. This was an eight-page comparison, not a new full-file extraction or an independent accuracy claim.
+
+84 focused transaction-date, heading-date, money and runtime-manifest checks pass. Private records are `andrews-row-date-*` under ignored `context-audit-final/`. All diagnostic commands are complete. D remains open because the difficult scans still require substantial corrections. No push or server restart; last pushed remains `23039a67`. Continue with the remaining amount/sign problems and documented original comparisons, not another unchanged full OCR run.
+
 ## Compact money crop fallback verified, 17 September 2026
 
 Following local `806d350b`, damaged Andrews money regions can use a bounded 300/450 dpi crop with a white border when the original larger crop cannot produce a complete match. Every prior valid reading remains part of the comparison; conflicting digits/signs are never outvoted. The compact primary must be complete, all four attempts must finish, and at least two must agree. Ordinary withdrawals still require a printed minus. Measured fragments within one amount/balance column can be reread together without changing the other fields. The 40-cell/30-second page limits remain.

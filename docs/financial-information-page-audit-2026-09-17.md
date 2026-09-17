@@ -109,3 +109,11 @@ A whole-file read-only check took 187.6 seconds. All 16 sections and 383 entries
 Flagged rows fall from 128 to 116. Remaining overlapping issue counts are 79 unreadable amounts, 19 balances, 28 dates, five running-balance differences and three direction conflicts. These are not dismissed as successful extraction. Private records and the accepted comparison image use the `andrews-compact-*` prefix in the ignored audit folder. A separate 28-date crop experiment produced conflicts and has not changed the transaction-date reader.
 
 28 focused money-region tests pass, including compact-profile conflicts, fragmented primary readings, lost minus signs and separate OCR fragments. A synthetic database import test also confirms that a newly separated damaged-date payment requires correction, preserves its original date cells and is not duplicated on repeat confirmation. No real imports were performed. Deployment remains held and D remains open.
+
+## Follow-up: Andrews transaction-date image regions
+
+The reader now revisits damaged dates on measured Andrews payment rows with an unambiguous printed account and period. It requires a complete primary reading, four completed attempts, at least two identical dates, no other valid conflicting date and a result within that period. It leaves readable dates and two-date fields alone. Original words, rectangles and observations remain in provenance. The 20-cell and 15-second limits sit within the page deadline.
+
+An eight-page read-only comparison recovered 12 previously unresolved transaction dates. Every accepted crop was visually checked against the original. All 16 sections and 383 entry identifiers remain. Existing amounts, balances, directions and descriptions are unchanged. Flagged rows fall from 116 to 111 and date issues from 28 to 16; several corrected rows still have other problems. The final geometry guard requires both amount and balance columns and was checked against every accepted source row.
+
+84 focused OCR and runtime-manifest tests pass. The records and visual comparison are under the ignored `andrews-row-date-*` files. No original PDF, saved review or case transaction was changed. These corrections do not close the difficult-file acceptance work or resolve the remaining money errors.
