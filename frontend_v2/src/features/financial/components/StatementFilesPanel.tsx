@@ -1,4 +1,6 @@
 import { useStatementRegister } from "../hooks/use-statement-register"
+import { FinancialFileAction } from "./FinancialFileAction"
+import { EvidenceFinancialPicker } from "./EvidenceFinancialPicker"
 import { useFinancialAccess } from "../hooks/use-financial-access"
 import { useRef, useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
@@ -31,6 +33,7 @@ export function StatementFilesPanel({
   const input = useRef<HTMLInputElement>(null)
   const [search, setSearch] = useState("")
   const [status, setStatus] = useState("all")
+  const [removed, setRemoved] = useState(false)
   const [error, setError] = useState("")
   const [reading, setReading] = useState<Record<string, boolean>>({})
   const queue = useStatementUploads((state) => state.queues[scope])
@@ -42,7 +45,8 @@ export function StatementFilesPanel({
     !!queue?.running,
     queue?.items.flatMap((item) =>
       item.status === "Reading queued" && item.fileId ? [item.fileId] : []
-    ) ?? []
+    ) ?? [],
+    true
   )
   const refresh = () => {
     void client.invalidateQueries({
@@ -70,6 +74,7 @@ export function StatementFilesPanel({
   }
   const visibleFiles =
     files.data
+      ?.filter((file) => file.financial_removed === removed)
       ?.filter((file) =>
         file.original_filename.toLowerCase().includes(search.toLowerCase())
       )
@@ -78,6 +83,7 @@ export function StatementFilesPanel({
           (item) => item.evidence_file_id === file.id
         )
         return (
+          removed ||
           status === "all" ||
           (status === "imported" && !!saved?.current_transactions) ||
           (status === "review" &&
@@ -125,6 +131,7 @@ export function StatementFilesPanel({
         />
       )}
       <div className="flex flex-wrap gap-2">
+        <EvidenceFinancialPicker caseId={caseId} />
         {canUpload && (
           <Button
             disabled={queue?.running}
@@ -142,7 +149,26 @@ export function StatementFilesPanel({
         >
           Refresh files
         </Button>
+        <Button
+          variant="outline"
+          aria-pressed={removed}
+          onClick={() => {
+            setRemoved(!removed)
+            setStatus("all")
+            setSearch("")
+          }}
+        >
+          {removed
+            ? "Back to financial files"
+            : `Removed files (${files.data?.filter((file) => file.financial_removed).length ?? 0})`}
+        </Button>
       </div>
+      {removed && (
+        <p className="text-sm">
+          These files were removed from Financial. Their originals remain in
+          Evidence. Restore a file to review it here again.
+        </p>
+      )}
       {canUpload && (
         <p className="text-xs text-muted-foreground">
           Up to 20 PDFs per selection. Keep the browser tab open while uploads
@@ -180,7 +206,7 @@ export function StatementFilesPanel({
         value={search}
         onChange={(event) => setSearch(event.target.value)}
       />
-      {register && (
+      {register && !removed && (
         <div className="flex flex-wrap items-center gap-3 text-sm">
           <label>
             Show files{" "}
@@ -197,7 +223,8 @@ export function StatementFilesPanel({
           </label>
           {files.data && (
             <span>
-              {files.data.length} uploaded PDFs ·{" "}
+              {files.data.filter((file) => !file.financial_removed).length} PDFs
+              in Financial ·{" "}
               {imports.data?.files.filter(
                 (file) => file.current_transactions > 0
               ).length ?? "…"}{" "}
@@ -217,7 +244,7 @@ export function StatementFilesPanel({
             <button
               type="button"
               aria-pressed={selected === file.id}
-              disabled={file.status !== "processed"}
+              disabled={removed || file.status !== "processed"}
               className={
                 register
                   ? "grid w-full gap-3 rounded-lg border bg-card p-4 text-left text-sm hover:bg-accent aria-pressed:border-primary disabled:opacity-60 md:grid-cols-[minmax(220px,1fr)_minmax(220px,1fr)]"
@@ -243,15 +270,17 @@ export function StatementFilesPanel({
                       : "review"
                 }
               >
-                {saved?.wire_review_count
-                  ? `${saved.wire_review_count} saved wire ${saved.wire_review_count === 1 ? "review" : "reviews"}`
-                  : saved
-                    ? `${saved.current_transactions} imported payments · ${saved.periods.length} recorded periods`
-                    : file.status === "processed"
-                      ? imports.data && !imports.data.truncated
-                        ? "Ready to review"
-                        : "Ready to open"
-                      : file.status}
+                {removed
+                  ? "Removed from Financial"
+                  : saved?.wire_review_count
+                    ? `${saved.wire_review_count} saved wire ${saved.wire_review_count === 1 ? "review" : "reviews"}`
+                    : saved
+                      ? `${saved.current_transactions} imported payments · ${saved.periods.length} recorded periods`
+                      : file.status === "processed"
+                        ? imports.data && !imports.data.truncated
+                          ? "Ready to review"
+                          : "Ready to open"
+                        : file.status}
               </span>
               {saved?.periods
                 .slice(0, register ? undefined : 3)
@@ -283,6 +312,13 @@ export function StatementFilesPanel({
                 </span>
               )}
             </button>
+            <FinancialFileAction
+              caseId={caseId}
+              file={file}
+              imported={
+                !!saved?.periods.length || !!saved?.current_transactions
+              }
+            />
             {!!saved?.wire_review_count && (
               <a
                 className="inline-block underline text-sm"
@@ -299,20 +335,22 @@ export function StatementFilesPanel({
                 Open saved receipt reviews in Findings
               </a>
             )}
-            {canUpload && ["unprocessed", "failed"].includes(file.status) && (
-              <Button
-                variant="outline"
-                disabled={reading[file.id] || queue?.running}
-                aria-label={`${file.status === "failed" ? "Retry reading" : "Read statement"}: ${file.original_filename}`}
-                onClick={() => void readStatement(file.id)}
-              >
-                {reading[file.id]
-                  ? "Starting reading…"
-                  : file.status === "failed"
-                    ? "Retry reading"
-                    : "Read statement"}
-              </Button>
-            )}
+            {!removed &&
+              canUpload &&
+              ["unprocessed", "failed"].includes(file.status) && (
+                <Button
+                  variant="outline"
+                  disabled={reading[file.id] || queue?.running}
+                  aria-label={`${file.status === "failed" ? "Retry reading" : "Read statement"}: ${file.original_filename}`}
+                  onClick={() => void readStatement(file.id)}
+                >
+                  {reading[file.id]
+                    ? "Starting reading…"
+                    : file.status === "failed"
+                      ? "Retry reading"
+                      : "Read statement"}
+                </Button>
+              )}
           </div>
         )
       })}
@@ -330,8 +368,9 @@ export function StatementFilesPanel({
       )}
       {!files.isError && !!files.data?.length && visibleFiles.length === 0 && (
         <p>
-          No files match these filters. Clear the filename search or choose All
-          files.
+          {removed
+            ? "No removed files match this search."
+            : "No files match these filters. Clear the filename search or check Removed files."}
         </p>
       )}
       {files.data?.length === 0 && (

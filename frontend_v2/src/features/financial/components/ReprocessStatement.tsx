@@ -22,10 +22,12 @@ function ReprocessStatementForm({
   caseId,
   fileId,
   onReady,
+  initiallyOpen = false,
 }: {
   caseId: string
   fileId: string
   onReady: (id: string) => void
+  initiallyOpen?: boolean
 }) {
   const owner = useAuthStore((state) => state.user?.id || state.user?.username)
   const storageKey = owner
@@ -134,7 +136,7 @@ function ReprocessStatementForm({
     }
   }, [ready, receipt, onReady, saved])
   return (
-    <details className="border rounded p-3" open={!!receipt || !!saved}>
+    <details className="border rounded p-3" open={initiallyOpen || !!receipt || !!saved}>
       <summary>Read the statement again</summary>
       <p className="text-sm my-2">
         Use this if the extraction missed information. A new reading will open

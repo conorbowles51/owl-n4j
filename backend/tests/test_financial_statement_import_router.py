@@ -50,6 +50,32 @@ class StatementImportAuthorizationTests(unittest.TestCase):
         self.assertEqual(read.call_args.kwargs['case_id'],self.db.case.id)
         write.assert_not_called();version.assert_not_called()
 
+    def test_arithmetic_checks_are_case_scoped_read_only_and_revision_bound(self):
+        body=dict(expected_revision='a'*64, currency='EUR', rows=[])
+        with patch.object(module, 'read_statement_import') as read:
+            self.assertEqual(self.client.post(self.endpoint('/checks'), json=body).status_code, 401)
+            self.user(None)
+            self.assertEqual(self.client.post(self.endpoint('/checks'), json=body).status_code, 403)
+            read.assert_not_called()
+            self.user({'case': {'view': True, 'edit': False}})
+            read.return_value=dict(revision='a'*64, currency='EUR', metadata={}, rows=[])
+            response=self.client.post(self.endpoint('/checks'), json=body)
+            self.assertEqual(response.status_code, 200)
+            self.assertFalse(response.json()['applied'])
+            self.assertEqual(read.call_args.kwargs['case_id'], self.db.case.id)
+            self.assertFalse(read.call_args.kwargs['_include_period_checks'])
+            body['expected_revision']='b'*64
+            self.assertEqual(self.client.post(self.endpoint('/checks'), json=body).status_code, 409)
+
+    def test_saving_review_progress_requires_case_edit(self):
+        with patch.object(module, 'save_progress') as save:
+            self.assertEqual(self.client.put(self.endpoint('/progress'), json={}).status_code, 401)
+            self.user(None)
+            self.assertEqual(self.client.put(self.endpoint('/progress'), json={}).status_code, 403)
+            self.user({'case': {'view': True, 'edit': False}})
+            self.assertEqual(self.client.put(self.endpoint('/progress'), json={}).status_code, 403)
+            save.assert_not_called()
+
     def test_case_edit_does_not_grant_evidence_upload_permission(self):
         self.user({'case':{'view':True,'edit':True},'evidence':{'upload':False}})
         with patch.object(module,'create_statement_version') as version:
@@ -85,3 +111,34 @@ class StatementImportAuthorizationTests(unittest.TestCase):
                 self.assertEqual(matches.call_args.kwargs['case_id'], self.db.case.id)
             save.assert_not_called()
             self.assertEqual(read.call_args.kwargs['case_id'], self.db.case.id)
+
+    def test_financial_file_actions_require_case_edit_and_preparation_requires_upload(self):
+        with patch.object(module, 'set_financial_file_visibility') as visibility, patch.object(module, 'prepare_existing_financial_file', AsyncMock()) as prepare:
+            self.assertEqual(self.client.post(self.endpoint('/visibility'), json={'removed': True, 'expected_revision': 'initial'}).status_code, 401)
+            self.user({'case': {'view': True}})
+            self.assertEqual(self.client.post(self.endpoint('/visibility'), json={'removed': True, 'expected_revision': 'initial'}).status_code, 403)
+            self.assertEqual(self.client.post(self.endpoint('/prepare-existing'), json={'expected_revision': 'initial'}).status_code, 403)
+            self.user({'case': {'view': True, 'edit': True}, 'evidence': {'upload': False}})
+            self.assertEqual(self.client.post(self.endpoint('/prepare-existing'), json={'expected_revision': 'initial'}).status_code, 403)
+            visibility.assert_not_called(); prepare.assert_not_awaited()
+            with patch.object(module, 'actor_from_user'):
+                visibility.return_value = {'financial_removed': True}
+                result = self.client.post(self.endpoint('/visibility'), json={'removed': True, 'expected_revision': 'initial'})
+                self.assertEqual(result.status_code, 200)
+                self.assertEqual(visibility.call_args.kwargs['case_id'], self.db.case.id)
+                self.assertEqual(visibility.call_args.kwargs['evidence_file_id'], self.file_id)
+
+    def test_batch_routes_require_case_access_and_edit(self):
+        prefix='/api/financial/statement-import/batches'
+        batch=uuid4()
+        with patch.object(module.import_batches,'create_batch') as create, patch.object(module.import_batches,'queue_import') as write, patch.object(module.import_batches,'batch_status',return_value={'ready':1}) as read:
+            self.assertEqual(self.client.get(f'{prefix}/{batch}?case_id={self.db.case.id}').status_code,401)
+            self.user(None)
+            self.assertEqual(self.client.get(f'{prefix}/{batch}?case_id={self.db.case.id}').status_code,403)
+            self.user({'case':{'view':True,'edit':False},'evidence':{'upload':False}})
+            self.assertEqual(self.client.get(f'{prefix}/{batch}?case_id={self.db.case.id}').status_code,200)
+            self.assertEqual(self.client.post(f'{prefix}?case_id={self.db.case.id}',json={'request_id':str(uuid4()),'file_ids':[str(self.file_id)]}).status_code,403)
+            self.assertEqual(self.client.post(f'{prefix}/{batch}/confirm?case_id={self.db.case.id}',json={'expected_ready_revision':'a'*64}).status_code,403)
+            self.assertEqual(self.client.put(f'{prefix}/{batch}/items/{uuid4()}?case_id={self.db.case.id}',json={}).status_code,403)
+            create.assert_not_called();write.assert_not_called()
+            self.assertEqual(read.call_args.kwargs['case_id'],self.db.case.id)

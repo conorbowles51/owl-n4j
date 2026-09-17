@@ -1,4 +1,4 @@
-import { Fragment } from "react"
+import { Fragment, type ReactNode } from "react"
 import { Button } from "@/components/ui/button"
 import {
   printedStatementSections,
@@ -10,10 +10,14 @@ export function PrintedStatementTable({
   rows,
   onCell,
   onReviewRow,
+  selectedRowId,
+  rowTools,
 }: {
   rows: PrintedRow[]
+  selectedRowId?: string
   onCell: (rowId: string, locator: unknown) => void
   onReviewRow?: (rowId: string) => void
+  rowTools?: (rowId: string) => ReactNode
 }) {
   const positioned = rows.filter(
     (row) => row.fields?.statement_layout === "andrews-share-statement"
@@ -41,7 +45,12 @@ export function PrintedStatementTable({
   return (
     <div className="space-y-4">
       {positioned.length > 0 && (
-        <PositionedStatementRows rows={positioned} onCell={onCell} />
+        <PositionedStatementRows
+          rows={positioned}
+          onCell={onCell}
+          selectedRowId={selectedRowId}
+          rowTools={rowTools}
+        />
       )}
       {sections.map((section) => (
         <section key={section.key} className="space-y-2">
@@ -74,20 +83,40 @@ export function PrintedStatementTable({
               )}
               <tbody>
                 {section.rows.map(({ row, cells, parts }) => (
-                  <tr key={row.id}>
-                    {cells.map((value, index) => (
-                      <td key={index} className="border p-2 align-top">
-                        {(parts?.[index] ?? (value ? [value] : [])).map(
-                          (part, partIndex) => (
-                            <Fragment key={part.column_index}>
-                              {partIndex > 0 ? " " : null}
-                              {cell(row.id, part)}
-                            </Fragment>
-                          )
-                        )}
-                      </td>
-                    ))}
-                  </tr>
+                  <Fragment key={row.id}>
+                    <tr
+                      key={row.id}
+                      data-statement-row={row.id}
+                      className={
+                        row.id === selectedRowId
+                          ? "bg-amber-100/70 dark:bg-amber-900/30"
+                          : undefined
+                      }
+                    >
+                      {cells.map((value, index) => (
+                        <td key={index} className="border p-2 align-top">
+                          {(parts?.[index] ?? (value ? [value] : [])).map(
+                            (part, partIndex) => (
+                              <Fragment key={part.column_index}>
+                                {partIndex > 0 ? " " : null}
+                                {cell(row.id, part)}
+                              </Fragment>
+                            )
+                          )}
+                        </td>
+                      ))}
+                    </tr>
+                    {rowTools?.(row.id) && (
+                      <tr>
+                        <td
+                          colSpan={section.columns.length}
+                          className="border p-2"
+                        >
+                          {rowTools(row.id)}
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
                 ))}
               </tbody>
             </table>
@@ -102,7 +131,11 @@ export function PrintedStatementTable({
             each against the PDF and use the correction controls below.
           </p>
           {unresolved.map((row) => (
-            <div key={row.id} className="flex flex-wrap gap-3 border-t py-2">
+            <div
+              key={row.id}
+              data-statement-row={row.id}
+              className={`flex flex-wrap gap-3 border-t py-2 ${row.id === selectedRowId ? "bg-amber-100/70 dark:bg-amber-900/30" : ""}`}
+            >
               {row.source_cells.map((value) => (
                 <span key={value.column_index}>{cell(row.id, value)}</span>
               ))}
@@ -115,6 +148,9 @@ export function PrintedStatementTable({
                   Review this row
                 </Button>
               )}
+              {rowTools?.(row.id) && (
+                <div className="w-full">{rowTools(row.id)}</div>
+              )}
             </div>
           ))}
         </section>
@@ -126,7 +162,14 @@ export function PrintedStatementTable({
         </p>
       )}
       {additional.length > 0 && (
-        <details className="rounded border p-3">
+        <details
+          className="rounded border p-3"
+          open={
+            additional.some(
+              (row) => row.id === selectedRowId && rowTools?.(row.id)
+            ) || undefined
+          }
+        >
           <summary className="cursor-pointer font-medium">
             Other extracted page text ({additional.length} lines)
           </summary>
@@ -142,6 +185,9 @@ export function PrintedStatementTable({
               {row.source_cells.map((value) => (
                 <span key={value.column_index}>{cell(row.id, value)}</span>
               ))}
+              {rowTools?.(row.id) && (
+                <div className="w-full">{rowTools(row.id)}</div>
+              )}
             </div>
           ))}
         </details>
@@ -156,9 +202,13 @@ export function PrintedStatementTable({
 function PositionedStatementRows({
   rows,
   onCell,
+  selectedRowId,
+  rowTools,
 }: {
   rows: PrintedRow[]
+  selectedRowId?: string
   onCell: (rowId: string, locator: unknown) => void
+  rowTools?: (rowId: string) => ReactNode
 }) {
   const box = (cell: PrintedCell) => {
     const value = (cell.locator as { rect?: number[] })?.rect
@@ -175,18 +225,25 @@ function PositionedStatementRows({
     return (
       <div className="space-y-2">
         {rows.map((row) => (
-          <div key={row.id} className="flex flex-wrap gap-3">
-            {row.source_cells.map((cell) => (
-              <button
-                type="button"
-                key={cell.column_index}
-                className="text-left whitespace-pre-wrap"
-                onClick={() => onCell(row.id, cell.locator)}
-              >
-                {cell.expected_text}
-              </button>
-            ))}
-          </div>
+          <Fragment key={row.id}>
+            <div
+              key={row.id}
+              data-statement-row={row.id}
+              className={`flex flex-wrap gap-3 ${row.id === selectedRowId ? "bg-amber-100/70 dark:bg-amber-900/30" : ""}`}
+            >
+              {row.source_cells.map((cell) => (
+                <button
+                  type="button"
+                  key={cell.column_index}
+                  className="text-left whitespace-pre-wrap"
+                  onClick={() => onCell(row.id, cell.locator)}
+                >
+                  {cell.expected_text}
+                </button>
+              ))}
+            </div>
+            {rowTools?.(row.id)}
+          </Fragment>
         ))}
       </div>
     )
@@ -209,38 +266,42 @@ function PositionedStatementRows({
     >
       <div className="min-w-[540px] p-3 font-mono text-[11px] leading-5">
         {rows.map((row) => (
-          <div
-            key={row.id}
-            className="grid border-b border-border/30 py-1"
-            style={{ gridTemplateColumns: "repeat(1000, minmax(0, 1fr))" }}
-          >
-            {row.source_cells.map((cell) => {
-              const rect = box(cell)
-              const numeric = /^[\d\s.,+\-/]+$/.test(cell.expected_text)
-              return (
-                <button
-                  key={cell.column_index}
-                  type="button"
-                  className="text-left whitespace-pre-wrap break-words hover:bg-accent focus-visible:outline-2 focus-visible:outline-primary"
-                  style={
-                    rect
-                      ? {
-                          gridColumn: `${column(rect[0])} / ${Math.max(column(rect[0]) + 1, column(rect[2]))}`,
-                          whiteSpace: numeric ? "pre" : "pre-wrap",
-                          textAlign:
-                            numeric && rect[0] > left + (right - left) * 0.6
-                              ? "right"
-                              : "left",
-                        }
-                      : { gridColumn: "1 / -1" }
-                  }
-                  onClick={() => onCell(row.id, cell.locator)}
-                >
-                  {cell.expected_text}
-                </button>
-              )
-            })}
-          </div>
+          <Fragment key={row.id}>
+            <div
+              key={row.id}
+              data-statement-row={row.id}
+              className={`grid border-b border-border/30 py-1 ${row.id === selectedRowId ? "bg-amber-100/70 dark:bg-amber-900/30" : ""}`}
+              style={{ gridTemplateColumns: "repeat(1000, minmax(0, 1fr))" }}
+            >
+              {row.source_cells.map((cell) => {
+                const rect = box(cell)
+                const numeric = /^[\d\s.,+\-/]+$/.test(cell.expected_text)
+                return (
+                  <button
+                    key={cell.column_index}
+                    type="button"
+                    className="text-left whitespace-pre-wrap break-words hover:bg-accent focus-visible:outline-2 focus-visible:outline-primary"
+                    style={
+                      rect
+                        ? {
+                            gridColumn: `${column(rect[0])} / ${Math.max(column(rect[0]) + 1, column(rect[2]))}`,
+                            whiteSpace: numeric ? "pre" : "pre-wrap",
+                            textAlign:
+                              numeric && rect[0] > left + (right - left) * 0.6
+                                ? "right"
+                                : "left",
+                          }
+                        : { gridColumn: "1 / -1" }
+                    }
+                    onClick={() => onCell(row.id, cell.locator)}
+                  >
+                    {cell.expected_text}
+                  </button>
+                )
+              })}
+            </div>
+            {rowTools?.(row.id)}
+          </Fragment>
         ))}
       </div>
     </div>

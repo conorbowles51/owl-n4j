@@ -162,7 +162,9 @@ def _resolve_stored_path(stored_path: str | None) -> Optional[Path]:
 
 
 def _evidence_record_from_db(record) -> dict:
+    from services.financial.file_visibility import financial_file_visibility
     return {
+        **financial_file_visibility(record),
         "id": str(record.id),
         "case_id": str(record.case_id),
         "original_filename": record.original_filename,
@@ -648,6 +650,8 @@ class EvidenceRecord(BaseModel):
     size: int
     sha256: str
     status: str
+    financial_removed: bool = False
+    financial_visibility_revision: str = "initial"
     processing_stale: bool = False
     is_duplicate: bool = False
     duplicate_of: Optional[str] = None

@@ -77,6 +77,8 @@ If a file says **Read statement**, select that action. If it says **Retry readin
 
 For a wrong payment value, use **Edit import values** or **Show corrections and import choices**. Correct the field against the original and give a reason. For this exercise, leave the correct payment amounts unchanged. If any other line is flagged, inspect it before importing and record the unexpected result in your test notes.
 
+Before resolving the footer, also check the confirmation area. **Before you can confirm** should identify the footer and offer **Review row**. That button must open the matching correction controls even if they were closed. After the footer is excluded and its reason recorded, the blocker should disappear and confirmation should become available.
+
 ## 4. Leave the review and return
 
 1. While the checking statement is still unconfirmed, open **Transactions**, then return to **Statements & accounts**.
@@ -85,7 +87,7 @@ For a wrong payment value, use **Edit import values** or **Show corrections and 
 4. Refresh this same browser tab. Reopen the statement if needed and check the same two details again.
 5. Open **savings.pdf** from the file list, then return to **checking.pdf**. The checking review should still be present.
 
-**Expected:** changing financial tabs, switching files and refreshing the same browser tab do not lose your review. Closing the browser tab can discard unfinished drafts. A saved import, finding or report is kept with the case; an unfinished browser draft is not shared with colleagues.
+**Expected:** changing financial tabs, switching files and refreshing the same browser tab do not lose your review. Select **Save progress** before closing the tab: saved statement corrections can then be reopened from another device with case access. Edits made after that save remain browser drafts until saved again. Imported payments, findings and reports are kept with the case.
 
 ## 5. Confirm both imports and check the totals
 
@@ -301,6 +303,18 @@ Do these in additional test cases or after recording the eight-payment baseline.
 4. Make a revised copy, change one amount, calculate again and save the revision. Check that the original saved calculation remains available.
 5. Include both versions in a report and explain why their results differ.
 
+### F. Select existing evidence folders and remove an unrelated PDF
+
+1. In the separate test case, place a synthetic PDF in an Evidence folder with a subfolder. Include a non-PDF file if available.
+2. Select **Send to Financial**. Tick the parent folder, browse into its subfolder and tick the same PDF too.
+3. Select **Review selected PDFs**. The PDF should appear once and the non-PDF file should be counted as skipped.
+4. Send the selection. Financial should open automatically on **Prepare statements for import**. Existing readings should be reused. No transactions should be imported before you confirm. Refresh and check that processing continues and the same batch remains available.
+5. Open Financial and select **Remove from Financial** on an unrelated, unimported PDF. Confirm removal, refresh and check that it stays out of the normal list while its original remains in Evidence.
+6. Select **Removed files**, restore the PDF, then select **Back to financial files**. It should reappear.
+7. A file already used by an imported statement should not offer removal. Existing transaction counts must stay unchanged.
+
+**Expected:** folder choices work across subfolders, selections do not duplicate a file, existing evidence results are preserved, and removal is reversible for the case.
+
 ## 18. Check the current size limits
 
 A case can contain more payments than one analysis permits. These are separate limits, not a single maximum case size.
@@ -357,3 +371,53 @@ For each failure, record:
 6. Whether the action saved anything before showing the problem. Check the case before repeating an import or save.
 
 Keep private real statements and their screenshots within your team's approved channels. A synthetic test passing does not establish extraction accuracy for every real statement. Keep your manually checked real-file notes so the team can compare them with the imported records.
+
+
+### Statement periods and transaction navigation
+
+1. Open a PDF containing more than one statement. Check that the **Statement period** dropdown lists the separate accounts and dates.
+2. Choose a period. Compare its count and balance check with the PDF. Check that summary pages and terms are not counted as transactions.
+3. Select **Next transaction**. The counter, table highlight and original PDF must refer to the same payment. Continue across a page boundary, then use **Previous transaction** to return.
+4. Correct a value and enter a reason. Switch to another period, then return. The correction must still be present.
+5. For a clean statement, confirm once without opening every transaction. For a flagged statement, select **Show items to check** and verify that each blocking row opens directly for correction.
+6. Check a period with a balance difference and one with no readable balance controls. Neither must be labelled as having matching balances.
+
+
+### G. Import ready statements together and fix one flagged row
+
+1. Use a separate test case containing at least two clean synthetic statements and one with a known ambiguous date or unreadable amount. Send their Evidence folder to Financial.
+2. Wait for **Files checked** to finish. The clean statements should be **Ready to import**. The problem statement should be **Needs attention**, with the actual field or row identified. A multi-period PDF should list its recognised periods separately.
+3. Read the ready statement and transaction counts, then select **Import [number] ready statements** once. Only those statements should become **Imported**. The problem statement must remain outside Transactions.
+4. Refresh the page. Imported counts must remain correct and the problem must still be available. Reopening the batch must not import duplicates.
+5. Tick **Show statements needing attention only**. Select **Go to this row**. Confirm that its correction controls and the matching PDF page open directly.
+6. Correct the value against the synthetic source and enter a reason. Select **Save for bulk import**. The batch should reopen and show the statement ready, unless another problem remains.
+7. Close and reopen the batch. Open that statement again and confirm that the saved correction is retained. Then import the newly ready statement.
+8. Open Transactions. Check the exact counts and totals against your synthetic source files. Confirm that every imported row can still open its original PDF.
+9. If a test file fails processing, confirm that its error remains visible with **Open file review** and **Retry this file**. Other successfully imported statements must remain available.
+
+**Expected:** folder processing leads directly to a persistent Financial batch, ready statements import together, flagged statements stay out until fixed, saved corrections survive reopening, and repeated actions do not add duplicates.
+
+## Check corrections, automatic checks and saved progress
+
+Use artificial test statements in a test case for these checks.
+
+1. In Evidence, select a folder containing statements and use **Send to Financial**. Confirm the selected PDFs. Check that Financial opens the processing batch.
+2. Open a ready statement with running balances. Check that **Balances between payments** gives the number of checked intervals.
+3. Select a printed transaction and **Edit this row**. Increase its credit or debit amount by 1.00 and enter a correction reason. Expect a balance difference with a link to the affected row. The original printed value must remain visible.
+4. Select **Save progress**. Return to the batch, reopen this statement and refresh the page. Expect the corrected value and reason to remain.
+5. Clear that transaction's date and select **Save progress** again. Expect the statement to remain under **Needs attention**, with import unavailable. Saving incomplete work must not add transactions.
+6. Restore the date and amount from the PDF. Expect the checks to run again and the difference to clear. Use **Save and open next problem**. Expect another statement with a problem to open, or the batch list if none remains.
+7. For a PDF containing several accounts and periods, change **Account**, then **Statement period**. Check that next/previous period stays in the chosen account. Search a long collection using **Find a period**.
+8. Import all ready statements. Expect the exact transaction count shown before confirmation. Refresh and repeat opening the batch; no duplicate payments should appear.
+9. If a synthetic statement deliberately contains a printed balance error, keep its printed values. Select **I checked these differences against the PDF**, enter **Why the difference remains**, and save. Expect the difference and explanation to stay recorded. Change an amount again; the previous acknowledgement must no longer accept that new difference.
+
+Record the filename, account, period, action, expected result and actual result for any failure. Do not repair a test result by changing the original PDF.
+
+### Check individual saved progress and repeated corrections
+
+1. Open an unimported synthetic statement from **Statements & accounts**. Clear one transaction date, select **Save progress** and wait for the saved message. Import should remain unavailable.
+2. Reload and reopen that statement. Expect the unfinished date correction to remain. Restore the date from the PDF and enter the reason.
+3. Open **Correct several rows**. Select two rows, choose **Switch credit and debit**, add a reason and select **Preview corrections**. Expect only those two rows in the preview, with their current and proposed columns.
+4. Apply the changes. Expect new balance differences where the switched values no longer match the statement. Switch the same rows back with a reason, then save. Expect the original values to remain visible in the printed table throughout.
+5. If two authorised reviewers open the same saved review, save a change from one and then attempt to save the older review from the other. Expect a conflict message; the later attempt must not overwrite the first saved review.
+6. If reprocessing changes a reading with an earlier saved review, inspect **Previous saved review**. Expect the earlier corrected values to remain available for comparison, rather than being copied onto different source rows.

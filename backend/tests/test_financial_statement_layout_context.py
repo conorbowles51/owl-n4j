@@ -46,7 +46,7 @@ class LayoutContextTests(unittest.TestCase):
         self.assertEqual(statement_layout_context(rows)['rows'],[])
 
     def test_supported_later_card_headings_and_split_cycle_preserve_both_cells(self):
-        for heading in ('Platinum Mastercard ending in 3539','Platinum Card ending in 8441','Platinum Card | Platinum Mastercard ending in 8441',
+        for heading in ('World Elite Mastercard Account Ending in 9392', 'World Elite MasterCard Account Ending in 9392', 'Platinum Mastercard ending in 3539','Platinum Card ending in 8441','Platinum Card | Platinum Mastercard ending in 8441',
                         'Secured Card | Platinum Mastercard ending in 3539', 'Platinum Secured Card | Platinum Mastercard ending in 8441'):
             source=self.source();source[0]['cells'][0]['expected_text']=heading
             source[2]['cells'][0]['expected_text']='Visit capitalone.com to see detailed transactions.'

@@ -24,7 +24,7 @@ def read_statement_running_balances(session, *, case_id, period_id):
         raise StatementCheckError('Transaction ownership is inconsistent.')
     # Retain excluded and historical rows so ambiguity and interrupted chains remain visible.
     rows = list(session.scalars(select(FinancialTransaction).where(FinancialTransaction.statement_period_id == period_id)
-        .order_by(FinancialTransaction.id).limit(1001)))
+        .order_by(FinancialTransaction.id)))
     try:
         comparison = current_running_balances(period, rows)
     except (MoneyError, PeriodError) as exc:

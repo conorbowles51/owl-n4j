@@ -1,0 +1,243 @@
+# DocuClipper research and Loupe processing benchmark
+
+## Local implementation checkpoint, 17 September 2026
+
+The continuation schedule is active every 10 minutes. The latest local implementation adds shared server-side checks to individual and batch review, recalculates edited values, compares running balances beyond 1,000 rows, and supports explicit printed credit/debit totals where recognised. A genuine printed discrepancy can be retained with an explanation tied to the exact values checked. It is never relabelled a match.
+
+Account and period controls are separate. Corrections open immediately under the selected printed row with the PDF alongside it. Batch reviews can save incomplete progress to the server, restore it after browser storage is cleared, and save before opening the next or previous statement needing attention. Original printed cells are retained.
+
+A new synthetic local case verified saved mismatches, incomplete dates, server recovery, navigation across files and bulk import of 36 transactions from three statements. A read-only rerun against the supplied Capital One extraction still finds 52 periods and 301 proposed transactions, with 45 closing-balance matches and 7 unavailable checks. This is regression evidence, not an independent accuracy measurement. Other recovery, reassignment, selected-row correction and investigation connections remain on the checklist below. Nothing here claims deployment.
+
+Research date: 17 September 2026.
+
+Purpose: make financial document processing straightforward for an investigator. Preserve the Loupe investigation workspace the user has accepted and improve the journey into it.
+
+## Recommendation
+
+Use DocuClipper as a benchmark for how little work a user must do to turn a folder of statements into usable transactions. Loupe already has substantial supporting functionality. The next development should bring that functionality together around a compact statement viewer, automatic checks and a short list of specific problems.
+
+The required journey is:
+
+1. Select files or folders in Evidence and choose **Send to Financial**.
+2. Arrive in Financial while the system prepares those documents.
+3. See how many files, accounts, statement periods and transactions were found.
+4. Import all ready statements with one confirmation.
+5. Open each remaining problem directly beside its original PDF, correct it and continue.
+6. Start investigating the imported payments. Return to the source and make recorded corrections later when needed.
+
+This is a proposed acceptance standard. It does not claim that every step already meets it on the deployed server.
+
+## Research method and limits
+
+I read DocuClipper's public product pages and detailed documentation for extraction, reconciliation, corrections, multiple accounts and periods, duplicates, coverage, transfers, categorisation, recurring payments, flow of funds, file handling, APIs, pricing and security. I also opened its public **Financial Investigator** demo and inspected transaction navigation, the PDF/table layout, coverage and an account-reference drill-down. The demo describes itself as a read-only sample environment. [Public demo](https://www.docuclipper.com/app/demo-entry/)
+
+No Loupe documents were uploaded to DocuClipper. The demo cannot establish extraction accuracy, processing speed on the user's files, persistence of edits, or behaviour at case scale. Statements below distinguish documented capabilities from observations and recommendations.
+
+For Loupe, I inspected the current local source and the running-state record. The latest intake, batch and review work is local and unpushed. Previously recorded local browser checks are evidence about those particular journeys, not deployed acceptance or a general accuracy measurement.
+
+## What makes the processing experience useful
+
+### 1. The document, account and period remain clear
+
+DocuClipper documents separate Document, Account and Period selectors. Reconciliation belongs to the selected account and period. Users can correct an account/period assignment rather than treating a whole PDF as one statement. Its reassignment controls support selected rows and creating a missing account/period. [Reconciliation](https://www.docuclipper.com/docs/how-reconciliation-works/), [account and period assignment](https://www.docuclipper.com/docs/how-to-assign-transactions-to-multiple-accounts-and-periods-in-docuclipper/)
+
+**Loupe implication:** a file containing years of statements needs a short account selector and a searchable period selector. Each period needs its own status and transaction count. A problem in one period must leave the others available to import. The PDF page number and the statement's printed page number should remain distinguishable.
+
+### 2. Checks identify a useful place to look
+
+The documentation distinguishes opening/closing reconciliation from running-balance checks and comparisons with independently printed credit/debit totals. A running-balance break points to the affected row. A totals difference shows the amount of the discrepancy. Checks rerun after edits. The documented running-balance check accommodates reverse printing order. [Running-balance and totals checks](https://www.docuclipper.com/docs/review-transactions-balance-and-totals-checks/)
+
+**Loupe implication:** present a short result such as **Balance differs by $21.19**, with **Show the difference**. Keep the calculation available on request. A missing printed balance needs a different status from an actual mismatch. A matching net balance must not silently clear an unreadable date, duplicated row or other unresolved field.
+
+### 3. Reviewing a value and correcting it are close together
+
+DocuClipper documents inline corrections, reversible exclusion, adding missing transactions, switching credits/debits and editing selected rows together. It says corrections are retained against the raw OCR reading. [Transaction review and editing](https://www.docuclipper.com/docs/matching-transactions/)
+
+**Loupe implication:** retain the original statement's columns and blank cells, with a clear edit action at the value or row. An investigator should not have to locate a second table below the viewer. Show the original value and correction history when requested, and use a compact reason control when a correction is saved. Do not require a written reason for every unchanged, valid transaction.
+
+### 4. Navigation follows the investigator's attention
+
+The user's screenshots show a compact transaction navigator, PDF on the left and a transaction grid on the right. In the public demo, clicking **Next transaction** changed the counter from 1 of 2 to 2 of 2. I also observed the document/account/period controls, selected-row actions and per-column filters. These observations confirm the interface arrangement, not extraction performance. [Public demo](https://www.docuclipper.com/app/demo-entry/)
+
+**Loupe implication:** keep previous/next transaction, previous/next issue and PDF page navigation distinct. Selecting a problem should select the transaction, reveal the relevant field and highlight its original location. Closing the review should return the user to the same place in the batch.
+
+### 5. Processing connects to questions an investigator can answer
+
+DocuClipper's coverage documentation describes an account-by-month view that distinguishes missing records, available statements and reconciliation status. Period dates drive the result, so correcting bad dates changes the coverage view. [Statement coverage](https://www.docuclipper.com/docs/date-gaps-analysis/)
+
+In the demo, an account reference with no supplied statement opened a list of the payments mentioning it, with dates and totals. That is a useful model for turning extracted information into a request for further records. [Public demo](https://www.docuclipper.com/app/demo-entry/)
+
+**Loupe implication:** after import, offer useful next actions: view payments, inspect missing periods, follow an account reference, compare related transactions or record a finding. A processed-file count alone is not the end result.
+
+## Current Loupe position
+
+These assessments concern the local working tree. “Present” does not mean every statement format has been independently measured or the change is deployed.
+
+| Area | What is present locally | Work needed to reach the benchmark |
+| --- | --- | --- |
+| Evidence folders to Financial | Folder/file selection, descendant PDFs, deduplicated selection and automatic navigation | Keep this as one obvious entry point; present skipped and already imported files clearly |
+| Background processing | Persistent server batches, per-file and per-period results, retry and worker leases | Improve the compact progress view and distinguish upload, reading and import status |
+| Bulk import | One confirmation imports the displayed ready periods; unresolved periods stay separate | Keep the count and meaning of “ready” consistent everywhere; surface duplicate concerns before confirmation |
+| Multiple statements per PDF | Recognised account/period sections, period dropdown, previous/next period | Separate file, account and period controls; make long collections easy to search and scan |
+| PDF comparison | Original PDF, preserved printed table, measured highlights and page navigation | Put edits beside values; reduce vertical movement and repeated controls |
+| Transaction navigation | Previous/next controls and source navigation | Add a continuous next-problem journey across periods and files; preserve focus throughout |
+| Automatic checks | Opening/closing checks before bulk import; separate running-balance tools after import | Use one current check result across batch, viewer and import; connect row-level differences and printed subtotals |
+| Corrections and recovery | Audited import/correction paths; batch reviews can be saved on the server with revision checks | Make save state obvious; extend durable draft behaviour consistently rather than relying on browser-tab drafts in other paths |
+| Coverage and duplicates | Existing coverage, requested-period and duplicate services/tools | Bring the actionable results into the normal statement workflow |
+| Investigation | Accepted Overview, Transactions, People and businesses, Follow money, Trends and Findings pages | Preserve these pages and open them with the imported accounts/periods already selected |
+
+### Specific integration gaps found during the initial research
+
+1. `statement_review_checks.py` checks opening balance plus selected movements against the closing balance. The batch service uses that result. It does not perform the complete running-balance chain or separate printed credit/debit subtotal checks in this path.
+2. `statement-review-balance.ts` can additionally compare with the last printed transaction balance under particular ordering conditions. The server batch check requires an opening and closing control. These are different checks, so the screen must not describe them as equivalent results.
+3. `correction_balances.py` already implements post-import running-balance diagnostics. It currently declines comparisons above 1,000 period rows. That limit needs to be handled in the proposed integrated checking work, not mistaken for a transaction-import limit.
+4. The statement viewer retains a printed table plus separate correction controls. This preserves original readings, but the correction path still involves moving between representations.
+5. The period selector combines bank, account, dates, pages and checking text into each option. That becomes difficult to scan when a file contains many periods.
+
+Relevant files:
+
+- [Batch processing and readiness](../backend/services/financial/import_batches.py)
+- [Current pre-import checks](../backend/services/financial/statement_review_checks.py)
+- [Shared review arithmetic](../backend/services/financial/review_arithmetic.py)
+- [Current-value checks in the viewer](../frontend_v2/src/features/financial/hooks/use-statement-checks.ts)
+- [Existing running-balance diagnostics](../backend/services/financial/correction_balances.py)
+- [Statement review](../frontend_v2/src/features/financial/components/StatementImportPanel.tsx)
+- [Period selection](../frontend_v2/src/features/financial/components/StatementSectionPicker.tsx)
+- [Persistent progress and earlier validation](loupe-build-state.md)
+
+## Proposed processing screen
+
+The following is Loupe design guidance, not a claim about a DocuClipper screen.
+
+**Top bar:** file selector, account selector, period selector, status and transaction count. Show dates and account identity without a long explanatory paragraph.
+
+**Left:** original PDF, fit/zoom, page navigation and a clearly visible row highlight. Opening a period should start on its first transaction or first problem while keeping summary pages available.
+
+**Right:** the extracted statement using its printed columns. Selecting a value locates it in the PDF. An edit action opens a small editor at that location. Edited values receive a visible marker with access to the original.
+
+**Problem strip:** “2 items need attention”, with previous/next problem and a one-sentence instruction for the selected item. For example: “This date has no readable day. Enter the date printed on page 14.” Summary pages and ordinary issuer wording should not become review tasks.
+
+**Footer:** save status and either **Import ready statements** or **Save correction and next problem**. A disabled action must name its blocker and provide the route to it.
+
+**Batch view:** count files, periods and transactions separately. Show Processing, Ready to import, Needs attention and Imported. Checking status is separate: Balances match, Balance difference, or Balance check unavailable. This prevents “imported” from being mistaken for “all arithmetic checks passed”.
+
+## Development order and completion criteria
+
+Retain completed work in this checklist. Checked items include the local implementation checkpoint below. Unchecked items remain work to complete.
+
+### A. Retain and finish the existing intake foundation
+
+- [x] Select Evidence PDFs and nested folders, then navigate to Financial.
+- [x] Process batches on the server and retain per-period status.
+- [x] Confirm a ready batch once and preserve successful imports on retry.
+- [x] Open a flagged row beside its PDF and save a batch correction on the server.
+- [ ] Apply the same clear progress, save and result language throughout the journey.
+- [ ] Verify the deployed workflow after the local batch changes are published.
+
+**Done when:** a user selects a parent folder, leaves the page, returns, imports the ready periods once and can see which records remain unresolved. Repeating an action must not add duplicate payments.
+
+### B. Make automatic checks consistent
+
+- [x] Create one server result for current proposed values, used by the viewer and batch list.
+- [x] Include independent opening/closing arithmetic, running-balance intervals and separately printed credit/debit totals where supported.
+- [x] Preserve debit/credit conventions for credit cards, currencies, source order and statement boundaries.
+- [x] Identify the relevant rows or source totals for each difference.
+- [x] Show unavailable checks without labelling them successful or creating an imaginary error.
+- [x] Remove or safely replace the current 1,000-row running-balance diagnostic limit.
+- [ ] Recalculate after an edit, exclusion, restored row or reassignment. Edits, exclusions and restoration are complete; account/period reassignment remains part of D.
+
+**Done when:** the same proposed import produces the same status and figures in every view. Equal and opposite missing amounts must be caught where printed gross totals or running balances expose them, even when the final net balance matches.
+
+### C. Simplify the statement workspace
+
+- [x] Separate file, account and period selection, with search for long collections.
+- [x] Show concise period status and counts in the selector.
+- [x] Edit at the value or row while preserving the printed representation and original PDF.
+- [x] Provide next/previous problem across the current batch, including movement to another period or file.
+- [x] Show saved, saving, unsaved and conflicting edits. Individual and batch statement reviews save incomplete progress to the server, restore it without browser storage and refuse stale saves. Reprocessing comparisons are listed separately below.
+- [x] Keep transaction navigation and PDF page navigation separate and keyboard usable.
+
+**Done when:** an investigator can locate and correct an amount without searching another part of the screen, then move to the next problem without reopening the file. Switching periods, tabs or refreshing restores saved work.
+
+### D. Reduce avoidable manual work on difficult files
+
+- [ ] Exclude recognised summary, disclosure and marketing sections from transaction candidates while retaining their source pages and useful totals.
+- [ ] Distinguish uncertain transaction fields from harmless contextual text.
+- [x] Offer selected-row correction for repetitive errors with a before/after preview, selection across pages, source links and a reason retained on every changed row. Checks recalculate after applying.
+- [ ] Permit account/period reassignment where detection was wrong, retaining source and correction history.
+- [ ] Finish reprocessing recovery for unmatched period boundaries and batch-only drafts. Individual saved reviews now carry forward from the explicit parent period only when the extraction revision matches; a changed revision shows earlier values for comparison. Current imports and earlier source versions remain retained.
+- [ ] Present probable duplicate coverage for a deliberate decision; keep originals in Evidence.
+
+**Done when:** the supplied multi-statement files produce a manageable, justified set of review tasks. A cleaner screen alone cannot close this item. Every false flag and missed transaction found in the benchmark must be recorded.
+
+### E. Connect import to investigation
+
+- [ ] Open the imported transactions with the relevant accounts and dates selected.
+- [ ] Bring missing-period and overlapping-period checks into the main statement register.
+- [ ] Add an actionable list of account references without supplied statements, linked to the payments that mention them.
+- [ ] Allow those questions and selected payments to be saved in Findings without copying text between screens.
+
+**Done when:** a user can go from a ready import to a source-backed investigation question in the ordinary workflow.
+
+## How to judge whether we matched the ease of use
+
+Measure the user's work as well as extraction accuracy. The following are acceptance targets, not measured results:
+
+| Scenario | Expected user experience | Evidence to record |
+| --- | --- | --- |
+| Clean single statement | One import confirmation after processing; no per-row acceptance | Steps, transaction count and checked fields |
+| Clean mixed folder | One confirmation for all ready periods | Expected files/periods/accounts, skipped files and duplicates |
+| One misread value | Open the issue, compare source, edit, save; other periods remain usable | Click path, source highlight, recalculated checks |
+| Multi-period card PDF | All recognised periods selectable; summary pages add no spurious transactions | Independent period inventory and row comparison |
+| Equal-offset errors | Net match does not conceal failures visible in other controls | Separate opening/closing, gross-total and running checks |
+| No printed balances | Clear unavailable status; valid records can follow the stated import policy | No invented opening/closing values or false success badge |
+| Repeated upload/retry | No duplicate import from repeating the same confirmed operation | Row counts and source identifiers before/after |
+| Navigation/restart | Saved edits and completed imports remain available | Close/reopen, refresh and worker recovery checks |
+| Large period | No silent omission or successful badge for a skipped check | Expected row count, complete retrieval and check coverage |
+
+For extraction, independently check transaction presence, date, description, amount, credit/debit placement, balance, account/period assignment and PDF location. Report results by document type and scan quality. Also measure time to usable import, manual interventions, false flags and incorrect records that were not flagged.
+
+The real 222-page PDF already examined locally and the user's 201-page DocuClipper screenshot are different documents. Their counts cannot establish a like-for-like accuracy comparison. The local record of 52 recognised periods and 301 extracted transactions is an extraction result, not independently established ground truth.
+
+## Broader capabilities worth learning from
+
+**Duplicates:** their documentation describes exact-file detection before conversion and possible transaction overlap across sources, with a review prompt. Its looser account matching is a reason to retain human review of ambiguous duplicates. Loupe should keep source records and decisions visible. [Duplicate detection](https://www.docuclipper.com/docs/detecting-duplicate-statements-and-transactions/)
+
+**Transfers:** matching uses opposite movements on different accounts, amount, dates and descriptions. The detailed workflow requires running detection and reviewing suggested matches. This supports proposing links automatically while keeping an investigator's decision separate. [Transfers](https://www.docuclipper.com/docs/transfers-analysis/)
+
+**Trends and repeated payments:** chronological balance/cash-flow charts and recurring series link summaries to the transactions behind them. Loupe should preserve that connection in its accepted investigation design. [Cashflow](https://www.docuclipper.com/docs/cashflow-analysis/), [recurring payments](https://www.docuclipper.com/docs/recurring-transactions-analysis/)
+
+**People and accounts:** the documented account model supports holder/role attributes and filtered flow diagrams. Manual account merging is explicitly described as not yet shipped in the tracing guide. A shared holder label is not a substitute for verified account identity. [Account tracing](https://www.docuclipper.com/docs/multi-account-tracing/)
+
+**Flow of funds:** the documentation connects diagram selection, filtered transaction lists and exports. It describes a workbook with transactions, account-to-account totals and account summaries. This is useful evidence-linked navigation, although it does not by itself establish the identity or purpose of a payment. [Flow of funds](https://www.docuclipper.com/docs/flow-of-funds-analysis/)
+
+**Categories:** the help article describes user-triggered keyword rules and recorded matching keywords. Marketing references to AI categorisation should not be taken as a precise description of that documented workflow. Categorisation, recurring detection and transfers are separate from automatic extraction/reconciliation. [Categorisation](https://www.docuclipper.com/docs/how-docuclipper-transaction-categorization-works/)
+
+**Checks and other documents:** its cheque workflow can enrich a statement's cheque-number placeholder using a matching cheque image, and skips ambiguous matches. That is a later opportunity for Loupe, separate from completing statement intake. [Cheque extraction](https://www.docuclipper.com/docs/check-extraction-overview/)
+
+**Document concerns:** metadata, document-template fingerprints and reconciliation contribute to a vendor-defined authenticity score. The documentation itself explains benign causes and says the score is not a final decision. Loupe should present any future document concerns as specific observations to investigate. [Fraud detection](https://www.docuclipper.com/docs/understanding-bank-statement-fraud-detection/)
+
+## Limits and inconsistencies in the public evidence
+
+- **Multi-period support is not unconditional.** The extraction quick-start recommends one period per PDF, while the account/period guide describes support and manual correction for combined files. The supplied screenshots demonstrate a successful combined-file example. Those facts do not establish reliable automatic segmentation for every pack. [Extraction guide](https://www.docuclipper.com/docs/extract-data-from-bank-statements/), [assignment guide](https://www.docuclipper.com/docs/how-to-assign-transactions-to-multiple-accounts-and-periods-in-docuclipper/)
+- **Input quality still matters.** Their preparation guide recommends original PDFs, upright complete pages and normal single-page layouts; it identifies two-up scans as difficult. [File preparation](https://www.docuclipper.com/docs/preparing-files-for-best-results/)
+- **Accuracy is a vendor claim.** The OCR page advertises 99.9% field-level accuracy and large-scale validation. I did not find a reproducible evaluation dataset or detailed scoring method on the reviewed pages. That percentage does not establish whole-statement accuracy or performance on Loupe's documents. [OCR product page](https://www.docuclipper.com/features/bank-statement-ocr/)
+- **“Reconciled” is not proof of authenticity or complete extraction.** A final balance can agree despite offsetting mistakes. This is why the separate checking methods matter and why originals must remain available.
+- **A read-only demo is not a production trial.** It confirms visible controls and sample navigation. I have not tested saving edits, processing the user's PDFs or exporting a real investigation through their service.
+- **Do not copy destructive document cleanup.** Their document guide says deletion removes the source and associated transactions, tags and notes within the project. Loupe's requirement is to retain Evidence and recorded history when excluding a file from Financial. [Document management](https://www.docuclipper.com/docs/managing-project-documents/)
+
+## API, cost and data handling
+
+These findings are relevant if an external extraction service is considered later. The present recommendation is to use the workflow as a benchmark. No integration or subscription was started.
+
+The API guide describes uploading documents, starting background jobs and retrieving grouped results or transactions. The documented flat transaction endpoint defaults to 1,000 rows, has a maximum of 10,000 and currently lacks an offset cursor; that particular endpoint should not be assumed to retrieve arbitrarily large cases. The guide also describes per-document reads and webhook use. Field-level PDF coordinates and complete correction-history portability would need explicit validation before an integration decision. [API recipes](https://www.docuclipper.com/docs/api-common-recipes/)
+
+Public pricing is page based, with unlimited users advertised and advanced financial analysis associated with Business/Enterprise. The dynamic pricing page mixes currency/billing options in its text extraction, so this report does not quote a potentially misleading price. Successful blank and cover pages count if processed; rerunning conversion consumes pages again. [Pricing](https://www.docuclipper.com/pricing/), [page counting](https://www.docuclipper.com/docs/do-all-pages-count/), [overages](https://www.docuclipper.com/docs/credits-and-overages/)
+
+The security page states SOC 2 Type II, encryption, a DPA on request and no training of third-party models using customer documents. This is a summary of vendor statements; I did not inspect its audit report. Its published subprocessor list identifies US hosting and external OCR/model providers. That list describes a broader set of processing activities than the security page's description of deterministic bank-transaction extraction. Exact document routing would need to be established for any integration. [Security](https://www.docuclipper.com/security/), [subprocessors](https://www.docuclipper.com/legal/subprocessors/)
+
+Public retention descriptions are not consistent: the security page gives plan-specific periods, while the job-history article describes active-subscription retention with shorter exceptions for some users and automated ingestion. These need clarification before relying on the service as a long-term evidence store. [Retention statements](https://www.docuclipper.com/security/), [job history](https://www.docuclipper.com/docs/how-to-access-job-history-in-docuclipper/)
+
+## Scope of this research change
+
+This report records the benchmark and proposed development order. Application code, extraction settings, case data and deployment were not changed as part of the research. The existing unpushed development work remains intact.

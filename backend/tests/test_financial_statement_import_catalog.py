@@ -69,3 +69,32 @@ class StatementCatalogTests(unittest.TestCase):
         value = page(1)
         value['rows'] += source([['Secured Card | Platinum Mastercard ending in 9999']])['rows']
         self.assertEqual(statement_catalog([value])['statements'], [])
+
+    def test_world_elite_collection_separates_periods_and_keeps_summary_and_terms_out_of_payments(self):
+        from services.financial.statement_import_card import propose_card_table
+        from services.financial.statement_layout_context import statement_layout_context
+        header = page(1, 'Nov. 30, 2020 - Dec. 23, 2020 | 24 days in Billing Cycle', '9392')
+        header['rows'][0]['cells'][0]['expected_text'] = 'World Elite Mastercard Account Ending in 9392'
+        summary = source([['Payment Information'], ['Minimum Payment', '22 Months', '$547']])
+        summary['page_number'] = 1; summary['table_index'] = 1
+        terms = source([['How can I Avoid Paying Interest Charges?'], ['How can I Close My Account?'], ['Billing Rights Summary']])
+        terms['page_number'] = 2
+        transactions = page(3, 'Nov. 30, 2020 - Dec. 23, 2020 | 24 days in Billing Cycle', '9392')
+        transactions['rows'][0]['cells'][0]['expected_text'] = 'World Elite Mastercard Account Ending in 9392'
+        more = source([['EXAMPLE PERSON #9392: Transactions'], ['Date','Description','Amount'], ['Dec 4','EXAMPLE SHOP','$63.31'], ['Total Transactions for This Period','$63.31']])['rows']
+        transactions['rows'] += [{**r, 'row_index': r['row_index']+3} for r in more]
+        transactions['layout_context'] = statement_layout_context(transactions['rows'])
+        following = page(5, 'Dec. 24, 2020 - Jan. 23, 2021 | 31 days in Billing Cycle', '9392')
+        following['rows'][0]['cells'][0]['expected_text'] = 'World Elite Mastercard Account Ending in 9392'
+        result = statement_catalog([header, summary, terms, transactions, following])
+        self.assertEqual(len(result['statements']), 2)
+        first = result['statements'][0]
+        self.assertEqual(first['page_numbers'], [1,3])
+        self.assertEqual(first['account_reference'], '****9392')
+        self.assertEqual(len(result['information_sources']), 1)
+        self.assertTrue(all(r['excluded'] for r in propose_card_table(summary, 'USD', first)['rows']))
+        payments = [r for r in propose_card_table(transactions, 'USD', first)['rows'] if not r['excluded']]
+        self.assertEqual(len(payments), 1)
+        self.assertEqual(payments[0]['fields']['date'], '2020-12-04')
+        self.assertEqual(payments[0]['fields']['amount_minor'], '6331')
+        self.assertEqual(payments[0]['fields']['direction'], 'debit')

@@ -33,6 +33,8 @@ import { useUploadToFolder } from "../hooks/use-upload-to-folder"
 import { useGuardedProcess } from "../hooks/use-guarded-process"
 import { ProcessHoldDialog } from "./ProcessHoldDialog"
 import { toast } from "sonner"
+import { EvidenceFinancialPicker } from "@/features/financial/components/EvidenceFinancialPicker"
+import { FinancialAccessProvider } from "@/features/financial/components/FinancialAccessProvider"
 
 interface FileListToolbarProps {
   caseId: string
@@ -218,6 +220,9 @@ export function FileListToolbar({
       <div className="flex-1" />
 
       {/* Action buttons */}
+      <FinancialAccessProvider caseId={caseId} quietFailure>
+        <EvidenceFinancialPicker caseId={caseId} initialFileIds={Array.from(selectedFileIds)} initialFolderId={currentFolderId} label="Send to Financial" />
+      </FinancialAccessProvider>
       <Tooltip>
         <TooltipTrigger asChild>
           <Button

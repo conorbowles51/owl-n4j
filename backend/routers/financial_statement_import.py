@@ -9,6 +9,7 @@ from routers.case_access import case_access_dependency
 from routers.users import get_current_db_user
 from services.financial.pdf_candidates import PdfMappingError
 from services.financial.statement_import import read_statement_import
+from services.financial.statement_check_request import StatementCheckRequest, check_statement_request
 from services.financial.statement_file_status import statement_file_status
 from services.financial.payment_document_review import (
     PaymentMatchRequest, PaymentDocumentReviewRequest, matching_payments,
@@ -41,7 +42,18 @@ def preview(evidence_file_id: UUID, case_id: UUID = Query(...),
 from sqlalchemy.orm import sessionmaker
 from routers.evidence import _resolve_stored_path
 from services.financial.quarantine_row import actor_from_user
-from services.financial.statement_import import StatementImportRequest, confirm_statement_import
+from services.financial.statement_import import StatementImportRequest, StatementReviewDraft, confirm_statement_import
+
+
+@router.post('/{evidence_file_id}/checks')
+def review_checks(evidence_file_id: UUID, body: StatementCheckRequest, case_id: UUID = Query(...),
+                  db: Session = Depends(get_db)):
+    try:
+        proposal = read_statement_import(db, case_id=case_id, evidence_file_id=evidence_file_id,
+                                        currency=body.currency, statement_id=body.statement_id, _include_period_checks=False)
+        return check_statement_request(proposal, body)
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
 
 @router.post('/{evidence_file_id}/payment-document/matches')
@@ -84,8 +96,91 @@ def confirm(evidence_file_id: UUID, body: StatementImportRequest, case_id: UUID 
         raise HTTPException(status_code=500, detail='Import could not be confirmed. Retry the same review to check its outcome without adding duplicates.')
 
 from pydantic import BaseModel, ConfigDict
+from pydantic import Field
+from services.financial.statement_progress import save_progress
+from services.financial.file_visibility import set_financial_file_visibility
+from services.financial.evidence_intake import resolve_financial_selection, prepare_existing_financial_file
 from services.financial.statement_reprocessing import create_statement_version
 from services.evidence_processing_service import process_db_files
+
+
+class FileVisibilityRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    removed: bool = Field(strict=True)
+    expected_revision: str = Field(min_length=1, max_length=64)
+
+
+class StatementProgressRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    expected_review_revision: str = Field(min_length=1, max_length=64)
+    request: StatementReviewDraft
+
+
+@router.put('/{evidence_file_id}/progress', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
+def save_statement_progress(evidence_file_id: UUID, body: StatementProgressRequest, case_id: UUID = Query(...),
+                            user=Depends(get_current_db_user), db: Session = Depends(get_db)):
+    try:
+        return save_progress(db, case_id=case_id, evidence_file_id=evidence_file_id,
+            request=body.request, expected_review_revision=body.expected_review_revision, actor=actor_from_user(user))
+    except PdfMappingError as exc:
+        db.rollback()
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception:
+        db.rollback()
+        logger.exception('Statement progress could not be saved')
+        raise HTTPException(status_code=500, detail='Progress could not be saved. Your edits remain in this review. Try saving again.')
+
+
+class EvidenceSelectionRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    file_ids: list[UUID] = Field(default_factory=list, max_length=10000)
+    folder_ids: list[UUID] = Field(default_factory=list, max_length=1000)
+
+
+class EvidencePreparationRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    expected_revision: str = Field(min_length=1, max_length=64)
+
+
+@router.post('/selection/resolve')
+def resolve_selection(body: EvidenceSelectionRequest, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    try:
+        return resolve_financial_selection(db, case_id=case_id, file_ids=body.file_ids, folder_ids=body.folder_ids)
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+@router.post('/{evidence_file_id}/prepare-existing', dependencies=[
+    Depends(case_access_dependency(lambda request, payload: ('case', 'edit'))),
+    Depends(case_access_dependency(lambda request, payload: ('evidence', 'upload')))])
+async def prepare_existing(evidence_file_id: UUID, body: EvidencePreparationRequest, case_id: UUID = Query(...),
+                           user=Depends(get_current_db_user), db: Session = Depends(get_db)):
+    try:
+        return await prepare_existing_financial_file(db, case_id=case_id, evidence_file_id=evidence_file_id,
+            expected_revision=body.expected_revision, actor=actor_from_user(user), resolve_path=_resolve_stored_path,
+            process_files=process_db_files)
+    except PdfMappingError as exc:
+        db.rollback()
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception:
+        db.rollback()
+        logger.exception('Existing evidence could not be sent to Financial')
+        raise HTTPException(status_code=500, detail='The financial reading could not be confirmed. Refresh files before trying again; existing evidence results are retained.')
+
+
+@router.post('/{evidence_file_id}/visibility', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
+def visibility(evidence_file_id: UUID, body: FileVisibilityRequest, case_id: UUID = Query(...),
+               user=Depends(get_current_db_user), db: Session = Depends(get_db)):
+    try:
+        return set_financial_file_visibility(db, case_id=case_id, evidence_file_id=evidence_file_id,
+            removed=body.removed, expected_revision=body.expected_revision, actor=actor_from_user(user))
+    except PdfMappingError as exc:
+        db.rollback()
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception:
+        db.rollback()
+        logger.exception('Financial file-list change failed')
+        raise HTTPException(status_code=500, detail='The file-list change could not be confirmed. Refresh files to check the result. The original remains in Evidence.')
 
 
 class ReprocessRequest(BaseModel):
@@ -113,3 +208,107 @@ async def reprocess(evidence_file_id: UUID, body: ReprocessRequest, case_id: UUI
     except Exception:
         logger.exception('Statement reprocessing failed')
         raise HTTPException(status_code=500, detail='Reprocessing could not be confirmed. Previous readings are preserved; retry the same request.')
+
+# Batches retain their own file/period list and reuse the single-statement writer.
+from services.financial import import_batches
+
+
+class CreateFinancialBatch(EvidenceSelectionRequest):
+    request_id: UUID
+
+
+class ConfirmFinancialBatch(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    expected_ready_revision: str = Field(pattern=r'^[a-f0-9]{64}$')
+
+
+class FinancialBatchCurrency(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    currency: str = Field(pattern=r'^[A-Z]{3}$')
+
+
+@router.post('/batches', dependencies=[Depends(case_access_dependency(lambda request,payload: ('case','edit'))), Depends(case_access_dependency(lambda request,payload: ('evidence','upload')))])
+def create_financial_batch(body: CreateFinancialBatch, case_id: UUID = Query(...), user=Depends(get_current_db_user), db: Session = Depends(get_db)):
+    try:
+        identifier=import_batches.create_batch(db,case_id=case_id,request_id=body.request_id,file_ids=body.file_ids,folder_ids=body.folder_ids,actor=actor_from_user(user))
+        return dict(id=str(identifier),case_id=str(case_id))
+    except PdfMappingError as exc:
+        db.rollback();raise HTTPException(status_code=exc.status_code,detail=str(exc)) from exc
+
+
+@router.get('/batches/list')
+def list_financial_batches(case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    from sqlalchemy import select
+    from postgres.models.financial_import_batches import FinancialImportBatch
+    batches=db.scalars(select(FinancialImportBatch).where(FinancialImportBatch.case_id==case_id).order_by(FinancialImportBatch.created_at.desc()).limit(100))
+    return dict(case_id=str(case_id),batches=[dict(id=str(b.id),status=b.status,created_at=b.created_at.isoformat(),file_count=len(b.files)) for b in batches])
+
+
+@router.get('/batches/{batch_id}')
+def get_financial_batch(batch_id: UUID, case_id: UUID = Query(...), offset: int = Query(0,ge=0), limit: int = Query(100,ge=1,le=500),only_problems: bool = Query(False),db: Session = Depends(get_db)):
+    try:
+        return import_batches.batch_status(db,case_id=case_id,batch_id=batch_id,offset=offset,limit=limit,only_problems=only_problems)
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code,detail=str(exc)) from exc
+
+
+@router.post('/batches/{batch_id}/confirm', dependencies=[Depends(case_access_dependency(lambda request,payload: ('case','edit')))])
+def confirm_financial_batch(batch_id: UUID,body: ConfirmFinancialBatch,case_id: UUID = Query(...),user=Depends(get_current_db_user),db: Session = Depends(get_db)):
+    try:
+        return import_batches.queue_import(db,case_id=case_id,batch_id=batch_id,expected_revision=body.expected_ready_revision,actor=actor_from_user(user))
+    except PdfMappingError as exc:
+        db.rollback();raise HTTPException(status_code=exc.status_code,detail=str(exc)) from exc
+
+
+class SaveFinancialBatchReview(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    expected_review_revision: str = Field(pattern=r'^[a-f0-9]{64}$')
+    request: StatementReviewDraft
+
+
+@router.put('/batches/{batch_id}/items/{item_id}',  dependencies=[Depends(case_access_dependency(lambda request,payload: ('case','edit')))])
+def save_financial_batch_review(batch_id: UUID,item_id: UUID,body: SaveFinancialBatchReview,case_id: UUID = Query(...),db: Session = Depends(get_db)):
+    try:
+        return import_batches.save_review(db,case_id=case_id,batch_id=batch_id,item_id=item_id,request=body.request,expected_review_revision=body.expected_review_revision)
+    except PdfMappingError as exc:
+        db.rollback();raise HTTPException(status_code=exc.status_code,detail=str(exc)) from exc
+
+
+@router.post('/batches/{batch_id}/files/{source_id}/currency', dependencies=[Depends(case_access_dependency(lambda request,payload: ('case','edit')))])
+def financial_batch_currency(batch_id: UUID,source_id: UUID,body: FinancialBatchCurrency,case_id: UUID=Query(...),db: Session=Depends(get_db)):
+    from services.financial.money import MoneyError
+    try:
+        import_batches.choose_currency(db,case_id=case_id,batch_id=batch_id,source_id=source_id,currency=body.currency)
+        return dict(saved=True)
+    except (PdfMappingError,MoneyError) as exc:
+        db.rollback();raise HTTPException(status_code=getattr(exc,'status_code',422),detail=str(exc)) from exc
+
+@router.get('/batches/{batch_id}/items/{item_id}')
+def get_financial_batch_item(batch_id: UUID,item_id: UUID,case_id: UUID=Query(...),db: Session=Depends(get_db)):
+    from sqlalchemy import select
+    from postgres.models.financial_import_batches import FinancialImportBatchItem
+    try:
+        import_batches.batch_for(db,case_id,batch_id)
+        item=db.scalar(select(FinancialImportBatchItem).where(FinancialImportBatchItem.batch_id==batch_id,FinancialImportBatchItem.id==item_id))
+        if item is None: raise PdfMappingError('Statement not found in this batch.',404)
+        return dict(id=str(item.id),file_id=str(item.file_id),statement_id=item.statement_key or None,status=item.status,review_request=item.review_request,review_revision=import_batches._digest(item.review_request or {}),**item.summary)
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code,detail=str(exc)) from exc
+
+
+@router.get('/batches/{batch_id}/items/{item_id}/next-problem')
+def next_financial_problem(batch_id: UUID, item_id: UUID, case_id: UUID=Query(...),
+                           direction: Literal["next", "previous"] = Query("next"), db: Session=Depends(get_db)):
+    try:
+        return import_batches.next_problem(db, case_id=case_id, batch_id=batch_id, item_id=item_id, direction=direction)
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+@router.post('/batches/{batch_id}/files/{source_id}/retry', dependencies=[Depends(case_access_dependency(lambda request,payload: ('case','edit'))),Depends(case_access_dependency(lambda request,payload: ('evidence','upload')))])
+def retry_financial_batch_file(batch_id: UUID,source_id: UUID,case_id: UUID=Query(...),db: Session=Depends(get_db)):
+    try:
+        import_batches.retry_file(db,case_id=case_id,batch_id=batch_id,source_id=source_id)
+        return dict(queued=True)
+    except PdfMappingError as exc:
+        db.rollback();raise HTTPException(status_code=exc.status_code,detail=str(exc)) from exc

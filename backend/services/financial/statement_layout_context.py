@@ -18,6 +18,7 @@ _CYCLE = re.compile(r'^' + _DATE + r'\s+-\s+' + _DATE + r'\s*\|\s*(\d{1,2}) days
 _SECTION = re.compile(r'^(.+?) #(\d{4}): (Payments, Credits and Adjustments|Transactions)$')
 CAPITAL_ONE_CARD_HEADING = re.compile(
     r'(?:Platinum MasterCard Account Ending in|Platinum Mastercard ending in|Platinum Card ending in|'
+    r'World Elite Mastercard Account Ending in|World Elite MasterCard Account Ending in|'
     r'(?:Platinum Card|Secured Card|Platinum Secured Card) \| Platinum Mastercard ending in) (\d{4})')
 
 

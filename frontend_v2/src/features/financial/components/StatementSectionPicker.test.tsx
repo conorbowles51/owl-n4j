@@ -1,6 +1,9 @@
 import { fireEvent, render, screen, within } from "@testing-library/react"
 import { beforeEach, expect, it, vi } from "vitest"
-import { StatementSectionPicker } from "./StatementSectionPicker"
+import {
+  StatementSectionPicker,
+  StatementPeriodSelect,
+} from "./StatementSectionPicker"
 import { useStatementWorkspace } from "../stores/statement-workspace"
 const choices = [
   {
@@ -33,6 +36,45 @@ const choices = [
   },
 ]
 beforeEach(() => useStatementWorkspace.setState({ sectionSearches: {} }))
+it("separates accounts from periods and keeps next-period navigation within the selected account", () => {
+  const choose = vi.fn()
+  const later = {
+    ...choices[0],
+    id: "later",
+    period_start: "2020-10-01",
+    period_end: "2020-10-31",
+  }
+  const view = render(
+    <StatementPeriodSelect
+      choices={[...choices, later]}
+      value="checking"
+      onChoose={choose}
+    />
+  )
+  const periods = within(
+    screen.getByRole("combobox", { name: "Statement period" })
+  ).getAllByRole("option")
+  expect(periods).toHaveLength(3)
+  expect(periods.map((option) => option.textContent).join(" ")).not.toContain(
+    "Savings"
+  )
+  fireEvent.click(screen.getByRole("button", { name: "Next period" }))
+  expect(choose).toHaveBeenLastCalledWith("later")
+  view.rerender(
+    <StatementPeriodSelect
+      choices={[...choices, later]}
+      value="later"
+      onChoose={choose}
+    />
+  )
+  expect(screen.getByRole("button", { name: "Next period" })).toBeDisabled()
+  const account = screen.getByRole("combobox", { name: "Statement account" })
+  const savings = within(account).getByRole("option", {
+    name: /Savings/,
+  }) as HTMLOptionElement
+  fireEvent.change(account, { target: { value: savings.value } })
+  expect(choose).toHaveBeenLastCalledWith("saving")
+})
 it("filters by all search words without changing PDF order, and selects the exact matching section", () => {
   const choose = vi.fn()
   render(
@@ -45,7 +87,7 @@ it("filters by all search words without changing PDF order, and selects the exac
   const area = screen.getByRole("region", { name: "Statements in this PDF" })
   expect(
     within(area)
-      .getAllByRole("button")
+      .getAllByRole("button", { name: /pages / })
       .map((b) => b.textContent)
   ).toEqual([
     expect.stringContaining("0040"),

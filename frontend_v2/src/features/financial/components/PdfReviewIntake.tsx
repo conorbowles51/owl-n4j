@@ -13,6 +13,7 @@ const uploadAnswer = z.object({
       original_filename: z.string(),
       engine_job_id: z.string().nullable().optional(),
       status: z.string(),
+      financial_removed: z.boolean().default(false),
     })
   ),
 })
@@ -55,8 +56,10 @@ function PdfReviewIntakeForm({
       )
       if (result.files.some((f) => f.case_id !== caseId))
         throw Error("Uploaded files belong to another case.")
-      return result.files.filter((f) =>
-        f.original_filename.toLowerCase().endsWith(".pdf")
+      return result.files.filter(
+        (f) =>
+          !f.financial_removed &&
+          f.original_filename.toLowerCase().endsWith(".pdf")
       )
     },
   })

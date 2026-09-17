@@ -65,9 +65,17 @@ class RunningBalanceTests(unittest.TestCase):
 
     def test_ambiguous_positions_missing_balances_mixed_accounts_and_limits_unavailable(self):
         for rows in ([row(0,10,10),row(0,20,30)], [row(0,10,None)], [row(0,10,10,account_id="b")],
-                     [row(0,10,10,currency="USD")], [row(0,1.1,10)], [row(i,1,i+1) for i in range(1001)]):
+                     [row(0,10,10,currency="USD")], [row(0,1.1,10)]):
             with self.subTest(rows=len(rows)):
                 self.assertFalse(self.check(rows)["available"])
+
+    def test_large_statement_checks_every_interval_and_late_correction(self):
+        result = self.check([row(i, 1, i+1) for i in range(25000)], transaction_id=24999, amount_minor=2)
+        forward = result['interpretations'][0]
+        self.assertEqual(forward['current']['compared_intervals'], 25000)
+        self.assertEqual(forward['current']['mismatch_count'], 0)
+        self.assertEqual(forward['proposed']['mismatch_count'], 1)
+        self.assertEqual(forward['proposed']['findings'][0]['after_transaction_id'], '24999')
 
     def test_large_and_signed_balances_remain_exact(self):
         value=9007199254740993

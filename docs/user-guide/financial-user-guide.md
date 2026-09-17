@@ -232,7 +232,7 @@ You do not need to assign columns, select every payment, save a batch or finaliz
 4. Wait for a file to show **Ready to review**, then select its filename. It opens in the main statement viewer.
 5. Select **Back to all statement files**, then another filename to switch files. Alternatively use the right-hand file switcher. Use **Search filenames** to narrow the list. The added time and short identifier distinguish files with the same name.
 6. Return to a file to continue its review. Changes are saved when you switch; its selected statement period and page are remembered during this session.
-7. Check and confirm each statement separately. Bulk upload does not automatically confirm transactions.
+7. Check and confirm statements individually, or choose the uploaded files through **Choose from Evidence** to prepare a bulk import. Uploading files does not automatically confirm transactions.
 
 If a file has not been read, select **Read statement** beside its name. If reading failed, select **Retry reading**. These actions read the PDF already in the case; you do not need to upload it again. Wait for **Ready to review**, then select the filename. Files being processed cannot be started again from this panel.
 
@@ -243,6 +243,37 @@ If a request fails, select **Refresh files** and inspect what arrived before upl
 ![The main statement file register with two synthetic PDFs and their imported payment counts](images/30-investigator-files.png)
 
 *The main file register shows filenames, import counts, accounts and periods. Select a file to open its review.*
+
+### Send files or folders already in Evidence to Financial
+
+1. In **Evidence**, select the files you want and choose **Send to Financial** in the toolbar. You can also start in the financial file list with **Choose from Evidence**.
+2. Select a folder name to browse inside it. Use **Evidence root** or the folder names above the list to go back.
+3. Tick individual PDFs or tick a folder to include its PDFs and all subfolders. Your selections remain selected when you browse another folder.
+4. Select **Review selected PDFs**. Check the filenames. Overlapping selections include a file once; non-PDF files are skipped. Files you previously removed from Financial will be restored if selected.
+5. Select **Send [number] PDFs to Financial**. Loupe takes you straight to **Prepare statements for import** in Financial. Processing continues on the server if you leave or refresh the page.
+6. Read **Files checked**, **Ready to import**, **Need attention** and **Imported**. Each recognised account and statement period has its own entry. Existing readings are reused. Completed Evidence results are kept; a separate financial reading is made if necessary.
+7. Select **Import [number] ready statements** to import the displayed ready group in one step. Read the transaction count beside the button first. Statements still processing or needing attention are left out. A statement already imported is shown as **Imported** and is not added again.
+8. Tick **Show statements needing attention only** to see problems anywhere in the batch. Select **Go to this row** to open the affected transaction beside its PDF. Use **Review problems** for missing account details, unreadable balances or another statement-level problem.
+9. Correct the flagged field and record what you checked. If the value is already correct, use **I checked this row against the PDF**. Select **Save for bulk import** to save that statement's corrections on the server and return to the batch. This button does not import its transactions yet.
+10. Import the newly ready group when you are satisfied. Statements with a remaining balance difference stay under **Need attention**. You can open any ready statement to inspect it before confirming.
+11. To return later, open **Statements & accounts**, select **Back to all statement files** if necessary, then open the dated entry under **Processing batches**. The batch and saved corrections remain available after closing the browser.
+
+![A Financial batch with two ready statements and one date needing attention](images/33-financial-bulk-import.png)
+
+*The bulk-import button names the ready statement count. The flagged statement stays outside the import and has a direct link to its date correction.*
+
+A statement is ready when its required fields can be used, its flagged rows have been resolved and any available opening/closing balance check agrees. If readable balances are missing, the entry says that the automatic balance check is unavailable. Missing balances do not by themselves stop an otherwise usable statement from being imported. Review that statement if you need to establish its balance before proceeding.
+
+If **File processing** shows an error, read the message. Use **Open file review** to inspect it or **Retry this file** after the current processing finishes. Successful imports remain saved when another statement fails. Use **Refresh batch** to check the outcome before retrying an uncertain import. You can select up to 10,000 existing files in one group; send larger folders in smaller groups. Receipts and payment documents use their own document review and are not bulk-imported as account statements.
+
+### Remove a PDF that does not belong in Financial
+
+1. In the financial file list, find the unwanted PDF and select **Remove from Financial**.
+2. Check its filename in the dialog, then select **Remove from Financial** again.
+3. The file leaves the Financial list for everyone working on the case. Its original remains in Evidence, and saved notes and review drafts are kept.
+4. To bring it back, select **Removed files**, find the filename and choose **Restore to Financial**. Select **Back to financial files** to return to the current list.
+
+A file with imported transactions or a recorded statement period cannot be removed this way. Open its existing import to correct the records or review an exclusion instead. Removing a file is not a way to delete financial records.
 
 ### Review a deposit receipt
 
@@ -351,6 +382,41 @@ Capital One fee tables can have either **Date** or separate **Trans Date** and *
 
 An opening balance, closing balance, column heading or disclosure paragraph is not a payment. Loupe excludes recognised examples from the proposed transaction count. Their source text remains available in the printed table or under **Other extracted page text**. To inspect their import treatment, open **Show corrections and import choices**, then select **Show excluded rows**.
 
+### Correct a value beside its original
+
+1. Select the printed row or value in **Extracted statement**. Its source is highlighted in the PDF.
+2. Select **Edit this row**. A small editor opens directly beneath that row.
+3. Change the date, description, Credit, Debit or printed balance as needed. Leave **Include this transaction** unchecked for a row that is not a payment.
+4. Enter **Reason for the correction or check**. The original printed text stays visible and is retained.
+5. Select **Done editing this row**. **View correction** reopens a changed row. This closes the editor; it does not import the statement.
+6. Use **Previous problem** and **Next problem** to move between flagged rows in this statement. The separate transaction and page controls remain available.
+7. Select **Save progress** to keep even unfinished corrections in the case. This works in an individual review and a bulk review. Reopening the same statement restores the saved fields. In a bulk review, **Save and open next problem** saves first and opens the next statement needing attention, including another file. **Save and open previous problem** moves back. A conflict message means another user saved a newer review; your current edits remain visible so you can compare them before reopening.
+8. Return to bulk import when ready, then confirm the ready statements together. Outside a batch, confirm this statement once its required fields and checks are complete.
+
+#### Correct several transactions together
+
+Use this when several transactions have the same error. It does not change the original printed table.
+
+1. In statement review, select **Correct several rows** below the extracted table.
+2. Use **Find transactions** to narrow the list, then tick the rows to change. **Select all matching rows** includes matches on every page of this statement. The selected count remains visible.
+3. Choose **Exclude from import**, **Include in import**, **Switch credit and debit**, **Set transaction date** or **Set paid by / paid to**.
+4. Enter the new date or name when requested, and give the reason for the correction.
+5. Select **Preview corrections**. Compare the current and proposed values. Use the correction-page controls to inspect larger selections. **View original** opens the corresponding row beside the PDF.
+6. Select **Apply corrections** only when the preview is right. The balances are checked again. Earlier explanations on each row are retained.
+7. Select **Save progress** to keep the corrections in the case, or confirm the import when the remaining checks are complete.
+
+If any selected value changes after the preview, Loupe requires a fresh preview before applying the corrections. Including a row again does not bypass its missing-field or balance checks.
+
+![Previewing a correction to two synthetic transactions](images/35-selected-row-corrections.png)
+
+*Check the current and proposed values before applying the correction. This example uses artificial statement data.*
+
+
+
+![Correcting a synthetic statement row beside its PDF](images/34-statement-row-correction.png)
+
+*Artificial test data, shown in light mode. The correction editor belongs to the selected printed row.*
+
 ### Compare a field with the PDF
 
 1. In **Extracted statement**, select the printed value you want to inspect.
@@ -367,11 +433,19 @@ Select **Edit import values** above the viewer, then select **Show problems and 
 
 ### Check a PDF containing several statements
 
-Use **Previous page**, **Next page** or the **Page** selector above the viewer to move through the original PDF. The PDF and extracted table change together. A page with no extracted rows still remains available as a PDF page; inspect it for anything missed. The viewer starts at the first page of the chosen statement.
+Use **Previous page**, **Next page** or the **Page** selector above the viewer to move through the original PDF. The PDF and extracted table change together. A page with no extracted rows still remains available as a PDF page; inspect it for anything missed. The viewer starts at its first transaction page, or returns to the page you last viewed in this browser tab.
 
 Each choice identifies a printed account and statement period or date. Use **Find a statement or receipt** to search by account, year, date or PDF page. You can combine terms, such as `0040 2020-09`, to find one account in a particular month. The count tells you how many sections match. Results remain in PDF order. Select **Clear search** to show the whole list again.
 
-Select **Choose another statement period** to return to the list. The search is remembered separately for each file. Confirm each statement separately so its account and dates stay attached to the correct payments.
+Use **Account** to choose the account or card ending, then **Statement period** to choose its dates. **Previous period** and **Next period** stay within that account and follow period dates. For long collections, use **Find a period** to search by year, month or PDF page. The selector describes checks on the extracted values. **Statement checks** inside the open review checks your current corrections.
+
+Select **Choose another statement period** to return to the searchable list. The search is remembered separately for each file. Corrections are saved separately for each period in this browser tab. Confirm each statement once, or use the bulk import above, so its account and dates stay attached to the correct payments.
+
+Use **Previous transaction** and **Next transaction** to move through the selected payments without scrolling down the table. The counter shows your position. Loupe opens the relevant PDF page and highlights the measured transaction line and matching table row. These controls skip headings and rows excluded from the import. While a navigation button has focus, you can also use the left and right arrow keys. Moving between transactions does not mark them as checked or alter any values.
+
+A Capital One PDF can contain many statements. Each statement can start with an account summary and terms before the transaction pages. Summary balances belong to that statement's account checks. Repayment examples, terms and year-to-date totals are not extra transactions. Check the selected account and period before importing.
+
+If the review says **The statements need to be separated before import**, the saved reading has not connected the pages to their statement periods. Later transaction amounts can still be readable. Select **Reprocess statement** with **Use the PDF text where available** to prepare separate reviews. Do not enter dates and amounts for thousands of summary or information lines. The original file and existing imports remain available. If another reading still cannot separate the periods, report that problem with the filename and page numbers.
 
 Refreshing in the same browser tab restores your selected file, statement period, currency and PDF page. Unfinished corrections restore for the same source reading. Another account period or file has its own draft. Closing statement review remains your choice; a refresh does not reopen it after you explicitly close it.
 
@@ -473,6 +547,34 @@ Do not guess an unreadable year, amount or direction to make the button availabl
 4. Wait for the confirmation. Loupe records the statement, included transactions, original extraction and your corrections together.
 5. You return to **Transactions**, where the imported payments appear in the table and working totals.
 6. Use the account and date filters, open a transaction's source, or move to **People & businesses**, **Trends** or **Follow money** to investigate. **Follow money** also opens the existing transfer and pattern tools.
+
+### Read the automatic checks
+
+At the top of the review, **Statement checks** shows the result for the values currently selected for import. Checks run again after you edit, exclude or restore a row. Confirmation waits while the checks are running. If the connection fails, select **Retry statement checks**.
+
+- **Opening and closing balance** compares the printed opening balance plus the payments with the printed closing balance. Credit-card charges increase the amount owed and card payments reduce it.
+- **Balances between payments** checks the amounts between readable running balances. It can find two wrong amounts that cancel each other out in the closing balance. The displayed count is the number of intervals checked.
+- **Printed money-in total** and **Printed money-out total** compare payments with separately identified statement totals. These are available for supported, explicit total labels. They are not inferred from repayment examples or year-to-date figures.
+- **Checks unavailable** explains which printed values or ordering information were missing. A missing total is not treated as zero and does not by itself prevent import.
+
+If a difference appears:
+
+1. Select **Check this balance** or **View printed value** to open the affected reading beside its original PDF.
+2. Correct a misread amount, date or credit/debit column, or add a missing transaction if necessary. Give the reason for a correction.
+3. Wait for the checks to finish again. The individual review and bulk-import list use the same calculations.
+4. If the values are correct but the PDF itself does not add up, select **I checked these differences against the PDF**. Enter **Why the difference remains**. Your explanation is retained with the import; the difference is not described as a match.
+5. If you change the numbers again, check the difference again. An explanation for earlier values cannot accept a new difference automatically.
+
+You do not need to approve every valid line separately. A matching calculation cannot establish that a statement contains every payment; keep any unresolved source questions in Findings.
+
+### If Confirm import is disabled
+
+1. Read **Before you can confirm**, directly below the button. It lists the missing account details and specific rows that still need a decision.
+2. Select **Go to field** for an account or period detail, or **Review row** to open a row beside the original PDF. Excluded rows can also need a reason if you changed their treatment or the reading flagged them.
+3. Correct any wrong value. Enter a short explanation in **Reason for correction or decision**.
+4. If an unchanged flagged transaction is correct, compare it with the PDF and select **I checked this row against the PDF**. This records your check for that row. It is not offered when required values are missing.
+5. Return to the confirmation area. Resolved items disappear. If more than eight rows need attention, the next ones appear as you resolve the earlier ones.
+6. Confirm once the list is clear and the button is enabled. A matching balance alone does not clear missing values or review decisions.
 
 ![Imported transactions ready for investigation](images/12-imported-transactions.png)
 
@@ -1277,7 +1379,7 @@ External timestamping is an administrator-operated process, not a button an inve
 
 | Work | What to do before leaving | What to do on return |
 |---|---|---|
-| Unconfirmed normal statement review | Look for the message that the review is saved in this browser tab. | Refreshing the same browser tab restores the selected file, period, currency and page. If you closed review, reopen the file. The draft restores if its source revision has not changed. Closing the tab may discard it. |
+| Unconfirmed normal statement review | Select **Save progress** and wait for **Progress saved to the case**. | Open the same file and statement period to restore saved corrections, including from another device with case access. More recent unsaved edits remain only in the browser tab. If a new reading differs, the earlier saved values are shown for comparison. |
 | Imported statement | Wait for import confirmation. | Open Transactions or reopen the uploaded statement. |
 | Transaction note | Select Save investigation note and wait for Note saved. | Open Workspace, then Casework and Notes. |
 | Selected PDF rows in advanced review | Select Save selected rows for review and wait for confirmation. | Open PDF readings, find the saved batch and open its readings. |

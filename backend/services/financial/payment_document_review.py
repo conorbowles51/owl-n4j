@@ -35,6 +35,8 @@ def read_payment_document(session, *, case_id, evidence_file_id, document_id=Non
     file = session.scalar(select(EvidenceFile).where(EvidenceFile.id == evidence_file_id, EvidenceFile.case_id == case_id))
     if file is None:
         raise PdfMappingError('Document not found in this case.', 404)
+    from services.financial.file_visibility import require_financial_file
+    require_financial_file(file)
     pages = list(session.scalars(select(EvidenceTableGeometry).where(
         EvidenceTableGeometry.evidence_file_id == file.id).order_by(EvidenceTableGeometry.page_number)))
     if not pages or len(pages) > 500:

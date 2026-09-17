@@ -23,8 +23,6 @@ def correction_running_balances(period, rows, *, transaction_id, amount_minor, d
 
 def current_running_balances(period, rows):
     """Inspect both source-row orders without requiring or inventing a correction."""
-    if len(rows) > 1000:
-        return dict(available=False, reason="More than 1,000 period rows; running-balance comparison was not performed.", interpretations=[])
     current = [r for r in rows if r.ledger_status != "superseded" and not r.superseded_by_id]
     if any(((getattr(r, 'provenance', None) or {}).get('statement_import_original') or {}).get('kind') == 'manual_entry' for r in current):
         return dict(available=False, reason="A manually added transaction has a page citation but no confirmed position in the printed row sequence. Compare its source and the statement totals; a sequential running-balance check is unavailable.", interpretations=[])

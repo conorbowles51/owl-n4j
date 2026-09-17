@@ -63,6 +63,7 @@
 <p><img src="images/02-exclude-footer.png" alt="Correction controls used to exclude the test document footer"/></p>
 <p><em>Clear Use on the footer row and record why. The excluded footer must not become a seventh payment.</em></p>
 <p>For a wrong payment value, use <strong>Edit import values</strong> or <strong>Show corrections and import choices</strong>. Correct the field against the original and give a reason. For this exercise, leave the correct payment amounts unchanged. If any other line is flagged, inspect it before importing and record the unexpected result in your test notes.</p>
+<p>Before resolving the footer, also check the confirmation area. <strong>Before you can confirm</strong> should identify the footer and offer <strong>Review row</strong>. That button must open the matching correction controls even if they were closed. After the footer is excluded and its reason recorded, the blocker should disappear and confirmation should become available.</p>
 <h2 id="4-leave-the-review-and-return">4. Leave the review and return</h2>
 <ol>
 <li>While the checking statement is still unconfirmed, open <strong>Transactions</strong>, then return to <strong>Statements &amp; accounts</strong>.</li>
@@ -71,7 +72,7 @@
 <li>Refresh this same browser tab. Reopen the statement if needed and check the same two details again.</li>
 <li>Open <strong>savings.pdf</strong> from the file list, then return to <strong>checking.pdf</strong>. The checking review should still be present.</li>
 </ol>
-<p><strong>Expected:</strong> changing financial tabs, switching files and refreshing the same browser tab do not lose your review. Closing the browser tab can discard unfinished drafts. A saved import, finding or report is kept with the case; an unfinished browser draft is not shared with colleagues.</p>
+<p><strong>Expected:</strong> changing financial tabs, switching files and refreshing the same browser tab do not lose your review. Select <strong>Save progress</strong> before closing the tab: saved statement corrections can then be reopened from another device with case access. Edits made after that save remain browser drafts until saved again. Imported payments, findings and reports are kept with the case.</p>
 <h2 id="5-confirm-both-imports-and-check-the-totals">5. Confirm both imports and check the totals</h2>
 <ol>
 <li>In the checking review, select <strong>Confirm import of 6 transactions</strong> once. Wait for the outcome. Its payments should become available in <strong>Transactions</strong>.</li>
@@ -258,6 +259,17 @@
 <li>Make a revised copy, change one amount, calculate again and save the revision. Check that the original saved calculation remains available.</li>
 <li>Include both versions in a report and explain why their results differ.</li>
 </ol>
+<h3>F. Select existing evidence folders and remove an unrelated PDF</h3>
+<ol>
+<li>In the separate test case, place a synthetic PDF in an Evidence folder with a subfolder. Include a non-PDF file if available.</li>
+<li>Select <strong>Send to Financial</strong>. Tick the parent folder, browse into its subfolder and tick the same PDF too.</li>
+<li>Select <strong>Review selected PDFs</strong>. The PDF should appear once and the non-PDF file should be counted as skipped.</li>
+<li>Send the selection. Financial should open automatically on <strong>Prepare statements for import</strong>. Existing readings should be reused. No transactions should be imported before you confirm. Refresh and check that processing continues and the same batch remains available.</li>
+<li>Open Financial and select <strong>Remove from Financial</strong> on an unrelated, unimported PDF. Confirm removal, refresh and check that it stays out of the normal list while its original remains in Evidence.</li>
+<li>Select <strong>Removed files</strong>, restore the PDF, then select <strong>Back to financial files</strong>. It should reappear.</li>
+<li>A file already used by an imported statement should not offer removal. Existing transaction counts must stay unchanged.</li>
+</ol>
+<p><strong>Expected:</strong> folder choices work across subfolders, selections do not duplicate a file, existing evidence results are preserved, and removal is reversible for the case.</p>
 <h2 id="18-check-the-current-size-limits">18. Check the current size limits</h2>
 <p>A case can contain more payments than one analysis permits. These are separate limits, not a single maximum case size.</p>
 <div class="table-scroll"><table><thead><tr><th>Feature</th><th>Current behaviour</th><th>What to test</th></tr></thead><tbody><tr><td>Upload PDFs</td><td>Up to 20 files per selection</td><td>Confirm each file appears and can be opened separately.</td></tr><tr><td>Single statement review</td><td>Up to 25,000 possible transactions and 100,000 retained text rows</td><td>Use the correction-page controls; check first, middle and last payments before and after import.</td></tr><tr><td>Saved payment selections</td><td>No 100-payment count restriction; saved details must fit within 32 MB</td><td>Save a known selection across pages, refresh and reopen its first and last payments.</td></tr><tr><td>Payment graph</td><td>No 1,000-payment count restriction; 250 connections drawn per page</td><td>Check the total payment count and the underlying payments on later graph pages.</td></tr><tr><td>Combined reports</td><td>No 20-finding or 20-PDF count restriction; 32 MB saved report data and 64 MB supporting files</td><td>Include findings from several pages and check that the saved report and download retain all of them.</td></tr><tr><td>Transfers</td><td>500 payments per comparison, with 1,000 pair/reference comparisons</td><td>Narrow From date and To date, then select Find possible transfers.</td></tr><tr><td>Payments and case events</td><td>1,000 payments per check</td><td>Choose an account or shorter dates, select Apply, then Load payments and case events.</td></tr><tr><td>Patterns</td><td>1,000 input payments; also 200 proposed matches, 50 payments per repeated-name group, and 10,000 examined steps between accounts</td><td>Narrow the account/dates, select Apply and Find patterns again.</td></tr></tbody></table></div>
@@ -276,4 +288,49 @@
 <li>Whether switching tabs or refreshing changed the result.</li>
 <li>Whether the action saved anything before showing the problem. Check the case before repeating an import or save.</li>
 </ol>
-<p>Keep private real statements and their screenshots within your team&#x27;s approved channels. A synthetic test passing does not establish extraction accuracy for every real statement. Keep your manually checked real-file notes so the team can compare them with the imported records.</p></main></html>
+<p>Keep private real statements and their screenshots within your team&#x27;s approved channels. A synthetic test passing does not establish extraction accuracy for every real statement. Keep your manually checked real-file notes so the team can compare them with the imported records.</p>
+<h3>Statement periods and transaction navigation</h3>
+<ol>
+<li>Open a PDF containing more than one statement. Check that the <strong>Statement period</strong> dropdown lists the separate accounts and dates.</li>
+<li>Choose a period. Compare its count and balance check with the PDF. Check that summary pages and terms are not counted as transactions.</li>
+<li>Select <strong>Next transaction</strong>. The counter, table highlight and original PDF must refer to the same payment. Continue across a page boundary, then use <strong>Previous transaction</strong> to return.</li>
+<li>Correct a value and enter a reason. Switch to another period, then return. The correction must still be present.</li>
+<li>For a clean statement, confirm once without opening every transaction. For a flagged statement, select <strong>Show items to check</strong> and verify that each blocking row opens directly for correction.</li>
+<li>Check a period with a balance difference and one with no readable balance controls. Neither must be labelled as having matching balances.</li>
+</ol>
+<h3>G. Import ready statements together and fix one flagged row</h3>
+<ol>
+<li>Use a separate test case containing at least two clean synthetic statements and one with a known ambiguous date or unreadable amount. Send their Evidence folder to Financial.</li>
+<li>Wait for <strong>Files checked</strong> to finish. The clean statements should be <strong>Ready to import</strong>. The problem statement should be <strong>Needs attention</strong>, with the actual field or row identified. A multi-period PDF should list its recognised periods separately.</li>
+<li>Read the ready statement and transaction counts, then select <strong>Import [number] ready statements</strong> once. Only those statements should become <strong>Imported</strong>. The problem statement must remain outside Transactions.</li>
+<li>Refresh the page. Imported counts must remain correct and the problem must still be available. Reopening the batch must not import duplicates.</li>
+<li>Tick <strong>Show statements needing attention only</strong>. Select <strong>Go to this row</strong>. Confirm that its correction controls and the matching PDF page open directly.</li>
+<li>Correct the value against the synthetic source and enter a reason. Select <strong>Save for bulk import</strong>. The batch should reopen and show the statement ready, unless another problem remains.</li>
+<li>Close and reopen the batch. Open that statement again and confirm that the saved correction is retained. Then import the newly ready statement.</li>
+<li>Open Transactions. Check the exact counts and totals against your synthetic source files. Confirm that every imported row can still open its original PDF.</li>
+<li>If a test file fails processing, confirm that its error remains visible with <strong>Open file review</strong> and <strong>Retry this file</strong>. Other successfully imported statements must remain available.</li>
+</ol>
+<p><strong>Expected:</strong> folder processing leads directly to a persistent Financial batch, ready statements import together, flagged statements stay out until fixed, saved corrections survive reopening, and repeated actions do not add duplicates.</p>
+<h2 id="check-corrections-automatic-checks-and-saved-progress">Check corrections, automatic checks and saved progress</h2>
+<p>Use artificial test statements in a test case for these checks.</p>
+<ol>
+<li>In Evidence, select a folder containing statements and use <strong>Send to Financial</strong>. Confirm the selected PDFs. Check that Financial opens the processing batch.</li>
+<li>Open a ready statement with running balances. Check that <strong>Balances between payments</strong> gives the number of checked intervals.</li>
+<li>Select a printed transaction and <strong>Edit this row</strong>. Increase its credit or debit amount by 1.00 and enter a correction reason. Expect a balance difference with a link to the affected row. The original printed value must remain visible.</li>
+<li>Select <strong>Save progress</strong>. Return to the batch, reopen this statement and refresh the page. Expect the corrected value and reason to remain.</li>
+<li>Clear that transaction&#x27;s date and select <strong>Save progress</strong> again. Expect the statement to remain under <strong>Needs attention</strong>, with import unavailable. Saving incomplete work must not add transactions.</li>
+<li>Restore the date and amount from the PDF. Expect the checks to run again and the difference to clear. Use <strong>Save and open next problem</strong>. Expect another statement with a problem to open, or the batch list if none remains.</li>
+<li>For a PDF containing several accounts and periods, change <strong>Account</strong>, then <strong>Statement period</strong>. Check that next/previous period stays in the chosen account. Search a long collection using <strong>Find a period</strong>.</li>
+<li>Import all ready statements. Expect the exact transaction count shown before confirmation. Refresh and repeat opening the batch; no duplicate payments should appear.</li>
+<li>If a synthetic statement deliberately contains a printed balance error, keep its printed values. Select <strong>I checked these differences against the PDF</strong>, enter <strong>Why the difference remains</strong>, and save. Expect the difference and explanation to stay recorded. Change an amount again; the previous acknowledgement must no longer accept that new difference.</li>
+</ol>
+<p>Record the filename, account, period, action, expected result and actual result for any failure. Do not repair a test result by changing the original PDF.</p>
+<h3>Check individual saved progress and repeated corrections</h3>
+<ol>
+<li>Open an unimported synthetic statement from <strong>Statements &amp; accounts</strong>. Clear one transaction date, select <strong>Save progress</strong> and wait for the saved message. Import should remain unavailable.</li>
+<li>Reload and reopen that statement. Expect the unfinished date correction to remain. Restore the date from the PDF and enter the reason.</li>
+<li>Open <strong>Correct several rows</strong>. Select two rows, choose <strong>Switch credit and debit</strong>, add a reason and select <strong>Preview corrections</strong>. Expect only those two rows in the preview, with their current and proposed columns.</li>
+<li>Apply the changes. Expect new balance differences where the switched values no longer match the statement. Switch the same rows back with a reason, then save. Expect the original values to remain visible in the printed table throughout.</li>
+<li>If two authorised reviewers open the same saved review, save a change from one and then attempt to save the older review from the other. Expect a conflict message; the later attempt must not overwrite the first saved review.</li>
+<li>If reprocessing changes a reading with an earlier saved review, inspect <strong>Previous saved review</strong>. Expect the earlier corrected values to remain available for comparison, rather than being copied onto different source rows.</li>
+</ol></main></html>

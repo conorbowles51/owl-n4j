@@ -410,6 +410,11 @@ class StatementImportTests(TransactionPersistenceTestCase):
         p, request = self.card_balance_request()
         closing = next(r for r in request['rows'] if r['description'] == 'Closing Balance')
         closing.update(balance_minor='93878', reason='Synthetic correction checked against the original.')
+        with self.assertRaises(PdfMappingError):
+            self.confirm(request)
+        from services.financial.review_arithmetic import check_proposed_rows
+        request['balance_exception_revision'] = check_proposed_rows(p, request['rows'])['checks_revision']
+        request['balance_exception_reason'] = 'Synthetic printed closing value differs from the payments. Retain for investigation.'
         result = self.confirm(request)
         period = self.db.scalar(select(FinancialStatementPeriod).where(FinancialStatementPeriod.source_document_id == UUID(result['source_document_id'])))
         self.assertEqual(read_closing(period).amount.minor_units, -93878)
@@ -805,3 +810,22 @@ class StatementImportTests(TransactionPersistenceTestCase):
         self.assertEqual(controls['account_closure']['original_text'],'06/29 ID 0011 VISA PAYMENT Closed')
         self.assertEqual(controls['account_closure']['date'],'2020-06-29')
         self.assertEqual(controls['account_closure']['locator']['page'],1)
+
+    def test_unseparated_card_collection_keeps_readable_rows_out_of_one_combined_import(self):
+        # Amounts can be readable even when older stored geometry omitted the
+        # account/period headers. Do not turn all pages into one statement.
+        text = self.db.get(EvidenceDocumentText, self.file.id)
+        text.content += ('\nCapital One\nMay 12, 2020 - Jun. 11, 2020 | 31 days in Billing Cycle\n'
+                         'Jun. 12, 2020 - Jul. 11, 2020 | 30 days in Billing Cycle\n')
+        text.content_sha256 = hashlib.sha256(text.content.encode()).hexdigest()
+        text.character_count = len(text.content)
+        self.db.commit()
+        result = self.preview()
+        self.assertIn('Transaction amounts on later pages may already be readable', result['reading_failure'])
+        self.assertEqual(result['transaction_count'], 0)
+        self.assertEqual(result['rows'], [])
+        self.assertTrue(result['sources'])
+        self.assertEqual(result['page_numbers'], [1])
+        from services.financial.statement_import import check_import_request
+        with self.assertRaisesRegex(PdfMappingError, 'several Capital One statements'):
+            check_import_request(result, None)

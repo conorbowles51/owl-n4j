@@ -141,11 +141,13 @@ def _existing_statement(session, case_id, file, statement_id, addresses=(), row_
     return matches[0] if matches else None
 
 
-def read_statement_import(session, *, case_id, evidence_file_id, currency=None, statement_id=None):
+def read_statement_import(session, *, case_id, evidence_file_id, currency=None, statement_id=None, _cache=None, _include_period_checks=True):
     file = session.scalar(select(EvidenceFile).where(EvidenceFile.id == evidence_file_id,
                                                     EvidenceFile.case_id == case_id))
     if file is None:
         raise PdfMappingError('Statement not found in this case.', 404)
+    from services.financial.file_visibility import require_financial_file
+    require_financial_file(file)
     text = session.get(EvidenceDocumentText, evidence_file_id)
     if text is None:
         raise PdfMappingError('Prepare this PDF before opening its statement review.', 409)
@@ -173,9 +175,13 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
     if len(pages) > 500:
         raise PdfMappingError('This statement exceeds the 500-page review limit. No pages were omitted.', 422)
     from services.financial.statement_import_catalog import statement_catalog
-    all_sources = [read_candidate_source(session, case_id=case_id, evidence_file_id=evidence_file_id,
-                    page_number=page.page_number, table_index=index)
-                   for page in pages for index in range(len(page.payload or []))]
+    cache = _cache if _cache is not None else {}
+    source_key = (str(case_id), str(evidence_file_id), text.content_sha256)
+    if source_key not in cache:
+        cache[source_key] = [read_candidate_source(session, case_id=case_id, evidence_file_id=evidence_file_id,
+                        page_number=page.page_number, table_index=index)
+                       for page in pages for index in range(len(page.payload or []))]
+    all_sources = cache[source_key]
     from services.financial.payment_document_review import payment_document_response
     payment_document = payment_document_response(file, all_sources, case_id=case_id)
     if payment_document is not None:
@@ -183,9 +189,18 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
             metadata=metadata, currency='', rows=[], sources=[], issues=[], transaction_count=0,
             needs_attention=0, revision=payment_document['revision'], applied=False,
             document_review=payment_document, page_numbers=payment_document['page_numbers'])
-    catalog = statement_catalog(all_sources)
+    catalog_key = ('catalog', source_key)
+    if catalog_key not in cache:
+        cache[catalog_key] = statement_catalog(all_sources)
+    catalog = cache[catalog_key]
     from services.financial.deposit_receipt_proposal import deposit_receipt_choices
     choices = catalog['statements'] + deposit_receipt_choices(all_sources)
+    from services.financial.statement_review_checks import add_period_checks
+    checks_key = ('checks', source_key, chosen_currency)
+    if _include_period_checks:
+        if checks_key not in cache:
+            cache[checks_key] = add_period_checks(choices, all_sources, chosen_currency)
+        choices = cache[checks_key]
     selected = next((item for item in choices if item['id'] == statement_id), None)
     if statement_id and selected is None:
         raise PdfMappingError('This statement period is no longer available. Reload the document.', 409)
@@ -296,6 +311,19 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
                         and row['fields'].get('description', '').lower() == f'{role} balance']
             if len(controls) > 1:
                 issues.append(f'More than one {role} amount owed was read. Check the account-summary rows and clear any repeated balance before importing.')
+    reading_failure = None
+    if not selected and not choices:
+        from services.financial.statement_layout_context import _cycle
+        printed_cycles = {cycle for line in text.content.splitlines()
+                          if (cycle := _cycle(' '.join(line.split()))) is not None}
+        if len(printed_cycles) > 1 and re.search(r'capital\s*one|capitalone\.com', text.content, re.I):
+            reading_failure = (
+                'This PDF contains several Capital One statements, but its saved reading has not separated '
+                'their account and period details. Transaction amounts on later pages may already be readable. '
+                'Use Reprocess statement below with Use the PDF text where available to prepare the statements '
+                'as separate reviews. Summary and information pages should not be corrected as payments. '
+                'The original file, saved reviews and existing imports are kept.'
+            )
     from postgres.models.financial import FinancialSourceDocument, FinancialTransaction
     from services.financial.duplicate_decisions import duplicate_revision
     from sqlalchemy import func
@@ -336,6 +364,8 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
             current_import['transaction_count'] = 0
     snapshot = dict(version=VERSION, source_sha256=file.sha256, sources=sources,
                     metadata=metadata, currency=chosen_currency, statement_id=statement_id)
+    if reading_failure:
+        snapshot['reading_failure'] = 'unseparated-statement-periods-v1'
     if row_addresses is not None:
         snapshot['statement_row_addresses'] = row_addresses
     balance_only = (metadata.get('account_type') in ('savings', 'checking', 'other')
@@ -346,8 +376,12 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
                         and not any(not row['excluded'] for row in rows)
                         and any(row['kind'] == 'balance' and row['fields'].get('description') == 'Opening Balance'
                                 and 'balance' in row['fields'] for row in rows))
+    from services.financial.statement_progress import review_progress, previous_review_progress
     return dict(case_id=str(case_id), evidence_file_id=str(evidence_file_id), filename=file.original_filename,
-                metadata=metadata, currency=chosen_currency, rows=rows, sources=sources, issues=issues,
+                metadata=metadata, currency=chosen_currency, rows=[] if reading_failure else rows, sources=sources, issues=issues,
+                saved_review=review_progress(file, statement_id),
+                previous_saved_review=previous_review_progress(session, file, statement_id),
+                reading_failure=reading_failure,
                 can_record_account_closure=closure_only,
                 can_import_balances=balance_only,
                 page_numbers=all_page_numbers,
@@ -357,7 +391,7 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
                 statement_choices=choices, statement_id=statement_id,
                 statement_row_addresses=row_addresses,
                 statement_source_regions=source_regions,
-                transaction_count=sum(not row['excluded'] for row in rows),
+                transaction_count=0 if reading_failure else sum(not row['excluded'] for row in rows),
                 needs_attention=sum(bool(row['issues']) for row in rows) + len(issues),
                 revision=_digest(snapshot), current_import=current_import, applied=False)
 
@@ -371,18 +405,23 @@ from pydantic import Field, model_validator
 from services.financial.pdf_candidates import _Contract, _Digest
 
 
-class ImportRow(_Contract):
+class DraftImportRow(_Contract):
     id: Annotated[str, Field(min_length=1, max_length=80)]
     excluded: bool = False
     manual_page: Annotated[int | None, Field(ge=1, le=500)] = None
-    date: str = ''
-    date_values: dict[Literal['date', 'booking_date', 'value_date'], str] = Field(default_factory=dict)
+    date: Annotated[str, Field(max_length=32)] = ''
+    date_values: dict[Literal['date', 'booking_date', 'value_date'], Annotated[str, Field(max_length=32)]] = Field(default_factory=dict)
     description: Annotated[str, Field(max_length=4096)] = ''
     counterparty: Annotated[str, Field(max_length=4096)] = ''
-    amount_minor: Annotated[str, Field(pattern=r'^(0|[1-9][0-9]{0,18})$')] = '0'
+    amount_minor: Annotated[str, Field(max_length=32)] = '0'
     direction: Literal['credit', 'debit'] | None = None
-    balance_minor: Annotated[str | None, Field(pattern=r'^-?(0|[1-9][0-9]{0,18})$')] = None
+    balance_minor: Annotated[str | None, Field(max_length=32)] = None
     reason: Annotated[str, Field(max_length=4096)] = ''
+
+
+class ImportRow(DraftImportRow):
+    amount_minor: Annotated[str, Field(pattern=r'^(0|[1-9][0-9]{0,18})$')] = '0'
+    balance_minor: Annotated[str | None, Field(pattern=r'^-?(0|[1-9][0-9]{0,18})$')] = None
 
     @model_validator(mode='after')
     def valid_transaction(self):
@@ -403,18 +442,26 @@ class ImportRow(_Contract):
         return self
 
 
-class StatementImportRequest(_Contract):
+class StatementReviewDraft(_Contract):
     expected_revision: _Digest
     statement_id: _Digest | None = None
     replaces_source_document_id: UUID | None = None
     replacement_revision: _Digest | None = None
     currency: Annotated[str, Field(pattern=r'^[A-Z]{3}$')]
-    account_number: Annotated[str, Field(min_length=1, max_length=128)]
+    account_number: Annotated[str, Field(max_length=128)]
     institution: Annotated[str, Field(max_length=128)] = ''
-    holder: Annotated[str, Field(min_length=1, max_length=128)]
-    period_start: str = ''
-    period_end: str = ''
+    holder: Annotated[str, Field(max_length=128)]
+    period_start: Annotated[str, Field(max_length=32)] = ''
+    period_end: Annotated[str, Field(max_length=32)] = ''
     details_reason: Annotated[str, Field(max_length=4096)] = ''
+    balance_exception_reason: Annotated[str, Field(max_length=4096)] = ''
+    balance_exception_revision: _Digest | None = None
+    rows: Annotated[list[DraftImportRow], Field(min_length=1, max_length=MAX_STATEMENT_REVIEW_ROWS)]
+
+
+class StatementImportRequest(StatementReviewDraft):
+    account_number: Annotated[str, Field(min_length=1, max_length=128)]
+    holder: Annotated[str, Field(min_length=1, max_length=128)]
     rows: Annotated[list[ImportRow], Field(min_length=1, max_length=MAX_STATEMENT_REVIEW_ROWS)]
 
     @model_validator(mode='after')
@@ -441,6 +488,8 @@ class StatementImportRequest(_Contract):
 
 
 def check_import_request(proposal, request):
+    if proposal.get('reading_failure'):
+        raise PdfMappingError(proposal['reading_failure'], 422)
     if proposal.get("statement_id") != request.statement_id:
         raise PdfMappingError("Reload the selected statement period before confirming.", 409)
     if request.expected_revision != proposal['revision']:
@@ -473,6 +522,8 @@ def check_import_request(proposal, request):
         additional_roles = set(_date_roles(fields)) - {_primary_date_role(fields)}
         if not set(row.date_values) <= additional_roles:
             raise PdfMappingError('Only separately identified source dates can be corrected here. Reload the statement.', 422)
+        if original['kind'] in ('balance', 'statement_total') and not row.excluded:
+            raise PdfMappingError('A printed balance or statement total is not a transaction. Keep it outside the transaction list.', 422)
         if fields.get('account_closed_on') and not row.excluded:
             raise PdfMappingError('An account closure notice is not a payment. Keep it outside the transaction list.', 422)
         if fields.get('balance_convention') == 'liability_owed':
@@ -560,6 +611,11 @@ def confirm_statement_import(*, session_factory, case_id, evidence_file_id, requ
                 elif request.replaces_source_document_id is not None:
                     raise PdfMappingError('The import selected for replacement is no longer current.', 409)
                 originals = check_import_request(proposal, request)
+                from services.financial.review_arithmetic import check_proposed_rows, arithmetic_problems, accepted_difference
+                arithmetic = check_proposed_rows(proposal, [r.model_dump() for r in request.rows])
+                problems = arithmetic_problems(arithmetic)
+                if problems and not accepted_difference(arithmetic, request.model_dump()):
+                    raise PdfMappingError(problems[0]['message'] + ' Check the difference against the PDF, then correct it or record why it remains.', 422)
                 path = resolve_path(file.stored_path)
                 if path is None or not path.is_file() or path.stat().st_size > 256 * 1024 * 1024:
                     raise PdfMappingError('The original statement is unavailable for verification.', 409)

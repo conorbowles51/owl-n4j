@@ -1,6 +1,13 @@
-import { StatementSectionPicker } from "./StatementSectionPicker"
+import { useBatchReview } from "../lib/batch-review-context"
+import { useStatementFiles } from "../hooks/use-statement-register"
+import {
+  StatementPeriodSelect,
+  StatementSectionPicker,
+} from "./StatementSectionPicker"
 import { useFinancialAccess } from "../hooks/use-financial-access"
-import { reviewSelectionBalance } from "../lib/statement-review-balance"
+import { statementRowLocator } from "../lib/statement-row-locator"
+import { useStatementChecks } from "../hooks/use-statement-checks"
+import { StatementArithmeticChecks } from "./StatementArithmeticChecks"
 import { ReprocessStatement } from "./ReprocessStatement"
 import { newReviewId } from "../lib/statement-review-id"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
@@ -10,11 +17,15 @@ import { useAuthStore } from "@/features/auth/hooks/use-auth"
 import {
   readStatementDraft,
   saveStatementDraft,
+  serverStatementDraft,
 } from "../lib/statement-review-draft"
 import { Button } from "@/components/ui/button"
 import { fetchAPI } from "@/lib/api-client"
 import { PdfReviewIntake } from "./PdfReviewIntake"
 import { TransactionSourceHighlight } from "./TransactionSourceHighlight"
+import { StatementRowEditor } from "./StatementRowEditor"
+import { StatementBulkCorrections } from "./StatementBulkCorrections"
+import { SavedReviewConflict } from "./SavedReviewConflict"
 import { PrintedStatementTable } from "./PrintedStatementTable"
 import { PaymentDocumentReview } from "./PaymentDocumentReview"
 import { paymentDocumentProposal } from "../lib/payment-document"
@@ -46,11 +57,27 @@ const row = z.object({
 })
 const proposalSchema = z.object({
   document_review: paymentDocumentProposal.optional(),
+  reading_failure: z.string().nullish(),
   case_id: z.string(),
   evidence_file_id: z.string(),
   filename: z.string(),
   currency: z.string(),
   revision: z.string(),
+  saved_review: z
+    .object({
+      review_revision: z.string(),
+      request: z.record(z.string(), z.unknown()),
+      saved_at: z.string(),
+      saved_by: z.object({ name: z.string() }),
+    })
+    .nullish(),
+  previous_saved_review: z
+    .object({
+      request: z.record(z.string(), z.unknown()),
+      evidence_file_id: z.string(),
+      filename: z.string(),
+    })
+    .nullish(),
   metadata: z.object({
     account_closure: z
       .object({
@@ -94,6 +121,14 @@ const proposalSchema = z.object({
         period_start: z.string(),
         period_end: z.string(),
         page_numbers: z.array(z.number()),
+        checks: z
+          .object({
+            balance_status: z.enum(["matches", "difference", "unavailable"]),
+            flagged_rows: z.number(),
+            has_difference: z.boolean().optional(),
+            transaction_count: z.number().optional(),
+          })
+          .optional(),
       })
     )
     .default([]),
@@ -204,6 +239,7 @@ export function StatementImportPanel({
   caseId: string | undefined
   onImported: (result?: StatementImportReceipt) => void
 }) {
+  const batchReview = useBatchReview()
   const { canEdit, canUpload } = useFinancialAccess()
   const owner = useAuthStore(
     (state) => state.user?.id || state.user?.username || "anonymous"
@@ -220,66 +256,50 @@ export function StatementImportPanel({
   const setFileId = (value: string | null) =>
     useStatementWorkspace.getState().select(scope, value)
   const [upload, setUpload] = useState(false)
-  const files = useQuery({
-    queryKey: ["statement-import-files", caseId],
-    enabled: open && !!caseId,
-    queryFn: async () =>
-      z
-        .object({
-          files: z.array(
-            z.object({
-              id: z.string(),
-              case_id: z.string(),
-              original_filename: z.string(),
-              created_at: z.string().optional(),
-              status: z.string(),
-            })
-          ),
-        })
-        .parse(
-          await fetchAPI(
-            `/api/evidence?${new URLSearchParams({ case_id: caseId! })}`
-          )
-        )
-        .files.filter(
-          (f) =>
-            f.case_id === caseId &&
-            f.original_filename.toLowerCase().endsWith(".pdf")
-        ),
-  })
+  const files = useStatementFiles(caseId, false, [], true, open)
+  const selectedFile = files.data?.find((file) => file.id === fileId)
+
+  useEffect(() => {
+    if (selectedFile?.financial_removed) {
+      useStatementWorkspace.getState().select(scope, null)
+      useStatementWorkspace.getState().setOpen(scope, false)
+    }
+  }, [scope, selectedFile?.financial_removed])
   if (!caseId) return null
   return (
     <section
       aria-label="Statement import"
       className="rounded-lg border bg-card p-4 space-y-3"
     >
-      <div className="flex flex-wrap justify-between items-center gap-3">
-        <div>
-          <h2 className="font-semibold">Bank statements</h2>
-          <p className="text-sm text-muted-foreground">
-            {canEdit
-              ? "Add a statement, check any problems, then import its transactions."
-              : "Open a statement to compare its extracted values with the original PDF."}
-          </p>
+      {!batchReview && (
+        <div className="flex flex-wrap justify-between items-center gap-3">
+          <div>
+            <h2 className="font-semibold">Bank statements</h2>
+            <p className="text-sm text-muted-foreground">
+              {canEdit
+                ? "Add a statement, check any problems, then import its transactions."
+                : "Open a statement to compare its extracted values with the original PDF."}
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              onClick={() => useUIStore.getState().expandGraphPanelTo("detail")}
+            >
+              Statement files
+            </Button>
+            <Button onClick={() => setOpen(!open)}>
+              {open
+                ? "Close statement review"
+                : canEdit
+                  ? "Import a statement"
+                  : "Open statements"}
+            </Button>
+          </div>
         </div>
-        <div className="flex gap-2">
-          <Button
-            variant="outline"
-            onClick={() => useUIStore.getState().expandGraphPanelTo("detail")}
-          >
-            Statement files
-          </Button>
-          <Button onClick={() => setOpen(!open)}>
-            {open
-              ? "Close statement review"
-              : canEdit
-                ? "Import a statement"
-                : "Open statements"}
-          </Button>
-        </div>
-      </div>
-      <div hidden={!open}>
-        {open && (
+      )}
+      <div hidden={!open && !batchReview}>
+        {open && !batchReview && (
           <div className="space-y-3">
             {canUpload && (
               <Button variant="outline" onClick={() => setUpload((v) => !v)}>
@@ -313,17 +333,20 @@ export function StatementImportPanel({
                 onChange={(e) => setFileId(e.target.value || null)}
               >
                 <option value="">Choose a statement</option>
-                {files.data?.map((f) => (
-                  <option key={f.id} value={f.id}>
-                    {f.original_filename}
-                    {(files.data?.filter(
-                      (other) => other.original_filename === f.original_filename
-                    ).length ?? 0) > 1
-                      ? ` · added ${f.created_at ? new Date(f.created_at).toLocaleString() : "at unknown time"} · ${f.id.slice(-6)}`
-                      : ""}
-                    {f.status !== "processed" ? ` (${f.status})` : ""}
-                  </option>
-                ))}
+                {files.data
+                  ?.filter((f) => !f.financial_removed)
+                  .map((f) => (
+                    <option key={f.id} value={f.id}>
+                      {f.original_filename}
+                      {(files.data?.filter(
+                        (other) =>
+                          other.original_filename === f.original_filename
+                      ).length ?? 0) > 1
+                        ? ` · added ${f.created_at ? new Date(f.created_at).toLocaleString() : "at unknown time"} · ${f.id.slice(-6)}`
+                        : ""}
+                      {f.status !== "processed" ? ` (${f.status})` : ""}
+                    </option>
+                  ))}
               </select>
             </label>
           </div>
@@ -359,6 +382,7 @@ function StatementReview({
   onImported: (result?: StatementImportReceipt) => void
   onReprocessed: (id: string) => void
 }) {
+  const batchReview = useBatchReview()
   const { canEdit } = useFinancialAccess()
   const owner = useAuthStore(
     (state) => state.user?.id || state.user?.username || "anonymous"
@@ -377,6 +401,7 @@ function StatementReview({
   const query = useQuery({
     queryKey: ["statement-import", caseId, fileId, currency, statementId],
     retry: false,
+    refetchOnWindowFocus: false,
     queryFn: async () => {
       const params = new URLSearchParams({ case_id: caseId })
       if (currency) params.set("currency", currency)
@@ -415,6 +440,15 @@ function StatementReview({
         />
       </div>
     )
+  if (query.data.reading_failure)
+    return (
+      <FailedStatementReading
+        caseId={caseId}
+        fileId={fileId}
+        data={query.data}
+        onReady={onReprocessed}
+      />
+    )
   const hasReceipts = query.data.statement_choices.some(
     (item) => item.document_kind === "deposit_receipt"
   )
@@ -428,7 +462,7 @@ function StatementReview({
       )
     return (
       <div className="space-y-3">
-        {query.data.statement_choices.length > 1 && (
+        {!batchReview && query.data.statement_choices.length > 1 && (
           <Button variant="outline" onClick={() => setStatementId("")}>
             Choose another statement or receipt
           </Button>
@@ -448,7 +482,7 @@ function StatementReview({
   if (!query.data.currency)
     return (
       <div>
-        {query.data.statement_choices.length > 1 && (
+        {!batchReview && query.data.statement_choices.length > 1 && (
           <Button variant="outline" onClick={() => setStatementId("")}>
             {hasReceipts
               ? "Choose another statement or receipt"
@@ -486,7 +520,14 @@ function StatementReview({
     )
   return (
     <div className="space-y-3">
-      {query.data.statement_choices.length > 1 && (
+      {!batchReview && query.data.statement_choices.length > 1 && (
+        <StatementPeriodSelect
+          choices={query.data.statement_choices}
+          value={statementId}
+          onChoose={setStatementId}
+        />
+      )}
+      {!batchReview && query.data.statement_choices.length > 1 && (
         <Button variant="outline" onClick={() => setStatementId("")}>
           {hasReceipts
             ? "Choose another statement or receipt"
@@ -521,12 +562,14 @@ function StatementReview({
           </Button>
         </section>
       ) : (
-        <ReprocessStatement
-          key={fileId}
-          caseId={caseId}
-          fileId={fileId}
-          onReady={onReprocessed}
-        />
+        !batchReview && (
+          <ReprocessStatement
+            key={fileId}
+            caseId={caseId}
+            fileId={fileId}
+            onReady={onReprocessed}
+          />
+        )
       )}
       {query.data.current_import &&
         !query.data.current_import.excluded_as_duplicate && (
@@ -612,6 +655,62 @@ function StatementReview({
   )
 }
 
+function FailedStatementReading({
+  caseId,
+  fileId,
+  data,
+  onReady,
+}: {
+  caseId: string
+  fileId: string
+  data: Proposal
+  onReady: (id: string) => void
+}) {
+  const [page, setPage] = useState(data.page_numbers[0] ?? 1)
+  return (
+    <div className="space-y-4 py-4">
+      <div
+        className="rounded border border-amber-500/50 bg-amber-50/60 dark:bg-amber-950/20 p-4 space-y-2"
+        role="alert"
+      >
+        <h3 className="font-semibold">
+          The statements need to be separated before import
+        </h3>
+        <p>{data.reading_failure}</p>
+        <p>You do not need to correct the summary or terms line by line.</p>
+      </div>
+      <ReprocessStatement
+        caseId={caseId}
+        fileId={fileId}
+        onReady={onReady}
+        initiallyOpen
+      />
+      <label className="block text-sm">
+        Original PDF page{" "}
+        <select
+          aria-label="Original PDF page"
+          value={page}
+          onChange={(event) => setPage(Number(event.target.value))}
+          className="rounded border bg-background p-2"
+        >
+          {data.page_numbers.map((number) => (
+            <option key={number} value={number}>
+              {number}
+            </option>
+          ))}
+        </select>
+      </label>
+      <div className="max-w-3xl">
+        <TransactionSourceHighlight
+          sourceDocumentId={fileId}
+          locatorPayload={{ kind: "page_only", page }}
+          wholePage
+        />
+      </div>
+    </div>
+  )
+}
+
 function EditableStatement({
   data,
   caseId,
@@ -623,23 +722,100 @@ function EditableStatement({
   fileId: string
   onImported: (result?: StatementImportReceipt) => void
 }) {
+  const batchReview = useBatchReview()
+  const currentRequestSnapshot = useRef("")
+  const pendingSaveSnapshot = useRef("")
+  const [savedServerSnapshot, setSavedServerSnapshot] = useState("")
+  const [progressRevision, setProgressRevision] = useState(
+    data.saved_review?.review_revision ?? "initial"
+  )
+  const saveBatchReview = useMutation({
+    retry: false,
+    mutationFn: async (_mode: "progress" | "done" | "next" | "previous") => {
+      void _mode
+      const request = importRequest()
+      pendingSaveSnapshot.current = JSON.stringify(request)
+      if (batchReview) return batchReview.save(request)
+      const result = z
+        .object({
+          case_id: z.string(),
+          evidence_file_id: z.string(),
+          review_revision: z.string(),
+          saved_at: z.string(),
+          saved_by: z.object({ name: z.string() }),
+          request: z.record(z.string(), z.unknown()),
+        })
+        .parse(
+          await fetchAPI(
+            `/api/financial/statement-import/${fileId}/progress?case_id=${caseId}`,
+            {
+              method: "PUT",
+              body: { request, expected_review_revision: progressRevision },
+            }
+          )
+        )
+      if (result.case_id !== caseId || result.evidence_file_id !== fileId)
+        throw Error("The saved review does not belong to this statement.")
+      setProgressRevision(result.review_revision)
+      client.setQueriesData<Proposal>(
+        { queryKey: ["statement-import", caseId, fileId] },
+        (cached) =>
+          cached?.revision === data.revision
+            ? { ...cached, saved_review: result }
+            : cached
+      )
+      return result
+    },
+    onSuccess: async (_result, mode) => {
+      setSavedServerSnapshot(pendingSaveSnapshot.current)
+      if (pendingSaveSnapshot.current !== currentRequestSnapshot.current) return
+      if (mode === "previous") await batchReview!.previousProblem?.()
+      else if (mode === "next") await batchReview!.nextProblem?.()
+      else if (mode === "done") batchReview!.saved()
+    },
+  })
   const { canEdit: caseCanEdit } = useFinancialAccess()
   const excludedCopy = !!data.current_import?.excluded_as_duplicate
-  const canEdit = caseCanEdit && !excludedCopy
+  const canEdit =
+    caseCanEdit && !excludedCopy && !(batchReview && data.current_import)
   const owner = useAuthStore((state) => state.user?.id || state.user?.username)
   const draftKey = owner
-    ? `loupe-statement-review:${owner}:${caseId}:${fileId}:${data.revision}`
+    ? `loupe-statement-review:${owner}:${caseId}:${fileId}:${data.revision}${batchReview ? `:batch:${batchReview.draftRevision || "initial"}` : progressRevision !== "initial" ? `:saved:${progressRevision}` : ""}`
     : null
-  const [saved] = useState(() => readStatementDraft(draftKey, data.revision))
+  const recovered = useMemo(
+    () =>
+      serverStatementDraft(
+        data.saved_review?.request ?? data.previous_saved_review?.request
+      ),
+    [data.saved_review?.request, data.previous_saved_review?.request]
+  )
+  const [saved] = useState(
+    () =>
+      readStatementDraft(draftKey, data.revision) ??
+      (batchReview?.draft?.revision === data.revision
+        ? batchReview.draft
+        : !batchReview && recovered?.revision === data.revision
+          ? recovered
+          : null)
+  )
+  const savedReadingChanged =
+    !batchReview && !!recovered && recovered.revision !== data.revision
+  const [previousReviewChecked, setPreviousReviewChecked] = useState(false)
   const [draftSaved, setDraftSaved] = useState(!!saved)
   const [correctionsOpen, setCorrectionsOpen] = useState(false)
   const [correctionPage, setCorrectionPage] = useState(0)
   const correctionControls = useRef<HTMLDivElement>(null)
+  const statementControls = useRef<HTMLDivElement>(null)
+  const printedControls = useRef<HTMLDivElement>(null)
+  const confirmationControls = useRef<HTMLDivElement>(null)
   const pageKey = `${owner}:${caseId}:${fileId}:${data.revision}`
   const rememberedPage = useStatementWorkspace.getState().pages[pageKey]
   const initialPage = data.page_numbers.includes(rememberedPage)
     ? rememberedPage
-    : data.rows[0]?.page_number || data.page_numbers[0] || 1
+    : data.rows.find((row) => !row.excluded)?.page_number ||
+      data.rows[0]?.page_number ||
+      data.page_numbers[0] ||
+      1
   const [sourcePage, setSourcePage] = useState(initialPage)
   const client = useQueryClient()
   const baseline = useMemo(() => initialRows(data), [data])
@@ -660,8 +836,16 @@ function EditableStatement({
       rowId: string
       locator: unknown
     } | null>({
-      rowId: "",
-      locator: { kind: "page_only", page: initialPage },
+      rowId:
+        data.rows.find(
+          (row) => !row.excluded && row.page_number === initialPage
+        )?.id ?? "",
+      locator: statementRowLocator(
+        data.rows.find(
+          (row) => !row.excluded && row.page_number === initialPage
+        ),
+        initialPage
+      ),
     }),
     [showExcluded, setShowExcluded] = useState(false),
     [onlyIssues, setOnlyIssues] = useState(false)
@@ -678,6 +862,9 @@ function EditableStatement({
       saved?.periodEnd ?? data.metadata.period_end
     ),
     [detailsReason, setDetailsReason] = useState(saved?.detailsReason ?? "")
+  const [balanceException, setBalanceException] = useState(
+    saved?.balanceException ?? { revision: "", reason: "" }
+  )
   const [replacePrevious, setReplacePrevious] = useState(false)
   const detailsChanged =
     institution !== data.metadata.institution ||
@@ -687,6 +874,10 @@ function EditableStatement({
     periodEnd !== data.metadata.period_end
   const digits = exponent(data.currency),
     originals = new Map(data.rows.map((r) => [r.id, r]))
+  const editsById = useMemo(
+    () => new Map(rows.map((row) => [row.id, row])),
+    [rows]
+  )
   for (const added of rows.filter((r) => r.manual_page))
     originals.set(added.id, {
       id: added.id,
@@ -731,20 +922,54 @@ function EditableStatement({
   )
   const requiresReason = (r: Edit) =>
     changed(r) || !!originals.get(r.id)?.issues.length
-  const incomplete = rows.some(
-    (r) =>
-      (r.balance_minor !== null && !/^-?\d+$/.test(r.balance_minor)) ||
-      (requiresReason(r) && !r.reason.trim()) ||
-      (!r.excluded &&
-        (!/^\d{4}-\d{2}-\d{2}$/.test(r.date) ||
-          Object.values(r.date_values ?? {}).some(
-            (value) => value && !/^\d{4}-\d{2}-\d{2}$/.test(value)
-          ) ||
-          !r.description.trim() ||
-          !r.direction ||
-          !/^\d+$/.test(r.amount_minor) ||
-          BigInt(r.amount_minor || "0") <= 0n))
-  )
+  const validDate = (value: string) =>
+    /^\d{4}-\d{2}-\d{2}$/.test(value) &&
+    Number(value.slice(0, 4)) > 0 &&
+    !Number.isNaN(Date.parse(value)) &&
+    new Date(value).toISOString().slice(0, 10) === value
+  const rowProblems = (r: Edit) => {
+    const problems: string[] = []
+    if (
+      r.balance_minor !== null &&
+      (!/^-?\d+$/.test(r.balance_minor) ||
+        BigInt(r.balance_minor) < -9223372036854775808n ||
+        BigInt(r.balance_minor) > 9223372036854775807n)
+    )
+      problems.push(
+        "Enter a valid printed balance, or clear it if none is printed."
+      )
+    if (!r.excluded) {
+      if (!validDate(r.date)) problems.push("Enter the transaction date.")
+      if (
+        Object.values(r.date_values ?? {}).some(
+          (value) => value && !validDate(value)
+        )
+      )
+        problems.push("Complete the other printed dates.")
+      if (!r.description.trim()) problems.push("Enter the description.")
+      if (!r.direction) problems.push("Choose Credit or Debit for the amount.")
+      if (
+        !/^\d+$/.test(r.amount_minor) ||
+        BigInt(r.amount_minor || "0") <= 0n ||
+        BigInt(r.amount_minor) > 9223372036854775807n
+      )
+        problems.push(
+          "Enter an amount greater than zero and within the supported range."
+        )
+    }
+    if (requiresReason(r) && !r.reason.trim())
+      problems.push(
+        changed(r)
+          ? "Explain your correction or decision in the reason field."
+          : r.excluded
+            ? "Check why this row was left out, then record your decision."
+            : "Check the flagged reading against the PDF and record your decision."
+      )
+    return problems
+  }
+  const blockedRows = rows
+    .map((r) => ({ row: r, problems: rowProblems(r) }))
+    .filter((item) => item.problems.length > 0)
   const included = rows.filter((r) => !r.excluded)
   const emptyStatementBalances = rows.filter((r) => {
     const original = originals.get(r.id)
@@ -760,11 +985,112 @@ function EditableStatement({
     emptyStatementBalances[0].balance_minor !== null &&
     emptyStatementBalances[0].balance_minor ===
       emptyStatementBalances[1].balance_minor
+  const detailProblems: { message: string; field?: string }[] = []
+  if (savedReadingChanged && !previousReviewChecked)
+    detailProblems.push({
+      message:
+        "The reading changed after your saved corrections. Compare your previous saved values before confirming.",
+      field: "I have compared the previous saved review",
+    })
+  if (!caseCanEdit)
+    detailProblems.push({
+      message: "You need editing access to this case to confirm an import.",
+    })
+  if (!holder.trim())
+    detailProblems.push({
+      message: "Enter the account holder.",
+      field: "Account holder",
+    })
+  if (!account.trim())
+    detailProblems.push({
+      message: "Enter the account number.",
+      field: "Account number",
+    })
+  if (Boolean(periodStart) !== Boolean(periodEnd))
+    detailProblems.push({
+      message: "Enter both the start and end of the statement period.",
+      field: periodStart ? "Period end" : "Period start",
+    })
+  else if (periodStart > periodEnd)
+    detailProblems.push({
+      message: "The period end must be on or after the start.",
+      field: "Period end",
+    })
+  if (detailsChanged && !detailsReason.trim())
+    detailProblems.push({
+      message: "Explain the account or statement details you changed.",
+      field: "Reason for detail corrections",
+    })
+  if (data.current_import) {
+    if (data.current_import.evidence_file_id === fileId)
+      detailProblems.push({
+        message:
+          "This reading is already imported. Use Open imported transactions above to work with it.",
+      })
+    else {
+      if (!replacePrevious)
+        detailProblems.push({
+          message:
+            "Choose whether this reading should replace the previous import.",
+          field: "Replace the previous import",
+        })
+      if (!detailsReason.trim() && !detailsChanged)
+        detailProblems.push({
+          message:
+            "Explain why this reading should replace the previous import.",
+          field: "Reason for detail corrections",
+        })
+    }
+  }
+  if (included.length === 0 && !data.can_record_account_closure) {
+    if (!data.can_import_balances)
+      detailProblems.push({
+        message: "Select at least one transaction to import.",
+      })
+    else if (!matchingEmptyBalances)
+      detailProblems.push({
+        message:
+          "Check the opening and closing balances. They must match when there are no transactions.",
+      })
+  }
+  const focusDetail = (field: string) => {
+    const input = Array.from(
+      statementControls.current?.querySelectorAll<HTMLInputElement>("input") ??
+        []
+    ).find((element) => element.getAttribute("aria-label") === field)
+    input?.focus({ preventScroll: true })
+    input?.scrollIntoView({ block: "center", behavior: "smooth" })
+  }
   const total = (direction: Edit["direction"]) =>
     included
       .filter((r) => r.direction === direction && /^\d+$/.test(r.amount_minor))
       .reduce((n, r) => n + BigInt(r.amount_minor), 0n)
       .toString()
+  const importRequest = () => ({
+    expected_revision: data.revision,
+    statement_id: data.statement_id ?? null,
+    ...(replacePrevious && data.current_import
+      ? {
+          replaces_source_document_id: data.current_import.source_document_id,
+          replacement_revision: data.current_import.revision,
+        }
+      : {}),
+    currency: data.currency,
+    holder,
+    institution,
+    account_number: account,
+    period_start: periodStart,
+    period_end: periodEnd,
+    details_reason: detailsReason,
+    balance_exception_reason: balanceException.reason,
+    balance_exception_revision: balanceException.revision || null,
+    rows: rows.map((r) => ({
+      ...r,
+      direction: r.direction || null,
+      amount_minor: r.excluded && !r.amount_minor ? "0" : r.amount_minor,
+    })),
+  })
+  currentRequestSnapshot.current = JSON.stringify(importRequest())
   const confirm = useMutation({
     retry: false,
     mutationFn: async () => {
@@ -773,30 +1099,7 @@ function EditableStatement({
           `/api/financial/statement-import/${fileId}/confirm?${new URLSearchParams({ case_id: caseId })}`,
           {
             method: "POST",
-            body: {
-              expected_revision: data.revision,
-              statement_id: data.statement_id ?? null,
-              ...(replacePrevious && data.current_import
-                ? {
-                    replaces_source_document_id:
-                      data.current_import.source_document_id,
-                    replacement_revision: data.current_import.revision,
-                  }
-                : {}),
-              currency: data.currency,
-              holder,
-              institution,
-              account_number: account,
-              period_start: periodStart,
-              period_end: periodEnd,
-              details_reason: detailsReason,
-              rows: rows.map((r) => ({
-                ...r,
-                direction: r.direction || null,
-                amount_minor:
-                  r.excluded && !r.amount_minor ? "0" : r.amount_minor,
-              })),
-            },
+            body: importRequest(),
             timeout: 120000,
           }
         )
@@ -834,6 +1137,7 @@ function EditableStatement({
       periodStart,
       periodEnd,
       detailsReason,
+      balanceException,
       amountText,
     }
     const timer = window.setTimeout(
@@ -865,14 +1169,72 @@ function EditableStatement({
     periodStart,
     periodEnd,
     detailsReason,
+    balanceException,
     amountText,
     confirm.isSuccess,
   ])
-  const selectionBalance = reviewSelectionBalance(
-    rows,
-    data.rows,
-    data.metadata.account_type === "credit_card"
+  const serverChecks = useStatementChecks(caseId, fileId, {
+    expected_revision: data.revision,
+    statement_id: data.statement_id ?? null,
+    currency: data.currency,
+    rows: rows.map((r) => ({
+      id: r.id,
+      excluded: r.excluded,
+      manual_page: r.manual_page ?? null,
+      date: r.date,
+      description: r.description,
+      amount_minor: r.amount_minor,
+      direction: r.direction || null,
+      balance_minor: r.balance_minor,
+      reason: r.reason,
+    })),
+  })
+  const statementWarnings = data.issues.filter(
+    (message) =>
+      !(message.startsWith("Check the account holder.") && holder.trim()) &&
+      !(message.startsWith("Check the account number.") && account.trim())
   )
+  const isStatementNote = (message: string) =>
+    [
+      "This is a credit-card statement.",
+      "Reviewing ",
+      "Some pages could not be assigned",
+      "These statement pages are out of order",
+      "The printed account label is VISA PAYMENT.",
+    ].some((prefix) => message.startsWith(prefix))
+  const statementNotes = statementWarnings.filter(isStatementNote)
+  const warnings = statementWarnings.filter(
+    (message) => !isStatementNote(message)
+  )
+  const attentionCount =
+    blockedRows.length + detailProblems.length + warnings.length
+  const balanceMismatch = serverChecks.checks.some(
+    (check) => check.status === "difference"
+  )
+  const differenceAccepted =
+    !!serverChecks.revision &&
+    balanceException.revision === serverChecks.revision &&
+    !!balanceException.reason.trim()
+  const unresolvedDifference = balanceMismatch && !differenceAccepted
+  const activeTransaction = included.findIndex((row) => row.id === focus?.rowId)
+  const showTransaction = (index: number) => {
+    const transaction = included[index]
+    if (!transaction) return
+    const original = originals.get(transaction.id)!
+    setSourcePage(original.page_number)
+    setFocus({
+      rowId: transaction.id,
+      locator: statementRowLocator(original, original.page_number),
+    })
+    requestAnimationFrame(() => {
+      const element = Array.from(
+        printedControls.current?.querySelectorAll<HTMLElement>(
+          "[data-statement-row]"
+        ) ?? []
+      ).find((element) => element.dataset.statementRow === transaction.id)
+      element?.scrollIntoView({ block: "nearest", behavior: "smooth" })
+    })
+  }
   const visible = rows.filter(
     (r) =>
       (showExcluded ||
@@ -962,23 +1324,404 @@ function EditableStatement({
       input?.scrollIntoView({ block: "center", behavior: "smooth" })
     })
   }
+  const [inlineRowId, setInlineRowId] = useState<string | null>(null)
+  const openInlineRow = (id: string) => {
+    const original = originals.get(id)
+    if (!original) return
+    if (!original.source_cells.length) {
+      reviewRow(id)
+      return
+    }
+    setSourcePage(original.page_number)
+    setFocus({
+      rowId: id,
+      locator: statementRowLocator(original, original.page_number),
+    })
+    setInlineRowId(id)
+    requestAnimationFrame(() => {
+      const editor = printedControls.current?.querySelector<HTMLElement>(
+        '[aria-label="Edit selected statement row"]'
+      )
+      editor?.scrollIntoView({ block: "nearest", behavior: "smooth" })
+    })
+  }
+  const problemIds = [
+    ...new Set([
+      ...blockedRows.map(({ row }) => row.id),
+      ...serverChecks.checks
+        .filter((check) => check.status === "difference")
+        .flatMap((check) =>
+          check.kind === "running_balance"
+            ? (check.findings ?? [])
+                .map((item) => item.row_id)
+                .filter((id): id is string => !!id)
+            : check.row_id
+              ? [check.row_id]
+              : []
+        ),
+    ]),
+  ]
+  const problemIndex = problemIds.indexOf(focus?.rowId ?? "")
+  const rowTools = (id: string) => {
+    if (!canEdit || (data.current_import && !replacePrevious)) return null
+    const edit = editsById.get(id)
+    const original = originals.get(id)
+    if (
+      !edit ||
+      !original ||
+      !["transaction", "unresolved", "balance", "statement_total"].includes(
+        original.kind
+      )
+    )
+      return null
+    if (focus?.rowId !== id)
+      return changed(edit) || edit.reason ? (
+        <Button
+          size="sm"
+          variant="ghost"
+          className="text-teal-700 dark:text-teal-300"
+          onClick={() => openInlineRow(id)}
+        >
+          {changed(edit) ? "View correction" : "View recorded check"}
+        </Button>
+      ) : null
+    if (inlineRowId !== id)
+      return (
+        <Button size="sm" variant="outline" onClick={() => openInlineRow(id)}>
+          Edit this row
+        </Button>
+      )
+    return (
+      <StatementRowEditor
+        row={edit}
+        kind={original.kind}
+        problems={rowProblems(edit)}
+        update={(patch) => update(id, patch)}
+        close={() => setInlineRowId(null)}
+        text={(field) =>
+          field === "balance"
+            ? (amountText[`balance:${id}`] ??
+              (edit.balance_minor === null
+                ? ""
+                : displayAmount(edit.balance_minor, digits)))
+            : edit.direction === field
+              ? (amountText[id] ?? displayAmount(edit.amount_minor, digits))
+              : ""
+        }
+        amount={(direction, value) => {
+          if (!value && edit.direction !== direction) return
+          setAmountText((previous) => ({ ...previous, [id]: value }))
+          update(id, { direction, amount_minor: minorAmount(value, digits) })
+        }}
+        balance={(value) => {
+          setAmountText((previous) => ({
+            ...previous,
+            [`balance:${id}`]: value,
+          }))
+          const negative = value.startsWith("-")
+          const minor = minorAmount(negative ? value.slice(1) : value, digits)
+          update(id, {
+            balance_minor: value
+              ? minor
+                ? `${negative ? "-" : ""}${minor}`
+                : ""
+              : null,
+          })
+        }}
+      />
+    )
+  }
+  const initialBatchRow = useRef(batchReview?.rowId)
+  useEffect(() => {
+    if (initialBatchRow.current) {
+      openInlineRow(initialBatchRow.current)
+      initialBatchRow.current = undefined
+    }
+    // Apply the requested problem once, without reopening it after each edit.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   return (
-    <div className="space-y-4 pt-4">
+    <div ref={statementControls} className="space-y-4 pt-4">
       <header>
         <h3 className="text-lg font-semibold">Review {data.filename}</h3>
-        {draftSaved && !excludedCopy && (
+        {draftSaved && !excludedCopy && !saveBatchReview.isSuccess && (
           <p className="text-xs text-muted-foreground" role="status">
-            Review saved in this browser tab. Reopening this statement after a
-            refresh restores it. Closing the tab may discard it.
+            Recent edits are saved in this browser tab. Use Save progress to
+            keep unfinished work in the case before leaving.
           </p>
         )}
+        {savedReadingChanged && (
+          <SavedReviewConflict
+            draft={recovered!}
+            formatAmount={(value) =>
+              `${displayAmount(value, digits)} ${data.currency}`
+            }
+            checked={previousReviewChecked}
+            onChecked={setPreviousReviewChecked}
+          />
+        )}
+        {!batchReview &&
+          !data.saved_review &&
+          data.previous_saved_review &&
+          !savedReadingChanged && (
+            <p className="text-sm">
+              Saved corrections from the previous reading have been restored
+              because the extracted values and source locations are unchanged.
+              Check this review, then save or confirm it.
+            </p>
+          )}
+        {!batchReview &&
+          data.saved_review &&
+          !savedReadingChanged &&
+          !saveBatchReview.isSuccess && (
+            <p className="text-sm text-muted-foreground">
+              Last saved to the case by {data.saved_review.saved_by.name} on{" "}
+              {new Date(data.saved_review.saved_at).toLocaleString()}. Save
+              progress again after editing.
+            </p>
+          )}
+        {canEdit && (!data.current_import || replacePrevious) && (
+          <div className="flex flex-wrap items-center gap-2 py-2">
+            <Button
+              variant="outline"
+              disabled={
+                saveBatchReview.isPending ||
+                confirm.isPending ||
+                (savedReadingChanged && !previousReviewChecked)
+              }
+              onClick={() => saveBatchReview.mutate("progress")}
+            >
+              {saveBatchReview.isPending ? "Saving progress…" : "Save progress"}
+            </Button>
+            {batchReview?.previousProblem && (
+              <Button
+                variant="outline"
+                disabled={saveBatchReview.isPending || confirm.isPending}
+                onClick={() => saveBatchReview.mutate("previous")}
+              >
+                Save and open previous problem
+              </Button>
+            )}
+            {batchReview?.nextProblem && (
+              <Button
+                variant="outline"
+                disabled={saveBatchReview.isPending || confirm.isPending}
+                onClick={() => saveBatchReview.mutate("next")}
+              >
+                Save and open next problem
+              </Button>
+            )}
+            <span className="text-xs text-muted-foreground">
+              Saves unfinished corrections to the case. Transactions are
+              imported separately.
+            </span>
+            {saveBatchReview.isSuccess && (
+              <p role="status" className="w-full text-sm">
+                {savedServerSnapshot === currentRequestSnapshot.current
+                  ? "Progress saved to the case. You can reopen this statement on another device."
+                  : "There are newer edits in this review. Save progress again before leaving."}
+              </p>
+            )}
+            {saveBatchReview.isError && (
+              <p role="alert" className="w-full text-sm">
+                {saveBatchReview.error.message} Your edits remain in this
+                review.
+              </p>
+            )}
+          </div>
+        )}
         <p className="text-sm">
-          Compare the extracted statement with the original PDF. Select printed
-          text to locate it on the page.
-          {canEdit &&
-            " Corrections and import choices are separate below the table."}
+          The system checks the extracted transactions and compares the balances
+          where available. Review flagged items, then confirm the import. You
+          can also select any value to check its source.
         </p>
       </header>
+      {(!data.current_import || replacePrevious) && (
+        <section
+          aria-label="Statement checks"
+          className={`rounded border p-3 text-sm ${attentionCount || unresolvedDifference ? "border-amber-500/50 bg-amber-50/60 dark:bg-amber-950/20" : "border-teal-500/40 bg-teal-50/60 dark:bg-teal-950/20"}`}
+        >
+          <div className="flex flex-wrap justify-between items-center gap-3">
+            <div>
+              <h4 className="font-semibold">
+                {serverChecks.pending
+                  ? "Checking current values…"
+                  : serverChecks.error
+                    ? "Statement checks could not finish"
+                    : attentionCount
+                      ? `${attentionCount} items need attention`
+                      : unresolvedDifference
+                        ? "Check the differences below"
+                        : "Ready to confirm"}
+              </h4>
+              <p>{included.length} transactions selected.</p>
+              <p>
+                {serverChecks.pending
+                  ? "Checking these values. You can keep reviewing the PDF while this runs."
+                  : attentionCount || unresolvedDifference
+                    ? "Open the flagged items to check them against the PDF."
+                    : "Confirm once to import this statement. You do not need to accept each line separately."}
+              </p>
+            </div>
+            {serverChecks.error && (
+              <div role="alert" className="w-full">
+                <p>{serverChecks.error}</p>
+                <Button variant="outline" onClick={serverChecks.retry}>
+                  Retry statement checks
+                </Button>
+              </div>
+            )}
+            <div className="w-full">
+              <StatementArithmeticChecks
+                checks={serverChecks.checks}
+                format={(value) =>
+                  `${displayAmount(value, digits)} ${data.currency}`
+                }
+                onInspect={openInlineRow}
+              />
+              {balanceMismatch && (
+                <div className="mt-3 space-y-2 rounded border p-3">
+                  <p>
+                    If the numbers match the PDF but the statement itself does
+                    not add up, keep the printed values and record the
+                    difference.
+                  </p>
+                  <label className="block">
+                    <input
+                      type="checkbox"
+                      checked={
+                        balanceException.revision === serverChecks.revision
+                      }
+                      disabled={!canEdit || serverChecks.pending}
+                      onChange={(event) =>
+                        setBalanceException((previous) => ({
+                          ...previous,
+                          revision: event.target.checked
+                            ? serverChecks.revision!
+                            : "",
+                        }))
+                      }
+                    />{" "}
+                    I checked these differences against the PDF
+                  </label>
+                  {balanceException.revision === serverChecks.revision && (
+                    <label className="block">
+                      Why the difference remains
+                      <textarea
+                        aria-label="Why the difference remains"
+                        className="block w-full rounded border bg-background p-2"
+                        value={balanceException.reason}
+                        disabled={!canEdit}
+                        onChange={(event) =>
+                          setBalanceException((previous) => ({
+                            ...previous,
+                            reason: event.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+                  )}
+                  {differenceAccepted && (
+                    <p>
+                      Your explanation will be saved with the import. The
+                      difference remains recorded.
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+            {warnings.length > 0 && (
+              <ul className="w-full list-disc pl-5">
+                {warnings.map((message) => (
+                  <li key={message}>{message}</li>
+                ))}
+              </ul>
+            )}
+            <Button
+              variant="outline"
+              onClick={() =>
+                confirmationControls.current?.scrollIntoView({
+                  block: "start",
+                  behavior: "smooth",
+                })
+              }
+            >
+              {attentionCount ? "Show items to check" : "Go to confirmation"}
+            </Button>
+          </div>
+        </section>
+      )}
+      {problemIds.length > 0 && (
+        <div
+          role="group"
+          aria-label="Problem navigation"
+          className="flex flex-wrap items-center gap-2 rounded border border-amber-500/30 bg-amber-50/40 dark:bg-amber-950/10 p-2"
+        >
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={problemIndex <= 0}
+            onClick={() => openInlineRow(problemIds[problemIndex - 1])}
+          >
+            Previous problem
+          </Button>
+          <span className="text-sm">
+            {problemIndex < 0
+              ? `${problemIds.length} rows need attention`
+              : `Problem ${problemIndex + 1} of ${problemIds.length}`}
+          </span>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={problemIndex >= problemIds.length - 1}
+            onClick={() => openInlineRow(problemIds[problemIndex + 1])}
+          >
+            {problemIndex < 0 ? "First problem" : "Next problem"}
+          </Button>
+        </div>
+      )}
+      {included.length > 0 && (
+        <div
+          role="group"
+          aria-label="Transaction navigation"
+          className="flex flex-wrap items-center gap-2 rounded border bg-muted/20 p-2"
+          onKeyDown={(event) => {
+            if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+              event.preventDefault()
+              showTransaction(
+                activeTransaction + (event.key === "ArrowLeft" ? -1 : 1)
+              )
+            }
+          }}
+        >
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={activeTransaction <= 0}
+            onClick={() => showTransaction(activeTransaction - 1)}
+          >
+            Previous transaction
+          </Button>
+          <span className="text-sm" aria-live="polite">
+            {activeTransaction >= 0
+              ? `Transaction ${activeTransaction + 1} of ${included.length}`
+              : `${included.length} transactions`}
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={activeTransaction >= included.length - 1}
+            onClick={() => showTransaction(activeTransaction + 1)}
+          >
+            {activeTransaction < 0 ? "First transaction" : "Next transaction"}
+          </Button>
+          {activeTransaction >= 0 && (
+            <span className="text-sm text-muted-foreground truncate max-w-md">
+              {included[activeTransaction].description}
+            </span>
+          )}
+        </div>
+      )}
       <div className="flex flex-wrap items-center gap-2">
         <Button
           variant="outline"
@@ -1037,7 +1780,9 @@ function EditableStatement({
           )}
       </div>
       <fieldset
-        disabled={confirm.isPending || confirm.isSuccess}
+        disabled={
+          confirm.isPending || confirm.isSuccess || saveBatchReview.isPending
+        }
         className="space-y-4"
       >
         <div
@@ -1058,21 +1803,46 @@ function EditableStatement({
               />
             </aside>
           )}
-          <div className="min-w-0 overflow-y-auto overflow-x-hidden max-h-[65vh]">
+          <div
+            ref={printedControls}
+            className="min-w-0 overflow-y-auto overflow-x-hidden max-h-[65vh]"
+          >
             <h4 className="font-semibold">Extracted statement</h4>
             <p className="text-sm text-muted-foreground mb-3">
-              Compare each table with the PDF. Select any printed value to
-              locate it on the page.
+              Select a printed value to locate it in the PDF, or use Previous
+              and Next transaction to move through the payments.
               {canEdit &&
-                " Use Show corrections and import choices below to change what will be imported."}
+                " Select Edit this row to correct a value beside its original."}
             </p>
             <PrintedStatementTable
+              selectedRowId={focus?.rowId}
               rows={data.rows.filter((row) => row.page_number === currentPage)}
               onCell={(rowId, locator) => setFocus({ rowId, locator })}
               onReviewRow={
-                canEdit && !data.current_import ? reviewRow : undefined
+                canEdit && !data.current_import ? openInlineRow : undefined
               }
+              rowTools={rowTools}
             />
+            {canEdit && (!data.current_import || replacePrevious) && (
+              <StatementBulkCorrections
+                rows={rows.filter(
+                  (row) =>
+                    row.manual_page ||
+                    ["transaction", "unresolved"].includes(
+                      originals.get(row.id)?.kind ?? ""
+                    )
+                )}
+                inspect={openInlineRow}
+                apply={(changes) => {
+                  const corrected = new Map(
+                    changes.map((change) => [change.before.id, change.after])
+                  )
+                  setRows((current) =>
+                    current.map((row) => corrected.get(row.id) ?? row)
+                  )
+                }}
+              />
+            )}
             {!data.rows.some((row) => row.page_number === currentPage) && (
               <p className="my-3 text-sm">
                 No extracted rows for this page in the selected statement. Check
@@ -1162,8 +1932,8 @@ function EditableStatement({
                               type="checkbox"
                               checked={!r.excluded}
                               disabled={
-                                original.fields.balance_convention ===
-                                "liability_owed"
+                                original.kind === "balance" ||
+                                original.kind === "statement_total"
                               }
                               onChange={(e) =>
                                 update(r.id, { excluded: !e.target.checked })
@@ -1290,7 +2060,7 @@ function EditableStatement({
                                 </select>
                               </label>
                             )}
-                            {requiresReason(r) && (
+                            {(requiresReason(r) || !!r.reason) && (
                               <label className="block mt-2">
                                 Reason for correction or decision
                                 <input
@@ -1301,6 +2071,24 @@ function EditableStatement({
                                   }
                                   className="border rounded p-1 w-full bg-background"
                                 />
+                                {!changed(r) &&
+                                  !r.excluded &&
+                                  !r.reason.trim() &&
+                                  rowProblems(r).length === 1 && (
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      className="mt-2"
+                                      onClick={() =>
+                                        update(r.id, {
+                                          reason:
+                                            "Checked against the original PDF; the extracted values are correct.",
+                                        })
+                                      }
+                                    >
+                                      I checked this row against the PDF
+                                    </Button>
+                                  )}
                               </label>
                             )}
                             {focus?.rowId === r.id && (
@@ -1482,6 +2270,7 @@ function EditableStatement({
                 <input
                   type="checkbox"
                   disabled={!canEdit}
+                  aria-label="Replace the previous import"
                   checked={replacePrevious}
                   onChange={(e) => setReplacePrevious(e.target.checked)}
                 />
@@ -1564,13 +2353,25 @@ function EditableStatement({
             </label>
           )}
         </div>
-        {data.issues.length > 0 && (
+        {warnings.length > 0 && (
           <div className="rounded border border-amber-500 p-3">
             <h4 className="font-semibold">Check statement details</h4>
-            {data.issues.map((s, i) => (
-              <p key={i}>{s}</p>
+            {warnings.map((message) => (
+              <p key={message}>{message}</p>
             ))}
           </div>
+        )}
+        {statementNotes.length > 0 && (
+          <details className="rounded border p-3 text-sm">
+            <summary className="cursor-pointer font-medium">
+              About this statement
+            </summary>
+            {statementNotes.map((message) => (
+              <p key={message} className="mt-2">
+                {message}
+              </p>
+            ))}
+          </details>
         )}
         <div className="flex flex-wrap gap-5 text-sm">
           <span>
@@ -1775,55 +2576,11 @@ function EditableStatement({
             Show selected page
           </Button>
         </details>
-        {selectionBalance && (
+        {!excludedCopy && !(batchReview && data.current_import) && (
           <div
-            className={`rounded border p-3 text-sm ${selectionBalance.difference !== "0" ? "border-amber-500" : "border-border"}`}
-            role="status"
+            ref={confirmationControls}
+            className="rounded border bg-muted/30 p-3 space-y-2"
           >
-            <p className="font-medium">
-              {selectionBalance.difference === "0"
-                ? "Selected movements agree with the printed balance"
-                : "Selected movements leave a balance difference"}
-            </p>
-            <p>
-              {data.metadata.balance_convention === "liability_owed"
-                ? "Opening amount owed plus charges minus payments gives "
-                : "Opening balance plus the selected movements gives "}
-              {displayAmount(selectionBalance.expected, digits)} {data.currency}
-              . The{" "}
-              {selectionBalance.independent
-                ? data.metadata.balance_convention === "liability_owed"
-                  ? "printed closing amount owed"
-                  : "printed closing balance"
-                : "last printed transaction balance"}{" "}
-              is {displayAmount(selectionBalance.printed, digits)}. Difference:{" "}
-              {displayAmount(selectionBalance.difference, digits)}.
-            </p>
-            <p>
-              {selectionBalance.difference !== "0"
-                ? "Check excluded payments, corrections and missing rows before confirming. "
-                : ""}
-              A matching balance cannot tell you whether any transactions were
-              missed. Check any flagged rows against the PDF.
-            </p>
-            <Button
-              variant="outline"
-              onClick={() => {
-                const original = originals.get(selectionBalance.sourceId)
-                if (original) {
-                  setFocus({
-                    rowId: original.id,
-                    locator: balanceLocator(original),
-                  })
-                }
-              }}
-            >
-              Inspect compared balance
-            </Button>
-          </div>
-        )}
-        {!excludedCopy && (
-          <div className="rounded border bg-muted/30 p-3 space-y-2">
             {data.metadata.account_closure && (
               <div className="space-y-2">
                 <p>
@@ -1851,52 +2608,137 @@ function EditableStatement({
                 ? "Save the account, statement period and printed closure notice. No transaction rows were found in this section. This does not supply a missing closing balance."
                 : data.can_import_balances && included.length === 0
                   ? "Save this account's statement period and its opening and closing balances. No transaction rows were found in this section. Check the original before saving."
-                  : `Import adds ${included.length} transactions to the case. Original readings and your corrections are retained. Check the PDF for any missed transactions before confirming.`}
+                  : batchReview
+                    ? `Save these ${included.length} checked transactions to the batch. Return to the batch to import all ready statements together.`
+                    : `Import adds ${included.length} transactions to the case. Original readings and your corrections are retained. You can return to Transactions to correct a value after import.`}
             </p>
             <Button
               disabled={
                 !canEdit ||
-                incomplete ||
-                (!!data.current_import &&
-                  (!replacePrevious || !detailsReason.trim())) ||
-                (detailsChanged && !detailsReason.trim()) ||
-                Boolean(periodStart) !== Boolean(periodEnd) ||
-                periodStart > periodEnd ||
-                !holder.trim() ||
-                !account.trim() ||
-                (included.length === 0 &&
-                  !data.can_record_account_closure &&
-                  (!data.can_import_balances || !matchingEmptyBalances))
+                confirm.isPending ||
+                saveBatchReview.isPending ||
+                blockedRows.length > 0 ||
+                detailProblems.length > 0 ||
+                serverChecks.pending ||
+                !!serverChecks.error ||
+                unresolvedDifference
+              }
+              aria-describedby={
+                blockedRows.length || detailProblems.length
+                  ? "statement-import-blockers"
+                  : undefined
               }
               onClick={() => {
-                if (canEdit) confirm.mutate()
+                if (canEdit) {
+                  if (batchReview) saveBatchReview.mutate("done")
+                  else confirm.mutate()
+                }
               }}
             >
-              {confirm.isPending
-                ? "Importing statement…"
-                : data.can_record_account_closure && included.length === 0
-                  ? "Save account closure"
-                  : data.can_import_balances && included.length === 0
-                    ? "Save statement balances"
-                    : `Confirm import of ${included.length} transactions`}
+              {batchReview
+                ? saveBatchReview.isPending
+                  ? "Saving checked statement…"
+                  : "Save for bulk import"
+                : confirm.isPending
+                  ? "Importing statement…"
+                  : data.can_record_account_closure && included.length === 0
+                    ? "Save account closure"
+                    : data.can_import_balances && included.length === 0
+                      ? "Save statement balances"
+                      : `Confirm import of ${included.length} transactions`}
             </Button>
-            {data.can_import_balances &&
-              included.length === 0 &&
-              !matchingEmptyBalances && (
-                <p className="text-sm">
-                  Check the opening and closing balances. They must match when
-                  there are no transactions.
-                </p>
-              )}
-            {incomplete && (
-              <p className="text-sm">
-                Complete the flagged fields and record a reason for each
-                correction or exception before importing.
+            {serverChecks.pending && (
+              <p role="status">
+                Checking the current values before confirmation…
               </p>
+            )}
+            {!!serverChecks.error && (
+              <p role="alert">
+                Statement checks could not finish. Use Retry statement checks
+                above.
+              </p>
+            )}
+            {unresolvedDifference && (
+              <p role="alert">
+                The current values leave a difference. Open Statement checks
+                above to correct it or record why it remains.
+              </p>
+            )}
+            {(blockedRows.length > 0 || detailProblems.length > 0) && (
+              <section
+                id="statement-import-blockers"
+                aria-label="What needs attention before import"
+                className="rounded border border-amber-500/50 bg-amber-50/60 dark:bg-amber-950/20 p-3 space-y-3"
+              >
+                <h4 className="font-semibold">Before you can confirm</h4>
+                {detailProblems.map((problem, index) => (
+                  <div
+                    key={index}
+                    className="flex flex-wrap items-center gap-2 text-sm"
+                  >
+                    <p>{problem.message}</p>
+                    {problem.field && canEdit && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => focusDetail(problem.field!)}
+                      >
+                        Go to field
+                      </Button>
+                    )}
+                  </div>
+                ))}
+                {blockedRows.length > 0 && (
+                  <>
+                    <p className="text-sm">
+                      {blockedRows.length}{" "}
+                      {blockedRows.length === 1 ? "row needs" : "rows need"}{" "}
+                      your attention. Select Review row to open its fields
+                      beside the PDF.
+                    </p>
+                    <ul className="space-y-3">
+                      {blockedRows.slice(0, 8).map(({ row: r, problems }) => {
+                        const original = originals.get(r.id)!
+                        return (
+                          <li key={r.id} className="text-sm">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <strong>
+                                PDF page {original.page_number}, row{" "}
+                                {original.row_index + 1}
+                                {r.excluded ? " (not being imported)" : ""}
+                              </strong>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => reviewRow(r.id)}
+                              >
+                                Review row
+                              </Button>
+                            </div>
+                            {r.description && <p>{r.description}</p>}
+                            {problems.map((problem) => (
+                              <p key={problem}>{problem}</p>
+                            ))}
+                          </li>
+                        )
+                      })}
+                    </ul>
+                    {blockedRows.length > 8 && (
+                      <p className="text-sm">
+                        Showing the first 8 rows. The next ones will appear as
+                        these are resolved.
+                      </p>
+                    )}
+                  </>
+                )}
+              </section>
             )}
           </div>
         )}
       </fieldset>
+      {saveBatchReview.isError && (
+        <p role="alert">{saveBatchReview.error.message}</p>
+      )}
       {confirm.isError && <p role="alert">{confirm.error.message}</p>}
       {confirm.isSuccess && (
         <p role="status">

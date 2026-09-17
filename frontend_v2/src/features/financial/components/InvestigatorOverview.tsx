@@ -207,7 +207,7 @@ export function InvestigatorOverview({ caseId }: { caseId: string }) {
                 <>
                   <dl className="space-y-3 text-sm">
                     <div className="flex justify-between">
-                      <dt>Uploaded PDFs in the case</dt>
+                      <dt>PDFs in Financial</dt>
                       <dd className="font-semibold">{files.length}</dd>
                     </div>
                     <div className="flex justify-between">

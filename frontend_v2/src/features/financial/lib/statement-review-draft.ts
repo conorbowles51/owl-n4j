@@ -26,9 +26,34 @@ export const statementDraft = z.object({
   periodStart: z.string(),
   periodEnd: z.string(),
   detailsReason: z.string(),
+  balanceException: z
+    .object({ revision: z.string(), reason: z.string() })
+    .optional(),
   amountText: z.record(z.string(), z.string()),
 })
 export type StatementDraft = z.infer<typeof statementDraft>
+
+export function serverStatementDraft(raw: Record<string, unknown> | undefined) {
+  if (!raw) return null
+  const parsed = statementDraft.safeParse({
+    revision: raw.expected_revision,
+    rows: Array.isArray(raw.rows)
+      ? raw.rows.map((row) => ({ ...row, direction: row.direction || "" }))
+      : [],
+    holder: raw.holder,
+    account: raw.account_number,
+    institution: raw.institution,
+    periodStart: raw.period_start,
+    periodEnd: raw.period_end,
+    detailsReason: raw.details_reason || "",
+    balanceException: {
+      revision: raw.balance_exception_revision || "",
+      reason: raw.balance_exception_reason || "",
+    },
+    amountText: {},
+  })
+  return parsed.success ? parsed.data : null
+}
 
 export function readStatementDraft(
   key: string | null,

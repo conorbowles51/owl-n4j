@@ -234,6 +234,25 @@ def propose_table(source, currency, *, page_has_transaction_table=False):
         fields = item['fields']
         fields.update({role+'_column': str(cell['column_index']) for role, cell in role_cells.items()})
         fields['description'] = texts.get('description', '')
+        total_role = {
+            'total credits': 'credit', 'total deposits': 'credit', 'total money in': 'credit',
+            'total debits': 'debit', 'total withdrawals': 'debit', 'total money out': 'debit',
+        }.get(' '.join(fields['description'].lower().split()))
+        if total_role and not any(texts.get(role, '').strip() for role in ('date', 'booking_date', 'value_date')):
+            # Only a labelled total in its matching amount column. Retain the
+            # printed cells and let the reviewer correct an unreadable total.
+            candidates = [role for role in ('credit', 'debit', 'amount', 'balance')
+                          if texts.get(role, '').strip() not in ('', '-', '—')]
+            if len(candidates) == 1 and candidates[0] in (total_role, 'amount'):
+                role = candidates[0]
+                fields.update(total_direction=total_role, balance_column=fields[role+'_column'])
+                try:
+                    fields['balance'] = exact_amount(texts[role], currency)
+                except ValueError:
+                    item['issues'].append('Check the printed statement total against the PDF.')
+                item.update(kind='statement_total', excluded=True)
+                result.append(item)
+                continue
         party = re.fullmatch(r'(?:wire|transfer|payment)\s+(?:from|to)\s+(.+)', fields['description'], re.I)
         fields['counterparty'] = party.group(1).strip() if party else ''
         control = fields['description'].strip().lower() in _CONTROLS

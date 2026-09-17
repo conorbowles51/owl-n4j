@@ -18,6 +18,8 @@ def create_statement_version(session, *, case_id, evidence_file_id, request_id, 
         EvidenceFile.case_id == case_id).with_for_update())
     if original is None:
         raise PdfMappingError('Statement not found in this case.', 404)
+    from services.financial.file_visibility import require_financial_file
+    require_financial_file(original)
     if not original.original_filename.lower().endswith('.pdf'):
         raise PdfMappingError('Statement reprocessing requires a PDF.', 422)
     existing = session.scalar(select(EvidenceFile).where(EvidenceFile.case_id == case_id,
