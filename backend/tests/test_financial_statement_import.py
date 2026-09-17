@@ -568,7 +568,7 @@ class StatementImportTests(TransactionPersistenceTestCase):
         from unittest.mock import Mock
         from services.financial.statement_import import _existing_statement
         source = dict(page_number=1, table_index=0)
-        candidates = [SimpleNamespace(metadata_={
+        candidates = [SimpleNamespace(evidence_file_id=self.file.id, metadata_={
             'statement_import_statement_id': str(index),
             'statement_import_original': {'sources': [source]},
         }) for index in range(2)]
@@ -735,16 +735,21 @@ class StatementImportTests(TransactionPersistenceTestCase):
                 period_start=choice['period_start'],period_end=choice['period_end'],rows=[])
             for row in proposal['rows']:
                 fields=row['fields']
-                request['rows'].append(dict(id=row['id'],excluded=row['excluded'],date=fields.get('date',choice['period_end'] if row['issues'] else ''),
+                request['rows'].append(dict(id=row['id'],excluded=row['excluded'],date=fields.get('date',''),
+                    date_unprinted=fields.get('date_basis') == 'statement_end_ordering_only',
                     description=fields.get('description',''),amount_minor=fields.get('amount_minor','0'),direction=fields.get('direction','credit'),
-                    reason='Local test: interest date checked against period end.' if row['issues'] else ''))
+                    reason='Local test: flagged fields checked against the PDF.' if row['issues'] else ''))
             receipt=self.confirm(request)
             self.assertEqual(receipt['transaction_count'],3)
             self.assertFalse(self.confirm(request)['created'])
             receipts.append(UUID(receipt['source_document_id']))
         self.db.expire_all()
         self.assertEqual(len(list(self.db.scalars(select(FinancialStatementPeriod).where(FinancialStatementPeriod.source_document_id.in_(receipts))))),2)
-        self.assertEqual(len(list(self.db.scalars(select(FinancialTransaction).where(FinancialTransaction.source_document_id.in_(receipts))))),6)
+        imported=list(self.db.scalars(select(FinancialTransaction).where(FinancialTransaction.source_document_id.in_(receipts))))
+        self.assertEqual(len(imported),6)
+        undated=[row for row in imported if row.transaction_date is None]
+        self.assertEqual(len(undated),2)
+        self.assertEqual({row.ordering_date.isoformat() for row in undated}, {choice['period_end'] for choice in choices})
 
     def andrews_request(self, share, *, install=False, no_payments=False):
         from tests.test_financial_statement_import_andrews import two_shares
