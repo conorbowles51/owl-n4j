@@ -2,6 +2,19 @@
 
 **Latest instruction supersedes the release window below:** hold off on the 1–2 hour deployment because Alex is working on the platform. Continue the whole remaining task and deploy only when the complete work is ready. The ACTIVE ten-minute heartbeat has been updated to remove the intermediate push and preserve continued local development. The earlier immediate push `23039a67` remains complete. No further push has occurred. The current Loupe URL question remains pending; local work continues.
 
+## Account references connected to Findings, 17 September 2026
+
+Local development only. Deployment remains held until the whole task is ready. Last pushed is `23039a67`; the preceding overlap checkpoint is local commit `803216b2`.
+
+- [x] Statements & accounts lists explicitly labelled account, card, share and IBAN references found in current imported payment descriptions. It includes payments accepted after review, excludes rejected/superseded records and keeps case boundaries. Bare numbers, dates and amounts are not nominated as account identifiers.
+- [x] Grouped references link every supporting payment, open the original PDF and distinguish no matching imported statement from a possible match. Partial references retain a warning; a shared ending never establishes identity. Search and pagination do not truncate supporting payment IDs.
+- [x] Save question in Findings fills the title, explanation, next action and supporting payments. The investigator can edit and save it using the existing Findings editor, then reopen it after refresh.
+- [x] User guide and testing guide include exact steps. Screenshot 40 is light mode and synthetic only. Existing investigator pages remain intact.
+
+Validation: four focused backend tests, three frontend tests, TypeScript and scoped ESLint pass. The real browser exposed and corrected an initial use of verified-total classes that omitted user-accepted PDF rows. The final browser check sees one reference across two payments, opens both payments and the PDF, and restores the saved question after refresh with no JavaScript errors. No full suite or production build was repeated.
+
+Synthetic case `c6ab6d19-3b0c-4c9a-bf2f-dd3a159fa5ea`, batch `2c16fd9d-f64c-4a15-9834-4da8932908b7`, file `e7f1d40a-5506-41d1-aada-dbb46d9307e5`. Three transactions were imported once and one question saved once. Ignored browser record `data/local-runtime/reference-browser.json` guards against duplicate writes. API restarted in exec session 1757 on port 58002 with log `financial-references-api.log`; compiled preview still predates local work. Next: finish D summary/context separation checks, then A wording and final combined validation. No intermediate deployment.
+
 ## Compare overlapping statements before import, 17 September 2026
 
 Local development only. The user cancelled the intermediate deployment while Alex works on the platform. Last pushed remains `23039a67`; recognised undated-interest work is committed locally as `d4a3bf09`.

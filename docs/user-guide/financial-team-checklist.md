@@ -470,3 +470,17 @@ Use synthetic copies in a separate test case. Do not create duplicate live case 
 7. Leave the copy unimported when finished. Check that both original PDFs remain in Evidence.
 
 Expected result: no duplicate payments are added without a deliberate comparison. A skipped statement can be restored without losing its source or saved work.
+
+### Follow a referenced account and save the question
+
+Use a synthetic statement whose payment descriptions contain an explicit reference such as **Transfer to account 9911223344** and **Payment from account 9911223344**.
+
+1. Import the statement and open **Statements & accounts**. Find **Other accounts mentioned in payments** below the file list.
+2. Expect one reference with two supporting payments and **No matching statement imported**, provided the case has no statement for that number.
+3. Select **View 2 payments**. Check that both descriptions are present. Open the original statement and compare the printed reference.
+4. Select **Save question in Findings**. Check the suggested question, two attached payments and proposed next action. Edit the question and select **Save finding**.
+5. Select **Open Findings**, refresh the page and reopen the saved question. Confirm the explanation and both payment links remain available.
+6. If the test case includes a matching account statement, tick **Include references with a possible statement match**. Open that account's statements. Expect a possible match, not a claim that the number proves the account owner's identity.
+7. Check a payment containing only a telephone number, an amount or an unlabelled trace number. It should not create an account-reference entry.
+
+Expected result: the investigator can follow the reference to its evidence and record what needs to be obtained, without copying payment IDs or descriptions between screens.

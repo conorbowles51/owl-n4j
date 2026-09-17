@@ -507,6 +507,18 @@ async def get_statement_checks(case_id: UUID = Query(...), offset: int = Query(0
         raise HTTPException(status_code=500, detail="Statement balances could not be checked.")
 
 
+@router.get("/account-references")
+async def get_account_references(case_id: UUID = Query(...), offset: int = Query(0, ge=0),
+                                 search: str = Query('', max_length=128), show: Literal['missing','all'] = Query('missing'),
+                                 db: Session = Depends(get_db)):
+    from services.financial.account_mentions import account_references
+    try:
+        return account_references(db, case_id=case_id, offset=offset, search=search, show=show)
+    except Exception:
+        logger.exception("Account references could not be checked for case %s", case_id)
+        raise HTTPException(status_code=500, detail="Account references could not be checked. Retry the check.")
+
+
 @router.get("/statement-coverage")
 async def get_statement_coverage(case_id: UUID = Query(...), offset: int = Query(0, ge=0), db: Session = Depends(get_db), account_id: UUID | None = None):
     try:

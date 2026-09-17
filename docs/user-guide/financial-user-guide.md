@@ -816,6 +816,22 @@ Up to 25 accounts appear on each register page. If **Next accounts** is availabl
 
 *Review dates & statements opens this account's originals and date-range check. Check duplicate imports lets you compare the repeated March records.*
 
+### Follow an account reference mentioned in a payment
+
+1. Open **Statements & accounts**. Below **Files in this case**, find **Other accounts mentioned in payments**.
+2. Read the account, card, share or IBAN reference and the quoted description. This list looks for explicitly labelled references in imported payments. It does not identify an account owner from a number alone.
+3. Select **View 2 payments** (the number depends on the reference) to examine every payment mentioning it. Select **View original statement** to compare the first cited payment with its PDF. The payment list provides access to the other originals.
+4. If you need to obtain records for that account, select **Save question in Findings**. Loupe fills in a question, explains why the reference was listed and attaches the supporting payments.
+5. Edit the title, observation and next action to describe what you need to investigate. Select **Save finding**, then **Open Findings**. The saved question remains available after leaving the page or refreshing it.
+6. To inspect a possible match, tick **Include references with a possible statement match**. Select the account button to compare its recorded holder, bank and statements. A shared card ending can belong to different accounts, so check the original records before deciding they match.
+7. Use **Find a reference** and **Search references** to narrow the list. **Previous references** and **Next references** show further groups without dropping their supporting payments. Select **Refresh references** after importing or correcting records elsewhere.
+
+**No matching statement imported** means Loupe did not find a matching imported statement in this case. A file waiting for review can still contain that account. References without a clear account label or readable number will need to be checked in the originals.
+
+![An account reference found in two synthetic payments, with actions to open the payments, inspect the PDF or save a question](images/40-account-reference-question.png)
+
+*The saved question cites both payments. It does not claim that the account holder has been identified.*
+
 ### Open one account's statements
 
 1. Open **Statements & accounts** and select **Review accounts**. **Statement files** returns to the main file register.

@@ -1,3 +1,4 @@
+import { ReferencedAccounts } from "./ReferencedAccounts"
 import { useSearchParams } from "react-router-dom"
 import { FinancialBatchPanel } from "./FinancialBatchPanel"
 import { Button } from "@/components/ui/button"
@@ -38,6 +39,13 @@ export function StatementRegister({
       <div hidden={open}>
         <StatementFilesPanel caseId={caseId} register />
       </div>
+      {!open && (
+        <ReferencedAccounts
+          key={caseId}
+          caseId={caseId}
+          onOpenTransactions={onOpenTransactions}
+        />
+      )}
       <div hidden={!open} className="space-y-3">
         <Button
           variant="outline"

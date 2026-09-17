@@ -377,4 +377,16 @@
 <li>Open the copy, tick the comparison checkbox and enter a reason. Save progress, leave the page and return. Check that the decision was saved. Change its period dates and check that the old comparison no longer authorises import.</li>
 <li>Leave the copy unimported when finished. Check that both original PDFs remain in Evidence.</li>
 </ol>
-<p>Expected result: no duplicate payments are added without a deliberate comparison. A skipped statement can be restored without losing its source or saved work.</p></main></html>
+<p>Expected result: no duplicate payments are added without a deliberate comparison. A skipped statement can be restored without losing its source or saved work.</p>
+<h3>Follow a referenced account and save the question</h3>
+<p>Use a synthetic statement whose payment descriptions contain an explicit reference such as <strong>Transfer to account 9911223344</strong> and <strong>Payment from account 9911223344</strong>.</p>
+<ol>
+<li>Import the statement and open <strong>Statements &amp; accounts</strong>. Find <strong>Other accounts mentioned in payments</strong> below the file list.</li>
+<li>Expect one reference with two supporting payments and <strong>No matching statement imported</strong>, provided the case has no statement for that number.</li>
+<li>Select <strong>View 2 payments</strong>. Check that both descriptions are present. Open the original statement and compare the printed reference.</li>
+<li>Select <strong>Save question in Findings</strong>. Check the suggested question, two attached payments and proposed next action. Edit the question and select <strong>Save finding</strong>.</li>
+<li>Select <strong>Open Findings</strong>, refresh the page and reopen the saved question. Confirm the explanation and both payment links remain available.</li>
+<li>If the test case includes a matching account statement, tick <strong>Include references with a possible statement match</strong>. Open that account&#x27;s statements. Expect a possible match, not a claim that the number proves the account owner&#x27;s identity.</li>
+<li>Check a payment containing only a telephone number, an amount or an unlabelled trace number. It should not create an account-reference entry.</li>
+</ol>
+<p>Expected result: the investigator can follow the reference to its evidence and record what needs to be obtained, without copying payment IDs or descriptions between screens.</p></main></html>
