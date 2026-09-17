@@ -4,6 +4,7 @@ Amounts come from the source image, never from balancing arithmetic. Complete
 matching visual readings are required; conflicting signs or digits stay flagged.
 """
 from copy import deepcopy
+from decimal import Decimal
 import re
 import time
 
@@ -67,7 +68,17 @@ def _candidates(tables, words, width, height):
                 b = [min(box(c)[0] for c in group), min(box(c)[1] for c in group),
                      max(box(c)[2] for c in group), max(box(c)[3] for c in group)]
                 readable = re.fullmatch(r'[+-]?\s*(?:\d{1,3}(?:,\d{3})+|\d+)\s*\.\s*\d{2}', text)
-                if readable or len(text) > 24 or b[2]-b[0] > width*.13:
+                sign_conflict = False
+                if readable and field == 'amount':
+                    value = Decimal(re.sub(r'[\s,]', '', text))
+                    sign_conflict = (value > 0 and verb[1] == 'Withdrawal'
+                                     and 'Adjustment' not in description['text']
+                                     or value < 0 and verb[1] == 'Deposit')
+                # A missing minus can look like a valid positive amount, or
+                # even an extra digit. Revisit the image only for an existing
+                # description/sign conflict. The description never supplies
+                # the replacement sign or amount; complete image readings do.
+                if readable and not sign_conflict or len(text) > 24 or b[2]-b[0] > width*.13:
                     continue
                 # All and only the words in this measured cell must agree with
                 # its original text. Repeated text elsewhere is not a match.
@@ -80,7 +91,8 @@ def _candidates(tables, words, width, height):
                     continue
                 used.update(indices)
                 candidates.append(dict(indices=indices, text=text, rect=b, field=field,
-                    verb=verb[1], adjustment='Adjustment' in description['text']))
+                    verb=verb[1], adjustment='Adjustment' in description['text'],
+                    reason='description_sign_conflict' if sign_conflict else 'unreadable_money'))
     return candidates[:40]
 
 
@@ -245,6 +257,7 @@ def reread_financial_amounts(page, data, *, rotation, image_width, image_height,
                 result['text'][i] = ''
             records.append(dict(method='tesseract_amount_crop_consensus',page=page.number+1,
                 rect=b,field=candidate['field'],original_text=candidate['text'],text=text,
+                reason=candidate['reason'],
                 original_words=[dict(text=w[4],rect=[round(v*1000) for v in w[:4]]) for w in original_words],
                 dpi=720 if original_agrees else 300,
                 segmentation_modes=[7] if clean_agrees else [7,13],

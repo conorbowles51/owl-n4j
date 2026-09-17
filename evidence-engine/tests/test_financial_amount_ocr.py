@@ -74,6 +74,41 @@ def test_matching_amount_reread_retains_original_and_other_fields(monkeypatch):
     assert all(c['timeout']<=10 for c in calls)
 
 
+@pytest.mark.parametrize('description,original,corrected',[
+    ('Withdrawal Debit Card', '53.89', '-3.99'),
+    ('Recurring Withdrawal Bill Payment', '13.53', '-13.53'),
+    ('Deposit Transfer', '-20.00', '20.00'),
+])
+def test_conflicting_readable_amount_requires_image_reading_and_retains_original(monkeypatch,description,original,corrected):
+    data=fixture();data['text'][4]=description;data['text'][5]=original;before=deepcopy(data)
+    result,records,calls=run(data,monkeypatch,iter([corrected]*6),cleaned=True)
+    assert data==before and result['text'][5]==corrected and len(calls)==6
+    assert records[0]['reason']=='description_sign_conflict'
+    assert records[0]['original_text']==original
+    assert result['text'][:5]+result['text'][6:]==data['text'][:5]+data['text'][6:]
+
+
+@pytest.mark.parametrize('replies',[
+    ['-3.99']*5+['-3.39'], ['53.89']*6, ['-3.99']*5+['3.99'],
+    ['399']*6, [RuntimeError('Timed out')],
+])
+def test_conflicting_readable_amount_stays_flagged_without_agreed_source_reading(monkeypatch,replies):
+    data=fixture();data['text'][5]='53.89'
+    result,records,_=run(data,monkeypatch,iter(replies),cleaned=True)
+    assert result is data and not records
+
+
+@pytest.mark.parametrize('description,amount',[
+    ('Withdrawal Debit Card','-12.00'), ('Deposit Transfer','20.00'),
+    ('Withdrawal Adjustment Credit Voucher','12.00'),
+    ('Withdrawal Debit Card','0.00'), ('Deposit Transfer','-0.00'),
+])
+def test_readable_nonconflicting_amounts_adjustments_and_zero_are_not_reread(monkeypatch,description,amount):
+    data=fixture();data['text'][4]=description;data['text'][5]=amount
+    result,records,calls=run(data,monkeypatch,iter([]),cleaned=True)
+    assert result is data and not records and not calls
+
+
 @pytest.mark.parametrize('replies',[
     ['-12.00','-12.01'],['-12.00','12.00'],['12.00','12.00'],
     ['-12.0','-12.0'],['-12,00','-12,00'],['12','-12.00'],

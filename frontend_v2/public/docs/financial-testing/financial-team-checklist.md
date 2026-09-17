@@ -438,7 +438,7 @@ Record the filename, account, period, action, expected result and actual result 
 
 1. Use an Andrews test statement with a damaged amount or balance reading. Record its account sections and transaction count before reprocessing.
 2. Choose **Read from page images** under **Read the statement again**, then **Reprocess statement**.
-3. Compare recovered values with the original PDF, including decimal points and minus signs. Existing readable values and account assignments should remain unchanged. Dates and descriptions must not change because a money cell was reread.
+3. Compare recovered values with the original PDF, including decimal points and minus signs. Readable values without a sign conflict and account assignments should remain unchanged. A flagged sign conflict can be reread from its image: check both the digits and the sign of the replacement. Dates and descriptions must not change because a money cell was reread.
 4. Check the remaining problems and balance differences. A newly readable balance can reveal a mismatch in another payment. Neither that mismatch nor a conflicting visual reading should be marked as resolved automatically.
 5. Open any earlier saved review and compare its corrections before importing a changed reading. Confirm only the statements whose remaining problems you have resolved.
 

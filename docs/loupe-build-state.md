@@ -1,3 +1,11 @@
+## Flagged Andrews amount signs recovered from the image, 18 September 2026
+
+After local `1657d193`, measured Andrews amounts with an existing Withdrawal/Deposit sign conflict can enter the bounded image rereader even if the original number is syntactically valid. This handles a minus read as a digit. Matching image observations must supply the replacement amount and sign; the description never supplies a value. Readable nonconflicting fields, adjustment credits and zero values remain unchanged. Provenance records why the crop was reread.
+
+All 52 focused amount-reader tests pass. Three affected original pages were reread, not the whole file. Two complete agreed recoveries match visual source checks; the third conflicting result stays unresolved. All 16 sections and 383 entry IDs are retained. Only those two amounts/directions and resulting diagnostics change; dates, descriptions, balances and all other values remain equal. Flagged rows fall 49 to 47. Private records are `andrews-sign-page-*`, `andrews-sign-comparison.json` and the inspected `andrews-sign-accepted.png`. No real saved data or original file changed.
+
+The larger retained reading's six unassigned original pages were inspected. Physical page 13 is printed July page 5 immediately after printed page 3; page 4 is absent. Ten genuine payment rows remain unassigned, with no printed share heading on that page. Physical page 42 is a deposit receipt and must remain financial. The other four are three account forms and a dividend summary. Next check the user's recovery route for that actual gap and improve recognised harmless-page classification where supported. No push; deployment remains held.
+
 ## Remaining-field audit and larger-file comparison, 18 September 2026
 
 All 64 remaining flagged Merrick rows and 49 flagged rows in the smaller Andrews image reading were compared visually with original line crops. These are real payments or nonzero charges. No additional heading or zero-charge false candidate was observed in this set. Some correctly read rows have a running-balance warning caused by the preceding row's incorrect balance. This is a flagged-row audit, not an independent transcription or completeness measurement of either entire file.
