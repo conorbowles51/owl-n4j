@@ -1,3 +1,9 @@
+## Final release prepared, 18 September 2026
+
+The complete local DocuClipper processing benchmark is passed. A-E implementation items are checked; only observed deployment verification remains unchecked. The final production build and compiled-browser checks passed. Release notes: `docs/releases/2026-09-18-financial-processing.md`. Known scan limitations and independent-sample scope are retained, not hidden by the completion status.
+
+Remote fetch found no new branch changes: `origin/integration/evidence-main-reunion` remains `23039a67`, with no remote commits to merge. All source changes through `e4edfa73` are locally committed. The next action is the authorised final push, now that local completion is reached. Do not treat this as permission for more intermediate releases or invent more development work after publication. Once pushed, record its exact commit and pause the development heartbeat while the correct deployment URL is outstanding. No credentials or case data may be sent to the unrelated old IP.
+
 ## Charge discrepancies and saved correction journey, 18 September 2026
 
 Local proposal v27 adds independent Merrick fee/interest total checks and recognises spaced card-payment wording after a damaged reference. Five newly flagged missing-minus rows and four 0.20 interest differences all match inspected original crops. No dates or numbers are adjusted to force arithmetic. Source cells, section IDs and included entries remain unchanged. The shared check links to both each total and its charges; edits and exclusions recalculate it. Duplicate/unreadable controls, unknown manual placement and YTD figures cannot produce a false match.
