@@ -13,17 +13,21 @@ export function StatementBulkCorrections({
   inspect,
   reassign,
   printedDates,
+  assignmentOnly = false,
 }: {
   rows: ReviewEdit[]
   apply: (changes: ReturnType<typeof previewCorrections>) => void
   inspect: (id: string) => void
   reassign?: (rowIds: string[], reason: string) => ReactNode
   printedDates?: ReadonlyMap<string, string>
+  assignmentOnly?: boolean
 }) {
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(assignmentOnly)
   const [search, setSearch] = useState("")
   const [selected, setSelected] = useState<Set<string>>(new Set())
-  const [action, setAction] = useState<CorrectionAction | "reassign">("exclude")
+  const [action, setAction] = useState<CorrectionAction | "reassign">(
+    assignmentOnly ? "reassign" : "exclude"
+  )
   const [value, setValue] = useState("")
   const [reason, setReason] = useState("")
   const [page, setPage] = useState(0)
@@ -75,7 +79,11 @@ export function StatementBulkCorrections({
       aria-label="Correct several statement rows"
     >
       <Button size="sm" variant="outline" onClick={() => setOpen(!open)}>
-        {open ? "Close selected-row corrections" : "Correct several rows"}
+        {open
+          ? "Close selected-row corrections"
+          : assignmentOnly
+            ? "Assign payments to a statement"
+            : "Correct several rows"}
       </Button>
       {message && (
         <p role="status" className="text-sm">
@@ -85,9 +93,9 @@ export function StatementBulkCorrections({
       {open && (
         <>
           <p className="text-sm">
-            Select transactions with the same error, choose a correction and
-            check the preview before applying it. Original readings are
-            retained.
+            {assignmentOnly
+              ? "Select the payments that belong to the same account and period, enter the reason for that choice, then preview the move. Original readings and any corrections are kept."
+              : "Select transactions with the same error, choose a correction and check the preview before applying it. Original readings are retained."}
           </p>
           <div className="flex flex-wrap gap-3 items-end text-sm">
             <label>

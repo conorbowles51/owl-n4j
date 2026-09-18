@@ -15,13 +15,14 @@ class StatementInformationTests(TestCase):
     def test_account_forms_are_information_only_when_no_payment_table_shares_the_page(self):
         for lines, kind in [
             (['Andrews Federal Credit Union', 'MEMBERSHIP APPLICATION AND SIGNATURE CARD', 'SECTION 1 - MINOR INFORMATION'], 'account_application'),
+            (['Andrews Federal Credit Union', 'MEMBERSHIP APPLICATION AND SIGNATURE CARD', 'SECTION 1 - PRIMARY MEMBER INFORMATION', 'STATE ID'], 'account_application'),
             (['Andrews Federal Credit Union', 'MEMBERSHIP APPLICATION AND SIGNATURE CARD', 'SECTION 4 - BENEFICIARIES'], 'account_application'),
             (['Andrews Federal Credit Union', 'Guaranty and Indemnification Agreement', 'RECITALS'], 'account_agreement'),
             (['Andrews', 'Right to Proceed Directly Against the Guarantor', 'Waiver', 'Amendments', 'Severability'], 'account_agreement')]:
             original = source([[line] for line in lines]); before = deepcopy(original)
             self.assertEqual(statement_catalog([original])['information_sources'], [dict(page_number=1,table_index=0,kind=kind)])
             self.assertEqual(original, before)
-            for row in ([['Date','Description','Amount']], [['06/02','SHOP','12.00']], [['Account Statement']], [['O6/02','Withdrawal','12.00']]):
+            for row in ([['Date','Description','Amount']], [['06/02','SHOP','12.00']], [['Account Statement']], [['O6/02','Withdrawal','12.00']], [['06/02 ID 0000']]):
                 mixed = source(row); mixed['table_index'] = 1
                 self.assertFalse(statement_catalog([original, mixed])['information_sources'])
             original['rows'][0]['cells'][0]['expected_text'] = 'Other bank'
@@ -40,6 +41,26 @@ class StatementInformationTests(TestCase):
         for text in ('| --- Withdrawal 12.00 |', '| --- 06/02 SHOP 12.00 |', 'Unknown payment 12.00'):
             data['rows'][6]['cells'][0]['expected_text'] = text
             self.assertFalse(statement_catalog([data])['information_sources'])
+
+    def test_dividend_summary_does_not_hide_dated_or_unrecognised_amounts(self):
+        data = andrews_source([
+            [(75, 'Total Dividends Paid Year to Date'), (350, '0.00')],
+            [(75, 'Your current account relationship is')], [(75, 'Member')],
+            [(15, '70,802')]], printed_page=7, names=False)
+        original = deepcopy(data)
+        result = statement_catalog([data])
+        self.assertEqual(result['information_sources'], [dict(page_number=1, table_index=0, kind='fee_summary')])
+        self.assertEqual(data, original)
+        for cells in ([('06/02'), ('Deposit'), ('20.00')], [('Unknown charge'), ('20.00')]):
+            mixed = deepcopy(data)
+            extra = source([cells])['rows'][0]
+            extra['row_index'] = 100
+            mixed['rows'].append(extra)
+            self.assertFalse(statement_catalog([mixed])['information_sources'])
+        other_table = source([['06/02', 'SHOP', '20.00']]); other_table['table_index'] = 1
+        mixed = statement_catalog([data, other_table])
+        self.assertIn(dict(page_number=1, table_index=1), mixed['unclassified_sources'])
+        self.assertFalse(mixed['complete_coverage'])
 
     def test_complete_notices_are_retained_as_information_not_unassigned_statements(self):
         for lines, kind in [

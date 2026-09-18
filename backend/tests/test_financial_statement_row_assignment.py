@@ -179,7 +179,8 @@ class RowAssignmentTests(TestCase):
             raw=deepcopy(proposal['saved_review']['request'])
             for row in raw['rows']:
                 if not row['excluded'] and not row['date']:
-                    row['date']=raw['period_end'];row['reason']+=' Checked synthetic interest date.'
+                    self.assertTrue(row['date_unprinted'])
+                    row['reason'] += ' Confirmed the synthetic interest charge has no printed date.'
             from services.financial.review_arithmetic import check_proposed_rows
             checks=check_proposed_rows(proposal,raw['rows'])
             raw.update(balance_exception_reason='Synthetic reassignment regression: controls intentionally remain in original periods.',balance_exception_revision=checks['checks_revision'])

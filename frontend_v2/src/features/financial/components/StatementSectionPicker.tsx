@@ -7,6 +7,7 @@ export type StatementSection = {
   institution: string
   account_reference: string
   account_label?: string
+  assignment_only?: boolean
   document_kind?: "deposit_receipt"
   statement_date?: string
   printed_statement_date?: string
@@ -23,7 +24,9 @@ export type StatementSection = {
 function sectionLabel(item: StatementSection) {
   return [
     item.document_kind ? "Deposit receipt" : item.institution,
-    item.account_reference || "Account needs review",
+    item.assignment_only
+      ? "Unassigned payments"
+      : item.account_reference || "Account needs review",
     item.account_label,
     item.period_start
       ? `${item.period_start} to ${item.period_end}`
@@ -36,6 +39,11 @@ function sectionLabel(item: StatementSection) {
 }
 function checkLabel(item: StatementSection) {
   const checks = item.checks
+  if (item.assignment_only) {
+    return checks?.transaction_count === 0
+      ? "Payments assigned to another statement"
+      : "Choose an account for these payments"
+  }
   if (!checks) return ""
   return [
     checks.has_difference
@@ -112,7 +120,9 @@ export function StatementPeriodSelect({
               <option value={key} key={key}>
                 {[
                   item.institution,
-                  item.account_reference || "Account needs review",
+                  item.assignment_only
+                    ? "Unassigned payments"
+                    : item.account_reference || "Account needs review",
                   item.account_label,
                   item.document_kind ? "Deposit receipts" : "",
                 ]

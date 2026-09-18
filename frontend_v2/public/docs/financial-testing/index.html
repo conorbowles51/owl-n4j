@@ -398,6 +398,17 @@
 <li>With two authorised reviewers, preview a move, then save a change to either affected statement from the other reviewer. Attempt the original move. Expect a conflict and a request to preview again, with neither saved review overwritten.</li>
 <li>Import both corrected statements. Expect each transaction once. The moved transaction must retain its original source and the reason for reassignment. Moving between these reviews after import must be refused.</li>
 </ol>
+<h3>Check a missing page with unassigned payments</h3>
+<p>Use an artificial Andrews-style PDF with a checking account opening, a skipped printed page number and a continuation containing payments but no share heading.</p>
+<ol>
+<li>Prepare its bulk review. Expect a recognised account review and a separate <strong>Unassigned payments</strong> review. The latter must need attention even when every payment value is readable.</li>
+<li>Open the unassigned review. Expect its original PDF, printed main account and period, an explanation of the missing account context, and the move controls. There must be no direct <strong>Confirm import</strong> button.</li>
+<li>Select its payments, record the account evidence and preview a move to the recognised account. Expect both counts before and after. The preview must not change saved reviews.</li>
+<li>Save the move, refresh and reopen both reviews. Expect every payment once in the receiving review, with original PDF locations and corrections retained.</li>
+<li>Expect <strong>Payments assigned</strong> for the emptied page and no empty correction controls. The bulk ready count must include only the receiving statement.</li>
+<li>Import the ready statement. Open its Transactions and the moved payment&#x27;s original PDF. Expect no duplicate and no second import of the emptied page.</li>
+<li>Repeat with a PDF that has no recognised receiving account. Expect instructions to obtain the missing account page, no empty destination form and no direct import. Excluding the unassigned rows alone must not mark the account decision complete.</li>
+</ol>
 <h3>Check the link from a completed batch to Transactions</h3>
 <ol>
 <li>Use a synthetic case with an imported batch and another imported statement outside that batch.</li>

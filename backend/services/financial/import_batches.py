@@ -121,6 +121,17 @@ def assess(proposal, request=None):
         summary.update(transaction_count=current['transaction_count'], problems=[], problem_count=0,
             source_document_id=current['source_document_id'], account_id=current['account_id'])
         return 'imported', summary
+    if proposal.get('assignment_only'):
+        remaining = [row for row in rows if row['kind'] in ('transaction', 'unresolved')]
+        summary['assignment_only'] = True
+        summary['account'] = 'Unassigned payments · main account ' + proposal.get('printed_main_account', '')
+        if not remaining:
+            summary.update(transaction_count=0, problems=[], problem_count=0)
+            return 'assigned', summary
+        assignment_problem = dict(message='Choose the correct account and period for these payments. Open the review and use Assign payments to a statement.', row_id=None)
+        summary['problems'] = [assignment_problem, *[p for p in summary['problems'] if p.get('row_id')]][:50]
+        summary['problem_count'] = 1 + len([p for p in problems if p.get('row_id')])
+        return 'attention', summary
     return ('attention' if problems else 'ready'), summary
 
 
@@ -237,7 +248,7 @@ def batch_status(session, *, case_id, batch_id, offset=0, limit=100, only_proble
     items=checked_batch_items(session, case_id, items)
     items.sort(key=lambda i: (i.summary.get('filename',''),i.summary.get('account',''),i.summary.get('period_start',''),str(i.id)))
     shown=[i for i in items if not only_problems or i.status=='attention']
-    counts={state:sum(i.status==state for i in items) for state in ('ready','attention','pending_import','imported','skipped')}
+    counts={state:sum(i.status==state for i in items) for state in ('ready','attention','pending_import','imported','skipped','assigned')}
     return dict(id=str(batch.id),case_id=str(case_id),status=batch.status,files=batch.files,counts=counts,
         ready_transactions=sum(i.summary.get('transaction_count',0) for i in items if i.status=='ready'),
         ready_revision=ready_revision(items),total=len(shown),offset=offset,
@@ -296,7 +307,7 @@ def leave_unimported(session, *, case_id, batch_id, item_id, action, reason, exp
     if item is None:
         raise PdfMappingError('Statement not found in this batch.', 404)
     revision = _digest(dict(status=item.status, request=item.review_request, decision=item.summary.get('import_decision')))
-    if revision != expected_revision or item.status in ('imported','pending_import'):
+    if revision != expected_revision or item.status in ('imported','pending_import','assigned'):
         raise PdfMappingError('The statement changed. Refresh the batch before changing its import choice.', 409)
     if (action == 'restore' and item.status != 'skipped') or (action == 'skip' and item.status == 'skipped'):
         raise PdfMappingError('The import choice has already changed. Refresh the batch.', 409)

@@ -137,6 +137,8 @@ def reassign_rows(session, *, case_id, evidence_file_id, body, actor, apply=Fals
         raise PdfMappingError('A statement in this move is already imported. Its existing transactions must be corrected through their import history.', 409)
     if any(p.get('document_review') or p.get('reading_failure') for p in proposals.values()):
         raise PdfMappingError('Choose two recognised statement periods before moving transactions.', 422)
+    if proposals[target_id].get('assignment_only'):
+        raise PdfMappingError('Choose a recognised account and period as the destination. An unassigned page cannot receive payments.', 422)
     originals = {row['id']: row for row in proposals[source_id]['rows']}
     if not selected <= originals.keys() or any(originals[key]['kind'] not in ('transaction', 'unresolved') for key in selected):
         raise PdfMappingError('Only extracted transaction rows can move. Keep balances, totals and manually added rows in their current review.', 422)

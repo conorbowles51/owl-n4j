@@ -98,7 +98,38 @@ class AndrewsReaderTests(unittest.TestCase):
             elif kind == 'opening_number': a['rows'][4]['cells'][0]['expected_text'] = '3'
             elif kind == 'missing_share': a['rows'] = [r for r in a['rows'] if r['row_index'] != 9]
             with self.subTest(kind=kind):
-                self.assertFalse(statement_catalog([a, b])['statements'])
+                # Orphan payment pages remain reviewable but must never
+                # inherit the unconfirmed opening's account share.
+                choices = statement_catalog([a, b])['statements']
+                self.assertTrue(all(c.get('assignment_only') and not c['account_reference'] for c in choices))
+
+    def test_missing_printed_page_exposes_payments_without_assigning_a_share(self):
+        first = source([
+            [(15, '06/01 ID 0040 FREE CHECKING Previous Balance'), (350, '100.00')],
+            [(15, '06/03'), (75, 'Withdrawal Debit Card'), (310, '-20.00'), (350, '80.00')],
+            [(15, 'Continued on following page')]])
+        orphan = source([
+            [(75, 'DETAIL FROM THE MISSING PREVIOUS PAGE')],
+            [(15, '06/05'), (75, 'Withdrawal Debit Card'), (310, '-10.00'), (350, '70.00')],
+            [(75, 'EXAMPLE SHOP')],
+            [(15, '06/30'), (75, 'Ending Balance'), (350, '70.00')],
+            [(75, 'Total Dividends Paid Year to Date'), (350, '0.00')]], page=2, printed_page=3, names=False)
+        before = deepcopy([first, orphan])
+        catalog = statement_catalog([first, orphan])
+        group = next(c for c in catalog['statements'] if c.get('assignment_only'))
+        self.assertEqual(group['main_account_reference'], '123456789')
+        self.assertEqual(group['account_reference'], '')
+        self.assertEqual(group['share_reference'], '')
+        self.assertEqual(group['period_start'], '2020-06-01')
+        result = propose_andrews_statement([orphan], 'USD', group)
+        rows = [r for r in result['rows'] if not r['excluded']]
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['fields']['description'], 'Withdrawal Debit Card\nEXAMPLE SHOP')
+        self.assertEqual(rows[0]['fields']['amount_minor'], '1000')
+        self.assertEqual(rows[0]['page_number'], 2)
+        self.assertEqual(rows[0]['source_cells'], orphan['rows'][6]['cells'])
+        self.assertFalse(catalog['complete_coverage'])
+        self.assertEqual([first, orphan], before)
 
     def test_spaces_inside_printed_payment_verbs_retain_source_and_sign_checks(self):
         for description, amount, balance, direction in (

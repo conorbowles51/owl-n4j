@@ -471,6 +471,20 @@ The original document and the original extracted values are retained. Earlier ro
 
 If either review changes after the preview, preview again. A move cannot proceed while either statement is being imported or has already been imported. This control moves extracted transaction rows between recognised statements in the same file; it does not move printed balances, statement totals or manually added rows. For an already imported payment, use its transaction correction controls.
 
+#### Payments on a page with no confirmed account
+
+A missing page can leave readable payments without the savings or checking share they belong to. Loupe shows these as **Unassigned payments**. It keeps the printed main account and dates, but does not guess the share.
+
+1. Open **Unassigned payments** in the account selector, or choose **Review problems** for that page in the bulk list.
+2. Compare the original page with the surrounding statement and any supporting records. Establish which account and period actually own the payments.
+3. The selected-row controls are already open. Tick the payments that belong together. Under **Correction**, keep **Move to another account or period**.
+4. Enter the reason, choose the receiving account and period, and select **Preview move**.
+5. Check the destination and before/after counts, then select **Save move**. The extracted dates, amounts, source locations and any saved corrections move together.
+6. Repeat only if remaining payments belong to another recognised statement. Once all payments are assigned, the page shows **All payments have been assigned** and the bulk list shows **Payments assigned**.
+7. Open each receiving statement to check the result, then import it normally or use **Import ready statements** in the bulk list.
+
+An unassigned page cannot be imported directly, even by typing an account number. If the missing page prevents a reliable account decision, leave it for review and obtain the missing record. When no receiving account was recognised in this PDF, process a complete copy that contains its account heading. You cannot move payments back into an unassigned page; a correction to their assignment must select another recognised account and period before import.
+
 ![Checking both statement reviews before moving a transaction](images/37-statement-row-move.png)
 
 *Artificial data in light mode. The preview shows both accounts and the effect on transaction counts. This example has no printed balance controls, so those checks are shown as unavailable.*

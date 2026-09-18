@@ -66,7 +66,8 @@ def is_andrews_fee_summary(source):
            and not divider(row)
            and not (len(row['cells']) == 1 and re.fullmatch(r'[\d,. ]+', _text(row))) for row in body):
         return False
-    return ({'Total Returned Item Fees', 'Total Overdraft Fees'} <= firsts
+    return (({'Total Returned Item Fees', 'Total Overdraft Fees'} <= firsts
+             or bool({'Dividends Paid Year to Date', 'Total Dividends Paid Year to Date'} & firsts))
             and not any(re.match(r'^\S{4,7}\s+(?:ID|Withdrawal|Deposit|Recurring)\b', text)
                         or re.match(r'^\d{2}/\d{2}\b', text) for text in labels))
 
@@ -286,6 +287,51 @@ def andrews_catalog(sources):
         previous = dict(**page, pdf_page=key[0], table_index=key[1], order_group=order_group,
                         continues=any('Continued on following page' in _text(r) for r in source['rows']))
     return list(groups.values()), handled, incomplete
+
+
+def unassigned_andrews_groups(sources, handled):
+    """Expose orphan payment pages for an explicit account assignment.
+
+    A readable main account and period do not establish which share owns a
+    continuation after a missing page. Keep its payments available for the
+    existing reviewed row move, without allowing this group to be imported.
+    """
+    groups = []
+    for source in sources:
+        key = (source['page_number'], source['table_index'])
+        if key in handled:
+            continue
+        page = andrews_page(source)
+        if not page:
+            continue
+        body = [r for r in source['rows'] if r['row_index'] >= page['body_start']]
+        if any(_SHARE_LABEL.match(_text(r)) or _PREVIOUS.search(_text(r)) for r in body):
+            continue
+        first = next((r for r in body if r['cells'] and _box(r['cells'][0])
+                      and _box(r['cells'][0])[0] < page['width'] * .08
+                      and (_PAYMENT.match(_text(r)) or _DAMAGED_DATE_PAYMENT.match(_text(r)))), None)
+        if first is None:
+            continue
+        indices = []
+        for row in body:
+            if row['row_index'] < first['row_index']:
+                continue
+            if 'Continued on following page' in _text(row):
+                break
+            indices.append(row['row_index'])
+            if _ending_balance(row, page['width']):
+                break
+        identity = dict(layout_id=_LAYOUT, main_account_reference=page['account'],
+                        period_start=page['start'], period_end=page['end'],
+                        unassigned_source=list(key))
+        groups.append(dict(id=_digest(identity), **identity,
+            institution='Andrews Federal Credit Union', account_reference='',
+            account_label=f"Unassigned payments on PDF page {source['page_number']}",
+            account_type='other', share_reference='', holder='', assignment_only=True,
+            page_numbers=[source['page_number']],
+            sources=[dict(page_number=key[0], table_index=key[1], source_revision=source['source_revision'],
+                          row_indices=indices, heading_rows=page['heading_rows'])]))
+    return groups
 
 
 def _period_date(text, statement):

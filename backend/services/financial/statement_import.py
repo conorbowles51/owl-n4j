@@ -270,9 +270,12 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
             metadata['balance_convention'] = 'asset_balance'
             if selected.get('account_closure'):
                 metadata['account_closure'] = selected['account_closure']
-            if selected['account_type'] == 'other':
+            if selected.get('assignment_only'):
+                issues.append('These payments have a printed main account and period, but their savings or checking share could not be established. Compare the PDF, then move the selected payments to the correct account and period. A missing preceding page may contain the share heading.')
+            elif selected['account_type'] == 'other':
                 issues.append('The printed account label is VISA PAYMENT. Its account type is recorded as Other; this label does not establish a credit-card balance.')
-            issues.append('Reviewing ' + selected['account_label'] + ', share ' + selected['share_reference'] + '. Other account sections in this PDF are reviewed separately.')
+            if not selected.get('assignment_only'):
+                issues.append('Reviewing ' + selected['account_label'] + ', share ' + selected['share_reference'] + '. Other account sections in this PDF are reviewed separately.')
             if selected.get('uses_printed_page_order'):
                 issues.append('These statement pages are out of order in the PDF. Payments follow the printed page numbers. The source viewer keeps the original PDF page numbers.')
         if catalog['unclassified_sources']:
@@ -403,6 +406,8 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
                 saved_review=review_progress(file, statement_id),
                 previous_saved_review=previous_review, review_recovery=recovery,
                 reading_failure=reading_failure,
+                assignment_only=bool(selected and selected.get('assignment_only')),
+                printed_main_account=selected.get('main_account_reference', '') if selected else '',
                 can_record_account_closure=closure_only,
                 can_import_balances=balance_only,
                 page_numbers=all_page_numbers,
@@ -529,6 +534,8 @@ def check_import_request(proposal, request):
         raise PdfMappingError('Compare the earlier saved reviews for this file before importing. Saved corrections may belong to different statement periods in the new reading.', 422)
     if proposal.get('reading_failure'):
         raise PdfMappingError(proposal['reading_failure'], 422)
+    if proposal.get('assignment_only'):
+        raise PdfMappingError('Assign these payments to a recognised account and statement period before importing. Use Move to another account or period; this unassigned page cannot be imported directly.', 422)
     if proposal.get("statement_id") != request.statement_id:
         raise PdfMappingError("Reload the selected statement period before confirming.", 409)
     if request.expected_revision != proposal['revision']:

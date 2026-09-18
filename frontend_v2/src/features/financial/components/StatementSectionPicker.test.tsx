@@ -36,6 +36,43 @@ const choices = [
   },
 ]
 beforeEach(() => useStatementWorkspace.setState({ sectionSearches: {} }))
+it("shows the assignment task instead of a successful balance check for unassigned payments", () => {
+  const orphan = {
+    ...choices[0],
+    assignment_only: true,
+    account_reference: "",
+    checks: {
+      balance_status: "matches" as const,
+      flagged_rows: 0,
+      transaction_count: 2,
+    },
+  }
+  const view = render(
+    <StatementPeriodSelect
+      choices={[orphan]}
+      value={orphan.id}
+      onChoose={vi.fn()}
+    />
+  )
+  expect(
+    screen.getByRole("option", { name: /Choose an account for these payments/ })
+  ).toBeVisible()
+  expect(screen.queryByText(/Extracted balances agree/)).toBeNull()
+  view.rerender(
+    <StatementPeriodSelect
+      choices={[
+        { ...orphan, checks: { ...orphan.checks, transaction_count: 0 } },
+      ]}
+      value={orphan.id}
+      onChoose={vi.fn()}
+    />
+  )
+  expect(
+    screen.getByRole("option", {
+      name: /Payments assigned to another statement/,
+    })
+  ).toBeVisible()
+})
 it("separates accounts from periods and keeps next-period navigation within the selected account", () => {
   const choose = vi.fn()
   const later = {

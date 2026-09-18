@@ -497,6 +497,18 @@ Use an artificial PDF with two recognised accounts or periods, before importing 
 8. With two authorised reviewers, preview a move, then save a change to either affected statement from the other reviewer. Attempt the original move. Expect a conflict and a request to preview again, with neither saved review overwritten.
 9. Import both corrected statements. Expect each transaction once. The moved transaction must retain its original source and the reason for reassignment. Moving between these reviews after import must be refused.
 
+### Check a missing page with unassigned payments
+
+Use an artificial Andrews-style PDF with a checking account opening, a skipped printed page number and a continuation containing payments but no share heading.
+
+1. Prepare its bulk review. Expect a recognised account review and a separate **Unassigned payments** review. The latter must need attention even when every payment value is readable.
+2. Open the unassigned review. Expect its original PDF, printed main account and period, an explanation of the missing account context, and the move controls. There must be no direct **Confirm import** button.
+3. Select its payments, record the account evidence and preview a move to the recognised account. Expect both counts before and after. The preview must not change saved reviews.
+4. Save the move, refresh and reopen both reviews. Expect every payment once in the receiving review, with original PDF locations and corrections retained.
+5. Expect **Payments assigned** for the emptied page and no empty correction controls. The bulk ready count must include only the receiving statement.
+6. Import the ready statement. Open its Transactions and the moved payment's original PDF. Expect no duplicate and no second import of the emptied page.
+7. Repeat with a PDF that has no recognised receiving account. Expect instructions to obtain the missing account page, no empty destination form and no direct import. Excluding the unassigned rows alone must not mark the account decision complete.
+
 ### Check the link from a completed batch to Transactions
 
 1. Use a synthetic case with an imported batch and another imported statement outside that batch.

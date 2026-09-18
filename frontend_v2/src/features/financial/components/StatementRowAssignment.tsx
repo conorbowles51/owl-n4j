@@ -207,8 +207,11 @@ export function StatementRowAssignment({
                 {index === 0 ? "From" : "To"}: {statement.label}
               </p>
               <p>
-                {statement.before.transaction_count} transactions before;{" "}
-                {statement.after.transaction_count} after.
+                {statement.before.transaction_count}{" "}
+                {statement.before.transaction_count === 1
+                  ? "transaction"
+                  : "transactions"}{" "}
+                before; {statement.after.transaction_count} after.
               </p>
               <table
                 className="w-full mt-2"

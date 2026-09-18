@@ -263,9 +263,7 @@ it("leaves a statement unimported with a reason and restores it without removing
   const restore = await screen.findByRole("button", {
     name: "Restore to review",
   })
-  expect(
-    screen.getByRole("heading", { name: "Checking.pdf" })
-  ).toBeVisible()
+  expect(screen.getByRole("heading", { name: "Checking.pdf" })).toBeVisible()
   expect(screen.getByText("Left unimported: Duplicate copy")).toBeVisible()
   fireEvent.click(restore)
   fireEvent.change(screen.getByLabelText("Reason to restore to review"), {
@@ -285,4 +283,24 @@ it("leaves a statement unimported with a reason and restores it without removing
       expected_revision: "d".repeat(64),
     },
   ])
+})
+
+it("keeps completed assignments separate from ready imports and removes the skip action", async () => {
+  vi.mocked(fetchAPI).mockResolvedValue({
+    ...batch,
+    counts: { ready: 0, assigned: 1 },
+    ready_transactions: 0,
+    items: [
+      { ...item, status: "assigned", transaction_count: 0, problems: [] },
+    ],
+  } as never)
+  mount()
+  expect(
+    await screen.findByText("Payments assigned", { exact: true })
+  ).toBeVisible()
+  expect(screen.getByText(/unassigned page review is complete/)).toBeVisible()
+  expect(
+    screen.getByRole("button", { name: "Import 0 ready statements" })
+  ).toBeDisabled()
+  expect(screen.queryByRole("button", { name: /Leave unimported/ })).toBeNull()
 })

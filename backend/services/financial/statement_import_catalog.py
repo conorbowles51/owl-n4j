@@ -48,9 +48,10 @@ def _capital_page_contexts(sources):
 
 
 def statement_catalog(sources):
-    from services.financial.statement_import_andrews import andrews_catalog, is_andrews_fee_summary
+    from services.financial.statement_import_andrews import andrews_catalog, is_andrews_fee_summary, unassigned_andrews_groups
     andrews, handled, incomplete = andrews_catalog(sources)
     groups = {statement['id']: statement for statement in andrews}
+    groups.update({statement['id']: statement for statement in unassigned_andrews_groups(sources, handled)})
     unclassified = []
     information = []
     from services.financial.statement_import_merrick import merrick_statement

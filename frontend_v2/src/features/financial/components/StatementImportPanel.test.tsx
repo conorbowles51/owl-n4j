@@ -865,7 +865,9 @@ it("keeps recognised information pages available without asking to correct them 
   mount()
   await open()
   fireEvent.click(screen.getByText("Inspect another page of the original PDF"))
-  expect(screen.getByText(/information pages contain supporting material/)).toBeVisible()
+  expect(
+    screen.getByText(/information pages contain supporting material/)
+  ).toBeVisible()
   expect(
     screen.getByRole("option", { name: "Page 2 · information page" })
   ).toBeInTheDocument()
@@ -879,6 +881,110 @@ it("keeps recognised information pages available without asking to correct them 
     target: { value: "2" },
   })
   expect(screen.getByLabelText("Original PDF page")).toHaveValue("2")
+})
+
+it("opens unassigned payments for a reviewed move without offering a direct import", async () => {
+  const base = vi.mocked(fetchAPI).getMockImplementation()!
+  const choice = {
+    institution: "Example Bank",
+    account_reference: "",
+    period_start: "2023-01-01",
+    period_end: "2023-01-31",
+    page_numbers: [1],
+  }
+  vi.mocked(fetchAPI).mockImplementation((url, options) =>
+    String(url).includes("/statement-import/file?")
+      ? Promise.resolve({
+          ...data,
+          page_numbers: [1],
+          assignment_only: true,
+          printed_main_account: "12345",
+          statement_id: "orphan",
+          metadata: { ...data.metadata, holder: "", account_number: "" },
+          statement_choices: [
+            { ...choice, id: "orphan", assignment_only: true },
+            { ...choice, id: "other-orphan", assignment_only: true },
+            {
+              ...choice,
+              id: "target",
+              account_reference: "12345 / Share 0040",
+            },
+          ],
+        } as never)
+      : base(url, options)
+  )
+  mount()
+  await open()
+  expect(
+    screen.getByRole("region", { name: "Unassigned payments" })
+  ).toHaveTextContent("This page cannot be imported on its own")
+  expect(screen.getByLabelText("Correction")).toHaveValue("reassign")
+  expect(
+    screen
+      .getByLabelText("Move to account and period")
+      .querySelectorAll("option")
+  ).toHaveLength(2)
+  expect(
+    screen.queryByRole("button", { name: /Confirm import/ })
+  ).not.toBeInTheDocument()
+  expect(
+    screen.queryByRole("textbox", { name: "Account holder" })
+  ).not.toBeInTheDocument()
+  expect(
+    screen.queryByRole("button", { name: "Add a missed transaction" })
+  ).not.toBeInTheDocument()
+  expect(
+    screen.getByText("Original PDF beside editable values")
+  ).toBeInTheDocument()
+})
+
+it("explains an unassigned page with no recognised destination instead of presenting an empty move", async () => {
+  const base = vi.mocked(fetchAPI).getMockImplementation()!
+  vi.mocked(fetchAPI).mockImplementation((url, options) =>
+    String(url).includes("/statement-import/file?")
+      ? Promise.resolve({
+          ...data,
+          page_numbers: [1],
+          assignment_only: true,
+          printed_main_account: "12345",
+        } as never)
+      : base(url, options)
+  )
+  mount()
+  await open()
+  expect(
+    screen.getByText(/No destination account was recognised/)
+  ).toBeVisible()
+  expect(
+    screen.queryByLabelText("Move to account and period")
+  ).not.toBeInTheDocument()
+  expect(
+    screen.queryByRole("button", { name: /Confirm import/ })
+  ).not.toBeInTheDocument()
+})
+
+it("removes empty correction controls when all unassigned payments have been moved", async () => {
+  const base = vi.mocked(fetchAPI).getMockImplementation()!
+  vi.mocked(fetchAPI).mockImplementation((url, options) =>
+    String(url).includes("/statement-import/file?")
+      ? Promise.resolve({
+          ...data,
+          assignment_only: true,
+          printed_main_account: "12345",
+          rows: [],
+          transaction_count: 0,
+        } as never)
+      : base(url, options)
+  )
+  mount()
+  useStatementWorkspace.getState().select("anonymous:case", "file")
+  expect(
+    await screen.findByText("All payments have been assigned")
+  ).toBeVisible()
+  expect(
+    screen.queryByRole("button", { name: /Select all .* matching rows/ })
+  ).toBeNull()
+  expect(screen.queryByRole("button", { name: /Confirm import/ })).toBeNull()
 })
 
 it("changes the printed page with next and previous controls", async () => {

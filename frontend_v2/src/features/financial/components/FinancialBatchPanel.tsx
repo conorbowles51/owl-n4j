@@ -81,6 +81,7 @@ const labels: Record<string, string> = {
   pending_import: "Importing",
   imported: "Imported",
   skipped: "Left unimported",
+  assigned: "Payments assigned",
 }
 
 export function FinancialBatchPanel({ caseId }: { caseId: string }) {
@@ -307,10 +308,21 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
           saved reviews are retained below.
         </p>
       )}
+      {!!batch.counts.assigned && (
+        <p className="text-sm">
+          {batch.counts.assigned}{" "}
+          {batch.counts.assigned === 1
+            ? "unassigned page review is"
+            : "unassigned page reviews are"}{" "}
+          complete. Check and import their payments in the destination
+          statements.
+        </p>
+      )}
       <div className="rounded border bg-card p-4 flex flex-wrap gap-3 items-center justify-between">
         <div>
           <p className="font-medium">
-            {batch.counts.ready || 0} statements ready ·{" "}
+            {batch.counts.ready || 0}{" "}
+            {batch.counts.ready === 1 ? "statement" : "statements"} ready ·{" "}
             {batch.ready_transactions} transactions
           </p>
           <p className="text-sm text-muted-foreground">
@@ -444,8 +456,13 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
                     .join(" · ")}
                 </p>
                 <p className="text-sm">
-                  {labels[item.status] ?? item.status} ·{" "}
-                  {item.transaction_count} transactions {item.currency}
+                  {labels[item.status] ?? item.status}
+                  {item.status !== "assigned" && (
+                    <>
+                      {" "}
+                      · {item.transaction_count} transactions {item.currency}
+                    </>
+                  )}
                 </p>
               </div>
               <Button
@@ -515,11 +532,13 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
                 saved with these values.
               </p>
             )}
-            {item.balance_status === "unavailable" && item.currency && (
-              <p className="text-sm text-muted-foreground">
-                Not enough readable balances for an automatic balance check.
-              </p>
-            )}
+            {item.status !== "assigned" &&
+              item.balance_status === "unavailable" &&
+              item.currency && (
+                <p className="text-sm text-muted-foreground">
+                  Not enough readable balances for an automatic balance check.
+                </p>
+              )}
             {!!item.coverage_review?.candidates.length && (
               <p className="text-sm">
                 Overlapping dates:{" "}
@@ -542,7 +561,9 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
             )}
             {canEdit &&
               item.disposition_revision &&
-              !["imported", "pending_import"].includes(item.status) && (
+              !["imported", "pending_import", "assigned"].includes(
+                item.status
+              ) && (
                 <BatchStatementImportChoice
                   caseId={caseId}
                   batchId={batchId}
