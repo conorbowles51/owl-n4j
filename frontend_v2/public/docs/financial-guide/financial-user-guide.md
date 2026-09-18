@@ -645,17 +645,20 @@ At the top of the review, **Statement checks** shows the result for the values c
 - **Opening and closing balance** compares the printed opening balance plus the payments with the printed closing balance. Credit-card charges increase the amount owed and card payments reduce it.
 - **Balances between payments** checks the amounts between readable running balances. It can find two wrong amounts that cancel each other out in the closing balance. The displayed count is the number of intervals checked.
 - **Printed money-in total** and **Printed money-out total** compare payments with separately identified statement totals. These are available for supported, explicit total labels. They are not inferred from repayment examples or year-to-date figures.
+- **Fees against printed total** and **Interest charges against printed total** compare the charges in a recognised Merrick statement section with its own printed total. They use your current import values. A fee refund reduces that section's total. These checks do not compare the section with all money out or with a year-to-date figure.
 - **Checks unavailable** explains which printed values or ordering information were missing. A missing total is not treated as zero and does not by itself prevent import.
 
 If a difference appears:
 
-1. Select **Check this balance** or **View printed value** to open the affected reading beside its original PDF.
+1. Select **Check this balance** or **View printed value** to open the affected reading beside its original PDF. For a fee or interest difference, **Check charge 1** and any further charge buttons open the individual charges. Compare both the charge and the total before deciding which reading is wrong.
 2. Correct a misread amount, date or credit/debit column, or add a missing transaction if necessary. Give the reason for a correction.
 3. Wait for the checks to finish again. The individual review and bulk-import list use the same calculations.
 4. If the values are correct but the PDF itself does not add up, select **I checked these differences against the PDF**. Enter **Why the difference remains**. Your explanation is retained with the import; the difference is not described as a match.
 5. If you change the numbers again, check the difference again. An explanation for earlier values cannot accept a new difference automatically.
 
 You do not need to approve every valid line separately. A matching calculation cannot establish that a statement contains every payment; keep any unresolved source questions in Findings.
+
+If a Merrick card-payment row has lost its minus sign, Loupe asks you to check its date and amount against the PDF. Enter the payment under **Credit / money in** when the original shows a credit. Correct its date if needed, then give the reason. The payment description identifies a possible problem; it does not supply the missing sign or date.
 
 ### If Confirm import is disabled
 

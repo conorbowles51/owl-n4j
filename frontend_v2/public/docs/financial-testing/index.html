@@ -335,6 +335,16 @@
 <li>If a synthetic statement deliberately contains a printed balance error, keep its printed values. Select <strong>I checked these differences against the PDF</strong>, enter <strong>Why the difference remains</strong>, and save. Expect the difference and explanation to stay recorded. Change an amount again; the previous acknowledgement must no longer accept that new difference.</li>
 </ol>
 <p>Record the filename, account, period, action, expected result and actual result for any failure. Do not repair a test result by changing the original PDF.</p>
+<h3>Check separately printed fee and interest totals</h3>
+<ol>
+<li>Use an artificial Merrick statement whose original interest charge and interest total both show 36.32, but whose extracted charge reads 36.52. Expect <strong>Interest charges against printed total: needs checking</strong>, with a difference of 0.20. The statement must need attention in the batch as well.</li>
+<li>Select <strong>View printed value</strong> to inspect the total, then <strong>Check charge 1</strong> to open the charge&#x27;s editor beside the PDF. Correct the debit to 36.32 and explain that the original charge was checked. Expect the comparison to change to <strong>matches</strong>.</li>
+<li>Include a card-payment reading with a missing trailing minus. Expect a specific request to check its date and original amount. Enter its original value under <strong>Credit / money in</strong>, correct any misread date and give a reason. The system must not silently convert the amount to a credit just because the description says payment.</li>
+<li>Save the review, leave and reopen it. Expect both corrections and their reasons to remain, including after browser tab storage is cleared. The batch should be ready only when its other problems are resolved.</li>
+<li>Import once, then open the resulting transactions. Expect the corrected interest amount, payment date and credit amount. Open each original PDF location and confirm the original reading remains available.</li>
+<li>Check a test statement with a damaged section total or a manually added transaction whose section is unknown. Expect that comparison to be unavailable. A missing or unreadable total must not be treated as zero or described as a match.</li>
+</ol>
+<p><strong>Expected:</strong> separate charge totals expose an amount error even when that amount looks like a valid number. Corrections change the calculation and imported values while preserving the original source.</p>
 <h3>Check individual saved progress and repeated corrections</h3>
 <ol>
 <li>Open an unimported synthetic statement from <strong>Statements &amp; accounts</strong>. Clear one transaction date, select <strong>Save progress</strong> and wait for the saved message. Import should remain unavailable.</li>

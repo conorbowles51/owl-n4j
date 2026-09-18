@@ -1501,9 +1501,9 @@ function EditableStatement({
             ? (check.findings ?? [])
                 .map((item) => item.row_id)
                 .filter((id): id is string => !!id)
-            : check.row_id
-              ? [check.row_id]
-              : []
+            : [check.row_id, ...(check.contributing_row_ids ?? [])].filter(
+                (id): id is string => !!id
+              )
         ),
     ]),
   ]

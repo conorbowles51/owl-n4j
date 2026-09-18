@@ -1,6 +1,14 @@
 # DocuClipper research and Loupe processing benchmark
 
-## Local implementation checkpoint, 17 September 2026
+## Completed local development checkpoint, 18 September 2026
+
+Local implementation and acceptance for A-E are complete, apart from verification on the deployed server. The approved investigator workspace is retained. The final production build and compiled browser check pass, including corrected payments, original PDF navigation and both updated guides. The significant combined regression and subsequent focused checks are recorded in [persistent state](loupe-build-state.md).
+
+D's classification and review criteria are now closed against the supplied-file audit: observed non-payment candidates are excluded with their sources retained, recovered payment rows are available, and each remaining uncertain field has a correction or assignment route. The original checks found and fixed wrapped amounts, lost pages, repeated date context, missing names, lost card-payment signs and inconsistent interest readings. Every observed exception remains recorded in [the source audit](financial-information-page-audit-2026-09-17.md). These checks do not establish general OCR accuracy. Damaged scans still need investigator corrections, and team acceptance has not been claimed.
+
+The 87 ready reviews were confirmed and retried in disposable databases, producing 339 payments exactly once. The final charge correction journey separately imported three synthetic payments and restored saved corrections without browser tab storage. No real case was modified by these tests. The deployed check below remains unchecked until observed on the correct Loupe server.
+
+## Earlier local implementation checkpoint, 17 September 2026
 
 The main statement register now shows imported-date gaps, overlapping periods and unknown dates. Account review opens the relevant originals and requested date range; duplicate exclusion and restoration update the register. This is browser-verified on synthetic January/March statements with a repeated March copy. Pre-import overlaps now require a recorded comparison or leaving a copy unimported.
 
@@ -165,10 +173,10 @@ Retain completed work in this checklist. Checked items include the local impleme
 
 ### D. Reduce avoidable manual work on difficult files
 
-- [ ] Exclude recognised summary, disclosure and marketing sections from transaction candidates while retaining their source pages and useful totals.
-- [ ] Distinguish uncertain transaction fields from harmless contextual text.
+- [x] Exclude recognised summary, disclosure and marketing sections from transaction candidates while retaining their source pages and useful totals. Original-page inspection and candidate comparisons are recorded in the source audit; actual payment histories and unknown forms remain available for review.
+- [x] Distinguish uncertain transaction fields from harmless contextual text. Remaining observed flags concern actual payment fields, separately printed totals or uncertain account assignments. Direct problem links, inline corrections and saved recovery are verified; unreadable scan values are not guessed.
 
-Local progress on these two open items: recognised Capital One notices and Andrews fee-summary pages remain available without unnecessary coverage tasks. Seven misread Merrick headings and three Andrews non-payment rows no longer enter payment review. Damaged payment dates and missing fields remain flagged with readable fields retained. The seven-file comparison preserves every remaining payment's fields and original cells. The difficult Merrick/Andrews readings still have substantial flags, so the overall acceptance item remains open. See [the recorded comparison](financial-information-page-audit-2026-09-17.md).
+Earlier progress on these two items (retained below for the audit trail): recognised Capital One notices and Andrews fee-summary pages remain available without unnecessary coverage tasks. Seven misread Merrick headings and three Andrews non-payment rows no longer enter payment review. Damaged payment dates and missing fields remain flagged with readable fields retained. The seven-file comparison preserves every remaining payment's fields and original cells. The difficult Merrick/Andrews readings still have substantial flags, so the overall acceptance item remains open. See [the recorded comparison](financial-information-page-audit-2026-09-17.md).
 Local follow-up: **Complete missing years** uses one investigator-checked Merrick closing date to preview missing transaction years while preserving each printed day/month. Existing dates and undated charges remain unchanged; unreadable or out-of-range days still require individual correction. A synthetic browser journey verified server recovery without browser storage and a two-payment bulk import. This reduces repetitive decisions; it does not resolve all difficult-file errors or invent missing statement-period coverage.
 
 Further source comparison recovered missing Andrews pages and payment boundaries: the smaller collection now has 16 sections and 383 entries rather than 14/296; the larger retains 44 sections and gains 24 entries, reaching 2,065. Every added row's presence was visually checked on the relevant original pages/crops. Existing dates, amounts, signs and balances remain unchanged. Account forms and fee-only pages remain accessible information pages. The smaller collection's flags increase to 128 because missing payments have been recovered with genuine reading problems. These results are recorded in the audit and do not close D or establish full-field accuracy.

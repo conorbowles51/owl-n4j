@@ -96,13 +96,27 @@ def arithmetic_checks(rows, *, liability=False):
     # total for the whole statement.
     for direction in ('credit', 'debit'):
         controls = [r for r in rows if r.get('kind') == 'statement_total' and r['excluded']
-                    and r['fields'].get('total_direction') == direction]
+                    and not r['fields'].get('total_scope') and r['fields'].get('total_direction') == direction]
         if len(controls) == 1 and usable and integer(controls[0]['fields'].get('balance')) is not None:
             expected = sum(integer(r['fields']['amount_minor']) for r in included if r['fields']['direction'] == direction)
             checks.append(comparison(direction + '_total', expected, integer(controls[0]['fields']['balance']), controls[0]))
         else:
             checks.append(dict(kind=direction + '_total', status='unavailable',
                                reason='No separate, readable statement total was identified.'))
+    for scope in ('fee', 'interest'):
+        controls = [r for r in rows if r.get('kind') == 'statement_total' and r['excluded']
+                    and r['fields'].get('total_scope') == scope]
+        if not controls:
+            continue
+        charges = [r for r in included if r['fields'].get('charge_group') == scope]
+        movements = [movement(r, True) for r in charges]
+        if (len(controls) == 1 and not manual and all(m is not None for m in movements)
+                and integer(controls[0]['fields'].get('balance')) is not None):
+            checks.append(comparison(scope + '_total', sum(movements), integer(controls[0]['fields']['balance']),
+                                     controls[0], contributing_row_ids=[r['id'] for r in charges]))
+        else:
+            checks.append(dict(kind=scope + '_total', status='unavailable',
+                reason='The printed total or a charge is unreadable, the total appears more than once, or a manually added payment has no printed section.'))
     return checks
 
 
@@ -155,6 +169,10 @@ def arithmetic_problems(result):
         else:
             message = {'closing_balance': 'The payments do not add up to the printed closing balance.',
                        'credit_total': 'The money in does not agree with the printed total.',
-                       'debit_total': 'The money out does not agree with the printed total.'}[check['kind']]
+                       'debit_total': 'The money out does not agree with the printed total.',
+                       'fee_total': 'The fees do not add up to the printed fee total. Check the charges and the total in the PDF.',
+                       'interest_total': 'The interest charges do not add up to the printed interest total. Check the charges and the total in the PDF.'}[check['kind']]
             problems.append(dict(message=message, row_id=check.get('row_id'), page=check.get('page'), check=check['kind']))
+            for row_id in check.get('contributing_row_ids', []):
+                problems.append(dict(message=message, row_id=row_id, page=check.get('page'), check=check['kind']))
     return problems

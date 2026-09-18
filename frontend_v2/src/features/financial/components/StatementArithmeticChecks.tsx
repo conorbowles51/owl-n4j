@@ -7,6 +7,8 @@ const names = {
   running_balance: "Balances between payments",
   credit_total: "Printed money-in total",
   debit_total: "Printed money-out total",
+  fee_total: "Fees against printed total",
+  interest_total: "Interest charges against printed total",
 }
 export function StatementArithmeticChecks({
   checks,
@@ -81,6 +83,17 @@ export function StatementArithmeticChecks({
                   View printed value
                 </Button>
               )}
+              {check.status === "difference" &&
+                check.contributing_row_ids?.map((id, index) => (
+                  <Button
+                    key={id}
+                    size="sm"
+                    variant="outline"
+                    onClick={() => onInspect(id)}
+                  >
+                    Check charge {index + 1}
+                  </Button>
+                ))}
             </div>
           )}
         </div>

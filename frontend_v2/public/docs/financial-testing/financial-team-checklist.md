@@ -425,6 +425,17 @@ Use artificial test statements in a test case for these checks.
 
 Record the filename, account, period, action, expected result and actual result for any failure. Do not repair a test result by changing the original PDF.
 
+### Check separately printed fee and interest totals
+
+1. Use an artificial Merrick statement whose original interest charge and interest total both show 36.32, but whose extracted charge reads 36.52. Expect **Interest charges against printed total: needs checking**, with a difference of 0.20. The statement must need attention in the batch as well.
+2. Select **View printed value** to inspect the total, then **Check charge 1** to open the charge's editor beside the PDF. Correct the debit to 36.32 and explain that the original charge was checked. Expect the comparison to change to **matches**.
+3. Include a card-payment reading with a missing trailing minus. Expect a specific request to check its date and original amount. Enter its original value under **Credit / money in**, correct any misread date and give a reason. The system must not silently convert the amount to a credit just because the description says payment.
+4. Save the review, leave and reopen it. Expect both corrections and their reasons to remain, including after browser tab storage is cleared. The batch should be ready only when its other problems are resolved.
+5. Import once, then open the resulting transactions. Expect the corrected interest amount, payment date and credit amount. Open each original PDF location and confirm the original reading remains available.
+6. Check a test statement with a damaged section total or a manually added transaction whose section is unknown. Expect that comparison to be unavailable. A missing or unreadable total must not be treated as zero or described as a match.
+
+**Expected:** separate charge totals expose an amount error even when that amount looks like a valid number. Corrections change the calculation and imported values while preserving the original source.
+
 ### Check individual saved progress and repeated corrections
 
 1. Open an unimported synthetic statement from **Statements & accounts**. Clear one transaction date, select **Save progress** and wait for the saved message. Import should remain unavailable.

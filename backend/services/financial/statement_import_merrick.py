@@ -266,6 +266,43 @@ def _section_heading(row, following):
     return False
 
 
+def _charge_controls(rows, source, currency):
+    """Keep printed fee/interest subtotals bound to their own charge sections."""
+    scope, members = None, []
+    headings = {'Fees': 'fee', 'Interest Charged': 'interest'}
+    totals = {'TOTAL FEES FOR THIS PERIOD': 'fee', 'TOTAL INTEREST FOR THIS PERIOD': 'interest'}
+    for row in rows:
+        cells = row['source_cells']
+        texts = [cell['expected_text'].strip() for cell in cells]
+        if len(texts) == 1 and texts[0] in headings:
+            scope, members = headings[texts[0]], []
+            continue
+        if any(text in headings or re.fullmatch(r'20\d{2} Totals Year-to-Date', text)
+               or text == 'Interest Charge Calculation' for text in texts):
+            scope, members = None, []
+        if not scope:
+            continue
+        if texts and texts[0] in totals:
+            label = _rectangle(cells[0], source['page_number'])
+            value = _rectangle(cells[-1], source['page_number'])
+            if (totals[texts[0]] == scope and len(cells) == 2 and label and value
+                    and (label.page_width, label.page_height) == (value.page_width, value.page_height)
+                    and label.x1 < value.x0 and min(label.y1, value.y1) > max(label.y0, value.y0)):
+                fields = dict(description='Printed ' + scope + ' total', total_scope=scope,
+                              balance_column=str(cells[-1]['column_index']))
+                try:
+                    amount, _ = _transaction_amount(cells, source, currency)
+                    fields['balance'] = str(amount)
+                except ValueError:
+                    pass  # An unreadable control makes this check unavailable.
+                row.update(kind='statement_total', excluded=True, fields=fields, issues=[])
+                for member in members:
+                    member['fields']['charge_group'] = scope
+            scope, members = None, []
+        elif not row['excluded'] or row['kind'] == 'zero_charge':
+            members.append(row)
+
+
 def propose_merrick_table(source, currency, statement):
     active = False
     header = None
@@ -326,8 +363,8 @@ def propose_merrick_table(source, currency, statement):
             try:
                 value, amount_index = _transaction_amount(cells, source, currency)
                 fields.update(amount_minor=str(abs(value)), amount_column=str(cells[amount_index]['column_index']))
-                if value > 0 and re.match(r'^(?:MOBILE )?PAYMENT-THANK YOU\b', fields['description']):
-                    item['issues'].append('This row describes a card payment, but no minus sign was read. Check the original amount and enter it under Credit or Debit.')
+                if value > 0 and re.search(r'\b(?:MOBILE\s+)?PAYMENT\s*-\s*THANK\s+YOU\b', fields['description'], re.IGNORECASE):
+                    item['issues'].append('This row describes a card payment, but no minus sign was read. Check its date and original amount in the PDF, then enter the amount under Credit or Debit.')
                 else:
                     fields['direction'] = 'credit' if value < 0 else 'debit'
                 # A clearly labelled, positioned zero-interest line records
@@ -349,4 +386,5 @@ def propose_merrick_table(source, currency, statement):
         if row['row_index'] in balances:
             item.update(balances[row['row_index']])
         result.append(item)
+    _charge_controls(result, source, currency)
     return dict(rows=result, issues=issues)

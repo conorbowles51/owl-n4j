@@ -487,3 +487,79 @@ class MerrickCouponHolderTests(unittest.TestCase):
                 result = merrick_statement(data)
                 self.assertEqual(result['holder'], '')
                 self.assertNotIn('holder_sources', result)
+
+
+class MerrickChargeControlTests(unittest.TestCase):
+    def example(self):
+        data = measured_statement()
+        data['rows'][0]['cells'][0]['expected_text'] = 'Statement Date: 04/25/21'
+        data['rows'][11]['cells'][-1]['expected_text'] = '36.52'
+        data['rows'][12]['cells'][-1]['expected_text'] = '36.32'
+        return data
+
+    def test_spaced_card_payment_with_damaged_reference_cannot_become_a_debit(self):
+        for label in ('MOBILE PAYMENT - THANK YOU', 'PAYMENT - THANK YOU', 'Mobile Payment-Thank You'):
+            data = measured_statement()
+            data['rows'][6]['cells'][1]['expected_text'] = '§123456789012345'
+            data['rows'][6]['cells'][2]['expected_text'] = label
+            row = propose_merrick_table(data, 'USD', merrick_statement(data))['rows'][6]
+            with self.subTest(label=label):
+                self.assertEqual(row['fields']['amount_minor'], '1400')
+                self.assertNotIn('direction', row['fields'])
+                self.assertIn('Check its date', row['issues'][0])
+                self.assertTrue(row['fields']['description'].startswith('§'))
+            data['rows'][6]['cells'][-1]['expected_text'] = '14.00 -'
+            row = propose_merrick_table(data, 'USD', merrick_statement(data))['rows'][6]
+            self.assertEqual(row['fields']['direction'], 'credit')
+            self.assertFalse(row['issues'])
+
+    def test_printed_interest_total_detects_a_plausible_but_incorrect_amount(self):
+        from services.financial.review_arithmetic import arithmetic_checks, arithmetic_problems, check_proposed_rows
+        from services.financial.import_batches import initial_request
+        data = self.example(); before = deepcopy(data)
+        rows = propose_merrick_table(data, 'USD', merrick_statement(data))['rows']
+        check = next(c for c in arithmetic_checks(rows, liability=True) if c['kind'] == 'interest_total')
+        self.assertEqual((check['expected_minor'], check['printed_minor'], check['difference_minor']), ('3652', '3632', '20'))
+        self.assertEqual(check['contributing_row_ids'], [rows[11]['id']])
+        self.assertEqual(rows[11]['fields']['amount_minor'], '3652')
+        self.assertEqual(rows[12]['kind'], 'statement_total')
+        self.assertTrue(rows[12]['excluded'])
+        self.assertEqual(data, before)
+        proposal = dict(rows=rows, revision='a'*64, metadata={}, currency='USD', page_numbers=[1])
+        edits = initial_request(proposal)['rows']
+        corrected = next(r for r in edits if r['id'] == rows[11]['id'])
+        corrected.update(amount_minor='3632', reason='Amount checked against the original PDF.')
+        checks = check_proposed_rows(proposal, edits)
+        self.assertFalse(arithmetic_problems(checks))
+        self.assertEqual(next(c for c in checks['checks'] if c['kind'] == 'interest_total')['status'], 'matches')
+        corrected['excluded'] = True
+        self.assertEqual(next(c for c in check_proposed_rows(proposal, edits)['checks'] if c['kind'] == 'interest_total')['status'], 'difference')
+
+    def test_unreadable_or_ambiguous_totals_cannot_claim_a_match(self):
+        from services.financial.review_arithmetic import arithmetic_checks
+        for change in ('number', 'duplicate', 'manual', 'page', 'overlap', 'ytd', 'heading'):
+            data = self.example()
+            if change == 'number': data['rows'][12]['cells'][-1]['expected_text'] = '3G.32'
+            elif change == 'page': data['rows'][12]['cells'][-1]['locator']['page'] = 2
+            elif change == 'overlap': data['rows'][12]['cells'][-1]['locator']['rect'][0] = 20000
+            elif change == 'ytd': data['rows'][12]['cells'][0]['expected_text'] = 'Total interest charged in 2021'
+            elif change == 'heading': data['rows'][10]['cells'][0]['expected_text'] = 'Other information'
+            rows = propose_merrick_table(data, 'USD', merrick_statement(data))['rows']
+            if change == 'duplicate': rows.append(deepcopy(rows[12]))
+            elif change == 'manual': rows[6]['kind'] = 'manual_entry'
+            with self.subTest(change=change):
+                checks = [c for c in arithmetic_checks(rows, liability=True) if c['kind'] == 'interest_total']
+                self.assertFalse(any(c['status'] in ('matches', 'difference') for c in checks))
+
+    def test_fee_total_is_separate_from_whole_statement_debits_and_refunds_are_net_charges(self):
+        from services.financial.review_arithmetic import arithmetic_checks
+        data = self.example()
+        row = deepcopy(data['rows'][6]);row['row_index']=90
+        row['cells'][2]['expected_text']='FEE REFUND';row['cells'][-1]['expected_text']='2.00 -'
+        data['rows'].insert(9, row)
+        data['rows'][10]['cells'][-1]['expected_text']='-2.00'
+        rows = propose_merrick_table(data, 'USD', merrick_statement(data))['rows']
+        checks = {c['kind']: c for c in arithmetic_checks(rows, liability=True)}
+        self.assertEqual(checks['fee_total']['status'], 'matches')
+        self.assertEqual(checks['fee_total']['expected_minor'], '-200')
+        self.assertEqual(checks['debit_total']['status'], 'unavailable')

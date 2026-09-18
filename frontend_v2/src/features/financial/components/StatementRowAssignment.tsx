@@ -35,6 +35,8 @@ const names: Record<string, string> = {
   running_balance: "Running balances",
   credit_total: "Printed credit total",
   debit_total: "Printed debit total",
+  fee_total: "Printed fee total",
+  interest_total: "Printed interest total",
 }
 const status = {
   matches: "Matches",

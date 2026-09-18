@@ -47,7 +47,7 @@ function checkLabel(item: StatementSection) {
   if (!checks) return ""
   return [
     checks.has_difference
-      ? "Balance difference"
+      ? "Difference to check"
       : checks.balance_status === "matches"
         ? "Extracted balances agree"
         : checks.balance_status === "difference"
