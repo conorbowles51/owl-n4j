@@ -556,3 +556,27 @@ class AndrewsReaderTests(unittest.TestCase):
         self.assertEqual(len([r for r in p['rows'] if not r['excluded']]), 1)
         self.assertNotIn('Other share', str(p))
         self.assertTrue(statement_catalog([grid])['unclassified_sources'])
+
+
+class AndrewsMailingHolderTests(unittest.TestCase):
+    def test_spaced_or_doubled_marker_uses_complete_same_page_mailing_block(self):
+        from services.financial.statement_import_andrews import _holder
+        for marker in ('>123456 7890<', '>1234567890«<'):
+            values = [marker, 'EXAMPLE PERSON', 'JOINT PERSON', '12 EXAMPLE ST APT 2', 'EXAMPLE CITY DC 20001-1234']
+            rows = [dict(cells=[dict(expected_text=v)]) for v in values]
+            before = deepcopy(rows)
+            self.assertEqual(_holder(rows), 'EXAMPLE PERSON / JOINT PERSON')
+            self.assertEqual(rows, before)
+
+    def test_incomplete_or_damaged_block_cannot_supply_a_partial_or_guessed_name(self):
+        from services.financial.statement_import_andrews import _holder
+        values = ['>1234567890«<', 'EXAMPLE PERSON', 'JOINT PERSON', '12 EXAMPLE ST APT 2', 'EXAMPLE CITY DC 20001-1234']
+        for change in ('marker', 'name', 'street', 'city', 'unfinished'):
+            edited = list(values)
+            if change == 'marker': edited[0] = '>12345G7890«<'
+            elif change == 'name': edited[2] = 'JO1NT PERSON'
+            elif change == 'street': edited[3] = 'Unknown'
+            elif change == 'city': edited[4] = 'EXAMPLE CITY DC 2O001-1234'
+            elif change == 'unfinished': edited = edited[:3]
+            with self.subTest(change=change):
+                self.assertEqual(_holder([dict(cells=[dict(expected_text=v)]) for v in edited]), '')

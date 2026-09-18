@@ -359,6 +359,8 @@ For scanned statements and statements without drawn table borders, Loupe compare
 4. Read the number beside **transactions to import**. Compare it with the payment rows on the original statement.
 5. Check the credit and debit totals. For a bank account, credits usually represent money in and debits money out. For a credit card, debits increase the amount owed and credits reduce it.
 
+For supported Merrick and Andrews statements, Loupe can fill **Account holder** from the name or joint names in the statement's mailing address. If it is blank, compare that address with the PDF, enter the complete name and explain the correction. Use the name printed for this statement, even when another statement in the file has the same account number. Saving the correction updates that period's import status.
+
 Where a printed opening balance and an ending balance are available, the review recalculates the balance using your selected payments. Excluding a payment or changing its amount can show **Selected movements leave a balance difference**. Inspect the compared balance and check missing rows or corrections before confirming. Agreement is an arithmetic check, not proof that every payment was supplied.
 
 For a recognised Capital One or Merrick card statement, **Previous Balance** in the account summary supplies the **Opening amount owed**, and **New Balance** supplies the **Closing amount owed**. On Merrick statements, these values come from **Summary of Account Activity**. The minimum payment due and credit limit are not balances for this check. Charges increase the amount owed and payments reduce it.

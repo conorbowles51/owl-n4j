@@ -427,3 +427,63 @@ class MerrickClosingDateFallbackTests(unittest.TestCase):
         self.assertEqual(row['fields']['amount_minor'],'250')
         self.assertTrue(any('interest-charge date differs' in issue for issue in row['issues']))
         self.assertEqual(row['source_cells'][0]['expected_text'],'03/25')
+
+
+class MerrickCouponHolderTests(unittest.TestCase):
+    def example(self, split=False):
+        data = measured_statement()
+        data['rows'][3]['cells'] = []
+        coupon = [
+            [('MERRICK ACCOUNT SUMMARY', 90, 210, 145, 8)],
+            [('MERRICK BANK', 95, 124, 60, 4)],
+            [('27 EXAMPLE', 370, 120, 40, 4), ('ST APT 2', 413, 120, 45, 4)],
+            [('EXAMPLE CITY DC 20001-1234', 370, 128, 105, 4)],
+            [('EXAMPLE A', 370, 113, 39, 4), ('99999', 510, 113, 15, 4)],
+            [('HOLDER', 410, 117, 31, 3)],
+        ] if split else [
+            [('MERRICK ACCOUNT SUMMARY', 90, 210, 145, 8)],
+            [('MERRICK BANK', 95, 124, 60, 4)],
+            [('27 EXAMPLE ST APT 2', 370, 120, 90, 4)],
+            [('EXAMPLE CITY DC 20001-1234', 370, 128, 105, 4)],
+            [('EXAMPLE A HOLDER', 370, 113, 71, 4), ('99999', 510, 113, 15, 4)],
+        ]
+        for index, values in enumerate(coupon):
+            data['rows'].append(dict(row_index=100 + index, cells=[dict(column_index=j, expected_text=text,
+                locator=rectangle(y, x=x, width=w, height=h)) for j, (text, x, y, w, h) in enumerate(values)]))
+        return data
+
+    def test_complete_and_split_coupon_names_keep_exact_sources_and_existing_statement_id(self):
+        from unittest.mock import patch
+        for split in (False, True):
+            data = self.example(split); before = deepcopy(data)
+            with patch('services.financial.statement_import_merrick._coupon_holder', return_value=('', [])):
+                previous = merrick_statement(data)
+            result = merrick_statement(data)
+            with self.subTest(split=split):
+                self.assertEqual(result['holder'], 'EXAMPLE A HOLDER')
+                self.assertEqual(result['id'], previous['id'])
+                self.assertEqual(result['account_reference'], previous['account_reference'])
+                self.assertEqual((result['period_start'], result['period_end']), ('', ''))
+                self.assertEqual(len(result['holder_sources']), 2 if split else 1)
+                self.assertEqual(' '.join(s['source_cell']['expected_text'] for s in result['holder_sources']), result['holder'])
+                self.assertEqual(data, before)
+
+    def test_missing_damaged_conflicting_or_unlocated_address_context_does_not_fill_a_name(self):
+        for change in ('summary', 'bank', 'city', 'street', 'name', 'surname', 'geometry', 'page', 'size', 'two_names', 'two_addresses'):
+            data = self.example(True)
+            extra = {r['row_index']: r for r in data['rows'] if r['row_index'] >= 100}
+            if change == 'summary': extra[100]['cells'][0]['expected_text'] = 'ACCOUNT INFORMATION'
+            elif change == 'bank': extra[101]['cells'][0]['locator'] = rectangle(124, x=370, width=60, height=4)
+            elif change == 'city': extra[103]['cells'][0]['expected_text'] = 'EXAMPLE CITY DC 2O001-1234'
+            elif change == 'street': extra[102]['cells'][0]['expected_text'] = 'OTHER TEXT'
+            elif change == 'name': extra[104]['cells'][0]['expected_text'] = 'EXAMPLE 4'
+            elif change == 'surname': extra[105]['cells'][0]['expected_text'] = 'Ho1der'
+            elif change == 'geometry': extra[105]['cells'][0]['locator'] = None
+            elif change == 'page': extra[105]['cells'][0]['locator']['page'] = 2
+            elif change == 'size': extra[105]['cells'][0]['locator']['page_size'] = [600000, 792000]
+            elif change == 'two_names': extra[105]['cells'][0]['locator'] = rectangle(117, x=370, width=71, height=3)
+            elif change == 'two_addresses': data['rows'].append(deepcopy(extra[103]))
+            with self.subTest(change=change):
+                result = merrick_statement(data)
+                self.assertEqual(result['holder'], '')
+                self.assertNotIn('holder_sources', result)

@@ -344,6 +344,15 @@
 <li>If two authorised reviewers open the same saved review, save a change from one and then attempt to save the older review from the other. Expect a conflict message; the later attempt must not overwrite the first saved review.</li>
 <li>If reprocessing changes a reading with an earlier saved review, open <strong>Earlier saved reviews</strong> and <strong>Compare earlier values</strong>. Expect individual and bulk corrections, including changed periods, to remain available. Compare them, tick the comparison box and select <strong>Save comparison for this file</strong>. Reload to check that the comparison remains saved. It must not add payments.</li>
 </ol>
+<h3>Check names read from a statement&#x27;s mailing address</h3>
+<ol>
+<li>Open an artificial Merrick statement with the account holder&#x27;s name above its mailing address, separate from the bank&#x27;s payment address. Expect <strong>Account holder</strong> to contain the complete printed name, including a surname extracted into the next cell.</li>
+<li>Check an Andrews statement with joint names. Expect both names, separated by a slash. The street address and mailing code must not become part of either name.</li>
+<li>Use a test reading with a damaged surname or incomplete address. Expect a missing-name problem where the complete name cannot be established. Enter the name from the original PDF, explain the correction and save it.</li>
+<li>Return to the batch. Expect the saved name and an updated status for that statement. Other unresolved amounts or dates must still prevent that period from joining the ready imports.</li>
+<li>Reopen an earlier saved review after a new reading finds the name. Check its earlier corrections before importing. A newly recognised name must not create a second period or a duplicate import.</li>
+</ol>
+<p><strong>Expected:</strong> clear names appear automatically. Unclear names have a specific correction route, and the account&#x27;s payments do not change because its name was recognised.</p>
 <h3>Check an Andrews image reread</h3>
 <ol>
 <li>Use an Andrews test statement with a damaged amount or balance reading. Record its account sections and transaction count before reprocessing.</li>

@@ -434,6 +434,16 @@ Record the filename, account, period, action, expected result and actual result 
 5. If two authorised reviewers open the same saved review, save a change from one and then attempt to save the older review from the other. Expect a conflict message; the later attempt must not overwrite the first saved review.
 6. If reprocessing changes a reading with an earlier saved review, open **Earlier saved reviews** and **Compare earlier values**. Expect individual and bulk corrections, including changed periods, to remain available. Compare them, tick the comparison box and select **Save comparison for this file**. Reload to check that the comparison remains saved. It must not add payments.
 
+### Check names read from a statement's mailing address
+
+1. Open an artificial Merrick statement with the account holder's name above its mailing address, separate from the bank's payment address. Expect **Account holder** to contain the complete printed name, including a surname extracted into the next cell.
+2. Check an Andrews statement with joint names. Expect both names, separated by a slash. The street address and mailing code must not become part of either name.
+3. Use a test reading with a damaged surname or incomplete address. Expect a missing-name problem where the complete name cannot be established. Enter the name from the original PDF, explain the correction and save it.
+4. Return to the batch. Expect the saved name and an updated status for that statement. Other unresolved amounts or dates must still prevent that period from joining the ready imports.
+5. Reopen an earlier saved review after a new reading finds the name. Check its earlier corrections before importing. A newly recognised name must not create a second period or a duplicate import.
+
+**Expected:** clear names appear automatically. Unclear names have a specific correction route, and the account's payments do not change because its name was recognised.
+
 ### Check an Andrews image reread
 
 1. Use an Andrews test statement with a damaged amount or balance reading. Record its account sections and transaction count before reprocessing.

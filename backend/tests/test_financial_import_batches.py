@@ -74,9 +74,17 @@ class BatchImportTests(TestCase):
         status,summary=service.assess(changed)
         self.assertEqual(status,'attention')
         self.assertIn(payment['id'],[p['row_id'] for p in summary['problems']])
+        self.assertFalse(any(p['row_id'] is None for p in summary['problems']))
+        self.assertEqual(summary['problems'][0]['page'], payment['page_number'])
         raw=service.initial_request(changed)
         next(r for r in raw['rows'] if r['id']==payment['id'])['reason']='Checked against the PDF.'
         self.assertEqual(service.assess(changed,raw)[0],'ready')
+        edited=service.initial_request(proposal)
+        next(r for r in edited['rows'] if r['id']==payment['id'])['description']='Corrected description'
+        status,summary=service.assess(proposal,edited)
+        self.assertEqual(status,'attention')
+        self.assertEqual(summary['problems'],[dict(message='Enter a reason for this payment change.',
+            row_id=payment['id'],page=payment['page_number'])])
         # An arithmetical mismatch never joins ready statements.
         changed=deepcopy(proposal)
         changed['rows'].append(dict(id='end',kind='balance',excluded=True,issues=[],page_number=1,fields=dict(description='Closing balance',balance='1')))

@@ -18,6 +18,61 @@ def _printed_date(text):
     return None
 
 
+def _coupon_holder(source):
+    """Read the recipient above the right-hand payment-coupon address.
+
+    OCR can split a name into adjacent cells on different extracted rows. The
+    street, city/state/ZIP and separate bank address establish this layout;
+    neither a nearby account number nor a name on another page can supply it.
+    """
+    measured = [(row, cell, _rectangle(cell, source['page_number']))
+                for row in source['rows'] for cell in row['cells']]
+    headings = [box for _, cell, box in measured
+                if cell['expected_text'].strip() == 'MERRICK ACCOUNT SUMMARY' and box]
+    if len(headings) != 1:
+        return '', []
+    heading = headings[0]
+    if any(box is None or (box.page_width, box.page_height) != (heading.page_width, heading.page_height)
+           for _, _, box in measured):
+        return '', []
+    coupon = [(row, cell, box) for row, cell, box in measured if box
+              and (box.page_width, box.page_height) == (heading.page_width, heading.page_height)
+              and box.y1 < heading.y0 and box.y0 < box.page_height // 3]
+    banks = [box for _, cell, box in coupon
+             if cell['expected_text'].strip() == 'MERRICK BANK' and box.x1 < box.page_width // 2]
+    candidates = []
+    for _, city, city_box in coupon:
+        if (city_box.x0 < city_box.page_width // 2
+                or not re.fullmatch(r"[A-Z][A-Z .'-]+ [A-Z]{2} \d{5}(?:-\d{4})?", city['expected_text'].strip())):
+            continue
+        tolerance = city_box.page_width // 60
+        streets = [(row, cell, box) for row, cell, box in coupon
+                   if abs(box.x0 - city_box.x0) <= tolerance
+                   and 0 <= city_box.y0 - box.y1 <= city_box.page_height // 50
+                   and re.match(r'\d+\s+[A-Z0-9]', cell['expected_text'].strip())]
+        if len(streets) != 1:
+            continue
+        street = streets[0][2]
+        # The bank's postal block must be separate from the recipient block.
+        if not any(abs(bank.y0 - street.y0) <= city_box.page_height // 25 for bank in banks):
+            continue
+        names = [(row, cell, box) for row, cell, box in coupon
+                 if city_box.x0 - tolerance <= box.x0 and box.x1 <= city_box.x1 + tolerance
+                 and 0 <= street.y0 - box.y1 <= city_box.page_height // 60]
+        names.sort(key=lambda item: item[2].x0)
+        if (not names or len(names) > 4 or abs(names[0][2].x0 - street.x0) > tolerance
+                or any(not re.fullmatch(r"[A-Z][A-Z .'-]*", cell['expected_text'].strip()) for _, cell, _ in names)
+                or any(not 0 <= right[2].x0 - left[2].x1 <= tolerance
+                       for left, right in zip(names, names[1:]))):
+            continue
+        name = ' '.join(cell['expected_text'].strip() for _, cell, _ in names)
+        if not 2 <= len(name.split()) <= 12 or len(name) > 128:
+            continue
+        candidates.append((name, [dict(page_number=source['page_number'], table_index=source['table_index'],
+                                      row_index=row['row_index'], source_cell=cell) for row, cell, _ in names]))
+    return candidates[0] if len(candidates) == 1 else ('', [])
+
+
 def merrick_statement(source):
     texts = [c['expected_text'].strip() for r in source['rows'] for c in r['cells']]
     if 'MERRICK BANK' not in texts or 'Transactions, Payments and Credits' not in texts:
@@ -88,6 +143,13 @@ def merrick_statement(source):
     if closing_fallback:
         identity.update(printed_closing_date=closing_fallback, statement_date_basis='billing_cycle_closing_date')
     identity['id'] = _digest(dict(**identity, source_page=source['page_number']))
+    # Preserve existing statement IDs and their imported/review records when
+    # filling a previously missed coupon name. Proposal versioning still makes
+    # changed metadata go through the normal saved-review recovery check.
+    if not holder:
+        coupon_holder, holder_sources = _coupon_holder(source)
+        if coupon_holder:
+            identity.update(holder=coupon_holder, holder_sources=holder_sources)
     return dict(**identity, date_conflict=date_conflict,
                 sources=[dict(page_number=source['page_number'],table_index=source['table_index'],source_revision=source['source_revision'])],page_numbers=[source['page_number']])
 

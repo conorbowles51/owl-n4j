@@ -189,3 +189,20 @@ Read-only comparison retains all 44 ordinary sections plus the assignment-only r
 Validation includes 28 Andrews reader tests, an exactly-once database import with retained money sources, 43 affected frontend checks, TypeScript and scoped lint. The added frontend test initially used the wrong accessibility label; the corrected test passes, with all other 42 checks already passing. Its two unsupported test-query options were removed before TypeScript passed. A fresh artificial browser case verifies a saved description correction, recovery after clearing tab storage, import of exactly three payments, and an original PDF highlight covering the wrapped money. No JavaScript errors. Browser harness selectors were corrected for the actual save endpoint, navigation back to the batch and the visible source panel; the completed import was not repeated.
 
 This closes the specific wrapped-layout defect found during the remaining-row review. Final combined build/workflow acceptance is still required before declaring the development ready. The remaining flags concern actual payments, uncertain fields or a running-balance interval affected by a misread neighbouring value. This flagged-row audit is not an independent transcription of the entire files or a guarantee of unflagged accuracy.
+
+## Import readiness and account names, 18 September 2026
+
+A separate readiness check used the real stored readings in disposable databases. It found missed mailing-address names on all 42 Merrick periods and six Andrews account sections. Recognition now retains 40 complete Merrick names and all six Andrews joint-name sections from their own original pages. Two damaged Merrick surname readings remain unresolved. All affected original name crops were inspected. The changes preserve every statement ID, payment proposal and source cell; they do not copy names from other statements. Proposal version is v26. Validation problems caused by a changed or flagged row now retain a direct row/page link instead of an additional unlinked internal identifier.
+
+After these corrections, actual confirmation and immediate retry succeeded for all 87 ready reviews in disposable databases. They wrote 339 payments, and retries wrote none. Some ready reviews contain balances only. No real case or original PDF changed.
+
+| Supplied collection | Recognised reviews | Ready reviews | Payments in ready reviews | Reviews still needing attention |
+| --- | ---: | ---: | ---: | ---: |
+| Capital One, 222 pages | 52 | 51 | 294 | 1 |
+| Merrick, 56 pages | 42 | 7 | 15 | 35 |
+| Andrews, 99 pages | 45, including one assignment-only review | 22 | 2 | 23 |
+| Andrews, 24 pages | 16 | 7 | 28 | 9 |
+
+These are import-readiness results for the retained extraction, not extraction-accuracy percentages. In particular, a ready balance-only review is not a ready set of payments. Private evidence: `completion-readiness.json`, `completion-disposable-imports.json`, `merrick-coupon-*` and `andrews-holder-comparison.json` under ignored `data/local-runtime/context-audit-final/`.
+
+A separate seeded sample of 30 unflagged rows was then read from original-image crops before comparing proposals. It checked printed month/day, amount, credit/debit sign and available running balance, not complete descriptions, years, account attribution or completeness. Eighteen Andrews rows matched. Ten of twelve Merrick rows matched. One interest amount was read as 36.52 instead of 36.32; a payment's date was read as 06/04 instead of 06/01 and its trailing minus was missed. Both periods were already blocked by other issues, but the individual errors were not flagged. **D remains open. Next: recognise spaced card-payment labels even with a damaged reference, and compare separately printed interest/fee totals with their contributing charges. Do not change amounts or dates merely to make a total agree.** Private blind sheets and independent values use `unflagged-*` filenames. This is a small sample, not a general accuracy claim.

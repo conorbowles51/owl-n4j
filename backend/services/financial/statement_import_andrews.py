@@ -138,17 +138,29 @@ def _holder(rows):
     """The addressee lines immediately following the printed mailing marker."""
     names = []
     active = False
-    for row in rows:
+    relaxed_marker = False
+    for index, row in enumerate(rows):
         text = _text(row)
         if re.fullmatch(r'>\d{8,12}<', text):
             active = True
+        elif re.fullmatch(r'>\s*(?:\d\s*){8,12}«?<', text):
+            # Spacing inside the mailing code and a doubled closing bracket
+            # are not part of the holder's name. Require the complete postal
+            # block below before accepting this less exact marker.
+            active = relaxed_marker = True
         elif active:
             if re.fullmatch(r'[A-Z][A-Z .\'-]{3,95}', text):
                 names.append(text)
             else:
+                if relaxed_marker:
+                    city = _text(rows[index + 1]) if index + 1 < len(rows) else ''
+                    if (not 1 <= len(names) <= 3 or not re.fullmatch(r'\d+ [A-Z0-9 .#\'-]+', text)
+                            or not re.fullmatch(r"[A-Z][A-Z .'-]+ [A-Z]{2} \d{5}(?:-\d{4})?", city)):
+                        return ''
+                    relaxed_marker = False
                 break
     value = ' / '.join(names)
-    return value if len(value) <= 128 else ''
+    return value if len(value) <= 128 and not relaxed_marker else ''
 
 
 def _reading_order(sources):

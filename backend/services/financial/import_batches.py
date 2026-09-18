@@ -93,7 +93,15 @@ def assess(proposal, request=None):
                     message=f'Enter the {label} shown on the statement.'
                 problems.append(dict(message=message, row_id=row_id))
         else:
-            problems.append(dict(message=str(error), row_id=None))
+            affected = next((row for row in rows
+                if str(error) == f"Explain the correction or decision for row {row['id']}."), None)
+            if affected is None:
+                problems.append(dict(message=str(error), row_id=None))
+            elif not affected['issues']:
+                problems.append(dict(message='Enter a reason for this payment change.',
+                                     row_id=affected['id'], page=affected['page_number']))
+            # Original reading problems are added below with their row/page
+            # link. Do not also show an unlinked internal row identifier.
     reviewed = {r['id']:r for r in raw['rows']}
     for row in rows:
         edit = reviewed.get(row['id'],{})
