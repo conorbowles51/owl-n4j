@@ -1,5 +1,7 @@
 # Financial investigation workspace
 
+Latest direction, 18 September 2026: retain the accepted workspace and simplify one complete journey before extending it. The user explicitly requires that reviewing flagged problems does not block import. See [simple-flow research and implementation direction](financial-simple-flow-research-2026-09-18.md). This supersedes earlier mandatory pre-import review requirements; implementation of the new import policy remains outstanding.
+
 Approved design, 16 September 2026; application implementation completed locally on 17 September. The user approved the interactive design and asked to build it. This document records the intended investigator workflow and acceptance tasks. Existing financial data, statement review, corrections, specialist analysis and saved reports are retained. Local product verification is recorded below. User acceptance and deployment of this redesign are separate and have not been claimed.
 
 ## The investigator's job

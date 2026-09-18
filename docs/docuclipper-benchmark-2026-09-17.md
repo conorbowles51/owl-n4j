@@ -1,5 +1,7 @@
 # DocuClipper research and Loupe processing benchmark
 
+User clarification, 18 September 2026: checking flagged problems must not block import. The new [simple-flow research and implementation direction](financial-simple-flow-research-2026-09-18.md) supersedes this document's ready-only import journey. Preserve issues after import and allow later correction. The historical implementation checkpoints below describe the previous policy, not completion of this new requirement.
+
 ## Completed local development checkpoint, 18 September 2026
 
 Local implementation and acceptance for A-E are complete, apart from verification on the deployed server. The approved investigator workspace is retained. The final production build and compiled browser check pass, including corrected payments, original PDF navigation and both updated guides. The significant combined regression and subsequent focused checks are recorded in [persistent state](loupe-build-state.md).

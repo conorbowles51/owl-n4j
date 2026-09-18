@@ -1,3 +1,41 @@
+## 18 September release commits
+
+Committed for the user's requested push: `7d66d1d0` fixes bounded, atomic Evidence Engine claim persistence and adds its parameter-limit/retry/rollback regressions; `493ac610` adds the tested financial categories, From/To editing, money comparisons, extraction/provenance corrections and updated guides with light-mode screenshots. The research and design documents accompany these changes. Existing verification is recorded in the checkpoints below; no full suite was repeated just to push.
+
+The new non-blocking import policy remains specified work, not implemented. The separate generic financial batch-import exception remains unresolved. Git publication does not establish deployment or successful reprocessing of the user's failed file. Earlier references below to these changes being uncommitted describe their original local checkpoints.
+
+## 18 September evidence claim write limit fixed locally
+
+The user's 20:16 screenshot is an Evidence Engine `evidence_claims` INSERT failure: asyncpg rejects more than 32,767 query arguments. The previous writer expanded every claim into a single statement with 13 parameters per row. This is separate from the still-unreproduced financial batch-import exception below.
+
+`evidence-engine/app/services/claim_ledger.py` now writes batches of at most 1,000 claims within one savepoint and leaves commit ownership with the caller. There is no total claim-count cap. Both the individual and batch orchestrators call this function. Deterministic IDs and conflict-ignore behaviour remain intact. A late database or input failure rolls back all batches before the caller can commit a failed job status. Other engine PostgreSQL insert sites were inspected: document text, geometry and geocoding already write one row at a time.
+
+Verification: the old single-statement shape reproduces the exact reported exception at 2,521 synthetic claims against local PostgreSQL using asyncpg 0.31.0 / SQLAlchemy 2.0.52. The fixed writer persists 10,003 claims with every field checked, retries without duplicates or overwritten original quotes, keeps uncommitted writes invisible, and rolls back late database and malformed-input failures. Eleven focused tests passed in 8.35 seconds, including the existing claim compilation tests. The new `test_claim_persistence.py` always exercises parameter boundaries and complete coverage; its four real PostgreSQL checks use `CLAIM_LEDGER_TEST_DATABASE_URL` and create/drop an isolated schema. No real case data was changed. `git diff --check` passes. No full suite, commit, push or deployment. Deploy the Evidence Engine fix before retrying the affected file; deployed success has not been claimed.
+
+## 18 September direction: simple flow, optional review
+
+The user says the added controls have not sufficiently improved usability. They asked for research into good financial products, then clarified: build outward from a simple working flow rather than rethink the whole platform; checking flagged problems must not block import. [Research and concrete implementation direction](financial-simple-flow-research-2026-09-18.md) compares official DocuClipper, Monarch, Valid8, Xero and MindBridge workflows and records the revised acceptance journey.
+
+Next implementation: separate imported state from outstanding issues; preserve incomplete records and source links in the financial workspace; make calculated-total exclusions explicit; consolidate transaction filters/actions and carry the same interaction into People, Trends and findings. Current `queue_import` still accepts only ready statements and imported summaries clear problems. The new policy is specified, not implemented. The generic live import exception remains unresolved independently. Existing uncommitted category/name/manifest/rewards fixes below are preserved. No code or deployed behaviour changed during this research; no push or deployment performed.
+
+## 18 September live feedback: categories, names and import checks
+
+Uncommitted follow-up to c6b8f252. Imported statement transactions now have case-scoped investigator categories and From/To labels stored separately from statement readings, with edit history and optimistic version checks. Single and bulk edits share a case-edit endpoint. The main financial investigation views, graph, Trends and exports read the same fields. Money comparison bars are included in shared payment totals and category comparisons are available in Transactions and Trends.
+
+The dated Capital One rewards help sentence is excluded only with its rewards heading and exact non-payment text; real mapped payments keep priority. Proposal version is v28. Processing provenance accepts the engine's current six-source inventory and known historic inventories, while still validating digests and unknown fields.
+
+Focused checks: 69 backend and 52 existing frontend tests pass. Synthetic PostgreSQL multi-period import passes, including retry, but does not reproduce the generic live batch import failure. That failure remains open pending its server exception or exact source reproduction. Four category editor tests pass. Synthetic browser checks confirm bulk categories, edited names, refresh recovery, global category filtering, Trends, graph name editing, People and businesses, selected-payment CSV and the filtered report download. The graph test locator was corrected to ignore retained hidden tabs. The permission route inventory now includes the category/name write route. Production build and TypeScript pass; scoped lint passes after moving category arithmetic into its own module. Final compiled-preview read-only check also passes: category lookup, category filter, saved names, Trends and the updated guide. The API is running with final changes on port 58002 (exec session 8702). Working changes remain uncommitted and unpushed. No claim of deployed verification.
+
+Public read-only check now confirms Loupe at http://104.196.62.215:5174 with frontend version c6b8f25. This supersedes the earlier observation about the bare IP/refused port below. It does not verify authenticated live case workflows. No private data was sent.
+
+## Final release published, 18 September 2026
+
+The final release was pushed successfully as `c6b8f252ae66ae38c6d276e5bc77be9817798f7e` to `origin/integration/evidence-main-reunion`, advancing the remote from `23039a67`. Local HEAD and the remote matched immediately after publication and the tracked working tree was clean. Receipt: ignored `data/local-runtime/financial-final-release.json`.
+
+All local A-E development and acceptance checks are complete. The ten-minute development heartbeat is PAUSED after final publication. Do not repeat completed imports, full suites or unchanged OCR runs. The only unchecked benchmark item is deployed verification. The current hosted Loupe URL has been requested; the old IP serves an unrelated website and must not receive credentials or case data. When the URL arrives, verify the deployed version first and perform the appropriate read-only checks before any authorised synthetic live-case exercise.
+
+The core folder-to-import and source-to-investigation flows passed locally. This is not a claim that every possible statement extracts perfectly: difficult scans still need corrections for unclear dates, amounts and account details. Team acceptance and full independent extraction measurement have not been claimed. The prepared-release notes below are historical and are superseded by this publication record.
+
 ## Final release prepared, 18 September 2026
 
 The complete local DocuClipper processing benchmark is passed. A-E implementation items are checked; only observed deployment verification remains unchecked. The final production build and compiled-browser checks passed. Release notes: `docs/releases/2026-09-18-financial-processing.md`. Known scan limitations and independent-sample scope are retained, not hidden by the completion status.
