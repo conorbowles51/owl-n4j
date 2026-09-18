@@ -832,6 +832,37 @@ class StatementImportTests(TransactionPersistenceTestCase):
         self.assertEqual(saved['fields']['additional_printed_date'], '06/02')
         self.assertEqual(saved['source_cells'][0]['expected_text'], '06/03 06/02')
 
+    def test_wrapped_voucher_import_keeps_money_sources_and_full_row_highlight(self):
+        from tests.test_financial_statement_import_andrews import wrapped_vouchers
+        from services.financial.transactions import LOCATOR_PROVENANCE_KEY
+        from services.financial.locators import Locator
+        grid = wrapped_vouchers()
+        self.db.get(EvidenceTableGeometry, (self.file.id, 1)).payload = [dict(
+            table_source='text_alignment', geometry_source='cell_rectangles',
+            table=dict(page=1, table=rectangle(0, x=0, width=600, height=800), unlocated_values=0,
+                values=[dict(row=r['row_index'], column=c['column_index'], text=c['expected_text'], locator=c['locator'])
+                        for r in grid['rows'] for c in r['cells']]))]
+        self.db.commit()
+        proposal, request = self.andrews_request('0040')
+        self.assertEqual(proposal['transaction_count'], 3)
+        self.assertFalse(any(r['issues'] for r in proposal['rows']))
+        receipt = self.confirm(request)
+        self.assertEqual(receipt['transaction_count'], 3)
+        self.assertFalse(self.confirm(request)['created'])
+        self.db.expire_all()
+        saved = list(self.db.scalars(select(FinancialTransaction).where(
+            FinancialTransaction.source_document_id == UUID(receipt['source_document_id']))))
+        self.assertEqual(len(saved), 3)
+        payment = next(r for r in saved if str(r.transaction_date) == '2020-06-04')
+        original = payment.provenance['statement_import_original']
+        self.assertEqual(original['source_cells'], grid['rows'][12]['cells'])
+        self.assertEqual(original['value_sources']['amount']['source_cell'], grid['rows'][13]['cells'][0])
+        self.assertEqual(original['value_sources']['balance']['source_cell'], grid['rows'][13]['cells'][1])
+        bounds = Locator.from_json(payment.provenance[LOCATOR_PROVENANCE_KEY]).rectangle
+        self.assertEqual(bounds.page_number, 1)
+        self.assertEqual(bounds.y0, 256000)
+        self.assertEqual(bounds.y1, 276000)
+
     def test_andrews_statement_without_payments_saves_matching_balances(self):
         from postgres.models.financial import FinancialStatementPeriod
         from services.financial.periods import read_opening, read_closing

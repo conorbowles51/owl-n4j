@@ -444,6 +444,15 @@ Record the filename, account, period, action, expected result and actual result 
 
 **Expected:** specific damaged money cells can improve without hiding unresolved values or replacing previous imports automatically. A lower warning count alone is not a successful test; record any wrong or missing value found against the PDF.
 
+### Check a refund whose amount is on the next line
+
+1. Use an Andrews-style test statement with a **Credit Voucher** refund. Its description should be on one line and its amount and running balance immediately below. Include another refund with its amount at the end of the description line.
+2. Open the statement review. Expect one payment for each refund, with its printed amount and balance. The extracted view must retain the original lines. The amount line must not become another payment or part of the payment description.
+3. Select the amount on the second line, then **Edit this row**. Expect the refund's date, description, credit and balance in the editor. Make a description correction with a reason and select **Save for bulk import**.
+4. Reopen the saved review after clearing this tab's temporary storage. Expect the correction to remain. The original printed text must still be visible.
+5. Import the ready statement once. Open that refund in **Transactions**. Expect its amount and balance, the saved description correction, and a source highlight covering both the first line and the amount line.
+6. Repeat with an unreadable amount or an unrelated number further down the page. Expect a review problem. Loupe must not choose a value just because it would make the balances match.
+
 ### Check missing Andrews pages and broken dates
 
 1. Use an artificial statement whose first-page logo is unreadable in the extracted text. Its printed account and dates must match the next branded page, numbered **2**, and the first page must contain an account opening and a continuation notice. Expect both pages under the same account and period. A conflicting account, different dates or missing intervening page must prevent that automatic grouping.

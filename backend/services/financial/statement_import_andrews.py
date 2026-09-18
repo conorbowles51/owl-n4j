@@ -408,6 +408,63 @@ def _money_cells(row, width):
     return [c for c in row['cells'] if _box(c) and _box(c)[0] >= width * .46]
 
 
+def _voucher_money(row, following, width, currency):
+    """Read two specific long credit-voucher layouts, retaining their cells.
+
+    A numeric suffix is accepted only after the exact printed payment label.
+    A following line must contain only two measured money cells immediately
+    beneath that label. No digit, sign, account or balance is inferred.
+    """
+    cells = row['cells']
+    if len(cells) not in (2, 3) or not all(_box(c) for c in cells):
+        return None
+    date_cell, description_cell = cells[:2]
+    if not (_box(date_cell)[0] < width * .08 and
+            _box(date_cell)[2] <= _box(description_cell)[0] < width * .46):
+        return None
+    match = re.fullmatch(r'((?:Recurring )?Withdrawal Adjustment Debit Card Credit Voucher)'
+                         r'(?:\s+(' + _SPACED_MONEY + r'))?', description_cell['expected_text'].strip())
+    if not match:
+        return None
+    wrapped = match[2] is None
+    if wrapped:
+        if len(cells) != 2 or following is None or len(following['cells']) != 2:
+            return None
+        money_cells = _money_cells(following, width)
+        if len(money_cells) != 2:
+            return None
+        amount_text, balance_text = [c['expected_text'].strip() for c in money_cells]
+    else:
+        if len(cells) != 3 or _box(cells[2])[0] < width * .46:
+            return None
+        money_cells = [description_cell, cells[2]]
+        amount_text, balance_text = match[2], cells[2]['expected_text'].strip()
+    measured = cells + (money_cells if wrapped else [])
+    space = tuple(cells[0]['locator'].get(k) for k in ('page', 'page_size', 'space', 'units'))
+    if any(tuple(c['locator'].get(k) for k in ('page', 'page_size', 'space', 'units')) != space
+           for c in measured):
+        return None
+    left, right = [_box(c) for c in money_cells]
+    if left[2] > right[0] or max(left[1], right[1]) >= min(left[3], right[3]):
+        return None
+    description_box = _box(description_cell)
+    if wrapped:
+        height = description_box[3] - description_box[1]
+        if not (description_box[2] <= left[2] and
+                description_box[3] - height * .25 <= min(left[1], right[1]) <= description_box[3] + height * 1.1):
+            return None
+    elif max(description_box[1], _box(date_cell)[1]) >= min(description_box[3], _box(date_cell)[3]):
+        return None
+    try:
+        _amount(amount_text, currency, separate_cell=wrapped)
+        _amount(balance_text, currency, separate_cell=True)
+    except ValueError:
+        return None
+    return dict(body=date_cell['expected_text'].strip() + ' ' + match[1],
+                money_cells=money_cells, amount_text=amount_text, balance_text=balance_text,
+                source_row=following if wrapped else row, wrapped=wrapped)
+
+
 def propose_andrews_statement(sources, currency, statement):
     result = []
     previous_balance = None
@@ -417,7 +474,8 @@ def propose_andrews_statement(sources, currency, statement):
     for source in sorted(sources, key=lambda s: order[(s['page_number'], s['table_index'])]):
         page = andrews_page(source, allow_unbranded=True)
         scope = scopes[(source['page_number'], source['table_index'])]
-        for row in source['rows']:
+        money_continuations = {}
+        for position, row in enumerate(source['rows']):
             index = row['row_index']
             if index not in scope['row_indices'] and index not in scope['heading_rows']:
                 continue
@@ -431,6 +489,13 @@ def propose_andrews_statement(sources, currency, statement):
             if index not in scope['row_indices']:
                 continue
             item['fields']['statement_layout'] = _LAYOUT
+            if index in money_continuations:
+                parent = money_continuations[index]
+                item.update(kind='continuation')
+                item['fields']['parent_transaction_id'] = parent['id']
+                parent.setdefault('continuation_sources', []).append(dict(
+                    page_number=source['page_number'], row_index=index, source_cells=cells))
+                continue
             # The period/year-to-date fee summary is not a second set of fee
             # payments, even when it follows an account's continuation page.
             if (cells and cells[0]['expected_text'].strip() in
@@ -475,6 +540,18 @@ def propose_andrews_statement(sources, currency, statement):
             dated_money = (first_box and first_box[0] < page['width'] * .08 and money_cells
                            and re.match(r'^\S{4,7}(?: |$)', body))
             if parsed or damaged_date_payment or dated_money:
+                following = source['rows'][position + 1] if position + 1 < len(source['rows']) else None
+                if following is not None and following['row_index'] not in scope['row_indices']:
+                    following = None
+                voucher = _voucher_money(row, following, page['width'], currency) if parsed else None
+                if voucher:
+                    body, money_cells = voucher['body'], voucher['money_cells']
+                    parsed = _PAYMENT.match(body)
+                    item['value_sources'] = {name: dict(page_number=source['page_number'],
+                        table_index=source['table_index'], row_index=voucher['source_row']['row_index'], source_cell=cell)
+                        for name, cell in zip(('amount', 'balance'), money_cells)}
+                    if voucher['wrapped']:
+                        money_continuations[voucher['source_row']['row_index']] = item
                 item.update(excluded=False, kind='transaction' if parsed else 'unresolved')
                 fields = item['fields']
                 date_text = parsed[1] if parsed else damaged_date_payment[1] if damaged_date_payment else body.split(' ', 1)[0]
@@ -502,11 +579,15 @@ def propose_andrews_statement(sources, currency, statement):
                         amount_text, balance_text = trailing[1], trailing[2]
                 if len(money_cells) == 2:
                     amount_text, balance_text = [c['expected_text'].strip() for c in money_cells]
+                if voucher:
+                    amount_text, balance_text = voucher['amount_text'], voucher['balance_text']
                 separate_cells = (len(money_cells) == 2 and
                                   _box(money_cells[0])[2] <= _box(money_cells[1])[0])
                 try:
                     amount = _amount(amount_text, currency, separate_cell=separate_cells)
-                    fields.update(amount_minor=str(abs(amount)), amount_column=str(money_cells[0]['column_index']))
+                    fields['amount_minor'] = str(abs(amount))
+                    if not voucher or not voucher['wrapped']:
+                        fields['amount_column'] = str(money_cells[0]['column_index'])
                     description = fields['description']
                     verb = re.sub(r'\s+', '', parsed[4] if parsed else damaged_date_payment[3]) if parsed or damaged_date_payment else None
                     conflict = (amount > 0 and verb == 'Withdrawal' and 'Adjustment' not in description
@@ -519,7 +600,8 @@ def propose_andrews_statement(sources, currency, statement):
                     item['issues'].append('Check the transaction amount in the PDF. Its digits, sign or decimal point could not be read.')
                 try:
                     fields['balance'] = str(_amount(balance_text, currency, separate_cell=separate_cells))
-                    fields['balance_column'] = str(money_cells[-1]['column_index'])
+                    if not voucher or not voucher['wrapped']:
+                        fields['balance_column'] = str(money_cells[-1]['column_index'])
                 except ValueError:
                     item['issues'].append('Check the running balance in the PDF. It could not be read separately from the transaction amount.')
                 if previous_balance is not None and all(k in fields for k in ('balance', 'amount_minor', 'direction')):

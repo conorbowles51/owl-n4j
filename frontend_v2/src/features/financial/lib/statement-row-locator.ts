@@ -3,10 +3,21 @@ import { readLocator } from "./locator"
 // The navigation highlight covers only measured cells on the same source page.
 // It is a display aid; the individual stored field locations remain unchanged.
 export function statementRowLocator(
-  row: { source_cells: { locator: unknown }[] } | undefined,
+  row:
+    | {
+        source_cells: { locator: unknown }[]
+        value_sources?: Record<string, { source_cell: { locator: unknown } }>
+      }
+    | undefined,
   page: number
 ) {
-  const rectangles = (row?.source_cells ?? []).flatMap((cell) => {
+  const cells = [
+    ...(row?.source_cells ?? []),
+    ...Object.values(row?.value_sources ?? {}).map(
+      (value) => value.source_cell
+    ),
+  ]
+  const rectangles = cells.flatMap((cell) => {
     const reading = readLocator(cell.locator)
     return reading.ok &&
       reading.locator.kind === "page_rectangle" &&

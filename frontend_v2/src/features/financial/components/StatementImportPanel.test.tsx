@@ -26,6 +26,7 @@ import {
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { beforeEach, expect, it, vi } from "vitest"
 import { StatementImportPanel } from "./StatementImportPanel"
+import { TransactionSourceHighlight } from "./TransactionSourceHighlight"
 import { fetchAPI } from "@/lib/api-client"
 import { useStatementChecks } from "../hooks/use-statement-checks"
 vi.mock("../hooks/use-statement-checks", async (original) => ({
@@ -36,9 +37,9 @@ import { useStatementWorkspace } from "../stores/statement-workspace"
 import { useAuthStore } from "@/features/auth/hooks/use-auth"
 vi.mock("@/lib/api-client", () => ({ fetchAPI: vi.fn() }))
 vi.mock("./TransactionSourceHighlight", () => ({
-  TransactionSourceHighlight: () => (
+  TransactionSourceHighlight: vi.fn(() => (
     <div>Original PDF beside editable values</div>
-  ),
+  )),
 }))
 vi.mock("./PdfReviewIntake", () => ({ PdfReviewIntake: () => null }))
 const data = {
@@ -172,6 +173,101 @@ beforeEach(() => {
     }
     return data as never
   })
+})
+it("opens the parent payment editor when a wrapped money cell is selected", async () => {
+  const base = vi.mocked(fetchAPI).getMockImplementation()!
+  const locator = (rect: number[]) => ({
+    kind: "page_rectangle",
+    page: 1,
+    rect,
+    page_size: [600000, 800000],
+    units: "millipoints",
+    space: "pdf_displayed",
+  })
+  const moneyCells = [
+    {
+      column_index: 0,
+      expected_text: "125.00",
+      locator: locator([310000, 240000, 330000, 248000]),
+    },
+    {
+      column_index: 1,
+      expected_text: "125.00 balance",
+      locator: locator([350000, 240000, 370000, 248000]),
+    },
+  ]
+  const payment = {
+    ...data.rows[1],
+    fields: {
+      ...data.rows[1].fields,
+      statement_layout: "andrews-share-statement",
+    },
+    source_cells: [
+      {
+        column_index: 0,
+        expected_text: "2023-01-02",
+        locator: locator([15000, 228000, 45000, 236000]),
+      },
+    ],
+    value_sources: {
+      amount: {
+        page_number: 1,
+        table_index: 0,
+        row_index: 2,
+        source_cell: moneyCells[0],
+      },
+      balance: {
+        page_number: 1,
+        table_index: 0,
+        row_index: 2,
+        source_cell: moneyCells[1],
+      },
+    },
+  }
+  const proposal = {
+    ...structuredClone(data),
+    rows: [
+      data.rows[0],
+      payment,
+      {
+        id: "1:0:2",
+        page_number: 1,
+        table_index: 0,
+        row_index: 2,
+        source_cells: moneyCells,
+        fields: {
+          statement_layout: "andrews-share-statement",
+          parent_transaction_id: payment.id,
+        },
+        issues: [],
+        excluded: true,
+        kind: "continuation",
+      },
+    ],
+  }
+  vi.mocked(fetchAPI).mockImplementation(async (url, options) =>
+    String(url).includes("/statement-import/file?")
+      ? (proposal as never)
+      : base(url, options)
+  )
+  mount()
+  await open()
+  expect(
+    vi.mocked(TransactionSourceHighlight).mock.lastCall?.[0].locatorPayload
+  ).toEqual(locator([15000, 228000, 370000, 248000]))
+  fireEvent.click(
+    screen.getByRole("button", { name: "125.00 balance" })
+  )
+  expect(
+    vi.mocked(TransactionSourceHighlight).mock.lastCall?.[0].locatorPayload
+  ).toEqual(moneyCells[1].locator)
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Edit this row" })
+  )
+  expect(
+    screen.getByRole("region", { name: "Edit selected statement row" })
+  ).toBeTruthy()
+  cleanup()
 })
 it("imports completed Merrick years through the normal recorded correction request", async () => {
   const base = vi.mocked(fetchAPI).getMockImplementation()!

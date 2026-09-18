@@ -45,7 +45,93 @@ def selected(sources, share='0040'):
     return st, propose_andrews_statement([s for s in sources if (s['page_number'], s['table_index']) in keys], 'USD', st)
 
 
+def wrapped_vouchers():
+    data = source([
+        [(15, '06/01 ID 0040 FREE CHECKING Previous Balance'), (350, '100.00')],
+        [(15, '06/03'), (75, 'Recurring Withdrawal Adjustment Debit Card Credit Voucher 0.36'), (350, '100.36')],
+        [(75, 'EXAMPLE REFUND ONE')],
+        [(15, '06/04'), (75, 'Recurring Withdrawal Adjustment Debit Card Credit Voucher')],
+        [(310, '18. 61'), (350, '118.97')],
+        [(75, 'EXAMPLE REFUND TWO')],
+        [(15, '06/05'), (75, 'Withdrawal Debit Card'), (310, '-20.00'), (350, '98.97')],
+        [(15, '06/30'), (75, 'Ending Balance'), (350, '98.97')]])
+    # The long label reaches the amount column, just as in the scanned layout.
+    data['rows'][10]['cells'][1]['locator']['rect'][2] = 336000
+    data['rows'][12]['cells'][1]['locator']['rect'][2] = 315000
+    return data
+
+
 class AndrewsReaderTests(unittest.TestCase):
+    def test_long_vouchers_read_printed_money_without_changing_original_cells(self):
+        data = wrapped_vouchers()
+        before = deepcopy(data)
+        _, result = selected([data])
+        payments = [r for r in result['rows'] if not r['excluded']]
+        self.assertEqual([r['fields']['amount_minor'] for r in payments], ['36', '1861', '2000'])
+        self.assertEqual([r['fields']['balance'] for r in payments], ['10036', '11897', '9897'])
+        self.assertEqual([r['fields']['direction'] for r in payments], ['credit', 'credit', 'debit'])
+        self.assertFalse(any(r['issues'] for r in result['rows']))
+        self.assertNotIn('0.36', payments[0]['fields']['description'])
+        self.assertNotIn('18. 61', payments[1]['fields']['description'])
+        self.assertTrue(payments[1]['fields']['description'].endswith('EXAMPLE REFUND TWO'))
+        self.assertEqual(payments[1]['value_sources']['amount']['source_cell'], data['rows'][13]['cells'][0])
+        self.assertEqual(payments[1]['value_sources']['balance']['row_index'], 13)
+        self.assertNotIn('amount_column', payments[1]['fields'])
+        self.assertNotIn('balance_column', payments[1]['fields'])
+        child = next(r for r in result['rows'] if r['row_index'] == 13)
+        self.assertTrue(child['excluded'])
+        self.assertEqual(child['fields']['parent_transaction_id'], payments[1]['id'])
+        self.assertEqual(data, before)
+
+    def test_wrapped_voucher_requires_adjacent_money_cells_in_the_same_coordinate_space(self):
+        for kind in ('below', 'above', 'overlap', 'page', 'size', 'units', 'space', 'damaged', 'label', 'extra', 'left'):
+            data = wrapped_vouchers()
+            cells = data['rows'][13]['cells']
+            if kind == 'below':
+                for cell in cells: cell['locator']['rect'][1:4:2] = [400000, 408000]
+            elif kind == 'above':
+                for cell in cells: cell['locator']['rect'][1:4:2] = [220000, 228000]
+            elif kind == 'overlap': cells[0]['locator']['rect'][2] = 360000
+            elif kind == 'page': cells[0]['locator']['page'] = 2
+            elif kind == 'size': cells[0]['locator']['page_size'] = [600000, 900000]
+            elif kind == 'units': cells[0]['locator']['units'] = 'points'
+            elif kind == 'space': cells[0]['locator']['space'] = 'other'
+            elif kind == 'damaged': cells[0]['expected_text'] = 'I8.6I'
+            elif kind == 'label': data['rows'][12]['cells'][1]['expected_text'] = 'Deposit Reference'
+            elif kind == 'extra': cells.append(deepcopy(cells[0]))
+            elif kind == 'left': cells[0]['locator']['rect'][0] = 100000
+            with self.subTest(kind=kind):
+                _, result = selected([data])
+                payment = next(r for r in result['rows'] if r['row_index'] == 12)
+                self.assertNotIn('value_sources', payment)
+                self.assertNotIn('amount_minor', payment['fields'])
+                self.assertTrue(payment['issues'])
+
+    def test_merged_voucher_requires_exact_label_and_separate_printed_balance(self):
+        for kind in ('reference', 'unreadable', 'overlap', 'no_balance'):
+            data = wrapped_vouchers()
+            cells = data['rows'][10]['cells']
+            if kind == 'reference': cells[1]['expected_text'] = 'Deposit Reference 0.36'
+            elif kind == 'unreadable': cells[1]['expected_text'] = cells[1]['expected_text'].replace('0.36', 'O.36')
+            elif kind == 'overlap': cells[1]['locator']['rect'][2] = 355000
+            elif kind == 'no_balance': cells.pop()
+            with self.subTest(kind=kind):
+                _, result = selected([data])
+                payment = next(r for r in result['rows'] if r['row_index'] == 10)
+                self.assertNotIn('value_sources', payment)
+                self.assertNotIn('amount_minor', payment['fields'])
+                self.assertTrue(payment['issues'])
+
+    def test_wrapped_amount_never_changes_to_make_the_balance_match(self):
+        data = wrapped_vouchers()
+        data['rows'][13]['cells'][0]['expected_text'] = '19.61'
+        _, result = selected([data])
+        payment = next(r for r in result['rows'] if r['row_index'] == 12)
+        self.assertEqual(payment['fields']['amount_minor'], '1961')
+        self.assertEqual(payment['fields']['balance'], '11897')
+        self.assertEqual(payment['fields']['balance_difference_minor'], '-100')
+        self.assertEqual(payment['issues'], ['The running balance does not match this payment. Check the amount, balance or a missing row.'])
+
     def test_split_damaged_date_is_a_separate_payment_not_a_description_continuation(self):
         data = source([
             [(15,'06/01 ID 0040 FREE CHECKING Previous Balance'),(350,'100.00')],

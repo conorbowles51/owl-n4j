@@ -742,10 +742,14 @@ def confirm_statement_import(*, session_factory, case_id, evidence_file_id, requ
                     if row.excluded:
                         continue
                     original = originals[row.id]
-                    rectangles = [Locator.from_json(c['locator']).rectangle for c in original['source_cells']]
+                    source_cells = original['source_cells'] + [value['source_cell']
+                        for value in original.get('value_sources', {}).values()]
+                    rectangles = [Locator.from_json(c['locator']).rectangle for c in source_cells]
                     rectangles = [r for r in rectangles if r is not None]
                     locator = Locator(kind=LocatorKind.page_only, page_number=original['page_number'])
-                    if rectangles:
+                    if rectangles and all((r.page_number, r.page_width, r.page_height) ==
+                            (original['page_number'], rectangles[0].page_width, rectangles[0].page_height)
+                            for r in rectangles):
                         first = rectangles[0]
                         locator = Locator(kind=LocatorKind.page_rectangle, rectangle=SourceRectangle(
                             page_number=first.page_number, page_width=first.page_width, page_height=first.page_height,

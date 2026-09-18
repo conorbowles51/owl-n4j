@@ -55,6 +55,17 @@ const row = z.object({
   table_index: z.number(),
   row_index: z.number(),
   source_cells: z.array(cell),
+  value_sources: z
+    .record(
+      z.string(),
+      z.object({
+        page_number: z.number(),
+        table_index: z.number(),
+        row_index: z.number(),
+        source_cell: cell,
+      })
+    )
+    .optional(),
   fields: z.record(z.string(), z.string()),
   issues: z.array(z.string()),
   excluded: z.boolean(),
@@ -1405,6 +1416,7 @@ function EditableStatement({
     )
   }
   const balanceLocator = (original: z.infer<typeof row>) =>
+    original.value_sources?.balance?.source_cell.locator ??
     original.source_cells.find(
       (cell) => String(cell.column_index) === original.fields.balance_column
     )?.locator ?? { kind: "page_only", page: original.page_number }
@@ -2025,7 +2037,13 @@ function EditableStatement({
             <PrintedStatementTable
               selectedRowId={focus?.rowId}
               rows={data.rows.filter((row) => row.page_number === currentPage)}
-              onCell={(rowId, locator) => setFocus({ rowId, locator })}
+              onCell={(rowId, locator) =>
+                setFocus({
+                  rowId:
+                    originals.get(rowId)?.fields.parent_transaction_id || rowId,
+                  locator,
+                })
+              }
               onReviewRow={
                 canEdit && !data.current_import ? openInlineRow : undefined
               }
@@ -2466,7 +2484,9 @@ function EditableStatement({
                                 setFocus({
                                   rowId: r.id,
                                   locator:
-                                    original.fields.balance_column !== undefined
+                                    original.fields.balance_column !==
+                                      undefined ||
+                                    original.value_sources?.balance
                                       ? balanceLocator(original)
                                       : (original.source_cells[0]?.locator ?? {
                                           kind: "page_only",
