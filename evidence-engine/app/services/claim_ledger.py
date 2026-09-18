@@ -10,6 +10,11 @@ from app.pipeline.extract_entities import RawEntity, RawRelationship
 from app.models.job import EvidenceClaim
 
 
+# A claim binds 13 values. Keep each INSERT well below asyncpg's 32,767
+# parameter limit, regardless of how many observations a document produces.
+_CLAIM_INSERT_BATCH_SIZE = 1_000
+
+
 @dataclass(frozen=True)
 class GroundedClaim:
     id: str
@@ -298,32 +303,38 @@ def attach_claim_ids(
 
 
 async def persist_grounded_claims(db: Any, claims: list[GroundedClaim]) -> int:
-    """Append immutable claims, ignoring deterministic duplicates on retry."""
+    """Append all claims atomically in bounded writes; retries ignore duplicates.
+
+    The caller owns the commit. A savepoint rolls back every batch on failure,
+    even if the caller subsequently commits the job's failed status.
+    """
     if not claims:
         return 0
 
     from sqlalchemy.dialects.postgresql import insert
 
-    statement = insert(EvidenceClaim).values(
-        [
-            {
-                "id": claim.id,
-                "case_id": uuid.UUID(claim.case_id),
-                "evidence_file_id": uuid.UUID(claim.evidence_file_id),
-                "revision_id": claim.revision_id,
-                "engine_job_id": uuid.UUID(claim.engine_job_id),
-                "claim_type": claim.claim_type,
-                "subject_id": claim.subject_id,
-                "predicate": claim.predicate,
-                "object_value": claim.object_value,
-                "quote": claim.quote,
-                "source_location": claim.source_location,
-                "confidence": claim.confidence,
-                "status": claim.status,
-            }
-            for claim in claims
-        ]
-    )
-    statement = statement.on_conflict_do_nothing(index_elements=[EvidenceClaim.id])
-    await db.execute(statement)
+    async with db.begin_nested():
+        for offset in range(0, len(claims), _CLAIM_INSERT_BATCH_SIZE):
+            statement = insert(EvidenceClaim).values(
+                [
+                    {
+                        "id": claim.id,
+                        "case_id": uuid.UUID(claim.case_id),
+                        "evidence_file_id": uuid.UUID(claim.evidence_file_id),
+                        "revision_id": claim.revision_id,
+                        "engine_job_id": uuid.UUID(claim.engine_job_id),
+                        "claim_type": claim.claim_type,
+                        "subject_id": claim.subject_id,
+                        "predicate": claim.predicate,
+                        "object_value": claim.object_value,
+                        "quote": claim.quote,
+                        "source_location": claim.source_location,
+                        "confidence": claim.confidence,
+                        "status": claim.status,
+                    }
+                    for claim in claims[offset : offset + _CLAIM_INSERT_BATCH_SIZE]
+                ]
+            )
+            statement = statement.on_conflict_do_nothing(index_elements=[EvidenceClaim.id])
+            await db.execute(statement)
     return len(claims)
