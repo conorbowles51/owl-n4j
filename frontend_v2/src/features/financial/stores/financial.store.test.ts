@@ -15,8 +15,8 @@ describe("financial store, global display preferences", () => {
     useFinancialStore.getState().reset()
   })
 
-  it("starts on transactions", () => {
-    expect(useFinancialStore.getState().mainView).toBe("transactions")
+  it("starts on the investigation overview", () => {
+    expect(useFinancialStore.getState().mainView).toBe("overview")
   })
 
   it("holds a chosen tab for the visit", () => {
@@ -58,7 +58,7 @@ describe("financial store, global display preferences", () => {
       useFinancialStore.getState()
     )
 
-    expect(merged.mainView).toBe("transactions")
+    expect(merged.mainView).toBe("overview")
     expect(merged.pageSize).toBe(200)
     expect(merged.mode).toBe("transactions")
   })

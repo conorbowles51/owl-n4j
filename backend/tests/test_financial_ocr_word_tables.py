@@ -45,7 +45,8 @@ class OcrWordTableTests(unittest.TestCase):
         self.assertEqual(included[0]['fields']['date'], '2020-05-30')
         self.assertEqual(included[1]['fields']['description'], 'EXAMPLE SHOP')
         self.assertNotIn('date', included[2]['fields'])
-        self.assertTrue(included[2]['issues'])
+        self.assertEqual(included[2]['fields']['date_basis'], 'statement_end_ordering_only')
+        self.assertEqual(included[2]['issues'], [])
 
     def test_measured_words_preserve_text_and_displayed_page_locations(self):
         words=[(10,10,40,20,'Date'),(100,10,140,20,'Amount'),

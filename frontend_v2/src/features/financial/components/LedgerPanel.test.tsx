@@ -22,6 +22,9 @@ const useLedgerTransactions = vi.hoisted(() => vi.fn())
 vi.mock("../hooks/use-ledger-transactions", () => ({
   useLedgerTransactions,
 }))
+vi.mock("../hooks/use-financial-finding-index", () => ({
+  useFinancialFindingIndex: () => ({ data: [], isPending: false, isError: false }),
+}))
 
 function makeRow(
   overrides: Partial<LedgerTransaction> = {}

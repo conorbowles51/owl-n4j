@@ -165,7 +165,7 @@ it("focuses both graph and payments on a searched name and restores every connec
     target: { value: "b" },
   })
   expect(screen.getByRole("status")).toHaveTextContent(
-    "Showing 1 of 2 payments"
+    "1 of 2 payments match this view"
   )
   expect(
     screen.queryByRole("button", { name: "Source amount 2500" })
@@ -177,7 +177,7 @@ it("focuses both graph and payments on a searched name and restores every connec
   ).toBeInTheDocument()
   expect(screen.getByLabelText("Find an account or name")).toHaveValue("")
   expect(screen.getByRole("status")).toHaveTextContent(
-    "Showing 2 of 2 payments"
+    "2 of 2 payments match this view"
   )
 })
 
