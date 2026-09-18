@@ -371,7 +371,8 @@ export function InvestigatorFollowMoney({ caseId }: { caseId: string }) {
                       </strong>
                       <p>{pair.incoming.ordering_date}</p>
                       <p className="text-xs text-muted-foreground">
-                        {pair.incoming.counterparty_raw ||
+                        {pair.incoming.from_name ||
+                          pair.incoming.counterparty_raw ||
                           pair.incoming.description}
                       </p>
                     </td>
@@ -390,7 +391,8 @@ export function InvestigatorFollowMoney({ caseId }: { caseId: string }) {
                       </strong>
                       <p>{pair.outgoing.ordering_date}</p>
                       <p className="text-xs text-muted-foreground">
-                        {pair.outgoing.counterparty_raw ||
+                        {pair.outgoing.to_name ||
+                          pair.outgoing.counterparty_raw ||
                           pair.outgoing.description}
                       </p>
                     </td>

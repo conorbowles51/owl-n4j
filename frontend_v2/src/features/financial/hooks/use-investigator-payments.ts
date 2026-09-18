@@ -1,6 +1,8 @@
+import { usePaymentCategory, categoryName } from "./use-payment-categories"
 import { useLedgerTransactions } from "./use-ledger-transactions"
 import { useInvestigationScope } from "../stores/investigation-scope"
 export function useInvestigatorPayments(caseId: string) {
+  const [category] = usePaymentCategory(caseId)
   const [params, setParams] = useInvestigationScope(caseId)
   const query = useLedgerTransactions(caseId, params)
   const complete =
@@ -15,6 +17,10 @@ export function useInvestigatorPayments(caseId: string) {
     params,
     setParams,
     complete,
-    rows: complete ? query.data!.transactions : [],
+    rows: complete
+      ? query.data!.transactions.filter(
+          (row) => !category || categoryName(row) === category
+        )
+      : [],
   }
 }

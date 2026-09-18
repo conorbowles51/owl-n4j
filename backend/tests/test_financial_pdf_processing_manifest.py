@@ -18,6 +18,38 @@ def manifest():
 
 
 class ProcessingManifestTests(unittest.TestCase):
+    def test_engine_runtime_record_is_accepted_without_discarding_new_fingerprints(self):
+        import importlib.util
+        from pathlib import Path
+        from types import SimpleNamespace
+        path = Path(__file__).resolve().parents[2] / 'evidence-engine/app/pipeline/pdf_processing_manifest.py'
+        spec = importlib.util.spec_from_file_location('engine_manifest_contract', path)
+        producer = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(producer)
+        current = producer.capture_pdf_processing_manifest(
+            settings=SimpleNamespace(**manifest()['content']['settings']), ocr_used=False)
+        self.assertEqual(len(current['content']['source_files_sha256']), 6)
+        self.assertEqual(validate_pdf_processing_manifest(current), current)
+        f = grids.GridBindingTests(); f.setUp()
+        try:
+            f.text.processing_manifest = current; f.db.commit()
+            from services.financial.pdf_geometry_candidates import pdf_grid_source_revision
+            f.mapping['source_revision'] = pdf_grid_source_revision(f.db, case_id=f.case,
+                evidence_file_id=f.file, page_number=1)
+            self.assertEqual(bind_pdf_grid_mapping(f.db, case_id=f.case, proposal=f.mapping).processing_manifest, current)
+        finally:
+            f.tearDown()
+        for defect in ('changed-hash', 'missing-core', 'unknown-source', 'incomplete-inventory'):
+            changed = copy.deepcopy(current)
+            fingerprints = changed['content']['source_files_sha256']
+            if defect == 'changed-hash': fingerprints['financial_amount_ocr.py'] = 'b'*64
+            elif defect == 'missing-core': fingerprints.pop('pdf_extraction.py')
+            elif defect == 'unknown-source': fingerprints['other.py'] = 'c'*64
+            else: fingerprints.pop('financial_date_ocr.py')
+            if defect != 'changed-hash': changed['sha256'] = _digest(changed['content'])
+            with self.subTest(defect=defect), self.assertRaises(ValueError):
+                validate_pdf_processing_manifest(changed)
+
     def test_reading_method_is_retained_and_changes_cannot_reuse_the_digest(self):
         legacy = manifest()
         self.assertEqual(validate_pdf_processing_manifest(legacy), legacy)

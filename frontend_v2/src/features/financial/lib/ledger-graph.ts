@@ -30,6 +30,7 @@ export const postingGraph = z
         direction: z.enum(["credit", "debit"]),
         ordering_date: z.string(),
         description: z.string().nullable(),
+        category: z.string().optional(),
         proof_class: z.enum(["p0", "p1", "p2", "p3"]),
       })
     ),

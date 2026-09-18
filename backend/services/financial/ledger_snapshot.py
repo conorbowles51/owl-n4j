@@ -310,23 +310,23 @@ def render_ledger_report(snapshot):
                              if f['id'] == source.get('evidence_file_id')), 'Selected statement')
             parts += ['<p>Statement filter: ' + text(filename) + '</p>']
         parts += ['<h2>Exported table view</h2>', '<p>' + text(view['limitation']) + '</p>',
-            table(['Search', 'Currency', 'Direction', 'Proof class', 'Display order', 'Matching rows'], [[
-                view['filters']['search'] or 'None', view['filters']['currency'] or 'All',
+            table(['Search', 'Category', 'Currency', 'Direction', 'Proof class', 'Display order', 'Matching rows'], [[
+                view['filters']['search'] or 'None', view['filters'].get('category') or 'All', view['filters']['currency'] or 'All',
                 view['filters']['direction'] or 'Both', view['filters']['proof'] or 'All',
                 view['filters']['sort'], view['matching_rows']]]),
-            table(['Date', 'Description', 'Credit', 'Debit', 'Printed balance', 'Source reference'], [[
-                indexed[key]['ordering_date'], indexed[key]['description'],
+            table(['Date', 'Description', 'From', 'To', 'Category', 'Credit', 'Debit', 'Printed balance', 'Source reference'], [[
+                indexed[key]['ordering_date'], indexed[key]['description'], indexed[key].get('from_name', ''), indexed[key].get('to_name', ''), indexed[key].get('category') or 'Uncategorized',
                 money_display(indexed[key]['amount_minor'], indexed[key]['currency'], exact=False) if indexed[key]['direction'] == 'credit' else '',
                 money_display(indexed[key]['amount_minor'], indexed[key]['currency'], exact=False) if indexed[key]['direction'] == 'debit' else '',
                 money_display(indexed[key]['running_balance_minor'], indexed[key]['currency'], exact=False) if indexed[key]['running_balance_minor'] is not None else 'Not recorded',
-                indexed[key]['ref_id']] for key in view['row_ids']], widths=[13,27,14,14,14,18])]
+                indexed[key]['ref_id']] for key in view['row_ids']], widths=[9,19,10,10,10,11,11,10,10])]
     else:
         current = [reading['row'] for reading in ledger['readings']
                    if reading['exclusion_reason'] in (None, 'proof_class_not_included')]
         current.sort(key=lambda row: (row['ordering_date'], row['row_index'], row['key']))
         parts += ['<h2>Current transactions</h2>',
-            table(['Date', 'Description', 'Credit', 'Debit', 'Printed balance', 'Source reference'], [[
-                row['ordering_date'], row['description'],
+            table(['Date', 'Description', 'From', 'To', 'Category', 'Credit', 'Debit', 'Printed balance', 'Source reference'], [[
+                row['ordering_date'], row['description'], row.get('from_name', ''), row.get('to_name', ''), row.get('category') or 'Uncategorized',
                 money_display(row['amount_minor'], row['currency'], exact=False) if row['direction'] == 'credit' else '',
                 money_display(row['amount_minor'], row['currency'], exact=False) if row['direction'] == 'debit' else '',
                 money_display(row['running_balance_minor'], row['currency'], exact=False) if row['running_balance_minor'] is not None else 'Not recorded',

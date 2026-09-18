@@ -1,3 +1,4 @@
+import { PaymentCategoryFilter } from "./PaymentCategoryFilter"
 import "../financial-workspace.css"
 import { useUIStore } from "@/stores/ui.store"
 import { resetPaymentTableView } from "../lib/payment-table-draft"
@@ -583,6 +584,18 @@ function FinancialPageContent() {
               ? "Loading case…"
               : (caseId ?? "Choose a case")}
         </p>
+        {caseId &&
+          store.mode === "transactions" &&
+          [
+            "overview",
+            "transactions",
+            "counterparties",
+            "follow-money",
+            "trends",
+            "posting-graph",
+          ].includes(store.mainView) && (
+            <PaymentCategoryFilter caseId={caseId} />
+          )}
         <FinancialGuide />
       </div>
       <Tabs

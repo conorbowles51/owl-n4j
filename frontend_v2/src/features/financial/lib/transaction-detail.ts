@@ -2,6 +2,10 @@ import { z } from "zod"
 
 const minor = z.union([z.string().regex(/^-?\d+$/), z.number().int().safe()])
 export const transactionDetail = z.object({
+  category: z.string().optional(),
+  from_name: z.string().optional(),
+  to_name: z.string().optional(),
+  label_version: z.number().int().nonnegative().optional(),
   account_type: z.string().optional(),
   account_label: z.string().optional(),
   key: z.string(),

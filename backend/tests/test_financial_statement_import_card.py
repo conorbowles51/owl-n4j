@@ -76,6 +76,43 @@ def fee_source():
 
 
 class CardStatementImportTests(unittest.TestCase):
+    def test_rewards_box_date_is_information_not_an_extra_payment(self):
+        grid = summary_source()
+        extra = source([['Rewards Balance as of', '', '', ''],
+            ['03/22/2021', 'Track and redeem your rewards with our', '', ''],
+            ['$21.06', 'mobile app.'], ['Previous Balance', 'Earned', 'Redeemed'],
+            ['$17.11', '$3.95', '$0.00']])
+        for row in extra['rows']:
+            row['row_index'] += 100
+        grid['rows'].extend(extra['rows'])
+        original = deepcopy(grid)
+        result = propose_card_table(grid, 'USD', {})
+        reward = next(r for r in result['rows'] if r['row_index'] == 101)
+        self.assertTrue(reward['excluded'])
+        self.assertEqual(reward['kind'], 'statement_information')
+        self.assertFalse(reward['issues'])
+        self.assertEqual(grid, original)
+        self.assertEqual(reward['source_cells'], extra['rows'][1]['cells'])
+        # A detached phrase, an added amount or unrelated dated text cannot
+        # be discarded as the rewards box.
+        for change in ('no-heading', 'extra-amount', 'different-text'):
+            changed = deepcopy(grid)
+            if change == 'no-heading': changed['rows'][-5]['cells'][0]['expected_text'] = 'Other information'
+            elif change == 'extra-amount': changed['rows'][-4]['cells'].append(dict(column_index=2, expected_text='$50.00', locator={}))
+            else: changed['rows'][-4]['cells'][1]['expected_text'] = 'Unidentified payment'
+            checked = next(r for r in propose_card_table(changed, 'USD', {})['rows'] if r['row_index'] == 101)
+            self.assertFalse(checked['excluded'], change)
+            self.assertTrue(checked['issues'], change)
+
+    def test_payment_in_real_columns_is_not_excluded_by_rewards_wording(self):
+        grid = card_source()
+        grid['rows'][8]['cells'][1]['expected_text'] = 'Track and redeem your rewards with our'
+        grid['layout_context'] = statement_layout_context(grid['rows'])
+        row = propose_card_table(grid, 'USD', dict(period_start='2020-05-12',
+            period_end='2020-06-11', account_reference='****1234'))['rows'][8]
+        self.assertFalse(row['excluded'])
+        self.assertEqual(row['fields']['amount_minor'], '6162')
+
     def test_newer_fee_table_retains_both_printed_dates_and_excludes_totals(self):
         data = fee_source()
         before = deepcopy(data)

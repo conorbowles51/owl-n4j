@@ -138,9 +138,17 @@ class TransactionView:
     ordering_date_context: Optional[str] = None
     account_type: Optional[str] = None
     account_label: Optional[str] = None
+    category: str = ""
+    from_name: str = ""
+    to_name: str = ""
+    label_version: int = 0
 
     def to_json(self) -> dict[str, Any]:
         return {
+            "category": self.category,
+            "from_name": self.from_name,
+            "to_name": self.to_name,
+            "label_version": self.label_version,
             "key": self.key,
             "case_id": self.case_id,
             "account_id": self.account_id,
@@ -187,8 +195,10 @@ def to_view(row: FinancialTransaction, *, account=None) -> TransactionView:
     always a ``.value``, never an enum instance -- so there is nothing to
     unwrap here.
     """
+    from services.financial.payment_labels import payment_label_view
     account_type = account.account_type if account is not None and account.case_id == row.case_id else None
     return TransactionView(
+        **payment_label_view(row, account),
         account_type=account_type,
         account_label=(" · ".join(v for v in [account.holder_name, account.institution_name, account.identifier_as_printed] if v) if account is not None and account.case_id == row.case_id else None),
         key=str(row.id),

@@ -1,3 +1,4 @@
+import { chartRatio } from "../lib/investigator-workspace"
 import type { LedgerTransaction } from "../api"
 import { formatLedgerAmount } from "../lib/ledger-format"
 import { Button } from "@/components/ui/button"
@@ -55,6 +56,21 @@ export function PaymentTotals({
                 <dd className="font-semibold">
                   {formatLedgerAmount(String(amount), currency).text} {currency}
                 </dd>
+                {index < 2 && (
+                  <div
+                    role="img"
+                    aria-label={`${String(title)} compared with ${index === 0 ? "outgoing" : "incoming"} amounts`}
+                    className="mt-2 h-3 rounded bg-background/70"
+                  >
+                    <div
+                      className="h-full rounded"
+                      style={{
+                        width: `${chartRatio(BigInt(amount), total.credit > total.debit ? total.credit || 1n : total.debit || 1n) * 100}%`,
+                        backgroundColor: `var(--finance-${index === 0 ? "credit" : "debit"})`,
+                      }}
+                    />
+                  </div>
+                )}
               </div>
             ))}
           </dl>
@@ -123,6 +139,9 @@ export function InvestigationTransactionTable({
             </th>
             <th className="p-2">Date</th>
             <th className="p-2">Description</th>
+            <th className="p-2">From</th>
+            <th className="p-2">To</th>
+            <th className="p-2">Category</th>
             <th className="p-2 text-right">{cards ? "Credit" : "Money in"}</th>
             <th className="p-2 text-right">{cards ? "Debit" : "Money out"}</th>
             <th className="p-2 text-right">Balance</th>
@@ -213,6 +232,29 @@ export function InvestigationTransactionTable({
                     )}
                   </div>
                 )}
+              </td>
+              <td className="p-2 max-w-44 break-words">
+                {row.from_name ||
+                  (row.direction === "debit"
+                    ? row.account_label
+                    : row.counterparty_raw) ||
+                  "Not recorded"}
+              </td>
+              <td className="p-2 max-w-44 break-words">
+                {row.to_name ||
+                  (row.direction === "credit"
+                    ? row.account_label
+                    : row.counterparty_raw) ||
+                  "Not recorded"}
+              </td>
+              <td className="p-2">
+                <button
+                  className="finance-badge underline underline-offset-2 text-left"
+                  data-finance-tone="work"
+                  onClick={() => onOpen?.(row)}
+                >
+                  {row.category || "Uncategorized"}
+                </button>
               </td>
               <td
                 className="finance-amount p-2 text-right tabular-nums"

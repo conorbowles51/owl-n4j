@@ -1,3 +1,9 @@
+import { CategoryMoneyChart } from "./CategoryMoneyChart"
+import { PaymentLabelsEditor } from "./PaymentLabelsEditor"
+import {
+  usePaymentCategory,
+  categoryName,
+} from "../hooks/use-payment-categories"
 import { useFinancialFindingIndex } from "../hooks/use-financial-finding-index"
 import { ExportSelectedPayments } from "./ExportSelectedPayments"
 import { PaymentComparison } from "./PaymentComparison"
@@ -37,6 +43,8 @@ export function LedgerRowBrowser({
   exportContext?: { caseId: string; params: LedgerQueryParams }
 }) {
   const { canEdit } = useFinancialAccess()
+  const [category] = usePaymentCategory(exportContext?.caseId ?? "none")
+  const [editingLabels, setEditingLabels] = useState(false)
   const findings = useFinancialFindingIndex(
     investigation ? exportContext?.caseId : undefined
   )
@@ -95,6 +103,7 @@ export function LedgerRowBrowser({
   const rows = transactions.filter(
     (row) =>
       !invalidRange &&
+      (!category || categoryName(row) === category) &&
       (!sourceDocumentId || row.source_document_id === sourceDocumentId) &&
       (!importBatchId || batchSources.has(row.source_document_id)) &&
       (!minMinor ||
@@ -108,6 +117,9 @@ export function LedgerRowBrowser({
         [
           row.ordering_date,
           row.description,
+          row.from_name,
+          row.to_name,
+          row.category,
           row.counterparty_raw,
           row.bank_reference,
           row.ref_id,
@@ -352,6 +364,12 @@ export function LedgerRowBrowser({
       {investigation && exportContext && (
         <>
           <PaymentTotals rows={rows} label="Payments matching your filters" />
+          <details className="rounded border p-3">
+            <summary className="cursor-pointer font-medium">
+              Compare money by category
+            </summary>
+            <CategoryMoneyChart caseId={exportContext.caseId} rows={rows} />
+          </details>
           <div className="space-y-3">
             <div className="flex flex-wrap items-center gap-2">
               <span>{selection.length} payments selected</span>
@@ -384,6 +402,12 @@ export function LedgerRowBrowser({
                   </Button>
                   {canEdit && (
                     <>
+                      <Button
+                        variant="outline"
+                        onClick={() => setEditingLabels(true)}
+                      >
+                        Categorize selected
+                      </Button>
                       <Button onClick={() => setFinding("observation")}>
                         Create finding
                       </Button>
@@ -400,6 +424,13 @@ export function LedgerRowBrowser({
                     ids={selection}
                   />
                 </div>
+                {editingLabels && (
+                  <PaymentLabelsEditor
+                    caseId={exportContext.caseId}
+                    ids={selection}
+                    onClose={() => setEditingLabels(false)}
+                  />
+                )}
                 {compare && (
                   <PaymentComparison
                     caseId={exportContext.caseId}
@@ -513,6 +544,7 @@ export function LedgerRowBrowser({
             params={exportContext.params}
             tableView={{
               search,
+              ...(category ? { category } : {}),
               ...(sourceDocumentId
                 ? { source_document_id: sourceDocumentId }
                 : {}),

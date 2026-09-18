@@ -1,3 +1,4 @@
+import { CategoryMoneyChart } from "./CategoryMoneyChart"
 import { useInvestigatorPayments } from "../hooks/use-investigator-payments"
 import { useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
@@ -155,7 +156,9 @@ export function InvestigatorTrends({ caseId }: { caseId: string }) {
                   ? "Recorded balance over time"
                   : metric === "count"
                     ? "Number of payments over time"
-                    : "Money in and out over time"}
+                    : kind === "card"
+                      ? "Card charges and credits over time"
+                      : "Money in and out over time"}
               </h3>
               <p className="text-sm text-muted-foreground">
                 {first || "No dated payments"}
@@ -458,6 +461,7 @@ export function InvestigatorTrends({ caseId }: { caseId: string }) {
             </p>
           )}
         </div>
+        <CategoryMoneyChart caseId={caseId} rows={rows} />
         {selected && (
           <section className="rounded-xl border bg-card p-5 space-y-4">
             <div className="flex flex-wrap justify-between gap-3">

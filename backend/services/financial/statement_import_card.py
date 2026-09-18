@@ -12,6 +12,25 @@ from datetime import date
 from services.financial.statement_import_card_balances import summary_balances
 
 
+def _rewards_information(row, source):
+    """Recognise the dated help text inside the issuer's rewards box.
+
+    Only the date and fixed help wording may be present. A payment amount or
+    any other text keeps the row reviewable, as does missing rewards context.
+    Recognised transaction candidates take precedence over this helper.
+    """
+    texts = [' '.join(cell['expected_text'].split()) for cell in row['cells']]
+    joined = ' '.join(text for text in texts if text)
+    if not re.fullmatch(
+            r'(?:\d{1,2}/\d{1,2}/\d{4}\s+)?Track and redeem your rewards with our'
+            r'(?:\s+mobile app[.]?)?', joined, re.IGNORECASE):
+        return False
+    before = [r for r in source['rows'] if r['row_index'] < row['row_index']][-3:]
+    return any(re.fullmatch(r'Rewards Balance as of',
+        ' '.join(' '.join(c['expected_text'] for c in previous['cells']).split()), re.IGNORECASE)
+        for previous in before)
+
+
 def propose_card_table(source, currency, statement):
     balances, issues = summary_balances(source, currency)
     context = source.get('layout_context')
@@ -110,7 +129,7 @@ def propose_card_table(source, currency, statement):
         elif row['row_index'] in (context or {}).get('unresolved_rows', []):
             item.update(kind='unresolved', excluded=False)
             item['issues'].append('A payment line has a missing or unreadable field. Compare this row with the PDF and enter the missing values.')
-        elif any(re.fullmatch(r'(?:\d{4}-\d{2}-\d{2}|\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?|[A-Za-z]{3,9}\.?\s+\d{1,2}(?:,?\s+\d{4})?)', text) for text in texts):
+        elif not _rewards_information(row, source) and any(re.fullmatch(r'(?:\d{4}-\d{2}-\d{2}|\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?|[A-Za-z]{3,9}\.?\s+\d{1,2}(?:,?\s+\d{4})?)', text) for text in texts):
             item.update(kind='unresolved', excluded=False)
             item['issues'].append('This dated row was not recognised in a transaction section. Check it against the PDF.')
         result.append(item)

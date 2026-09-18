@@ -1,3 +1,4 @@
+import { PaymentLabelsEditor } from "./PaymentLabelsEditor"
 import { useLedgerTransactions } from "../hooks/use-ledger-transactions"
 import { useMediaQuery } from "@/hooks/use-media-query"
 import { useState, type ReactNode } from "react"
@@ -116,6 +117,7 @@ export function PaymentSet({
     `investigation-source:${title}`,
     null
   )
+  const [editingLabels, setEditingLabels] = useState(false)
   const [comparison, setComparison] = useState(false)
   const [finding, setFinding] = useState(false)
   const [requestedPage, setPage] = useFinancialDraft(
@@ -149,6 +151,15 @@ export function PaymentSet({
           >
             Compare {ids.length} payments
           </Button>
+          {canEdit && (
+            <Button
+              variant="outline"
+              disabled={!ids.length}
+              onClick={() => setEditingLabels(true)}
+            >
+              Categorize {ids.length} payments
+            </Button>
+          )}
           {canEdit && (
             <Button disabled={!ids.length} onClick={() => setFinding(true)}>
               Create finding
@@ -212,6 +223,13 @@ export function PaymentSet({
           />
         )}
       </div>
+      {editingLabels && (
+        <PaymentLabelsEditor
+          caseId={caseId}
+          ids={ids}
+          onClose={() => setEditingLabels(false)}
+        />
+      )}
       {comparison && (
         <PaymentComparison
           caseId={caseId}

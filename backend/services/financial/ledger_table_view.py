@@ -6,6 +6,7 @@ from services.financial.ledger_summary import LedgerSummaryError
 class LedgerTableView(BaseModel):
     model_config = ConfigDict(extra='forbid', strict=True)
     search: Annotated[str, Field(max_length=256)] = ''
+    category: Annotated[str, Field(max_length=120)] = ''
     source_document_id: Annotated[str, Field(pattern=r'^$|^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')] = ''
     import_batch_id: Annotated[str, Field(pattern=r'^$|^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')] = ''
     import_batch_revision: Annotated[str, Field(pattern=r'^$|^[a-f0-9]{64}$')] = ''
@@ -50,12 +51,14 @@ def capture_table_view(ledger, request, *, batch_scope=None):
             continue
         if batch_sources is not None and row.get('source_document_id') not in batch_sources:
             continue
+        if view.category and (row.get('category') or 'Uncategorized') != view.category:
+            continue
         if view.currency and row['currency'] != view.currency or view.direction and row['direction'] != view.direction or view.proof and row['proof_class'] != view.proof:
             continue
         if view.minimum_minor and int(row['amount_minor']) < int(view.minimum_minor) or view.maximum_minor and int(row['amount_minor']) > int(view.maximum_minor):
             continue
         if query and not any(isinstance(row.get(k), str) and query in row[k].lower() for k in (
-                'description','counterparty_raw','bank_reference','ref_id','key','account_id','source_document_id')):
+                'description','from_name','to_name','category','counterparty_raw','bank_reference','ref_id','key','account_id','source_document_id')):
             continue
         rows.append(row)
     rows.sort(key=lambda r: (r['ordering_date'], r['row_index'], r['key']))
@@ -65,7 +68,7 @@ def capture_table_view(ledger, request, *, batch_scope=None):
         if len({r['currency'] for r in rows}) > 1:
             raise LedgerSummaryError('Choose one currency before exporting an amount-sorted table.')
         rows.sort(key=lambda r: int(r['amount_minor']), reverse=view.sort == 'amount-desc')
-    result = dict(schema='loupe.financial.ledger_table_view/1',filters=view.model_dump(exclude={key for key in ('source_document_id', 'import_batch_id', 'import_batch_revision') if not getattr(view, key)}),
+    result = dict(schema='loupe.financial.ledger_table_view/1',filters=view.model_dump(exclude={key for key in ('category', 'source_document_id', 'import_batch_id', 'import_batch_revision') if not getattr(view, key)}),
         row_ids=[r['key'] for r in rows],matching_rows=len(rows),
         limitation='Admitted ledger rows matching the recorded table filters, in display order, captured at export time. Display order does not establish bank sequence. The enclosing snapshot retains the full applied account/date scope and its history; its totals apply to that full scope. Source eligibility and proof classes are unchanged. All matching rows are included, not just the visible page.')
     if batch_sources is not None:

@@ -1,4 +1,5 @@
 export interface LedgerTableView {
+  category?: string
   source_document_id?: string
   import_batch_id?: string
   import_batch_revision?: string

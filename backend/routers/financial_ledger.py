@@ -1292,3 +1292,13 @@ def read_source_custody(file_id: UUID, case_id: UUID = Query(...), db: Session =
         return source_custody(db, case_id=case_id, file_id=file_id)
     except CandidateStoreError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+@router.get("/ledger-categories")
+def get_ledger_categories(case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    from sqlalchemy import select
+    from postgres.models.financial import FinancialTransaction
+    category = FinancialTransaction.metadata_['investigation_labels']['category'].as_string()
+    values = db.scalars(select(category).where(FinancialTransaction.case_id == case_id,
+        FinancialTransaction.ledger_status == 'admitted', category.is_not(None), category != '').distinct())
+    return dict(case_id=str(case_id), categories=sorted(values))

@@ -41,6 +41,9 @@ export function paymentProfiles(rows: LedgerTransaction[]): PaymentProfile[] {
     { name: string; kind: "account" | "name"; rows: LedgerTransaction[] }
   >()
   for (const row of rows) {
+    const counterparty =
+      (row.direction === "credit" ? row.from_name : row.to_name) ||
+      row.counterparty_raw
     for (const [id, name, kind] of [
       [
         `account:${row.account_id}`,
@@ -48,10 +51,8 @@ export function paymentProfiles(rows: LedgerTransaction[]): PaymentProfile[] {
         "account",
       ],
       [
-        `name:${row.counterparty_raw ?? ""}`,
-        row.counterparty_raw?.trim()
-          ? row.counterparty_raw
-          : "Name not recorded",
+        `name:${counterparty ?? ""}`,
+        counterparty?.trim() ? counterparty : "Name not recorded",
         "name",
       ],
     ] as const) {

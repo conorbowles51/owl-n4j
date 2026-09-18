@@ -209,6 +209,10 @@ export type QuarantineReason = (typeof QUARANTINE_REASONS)[number]
  * one of these fields reaches a component through that module.
  */
 export interface LedgerTransaction {
+  category?: string
+  from_name?: string
+  to_name?: string
+  label_version?: number
   account_type?: string
   account_label?: string
   key: string
@@ -272,6 +276,10 @@ export interface LedgerTransaction {
  * declare fails to compile; the test closes the other direction.
  */
 export const LEDGER_TRANSACTION_FIELDS: readonly (keyof LedgerTransaction)[] = [
+  "category",
+  "from_name",
+  "to_name",
+  "label_version",
   "key",
   "case_id",
   "account_id",

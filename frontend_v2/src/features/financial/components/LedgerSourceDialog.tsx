@@ -1,3 +1,4 @@
+import { PaymentLabelsEditor } from "./PaymentLabelsEditor"
 import { NearbyPaymentSearch } from "./NearbyPaymentSearch"
 import { useFinancialFindingIndex } from "../hooks/use-financial-finding-index"
 import { useFinancialAccess } from "../hooks/use-financial-access"
@@ -50,6 +51,7 @@ export function LedgerSourceDialog({
   const [replacement, setReplacement] = useState<string | null>(null)
   const [viewFile, setViewFile] = useState(false)
   const [assessAmount, setAssessAmount] = useState(false)
+  const [editingLabels, setEditingLabels] = useState(false)
   const [correcting, setCorrecting] = useState(false)
   const source = useQuery({
     queryKey: ["ledger-source", caseId, transactionId],
@@ -208,10 +210,12 @@ export function LedgerSourceDialog({
                     </dd>
                   </div>
                   <div>
-                    <dt>Paid by / paid to</dt>
-                    <dd>
-                      {data.transaction.counterparty_raw || "Not recorded"}
-                    </dd>
+                    <dt>From</dt>
+                    <dd>{data.transaction.from_name || "Not recorded"}</dd>
+                    <dt>To</dt>
+                    <dd>{data.transaction.to_name || "Not recorded"}</dd>
+                    <dt>Category</dt>
+                    <dd>{data.transaction.category || "Uncategorized"}</dd>
                   </div>
                   <div>
                     <dt>Bank reference</dt>
@@ -245,6 +249,25 @@ export function LedgerSourceDialog({
                       Exclude from totals
                     </Button>
                   )}
+                {canEdit &&
+                  data.ledger_status === "admitted" &&
+                  !data.superseded_by_id && (
+                    <Button
+                      variant="outline"
+                      onClick={() => setEditingLabels(true)}
+                    >
+                      Edit names and category
+                    </Button>
+                  )}
+                {editingLabels && (
+                  <PaymentLabelsEditor
+                    key={transactionId}
+                    caseId={caseId}
+                    ids={[transactionId]}
+                    names
+                    onClose={() => setEditingLabels(false)}
+                  />
+                )}
                 {canEdit && !correcting && (
                   <Button
                     variant="outline"

@@ -17,7 +17,7 @@ def ledger_posting_graph(export, *, population='working'):
     readings = [r for r in ledger['readings'] if (r['exclusion_reason'] in (None, 'proof_class_not_included') if population == 'working' else r['included'])]
     nodes, edges = {}, []
     for reading in readings:
-        row = reading['row']; account = row['account_id']; label = row['counterparty_raw']
+        row = reading['row']; account = row['account_id']; label = row.get('from_name' if row['direction'] == 'credit' else 'to_name') or row['counterparty_raw']
         if label is not None and not isinstance(label, str): raise LedgerSummaryError('A source counterparty label is invalid.')
         account_key = 'account:' + account
         account_details = reading.get('account', {})
@@ -30,7 +30,7 @@ def ledger_posting_graph(export, *, population='working'):
         edges.append(dict(id=row['key'], source=source, target=target, transaction_id=row['key'],
             source_document_id=row['source_document_id'], currency=row['currency'], amount_minor=row['amount_minor'],
             direction=row['direction'], ordering_date=row['ordering_date'], description=row['description'],
-            proof_class=row['proof_class']))
+            proof_class=row['proof_class'], category=row.get('category', '')))
     return dict(case_id=ledger['case_id'], account_id=ledger['account_id'], start_date=ledger['start_date'], end_date=ledger['end_date'],
         population=population, snapshot_sha256=export.snapshot.sha256, applied=False,
         nodes=sorted(nodes.values(), key=lambda n:n['id']), edges=edges, currencies=totals['currencies'], excluded_rows=totals['excluded_rows'],

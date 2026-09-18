@@ -607,3 +607,20 @@ Expected result: recognised information stays available without adding review ta
 4. Compare a row whose additional date is invalid or later than the first date. That row should still need attention. A missing minus sign, unreadable amount or balance difference must also remain flagged even when both dates are readable.
 
 Expected result: ordinary extra date text does not require repetitive approval, and unrelated payment errors remain visible.
+
+## Check categories, From and To, and money charts
+
+Use an artificial case with at least two incoming and two outgoing payments. Include more than 50 payments to check table paging. If testing card statements, expect **Card credits** and **Card charges** instead of bank money in and out.
+
+1. In **Transactions**, tick two payments. Select **Categorize selected**, type **Team test**, and save. Both rows should show that category.
+2. Select one payment's description, then **Edit names and category**. Change its From or To name and save. The source PDF and original description should stay available.
+3. Refresh the page. The category and edited name should remain.
+4. Choose **Team test** in Category at the top. Only that category should contribute to the transaction totals and chart.
+5. Open **Trends**. The selected category should remain active. Check its incoming and outgoing amounts against the two payments. Open its category name under **Money by category** to inspect the supporting payments.
+6. Choose **All categories**. Compare category amounts and check that different currencies and credit cards are shown separately.
+7. Open **People & businesses**. The edited name should be present. Open the profile and one of its transactions.
+8. Open **More financial tools**, then **Payment graph**. Select the person or business and use **Edit this person or business name**. Save and check the same payment back in Transactions.
+9. Select payments and use **Export selected**. Check From, To and Category in the CSV. Use **Download these transactions** to check the filtered report as well.
+10. Select every matching payment in a list with more than 50 rows. Assign a category, go to the next page and confirm those payments were included. The count should represent the whole selection, not just the visible page.
+11. With two editors open on the same payment, save a change in one and try to save the older edit in the other. The older edit should be rejected without overwriting the first person's work.
+12. Sign in as a user who can view but cannot edit the case. Categories and names should be visible, but saving changes should not be offered.

@@ -33,6 +33,53 @@ Step-by-step instructions for reviewing financial records, investigating payment
 25. [Words used in Loupe](#words-used-in-loupe)
 26. [Advanced manual review](#advanced-manual-review)
 
+## Categorize imported transactions and edit From and To
+
+Categories help you group payments for your investigation. For example, use **Travel**, **Repayments** or a name specific to your case. Your category and names are saved with the transaction. The original description, amounts and PDF are kept.
+
+### Assign a category to several payments
+
+1. Open **Transactions**. Search or filter until you can see the payments you want.
+2. Tick the payments, or select **Select all [number] matching payments**. This selects all matches, including later pages.
+3. Select **Categorize selected**.
+4. In **Category**, choose a suggested name or type your own.
+5. Check the number of selected transactions, then select **Save changes**. If some selected payments are hidden by your filters, they are included too. Use **Review selected payments** first if you need to check the selection.
+6. The category now appears in the transaction table. Refreshing or returning later keeps it.
+
+### Edit a single payment's names or category
+
+1. Select its description in the transaction table to open **Transaction details**.
+2. Select **Edit names and category**.
+3. Enter **From**, **To** or **Category**, then select **Save changes**. Only fields you change are updated.
+4. Leave Category empty to remove it. Clearing an edited name restores the name available from the original reading and account details. **Not recorded** means no name is available; it does not identify the other party.
+5. To correct a date or amount, select **Correct a value** instead. Compare the value with the PDF and follow that correction form.
+
+For a bank payment, **From** identifies the sender and **To** identifies the recipient. For a credit card, these names follow the charge or credit recorded on the card account. Card charges and credits are labelled separately from money moving into or out of a bank account.
+
+![Categories, From and To, and editing controls beside an imported transaction.](images/44-payment-categories.png)
+
+### Use categories during investigation
+
+1. Choose **Category** at the top of Financial. **All categories** restores the full category scope; **Uncategorized** shows payments without an assigned category.
+2. The choice follows you through **Overview**, **Transactions**, **People & businesses**, **Follow money**, **Trends** and **Payment graph**. Account and date filters still apply.
+3. In **Trends**, the calendar chart shows the chosen category over time. Choose **All categories** to return to the combined chart.
+4. Under **Money by category**, compare incoming and outgoing amounts. Currencies and credit cards are kept separate. Select a category name to open its payments. Use **Use this category across financial views** to apply that category filter.
+5. In **Transactions**, open **Compare money by category** for the same comparison using the current table filters.
+6. When a payment list is opened from an investigation view, select payments and use **Categorize [number] payments**. With nothing selected, that button applies to all payments in that particular list; its count tells you how many.
+7. Selected-payment CSV downloads and transaction reports include **From**, **To** and **Category**. The detailed download also retains the history of label edits.
+
+![Trends for a selected category, with incoming and outgoing amounts.](images/45-category-trends.png)
+
+### Edit a name from the payment graph
+
+1. Open **More financial tools**, then **Payment graph** and **Show connections**.
+2. Select a person or business node, or choose its name in **Choose an account or name**.
+3. Select **Edit this person or business name**. Enter the name and check how many payments will change.
+4. Select **Save changes**. The graph, transaction names and People & businesses use the saved name. This changes the name for those payments; it does not declare that two case entities are the same person.
+5. Use **Categorize these [number] payments** to give the displayed payments a category.
+
+If another person has changed a selected transaction before you save, Loupe refuses the whole edit. Close the editor, reload the selection and check the current values before trying again. A failed save keeps your typed values visible until you close it.
+
 ## Start here
 
 ### Open this guide while working

@@ -497,4 +497,20 @@
 <li>Confirm the import and open its original source. Both printed dates must remain available. The extra date must not be labelled as a value date or posting date without source support.</li>
 <li>Compare a row whose additional date is invalid or later than the first date. That row should still need attention. A missing minus sign, unreadable amount or balance difference must also remain flagged even when both dates are readable.</li>
 </ol>
-<p>Expected result: ordinary extra date text does not require repetitive approval, and unrelated payment errors remain visible.</p></main></html>
+<p>Expected result: ordinary extra date text does not require repetitive approval, and unrelated payment errors remain visible.</p>
+<h2 id="check-categories-from-and-to-and-money-charts">Check categories, From and To, and money charts</h2>
+<p>Use an artificial case with at least two incoming and two outgoing payments. Include more than 50 payments to check table paging. If testing card statements, expect <strong>Card credits</strong> and <strong>Card charges</strong> instead of bank money in and out.</p>
+<ol>
+<li>In <strong>Transactions</strong>, tick two payments. Select <strong>Categorize selected</strong>, type <strong>Team test</strong>, and save. Both rows should show that category.</li>
+<li>Select one payment&#x27;s description, then <strong>Edit names and category</strong>. Change its From or To name and save. The source PDF and original description should stay available.</li>
+<li>Refresh the page. The category and edited name should remain.</li>
+<li>Choose <strong>Team test</strong> in Category at the top. Only that category should contribute to the transaction totals and chart.</li>
+<li>Open <strong>Trends</strong>. The selected category should remain active. Check its incoming and outgoing amounts against the two payments. Open its category name under <strong>Money by category</strong> to inspect the supporting payments.</li>
+<li>Choose <strong>All categories</strong>. Compare category amounts and check that different currencies and credit cards are shown separately.</li>
+<li>Open <strong>People &amp; businesses</strong>. The edited name should be present. Open the profile and one of its transactions.</li>
+<li>Open <strong>More financial tools</strong>, then <strong>Payment graph</strong>. Select the person or business and use <strong>Edit this person or business name</strong>. Save and check the same payment back in Transactions.</li>
+<li>Select payments and use <strong>Export selected</strong>. Check From, To and Category in the CSV. Use <strong>Download these transactions</strong> to check the filtered report as well.</li>
+<li>Select every matching payment in a list with more than 50 rows. Assign a category, go to the next page and confirm those payments were included. The count should represent the whole selection, not just the visible page.</li>
+<li>With two editors open on the same payment, save a change in one and try to save the older edit in the other. The older edit should be rejected without overwriting the first person&#x27;s work.</li>
+<li>Sign in as a user who can view but cannot edit the case. Categories and names should be visible, but saving changes should not be offered.</li>
+</ol></main></html>

@@ -7,6 +7,12 @@ from pydantic import BaseModel, ConfigDict, Field
 
 Text = Annotated[str, Field(strict=True,min_length=1,max_length=2048)]
 Digest = Annotated[str, Field(strict=True,pattern=r'^[a-f0-9]{64}$')]
+SourceName = Literal['pdf_extraction.py', 'ocr_geometry.py', 'pdf_processing_manifest.py',
+    'financial_date_ocr.py', 'financial_transaction_date_ocr.py', 'financial_amount_ocr.py']
+_BASE_SOURCES = {'pdf_extraction.py', 'ocr_geometry.py', 'pdf_processing_manifest.py'}
+_SOURCE_INVENTORIES = tuple(_BASE_SOURCES | set(additions) for additions in (
+    (), ('financial_date_ocr.py',), ('financial_date_ocr.py', 'financial_amount_ocr.py'),
+    ('financial_date_ocr.py', 'financial_transaction_date_ocr.py', 'financial_amount_ocr.py')))
 
 class _Settings(BaseModel):
     model_config=ConfigDict(extra='forbid',strict=True)
@@ -29,7 +35,7 @@ class _Content(BaseModel):
     recorded_at:Text
     python_version:Text
     packages:dict[Literal['PyMuPDF','pytesseract','Pillow'],Text|None]
-    source_files_sha256:dict[Literal['pdf_extraction.py','ocr_geometry.py','pdf_processing_manifest.py'],Digest|None]
+    source_files_sha256:dict[SourceName,Digest|None]
     tesseract:_Tesseract
     settings:_Settings
     limitation:Text
@@ -40,7 +46,7 @@ def validate_pdf_processing_manifest(value):
     if not isinstance(value,dict) or set(value)!={'content','sha256'}:
         raise ValueError('Malformed PDF processing record.')
     content=_Content.model_validate(value['content'])
-    if set(content.packages)!={'PyMuPDF','pytesseract','Pillow'} or set(content.source_files_sha256)!={'pdf_extraction.py','ocr_geometry.py','pdf_processing_manifest.py'}:
+    if set(content.packages)!={'PyMuPDF','pytesseract','Pillow'} or set(content.source_files_sha256) not in _SOURCE_INVENTORIES:
         raise ValueError('Incomplete PDF processing record inventory.')
     if (content.tesseract.status=='reported') != (content.tesseract.version is not None):
         raise ValueError('Inconsistent OCR version record.')

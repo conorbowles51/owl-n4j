@@ -1,3 +1,9 @@
+import {
+  usePaymentCategory,
+  categoryName,
+} from "../hooks/use-payment-categories"
+import { PaymentLabelsEditor } from "./PaymentLabelsEditor"
+import { useFinancialAccess } from "../hooks/use-financial-access"
 import { lazy, Suspense, useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
@@ -64,6 +70,9 @@ function GraphScope({
   params: LedgerQueryParams
   population: "working" | "verified"
 }) {
+  const [category] = usePaymentCategory(caseId)
+  const { canEdit } = useFinancialAccess()
+  const [editing, setEditing] = useState<"name" | "category" | null>(null)
   const [connectionPage, setConnectionPage] = useState(0)
   const [connectionIds, setConnectionIds] = useState<string[] | null>(null)
   const [opened, setOpened] = useState(false),
@@ -109,7 +118,9 @@ function GraphScope({
   const focusedGraph = useMemo(() => {
     if (!query.data) return null
     const edges = query.data.edges.filter(
-      (edge) => !node || edge.source === node || edge.target === node
+      (edge) =>
+        (!node || edge.source === node || edge.target === node) &&
+        (!category || categoryName(edge) === category)
     )
     const connected = new Set(
       edges.flatMap((edge) => [edge.source, edge.target])
@@ -118,7 +129,7 @@ function GraphScope({
       nodes: query.data.nodes.filter((item) => connected.has(item.id)),
       edges,
     }
-  }, [query.data, node])
+  }, [query.data, node, category])
   const edges = focusedGraph?.edges ?? []
   const connections = useMemo(
     () => paymentConnections(focusedGraph?.edges ?? []),
@@ -229,6 +240,37 @@ function GraphScope({
                   </Button>
                 )}
               </div>
+              {canEdit && edges.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {query.data.nodes.find((item) => item.id === node)?.kind ===
+                    "source_label" && (
+                    <Button
+                      variant="outline"
+                      onClick={() => setEditing("name")}
+                    >
+                      Edit this person or business name
+                    </Button>
+                  )}
+                  <Button
+                    variant="outline"
+                    onClick={() => setEditing("category")}
+                  >
+                    Categorize these {edges.length} payments
+                  </Button>
+                </div>
+              )}
+              {editing && (
+                <PaymentLabelsEditor
+                  key={JSON.stringify([editing, node, category])}
+                  caseId={caseId}
+                  ids={edges.map((edge) => edge.transaction_id)}
+                  counterparty={editing === "name"}
+                  onClose={() => {
+                    setEditing(null)
+                    setNode("")
+                  }}
+                />
+              )}
               {search.trim() && matchingNodes.length === 0 && (
                 <p>
                   No account or name matches this search. Change or clear the
@@ -236,9 +278,9 @@ function GraphScope({
                 </p>
               )}
               <p role="status">
-                {edges.length} of {query.data.edges.length} payments
-                match this view. Repeated payments share an arrow. Every payment
-                is available in the list below.
+                {edges.length} of {query.data.edges.length} payments match this
+                view. Repeated payments share an arrow. Every payment is
+                available in the list below.
               </p>
               {connections.length > 250 && (
                 <div className="flex flex-wrap items-center gap-2">
