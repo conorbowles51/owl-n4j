@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from uuid import UUID
 from sqlalchemy import select
 from postgres.models.evidence import EvidenceFile
+from postgres.models.financial import FinancialSourceDocument
 from postgres.models.financial_import_batches import FinancialImportBatch, FinancialImportBatchItem
 from services.financial.pdf_candidates import PdfMappingError, _digest
 
@@ -56,6 +57,26 @@ def saved_ancestor_reviews(session, file):
             add(previous, saved, 'Statement review', key)
         for saved in reversed(metadata.get('financial_review_history', [])):
             add(previous, saved, 'Earlier statement review')
+        # Late corrections are separate from the immutable import request.
+        # Keep them available for explicit comparison with a fresh extraction.
+        sources = session.scalars(select(FinancialSourceDocument).where(
+            FinancialSourceDocument.case_id == file.case_id,
+            FinancialSourceDocument.evidence_file_id == previous.id)
+            .order_by(FinancialSourceDocument.id))
+        for source in sources:
+            imported = source.metadata_ or {}
+            corrected = [r for r in imported.get('statement_incomplete_records', [])
+                         if r.get('correction')]
+            if not corrected or not imported.get('statement_import_request'):
+                continue
+            request = deepcopy(imported['statement_import_request'])
+            corrections = {r['id']: r['correction'] for r in corrected}
+            request['rows'] = [corrections.get(r['id'], r) for r in request['rows']]
+            latest = max(corrected, key=lambda r: r.get('corrected_at', ''))
+            currencies = sorted({r['correction_currency'] for r in corrected})
+            add(previous, dict(request=request, saved_at=latest.get('corrected_at'),
+                saved_by=dict(user_id=latest.get('corrected_by'))),
+                f"Corrected imported records ({', '.join(currencies)})")
         items = session.execute(select(FinancialImportBatchItem, FinancialImportBatch)
             .join(FinancialImportBatch, FinancialImportBatch.id == FinancialImportBatchItem.batch_id)
             .where(FinancialImportBatchItem.file_id == previous.id,

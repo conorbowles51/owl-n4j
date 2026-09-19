@@ -61,14 +61,17 @@ def initial_request(proposal):
 
 
 def assess(proposal, request=None):
-    """Ready means the same request can pass the existing single-import validator."""
+    """Checks stay visible; import availability reflects structural validity."""
     problems = []
+    can_import = True
     raw = request or initial_request(proposal)
     rows = proposal['rows']
     current = proposal.get('current_import')
     if proposal.get('document_review'):
+        can_import = False
         problems.append(dict(message='This is a receipt or payment document. Open its document review.', row_id=None))
     if proposal.get('reading_failure'):
+        can_import = False
         problems.append(dict(message=proposal['reading_failure'], row_id=None))
     recovery = proposal.get('review_recovery')
     if recovery and recovery['required'] and not recovery['acknowledged']:
@@ -79,6 +82,7 @@ def assess(proposal, request=None):
         validated = StatementImportRequest.model_validate(raw)
         check_import_request(proposal, validated)
     except (ValidationError, PdfMappingError) as error:
+        can_import = False
         if isinstance(error, ValidationError):
             for issue in error.errors(include_url=False, include_input=False)[:30]:
                 path = issue['loc']
@@ -108,6 +112,11 @@ def assess(proposal, request=None):
         if row['issues'] and not edit.get('reason','').strip():
             problems.append(dict(message=' '.join(row['issues']),row_id=row['id'],page=row['page_number']))
     balance = check_proposed_rows(proposal, raw['rows'])
+    if can_import:
+        from services.financial.import_issues import retained_issues
+        for issue in retained_issues(proposal, validated):
+            if not any(p.get('row_id') == issue.get('row_id') and p['message'] == issue['message'] for p in problems):
+                problems.append(issue)
     if not accepted_difference(balance, raw):
         problems.extend(arithmetic_problems(balance))
     # One link per affected row, with all explanations beside it.
@@ -124,14 +133,17 @@ def assess(proposal, request=None):
     summary = dict(revision=proposal['revision'], page_number=min((r.get('page_number', 1) for r in rows if not r['excluded']), default=min(proposal.get('page_numbers') or [1])), transaction_count=sum(not r['excluded'] for r in raw['rows']), currency=proposal['currency'],
         holder=raw.get('holder',''), institution=raw.get('institution',''), account=raw.get('account_number',''), period_start=raw.get('period_start',''),period_end=raw.get('period_end',''),
         balance_status=balance['balance_status'], checks=balance['checks'],
-        balance_exception=accepted_difference(balance, raw), problems=problems[:50], problem_count=len(problems))
+        can_import=can_import, balance_exception=accepted_difference(balance, raw), problems=problems[:50], problem_count=len(problems))
     if current:
-        summary.update(transaction_count=current['transaction_count'], problems=[], problem_count=0,
+        retained = current.get('issues', problems)
+        summary.update(transaction_count=current['transaction_count'], record_count=current.get('record_count', current['transaction_count']),
+            incomplete_count=current.get('incomplete_count', 0), problems=retained[:50], problem_count=len(retained), can_import=False,
             source_document_id=current['source_document_id'], account_id=current['account_id'])
         return 'imported', summary
     if proposal.get('assignment_only'):
         remaining = [row for row in rows if row['kind'] in ('transaction', 'unresolved')]
         summary['assignment_only'] = True
+        summary['can_import'] = False
         summary['account'] = 'Unassigned payments · main account ' + proposal.get('printed_main_account', '')
         if not remaining:
             summary.update(transaction_count=0, problems=[], problem_count=0)
@@ -198,9 +210,13 @@ def prepare_reviews(session, batch, file):
     session.commit()
 
 
+def import_available(item):
+    return item.status in ('ready', 'attention') and item.summary.get('can_import', item.status == 'ready')
+
+
 def ready_revision(items):
     return _digest(sorted((str(i.id),i.summary['revision'],_digest(i.review_request or {}),
-                          (i.summary.get('coverage_review') or {}).get('revision')) for i in items if i.status=='ready'))
+                          (i.summary.get('coverage_review') or {}).get('revision')) for i in items if import_available(i)))
 
 
 def checked_batch_items(session, case_id, items):
@@ -210,11 +226,27 @@ def checked_batch_items(session, case_id, items):
         .join(EvidenceFile, EvidenceFile.id == Item.file_id).where(Batch.case_id == case_id,
         EvidenceFile.case_id == case_id, Item.status.in_(('ready','attention','pending_import')))).all()
     sources, prepared = comparison_sources(session, case_id, pending)
+    cache = {}
+    from postgres.models.financial import FinancialSourceDocument
+    imported_ids = [UUID(i.summary['source_document_id']) for i in items
+                    if i.status == 'imported' and i.summary.get('source_document_id')]
+    retained = {str(source_id): (issues or [], records or []) for source_id, issues, records in session.execute(
+        select(FinancialSourceDocument.id, FinancialSourceDocument.metadata_['statement_import_issues'],
+               FinancialSourceDocument.metadata_['statement_incomplete_records']).where(
+            FinancialSourceDocument.case_id == case_id, FinancialSourceDocument.id.in_(imported_ids)))} if imported_ids else {}
     result = []
     for item in items:
         summary = deepcopy(item.summary)
         state = item.status
         if state in ('ready', 'attention'):
+            if 'can_import' not in summary:
+                try:
+                    proposal = read_statement_import(session, case_id=case_id, evidence_file_id=item.file_id,
+                        currency=summary.get('currency') or None, statement_id=item.statement_key or None, _cache=cache)
+                    state, assessment = assess(proposal, item.review_request)
+                    summary.update(assessment)
+                except PdfMappingError as error:
+                    summary.update(can_import=False, problems=[dict(message=str(error), row_id=None)], problem_count=1)
             raw = {**prepared.get(item.id, item.review_request or summary_request(summary)), 'statement_id': item.statement_key or None}
             review = coverage_review(session, case_id=case_id, file_id=item.file_id, request=raw, sources=sources)
             problems = [p for p in summary.get('problems', []) if p.get('kind') not in ('coverage', 'coverage_load')]
@@ -223,9 +255,15 @@ def checked_batch_items(session, case_id, items):
                 problems.append(dict(kind='coverage_load', row_id=None, message=raw['_coverage_error']))
             if requires_decision(review, raw):
                 problems.append(dict(kind='coverage', row_id=None,
-                    message='Another statement covers some of these dates. Compare the files before importing both.'))
+                    message='Another statement covers some of these dates. You can compare their payments now or after importing.'))
             summary.update(coverage_review=review, problems=problems, problem_count=len(problems) + extra_count)
             state = 'attention' if problems else 'ready'
+        if state == 'imported' and summary.get('source_document_id') in retained:
+            issues, records = retained[summary['source_document_id']]
+            unresolved = sum(not r.get('resolved_transaction_id') for r in records)
+            previous = summary.get('incomplete_count', unresolved)
+            summary.update(problems=issues[:50], problem_count=len(issues), incomplete_count=unresolved,
+                transaction_count=summary.get('transaction_count', 0) + previous - unresolved)
         summary['disposition_revision'] = _digest(dict(status=item.status, request=item.review_request,
             decision=item.summary.get('import_decision')))
         result.append(SimpleNamespace(id=item.id, file_id=item.file_id, statement_key=item.statement_key,
@@ -243,7 +281,7 @@ def next_problem(session, *, case_id, batch_id, item_id, direction="next"):
     ordered = items[index+1:] + items[:index]
     if direction == 'previous':
         ordered.reverse()
-    remaining = [i for i in ordered if i.status == 'attention']
+    remaining = [i for i in ordered if i.summary.get('problem_count', 0) and i.status != 'skipped']
     following = remaining[0] if remaining else None
     return dict(case_id=str(case_id), batch_id=str(batch_id), remaining=len(remaining),
         item_id=str(following.id) if following else None,
@@ -255,9 +293,12 @@ def batch_status(session, *, case_id, batch_id, offset=0, limit=100, only_proble
     items=list(session.scalars(select(Item).where(Item.batch_id==batch.id).order_by(Item.file_id,Item.statement_key)))
     items=checked_batch_items(session, case_id, items)
     items.sort(key=lambda i: (i.summary.get('filename',''),i.summary.get('account',''),i.summary.get('period_start',''),str(i.id)))
-    shown=[i for i in items if not only_problems or i.status=='attention']
+    shown=[i for i in items if not only_problems or i.summary.get('problem_count', 0)]
     counts={state:sum(i.status==state for i in items) for state in ('ready','attention','pending_import','imported','skipped','assigned')}
     return dict(id=str(batch.id),case_id=str(case_id),status=batch.status,files=batch.files,counts=counts,
+        available_statements=sum(import_available(i) for i in items),
+        available_records=sum(i.summary.get('transaction_count', 0) for i in items if import_available(i)),
+        issues_count=sum(i.summary.get('problem_count', 0) for i in items if i.status != 'skipped'),
         ready_transactions=sum(i.summary.get('transaction_count',0) for i in items if i.status=='ready'),
         ready_revision=ready_revision(items),total=len(shown),offset=offset,
         items=[dict(id=str(i.id),file_id=str(i.file_id),statement_id=i.statement_key or None,status=i.status,**i.summary) for i in shown[offset:offset+limit]])
@@ -280,8 +321,7 @@ def save_review(session, *, case_id, batch_id, item_id, request, expected_review
     proposal=read_statement_import(session,case_id=case_id,evidence_file_id=item.file_id,currency=request.currency,statement_id=request.statement_id)
     if request.expected_revision != proposal['revision']:
         raise PdfMappingError('The saved reading changed. Reopen this statement before saving corrections.', 409)
-    # Incomplete edits can be saved. Only the strict assessment can mark them
-    # ready for import; source rows and manual page references remain intact.
+    # Save incomplete edits without discarding their source rows or page references.
     check_proposed_rows(proposal, [r.model_dump() for r in request.rows])
     status,summary=assess(proposal,request.model_dump(mode='json'))
     summary.update(filename=item.summary['filename'],source_id=item.summary['source_id'])
@@ -298,12 +338,13 @@ def queue_import(session, *, case_id,batch_id,expected_revision,actor):
     items=list(session.scalars(select(Item).where(Item.batch_id==batch.id).with_for_update()))
     checked=checked_batch_items(session, case_id, items)
     if ready_revision(checked)!=expected_revision: raise PdfMappingError('The ready statements changed. Refresh the batch before confirming.',409)
-    ready_ids={i.id for i in checked if i.status=='ready'}
+    ready_ids={i.id for i in checked if import_available(i)}
     ready=[i for i in items if i.id in ready_ids]
-    if not ready: raise PdfMappingError('There are no ready statements to import.',422)
+    if not ready: raise PdfMappingError('There are no new statement records available to import.',422)
     for item in ready:
         item.status='pending_import'
-        item.summary={**item.summary,'import_actor':dict(name=actor.name,email=actor.email,user_id=str(actor.user_id))}
+        checked_summary = next(i.summary for i in checked if i.id == item.id)
+        item.summary={**checked_summary,'import_actor':dict(name=actor.name,email=actor.email,user_id=str(actor.user_id))}
     batch.status='preparing'
     session.commit()
     return dict(queued=len(ready))
@@ -444,11 +485,14 @@ def _import_item(factory,case_id,batch_id,item_id,resolve_path):
             request=StatementImportRequest.model_validate(raw)
             actor=item.summary['import_actor'];actor=Actor(**{**actor,'user_id':UUID(actor['user_id'])})
             receipt=confirm_statement_import(session_factory=factory,case_id=case_id,evidence_file_id=item.file_id,request=request,actor=actor,resolve_path=resolve_path)
-            item.status='imported';item.summary={**item.summary,'transaction_count':receipt['transaction_count'],'problems':[],
+            retained = receipt.get('issues', item.summary.get('problems', []))
+            item.status='imported';item.summary={**item.summary,'transaction_count':receipt['transaction_count'],
+                'record_count':receipt.get('record_count', receipt['transaction_count']),
+                'incomplete_count':receipt.get('incomplete_count', 0), 'problems':retained[:50], 'problem_count':len(retained), 'can_import':False,
                 'source_document_id':receipt['source_document_id'],'account_id':receipt['account_id']}
         except Exception as error:
             log.exception('Financial batch import failed')
-            item.status='attention';item.summary={**item.summary,'problems':[dict(message=str(error) if isinstance(error,PdfMappingError) else 'Import could not be confirmed. Open this statement to check its current import before retrying.',row_id=None)]}
+            item.status='attention';item.summary={**item.summary,'problem_count':1, 'problems':[dict(message=str(error) if isinstance(error,PdfMappingError) else 'Import could not be confirmed. Open this statement to check its current import before retrying.',row_id=None)]}
         db.commit()
 
 

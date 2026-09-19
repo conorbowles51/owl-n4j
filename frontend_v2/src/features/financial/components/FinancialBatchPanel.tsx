@@ -27,6 +27,10 @@ const itemSchema = z.object({
   period_start: z.string().optional(),
   period_end: z.string().optional(),
   transaction_count: z.number(),
+  record_count: z.number().optional(),
+  incomplete_count: z.number().optional(),
+  problem_count: z.number().optional(),
+  can_import: z.boolean().optional(),
   balance_status: z.string().optional(),
   balance_exception: z.boolean().optional(),
   source_id: z.string(),
@@ -41,7 +45,7 @@ const itemSchema = z.object({
     z.object({
       message: z.string(),
       row_id: z.string().nullish(),
-      page: z.number().optional(),
+      page: z.number().nullish(),
     })
   ),
 })
@@ -59,6 +63,9 @@ const batchSchema = z.object({
     })
   ),
   counts: z.record(z.string(), z.number()),
+  available_statements: z.number().optional(),
+  available_records: z.number().optional(),
+  issues_count: z.number().optional(),
   ready_transactions: z.number(),
   ready_revision: z.string(),
   total: z.number(),
@@ -253,7 +260,9 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
       </div>
     )
   const batch = query.data
-  const problems = batch.counts.attention || 0
+  const problems = batch.issues_count ?? batch.counts.attention ?? 0
+  const available = batch.available_statements ?? batch.counts.ready ?? 0
+  const availableRecords = batch.available_records ?? batch.ready_transactions
   return (
     <section aria-label="Financial processing batch" className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -289,12 +298,12 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
             "Files checked",
             `${batch.files.filter((f) => f.status === "checked").length} of ${batch.files.length}`,
           ],
-          ["Ready to import", batch.counts.ready || 0],
-          ["Need attention", problems],
+          ["Available to import", available],
+          ["Issues to check", problems],
           ["Imported", batch.counts.imported || 0],
         ].map(([title, value]) => (
           <div
-            className={`rounded border p-3 ${title === "Need attention" && problems ? "border-amber-400 bg-amber-50/60 dark:bg-amber-950/20" : "bg-card"}`}
+            className={`rounded border p-3 ${title === "Issues to check" && problems ? "border-amber-400 bg-amber-50/60 dark:bg-amber-950/20" : "bg-card"}`}
             key={title}
           >
             <p className="text-sm text-muted-foreground">{title}</p>
@@ -321,22 +330,21 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
       <div className="rounded border bg-card p-4 flex flex-wrap gap-3 items-center justify-between">
         <div>
           <p className="font-medium">
-            {batch.counts.ready || 0}{" "}
-            {batch.counts.ready === 1 ? "statement" : "statements"} ready ·{" "}
-            {batch.ready_transactions} transactions
+            {available} {available === 1 ? "statement" : "statements"} available
+            · {availableRecords} records
           </p>
           <p className="text-sm text-muted-foreground">
-            Only ready statements are included. Statements needing attention
-            stay here for correction.
+            Import now and return to any issues later. Incomplete records and
+            their originals are retained; unreadable values stay out of totals.
           </p>
         </div>
         <Button
-          disabled={!canEdit || !batch.counts.ready || confirm.isPending}
+          disabled={!canEdit || !available || confirm.isPending}
           onClick={() => confirm.mutate()}
         >
           {confirm.isPending
             ? "Confirming…"
-            : `Import ${batch.counts.ready || 0} ready ${batch.counts.ready === 1 ? "statement" : "statements"}`}
+            : `Import ${availableRecords} records`}
         </Button>
       </div>
       {(confirm.isError || error) && (
@@ -426,7 +434,7 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
               setOffset(0)
             }}
           />{" "}
-          Show statements needing attention only
+          Show statements with issues only
         </label>
         <Button
           size="sm"
@@ -456,11 +464,18 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
                     .join(" · ")}
                 </p>
                 <p className="text-sm">
-                  {labels[item.status] ?? item.status}
+                  {item.can_import
+                    ? "Available to import"
+                    : (labels[item.status] ?? item.status)}
+                  {!!(item.problem_count ?? item.problems.length) &&
+                    ` · ${item.problem_count ?? item.problems.length} issues`}
                   {item.status !== "assigned" && (
                     <>
                       {" "}
-                      · {item.transaction_count} transactions {item.currency}
+                      · {item.record_count ??
+                        item.transaction_count} records {item.currency}
+                      {!!item.incomplete_count &&
+                        ` · ${item.incomplete_count} with missing values`}
                     </>
                   )}
                 </p>

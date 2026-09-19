@@ -119,7 +119,7 @@ class BatchImportTests(TestCase):
         before=self.status(batch)
         with f.SessionLocal() as db:
             original=db.scalar(select(Item).where(Item.batch_id==batch))
-            flagged=Item(id=uuid4(),batch_id=batch,file_id=f.file.id,statement_key='other-period',status='attention',summary={**original.summary,'period_start':'2024-01-01','period_end':'2024-12-31','problems':[{'message':'Check an amount.','row_id':'1:0:1'}]})
+            flagged=Item(id=uuid4(),batch_id=batch,file_id=f.file.id,statement_key='other-period',status='attention',summary={**original.summary,'period_start':'2024-01-01','period_end':'2024-12-31','can_import':False,'problems':[{'message':'Check an amount.','row_id':'1:0:1'}]})
             db.add(flagged);db.commit()
             # An unrelated attention item does not alter the approved ready list.
             service.queue_import(db,case_id=f.case.id,batch_id=batch,expected_revision=before['ready_revision'],actor=f.actor)
@@ -184,7 +184,7 @@ class BatchImportTests(TestCase):
             saved=db.get(Item, UUID(item['id']))
             self.assertEqual(saved.review_request['holder'], '')
             self.assertEqual(result['review_revision'], service._digest(saved.review_request))
-            with self.assertRaisesRegex(PdfMappingError, 'no ready statements'):
+            with self.assertRaisesRegex(PdfMappingError, 'no new statement records'):
                 service.queue_import(db, case_id=f.case.id, batch_id=batch,
                     expected_revision=service.ready_revision([saved]), actor=f.actor)
         restored=service.initial_request(f.preview())

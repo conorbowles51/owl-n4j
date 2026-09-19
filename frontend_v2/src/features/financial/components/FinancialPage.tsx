@@ -718,7 +718,8 @@ function FinancialPageContent() {
             <div hidden={!reviewingAccounts}>
               {importReceipt &&
                 importReceipt.case_id === caseId &&
-                importReceipt.transaction_count === 0 && (
+                (importReceipt.record_count ??
+                  importReceipt.transaction_count) === 0 && (
                   <p role="status" className="rounded border p-3 my-3">
                     {importReceipt.account_closed_on
                       ? `Recorded the account closure on ${importReceipt.account_closed_on} from `
@@ -762,7 +763,10 @@ function FinancialPageContent() {
                       if (caseId) resetPaymentTableView(caseId, scope, result)
                       applyInvestigationScope(scope)
                       store.setMode("transactions")
-                      if (result?.transaction_count === 0) {
+                      if (
+                        (result?.record_count ?? result?.transaction_count) ===
+                        0
+                      ) {
                         setAccountReviewCase(caseId ?? null)
                         store.setMainView("statements")
                       } else {
@@ -932,17 +936,22 @@ function FinancialPageContent() {
             </header>
             {importReceipt &&
               importReceipt.case_id === caseId &&
-              importReceipt.transaction_count > 0 && (
+              (importReceipt.record_count ?? importReceipt.transaction_count) >
+                0 && (
                 <section
                   role="status"
                   className="rounded border border-primary/30 bg-primary/5 p-3 space-y-2"
                 >
                   <p>
                     <strong>
-                      {importReceipt.transaction_count} imported transactions
+                      {importReceipt.record_count ??
+                        importReceipt.transaction_count}{" "}
+                      imported records
                     </strong>{" "}
                     from {importReceipt.filename || "your statement"}. Showing
                     this statement’s payments.
+                    {!!importReceipt.incomplete_count &&
+                      ` ${importReceipt.incomplete_count} records have missing values and are kept outside totals.`}
                   </p>
                   <div className="flex gap-2">
                     {importReceipt.account_id && (

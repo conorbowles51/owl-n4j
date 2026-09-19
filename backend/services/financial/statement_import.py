@@ -11,10 +11,13 @@ MAX_STATEMENT_REVIEW_ROWS = 100000
 
 
 def _imported_account_id(session, source_document_id):
-    from postgres.models.financial import FinancialStatementPeriod
+    from postgres.models.financial import FinancialStatementPeriod, FinancialSourceDocument
     accounts = list(session.scalars(select(FinancialStatementPeriod.account_id).where(
         FinancialStatementPeriod.source_document_id == source_document_id).distinct().limit(2)))
-    return str(accounts[0]) if len(accounts) == 1 else None
+    if len(accounts) == 1:
+        return str(accounts[0])
+    document = session.get(FinancialSourceDocument, source_document_id)
+    return (document.metadata_ or {}).get('statement_account_id') if document else None
 
 
 def _check_review_size(rows):
@@ -64,7 +67,9 @@ def _reading_dates(fields, reviewed_date, date_values=None):
     # The editable date keeps the meaning of the first populated source date.
     primary = _primary_date_role(fields)
     names = {'date': 'transaction_date', 'booking_date': 'posted_date', 'value_date': 'value_date'}
-    result = {names[key]: date.fromisoformat(value) for key, value in fields.items() if key in names and value}
+    # An edited additional date replaces its unreadable original before parsing.
+    values = {**fields, **(date_values or {})}
+    result = {names[key]: date.fromisoformat(value) for key, value in values.items() if key in names and value and key != primary}
     result[names[primary]] = date.fromisoformat(reviewed_date)
     for key, value in (date_values or {}).items():
         if value:
@@ -372,6 +377,9 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
                  excluded=bool(row.get('excluded')), reason=row['reason'])
             for row in recorded_review.get('rows', []) if row.get('reason')]
         current_import['details_reason'] = recorded_review.get('details_reason', '')
+        current_import['issues'] = (current.metadata_ or {}).get('statement_import_issues', [])
+        current_import['incomplete_count'] = sum(not r.get('resolved_transaction_id') for r in (current.metadata_ or {}).get('statement_incomplete_records', []))
+        current_import['record_count'] = current_import['transaction_count'] + current_import['incomplete_count']
         current_import['excluded_as_duplicate'] = excluded_copy is not None
         if excluded_copy is not None:
             retained = session.scalar(select(FinancialSourceDocument).where(
@@ -498,9 +506,8 @@ class StatementReviewDraft(_Contract):
 
 
 class StatementImportRequest(StatementReviewDraft):
-    account_number: Annotated[str, Field(min_length=1, max_length=128)]
-    holder: Annotated[str, Field(min_length=1, max_length=128)]
-    rows: Annotated[list[ImportRow], Field(min_length=1, max_length=MAX_STATEMENT_REVIEW_ROWS)]
+    currency: Annotated[str, Field(pattern=r'^(?:[A-Z]{3})?$')]
+    rows: Annotated[list[DraftImportRow], Field(min_length=1, max_length=MAX_STATEMENT_REVIEW_ROWS)]
 
     @model_validator(mode='after')
     def distinct_rows(self):
@@ -512,16 +519,6 @@ class StatementImportRequest(StatementReviewDraft):
             raise ValueError('A replacement must identify the current imported version.')
         if self.replaces_source_document_id and not self.details_reason.strip():
             raise ValueError('Explain why the reprocessed version should replace the current import.')
-        if bool(self.period_start) != bool(self.period_end):
-            raise ValueError('Both statement period dates are required together.')
-        if self.period_start:
-            for value in (self.period_start, self.period_end):
-                if date.fromisoformat(value).isoformat() != value:
-                    raise ValueError('Statement period dates must be full dates.')
-            if self.period_start > self.period_end:
-                raise ValueError('Statement period runs backwards.')
-        if not self.holder.strip() or not self.account_number.strip():
-            raise ValueError('Check the account details.')
         return self
 
 
@@ -566,8 +563,8 @@ def check_import_request(proposal, request):
         original = originals[row.id]
         fields = original['fields']
         originally_undated = fields.get('date_basis') == 'statement_end_ordering_only'
-        if row.date_unprinted and (not originally_undated or (not row.excluded and not request.period_end)):
-            raise PdfMappingError('Only a recognised undated statement charge with a complete statement period can be imported without a transaction date.', 422)
+        if row.date_unprinted and (not originally_undated or bool(row.date)):
+            raise PdfMappingError('Only a recognised undated statement charge can be marked as having no printed date.', 422)
         additional_roles = set(_date_roles(fields)) - {_primary_date_role(fields)}
         if not set(row.date_values) <= additional_roles:
             raise PdfMappingError('Only separately identified source dates can be corrected here. Reload the statement.', 422)
@@ -584,11 +581,11 @@ def check_import_request(proposal, request):
             row.date != (fields.get('date') or fields.get('booking_date') or fields.get('value_date') or '')
             or row.description != fields.get('description', '')
             or row.counterparty != fields.get('counterparty', '')
-            or row.amount_minor != fields.get('amount_minor')
+            or row.amount_minor != (fields.get('amount_minor') or '')
             or row.direction != fields.get('direction'))) or row.balance_minor != fields.get('balance')
         changed = changed or any(value != fields.get(key, '') for key, value in row.date_values.items())
         changed = changed or (not row.excluded and row.date_unprinted != originally_undated)
-        if (changed or original['issues']) and not row.reason.strip():
+        if changed and not row.reason.strip():
             raise PdfMappingError(f"Explain the correction or decision for row {row.id}.", 422)
     return originals
 
@@ -656,8 +653,15 @@ def confirm_statement_import(*, session_factory, case_id, evidence_file_id, requ
                 replacing = None
                 if existing is not None:
                     if _same_import_request(existing, request, request_hash):
-                        imported_count = sum(not row['excluded'] for row in existing.metadata_['statement_import_request']['rows'])
-                        return dict(case_id=str(case_id), evidence_file_id=str(evidence_file_id), source_document_id=str(existing.id), account_id=_imported_account_id(session, existing.id), transaction_count=imported_count, account_closed_on=((existing.metadata_.get('statement_import_original', {}).get('metadata', {}).get('account_closure')) or {}).get('date'), created=False, applied=True)
+                        from sqlalchemy import func
+                        imported_count = session.scalar(select(func.count()).select_from(FinancialTransaction).where(
+                            FinancialTransaction.source_document_id == existing.id, FinancialTransaction.ledger_status == 'admitted'))
+                        incomplete_count = sum(not r.get('resolved_transaction_id') for r in existing.metadata_.get('statement_incomplete_records', []))
+                        return dict(case_id=str(case_id), evidence_file_id=str(evidence_file_id), source_document_id=str(existing.id),
+                            account_id=_imported_account_id(session, existing.id), transaction_count=imported_count,
+                            record_count=imported_count + incomplete_count, incomplete_count=incomplete_count,
+                            issues=existing.metadata_.get('statement_import_issues', []),
+                            account_closed_on=((existing.metadata_.get('statement_import_original', {}).get('metadata', {}).get('account_closure')) or {}).get('date'), created=False, applied=True)
                     from services.financial.duplicate_decisions import duplicate_revision
                     parent = (file.metadata_ or {}).get('statement_parent_evidence_id')
                     root = (file.metadata_ or {}).get('statement_root_evidence_id')
@@ -676,14 +680,15 @@ def confirm_statement_import(*, session_factory, case_id, evidence_file_id, requ
                 elif request.replaces_source_document_id is not None:
                     raise PdfMappingError('The import selected for replacement is no longer current.', 409)
                 originals = check_import_request(proposal, request)
-                from services.financial.statement_import_overlap import require_coverage_decision
-                require_coverage_decision(session, case_id=case_id, file_id=evidence_file_id,
-                                          request=request.model_dump(mode='json'))
-                from services.financial.review_arithmetic import check_proposed_rows, arithmetic_problems, accepted_difference
+                from services.financial.statement_import_overlap import coverage_review, requires_decision
+                coverage = coverage_review(session, case_id=case_id, file_id=evidence_file_id,
+                                           request=request.model_dump(mode='json'))
+                coverage['requires_review'] = requires_decision(coverage, request.model_dump(mode='json'))
+                from services.financial.review_arithmetic import check_proposed_rows
                 arithmetic = check_proposed_rows(proposal, [r.model_dump() for r in request.rows])
-                problems = arithmetic_problems(arithmetic)
-                if problems and not accepted_difference(arithmetic, request.model_dump()):
-                    raise PdfMappingError(problems[0]['message'] + ' Check the difference against the PDF, then correct it or record why it remains.', 422)
+                from services.financial.import_issues import incomplete_records, retained_issues, calendar_date, usable_currency
+                incomplete = incomplete_records(proposal, request)
+                issues = retained_issues(proposal, request, arithmetic=arithmetic, coverage=coverage)
                 path = resolve_path(file.stored_path)
                 if path is None or not path.is_file() or path.stat().st_size > 256 * 1024 * 1024:
                     raise PdfMappingError('The original statement is unavailable for verification.', 409)
@@ -701,7 +706,7 @@ def confirm_statement_import(*, session_factory, case_id, evidence_file_id, requ
                 account_fields = dict(institution_name=request.institution or None,
                     identifier_as_printed=request.account_number, holder_name=request.holder,
                     account_type=proposal['metadata'].get('account_type'),
-                    currency=request.currency, metadata=dict(display_label=request.holder + ' · ' + request.account_number,
+                    currency=request.currency or None, metadata=dict(display_label=' · '.join(filter(None, [request.holder, request.account_number])) or file.original_filename,
                         statement_source_file_id=str(evidence_file_id)))
                 try:
                     account_draft = AccountDraft.observed(**account_fields)
@@ -718,57 +723,45 @@ def confirm_statement_import(*, session_factory, case_id, evidence_file_id, requ
                     parser_name=VERSION, parser_version='1', metadata=dict(
                         statement_import_statement_id=request.statement_id,
                         statement_import_request_sha256=request_hash, statement_import_request=request.model_dump(mode='json'),
-                        statement_import_original=proposal, statement_import_original_sha256=_digest(proposal), coverage='all_prepared_rows_reviewed',
+                        statement_import_original=proposal, statement_import_original_sha256=_digest(proposal), coverage='all_prepared_rows_imported',
+                        statement_account_id=str(account.id), statement_import_issues=issues,
+                        statement_incomplete_records=incomplete, statement_import_checks=arithmetic,
                         whole_document_extraction_verified=False)))
                 from services.financial.periods import StatementPeriodDraft, PeriodBounds, BalanceObservation, record_statement_period
                 from services.financial.money import Money
                 balance_sign = -1 if proposal['metadata'].get('balance_convention') == 'liability_owed' else 1
-                bounds = PeriodBounds.printed(date.fromisoformat(request.period_start), date.fromisoformat(request.period_end)) if request.period_start else PeriodBounds()
+                start, end = calendar_date(request.period_start), calendar_date(request.period_end)
+                bounds = PeriodBounds.printed(start, end) if start and end and start <= end else PeriodBounds()
+                from services.financial.import_issues import usable_balance
+                convention = proposal['metadata'].get('balance_convention')
                 openings = [row for row in request.rows if row.excluded and originals[row.id]['kind'] == 'balance'
-                    and 'opening' in originals[row.id]['fields'].get('description', '').lower() and row.balance_minor is not None]
-                opening = BalanceObservation.printed(Money(balance_sign * int(openings[0].balance_minor), request.currency)) if len(openings) == 1 else BalanceObservation.absent()
+                    and 'opening' in originals[row.id]['fields'].get('description', '').lower() and usable_balance(row.balance_minor, convention)]
+                currency = usable_currency(request.currency)
+                opening = BalanceObservation.printed(Money(balance_sign * int(openings[0].balance_minor), currency)) if len(openings) == 1 and currency else BalanceObservation.absent()
                 closings = [row for row in request.rows if row.excluded and originals[row.id]['kind'] == 'balance'
                     and originals[row.id]['fields'].get('description', '').strip().lower() == 'closing balance'
-                    and row.balance_minor is not None]
-                closing = BalanceObservation.printed(Money(balance_sign * int(closings[0].balance_minor), request.currency)) if len(closings) == 1 else BalanceObservation.absent()
+                    and usable_balance(row.balance_minor, convention)]
+                closing = BalanceObservation.printed(Money(balance_sign * int(closings[0].balance_minor), currency)) if len(closings) == 1 and currency else BalanceObservation.absent()
                 period = record_statement_period(session, run, StatementPeriodDraft(account_id=account.id,
-                    source_document_id=document.id, currency=request.currency, bounds=bounds, opening=opening, closing=closing))
-                if proposal['metadata'].get('balance_convention') in ('liability_owed', 'asset_balance'):
+                    source_document_id=document.id, currency=currency, bounds=bounds, opening=opening, closing=closing)) if currency else None
+                if period and proposal['metadata'].get('balance_convention') in ('liability_owed', 'asset_balance'):
                     from services.financial.statement_import_controls import retain_import_controls
                     retain_import_controls(document, period, request, originals, openings, closings,
                                            balance_convention=proposal['metadata']['balance_convention'])
                 drafts = []
-                for row in request.rows:
-                    if row.excluded:
+                incomplete_ids = {r['id'] for r in incomplete}
+                for position, row in enumerate(r for r in request.rows if not r.excluded):
+                    if row.excluded or row.id in incomplete_ids:
                         continue
                     original = originals[row.id]
-                    source_cells = original['source_cells'] + [value['source_cell']
-                        for value in original.get('value_sources', {}).values()]
-                    rectangles = [Locator.from_json(c['locator']).rectangle for c in source_cells]
-                    rectangles = [r for r in rectangles if r is not None]
-                    locator = Locator(kind=LocatorKind.page_only, page_number=original['page_number'])
-                    if rectangles and all((r.page_number, r.page_width, r.page_height) ==
-                            (original['page_number'], rectangles[0].page_width, rectangles[0].page_height)
-                            for r in rectangles):
-                        first = rectangles[0]
-                        locator = Locator(kind=LocatorKind.page_rectangle, rectangle=SourceRectangle(
-                            page_number=first.page_number, page_width=first.page_width, page_height=first.page_height,
-                            x0=min(r.x0 for r in rectangles), y0=min(r.y0 for r in rectangles),
-                            x1=max(r.x1 for r in rectangles), y1=max(r.y1 for r in rectangles)))
-                    drafts.append(TransactionDraft(row_index=len(drafts), account_id=account.id, locator=locator, statement_period_id=period.id,
-                        reading=RowReading(currency=request.currency, amount_minor=int(row.amount_minor),
-                            direction=TransactionDirection(row.direction), **(
-                                {'effective_date': date.fromisoformat(request.period_end)} if row.date_unprinted
-                                else _reading_dates(original['fields'], row.date, row.date_values)),
-                            description=row.description, counterparty_raw=row.counterparty or None,
-                            bank_reference=original['fields'].get('bank_reference'),
-                            running_balance_minor=balance_sign * int(row.balance_minor) if row.balance_minor is not None else None), provenance=dict(statement_import_original=original,
-                                statement_import_review=row.model_dump(mode='json'),
-                                **(dict(date_basis='statement_end_ordering_only', statement_end_date=request.period_end) if row.date_unprinted else {}),
-                                confirmed_by=dict(user_id=str(actor.user_id), name=actor.name, email=actor.email))))
+                    from services.financial.imported_records import transaction_draft
+                    drafts.append(transaction_draft(row, original, account_id=account.id,
+                        period_id=period.id if period else None, currency=request.currency, position=position,
+                        actor=actor, balance_sign=balance_sign, period_end=request.period_end))
                 transactions = record_transactions(session, run, document, drafts, retain_prior_versions=shares_source_references)
                 from services.financial.reconcile import reconcile_period
-                reconcile_period(session, period)
+                if period:
+                    reconcile_period(session, period)
                 if replacing is not None:
                     from services.financial.duplicates import _supersede, store_fingerprint
                     from postgres.models.enums import DuplicateMatchRung
@@ -781,7 +774,9 @@ def confirm_statement_import(*, session_factory, case_id, evidence_file_id, requ
                 run.transaction_admitted(len(transactions))
                 return dict(case_id=str(case_id), evidence_file_id=str(evidence_file_id),
                     source_document_id=str(document.id), account_id=str(account.id),
-                    transaction_count=len(transactions), account_closed_on=(proposal['metadata'].get('account_closure') or {}).get('date'), created=True, applied=True)
+                    transaction_count=len(transactions), record_count=len(transactions) + len(incomplete),
+                    incomplete_count=len(incomplete), issues=issues,
+                    account_closed_on=(proposal['metadata'].get('account_closure') or {}).get('date'), created=True, applied=True)
             except Exception:
                 session.rollback()
                 raise

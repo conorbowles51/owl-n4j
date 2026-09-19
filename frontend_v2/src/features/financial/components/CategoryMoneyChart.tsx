@@ -1,5 +1,5 @@
 import { categoryAmounts } from "../lib/category-amounts"
-import { useState } from "react"
+import { useFinancialDraft } from "../stores/financial-drafts"
 import type { LedgerTransaction } from "../api"
 import { usePaymentCategory } from "../hooks/use-payment-categories"
 import { chartRatio } from "../lib/investigator-workspace"
@@ -16,8 +16,12 @@ export function CategoryMoneyChart({
 }) {
   const groups = categoryAmounts(rows)
   const [, setCategory] = usePaymentCategory(caseId)
-  const [selected, setSelected] = useState<string | null>(null)
-  const [page, setPage] = useState(0)
+  const [selected, setSelected] = useFinancialDraft<string | null>(
+    caseId,
+    "category-chart-selection",
+    null
+  )
+  const [page, setPage] = useFinancialDraft(caseId, "category-chart-page", 0)
   const index = Math.min(page, Math.max(0, Math.ceil(groups.length / 12) - 1))
   const key = (group: (typeof groups)[number]) =>
     JSON.stringify([group.currency, group.card, group.category])

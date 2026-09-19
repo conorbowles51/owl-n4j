@@ -1,6 +1,7 @@
 """Retain source-bound balance readings from the normal statement import."""
 from services.financial.locators import Locator
 from services.financial.pdf_candidates import _digest
+from services.financial.import_issues import usable_balance
 
 
 def _control(role, row, original):
@@ -53,7 +54,7 @@ def read_import_controls(period, document, evidence):
     originals = {row['id']: row for row in original['rows']}
     expected = []
     for role in ('opening', 'closing'):
-        matches = [row for row in request['rows'] if row['excluded'] and row['balance_minor'] is not None
+        matches = [row for row in request['rows'] if row['excluded'] and usable_balance(row['balance_minor'], record['balance_convention'])
                    and originals.get(row['id'], {}).get('kind') == 'balance'
                    and originals[row['id']]['fields'].get('description', '').lower() == f'{role} balance']
         if len(matches) == 1:

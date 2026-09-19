@@ -130,44 +130,6 @@ export function InvestigatorFindingEditor({
               disabled={!canEdit || save.isPending || uncertain}
               className="space-y-3"
             >
-              <div className="grid grid-cols-2 gap-3">
-                <label>
-                  Type
-                  <select
-                    aria-label="Finding type"
-                    className="block w-full rounded border bg-background p-2"
-                    value={draft.kind}
-                    onChange={(e) =>
-                      change({
-                        kind: e.target
-                          .value as InvestigatorFindingDraft["kind"],
-                      })
-                    }
-                  >
-                    <option value="question">Question</option>
-                    <option value="observation">Observation</option>
-                    <option value="conclusion">Conclusion</option>
-                  </select>
-                </label>
-                <label>
-                  Progress
-                  <select
-                    aria-label="Progress"
-                    className="block w-full rounded border bg-background p-2"
-                    value={draft.progress}
-                    onChange={(e) =>
-                      change({
-                        progress: e.target
-                          .value as InvestigatorFindingDraft["progress"],
-                      })
-                    }
-                  >
-                    <option value="open">Open</option>
-                    <option value="in-progress">In progress</option>
-                    <option value="complete">Complete</option>
-                  </select>
-                </label>
-              </div>
               <label className="block">
                 Title
                 <input
@@ -189,28 +151,74 @@ export function InvestigatorFindingEditor({
                   placeholder="What do the records show? What remains unknown?"
                 />
               </label>
-              <label className="block">
-                Next action
-                <textarea
-                  className="block w-full rounded border bg-background p-2"
-                  maxLength={1500}
-                  aria-label="Next action"
-                  value={draft.nextAction}
-                  onChange={(e) => change({ nextAction: e.target.value })}
-                  placeholder="What needs to happen next?"
-                />
-              </label>
-              <label className="block">
-                Assigned to
-                <input
-                  className="block w-full rounded border bg-background p-2"
-                  maxLength={200}
-                  aria-label="Assigned to"
-                  value={draft.owner}
-                  onChange={(e) => change({ owner: e.target.value })}
-                  placeholder="Name of the person following this up"
-                />
-              </label>
+              <details open={entry ? undefined : false}>
+                <summary className="cursor-pointer text-sm">
+                  Follow-up and finding details (optional)
+                </summary>
+                <div className="space-y-3 pt-3">
+                  {" "}
+                  <div className="grid grid-cols-2 gap-3">
+                    <label>
+                      Type
+                      <select
+                        aria-label="Finding type"
+                        className="block w-full rounded border bg-background p-2"
+                        value={draft.kind}
+                        onChange={(e) =>
+                          change({
+                            kind: e.target
+                              .value as InvestigatorFindingDraft["kind"],
+                          })
+                        }
+                      >
+                        <option value="question">Question</option>
+                        <option value="observation">Observation</option>
+                        <option value="conclusion">Conclusion</option>
+                      </select>
+                    </label>
+                    <label>
+                      Progress
+                      <select
+                        aria-label="Progress"
+                        className="block w-full rounded border bg-background p-2"
+                        value={draft.progress}
+                        onChange={(e) =>
+                          change({
+                            progress: e.target
+                              .value as InvestigatorFindingDraft["progress"],
+                          })
+                        }
+                      >
+                        <option value="open">Open</option>
+                        <option value="in-progress">In progress</option>
+                        <option value="complete">Complete</option>
+                      </select>
+                    </label>
+                  </div>
+                  <label className="block">
+                    Next action
+                    <textarea
+                      className="block w-full rounded border bg-background p-2"
+                      maxLength={1500}
+                      aria-label="Next action"
+                      value={draft.nextAction}
+                      onChange={(e) => change({ nextAction: e.target.value })}
+                      placeholder="What needs to happen next?"
+                    />
+                  </label>
+                  <label className="block">
+                    Assigned to
+                    <input
+                      className="block w-full rounded border bg-background p-2"
+                      maxLength={200}
+                      aria-label="Assigned to"
+                      value={draft.owner}
+                      onChange={(e) => change({ owner: e.target.value })}
+                      placeholder="Name of the person following this up"
+                    />
+                  </label>
+                </div>
+              </details>
               <div className="rounded border bg-muted/20 p-3 flex flex-wrap items-center justify-between gap-2">
                 <p>
                   {attached.length} supporting payments

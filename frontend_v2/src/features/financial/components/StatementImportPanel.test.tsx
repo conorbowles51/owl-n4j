@@ -255,15 +255,11 @@ it("opens the parent payment editor when a wrapped money cell is selected", asyn
   expect(
     vi.mocked(TransactionSourceHighlight).mock.lastCall?.[0].locatorPayload
   ).toEqual(locator([15000, 228000, 370000, 248000]))
-  fireEvent.click(
-    screen.getByRole("button", { name: "125.00 balance" })
-  )
+  fireEvent.click(screen.getByRole("button", { name: "125.00 balance" }))
   expect(
     vi.mocked(TransactionSourceHighlight).mock.lastCall?.[0].locatorPayload
   ).toEqual(moneyCells[1].locator)
-  fireEvent.click(
-    await screen.findByRole("button", { name: "Edit this row" })
-  )
+  fireEvent.click(await screen.findByRole("button", { name: "Edit this row" }))
   expect(
     screen.getByRole("region", { name: "Edit selected statement row" })
   ).toBeTruthy()
@@ -745,7 +741,7 @@ it("offers the missing transaction date separately when the posting date was rea
   })
 })
 
-it("leaves an unknown credit or debit blank and requires the investigator to choose", async () => {
+it("imports unchanged unknown directions, requiring a reason only when the investigator edits", async () => {
   const unknown = structuredClone(data)
   delete (unknown.rows[1].fields as Record<string, unknown>).direction
   unknown.rows[1].issues = ["The payment's minus sign could not be read."]
@@ -761,15 +757,16 @@ it("leaves an unknown credit or debit blank and requires the investigator to cho
   expect(screen.getByLabelText("Credit 1:0:1")).toHaveValue("")
   expect(screen.getByLabelText("Debit 1:0:1")).toHaveValue("")
   expect(screen.getByText(/Totals are incomplete/)).toBeVisible()
-  fireEvent.change(screen.getByLabelText("Reason 1:0:1"), {
-    target: { value: "Checked the original payment marker" },
-  })
   const confirm = screen.getByRole("button", {
     name: "Confirm import of 1 transactions",
   })
-  expect(confirm).toBeDisabled()
+  expect(confirm).toBeEnabled()
   fireEvent.change(screen.getByLabelText("Credit 1:0:1"), {
     target: { value: "125.00" },
+  })
+  expect(confirm).toBeDisabled()
+  fireEvent.change(screen.getByLabelText("Reason 1:0:1"), {
+    target: { value: "Checked the original payment marker" },
   })
   expect(confirm).toBeEnabled()
   expect(screen.queryByText(/Totals are incomplete/)).not.toBeInTheDocument()
@@ -1504,7 +1501,7 @@ it("pages 1200 correction rows, restores a late edit and submits every row", asy
   expect(request.rows[1199].description).toBe("Corrected last payment")
 })
 
-it("explains a hidden flagged reading and records an explicit check before enabling import", async () => {
+it("allows importing an unchanged flagged reading without an acknowledgement", async () => {
   const flagged = structuredClone(data)
   flagged.rows[1].issues = [
     "Check the inferred date against the printed statement period.",
@@ -1523,16 +1520,6 @@ it("explains a hidden flagged reading and records an explicit check before enabl
   const button = screen.getByRole("button", {
     name: "Confirm import of 1 transactions",
   })
-  expect(button).toBeDisabled()
-  const blockers = screen.getByRole("region", {
-    name: "What needs attention before import",
-  })
-  expect(blockers).toHaveTextContent("PDF page 1, row 2")
-  fireEvent.click(screen.getByRole("button", { name: "Review row" }))
-  await screen.findByLabelText("Reason 1:0:1")
-  fireEvent.click(
-    screen.getByRole("button", { name: "I checked this row against the PDF" })
-  )
   expect(button).toBeEnabled()
   fireEvent.click(button)
   await waitFor(() => expect(done).toHaveBeenCalledTimes(1))
@@ -1541,8 +1528,7 @@ it("explains a hidden flagged reading and records an explicit check before enabl
       { id: "1:0:0" },
       {
         id: "1:0:1",
-        reason:
-          "Checked against the original PDF; the extracted values are correct.",
+        reason: "",
       },
     ],
   })
@@ -1558,8 +1544,8 @@ it("links missing account details from the disabled confirmation and clears the 
     screen.getByRole("button", { name: "Confirm import of 1 transactions" })
   ).toBeDisabled()
   expect(
-    screen.getByRole("region", { name: "What needs attention before import" })
-  ).toHaveTextContent("Enter the account holder.")
+    screen.getByRole("region", { name: "Statement issues and edits" })
+  ).toHaveTextContent("Account holder not identified.")
   fireEvent.click(screen.getAllByRole("button", { name: "Go to field" })[0])
   expect(screen.getByLabelText("Account holder")).toHaveFocus()
   fireEvent.change(screen.getByLabelText("Account holder"), {
@@ -1569,7 +1555,7 @@ it("links missing account details from the disabled confirmation and clears the 
     target: { value: "Checked the printed account name." },
   })
   expect(
-    screen.queryByRole("region", { name: "What needs attention before import" })
+    screen.queryByRole("region", { name: "Statement issues and edits" })
   ).not.toBeInTheDocument()
   expect(
     screen.getByRole("button", { name: "Confirm import of 1 transactions" })
@@ -1817,7 +1803,7 @@ it("restores a server-saved bulk review, focuses its row and saves without impor
   expect(sent).toHaveLength(0)
 })
 
-it("requires an explanation for a printed difference and retains it in the import", async () => {
+it("allows importing a printed difference and retains an optional explanation", async () => {
   vi.mocked(useStatementChecks).mockReturnValue({
     checks: [
       {
@@ -1838,11 +1824,11 @@ it("requires an explanation for a printed difference and retains it in the impor
   const confirm = screen.getByRole("button", {
     name: "Confirm import of 1 transactions",
   })
-  expect(confirm).toBeDisabled()
+  expect(confirm).toBeEnabled()
   fireEvent.click(
     screen.getByLabelText("I checked these differences against the PDF")
   )
-  expect(confirm).toBeDisabled()
+  expect(confirm).toBeEnabled()
   fireEvent.change(screen.getByLabelText("Why the difference remains"), {
     target: {
       value: "The PDF itself shows this difference. Investigate with the bank.",
@@ -1858,7 +1844,7 @@ it("requires an explanation for a printed difference and retains it in the impor
   })
 })
 
-it("cannot confirm while arithmetic is pending or could not finish", async () => {
+it("keeps import available while checks are pending but still requires reasons for edits", async () => {
   const state = {
     checks: [],
     pending: true,
@@ -1872,7 +1858,7 @@ it("cannot confirm while arithmetic is pending or could not finish", async () =>
   const confirm = screen.getByRole("button", {
     name: "Confirm import of 1 transactions",
   })
-  expect(confirm).toBeDisabled()
+  expect(confirm).toBeEnabled()
   state.pending = false
   state.error = "Connection interrupted"
   fireEvent.change(screen.getByLabelText("Description 1:0:1"), {
@@ -1915,7 +1901,7 @@ it("edits beside a printed row, preserves its source text and uses the correctio
   )
 })
 
-it("requires a reason to import overlapping statements and retains it in the import", async () => {
+it("allows overlapping statements to import and retains optional comparison notes", async () => {
   vi.mocked(useStatementCoverageReview).mockReturnValue({
     data: {
       available: true,
@@ -1941,14 +1927,14 @@ it("requires a reason to import overlapping statements and retains it in the imp
   const confirm = screen.getByRole("button", {
     name: "Confirm import of 1 transactions",
   })
-  expect(confirm).toBeDisabled()
+  expect(confirm).toBeEnabled()
   expect(screen.getByText("Other statement.pdf")).toBeVisible()
   fireEvent.click(
     screen.getByRole("checkbox", {
       name: "I have compared these files and need to import this statement too",
     })
   )
-  expect(confirm).toBeDisabled()
+  expect(confirm).toBeEnabled()
   fireEvent.change(
     screen.getByLabelText("Reason for importing overlapping statements"),
     { target: { value: "Additional records in this statement." } }

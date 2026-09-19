@@ -2,7 +2,7 @@ import {
   financialDraftKey,
   useFinancialDraftStore,
 } from "../stores/financial-drafts"
-import { useLayoutEffect } from "react"
+import { useEffect, useLayoutEffect } from "react"
 import { useSearchParams } from "react-router-dom"
 import {
   financialMainViews,
@@ -46,8 +46,21 @@ export function useFinancialViewNavigation(caseId: string | undefined) {
           else next.delete("dataset")
           return next
         },
-        { replace: true }
+        { replace: state.mainView === previous.mainView }
       )
     })
+  }, [caseId, params, setParams])
+  useEffect(() => {
+    if (!caseId || params.get("view")) return
+    // Normalize after the router is mounted. Back must restore this initial
+    // entry rather than reuse the destination saved as last-view.
+    setParams(
+      (current) => {
+        const next = new URLSearchParams(current)
+        next.set("view", useFinancialStore.getState().mainView)
+        return next
+      },
+      { replace: true }
+    )
   }, [caseId, params, setParams])
 }

@@ -128,6 +128,8 @@ const proposalSchema = z.object({
   rows: z.array(row),
   issues: z.array(z.string()),
   transaction_count: z.number(),
+  record_count: z.number().optional(),
+  incomplete_count: z.number().optional(),
   can_import_balances: z.boolean().default(false),
   can_record_account_closure: z.boolean().default(false),
   assignment_only: z.boolean().default(false),
@@ -196,6 +198,8 @@ export type StatementImportReceipt = {
   source_document_id?: string
   account_id?: string
   transaction_count: number
+  record_count?: number
+  incomplete_count?: number
   filename?: string
   account_closed_on?: string | null
 }
@@ -218,6 +222,8 @@ const receipt = z.object({
   case_id: z.string(),
   evidence_file_id: z.string(),
   transaction_count: z.number(),
+  record_count: z.number().optional(),
+  incomplete_count: z.number().optional(),
   source_document_id: z.string().optional(),
   account_id: z
     .string()
@@ -1027,8 +1033,7 @@ function EditableStatement({
     },
     [initialById]
   )
-  const requiresReason = (r: Edit) =>
-    changed(r) || !!originals.get(r.id)?.issues.length
+  const requiresReason = (r: Edit) => changed(r)
   const validDate = (value: string) =>
     /^\d{4}-\d{2}-\d{2}$/.test(value) &&
     Number(value.slice(0, 4)) > 0 &&
@@ -1109,7 +1114,7 @@ function EditableStatement({
   if (coverageBlocked)
     detailProblems.push({
       message:
-        "Open Compare overlapping statements. Record why both are needed, or leave this statement unimported.",
+        "Another statement covers these dates. You can compare the statements now or after importing.",
       field:
         coverageDecision.revision === coverage.data?.revision
           ? "Reason for importing overlapping statements"
@@ -1137,17 +1142,20 @@ function EditableStatement({
     })
   if (!holder.trim())
     detailProblems.push({
-      message: "Enter the account holder.",
+      message:
+        "Account holder not identified. You can import and check it later.",
       field: "Account holder",
     })
   if (!account.trim())
     detailProblems.push({
-      message: "Enter the account number.",
+      message:
+        "Account number not identified. You can import and check it later.",
       field: "Account number",
     })
   if (Boolean(periodStart) !== Boolean(periodEnd))
     detailProblems.push({
-      message: "Enter both the start and end of the statement period.",
+      message:
+        "The statement period is incomplete. Its coverage will stay unknown until corrected.",
       field: periodStart ? "Period end" : "Period start",
     })
   else if (periodStart > periodEnd)
@@ -1249,7 +1257,7 @@ function EditableStatement({
       if (
         result.case_id !== caseId ||
         result.evidence_file_id !== fileId ||
-        result.transaction_count !== included.length
+        (result.record_count ?? result.transaction_count) !== included.length
       )
         throw Error("The import result does not match the reviewed statement.")
       return result
@@ -2965,21 +2973,25 @@ function EditableStatement({
                   : data.can_import_balances && included.length === 0
                     ? "Save this account's statement period and its opening and closing balances. No transaction rows were found in this section. Check the original before saving."
                     : batchReview
-                      ? `Save these ${included.length} checked transactions to the batch. Return to the batch to import all ready statements together.`
-                      : `Import adds ${included.length} transactions to the case. Original readings and your corrections are retained. You can return to Transactions to correct a value after import.`}
+                      ? `Save these ${included.length} records to the batch for import together. Issues can be checked later.`
+                      : `Import ${included.length} records with their originals. You can correct values later. Incomplete records stay visible outside calculated totals.`}
               </p>
               <Button
                 disabled={
                   !canEdit ||
                   confirm.isPending ||
                   saveBatchReview.isPending ||
-                  blockedRows.length > 0 ||
-                  detailProblems.length > 0 ||
-                  coverage.pending ||
-                  !!coverage.error ||
-                  serverChecks.pending ||
-                  !!serverChecks.error ||
-                  unresolvedDifference
+                  rows.some((r) => changed(r) && !r.reason.trim()) ||
+                  (detailsChanged && !detailsReason.trim()) ||
+                  (data.review_recovery?.required && !recoveryCompared) ||
+                  (savedReadingChanged &&
+                    (!previousReviewChecked || !!data.saved_review)) ||
+                  (!!data.current_import && !replacePrevious) ||
+                  (replacePrevious && !detailsReason.trim()) ||
+                  !!data.reading_failure ||
+                  (!included.length &&
+                    !data.can_import_balances &&
+                    !data.can_record_account_closure)
                 }
                 aria-describedby={
                   blockedRows.length || detailProblems.length
@@ -3018,17 +3030,21 @@ function EditableStatement({
               )}
               {unresolvedDifference && (
                 <p role="alert">
-                  The current values leave a difference. Open Statement checks
-                  above to correct it or record why it remains.
+                  These values leave a balance difference. You can import now;
+                  the check stays attached to the statement.
                 </p>
               )}
               {(blockedRows.length > 0 || detailProblems.length > 0) && (
                 <section
                   id="statement-import-blockers"
-                  aria-label="What needs attention before import"
+                  aria-label="Statement issues and edits"
                   className="rounded border border-amber-500/50 bg-amber-50/60 dark:bg-amber-950/20 p-3 space-y-3"
                 >
-                  <h4 className="font-semibold">Before you can confirm</h4>
+                  <h4 className="font-semibold">Issues and edits</h4>
+                  <p className="text-sm">
+                    Reading issues do not block import. If you changed a value,
+                    record the reason beside that edit.
+                  </p>
                   {detailProblems.map((problem, index) => (
                     <div
                       key={index}

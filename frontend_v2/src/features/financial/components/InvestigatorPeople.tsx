@@ -15,11 +15,16 @@ import {
   WorkspaceScope,
 } from "./InvestigationWorkspaceParts"
 import { LedgerCounterpartiesAnalysis } from "./LedgerCounterpartiesAnalysis"
+import type { FinancialMainView } from "../stores/financial.store"
 import { useFinancialStore } from "../stores/financial.store"
 import { useFinancialFindingIndex } from "../hooks/use-financial-finding-index"
 
 export function InvestigatorPeople({ caseId }: { caseId: string }) {
   const data = useInvestigatorPayments(caseId)
+  const [returnPath, , clearReturn] = useFinancialDraft<{
+    view: FinancialMainView
+    people: Record<string, unknown>
+  } | null>(caseId, "people-return", null)
   const [view, setView] = useFinancialDraft(caseId, "investigator-people", {
     search: "",
     kind: "all",
@@ -83,6 +88,27 @@ export function InvestigatorPeople({ caseId }: { caseId: string }) {
       <InvestigationReadState data={data}>
         {selected ? (
           <>
+            {returnPath && (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  if (returnPath.view === "counterparties")
+                    setView((current) => ({ ...current, ...returnPath.people }))
+                  useFinancialStore.getState().setMainView(returnPath.view)
+                  clearReturn()
+                }}
+              >
+                Back to{" "}
+                {returnPath.view === "transactions" ||
+                returnPath.view === "ledger"
+                  ? "transactions"
+                  : returnPath.view === "follow-money"
+                    ? "Follow money"
+                    : returnPath.view === "counterparties"
+                      ? "previous name"
+                      : returnPath.view}
+              </Button>
+            )}
             <Button
               variant="outline"
               onClick={() =>

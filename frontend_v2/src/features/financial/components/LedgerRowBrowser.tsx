@@ -1,4 +1,3 @@
-import { CategoryMoneyChart } from "./CategoryMoneyChart"
 import { PaymentLabelsEditor } from "./PaymentLabelsEditor"
 import {
   usePaymentCategory,
@@ -43,8 +42,10 @@ export function LedgerRowBrowser({
   exportContext?: { caseId: string; params: LedgerQueryParams }
 }) {
   const { canEdit } = useFinancialAccess()
-  const [category] = usePaymentCategory(exportContext?.caseId ?? "none")
-  const [editingLabels, setEditingLabels] = useState(false)
+  const [category, setCategory] = usePaymentCategory(
+    exportContext?.caseId ?? "none"
+  )
+  const [labelIds, setLabelIds] = useState<string[] | null>(null)
   const findings = useFinancialFindingIndex(
     investigation ? exportContext?.caseId : undefined
   )
@@ -217,67 +218,84 @@ export function LedgerRowBrowser({
             placeholder="Description, name or reference"
           />
         </label>
-        <label>
-          Currency
-          <select
-            aria-label="Currency"
-            className="block rounded border bg-background p-2"
-            value={currency}
-            onChange={(e) => {
-              changeView({
-                currency: e.target.value,
-                minimum: "",
-                maximum: "",
-                sort: sort.startsWith("amount") ? "ledger" : sort,
-              })
-            }}
-          >
-            <option value="">All currencies</option>
-            {[...new Set(transactions.map((r) => r.currency))]
-              .sort()
-              .map((c) => (
-                <option key={c}>{c}</option>
-              ))}
-          </select>
-        </label>
-        <label>
-          Sort payments
-          <select
-            aria-label="Sort payments"
-            className="block rounded border bg-background p-2"
-            value={sort}
-            onChange={(e) => {
-              changeView({ sort: e.target.value })
-            }}
-          >
-            <option value="ledger">Recorded date order</option>
-            <option value="oldest">Oldest first</option>
-            <option value="newest">Newest first</option>
-            <option value="amount-desc" disabled={!amountAllowed}>
-              Largest amount first (one currency)
-            </option>
-            <option value="amount-asc" disabled={!amountAllowed}>
-              Smallest amount first (one currency)
-            </option>
-          </select>
-        </label>
-        <Button
-          variant="outline"
-          onClick={() => {
-            setView(emptyView)
-          }}
-        >
-          Clear payment filters
-        </Button>
         <details className="rounded border p-2 text-sm">
           <summary className="cursor-pointer">
-            More filters
-            {[minimum, maximum, direction, proof].filter(Boolean).length
-              ? ` (${[minimum, maximum, direction, proof].filter(Boolean).length} applied)`
-              : ""}
+            Filters
+            {[currency, category, minimum, maximum, direction, proof].filter(
+              Boolean
+            ).length > 0 &&
+              ` (${[currency, category, minimum, maximum, direction, proof].filter(Boolean).length})`}
           </summary>
           <div className="flex flex-wrap gap-3 pt-3">
-            {" "}
+            <label>
+              Currency
+              <select
+                aria-label="Currency"
+                className="block rounded border bg-background p-2"
+                value={currency}
+                onChange={(e) => {
+                  changeView({
+                    currency: e.target.value,
+                    minimum: "",
+                    maximum: "",
+                    sort: sort.startsWith("amount") ? "ledger" : sort,
+                  })
+                }}
+              >
+                <option value="">All currencies</option>
+                {[...new Set(transactions.map((r) => r.currency))]
+                  .sort()
+                  .map((c) => (
+                    <option key={c}>{c}</option>
+                  ))}
+              </select>
+            </label>
+            <label>
+              Sort payments
+              <select
+                aria-label="Sort payments"
+                className="block rounded border bg-background p-2"
+                value={sort}
+                onChange={(e) => {
+                  changeView({ sort: e.target.value })
+                }}
+              >
+                <option value="ledger">Recorded date order</option>
+                <option value="oldest">Oldest first</option>
+                <option value="newest">Newest first</option>
+                <option value="amount-desc" disabled={!amountAllowed}>
+                  Largest amount first (one currency)
+                </option>
+                <option value="amount-asc" disabled={!amountAllowed}>
+                  Smallest amount first (one currency)
+                </option>
+              </select>
+            </label>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setView(emptyView)
+                setCategory("")
+              }}
+            >
+              Clear payment filters
+            </Button>
+            <label>
+              Category
+              <select
+                aria-label="Category filter"
+                className="block rounded border bg-background p-2"
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+              >
+                <option value="">All categories</option>
+                {[...new Set(transactions.map(categoryName))]
+                  .sort()
+                  .map((value) => (
+                    <option key={value}>{value}</option>
+                  ))}
+              </select>
+            </label>{" "}
             <label>
               Minimum amount {currency}
               <input
@@ -350,6 +368,54 @@ export function LedgerRowBrowser({
           </div>
         </details>
       </div>
+      <div
+        className="flex flex-wrap gap-2 text-xs"
+        aria-label="Applied payment filters"
+      >
+        {currency && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() =>
+              changeView({ currency: "", minimum: "", maximum: "" })
+            }
+          >
+            {currency} ×
+          </Button>
+        )}
+        {category && (
+          <Button size="sm" variant="outline" onClick={() => setCategory("")}>
+            {category} ×
+          </Button>
+        )}
+        {direction && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => changeView({ direction: "" })}
+          >
+            {direction === "credit" ? "Incoming" : "Outgoing"} ×
+          </Button>
+        )}
+        {(minimum || maximum) && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => changeView({ minimum: "", maximum: "" })}
+          >
+            Amount: {minimum || "any"} – {maximum || "any"} {currency} ×
+          </Button>
+        )}
+        {proof && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => changeView({ proof: "" })}
+          >
+            Classification: {proof} ×
+          </Button>
+        )}
+      </div>
       {invalidRange && (
         <p role="alert">
           Enter valid amounts for {currency}, with the minimum no greater than
@@ -364,15 +430,13 @@ export function LedgerRowBrowser({
       {investigation && exportContext && (
         <>
           <PaymentTotals rows={rows} label="Payments matching your filters" />
-          <details className="rounded border p-3">
-            <summary className="cursor-pointer font-medium">
-              Compare money by category
-            </summary>
-            <CategoryMoneyChart caseId={exportContext.caseId} rows={rows} />
-          </details>
           <div className="space-y-3">
             <div className="flex flex-wrap items-center gap-2">
-              <span>{selection.length} payments selected</span>
+              <span>
+                {selection.length
+                  ? `${selection.length} payments selected`
+                  : `${rows.length} matching payments`}
+              </span>
               <Button
                 variant="outline"
                 disabled={
@@ -386,13 +450,15 @@ export function LedgerRowBrowser({
               >
                 Select all {rows.length} matching payments
               </Button>
-              <Button
-                variant="ghost"
-                disabled={!selection.length}
-                onClick={() => setSelection([])}
-              >
-                Clear selection
-              </Button>
+              {selection.length > 0 && (
+                <Button
+                  variant="ghost"
+                  disabled={!selection.length}
+                  onClick={() => setSelection([])}
+                >
+                  Clear selection
+                </Button>
+              )}
             </div>
             {selection.length > 0 && (
               <>
@@ -404,33 +470,35 @@ export function LedgerRowBrowser({
                     <>
                       <Button
                         variant="outline"
-                        onClick={() => setEditingLabels(true)}
+                        onClick={() => setLabelIds(selection)}
                       >
                         Categorize selected
                       </Button>
                       <Button onClick={() => setFinding("observation")}>
                         Create finding
                       </Button>
-                      <Button
-                        variant="outline"
-                        onClick={() => setFinding("question")}
-                      >
-                        Mark for follow-up
-                      </Button>
                     </>
                   )}
-                  <ExportSelectedPayments
-                    caseId={exportContext.caseId}
-                    ids={selection}
-                  />
+                  <details>
+                    <summary className="cursor-pointer rounded border px-3 py-2 text-sm">
+                      More actions
+                    </summary>
+                    <div className="flex flex-wrap gap-2 p-2">
+                      {canEdit && (
+                        <Button
+                          variant="outline"
+                          onClick={() => setFinding("question")}
+                        >
+                          Mark for follow-up
+                        </Button>
+                      )}
+                      <ExportSelectedPayments
+                        caseId={exportContext.caseId}
+                        ids={selection}
+                      />
+                    </div>
+                  </details>
                 </div>
-                {editingLabels && (
-                  <PaymentLabelsEditor
-                    caseId={exportContext.caseId}
-                    ids={selection}
-                    onClose={() => setEditingLabels(false)}
-                  />
-                )}
                 {compare && (
                   <PaymentComparison
                     caseId={exportContext.caseId}
@@ -504,6 +572,14 @@ export function LedgerRowBrowser({
           </div>
         </>
       )}
+      {labelIds && exportContext && (
+        <PaymentLabelsEditor
+          key={labelIds.join(",")}
+          caseId={exportContext.caseId}
+          ids={labelIds}
+          onClose={() => setLabelIds(null)}
+        />
+      )}
       {investigation && findings.isError && (
         <p role="alert" className="text-sm">
           Saved finding links could not be loaded.{" "}
@@ -527,6 +603,7 @@ export function LedgerRowBrowser({
           onToggle={toggle}
           onOpen={actions.onSource}
           onNote={actions.onNote}
+          onCategorize={canEdit ? (row) => setLabelIds([row.key]) : undefined}
         />
       ) : (
         <LedgerTable

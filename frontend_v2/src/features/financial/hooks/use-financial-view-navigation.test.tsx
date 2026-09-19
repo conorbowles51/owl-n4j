@@ -56,6 +56,34 @@ beforeEach(() => {
   useFinancialStore.getState().reset()
   useFinancialDraftStore.setState({ drafts: {} })
 })
+it("uses browser Back to return through the financial views, including the initial view", async () => {
+  setup()
+  await waitFor(() =>
+    expect(screen.getByLabelText("Location")).toHaveTextContent("view=overview")
+  )
+  act(() => useFinancialStore.getState().setMainView("transactions"))
+  await waitFor(() =>
+    expect(screen.getByLabelText("Location")).toHaveTextContent(
+      "view=transactions"
+    )
+  )
+  act(() => useFinancialStore.getState().setMainView("counterparties"))
+  await waitFor(() =>
+    expect(screen.getByLabelText("Location")).toHaveTextContent(
+      "view=counterparties"
+    )
+  )
+  fireEvent.click(screen.getByRole("button", { name: "Back" }))
+  await waitFor(() =>
+    expect(screen.getByLabelText("Financial tab")).toHaveTextContent(
+      "transactions"
+    )
+  )
+  fireEvent.click(screen.getByRole("button", { name: "Back" }))
+  await waitFor(() =>
+    expect(screen.getByLabelText("Financial tab")).toHaveTextContent("overview")
+  )
+})
 it("retains a requested tab across an outside route and browser Back", async () => {
   setup("/cases/first/financial?view=findings")
   expect(screen.getByLabelText("Financial tab")).toHaveTextContent("findings")
@@ -100,7 +128,7 @@ it("opens a different unqualified case on Overview instead of retaining the firs
     expect(screen.getByLabelText("Financial tab")).toHaveTextContent("overview")
   )
   expect(screen.getByLabelText("Location").textContent).toBe(
-    "/cases/second/financial"
+    "/cases/second/financial?view=overview"
   )
 })
 it("falls back to Overview for an unsupported tab", () => {

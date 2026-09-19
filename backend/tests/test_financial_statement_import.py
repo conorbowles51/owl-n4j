@@ -282,15 +282,17 @@ class StatementImportTests(TransactionPersistenceTestCase):
         with self.assertRaisesRegex(PdfMappingError, 'recognised undated'):
             check_import_request(p, StatementImportRequest.model_validate(request))
         dated['date_unprinted'] = False
-        with self.assertRaises(ValidationError):
-            StatementImportRequest.model_validate(request)
+        from services.financial.import_issues import incomplete_fields
+        incomplete = StatementImportRequest.model_validate(request)
+        self.assertIn('date', incomplete_fields(next(r for r in incomplete.rows if r.id == dated['id']), incomplete))
         dated.update(date='2020-05-30', reason='')
         request.update(period_start='', period_end='', details_reason='Removed dates')
-        with self.assertRaisesRegex(PdfMappingError, 'complete statement period'):
-            check_import_request(p, StatementImportRequest.model_validate(request))
+        check_import_request(p, StatementImportRequest.model_validate(request))
+        incomplete = StatementImportRequest.model_validate(request)
+        self.assertIn('date', incomplete_fields(next(r for r in incomplete.rows if r.id == charge['id']), incomplete))
         charge['date'] = '2020-06-11'
-        with self.assertRaisesRegex(ValidationError, 'printed date'):
-            StatementImportRequest.model_validate(request)
+        with self.assertRaisesRegex(PdfMappingError, 'recognised undated'):
+            check_import_request(p, StatementImportRequest.model_validate(request))
 
     def test_card_balances_import_as_owed_and_reopen_the_exact_summary_cells(self):
         from tests.test_financial_statement_import_card import summary_source
@@ -487,8 +489,10 @@ class StatementImportTests(TransactionPersistenceTestCase):
                        rows=[dict(id=r['id'], excluded=r['excluded'], date=r['fields'].get('date', ''),
                                   description=r['fields'].get('description', ''), amount_minor=r['fields'].get('amount_minor', '0'),
                                   direction=r['fields'].get('direction'), balance_minor=r['fields'].get('balance'), reason='') for r in p['rows']])
-        with self.assertRaises(ValidationError):
-            StatementImportRequest.model_validate(request)
+        from services.financial.import_issues import incomplete_fields
+        from services.financial.statement_import import StatementImportRequest
+        pending = StatementImportRequest.model_validate(request)
+        self.assertIn('date', incomplete_fields(pending.rows[6], pending))
         request['rows'][6].update(date='2021-04-22', reason='Read the first date against the original PDF.')
         result = self.confirm(request)
         self.assertEqual(result['transaction_count'], 2)
@@ -512,12 +516,8 @@ class StatementImportTests(TransactionPersistenceTestCase):
         p, request = self.card_balance_request()
         closing = next(r for r in request['rows'] if r['description'] == 'Closing Balance')
         closing.update(balance_minor='93878', reason='Synthetic correction checked against the original.')
-        with self.assertRaises(PdfMappingError):
-            self.confirm(request)
-        from services.financial.review_arithmetic import check_proposed_rows
-        request['balance_exception_revision'] = check_proposed_rows(p, request['rows'])['checks_revision']
-        request['balance_exception_reason'] = 'Synthetic printed closing value differs from the payments. Retain for investigation.'
         result = self.confirm(request)
+        self.assertTrue(any(issue['kind'] == 'arithmetic' for issue in result['issues']))
         period = self.db.scalar(select(FinancialStatementPeriod).where(FinancialStatementPeriod.source_document_id == UUID(result['source_document_id'])))
         self.assertEqual(read_closing(period).amount.minor_units, -93878)
         controls = statement_source(self.db, case_id=self.case.id, period_id=period.id)['reviewed_controls']
@@ -895,8 +895,10 @@ class StatementImportTests(TransactionPersistenceTestCase):
         self.assertEqual(len(rows),2)
         damaged = next(r for r in rows if r['source_cells'][0]['expected_text']=='O6 /O4')
         self.assertTrue(damaged['issues'])
-        with self.assertRaises(ValidationError):
-            self.confirm(request)
+        from services.financial.import_issues import incomplete_fields
+        from services.financial.statement_import import StatementImportRequest
+        pending = StatementImportRequest.model_validate(request)
+        self.assertIn('date', incomplete_fields(next(r for r in pending.rows if r.id == damaged['id']), pending))
         correction = next(r for r in request['rows'] if r['id']==damaged['id'])
         correction.update(date='2020-06-04',reason='Date checked against the original PDF')
         result = self.confirm(request)

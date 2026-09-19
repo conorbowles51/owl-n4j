@@ -14,6 +14,7 @@ import { CorrectionForm } from "./CorrectionForm"
 import { LedgerPanel } from "./LedgerPanel"
 import { QuarantinePanel } from "./QuarantinePanel"
 import { LedgerSourceDialog } from "./LedgerSourceDialog"
+import { ImportedRecordsPanel } from "./ImportedRecordsPanel"
 
 export function CorrectableLedger(props: {
   caseId: string | undefined
@@ -87,6 +88,13 @@ function CorrectableLedgerContent({
           initialRow={selected}
           initialDirection={selected.direction === "debit" ? "debit" : "credit"}
           onClose={() => setSelected(null)}
+        />
+      )}
+      {caseId && investigation && !heldOut && (
+        <ImportedRecordsPanel
+          caseId={caseId}
+          params={params}
+          onOpen={(transactionId) => setSource({ caseId, transactionId })}
         />
       )}
       <div

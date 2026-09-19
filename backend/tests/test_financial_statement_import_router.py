@@ -103,6 +103,22 @@ class StatementImportAuthorizationTests(unittest.TestCase):
             self.assertEqual(self.client.post(compare, json={'expected_revision': 'a' * 64}).status_code, 403)
             write.assert_not_called()
 
+    def test_incomplete_records_require_case_view_and_completion_requires_edit(self):
+        read_url = f'/api/financial/statement-import/incomplete-records?case_id={self.db.case.id}'
+        write_url = f'/api/financial/statement-import/sources/{uuid4()}/complete-record?case_id={self.db.case.id}'
+        with patch('services.financial.imported_records.imported_records', return_value={'records':[], 'total':0}) as read, patch('services.financial.imported_records.complete_record') as write:
+            self.assertEqual(self.client.get(read_url).status_code, 401)
+            self.assertEqual(self.client.post(write_url, json={}).status_code, 401)
+            self.user(None)
+            self.assertEqual(self.client.get(read_url).status_code, 403)
+            self.assertEqual(self.client.post(write_url, json={}).status_code, 403)
+            self.user({'case':{'view':True, 'edit':False}})
+            self.assertEqual(self.client.get(read_url).status_code, 200)
+            self.assertEqual(read.call_args.kwargs['case_id'], self.db.case.id)
+            self.assertEqual(self.client.post(write_url, json={}).status_code, 403)
+            self.assertEqual(self.client.get(read_url + '&limit=101').status_code, 422)
+            write.assert_not_called()
+
     def test_case_edit_does_not_grant_evidence_upload_permission(self):
         self.user({'case':{'view':True,'edit':True},'evidence':{'upload':False}})
         with patch.object(module,'create_statement_version') as version:

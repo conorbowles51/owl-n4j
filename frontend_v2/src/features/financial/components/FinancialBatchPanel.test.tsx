@@ -119,7 +119,7 @@ beforeEach(() => {
 it("confirms the displayed ready list and filters problems across the batch", async () => {
   mount()
   fireEvent.click(
-    await screen.findByRole("button", { name: "Import 2 ready statements" })
+    await screen.findByRole("button", { name: "Import 14 records" })
   )
   await waitFor(() =>
     expect(fetchAPI).toHaveBeenCalledWith(
@@ -129,7 +129,7 @@ it("confirms the displayed ready list and filters problems across the batch", as
   )
   fireEvent.click(
     screen.getByRole("checkbox", {
-      name: "Show statements needing attention only",
+      name: "Show statements with issues only",
     })
   )
   await waitFor(() =>
@@ -138,7 +138,7 @@ it("confirms the displayed ready list and filters problems across the batch", as
     )
   )
   expect(
-    await screen.findByText("14 transactions", { exact: false })
+    await screen.findByText(/2 statements available.*14 records/)
   ).toBeVisible()
 })
 it("opens the exact problem row, reloads server corrections and returns after saving", async () => {
@@ -171,7 +171,7 @@ it("refuses a response for a different case", async () => {
   mount()
   expect(await screen.findByRole("alert")).toHaveTextContent("another case")
   expect(
-    screen.queryByRole("button", { name: "Import 2 ready statements" })
+    screen.queryByRole("button", { name: "Import 14 records" })
   ).not.toBeInTheDocument()
 })
 
@@ -300,7 +300,7 @@ it("keeps completed assignments separate from ready imports and removes the skip
   ).toBeVisible()
   expect(screen.getByText(/unassigned page review is complete/)).toBeVisible()
   expect(
-    screen.getByRole("button", { name: "Import 0 ready statements" })
+    screen.getByRole("button", { name: "Import 0 records" })
   ).toBeDisabled()
   expect(screen.queryByRole("button", { name: /Leave unimported/ })).toBeNull()
 })

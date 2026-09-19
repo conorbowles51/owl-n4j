@@ -1,5 +1,6 @@
 import { PaymentLabelsEditor } from "./PaymentLabelsEditor"
 import { NearbyPaymentSearch } from "./NearbyPaymentSearch"
+import { InvestigatorFindingEditor } from "./InvestigatorFindingEditor"
 import { useFinancialFindingIndex } from "../hooks/use-financial-finding-index"
 import { useFinancialAccess } from "../hooks/use-financial-access"
 import type { LedgerTransaction } from "../api"
@@ -53,6 +54,7 @@ export function LedgerSourceDialog({
   const [assessAmount, setAssessAmount] = useState(false)
   const [editingLabels, setEditingLabels] = useState(false)
   const [correcting, setCorrecting] = useState(false)
+  const [finding, setFinding] = useState(false)
   const source = useQuery({
     queryKey: ["ledger-source", caseId, transactionId],
     retry: false,
@@ -102,7 +104,7 @@ export function LedgerSourceDialog({
     <>
       <SourceFrame
         inline={inline}
-        open={!viewFile || source.isError}
+        open={(!viewFile || source.isError) && !finding}
         onClose={onClose}
       >
         {inline ? (
@@ -230,9 +232,59 @@ export function LedgerSourceDialog({
                     was printed.
                   </p>
                 )}
+                <p className="font-medium">
+                  {data.ref_id} · {data.filename}
+                </p>
+                {data.ledger_status === "superseded" && (
+                  <div className="space-y-2">
+                    <p>This is the original transaction before correction.</p>
+                    {data.superseded_by_id && (
+                      <Button
+                        variant="outline"
+                        onClick={() => setReplacement(data.superseded_by_id)}
+                      >
+                        Open corrected transaction
+                      </Button>
+                    )}
+                  </div>
+                )}
+                {data.locator_state === "missing" && (
+                  <p>
+                    No location was stored for this row. You can open the source
+                    file.
+                  </p>
+                )}
+                {data.locator_state === "invalid" && (
+                  <p>
+                    The stored location could not be read. You can open the
+                    source file without a highlight.
+                  </p>
+                )}
+                {data.locator_state === "stored" && (
+                  <TransactionSourceHighlight
+                    locatorPayload={data.locator}
+                    sourceDocumentId={
+                      data.filename.toLowerCase().endsWith(".pdf")
+                        ? data.evidence_file_id
+                        : undefined
+                    }
+                    valueLabel={data.ref_id}
+                  />
+                )}
+                <Button onClick={() => setViewFile(true)}>
+                  Open source file
+                </Button>
+
                 {allowNearby && (
                   <NearbyPaymentSearch caseId={caseId} row={data.transaction} />
                 )}
+                {canEdit &&
+                  data.ledger_status === "admitted" &&
+                  !data.superseded_by_id && (
+                    <Button onClick={() => setFinding(true)}>
+                      Create finding
+                    </Button>
+                  )}
                 {canEdit &&
                   onAdjudicate &&
                   data.ledger_status === "admitted" &&
@@ -299,6 +351,52 @@ export function LedgerSourceDialog({
                 )}
               </section>
             )}
+            {!data.transaction && (
+              <>
+                <p className="font-medium">
+                  {data.ref_id} · {data.filename}
+                </p>
+                {data.ledger_status === "superseded" && (
+                  <div className="space-y-2">
+                    <p>This is the original transaction before correction.</p>
+                    {data.superseded_by_id && (
+                      <Button
+                        variant="outline"
+                        onClick={() => setReplacement(data.superseded_by_id)}
+                      >
+                        Open corrected transaction
+                      </Button>
+                    )}
+                  </div>
+                )}
+                {data.locator_state === "missing" && (
+                  <p>
+                    No location was stored for this row. You can open the source
+                    file.
+                  </p>
+                )}
+                {data.locator_state === "invalid" && (
+                  <p>
+                    The stored location could not be read. You can open the
+                    source file without a highlight.
+                  </p>
+                )}
+                {data.locator_state === "stored" && (
+                  <TransactionSourceHighlight
+                    locatorPayload={data.locator}
+                    sourceDocumentId={
+                      data.filename.toLowerCase().endsWith(".pdf")
+                        ? data.evidence_file_id
+                        : undefined
+                    }
+                    valueLabel={data.ref_id}
+                  />
+                )}
+                <Button onClick={() => setViewFile(true)}>
+                  Open source file
+                </Button>
+              </>
+            )}
             <TransactionNote
               caseId={caseId}
               transactionId={transactionId}
@@ -317,46 +415,6 @@ export function LedgerSourceDialog({
               />
               <p className="text-sm text-muted-foreground">{data.limitation}</p>
             </details>
-            <p className="font-medium">
-              {data.ref_id} · {data.filename}
-            </p>
-            {data.ledger_status === "superseded" && (
-              <div className="space-y-2">
-                <p>This is the original transaction before correction.</p>
-                {data.superseded_by_id && (
-                  <Button
-                    variant="outline"
-                    onClick={() => setReplacement(data.superseded_by_id)}
-                  >
-                    Open corrected transaction
-                  </Button>
-                )}
-              </div>
-            )}
-            {data.locator_state === "missing" && (
-              <p>
-                No location was stored for this row. You can open the source
-                file.
-              </p>
-            )}
-            {data.locator_state === "invalid" && (
-              <p>
-                The stored location could not be read. You can open the source
-                file without a highlight.
-              </p>
-            )}
-            {data.locator_state === "stored" && (
-              <TransactionSourceHighlight
-                locatorPayload={data.locator}
-                sourceDocumentId={
-                  data.filename.toLowerCase().endsWith(".pdf")
-                    ? data.evidence_file_id
-                    : undefined
-                }
-                valueLabel={data.ref_id}
-              />
-            )}
-            <Button onClick={() => setViewFile(true)}>Open source file</Button>
             {assessAmount ? (
               <SourceAmountPanel
                 key={`${caseId}:${data.evidence_file_id}`}
@@ -382,6 +440,13 @@ export function LedgerSourceDialog({
           documentName={data.filename}
           initialPage={page}
           navigationKey={`${caseId}:${transactionId}`}
+        />
+      )}
+      {finding && (
+        <InvestigatorFindingEditor
+          caseId={caseId}
+          ids={[transactionId]}
+          onClose={() => setFinding(false)}
         />
       )}
     </>

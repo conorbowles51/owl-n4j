@@ -117,7 +117,7 @@ export function PaymentSet({
     `investigation-source:${title}`,
     null
   )
-  const [editingLabels, setEditingLabels] = useState(false)
+  const [labelIds, setLabelIds] = useState<string[] | null>(null)
   const [comparison, setComparison] = useState(false)
   const [finding, setFinding] = useState(false)
   const [requestedPage, setPage] = useFinancialDraft(
@@ -127,8 +127,8 @@ export function PaymentSet({
   )
   const selectedSet = new Set(selected)
   const chosen = rows.filter((row) => selectedSet.has(row.key))
-  const actionRows = chosen.length ? chosen : rows
-  const ids = actionRows.map((row) => row.key)
+  const ids = selected
+  const hiddenCount = selected.length - chosen.length
   const page = Math.min(
     requestedPage,
     Math.max(0, Math.ceil(rows.length / 25) - 1)
@@ -140,38 +140,61 @@ export function PaymentSet({
           <h3 className="font-semibold">{title}</h3>
           <p className="text-xs text-muted-foreground">
             {rows.length} payments
-            {chosen.length ? ` · ${chosen.length} selected` : ""}
+            {selected.length ? ` · ${selected.length} selected` : ""}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button
             variant="outline"
-            disabled={!ids.length}
-            onClick={() => setComparison(true)}
+            disabled={
+              !rows.length || rows.every((row) => selectedSet.has(row.key))
+            }
+            onClick={() =>
+              setSelected((current) => [
+                ...new Set([...current, ...rows.map((row) => row.key)]),
+              ])
+            }
           >
-            Compare {ids.length} payments
+            Select all {rows.length} payments
           </Button>
-          {canEdit && (
-            <Button
-              variant="outline"
-              disabled={!ids.length}
-              onClick={() => setEditingLabels(true)}
-            >
-              Categorize {ids.length} payments
-            </Button>
-          )}
-          {canEdit && (
-            <Button disabled={!ids.length} onClick={() => setFinding(true)}>
-              Create finding
-            </Button>
-          )}
-          {chosen.length > 0 && (
-            <Button variant="ghost" onClick={() => setSelected([])}>
-              Clear selection
-            </Button>
+          {ids.length > 0 && (
+            <>
+              <Button
+                variant="outline"
+                disabled={!ids.length}
+                onClick={() => setComparison(true)}
+              >
+                Compare {ids.length} payments
+              </Button>
+              {canEdit && (
+                <Button
+                  variant="outline"
+                  disabled={!ids.length}
+                  onClick={() => setLabelIds(ids)}
+                >
+                  Categorize {ids.length} payments
+                </Button>
+              )}
+              {canEdit && (
+                <Button disabled={!ids.length} onClick={() => setFinding(true)}>
+                  Create finding
+                </Button>
+              )}
+              {selected.length > 0 && (
+                <Button variant="ghost" onClick={() => setSelected([])}>
+                  Clear selection
+                </Button>
+              )}
+            </>
           )}
         </div>
       </div>
+      {!!hiddenCount && (
+        <p className="text-sm">
+          {hiddenCount} selected payments are outside this view. Compare opens
+          the complete selection.
+        </p>
+      )}
       <div
         className={`grid gap-4 ${source && wide ? "xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.8fr)]" : ""}`}
       >
@@ -189,6 +212,7 @@ export function PaymentSet({
               )
             }
             onOpen={(row) => setSource(row.key)}
+            onCategorize={canEdit ? (row) => setLabelIds([row.key]) : undefined}
           />
           {rows.length > 25 && (
             <div className="flex items-center gap-3 py-3">
@@ -223,11 +247,11 @@ export function PaymentSet({
           />
         )}
       </div>
-      {editingLabels && (
+      {labelIds && (
         <PaymentLabelsEditor
           caseId={caseId}
-          ids={ids}
-          onClose={() => setEditingLabels(false)}
+          ids={labelIds}
+          onClose={() => setLabelIds(null)}
         />
       )}
       {comparison && (

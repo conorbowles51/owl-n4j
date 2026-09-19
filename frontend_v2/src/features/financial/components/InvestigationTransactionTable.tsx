@@ -1,3 +1,4 @@
+import { openPaymentParty } from "../lib/payment-party-navigation"
 import { chartRatio } from "../lib/investigator-workspace"
 import type { LedgerTransaction } from "../api"
 import { formatLedgerAmount } from "../lib/ledger-format"
@@ -98,6 +99,7 @@ export function InvestigationTransactionTable({
   onToggle,
   onOpen,
   onNote,
+  onCategorize,
   compact = false,
   showAccount,
   findings = [],
@@ -110,6 +112,7 @@ export function InvestigationTransactionTable({
   onToggle: (row: LedgerTransaction, checked: boolean) => void
   onOpen?: (row: LedgerTransaction) => void
   onNote?: (row: LedgerTransaction) => void
+  onCategorize?: (row: LedgerTransaction) => void
 }) {
   const selectedIds = new Set(selected)
   const notes = new Map<string, { count: number; followUp: boolean }>()
@@ -123,6 +126,7 @@ export function InvestigationTransactionTable({
       notes.set(id, value)
     }
   const multipleAccounts = new Set(rows.map((row) => row.account_id)).size > 1
+  const hasBalance = rows.some((row) => row.running_balance_minor != null)
   const cards = rows.some((row) => row.account_type === "credit_card")
   const money = (value: string | number, currency: string) =>
     `${formatLedgerAmount(value, currency).text} ${currency}`
@@ -144,7 +148,7 @@ export function InvestigationTransactionTable({
             <th className="p-2">Category</th>
             <th className="p-2 text-right">{cards ? "Credit" : "Money in"}</th>
             <th className="p-2 text-right">{cards ? "Debit" : "Money out"}</th>
-            <th className="p-2 text-right">Balance</th>
+            {hasBalance && <th className="p-2 text-right">Balance</th>}
           </tr>
         </thead>
         <tbody>
@@ -234,24 +238,37 @@ export function InvestigationTransactionTable({
                 )}
               </td>
               <td className="p-2 max-w-44 break-words">
-                {row.from_name ||
-                  (row.direction === "debit"
-                    ? row.account_label
-                    : row.counterparty_raw) ||
-                  "Not recorded"}
+                <button
+                  className="text-left underline underline-offset-2 decoration-muted-foreground/40"
+                  onClick={() => openPaymentParty(row.case_id, row, "from")}
+                >
+                  {row.from_name ||
+                    (row.direction === "debit"
+                      ? row.account_label
+                      : row.counterparty_raw) ||
+                    "Not recorded"}
+                </button>
               </td>
               <td className="p-2 max-w-44 break-words">
-                {row.to_name ||
-                  (row.direction === "credit"
-                    ? row.account_label
-                    : row.counterparty_raw) ||
-                  "Not recorded"}
+                <button
+                  className="text-left underline underline-offset-2 decoration-muted-foreground/40"
+                  onClick={() => openPaymentParty(row.case_id, row, "to")}
+                >
+                  {row.to_name ||
+                    (row.direction === "credit"
+                      ? row.account_label
+                      : row.counterparty_raw) ||
+                    "Not recorded"}
+                </button>
               </td>
               <td className="p-2">
                 <button
                   className="finance-badge underline underline-offset-2 text-left"
                   data-finance-tone="work"
-                  onClick={() => onOpen?.(row)}
+                  aria-label={`Change category for ${row.description || row.ref_id}`}
+                  onClick={() =>
+                    onCategorize ? onCategorize(row) : onOpen?.(row)
+                  }
                 >
                   {row.category || "Uncategorized"}
                 </button>
@@ -272,11 +289,13 @@ export function InvestigationTransactionTable({
                   ? money(row.amount_minor, row.currency)
                   : ""}
               </td>
-              <td className="p-2 text-right tabular-nums">
-                {row.running_balance_minor === null
-                  ? "Not recorded"
-                  : money(row.running_balance_minor, row.currency)}
-              </td>
+              {hasBalance && (
+                <td className="p-2 text-right tabular-nums">
+                  {row.running_balance_minor === null
+                    ? "Not recorded"
+                    : money(row.running_balance_minor, row.currency)}
+                </td>
+              )}
             </tr>
           ))}
         </tbody>

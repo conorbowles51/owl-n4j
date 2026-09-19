@@ -29,6 +29,8 @@ export function InvestigatorTrends({ caseId }: { caseId: string }) {
     metric: "amount",
     page: 0,
     selected: "",
+    chart: "time",
+    showUndated: false,
   })
   const [compare, setCompare] = useState<string[] | null>(null)
   const groups = [...new Set(data.rows.map(paymentGroup))].sort()
@@ -146,323 +148,364 @@ export function InvestigatorTrends({ caseId }: { caseId: string }) {
       <WorkspaceScope caseId={caseId} />
       <InvestigationReadState data={data}>
         <div
-          className="finance-panel rounded-xl border p-5 space-y-4"
-          data-finance-tone="info"
+          className="flex flex-wrap items-end gap-3"
+          role="group"
+          aria-label="Trend view"
         >
-          <div className="flex flex-wrap justify-between items-end gap-4">
-            <div>
-              <h3 className="font-semibold text-lg">
-                {metric === "balance"
-                  ? "Recorded balance over time"
-                  : metric === "count"
-                    ? "Number of payments over time"
-                    : kind === "card"
-                      ? "Card charges and credits over time"
-                      : "Money in and out over time"}
-              </h3>
-              <p className="text-sm text-muted-foreground">
-                {first || "No dated payments"}
-                {last ? ` to ${last}` : ""}
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-3 text-sm">
-              <label>
-                Amounts
-                <select
-                  aria-label="Trend currency and account type"
-                  className="block rounded border bg-background p-2"
-                  value={group}
-                  onChange={(e) =>
-                    setView({
-                      ...view,
-                      group: e.target.value,
-                      page: 0,
-                      selected: "",
-                    })
-                  }
-                >
-                  {groups.map((value) => (
-                    <option key={value} value={value}>
-                      {value.split(":")[0]} ·{" "}
-                      {value.endsWith(":card")
-                        ? "credit cards"
-                        : "bank accounts"}
+          {" "}
+          <label>
+            Amounts
+            <select
+              aria-label="Trend currency and account type"
+              className="block rounded border bg-background p-2"
+              value={group}
+              onChange={(e) =>
+                setView({
+                  ...view,
+                  group: e.target.value,
+                  page: 0,
+                  selected: "",
+                })
+              }
+            >
+              {groups.map((value) => (
+                <option key={value} value={value}>
+                  {value.split(":")[0]} ·{" "}
+                  {value.endsWith(":card") ? "credit cards" : "bank accounts"}
+                </option>
+              ))}
+            </select>
+          </label>
+          <Button
+            variant={view.chart !== "category" ? "primary" : "outline"}
+            onClick={() => setView({ ...view, chart: "time" })}
+          >
+            Over time
+          </Button>
+          <Button
+            variant={view.chart === "category" ? "primary" : "outline"}
+            onClick={() => setView({ ...view, chart: "category" })}
+          >
+            By category
+          </Button>
+        </div>
+        {view.chart !== "category" && (
+          <div
+            className="finance-panel rounded-xl border p-5 space-y-4"
+            data-finance-tone="info"
+          >
+            <div className="flex flex-wrap justify-between items-end gap-4">
+              <div>
+                <h3 className="font-semibold text-lg">
+                  {metric === "balance"
+                    ? "Recorded balance over time"
+                    : metric === "count"
+                      ? "Number of payments over time"
+                      : kind === "card"
+                        ? "Card charges and credits over time"
+                        : "Money in and out over time"}
+                </h3>
+                <p className="text-sm text-muted-foreground">
+                  {first || "No dated payments"}
+                  {last ? ` to ${last}` : ""}
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-3 text-sm">
+                <label>
+                  Interval
+                  <select
+                    className="block rounded border bg-background p-2"
+                    value={view.granularity}
+                    onChange={(e) =>
+                      setView({
+                        ...view,
+                        granularity: e.target.value as "month" | "day",
+                        page: 0,
+                        selected: "",
+                      })
+                    }
+                  >
+                    <option value="month">Monthly</option>
+                    <option value="day">Daily</option>
+                  </select>
+                </label>
+                <label>
+                  Show
+                  <select
+                    className="block rounded border bg-background p-2"
+                    value={metric}
+                    onChange={(e) =>
+                      setView({ ...view, metric: e.target.value })
+                    }
+                  >
+                    <option value="amount">Amounts</option>
+                    <option value="count">Payment count</option>
+                    <option value="balance" disabled={accounts.size !== 1}>
+                      Recorded balance (one account)
                     </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Interval
-                <select
-                  className="block rounded border bg-background p-2"
-                  value={view.granularity}
-                  onChange={(e) =>
-                    setView({
-                      ...view,
-                      granularity: e.target.value as "month" | "day",
-                      page: 0,
-                      selected: "",
-                    })
-                  }
-                >
-                  <option value="month">Monthly</option>
-                  <option value="day">Daily</option>
-                </select>
-              </label>
-              <label>
-                Show
-                <select
-                  className="block rounded border bg-background p-2"
-                  value={metric}
-                  onChange={(e) => setView({ ...view, metric: e.target.value })}
-                >
-                  <option value="amount">Amounts</option>
-                  <option value="count">Payment count</option>
-                  <option value="balance" disabled={accounts.size !== 1}>
-                    Recorded balance (one account)
-                  </option>
-                </select>
-              </label>
+                  </select>
+                </label>
+              </div>
             </div>
-          </div>
-          {visible.length ? (
-            <>
-              <div className="overflow-x-auto">
-                <svg
-                  viewBox="0 0 1000 295"
-                  className="w-full min-w-[700px]"
-                  role="group"
-                  aria-label="Chronological payment chart"
-                >
-                  {[0, 1, 2, 3, 4].map((tick) => {
-                    const value =
-                      minimum + ((maximum - minimum) * BigInt(tick)) / 4n
-                    return (
-                      <g key={tick}>
-                        <line
-                          x1="150"
-                          x2="990"
-                          y1={y(value)}
-                          y2={y(value)}
-                          stroke="currentColor"
-                          opacity="0.12"
-                        />
-                        <text
-                          x="140"
-                          y={y(value) + 4}
-                          textAnchor="end"
-                          fontSize="11"
-                          fill="currentColor"
-                        >
-                          {amount(value)}
-                        </text>
-                      </g>
-                    )
-                  })}
-                  {visible.map((period, index) => {
-                    const x = 150 + index * step + step / 2
-                    return (
-                      <g
-                        key={period.date}
-                        role="button"
-                        tabIndex={0}
-                        aria-label={`${label(period.date)}: ${period.rows.length} imported payments. Open period`}
-                        onClick={() =>
-                          setView({ ...view, selected: period.date })
-                        }
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter" || event.key === " ") {
-                            event.preventDefault()
-                            setView({ ...view, selected: period.date })
-                          }
-                        }}
-                        className="cursor-pointer focus:outline-primary"
-                      >
-                        <rect
-                          x={x - step / 2 + 1}
-                          y="25"
-                          width={step - 2}
-                          height="232"
-                          fill={
-                            selected?.date === period.date
-                              ? "var(--finance-info)"
-                              : "transparent"
-                          }
-                          opacity="0.15"
-                        />
-                        {metric === "balance"
-                          ? values[index][0] !== null && (
-                              <>
-                                <circle
-                                  cx={x}
-                                  cy={y(values[index][0]!)}
-                                  r="5"
-                                  fill="var(--finance-info)"
-                                />
-                                {index > 0 && values[index - 1][0] !== null && (
-                                  <line
-                                    x1={x - step}
-                                    x2={x}
-                                    y1={y(values[index - 1][0]!)}
-                                    y2={y(values[index][0]!)}
-                                    stroke="var(--finance-info)"
-                                    strokeWidth="2"
-                                  />
-                                )}
-                                <title>{`${label(period.date)}: ${amount(values[index][0]!)}. Last printed balance in this interval.`}</title>
-                              </>
-                            )
-                          : values[index].map((value, direction) => (
-                              <rect
-                                key={direction}
-                                x={x + (direction ? 1 : -step * 0.32)}
-                                y={y(value ?? 0n)}
-                                width={step * 0.3}
-                                height={Math.max(
-                                  value ? 2 : 0,
-                                  baseline - y(value ?? 0n)
-                                )}
-                                rx="2"
-                                fill={
-                                  direction
-                                    ? "var(--finance-debit)"
-                                    : "var(--finance-credit)"
-                                }
-                              >
-                                <title>{`${label(period.date)}: ${direction ? "debit" : "credit"} ${amount(value ?? 0n)}`}</title>
-                              </rect>
-                            ))}
-                        {!period.rows.length && (
+            {visible.length ? (
+              <>
+                <div className="overflow-x-auto">
+                  <svg
+                    viewBox="0 0 1000 295"
+                    className="w-full min-w-[700px]"
+                    role="group"
+                    aria-label="Chronological payment chart"
+                  >
+                    {[0, 1, 2, 3, 4].map((tick) => {
+                      const value =
+                        minimum + ((maximum - minimum) * BigInt(tick)) / 4n
+                      return (
+                        <g key={tick}>
+                          <line
+                            x1="150"
+                            x2="990"
+                            y1={y(value)}
+                            y2={y(value)}
+                            stroke="currentColor"
+                            opacity="0.12"
+                          />
                           <text
-                            x={x}
-                            y={baseline - 5}
-                            textAnchor="middle"
-                            fontSize="13"
+                            x="140"
+                            y={y(value) + 4}
+                            textAnchor="end"
+                            fontSize="11"
                             fill="currentColor"
                           >
-                            ·
+                            {amount(value)}
                           </text>
-                        )}
-                        <text
-                          x={x}
-                          y="278"
-                          textAnchor="middle"
-                          fontSize={visible.length > 20 ? "9" : "12"}
-                          fill="currentColor"
+                        </g>
+                      )
+                    })}
+                    {visible.map((period, index) => {
+                      const x = 150 + index * step + step / 2
+                      return (
+                        <g
+                          key={period.date}
+                          role="button"
+                          tabIndex={0}
+                          aria-label={`${label(period.date)}: ${period.rows.length} imported payments. Open period`}
+                          onClick={() =>
+                            setView({ ...view, selected: period.date })
+                          }
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault()
+                              setView({ ...view, selected: period.date })
+                            }
+                          }}
+                          className="cursor-pointer focus:outline-primary"
                         >
-                          {label(period.date)}
-                        </text>
-                      </g>
-                    )
-                  })}
-                </svg>
-              </div>
-              <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
-                {metric === "balance" ? (
-                  <span>
-                    Each point is the last printed balance in that interval. A
-                    gap means no balance was recorded.
-                  </span>
-                ) : (
-                  <>
-                    <span className="flex items-center gap-2">
-                      <i className="w-3 h-3 rounded-sm bg-[var(--finance-credit)]" />
-                      {kind === "card" ? "Card credits" : "Money in"}
-                    </span>
-                    <span className="flex items-center gap-2">
-                      <i className="w-3 h-3 rounded-sm bg-[var(--finance-debit)]" />
-                      {kind === "card" ? "Card charges" : "Money out"}
-                    </span>
-                  </>
-                )}
-                <span>Select a date to inspect its payments.</span>
-              </div>
-              <p className="text-sm text-muted-foreground">
-                Empty intervals mean no imported payments, not confirmed
-                inactivity.{" "}
-                {register.imports.isError
-                  ? "Statement coverage could not be checked."
-                  : "Select an interval to check its recorded statement dates."}
-                {unknownDates > 0 &&
-                  ` ${unknownDates} payments have no known payment date and are omitted from this chart.`}
-                {kind === "card" &&
-                  " Card charges increase the amount owed; credits reduce it."}
-              </p>
-              {periods.length > size && (
-                <div className="flex items-center gap-3">
-                  <Button
-                    variant="outline"
-                    disabled={!page}
-                    onClick={() => setView({ ...view, page: page - 1 })}
-                  >
-                    Earlier dates
-                  </Button>
-                  <span className="text-sm">
-                    {visible[0].date} to {visible.at(-1)!.end}
-                  </span>
-                  <Button
-                    variant="outline"
-                    disabled={(page + 1) * size >= periods.length}
-                    onClick={() => setView({ ...view, page: page + 1 })}
-                  >
-                    Later dates
-                  </Button>
-                </div>
-              )}
-              <details>
-                <summary className="cursor-pointer text-sm">
-                  Read the chart values as a table
-                </summary>
-                <div className="overflow-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-left">
-                        <th>Period</th>
-                        <th>
-                          {metric === "balance" ? "Recorded balance" : "Credit"}
-                        </th>
-                        {metric !== "balance" && <th>Debit</th>}
-                        <th>Payments</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {visible.map((period, index) => (
-                        <tr key={period.date} className="border-t">
-                          <td>
-                            <button
-                              className="underline p-2"
-                              onClick={() =>
-                                setView({ ...view, selected: period.date })
-                              }
+                          <rect
+                            x={x - step / 2 + 1}
+                            y="25"
+                            width={step - 2}
+                            height="232"
+                            fill={
+                              selected?.date === period.date
+                                ? "var(--finance-info)"
+                                : "transparent"
+                            }
+                            opacity="0.15"
+                          />
+                          {metric === "balance"
+                            ? values[index][0] !== null && (
+                                <>
+                                  <circle
+                                    cx={x}
+                                    cy={y(values[index][0]!)}
+                                    r="5"
+                                    fill="var(--finance-info)"
+                                  />
+                                  {index > 0 &&
+                                    values[index - 1][0] !== null && (
+                                      <line
+                                        x1={x - step}
+                                        x2={x}
+                                        y1={y(values[index - 1][0]!)}
+                                        y2={y(values[index][0]!)}
+                                        stroke="var(--finance-info)"
+                                        strokeWidth="2"
+                                      />
+                                    )}
+                                  <title>{`${label(period.date)}: ${amount(values[index][0]!)}. Last printed balance in this interval.`}</title>
+                                </>
+                              )
+                            : values[index].map((value, direction) => (
+                                <rect
+                                  key={direction}
+                                  x={x + (direction ? 1 : -step * 0.32)}
+                                  y={y(value ?? 0n)}
+                                  width={step * 0.3}
+                                  height={Math.max(
+                                    value ? 2 : 0,
+                                    baseline - y(value ?? 0n)
+                                  )}
+                                  rx="2"
+                                  fill={
+                                    direction
+                                      ? "var(--finance-debit)"
+                                      : "var(--finance-credit)"
+                                  }
+                                >
+                                  <title>{`${label(period.date)}: ${direction ? "debit" : "credit"} ${amount(value ?? 0n)}`}</title>
+                                </rect>
+                              ))}
+                          {!period.rows.length && (
+                            <text
+                              x={x}
+                              y={baseline - 5}
+                              textAnchor="middle"
+                              fontSize="13"
+                              fill="currentColor"
                             >
-                              {label(period.date)}
-                            </button>
-                          </td>
-                          <td>
-                            {values[index][0] === null
-                              ? "Not recorded"
-                              : amount(values[index][0]!)}
-                          </td>
-                          {metric !== "balance" && (
-                            <td>{amount(values[index][1] ?? 0n)}</td>
+                              ·
+                            </text>
                           )}
-                          <td>{period.rows.length}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                          <text
+                            x={x}
+                            y="278"
+                            textAnchor="middle"
+                            fontSize={visible.length > 20 ? "9" : "12"}
+                            fill="currentColor"
+                          >
+                            {label(period.date)}
+                          </text>
+                        </g>
+                      )
+                    })}
+                  </svg>
                 </div>
-              </details>
-            </>
-          ) : (
-            <p className="py-8 text-center text-muted-foreground">
-              No dated payments in this scope. Import a statement or change the
-              accounts and dates.
-            </p>
-          )}
-        </div>
-        <CategoryMoneyChart caseId={caseId} rows={rows} />
-        {selected && (
+                <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
+                  {metric === "balance" ? (
+                    <span>
+                      Each point is the last printed balance in that interval. A
+                      gap means no balance was recorded.
+                    </span>
+                  ) : (
+                    <>
+                      <span className="flex items-center gap-2">
+                        <i className="w-3 h-3 rounded-sm bg-[var(--finance-credit)]" />
+                        {kind === "card" ? "Card credits" : "Money in"}
+                      </span>
+                      <span className="flex items-center gap-2">
+                        <i className="w-3 h-3 rounded-sm bg-[var(--finance-debit)]" />
+                        {kind === "card" ? "Card charges" : "Money out"}
+                      </span>
+                    </>
+                  )}
+                  <span>Select a date to inspect its payments.</span>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Empty intervals mean no imported payments, not confirmed
+                  inactivity.{" "}
+                  {register.imports.isError
+                    ? "Statement coverage could not be checked."
+                    : "Select an interval to check its recorded statement dates."}
+                  {unknownDates > 0 &&
+                    ` ${unknownDates} payments have no known payment date and are omitted from this chart.`}
+                  {kind === "card" &&
+                    " Card charges increase the amount owed; credits reduce it."}
+                </p>
+                {periods.length > size && (
+                  <div className="flex items-center gap-3">
+                    <Button
+                      variant="outline"
+                      disabled={!page}
+                      onClick={() => setView({ ...view, page: page - 1 })}
+                    >
+                      Earlier dates
+                    </Button>
+                    <span className="text-sm">
+                      {visible[0].date} to {visible.at(-1)!.end}
+                    </span>
+                    <Button
+                      variant="outline"
+                      disabled={(page + 1) * size >= periods.length}
+                      onClick={() => setView({ ...view, page: page + 1 })}
+                    >
+                      Later dates
+                    </Button>
+                  </div>
+                )}
+                <details>
+                  <summary className="cursor-pointer text-sm">
+                    Read the chart values as a table
+                  </summary>
+                  <div className="overflow-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-left">
+                          <th>Period</th>
+                          <th>
+                            {metric === "balance"
+                              ? "Recorded balance"
+                              : "Credit"}
+                          </th>
+                          {metric !== "balance" && <th>Debit</th>}
+                          <th>Payments</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {visible.map((period, index) => (
+                          <tr key={period.date} className="border-t">
+                            <td>
+                              <button
+                                className="underline p-2"
+                                onClick={() =>
+                                  setView({ ...view, selected: period.date })
+                                }
+                              >
+                                {label(period.date)}
+                              </button>
+                            </td>
+                            <td>
+                              {values[index][0] === null
+                                ? "Not recorded"
+                                : amount(values[index][0]!)}
+                            </td>
+                            {metric !== "balance" && (
+                              <td>{amount(values[index][1] ?? 0n)}</td>
+                            )}
+                            <td>{period.rows.length}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </details>
+              </>
+            ) : (
+              <p className="py-8 text-center text-muted-foreground">
+                No dated payments in this scope. Import a statement or change
+                the accounts and dates.
+              </p>
+            )}
+          </div>
+        )}
+        {unknownDates > 0 && (
+          <Button
+            variant="outline"
+            onClick={() => setView({ ...view, showUndated: !view.showUndated })}
+          >
+            {view.showUndated ? "Hide" : "View"} {unknownDates} undated payments
+          </Button>
+        )}
+        {view.showUndated && unknownDates > 0 && (
+          <PaymentSet
+            caseId={caseId}
+            rows={rows.filter((row) => !paymentDay(row))}
+            title="Payments without a printed date"
+          />
+        )}
+        {view.chart === "category" && (
+          <CategoryMoneyChart caseId={caseId} rows={rows} />
+        )}
+        {selected && view.chart !== "category" && (
           <section className="rounded-xl border bg-card p-5 space-y-4">
             <div className="flex flex-wrap justify-between gap-3">
               <div>
