@@ -36,6 +36,10 @@ def exact_amount(text, currency):
     value = text.strip().replace('\u00a0', ' ')
     code = get_currency(currency)
     symbols = {'EUR': '€', 'GBP': '£', 'USD': '$', 'CAD': '$', 'AUD': '$', 'NZD': '$'}
+    marker = re.match(r'^[=(+\-−\s]*(\$|€|£|[A-Z]{3})', value)
+    if marker and (marker[1] in {'$', '€', '£'} and marker[1] != symbols.get(currency)
+                   or marker[1] not in {'$', '€', '£'} and marker[1] != currency):
+        raise ValueError(f'The statement shows "{text.strip()[:80]}", but this review uses {currency}. Change the statement currency.')
     prefix = re.escape(currency)
     if currency in symbols:
         prefix += '|' + re.escape(symbols[currency])
@@ -44,7 +48,7 @@ def exact_amount(text, currency):
     if negative:
         value = value[1:-1]
     if not re.fullmatch(r'[+-]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?', value):
-        raise ValueError('Check this amount against the statement.')
+        raise ValueError(f'Loupe could not read "{text.strip()[:80]}" as an amount. Compare it with the PDF and correct the value.')
     if negative and value.startswith(('-', '+')):
         raise ValueError('The amount has conflicting signs.')
     try:

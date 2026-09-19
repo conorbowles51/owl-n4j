@@ -94,7 +94,7 @@ def assigned_proposal(session, file, proposal, cache):
 
 def assignment_choices(session, file, choices, currency, cache):
     state = (file.metadata_ or {}).get('financial_row_assignments')
-    if not state or not currency:
+    if not state:
         return choices
     from services.financial.import_batches import initial_request
     from services.financial.review_arithmetic import check_proposed_rows
@@ -103,7 +103,8 @@ def assignment_choices(session, file, choices, currency, cache):
         if choice['id'] not in state['base_revisions']:
             result.append(choice)
             continue
-        proposal = assigned_proposal(session, file, _base(session, file, currency, choice['id'], cache), cache)
+        chosen_currency = currency or choice.get('currency') or state.get('currency')
+        proposal = assigned_proposal(session, file, _base(session, file, chosen_currency, choice['id'], cache), cache)
         saved = (proposal.get('saved_review') or {}).get('request')
         request = saved if saved and saved['expected_revision'] == proposal['revision'] else initial_request(proposal)
         result.append({**choice, 'checks': check_proposed_rows(proposal, request['rows'])})

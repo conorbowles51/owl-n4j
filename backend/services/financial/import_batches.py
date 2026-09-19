@@ -1,7 +1,6 @@
 """Case-scoped folder batches. Preparation and imports survive browser navigation."""
 import asyncio
 import logging
-import re
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4, uuid5
@@ -9,7 +8,7 @@ from types import SimpleNamespace
 from sqlalchemy import select
 from pydantic import ValidationError
 from postgres.models.financial_import_batches import FinancialImportBatch as Batch, FinancialImportBatchItem as Item
-from postgres.models.evidence import EvidenceFile, EvidenceDocumentText
+from postgres.models.evidence import EvidenceFile
 from services.financial.pdf_candidates import PdfMappingError, _digest
 from services.financial.decisions import Actor
 from services.financial.evidence_intake import resolve_financial_selection, prepare_existing_financial_file
@@ -155,34 +154,17 @@ def assess(proposal, request=None):
     return ('attention' if problems else 'ready'), summary
 
 
-def inferred_currency(session, file_id, proposal):
-    if proposal['currency']:
-        return proposal['currency']
-    text = session.get(EvidenceDocumentText, file_id)
-    content = text.content if text else ''
-    codes = set(re.findall(r'\b(?:USD|EUR|GBP|CAD|AUD|JPY|CHF|NZD|KWD)\b',content))
-    if len(codes)==1:
-        return next(iter(codes))
-    # These recognised US issuer layouts use dollars. A dollar symbol by itself,
-    # or conflicting printed currency codes, is not enough for other layouts.
-    choices = proposal.get('statement_choices',[])
-    if not codes and choices and all(c.get('layout_id') in ('capital-one-card','merrick-card','andrews-share-statement') for c in choices) and '$' in content:
-        return 'USD'
-    return ''
-
-
 def prepare_reviews(session, batch, file):
     cache = {}
     fid = UUID(file['file_id'])
     session.execute(select(EvidenceFile).where(EvidenceFile.id == fid,
         EvidenceFile.case_id == batch.case_id).with_for_update().execution_options(populate_existing=True)).all()
     first = read_statement_import(session,case_id=batch.case_id,evidence_file_id=fid,currency=file.get('currency'),_cache=cache)
-    currency = file.get('currency') or inferred_currency(session,fid,first)
     choices = first.get('statement_choices',[])
-    identifiers = [c['id'] for c in choices] if currency else [None]
+    identifiers = [c['id'] for c in choices]
     if not identifiers: identifiers=[None]
     for statement_id in identifiers:
-        proposal = read_statement_import(session,case_id=batch.case_id,evidence_file_id=fid,currency=currency or None,statement_id=statement_id,_cache=cache)
+        proposal = read_statement_import(session,case_id=batch.case_id,evidence_file_id=fid,currency=file.get('currency') or None,statement_id=statement_id,_cache=cache)
         key = statement_id or proposal.get('statement_id') or ''
         identifier = uuid5(batch.id, str(fid)+':'+key)
         existing = session.get(Item,identifier)
@@ -197,13 +179,13 @@ def prepare_reviews(session, batch, file):
             # recovery panel. Assessment holds import until comparison is saved.
             draft = None
         status,summary = assess(proposal, draft)
-        summary.update(filename=file['filename'], currency=currency, source_id=file['source_id'])
+        summary.update(filename=file['filename'], currency=proposal['currency'], source_id=file['source_id'])
         if existing:
             existing.status=status; existing.summary=summary; existing.review_request=draft
         else:
             session.add(Item(id=identifier,batch_id=batch.id,file_id=fid,statement_key=key,status=status,summary=summary,review_request=draft))
     # A former file-level currency question is replaced by its actual periods.
-    if currency and choices:
+    if choices:
         stale = session.get(Item,uuid5(batch.id,str(fid)+':'))
         if stale and stale.status=='attention' and not stale.review_request:
             session.delete(stale)

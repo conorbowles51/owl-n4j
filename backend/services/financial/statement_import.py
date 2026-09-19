@@ -172,7 +172,6 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
     banks = [line.strip() for line in header.splitlines() if re.search(r'\b(?:bank|credit union)\b', line, re.I) and not re.search(r'statement|account|:', line, re.I)]
     metadata['institution'] = _label(header, ('Bank', 'Institution')) or (banks[0] if len(set(banks)) == 1 else '')
     metadata['period_start'], metadata['period_end'] = _period(metadata['period'])
-    chosen_currency = currency or metadata['currency']
     issues = []
     if not metadata['holder']:
         issues.append('Check the account holder. It could not be identified automatically.')
@@ -204,13 +203,21 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
         cache[catalog_key] = statement_catalog(all_sources)
     catalog = cache[catalog_key]
     from services.financial.deposit_receipt_proposal import deposit_receipt_choices
-    choices = catalog['statements'] + deposit_receipt_choices(all_sources)
+    from services.financial.statement_currency import currencies_by_statement, detect_statement_currency
+    currencies_key = ('currencies', source_key)
+    if currencies_key not in cache:
+        cache[currencies_key] = currencies_by_statement(
+            catalog['statements'] + deposit_receipt_choices(all_sources), all_sources)
+    choices = cache[currencies_key]
+    detected = {choice.get('currency', '') for choice in choices if not choice.get('document_kind')}
+    detected_currency = (next(iter(detected)) if len(detected) == 1 else '') if choices else detect_statement_currency(all_sources, header_text=header)
+    chosen_currency = currency or detected_currency
     from services.financial.review_recovery import recovery_state
     from services.financial.statement_review_checks import add_period_checks
     checks_key = ('checks', source_key, chosen_currency)
     if _include_period_checks:
         if checks_key not in cache:
-            cache[checks_key] = add_period_checks(choices, all_sources, chosen_currency)
+            cache[checks_key] = add_period_checks(choices, all_sources, currency)
         choices = cache[checks_key]
         if _apply_assignments:
             from services.financial.statement_row_assignment import assignment_choices
@@ -239,6 +246,8 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
             statement_choices=choices, statement_id=selected['id'], page_numbers=document['page_numbers'])
     sources = all_sources
     if selected:
+        detected_currency = selected.get('currency', '')
+        chosen_currency = currency or detected_currency
         addresses = {(item['page_number'], item['table_index']) for item in selected['sources']}
         sources = [source for source in all_sources if (source['page_number'], source['table_index']) in addresses]
         metadata.update(account_type=selected.get('account_type', 'credit_card'), institution=selected['institution'], account_number=selected['account_reference'],
@@ -295,7 +304,7 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
         recovery, _ = recovery_state(session, file, sources=all_sources, choices=choices,
             statement_id=statement_id, revision=None, cache=cache)
         return dict(case_id=str(case_id), evidence_file_id=str(evidence_file_id), filename=file.original_filename,
-                    metadata=metadata, currency='', rows=[], sources=[], issues=issues + ['Choose the statement currency to read its amounts.'],
+                    metadata=metadata, currency='', detected_currency=detected_currency, rows=[], sources=[], issues=issues + ['The statement currency could not be identified confidently. Choose it once to read the amounts.'],
                     statement_choices=choices, statement_id=statement_id,
                     transaction_count=0, needs_attention=1, revision=_digest(dict(file=str(file.id), text=text.content_sha256, version=VERSION)), applied=False,
                     review_recovery=recovery)
@@ -410,7 +419,7 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
     recovery, previous_review = recovery_state(session, file, sources=all_sources, choices=choices,
         statement_id=statement_id, revision=revision, cache=cache)
     result = dict(case_id=str(case_id), evidence_file_id=str(evidence_file_id), filename=file.original_filename,
-                metadata=metadata, currency=chosen_currency, rows=[] if reading_failure else rows, sources=sources, issues=issues,
+                metadata=metadata, currency=chosen_currency, detected_currency=detected_currency, rows=[] if reading_failure else rows, sources=sources, issues=issues,
                 saved_review=review_progress(file, statement_id),
                 previous_saved_review=previous_review, review_recovery=recovery,
                 reading_failure=reading_failure,

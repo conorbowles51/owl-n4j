@@ -281,7 +281,7 @@ A failed download displays an error and leaves your filters in place. Select **D
 4. Keep the browser tab open while the files upload and are read. Each file shows its own progress.
 5. When a file says **Ready to review**, select its filename. Its original PDF and extracted statement open together.
 6. If the PDF contains several statements, choose the account and period you want to import. The page numbers help identify the right statement.
-7. If asked, choose the currency printed on the statement. Do not choose a currency merely because it is your usual working currency.
+7. Loupe detects the currency separately for each statement, in both individual and bulk review. **Detected from statement** shows when it has identified the currency. It asks you to choose only when the source is ambiguous. If an older review saved a different currency, select **Use USD from statement** (or the detected currency shown) to reread the amounts without uploading the PDF again. **Change currency** lets you correct the choice against the original.
 8. Use **Back to all statement files** to return to the register. **Continue last statement review** reopens where you were working.
 
 You do not need to assign columns, select every payment, save a batch or finalize readings in the normal import process. Those tasks happen within the system. Nothing enters the transaction totals until you confirm the import in section 6.

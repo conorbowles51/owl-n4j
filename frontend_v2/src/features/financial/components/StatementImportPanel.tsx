@@ -26,6 +26,7 @@ import { fetchAPI } from "@/lib/api-client"
 import { PdfReviewIntake } from "./PdfReviewIntake"
 import { TransactionSourceHighlight } from "./TransactionSourceHighlight"
 import { StatementRowEditor } from "./StatementRowEditor"
+import { StatementCurrencyControl } from "./StatementCurrencyControl"
 import { StatementBulkCorrections } from "./StatementBulkCorrections"
 import { StatementRowAssignment } from "./StatementRowAssignment"
 import { SavedReviewConflict } from "./SavedReviewConflict"
@@ -78,6 +79,7 @@ const proposalSchema = z.object({
   evidence_file_id: z.string(),
   filename: z.string(),
   currency: z.string(),
+  detected_currency: z.string().optional(),
   revision: z.string(),
   review_recovery: reviewRecoverySchema.nullish(),
   row_assignments: z
@@ -438,7 +440,9 @@ function StatementReview({
   const setCurrency = (currency: string) =>
     useStatementWorkspace.getState().setReviewChoice(choiceKey, { currency })
   const setStatementId = (statementId: string) =>
-    useStatementWorkspace.getState().setReviewChoice(choiceKey, { statementId })
+    useStatementWorkspace
+      .getState()
+      .setReviewChoice(choiceKey, { statementId, currency: "" })
   const query = useQuery({
     queryKey: ["statement-import", caseId, fileId, currency, statementId],
     retry: false,
@@ -523,6 +527,10 @@ function StatementReview({
   if (!query.data.currency)
     return (
       <div>
+        <p className="text-sm mt-3">
+          Loupe could not identify the currency confidently. Choose it once for
+          this statement.
+        </p>
         {!batchReview && query.data.statement_choices.length > 1 && (
           <Button variant="outline" onClick={() => setStatementId("")}>
             {hasReceipts
@@ -561,6 +569,14 @@ function StatementReview({
     )
   return (
     <div className="space-y-3">
+      <StatementCurrencyControl
+        currency={query.data.currency}
+        detectedCurrency={query.data.detected_currency}
+        disabled={
+          !canEdit || !!batchReview?.readOnly || !!query.data.current_import
+        }
+        onChange={setCurrency}
+      />
       {!batchReview && query.data.statement_choices.length > 1 && (
         <StatementPeriodSelect
           choices={query.data.statement_choices}

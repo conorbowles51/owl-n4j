@@ -38,17 +38,20 @@ def add_period_checks(choices, sources, currency):
     A balance match is arithmetic only. Missing controls and unreadable amounts
     never receive a successful reconciliation status.
     """
-    if not currency:
-        return choices
     from services.financial.money import get_currency, MoneyError
-    try:
-        get_currency(currency)
-    except MoneyError:
-        return choices  # The selected-period review presents the currency error.
     by_address = {(s['page_number'], s['table_index']): s for s in sources}
     result = []
     for choice in choices:
         if choice.get('document_kind'):
+            result.append(choice)
+            continue
+        chosen_currency = currency or choice.get('currency')
+        if not chosen_currency:
+            result.append(choice)
+            continue
+        try:
+            get_currency(chosen_currency)
+        except MoneyError:
             result.append(choice)
             continue
         selected = [by_address[(s['page_number'], s['table_index'])] for s in choice['sources']]
@@ -56,12 +59,12 @@ def add_period_checks(choices, sources, currency):
         try:
             if layout == 'andrews-share-statement':
                 from services.financial.statement_import_andrews import propose_andrews_statement
-                rows = propose_andrews_statement(selected, currency, choice)['rows']
+                rows = propose_andrews_statement(selected, chosen_currency, choice)['rows']
             elif layout in ('capital-one-card', 'merrick-card'):
                 from services.financial.statement_import_card import propose_card_table
                 from services.financial.statement_import_merrick import propose_merrick_table
                 propose = propose_card_table if layout == 'capital-one-card' else propose_merrick_table
-                rows = [row for source in selected for row in propose(source, currency, choice)['rows']]
+                rows = [row for source in selected for row in propose(source, chosen_currency, choice)['rows']]
             else:
                 result.append(choice)
                 continue

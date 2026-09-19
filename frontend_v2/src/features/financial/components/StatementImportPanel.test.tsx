@@ -174,6 +174,56 @@ beforeEach(() => {
     return data as never
   })
 })
+it("uses automatic currency and replaces an old EUR choice with the detected USD reading", async () => {
+  const base = vi.mocked(fetchAPI).getMockImplementation()!
+  useStatementWorkspace.getState().setReviewChoice("anonymous:case:file", {
+    currency: "EUR",
+  })
+  vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
+    if (!url.includes("/statement-import/file?")) return base(url, options)
+    const manual = new URL(url, "http://test").searchParams.get("currency")
+    return {
+      ...data,
+      currency: manual || "USD",
+      detected_currency: "USD",
+      revision: (manual ? "a" : "b").repeat(64),
+      rows: [
+        data.rows[0],
+        {
+          ...data.rows[1],
+          fields: {
+            ...data.rows[1].fields,
+            amount_minor: manual ? "" : "2119",
+          },
+          issues: manual
+            ? [
+                'The statement shows "$21.19", but this review uses EUR. Change the statement currency.',
+              ]
+            : [],
+        },
+      ],
+    } as never
+  })
+  mount()
+  await open()
+  expect(screen.getByLabelText("Credit 1:0:1")).toHaveValue("")
+  expect(
+    screen.getByText(/This statement uses USD, but the review was set to EUR/)
+  ).toBeVisible()
+  fireEvent.click(
+    screen.getByRole("button", { name: "Use USD from statement" })
+  )
+  await screen.findByText("Detected from statement")
+  fireEvent.click(screen.getByRole("button", { name: "Edit import values" }))
+  expect(screen.getByLabelText("Credit 1:0:1")).toHaveValue("21.19")
+  expect(screen.queryByText(/review uses EUR/)).not.toBeInTheDocument()
+  expect(
+    useStatementWorkspace.getState().reviewChoices["anonymous:case:file"]
+      .currency
+  ).toBe("")
+  expect(sent).toEqual([])
+})
+
 it("opens the parent payment editor when a wrapped money cell is selected", async () => {
   const base = vi.mocked(fetchAPI).getMockImplementation()!
   const locator = (rect: number[]) => ({
