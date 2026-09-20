@@ -1,3 +1,4 @@
+import { CurrencyOptions } from "./CurrencyOptions"
 import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { z } from "zod"
@@ -124,8 +125,8 @@ function DetailsForm({
   const initialAmount = (role: (typeof roles)[number]) =>
     data.balances[role].amount_minor === null
       ? ""
-      : correctionMoney(data.balances[role].amount_minor!, currency).replace(
-          ` ${currency}`,
+      : correctionMoney(data.balances[role].amount_minor!, data.currency || "").replace(
+          ` ${data.currency}`,
           ""
         )
   const [amounts, setAmounts] = useState({
@@ -269,13 +270,7 @@ function DetailsForm({
               className="block w-full rounded border bg-background p-2"
             >
               {!currency && <option value="">Choose currency</option>}
-              {data.currency &&
-                !["USD", "MXN", "EUR"].includes(data.currency) && (
-                  <option value={data.currency}>{data.currency}</option>
-                )}
-              <option value="USD">USD — US dollars</option>
-              <option value="MXN">MXN — Mexican pesos</option>
-              <option value="EUR">EUR — Euros</option>
+              <CurrencyOptions />
             </select>
           </label>
           {currency !== data.currency && currency && (

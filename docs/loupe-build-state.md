@@ -1,3 +1,15 @@
+## 20 September live six-file follow-up and unrestricted statement currency choices
+
+The deployed 2937364 repair was exercised while logged in as Alex in Neil finance. Four actual ARRENDO statements were saved and reopened: February USD has 17 payments, January USD has 15, and January/February EUR save their 1,817.77 opening and closing balances with no invented payments. Source highlighting, saved account/balance details, full reload and all-account/holder navigation were checked. Earlier readings remain in history. Alex's manually entered account number was preserved, including its difference from the printed value.
+
+The remaining two MXN PDFs exposed wide amounts extending left of the Cargos heading and BBVA Bancomer footer lines becoming empty transactions. Proposal v30 uses unambiguous amount right edges before description placement and stops at that footer while preserving next-page payment continuations. Replaying the actual retained sources now produces 137 January payments (21 credits 425,297.47; 116 debits 3,062,458.84) and 136 February payments (26 credits 2,901,073.18; 110 debits 2,333,275.71), with no row issues, matching printed counts/totals and matching closing balances. Live saving of those two files follows this release.
+
+Batch status and its transaction link now recognize individually saved imports, follow replacement history and recompute current balance summaries, without rewriting an older draft. A stale invalid draft cannot hide a successful current import. Balance-only recovery copy states that balances are saved without payments.
+
+All statement currency selectors now share the backend-supported catalog, including historical codes. Bulk assignment and post-import editing accept all supported denominations. Exact minor-unit rescaling preserves the same printed numeric amounts across 0/2/3/4-decimal currencies, including balances, unresolved records and audit replacements; unrepresentable precision/overflow rolls back atomically. The batch requires an explicit currency choice instead of assuming MXN. Catalog parity is regression-tested.
+
+Validation: 187 focused backend tests and a further 14 currency/detail tests pass; 92 component/format tests pass. Production build and scoped lint pass. Six Chromium workflow checks pass. Authenticated post-deployment MXN/batch checks follow. The full 588-file client corpus remains unverified; no client-case data was changed.
+
 ## 20 September authenticated ARRENDO review-to-payments repair
 
 Logged into Alex's live Neil finance case and reproduced the exact supplied February USD statement: its current reading contains 17 correct payments, but an earlier import of 245 incomplete records suppresses the import action. Saved manual balances wrongly disqualified automatic recovery; an unchanged 204-row saved review also triggered a stale-reading comparison. Fully read Spanish payment rows were incorrectly presented as layout problems.

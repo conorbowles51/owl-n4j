@@ -97,6 +97,37 @@ class BbvaProposalTests(TestCase):
         self.assertEqual(len(rows), sum(len(s['rows']) for s in sources))
         self.assertEqual(sources, before)
 
+    def test_wide_right_aligned_amounts_are_not_absorbed_into_the_description(self):
+        sources = statement()
+        for table in sources:
+            for row in table['rows']:
+                for cell in row['cells']:
+                    if cell['expected_text'] == '30.00':
+                        cell['expected_text'] = '434,908.22'
+                        cell['locator']['rect'][0] = 340000
+        _, p = self.proposal(sources)
+        payment = next(row for row in p['rows'] if row['fields'].get('description', '').startswith('C49'))
+        self.assertEqual(payment['fields']['amount_minor'], '43490822')
+        self.assertEqual(payment['fields']['direction'], 'debit')
+        self.assertNotIn('434,908.22', payment['fields']['description'])
+        self.assertFalse(payment['issues'])
+
+    def test_bancomer_footer_is_not_a_payment_and_continuation_keeps_its_parent(self):
+        sources = statement()
+        body = sources[1]
+        body['rows'][-1:] = source([
+            [(9000, 580000, 'BBVA BANCOMER, S.A. INSTITUCION DE BANCA MULTIPLE')],
+            [(9000, 580000, 'Av. Paseo de la Reforma 510, C.P. 06600 Mexico')]], table=1)['rows']
+        for i, row in enumerate(body['rows']):
+            row['row_index'] = i
+        _, p = self.proposal(sources)
+        payments = [r for r in p['rows'] if not r['excluded']]
+        self.assertEqual(len(payments), 2)
+        self.assertFalse(any(r['issues'] for r in payments))
+        self.assertTrue(payments[-1]['fields']['description'].endswith('16%'))
+        self.assertNotIn('BANCOMER', payments[-1]['fields']['description'])
+        self.assertEqual(check_statement_rows(p['rows'])['balance_status'], 'matches')
+
     def test_balance_only_statement_has_no_incomplete_payments(self):
         _, p = self.proposal(statement(empty=True))
         self.assertFalse(any(not r['excluded'] for r in p['rows']))

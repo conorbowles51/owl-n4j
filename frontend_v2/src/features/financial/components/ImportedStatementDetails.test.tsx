@@ -144,7 +144,7 @@ it("retains edits after a failed save and requires a page only for changed balan
   ).toHaveLength(1)
 })
 
-it("corrects the saved currency without changing amounts or asking to re-import", async () => {
+it.each(["GBP", "JPY", "KWD", "CLF"])("corrects saved currency to %s without changing printed numbers", async (currency) => {
   const data = {
     ...initial(),
     balances: {
@@ -155,12 +155,12 @@ it("corrects the saved currency without changing amounts or asking to re-import"
   vi.mocked(fetchAPI).mockImplementation(async (_url, options) => {
     if (options?.method === "PUT") {
       expect(options.body).toMatchObject({
-        currency: "MXN",
+        currency,
         expected_revision: data.revision,
       })
       expect(options.body).not.toHaveProperty("opening")
       expect(options.body).not.toHaveProperty("closing")
-      return { ...data, currency: "MXN", revision: "b".repeat(64) } as never
+      return { ...data, currency, revision: "b".repeat(64) } as never
     }
     return data as never
   })
@@ -169,7 +169,7 @@ it("corrects the saved currency without changing amounts or asking to re-import"
     screen.getByRole("button", { name: "Edit account and balances" })
   )
   fireEvent.change(await screen.findByLabelText("Saved statement currency"), {
-    target: { value: "MXN" },
+    target: { value: currency },
   })
   expect(screen.getByLabelText("Saved opening balance")).toHaveValue("60.00")
   expect(screen.getByLabelText("Saved closing balance")).toHaveValue("25.20")

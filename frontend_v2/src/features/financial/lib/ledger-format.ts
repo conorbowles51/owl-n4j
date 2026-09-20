@@ -1,3 +1,4 @@
+import { currencyCatalog } from "./currency-catalog"
 /**
  * Reading a relational ledger row for display.
  *
@@ -97,31 +98,13 @@ export function narrow<T extends string>(
  * How many minor units make one major unit of `currency`, or null when the
  * code is not one this runtime can scale.
  *
- * The answer comes from the runtime's own currency data rather than from a
- * table kept here, because a table kept here is a table that goes stale.
+ * Use the same scale as the backend so historical currencies and units with
+ * four decimal places are displayed exactly as they are stored.
  */
 export function currencyMinorUnits(currency: string): number | null {
   const code = currency.trim().toUpperCase()
-  const cached = minorUnitCache.get(code)
-  if (cached !== undefined) return cached
-
-  let digits: number | null
-  try {
-    digits =
-      new Intl.NumberFormat("en-US", {
-        style: "currency",
-        currency: code,
-      }).resolvedOptions().maximumFractionDigits ?? null
-  } catch {
-    // A code that is not three ASCII letters. Malformed rather than merely
-    // unfamiliar, and worth showing as such.
-    digits = null
-  }
-  minorUnitCache.set(code, digits)
-  return digits
+  return currencyCatalog[code as keyof typeof currencyCatalog] ?? null
 }
-
-const minorUnitCache = new Map<string, number | null>()
 
 export interface LedgerAmountText {
   /**

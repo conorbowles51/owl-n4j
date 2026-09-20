@@ -1,3 +1,5 @@
+import { CurrencyOptions } from "./CurrencyOptions"
+import { currencyMinorUnits } from "../lib/ledger-format"
 import { ImportedStatementDetails } from "./ImportedStatementDetails"
 import { useStatementCoverageReview } from "../hooks/use-statement-coverage-review"
 import { StatementCoverageReview } from "./StatementCoverageReview"
@@ -270,12 +272,7 @@ function initialRows(data: Proposal): Edit[] {
   }))
 }
 function exponent(currency: string) {
-  return (
-    new Intl.NumberFormat("en", {
-      style: "currency",
-      currency,
-    }).resolvedOptions().maximumFractionDigits ?? 2
-  )
+  return currencyMinorUnits(currency) ?? 2
 }
 function displayAmount(value: string, digits: number) {
   if (!/^-?\d+$/.test(value)) return value
@@ -563,22 +560,7 @@ function StatementReview({
             className="border p-2 bg-background"
           >
             <option value="">Choose currency</option>
-            {Array.from(
-              new Set([
-                "EUR",
-                "GBP",
-                "USD",
-                "CAD",
-                "AUD",
-                "JPY",
-                "KWD",
-                ...(typeof Intl.supportedValuesOf === "function"
-                  ? Intl.supportedValuesOf("currency")
-                  : []),
-              ])
-            ).map((c) => (
-              <option key={c}>{c}</option>
-            ))}
+            <CurrencyOptions />
           </select>
         </label>
       </div>
@@ -785,10 +767,11 @@ function RefreshStoredReading({
   return (
     <div className="rounded border p-3 space-y-2">
       <p>
-        The current reading identifies {paymentCount} payments in{" "}
-        {data.currency}. Save these to Transactions with your saved account
-        details and balances. The earlier reading stays in history; this does
-        not add duplicate payments.
+        {paymentCount
+          ? `The current reading identifies ${paymentCount} payments in ${data.currency}. Save these to Transactions with your saved account details and balances.`
+          : `This statement has printed balances in ${data.currency} and no payments. Save its account and balances without adding empty transactions.`}{" "}
+        The earlier reading stays in history; this does not add duplicate
+        payments.
       </p>
       <Button disabled={update.isPending} onClick={() => update.mutate()}>
         {update.isPending
@@ -2928,7 +2911,10 @@ function EditableStatement({
             {data.current_import.evidence_file_id === fileId ? (
               <p>
                 {data.current_import.refresh_available
-                  ? "Use Save payments above to add the current reading to Transactions."
+                  ? (data.current_import.refresh_transaction_count ??
+                    data.transaction_count)
+                    ? "Use Save payments above to add the current reading to Transactions."
+                    : "Use Save statement balances above to update this account. No payments will be added."
                   : data.current_import.transaction_count
                     ? "Open Transactions to work with the saved payments."
                     : "The saved account, balances and original PDF remain available in this statement."}

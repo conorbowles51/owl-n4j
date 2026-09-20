@@ -1,3 +1,4 @@
+import { CurrencyOptions } from "./CurrencyOptions"
 import { useState } from "react"
 import { useMutation, useQuery } from "@tanstack/react-query"
 import { z } from "zod"
@@ -33,7 +34,7 @@ export function BatchCurrencyEditor({
 }) {
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState("")
-  const [currency, setCurrency] = useState("MXN")
+  const [currency, setCurrency] = useState("")
   const [selected, setSelected] = useState<Record<string, Item>>({})
   const [page, setPage] = useState(0)
   const [message, setMessage] = useState("")
@@ -130,7 +131,7 @@ export function BatchCurrencyEditor({
         <>
           <p className="text-sm">
             Find statements by filename, account or date, select them, then
-            apply USD, MXN or EUR. This labels the amounts; it does not exchange
+            choose their currency. This labels the amounts; it does not exchange
             currencies. Already imported statements are not changed.
           </p>
           {query.isPending ? (
@@ -248,13 +249,12 @@ export function BatchCurrencyEditor({
                     disabled={save.isPending}
                     onChange={(e) => setCurrency(e.target.value)}
                   >
-                    {["USD", "MXN", "EUR"].map((code) => (
-                      <option key={code}>{code}</option>
-                    ))}
+                    <option value="">Choose currency</option>
+                    <CurrencyOptions />
                   </select>
                 </label>
                 <Button
-                  disabled={!count || save.isPending}
+                  disabled={!count || !currency || save.isPending}
                   onClick={() => {
                     setMessage("")
                     save.mutate()
@@ -262,7 +262,7 @@ export function BatchCurrencyEditor({
                 >
                   {save.isPending
                     ? "Saving currencies…"
-                    : `Apply ${currency} to ${count} statements`}
+                    : currency ? `Apply ${currency} to ${count} statements` : "Choose currency to apply"}
                 </Button>
                 <Button
                   variant="outline"

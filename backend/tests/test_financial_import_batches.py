@@ -45,6 +45,40 @@ class BatchImportTests(TestCase):
         with self.assertRaisesRegex(PdfMappingError, 'different values'):
             service.confirm_review(**{**args, 'request': StatementReviewDraft.model_validate(changed)})
 
+    def test_individual_import_updates_an_older_batch_without_resaving_its_bad_draft(self):
+        from services.financial.batch_transaction_scope import imported_batch_scope
+        batch = self.create(); self.advance(batch)
+        item = self.status(batch)['items'][0]
+        raw = service.initial_request(self.f.preview())
+        with self.f.SessionLocal() as db:
+            saved = db.get(Item, UUID(item['id']))
+            saved.review_request = {**raw, 'rows': [*raw['rows'], dict(id='manual:bad', manual_page=999)]}
+            saved.status = 'attention'
+            saved.summary = {**saved.summary, 'can_import':False, 'review_model':service.REVIEW_MODEL,
+                'balance_status':'unavailable', 'problems':[dict(message='Old invalid page')], 'problem_count':1}
+            db.commit()
+        receipt = self.f.confirm(raw)
+        from services.financial.statement_details import read_statement_details, update_statement_details, StatementDetailsRequest
+        with self.f.SessionLocal() as db:
+            source_id = UUID(receipt['source_document_id'])
+            details = read_statement_details(db, case_id=self.f.case.id, source_id=source_id)
+            net = sum(int(row['amount_minor']) * (1 if row['direction'] == 'credit' else -1)
+                for row in raw['rows'] if not row['excluded'])
+            update_statement_details(db, case_id=self.f.case.id, source_id=source_id, actor=self.f.actor,
+                request=StatementDetailsRequest(expected_revision=details['revision'],
+                    **{key:details['details'][key] for key in ('holder', 'account_number', 'institution')}, opening=dict(amount_minor='0', page=1), closing=dict(amount_minor=str(net), page=1)))
+        shown = self.status(batch)
+        self.assertEqual(shown['counts']['imported'], 1, shown)
+        self.assertEqual(shown['available_statements'], 0)
+        self.assertEqual(shown['items'][0]['source_document_id'], receipt['source_document_id'])
+        self.assertNotIn('Old invalid page', str(shown['items'][0]['problems']))
+        self.assertEqual(shown['items'][0]['balance_status'], 'matches')
+        with self.f.SessionLocal() as db:
+            scope = imported_batch_scope(db, case_id=self.f.case.id, batch_id=batch)
+            self.assertEqual(scope['transaction_count'], 12)
+            self.assertEqual(scope['source_document_ids'], [receipt['source_document_id']])
+            self.assertEqual(db.get(Item, UUID(item['id'])).status, 'attention')
+
     def test_refresh_statement_list_keeps_saved_review_and_imports(self):
         batch = self.create(); self.advance(batch)
         item = self.status(batch)['items'][0]
@@ -171,6 +205,33 @@ class BatchImportTests(TestCase):
         self.assertEqual(self.status(batch)['counts']['imported'], 1)
         with self.f.SessionLocal() as db:
             self.assertEqual({r.currency for r in db.scalars(select(FinancialTransaction))}, {'MXN'})
+
+    def test_bulk_currency_preserves_manual_amounts_across_scales(self):
+        from types import SimpleNamespace
+        batch = self.create(); self.advance(batch)
+        with self.f.SessionLocal() as db:
+            item = db.scalar(select(Item).where(Item.batch_id == batch))
+            raw = service.initial_request(self.f.preview())
+            row = next(r for r in raw['rows'] if not r['excluded'])
+            row['amount_minor'] = '12300'
+            row['reason'] = 'Reviewed amount'
+            raw['rows'].append(dict(id='manual:opening-balance', excluded=True, manual_page=1,
+                date='', description='opening balance', counterparty='', amount_minor='0', direction=None,
+                balance_minor='25000', reason=''))
+            item.review_request = raw
+            db.commit()
+            for code, amount, balance in [('GBP','12300','25000'), ('JPY','123','250'), ('KWD','123000','250000')]:
+                service.set_selected_currency(db, case_id=self.f.case.id, batch_id=batch,
+                    selections=[SimpleNamespace(id=item.id, revision=service.currency_revision(item))], currency=code, actor=self.f.actor)
+                db.refresh(item)
+                self.assertEqual(next(r for r in item.review_request['rows'] if r['id']==row['id'])['amount_minor'], amount)
+                self.assertEqual(item.review_request['rows'][-1]['balance_minor'], balance)
+            status = self.status(batch)
+            service.queue_import(db, case_id=self.f.case.id, batch_id=batch, expected_revision=status['ready_revision'], actor=self.f.actor)
+        self.advance(batch)
+        self.assertEqual(self.status(batch)['counts']['imported'], 1)
+        with self.f.SessionLocal() as db:
+            self.assertEqual({r.currency for r in db.scalars(select(FinancialTransaction))}, {'KWD'})
 
     def test_bulk_currency_cannot_touch_imported_or_cross_case_items(self):
         from types import SimpleNamespace

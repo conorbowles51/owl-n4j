@@ -3,11 +3,12 @@ from copy import deepcopy
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from uuid import UUID
-from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from postgres.models.financial import FinancialAccount, FinancialSourceDocument, FinancialStatementPeriod, FinancialTransaction
 from services.financial.pdf_candidates import PdfMappingError, _digest
+
+from services.financial.currency_correction import CurrencyCode, rescale_minor
 
 DETAIL_KEYS = ('holder', 'account_number', 'institution')
 
@@ -24,7 +25,7 @@ class StatementDetailsRequest(BaseModel):
     holder: str = Field(max_length=255)
     account_number: str = Field(max_length=128)
     institution: str = Field(max_length=128)
-    currency: Literal['USD', 'MXN', 'EUR'] | None = None
+    currency: CurrencyCode | None = None
     opening: BalanceEdit | None = None
     closing: BalanceEdit | None = None
 
@@ -112,6 +113,10 @@ def update_statement_details(session, *, case_id, source_id, request, actor):
         if any(any(ord(c) < 32 for c in value) for value in details.values()):
             raise PdfMappingError('Account details must be on a single line.', 422)
         balances = deepcopy((document.metadata_ or {}).get('statement_details_review', {}).get('balances', {}))
+        if request.currency and before['currency'] and request.currency != before['currency']:
+            for role, balance in balances.items():
+                if getattr(request, role) is None:
+                    balance['amount_minor'] = rescale_minor(balance['amount_minor'], before['currency'], request.currency)
         for role in ('opening', 'closing'):
             edit = getattr(request, role)
             if edit is None:
@@ -152,7 +157,8 @@ def update_statement_details(session, *, case_id, source_id, request, actor):
         if request.currency and (request.currency != before['currency'] or period is None):
             from services.financial.statement_currency_edit import change_currency, complete_currency_records
             period, replacements = change_currency(session, document=document, period=period, account=account,
-                currency=request.currency, actor=actor, revision=before['revision'])
+                currency=request.currency, actor=actor, revision=before['revision'],
+                balance_edits={role for role in ('opening', 'closing') if getattr(request, role) is not None})
             for record in metadata.get('statement_incomplete_records', []):
                 previous = record.get('resolved_transaction_id')
                 if previous in replacements:
@@ -174,7 +180,8 @@ def update_statement_details(session, *, case_id, source_id, request, actor):
                     if getattr(request, role) is None and len(candidates) == 1:
                         row, original = candidates[0]
                         if original.get('page_number') in before['pages']:
-                            balances[role] = dict(amount_minor=row['balance_minor'], page=original['page_number'])
+                            balances[role] = dict(amount_minor=rescale_minor(row['balance_minor'],
+                                metadata['statement_import_request']['currency'], request.currency) if metadata['statement_import_request']['currency'] else row['balance_minor'], page=original['page_number'])
         for role in ('opening', 'closing'):
             edit = getattr(request, role)
             if edit is None and before['period_id'] is None and role in balances:
@@ -218,6 +225,10 @@ def reviewed_controls(period, document, original):
         raise ValueError('The later statement review no longer matches its period.')
     result = deepcopy(original) if original else dict(import_source_document_id=str(document.id), finalization_id=None,
         currency=period.currency, balance_convention=review['balance_convention'], controls=[], account_closure=None)
+    if result['currency'] != period.currency:
+        for control in result['controls']:
+            if control['role'] not in review['balances']:
+                control['reviewed_value'] = rescale_minor(control['reviewed_value'], result['currency'], period.currency)
     controls = {item['role']: item for item in result['controls']}
     for role, balance in review['balances'].items():
         if balance['amount_minor'] is None:

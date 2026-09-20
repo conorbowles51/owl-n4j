@@ -58,6 +58,8 @@ class EmptyImportRecoveryTests(TestCase):
             self.assertEqual(read_opening(period).amount.minor_units, 12345)
             self.assertEqual(read_closing(period).amount.minor_units, 0)
             self.assertEqual(db.get(FinancialSourceDocument, source_id).status, 'superseded')
+            from services.financial.batch_import_history import current_imports
+            self.assertEqual(current_imports(db, f.case.id, [source_id])[str(source_id)]['balance_status'], 'difference')
 
     def test_metadata_change_with_identical_saved_rows_does_not_require_rechecking_payments(self):
         from services.financial.review_upgrade import attach_upgrade

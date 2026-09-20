@@ -10,6 +10,7 @@ from services.financial.decisions import record
 from services.financial.pdf_candidates import PdfMappingError
 from services.financial.references import RowReading, content_hash, ref_id
 from services.financial.transaction_query import to_view
+from services.financial.currency_correction import rescale_minor
 
 
 def review_run(document):
@@ -19,21 +20,17 @@ def review_run(document):
     return SimpleNamespace(case_id=document.case_id, run_id=document.ingestion_run_id, stamp=stamp)
 
 
-def change_currency(session, *, document, period, account, currency, actor, revision):
+def change_currency(session, *, document, period, account, currency, actor, revision, balance_edits=None):
     """Caller owns locks, the details audit overlay, reconciliation and commit.
 
-    This changes the currency label, never the printed numeric amounts. The
-    supported destination currencies all have two decimal places.
+    This changes the denomination, retaining printed numbers exactly even
+    when the destination currency uses a different minor-unit scale.
     """
-    from services.financial.money import get_currency
     rows = list(session.scalars(select(FinancialTransaction).where(
         FinancialTransaction.source_document_id == document.id).order_by(FinancialTransaction.id).with_for_update()))
     current = [row for row in rows if row.ledger_status != 'superseded' and row.superseded_by_id is None]
     if any(row.case_id != document.case_id or row.account_id != account.id for row in rows):
         raise PdfMappingError('The saved payments do not match this statement account.', 409)
-    prior_currencies = {row.currency for row in current} | ({period.currency} if period else set())
-    if any(get_currency(code).exponent != 2 for code in prior_currencies):
-        raise PdfMappingError('This currency uses different decimal places. Review the printed amounts before changing it.', 422)
     if period is None:
         from services.financial.periods import StatementPeriodDraft, PeriodBounds, record_statement_period
         from services.financial.import_issues import calendar_date
@@ -43,6 +40,10 @@ def change_currency(session, *, document, period, account, currency, actor, revi
         period = record_statement_period(session, review_run(document),
             StatementPeriodDraft(account_id=account.id, source_document_id=document.id, currency=currency, bounds=bounds))
     else:
+        for role in ('opening', 'closing'):
+            name = role + '_balance_minor'
+            if role not in (balance_edits or set()):
+                setattr(period, name, rescale_minor(getattr(period, name), period.currency, currency))
         period.currency = currency
     # Historical row identities are immutable. New readings inherit exclusions,
     # categories, names, source locations and links through the correction chain.
@@ -54,7 +55,9 @@ def change_currency(session, *, document, period, account, currency, actor, revi
             row.statement_period_id = period.id
             continue
         reading = {field.name: getattr(row, field.name) for field in fields(RowReading)}
-        reading.update(currency=currency, direction=TransactionDirection(row.direction))
+        amounts = {name: rescale_minor(getattr(row, name), row.currency, currency)
+            for name in ('amount_minor', 'running_balance_minor')}
+        reading.update(currency=currency, direction=TransactionDirection(row.direction), **amounts)
         occurrence = 0
         while True:
             digest = content_hash(RowReading(**reading), occurrence)
@@ -65,7 +68,7 @@ def change_currency(session, *, document, period, account, currency, actor, revi
         hashes.add(digest); references.add(reference)
         values = {prop.key: deepcopy(getattr(row, prop.key)) for prop in FinancialTransaction.__mapper__.column_attrs
             if prop.key not in {'id', 'created_at', 'updated_at'}}
-        values.update(id=uuid4(), currency=currency, ref_id=reference, content_hash=digest,
+        values.update(id=uuid4(), currency=currency, **amounts, ref_id=reference, content_hash=digest,
             statement_period_id=period.id, superseded_by_id=None)
         values['provenance'] = {**(values['provenance'] or {}), 'correction': dict(
             previous_transaction_id=str(row.id), previous_ref_id=row.ref_id, occurrence=occurrence, version=1)}
@@ -78,7 +81,8 @@ def change_currency(session, *, document, period, account, currency, actor, revi
             reason=f'Statement currency corrected from {row.currency} to {currency}; printed numeric amounts unchanged.',
             before=dict(row=before, replacement_id=None, original_status=row.ledger_status,
                 original_quarantine_reason=row.quarantine_reason, reviewed_revision=revision),
-            after=dict(row={**before, 'key': str(replacement.id), 'ref_id': reference, 'currency': currency},
+            after=dict(row={**before, 'key': str(replacement.id), 'ref_id': reference, 'currency': currency,
+                **{name: str(value) if value is not None else None for name, value in amounts.items()}},
                 replacement_id=str(replacement.id), original_status='superseded', original_quarantine_reason=None,
                 reviewed_revision=revision))
         session.add(replacement)
@@ -112,7 +116,13 @@ def complete_currency_records(session, *, document, period, metadata, currency, 
     for item in metadata.get('statement_incomplete_records', []):
         if item.get('resolved_transaction_id'):
             continue
-        row = DraftImportRow.model_validate(item.get('correction') or item['fields'])
+        fields = deepcopy(item.get('correction') or item['fields'])
+        previous_currency = item.get('correction_currency') or raw.get('currency')
+        if previous_currency and previous_currency != currency:
+            for key in ('amount_minor', 'balance_minor'):
+                fields[key] = rescale_minor(fields.get(key), previous_currency, currency)
+            item.update(correction=fields, correction_currency=currency)
+        row = DraftImportRow.model_validate(fields)
         item['missing_fields'] = incomplete_fields(row, request)
         if item['missing_fields'] or row.excluded:
             continue

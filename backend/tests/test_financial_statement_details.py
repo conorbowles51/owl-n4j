@@ -148,6 +148,66 @@ class StatementDetailsTests(TestCase):
         self.assertEqual(restored['currency'], 'EUR')
         self.assertEqual(self.read(), restored)
 
+    def test_all_supported_scales_preserve_printed_values_and_balances(self):
+        import json
+        from pathlib import Path
+        from services.financial.money import _ACTIVE, _HISTORICAL, get_currency
+        catalog = Path(__file__).resolve().parents[2] / 'frontend_v2/src/features/financial/lib/currency-catalog.ts'
+        frontend = json.loads(catalog.read_text().split('export const currencyCatalog = ')[1].split(' as const')[0])
+        self.assertEqual(frontend, {c: get_currency(c).exponent for c in _ACTIVE | _HISTORICAL})
+        self.save(self.request(opening=dict(amount_minor='1245000', page=1), closing=dict(amount_minor='4745000', page=1)))
+        with self.f.SessionLocal() as db:
+            original = {r.id: (r.amount_minor, r.running_balance_minor) for r in db.scalars(select(FinancialTransaction))}
+        for currency, multiplier, divisor in [('GBP',1,1),('CHF',1,1),('JPY',1,100),('KWD',10,1),('CLF',100,1),('EUR',1,1)]:
+            saved = self.save(self.request(currency=currency))
+            self.assertEqual(saved['currency'], currency)
+            self.assertEqual(saved['balances']['opening']['amount_minor'], str(1245000 * multiplier // divisor))
+            with self.f.SessionLocal() as db:
+                current = list(db.scalars(select(FinancialTransaction).where(FinancialTransaction.superseded_by_id.is_(None))))
+                self.assertEqual(sorted(r.amount_minor for r in current), sorted(v[0]*multiplier//divisor for v in original.values()))
+                period = db.get(FinancialStatementPeriod, UUID(saved['period_id']))
+                controls = read_import_controls(period, db.get(FinancialSourceDocument, self.source_id), self.f.file)
+                self.assertEqual(controls['controls'][0]['reviewed_value'], saved['balances']['opening']['amount_minor'])
+                self.assertEqual(period.reconciliation_status, 'balanced')
+
+    def test_unrepresentable_currency_change_and_unknown_codes_do_not_change_saved_values(self):
+        from pydantic import ValidationError
+        self.save(self.request(opening=dict(amount_minor='12345', page=1)))
+        before = self.read()
+        with self.assertRaisesRegex(PdfMappingError, 'decimal places'):
+            self.save(self.request(currency='JPY'))
+        self.assertEqual(self.read(), before)
+        with self.assertRaises(ValidationError):
+            self.save(self.request(currency='ZZZ'))
+        self.assertEqual(self.read(), before)
+
+    def test_changed_balance_is_read_in_destination_currency(self):
+        self.save(self.request(opening=dict(amount_minor='12345', page=1)))
+        saved = self.save(self.request(currency='JPY', opening=dict(amount_minor='123', page=1)))
+        self.assertEqual(saved['balances']['opening']['amount_minor'], '123')
+        with self.f.SessionLocal() as db:
+            controls = read_import_controls(db.get(FinancialStatementPeriod, UUID(saved['period_id'])),
+                db.get(FinancialSourceDocument, self.source_id), self.f.file)
+            self.assertEqual(controls['controls'][0]['reviewed_value'], '123')
+
+    def test_unresolved_records_keep_their_amount_when_currency_scale_changes(self):
+        with self.f.SessionLocal() as db:
+            document = db.get(FinancialSourceDocument, self.source_id)
+            metadata = deepcopy(document.metadata_)
+            row = deepcopy(next(r for r in metadata['statement_import_request']['rows'] if not r['excluded']))
+            row['amount_minor'] = '12345'; row['date'] = ''
+            metadata['statement_incomplete_records'] = [dict(id=row['id'], fields=row, missing_fields=['date'])]
+            document.metadata_ = metadata; db.commit()
+        self.save(self.request(currency='KWD'))
+        with self.f.SessionLocal() as db:
+            record = db.get(FinancialSourceDocument, self.source_id).metadata_['statement_incomplete_records'][0]
+            self.assertEqual(record['correction']['amount_minor'], '123450')
+            self.assertEqual(record['correction_currency'], 'KWD')
+        self.save(self.request(currency='GBP'))
+        with self.f.SessionLocal() as db:
+            record = db.get(FinancialSourceDocument, self.source_id).metadata_['statement_incomplete_records'][0]
+            self.assertEqual(record['correction']['amount_minor'], '12345')
+
     def test_currency_late_failure_rolls_back_rows_and_period(self):
         before = self.read()
         with self.f.SessionLocal() as db:

@@ -11,8 +11,10 @@ def imported_batch_scope(session, *, case_id, batch_id):
         FinancialImportBatch.id == batch_id, FinancialImportBatch.case_id == case_id))
     if batch is None:
         raise PdfMappingError('Financial processing batch not found in this case.', 404)
-    items = list(session.scalars(select(FinancialImportBatchItem).where(
-        FinancialImportBatchItem.batch_id == batch_id, FinancialImportBatchItem.status == 'imported')))
+    from services.financial.import_batches import checked_batch_items
+    items = [item for item in checked_batch_items(session, case_id, list(session.scalars(
+        select(FinancialImportBatchItem).where(FinancialImportBatchItem.batch_id == batch_id))))
+        if item.status == 'imported']
     file_ids = {i.file_id for i in items}
     try:
         receipt_ids = {UUID(i.summary['source_document_id']) for i in items if i.summary.get('source_document_id')}

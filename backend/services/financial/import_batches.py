@@ -218,6 +218,10 @@ def checked_batch_items(session, case_id, items):
         EvidenceFile.case_id == case_id, Item.status.in_(('ready','attention','pending_import')))).all()
     sources, prepared = comparison_sources(session, case_id, pending)
     cache = {}
+    from postgres.models.financial import FinancialSourceDocument
+    saved_files = set(session.scalars(select(FinancialSourceDocument.evidence_file_id).where(
+        FinancialSourceDocument.case_id == case_id, FinancialSourceDocument.status == 'admitted',
+        FinancialSourceDocument.evidence_file_id.in_([item.file_id for item in items]))))
     imported_ids = [UUID(i.summary['source_document_id']) for i in items
                     if i.status == 'imported' and i.summary.get('source_document_id')]
     from services.financial.batch_import_history import current_imports
@@ -228,35 +232,40 @@ def checked_batch_items(session, case_id, items):
         state = item.status
         projected_request = item.review_request
         if state in ('ready', 'attention'):
-            if 'can_import' not in summary or summary.get('review_model') != REVIEW_MODEL:
+            if item.file_id in saved_files or 'can_import' not in summary or summary.get('review_model') != REVIEW_MODEL:
                 try:
                     proposal = read_statement_import(session, case_id=case_id, evidence_file_id=item.file_id,
                         currency=summary.get('currency') or None, statement_id=item.statement_key or None, _cache=cache)
                     from services.financial.review_upgrade import upgrade_request
                     projected_request = upgrade_request(item.review_request, proposal) or item.review_request
-                    state, assessment = assess(proposal, projected_request)
+                    state, assessment = assess(proposal, None if proposal.get('current_import') else projected_request)
                     summary.update(assessment)
                 except PdfMappingError as error:
                     summary.update(can_import=False, problems=[dict(message=str(error), row_id=None)], problem_count=1)
-            raw = {**(projected_request or prepared.get(item.id) or summary_request(summary)), 'statement_id': item.statement_key or None}
-            review = coverage_review(session, case_id=case_id, file_id=item.file_id, request=raw, sources=sources)
-            problems = [p for p in summary.get('problems', []) if p.get('kind') not in ('coverage', 'coverage_load')]
-            extra_count = max(0, summary.get('problem_count', 0) - len(summary.get('problems', [])))
-            if raw.get('_coverage_error'):
-                problems.append(dict(kind='coverage_load', row_id=None, message=raw['_coverage_error']))
-            if requires_decision(review, raw):
-                problems.append(dict(kind='coverage', row_id=None,
-                    message='Another statement covers some of these dates. You can compare their payments now or after importing.'))
-            summary.update(coverage_review=review, problems=problems, problem_count=len(problems) + extra_count)
-            state = 'attention' if problems else 'ready'
+            if state in ('ready', 'attention'):
+                raw = {**(projected_request or prepared.get(item.id) or summary_request(summary)), 'statement_id': item.statement_key or None}
+                review = coverage_review(session, case_id=case_id, file_id=item.file_id, request=raw, sources=sources)
+                problems = [p for p in summary.get('problems', []) if p.get('kind') not in ('coverage', 'coverage_load')]
+                extra_count = max(0, summary.get('problem_count', 0) - len(summary.get('problems', [])))
+                if raw.get('_coverage_error'):
+                    problems.append(dict(kind='coverage_load', row_id=None, message=raw['_coverage_error']))
+                if requires_decision(review, raw):
+                    problems.append(dict(kind='coverage', row_id=None,
+                        message='Another statement covers some of these dates. You can compare their payments now or after importing.'))
+                summary.update(coverage_review=review, problems=problems, problem_count=len(problems) + extra_count)
+                state = 'attention' if problems else 'ready'
+        if state == 'imported' and summary.get('source_document_id') and summary['source_document_id'] not in retained:
+            retained.update(current_imports(session, case_id, [UUID(summary['source_document_id'])]))
         if state == 'imported' and summary.get('source_document_id') in retained:
             current = retained[summary['source_document_id']]
             issues, records, review = current['issues'], current['records'], current['review']
-            summary.update(source_document_id=current['source_document_id'], account_id=current['account_id'], currency=current['currency'])
+            summary.update(source_document_id=current['source_document_id'], account_id=current['account_id'], currency=current['currency'],
+                balance_status=current['balance_status'])
             details = review.get('details', {})
             if details:
                 summary.update(holder=details.get('holder', ''), account=details.get('account_number', ''),
-                    institution=details.get('institution', ''))
+                    institution=details.get('institution', ''), period_start=details.get('period_start', ''),
+                    period_end=details.get('period_end', ''))
                 issues = [issue for issue in issues if not (issue.get('kind') == 'statement_detail' and
                     details.get(issue.get('field')))]
             unresolved = sum(not r.get('resolved_transaction_id') for r in records)
@@ -277,8 +286,11 @@ def currency_revision(item, summary=None):
 
 def set_selected_currency(session, *, case_id, batch_id, selections, currency, actor):
     """Change unimported statements atomically; preserve all saved corrections."""
-    if currency not in ('USD', 'MXN', 'EUR'):
-        raise PdfMappingError('Choose USD, MXN or EUR for this selection.', 422)
+    from services.financial.currency_correction import currency_code, rescale_minor
+    try:
+        currency = currency_code(currency)
+    except ValueError as exc:
+        raise PdfMappingError(str(exc), 422) from exc
     try:
         batch = batch_for(session, case_id, batch_id, True)
         if batch.worker_token and batch.lease_until and batch.lease_until.replace(tzinfo=timezone.utc) > datetime.now(timezone.utc):
@@ -318,21 +330,23 @@ def set_selected_currency(session, *, case_id, batch_id, selections, currency, a
                 changes = {key: value for key, value in row.items() if value != old_rows.get(row['id'], {}).get(key)}
                 if row['id'] not in new_rows:
                     if row.get('manual_page'):
-                        merged['rows'].append(deepcopy(row))
+                        manual = deepcopy(row)
+                        if old['currency']:
+                            for key in ('amount_minor', 'balance_minor'):
+                                if manual.get(key) is not None:
+                                    manual[key] = rescale_minor(manual[key], old['currency'], currency)
+                        merged['rows'].append(manual)
                     elif changes:
                         raise PdfMappingError('The new currency changes a corrected row. Open that statement to compare it; no selected currencies were changed.', 409)
                 else:
-                    if old['currency'] not in ('', 'USD', 'MXN', 'EUR') and any(k in changes for k in ('amount_minor', 'balance_minor')):
-                        raise PdfMappingError('A corrected amount uses a different currency format. Change that statement individually.', 409)
                     new_rows[row['id']].update(changes)
-                    if old['currency'] in ('USD', 'MXN', 'EUR'):
-                        # These currencies have the same decimal scale. The
-                        # explicit choice relabels saved amounts, never clears
-                        # them merely because a printed currency marker differs.
+                    if old['currency']:
+                        # Preserve readable and manually corrected amounts even
+                        # when the selected label differs from printed symbols.
                         for key in ('amount_minor', 'balance_minor'):
                             value = row.get(key)
                             if isinstance(value, str) and value.lstrip('-').isdigit():
-                                new_rows[row['id']][key] = value
+                                new_rows[row['id']][key] = rescale_minor(value, old['currency'], currency)
                         if row.get('direction'):
                             new_rows[row['id']]['direction'] = row['direction']
             for key, value in raw.items():

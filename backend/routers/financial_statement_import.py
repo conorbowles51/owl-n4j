@@ -10,6 +10,7 @@ from routers.case_access import case_access_dependency
 from routers.users import get_current_db_user
 from services.financial.pdf_candidates import PdfMappingError
 from services.financial.statement_import import read_statement_import
+from services.financial.currency_correction import CurrencyCode
 from services.financial.imported_records import CompleteImportedRecord
 from services.financial.statement_check_request import StatementCheckRequest, check_statement_request
 from services.financial.statement_file_status import statement_file_status
@@ -390,7 +391,7 @@ class SelectedCurrencyStatement(BaseModel):
 
 class SelectedStatementCurrency(BaseModel):
     model_config = ConfigDict(extra='forbid')
-    currency: Literal['USD', 'MXN', 'EUR']
+    currency: CurrencyCode
     statements: list[SelectedCurrencyStatement] = Field(min_length=1, max_length=10000)
 
 

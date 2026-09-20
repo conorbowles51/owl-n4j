@@ -33,7 +33,7 @@ def attach_upgrade(proposal, snapshot):
     # account/period metadata and currency are identical. A filename or period
     # match alone must never migrate a saved correction.
     proposal['_compatible_review_revisions'] = [
-        _digest({**snapshot, 'version': f'statement-review-v{version}'}) for version in range(1, 29)]
+        _digest({**snapshot, 'version': f'statement-review-v{version}'}) for version in range(1, 30)]
     saved = proposal.get('saved_review')
     if saved and saved['request'].get('expected_revision') != proposal['revision']:
         upgraded = upgrade_request(saved['request'], proposal)

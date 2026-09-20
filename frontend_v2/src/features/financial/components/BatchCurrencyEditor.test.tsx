@@ -66,6 +66,7 @@ it("selects matching statements across all pages, retains hidden selections and 
     target: { value: "USD" },
   })
   expect(screen.getByText("350 selected · 350 hidden by search")).toBeVisible()
+  fireEvent.change(screen.getByLabelText("Currency for selected statements"), { target: { value: "MXN" } })
   fireEvent.click(
     screen.getByRole("button", { name: "Apply MXN to 350 statements" })
   )
@@ -97,6 +98,7 @@ it("retains selection on failure and rejects another case's list", async () => {
       name: "Select all 1 matching statements",
     })
   )
+  fireEvent.change(screen.getByLabelText("Currency for selected statements"), { target: { value: "MXN" } })
   fireEvent.click(
     screen.getByRole("button", { name: "Apply MXN to 1 statements" })
   )
@@ -118,4 +120,17 @@ it("retains selection on failure and rejects another case's list", async () => {
         .some((node) => node.textContent?.includes("another batch"))
     ).toBe(true)
   )
+})
+
+it("offers the full supported list without assuming this case's currency", async () => {
+  vi.mocked(fetchAPI).mockResolvedValue({case_id:"case",id:"batch",total:1,items:[items[0]]} as never)
+  mount()
+  fireEvent.click(screen.getByRole("button", {name:"Set currency for selected statements"}))
+  const selector = await screen.findByLabelText("Currency for selected statements")
+  expect(selector).toHaveValue("")
+  for (const currency of ["GBP","CHF","JPY","KWD","CLF","DEM"]) {
+    fireEvent.change(selector, {target:{value:currency}})
+    expect(selector).toHaveValue(currency)
+  }
+  expect(screen.queryByRole("option", {name:/ZZZ/})).not.toBeInTheDocument()
 })

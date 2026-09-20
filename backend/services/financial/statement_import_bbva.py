@@ -201,7 +201,7 @@ def propose_bbva_statement(sources, currency, choice):
                 continue
             if columns is None:
                 continue
-            if norm(text(raw)).startswith(('TOTAL DE MOVIMIENTOS', 'ESTIMADO CLIENTE', 'BBVA MEXICO,', 'LA GAT REAL')):
+            if norm(text(raw)).startswith(('TOTAL DE MOVIMIENTOS', 'ESTIMADO CLIENTE', 'BBVA MEXICO,', 'BBVA BANCOMER,', 'LA GAT REAL')):
                 columns = None
                 continue
             # Match amount cells to the printed debit, credit and two balance
@@ -217,6 +217,13 @@ def propose_bbva_statement(sources, currency, choice):
                     buckets['OPER'].append(cell)
                 elif rect[0] < box(columns['COD. DESCRIPCION'])[0] - 3000:
                     buckets['LIQ'].append(cell)
+                elif (re.fullmatch(r'(?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)\.[0-9]{2}', cell['expected_text'].strip())
+                        and len(aligned := [name for name in names[4:]
+                            if abs(rect[2]-box(columns[name])[2]) <= 6000]) == 1):
+                    # Large right-aligned amounts extend left of their shorter
+                    # column heading. Their right edge, not text width, places
+                    # them in Cargos/Abonos rather than the description.
+                    buckets[aligned[0]].append(cell)
                 elif rect[0] < box(columns['CARGOS'])[0] - 3000:
                     buckets['COD. DESCRIPCION'].append(cell)
                 else:

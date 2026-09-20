@@ -1,3 +1,4 @@
+import { CurrencyOptions } from "./CurrencyOptions"
 import { Button } from "@/components/ui/button"
 
 export function StatementCurrencyControl({
@@ -57,28 +58,7 @@ export function StatementCurrencyControl({
                 ? `Automatic (${detectedCurrency})`
                 : "Choose currency"}
             </option>
-            {Array.from(
-              new Set([
-                currency,
-                detectedCurrency,
-                "USD",
-                "EUR",
-                "GBP",
-                "CAD",
-                "AUD",
-                "JPY",
-                "KWD",
-                ...(typeof Intl.supportedValuesOf === "function"
-                  ? Intl.supportedValuesOf("currency")
-                  : []),
-              ])
-            )
-              .filter((code): code is string => !!code)
-              .map((code) => (
-                <option key={code} value={code}>
-                  {code}
-                </option>
-              ))}
+            <CurrencyOptions />
           </select>
         </label>
       </details>

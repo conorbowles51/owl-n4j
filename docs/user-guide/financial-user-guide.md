@@ -314,7 +314,7 @@ If an import contains incomplete records, the file list counts them separately f
 
 ### Set the currency for several statements
 
-In the batch, select **Set currency for selected statements**. Search by filename, account or dates, then select individual statements or **Select all [number] matching statements**. This selection covers every page of matching results. Choose USD, MXN or EUR and select **Apply [currency] to [number] statements**. Hidden selections remain selected and are counted explicitly. Saved account and row corrections are kept. This changes the currency label without converting amounts. This batch action applies to unimported statements. For an imported statement, use **Edit account and balances** as described below.
+In the batch, select **Set currency for selected statements**. Search by filename, account or dates, then select individual statements or **Select all [number] matching statements**. This selection covers every page of matching results. Choose the statement currency from the full supported list and select **Apply [currency] to [number] statements**. Hidden selections remain selected and are counted explicitly. Saved account and row corrections are kept. This changes the currency label without converting amounts. This batch action applies to unimported statements. For an imported statement, use **Edit account and balances** as described below.
 
 ### Enter missing balances before import
 
@@ -328,7 +328,7 @@ Text that has not been identified as a payment stays under **Other extracted pag
 
 1. From a statement's balance check, select **Open statement and balances**, then **Edit account and balances**. The original PDF stays beside the fields. You can also select **Edit account and balances** in an already imported statement's review.
 2. Enter the account holder, account number or bank. Account numbers keep leading zeros.
-3. If needed, choose USD, MXN or EUR under **Statement currency**. This corrects the denomination without converting the numeric amounts. Existing payment categories and exclusions are kept. A currency choice also makes an incomplete record usable when currency was its only missing field.
+3. If needed, choose its currency from the full supported list under **Statement currency**. This corrects the denomination without exchanging the numeric amounts. Currencies with zero, three or four decimal places are supported. If a saved amount cannot be represented exactly in the chosen currency, Loupe keeps the original values and asks you to check it; it never rounds a payment. Existing payment categories and exclusions are kept. A currency choice also makes an incomplete record usable when currency was its only missing field.
 4. Enter the printed opening or closing balance, then choose its PDF page. Leave a balance blank when it is unknown; enter **0.00** only when the statement prints zero. For credit cards, enter the printed amount owed.
 5. Select **Save changes**. A confirmation appears in the same view. Reopen the editor to check the saved values. The earlier details and readings remain in history; a reason is not required for each field. Transactions, totals and balance checks use the saved currency.
 
