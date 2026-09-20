@@ -96,6 +96,8 @@ class StatementCoverageRequest(_Contract):
 
 class RefreshStoredReadingRequest(_Contract):
     expected_revision: _Digest
+    expected_reading_revision: _Digest | None = None
+    currency: str | None = Field(default=None, pattern=r'^[A-Z]{3}$')
 
 
 @router.post('/sources/{source_id}/refresh-reading', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
@@ -104,7 +106,8 @@ def refresh_stored_reading(source_id: UUID, body: RefreshStoredReadingRequest, c
     from services.financial.legacy_statement_refresh import refresh_legacy_import
     try:
         return refresh_legacy_import(session_factory=sessionmaker(bind=db.get_bind()), case_id=case_id,
-            source_id=source_id, expected_revision=body.expected_revision, actor=actor_from_user(user), resolve_path=_resolve_stored_path)
+            source_id=source_id, expected_revision=body.expected_revision, actor=actor_from_user(user), resolve_path=_resolve_stored_path,
+            expected_reading_revision=body.expected_reading_revision, currency=body.currency)
     except PdfMappingError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
     except Exception:
@@ -459,6 +462,17 @@ class SaveFinancialBatchReview(BaseModel):
     model_config = ConfigDict(extra='forbid')
     expected_review_revision: str = Field(pattern=r'^[a-f0-9]{64}$')
     request: StatementReviewDraft
+
+
+@router.post('/batches/{batch_id}/items/{item_id}/confirm', dependencies=[Depends(case_access_dependency(lambda request,payload: ('case','edit')))])
+def confirm_financial_batch_review(batch_id: UUID, item_id: UUID, body: SaveFinancialBatchReview,
+        case_id: UUID = Query(...), user=Depends(get_current_db_user), db: Session = Depends(get_db)):
+    try:
+        return import_batches.confirm_review(session_factory=sessionmaker(bind=db.get_bind()), case_id=case_id,
+            batch_id=batch_id, item_id=item_id, request=body.request,
+            expected_review_revision=body.expected_review_revision, actor=actor_from_user(user), resolve_path=_resolve_stored_path)
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
 
 @router.put('/batches/{batch_id}/items/{item_id}',  dependencies=[Depends(case_access_dependency(lambda request,payload: ('case','edit')))])

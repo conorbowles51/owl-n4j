@@ -470,8 +470,10 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
     from services.financial.review_upgrade import attach_upgrade
     attach_upgrade(result, snapshot)
     if current_import and current and current.evidence_file_id == file.id and not excluded_copy:
-        from services.financial.legacy_statement_refresh import refresh_available
+        from services.financial.legacy_statement_refresh import refresh_available, refresh_payment_count
         current_import['refresh_available'] = refresh_available(session, current, result)
+        if current_import['refresh_available']:
+            current_import['refresh_transaction_count'] = refresh_payment_count(current, result)
     if _apply_assignments:
         from services.financial.statement_row_assignment import assigned_proposal
         return assigned_proposal(session, file, result, cache)

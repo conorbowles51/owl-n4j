@@ -68,10 +68,34 @@ beforeEach(() => {
   vi.mocked(fetchAPI).mockReset()
 })
 afterEach(cleanup)
+it("offers every affected statement, not just the first page of incomplete records", async () => {
+  vi.mocked(fetchAPI).mockResolvedValue({
+    records: [record],
+    total: 2347,
+    statements: [
+      { evidence_file_id: "file", filename: "Statement.pdf", count: 2102 },
+      {
+        evidence_file_id: "usd-file",
+        filename: "February USD.pdf",
+        count: 245,
+      },
+    ],
+  } as never)
+  const review = vi.fn()
+  mount(vi.fn(), review)
+  fireEvent.click(await screen.findByText(/2347 imported/))
+  fireEvent.click(
+    screen.getByRole("button", { name: "Review statement: February USD.pdf" })
+  )
+  expect(review).toHaveBeenCalledWith("usd-file")
+})
 it("offers a way back to the PDF before opening hundreds of incomplete records", async () => {
   vi.mocked(fetchAPI).mockResolvedValue({
     records: [record],
     total: 250,
+    statements: [
+      { evidence_file_id: "file", filename: "Statement.pdf", count: 250 },
+    ],
   } as never)
   const review = vi.fn()
   mount(vi.fn(), review)
@@ -82,7 +106,7 @@ it("offers a way back to the PDF before opening hundreds of incomplete records",
   )
   expect(review).toHaveBeenCalledWith("file")
   expect(
-    screen.getByText(/instead of filling in each empty record/)
+    screen.getByText(/payments below are available to investigate/)
   ).toBeVisible()
 })
 it("retains missing values and an unfinished correction, then opens the saved transaction", async () => {

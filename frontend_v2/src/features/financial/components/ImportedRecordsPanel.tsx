@@ -62,7 +62,19 @@ export function ImportedRecordsPanel({
       if (params.startDate) search.set("start_date", params.startDate)
       if (params.endDate) search.set("end_date", params.endDate)
       return z
-        .object({ records: z.array(recordSchema), total: z.number() })
+        .object({
+          records: z.array(recordSchema),
+          total: z.number(),
+          statements: z
+            .array(
+              z.object({
+                evidence_file_id: z.string(),
+                filename: z.string(),
+                count: z.number(),
+              })
+            )
+            .optional(),
+        })
         .parse(
           await fetchAPI(
             `/api/financial/statement-import/incomplete-records?${search}`
@@ -86,28 +98,35 @@ export function ImportedRecordsPanel({
       </p>
     )
   if (!query.data.total) return null
-  const files = [
-    ...new Map(
-      query.data.records.map((r) => [r.evidence_file_id, r.filename])
-    ).entries(),
-  ]
+  const files =
+    query.data.statements ??
+    (query.data.total <= query.data.records.length
+      ? [
+          ...new Map(
+            query.data.records.map((r) => [
+              r.evidence_file_id,
+              { evidence_file_id: r.evidence_file_id, filename: r.filename },
+            ])
+          ).values(),
+        ]
+      : [])
   return (
     <section
       className="rounded-lg border border-amber-500/40 bg-amber-50/50 p-3 dark:bg-amber-950/15"
       aria-label="Imported records with missing values"
     >
       <p className="text-sm mb-2">
-        These readings are saved, but cannot be counted as payments yet. If the
-        PDF contains balances or other text, review the statement instead of
-        filling in each empty record.
+        Some statements still have readings to review. Their missing values are
+        not included in payment totals. The payments below are available to
+        investigate.
       </p>
       {onReviewFile && files.length === 1 && (
         <Button
           variant="outline"
           className="mb-2"
-          onClick={() => onReviewFile(files[0][0])}
+          onClick={() => onReviewFile(files[0].evidence_file_id)}
         >
-          Review statement: {files[0][1]}
+          Review statement: {files[0].filename}
         </Button>
       )}
       <details open={!!active}>
@@ -117,6 +136,22 @@ export function ImportedRecordsPanel({
           values · kept outside totals
         </summary>
         <div className="mt-3 space-y-3">
+          {onReviewFile && files.length > 1 && (
+            <div
+              className="flex flex-wrap gap-2"
+              aria-label="Statements with readings to review"
+            >
+              {files.map((file) => (
+                <Button
+                  key={file.evidence_file_id}
+                  variant="outline"
+                  onClick={() => onReviewFile(file.evidence_file_id)}
+                >
+                  Review statement: {file.filename}
+                </Button>
+              ))}
+            </div>
+          )}
           <p className="text-sm text-muted-foreground">
             The originals are retained. You can investigate other payments and
             return here later. This list follows the account and date scope,

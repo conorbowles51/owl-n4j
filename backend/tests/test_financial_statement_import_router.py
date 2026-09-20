@@ -57,6 +57,28 @@ class StatementImportAuthorizationTests(unittest.TestCase):
             self.assertEqual(refresh.call_args.kwargs['case_id'], self.db.case.id)
             self.assertEqual(refresh.call_args.kwargs['batch_id'], batch_id)
 
+    def test_direct_batch_confirmation_requires_edit_and_passes_review_revision(self):
+        self.db.get_bind = lambda: None
+        batch_id, item_id = uuid4(), uuid4()
+        url = f'/api/financial/statement-import/batches/{batch_id}/items/{item_id}/confirm?case_id={self.db.case.id}'
+        body = dict(expected_review_revision='b'*64, request=dict(expected_revision='a'*64,
+            currency='USD', holder='Reviewed owner', account_number='00123', rows=[dict(id='row')]))
+        with patch.object(module.import_batches, 'confirm_review', return_value={}) as save, patch.object(module, 'actor_from_user'), patch.object(module, 'sessionmaker'):
+            self.assertEqual(self.client.post(url, json=body).status_code, 401)
+            self.user(None)
+            self.assertEqual(self.client.post(url, json=body).status_code, 403)
+            self.user({'case': {'view': True, 'edit': False}})
+            self.assertEqual(self.client.post(url, json=body).status_code, 403)
+            save.assert_not_called()
+            self.user({'case': {'view': True, 'edit': True}})
+            self.assertEqual(self.client.post(url, json=body).status_code, 200)
+            self.assertEqual(save.call_args.kwargs['case_id'], self.db.case.id)
+            self.assertEqual(save.call_args.kwargs['batch_id'], batch_id)
+            self.assertEqual(save.call_args.kwargs['item_id'], item_id)
+            self.assertEqual(save.call_args.kwargs['expected_review_revision'], 'b'*64)
+            self.assertEqual(save.call_args.kwargs['request'].holder, 'Reviewed owner')
+            self.assertEqual(self.client.post(url, json={**body, 'expected_review_revision': 'stale'}).status_code, 422)
+
     def test_imported_details_require_case_edit_permission(self):
         url = f'/api/financial/statement-import/sources/{self.file_id}/details?case_id={self.db.case.id}'
         body = dict(expected_revision='a'*64, holder='Holder', account_number='00123', institution='Bank')

@@ -428,6 +428,53 @@ def save_review(session, *, case_id, batch_id, item_id, request, expected_review
     return dict(status=checked.status, review_revision=_digest(item.review_request))
 
 
+def confirm_review(*, session_factory, case_id, batch_id, item_id, request,
+        expected_review_revision, actor, resolve_path):
+    """Save and import one reviewed statement, retaining the batch's durable job.
+
+    Other ready statements remain untouched. Retrying the same submitted values
+    resumes the pending job or returns its receipt without importing twice.
+    """
+    raw = request.model_dump(mode='json')
+    with session_factory() as session:
+        batch = batch_for(session, case_id, batch_id, True)
+        item = session.scalar(select(Item).where(Item.id == item_id, Item.batch_id == batch.id).with_for_update())
+        if item is None:
+            raise PdfMappingError('Statement not found in this batch.', 404)
+        if item.status in ('pending_import', 'imported'):
+            if item.review_request != raw:
+                raise PdfMappingError('This statement is already being imported or was imported with different values. Reopen it to check the result.', 409)
+        else:
+            save_review(session, case_id=case_id, batch_id=batch_id, item_id=item_id,
+                request=request, expected_review_revision=(
+                    _digest(item.review_request) if item.review_request == raw else expected_review_revision))
+            batch = batch_for(session, case_id, batch_id, True)
+            item = session.scalar(select(Item).where(Item.id == item_id, Item.batch_id == batch.id)
+                .with_for_update().execution_options(populate_existing=True))
+            if item.review_request != raw:
+                raise PdfMappingError('Another reviewer changed these values. Reopen the statement before importing.', 409)
+            if item.status != 'imported':
+                if not import_available(item):
+                    raise PdfMappingError('This statement cannot be imported yet. ' + ' '.join(
+                        p['message'] for p in item.summary.get('problems', [])[:3]), 422)
+                item.status = 'pending_import'
+                item.summary = {**item.summary, 'import_actor':dict(name=actor.name, email=actor.email, user_id=str(actor.user_id))}
+                batch.status = 'preparing'
+        session.commit()
+    _import_item(session_factory, case_id, batch_id, item_id, resolve_path)
+    with session_factory() as session:
+        item = session.scalar(select(Item).where(Item.id == item_id, Item.batch_id == batch_id))
+        if item.status != 'imported':
+            raise PdfMappingError(' '.join(p['message'] for p in item.summary.get('problems', [])[:3]) or
+                'The import is still running. Reopen this statement to check its result.', 409)
+        from services.financial.batch_import_history import current_imports
+        current = current_imports(session, case_id, [UUID(item.summary['source_document_id'])])[item.summary['source_document_id']]
+        unresolved = sum(not row.get('resolved_transaction_id') for row in current['records'])
+        return dict(case_id=str(case_id), evidence_file_id=str(item.file_id), source_document_id=current['source_document_id'],
+            account_id=current['account_id'], transaction_count=current['transaction_count'], incomplete_count=unresolved,
+            record_count=current['transaction_count'] + unresolved, applied=True)
+
+
 def queue_import(session, *, case_id,batch_id,expected_revision,actor):
     batch=batch_for(session,case_id,batch_id,True)
     items=list(session.scalars(select(Item).where(Item.batch_id==batch.id).with_for_update()))

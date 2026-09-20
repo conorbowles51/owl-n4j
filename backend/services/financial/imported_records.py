@@ -48,7 +48,13 @@ def imported_records(session, *, case_id, account_id=None, start_date=None, end_
                 page_number=original.get('page_number'), locator=(original.get('source_cells') or [{}])[0].get('locator'),
                 original_text=' '.join(c.get('expected_text', '') for c in original.get('source_cells', [])),
                 missing_fields=item['missing_fields'], version=item.get('version', 0)))
-    return dict(records=records[offset:offset+limit], total=len(records), offset=offset)
+    statements = {}
+    for record in records:
+        summary = statements.setdefault(record['evidence_file_id'], dict(
+            evidence_file_id=record['evidence_file_id'], filename=record['filename'], count=0))
+        summary['count'] += 1
+    return dict(records=records[offset:offset+limit], total=len(records), offset=offset,
+        statements=sorted(statements.values(), key=lambda item: (item['filename'], item['evidence_file_id'])))
 
 
 def transaction_draft(row, original, *, account_id, period_id, currency, position, actor, balance_sign=1, period_end=''):

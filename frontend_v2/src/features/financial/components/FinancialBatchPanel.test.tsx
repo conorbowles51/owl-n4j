@@ -17,12 +17,24 @@ vi.mock("../hooks/use-financial-access", () => ({
   useFinancialAccess: () => ({ canEdit: true }),
 }))
 vi.mock("./StatementImportPanel", () => ({
-  StatementImportPanel: () => {
+  StatementImportPanel: ({
+    onImported,
+  }: {
+    onImported: (receipt: {
+      transaction_count: number
+      record_count: number
+    }) => void
+  }) => {
     const ctx = useBatchReview()
     return (
       <>
         <p>Focused row: {ctx?.rowId}</p>
         <p>Saved holder: {ctx?.draft?.holder}</p>
+        <button
+          onClick={() => onImported({ transaction_count: 0, record_count: 0 })}
+        >
+          Complete balance-only import
+        </button>
         <button
           onClick={async () => {
             await ctx!.save({ checked: true })
@@ -263,6 +275,16 @@ it("opens the exact problem row, reloads server corrections and returns after sa
   )
   expect(screen.getByLabelText("Location")).not.toHaveTextContent("batchItem")
 })
+it("keeps a saved balance-only statement visible instead of opening an empty ledger", async () => {
+  mount("/cases/case/financial?view=statements&batch=batch&batchItem=item")
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Complete balance-only import" })
+  )
+  expect(screen.getByText(/Statement balances saved\./)).toBeVisible()
+  expect(screen.getByLabelText("Location")).toHaveTextContent("view=statements")
+  expect(screen.getByText("Saved holder: Checked owner")).toBeVisible()
+})
+
 it("refuses a response for a different case", async () => {
   vi.mocked(fetchAPI).mockResolvedValue({
     ...batch,

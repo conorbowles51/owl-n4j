@@ -334,11 +334,11 @@ Text that has not been identified as a payment stays under **Other extracted pag
 
 Before import, **Save account details** saves your current review, including the account number you entered. After import, use the saved-details editor above. You do not need to read the PDF again to correct an account number or balance.
 
-### Recover an older BBVA import containing empty records
+### Save payments from an older import containing empty records
 
-When an older BBVA Cash Management import contains only incomplete records and Loupe can now recognise its layout, its statement review offers **Update saved reading and open results**. The preview states the recognised payment count. Select the action to update the saved import using the PDF already in the case, then open its current results. The earlier reading stays in history and the batch count follows the replacement. You do not need to upload the document again.
+If a statement was previously saved with only incomplete records, its review can offer **Save [number] payments to Transactions** when the current reading finds usable payments. Check the displayed payments, then select this action to save them and open Transactions. Saved account details and manually entered balances are retained. The earlier reading stays in history and the batch count follows the replacement. You do not need to upload the document again.
 
-This shortcut is offered only when no saved payments or manual row or balance corrections would be displaced. Other previously edited imports need a source comparison. Repeating the same request after a connection failure does not import twice.
+This action is offered only when no saved payments or manual payment corrections would be displaced. Other previously edited imports need a source comparison. Repeating the same request after a connection failure does not import twice. A statement containing only balances stays in the account/statement view with a confirmation; it does not open an empty payment table.
 
 If the extraction missed transactions, open **Read the statement again**, choose the reading method and select **Reprocess statement**. Compare the new reading, then explicitly replace the earlier import. Earlier account and balance corrections remain available in **Compare earlier values**; they are not silently assigned to new extraction rows.
 
@@ -355,7 +355,7 @@ If a request fails, select **Refresh files** and inspect what arrived before upl
 3. Select **Review selected PDFs**, check the filenames, then **Send [number] PDFs to Financial**. Loupe opens the batch in Financial. Processing continues on the server when you leave.
 4. Read **Available to import**, **Issues to check** and **Imported**. Each recognised account and period has its own entry. Issues do not remove an otherwise available statement from the import.
 5. Select **Import [number] records** once. Readings with usable values enter Transactions. An unreadable amount or date stays with its original under **Imported records with missing values**, outside calculated totals. Unknown amounts are never counted as zero.
-6. Use **Show statements with issues only** to find concerns when you want to examine them. Open the statement or affected row to compare it with the PDF. Before import, you can correct a value and **Save for bulk import**; a correction note is optional; checking an unchanged flag is optional.
+6. Use **Show statements with issues only** to find concerns when you want to examine them. Open the statement or affected row to compare it with the PDF. From the statement review, correct any values and select **Import [number] payments and view Transactions** to save this statement and open its payments immediately. Other batch statements remain unchanged. **Save draft and return to batch** keeps unfinished work for later bulk import. Notes and checking an unchanged flag are optional.
 7. After import, open **Transactions** to investigate or correct a record. The imported count and outstanding issues stay saved when you reopen the batch. Repeating an unchanged import does not add copies.
 8. To return later, open **Statements & accounts**, then its dated entry under **Processing batches**.
 

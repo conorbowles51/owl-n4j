@@ -16,6 +16,35 @@ from tests.test_financial_statement_import import StatementImportTests as Fixtur
 
 
 class BatchImportTests(TestCase):
+    def test_one_review_saves_payments_and_returns_exact_batch_result_idempotently(self):
+        from services.financial.batch_transaction_scope import imported_batch_scope
+        from services.financial.transaction_query import list_transactions
+        batch = self.create(); self.advance(batch)
+        item = self.status(batch)['items'][0]
+        raw = service.initial_request(self.f.preview())
+        raw['holder'] = 'Reviewed account holder'
+        args = dict(session_factory=self.f.SessionLocal, case_id=self.f.case.id, batch_id=batch,
+            item_id=UUID(item['id']), request=StatementReviewDraft.model_validate(raw),
+            expected_review_revision=service._digest({}), actor=self.f.actor, resolve_path=Path)
+        with self.assertRaisesRegex(PdfMappingError, 'not found'):
+            service.confirm_review(**{**args, 'case_id': uuid4()})
+        with self.assertRaisesRegex(PdfMappingError, 'Another user'):
+            service.confirm_review(**{**args, 'expected_review_revision': '0'*64})
+        receipt = service.confirm_review(**args)
+        self.assertEqual(receipt['transaction_count'], 12)
+        self.assertEqual(service.confirm_review(**args), receipt)
+        self.assertEqual(self.status(batch)['counts']['imported'], 1)
+        with self.f.SessionLocal() as db:
+            scope = imported_batch_scope(db, case_id=self.f.case.id, batch_id=batch)
+            self.assertEqual(scope['source_document_ids'], [receipt['source_document_id']])
+            self.assertEqual(scope['transaction_count'], 12)
+            rows = list_transactions(db, self.f.case.id)
+            self.assertEqual(len(rows), 12)
+            self.assertTrue(all(str(row.source_document_id) == receipt['source_document_id'] for row in rows))
+        changed = {**raw, 'holder': 'Different later edit'}
+        with self.assertRaisesRegex(PdfMappingError, 'different values'):
+            service.confirm_review(**{**args, 'request': StatementReviewDraft.model_validate(changed)})
+
     def test_refresh_statement_list_keeps_saved_review_and_imports(self):
         batch = self.create(); self.advance(batch)
         item = self.status(batch)['items'][0]

@@ -982,9 +982,8 @@ function FinancialPageContent() {
                 >
                   <p>
                     <strong>
-                      {importReceipt.record_count ??
-                        importReceipt.transaction_count}{" "}
-                      imported records
+                      {importReceipt.transaction_count} payments saved to
+                      Transactions
                     </strong>{" "}
                     from {importReceipt.filename || "your statement"}.
                     {importReceipt.transaction_count

@@ -818,6 +818,7 @@ function BatchStatementReview({
         ),
   })
   const item = query.data
+  const [savedBalances, setSavedBalances] = useState(false)
   const [selected, setSelected] = useState(false)
   useEffect(() => {
     if (!item || query.isFetching) return
@@ -901,6 +902,13 @@ function BatchStatementReview({
         </p>
       )}
       {navigationError && <p role="alert">{navigationError}</p>}
+      {savedBalances && (
+        <p role="status" className="rounded border p-3">
+          Statement balances saved. This statement has no payments to show in
+          Transactions. You can check its saved account and balances below or
+          return to the batch.
+        </p>
+      )}
       {query.isError ? (
         <p role="alert">{query.error.message}</p>
       ) : !item || !selected ? (
@@ -919,6 +927,18 @@ function BatchStatementReview({
               : undefined,
             draftRevision: item.review_revision,
             save,
+            confirm: (request) =>
+              fetchAPI(
+                `/api/financial/statement-import/batches/${batchId}/items/${itemId}/confirm?case_id=${caseId}`,
+                {
+                  method: "POST",
+                  body: {
+                    request,
+                    expected_review_revision: reviewRevision.current,
+                  },
+                  timeout: 120000,
+                }
+              ),
             saved: onBack,
             nextProblem,
             previousProblem: () => nextProblem("previous"),
@@ -930,6 +950,11 @@ function BatchStatementReview({
           <StatementImportPanel
             caseId={caseId}
             onImported={(receipt) => {
+              if ((receipt?.record_count ?? receipt?.transaction_count) === 0) {
+                setSavedBalances(true)
+                void client.invalidateQueries()
+                return
+              }
               const scope = { accountId: receipt?.account_id }
               resetPaymentTableView(caseId, scope, receipt)
               useInvestigationScopeStore.getState().apply(caseId, scope)

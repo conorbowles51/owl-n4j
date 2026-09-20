@@ -177,6 +177,59 @@ beforeEach(() => {
     return data as never
   })
 })
+it("imports directly from a batch review, carrying account edits into the visible receipt", async () => {
+  const { BatchReviewContext } = await import("../lib/batch-review-context")
+  const save = vi.fn(),
+    saved = vi.fn(),
+    done = vi.fn()
+  const confirmBatch = vi.fn().mockResolvedValue({
+    case_id: "case",
+    evidence_file_id: "file",
+    source_document_id: "new-source",
+    account_id: "new-account",
+    transaction_count: 1,
+    incomplete_count: 0,
+    record_count: 1,
+    applied: true,
+  })
+  useStatementWorkspace.getState().select("anonymous:case", "file")
+  render(
+    <QueryClientProvider
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
+    >
+      <BatchReviewContext.Provider
+        value={{ save, saved, confirm: confirmBatch }}
+      >
+        <StatementImportPanel caseId="case" onImported={done} />
+      </BatchReviewContext.Provider>
+    </QueryClientProvider>
+  )
+  await screen.findByText("Review statement.pdf")
+  fireEvent.change(screen.getByLabelText("Account holder"), {
+    target: { value: "Reviewed holder" },
+  })
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: "Import 1 payments and view Transactions",
+    })
+  )
+  await waitFor(() =>
+    expect(done).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source_document_id: "new-source",
+        transaction_count: 1,
+      })
+    )
+  )
+  expect(confirmBatch).toHaveBeenCalledWith(
+    expect.objectContaining({ holder: "Reviewed holder" })
+  )
+  expect(save).not.toHaveBeenCalled()
+  expect(saved).not.toHaveBeenCalled()
+})
+
 it("uses automatic currency and replaces an old EUR choice with the detected USD reading", async () => {
   const base = vi.mocked(fetchAPI).getMockImplementation()!
   useStatementWorkspace.getState().setReviewChoice("anonymous:case:file", {
@@ -1279,7 +1332,11 @@ it("updates an eligible empty legacy import and opens its usable results", async
       String(url).includes("/refresh-reading") &&
       options?.method === "POST"
     ) {
-      expect(options.body).toEqual({ expected_revision: "b".repeat(64) })
+      expect(options.body).toEqual({
+        expected_revision: "b".repeat(64),
+        expected_reading_revision: data.revision,
+        currency: "EUR",
+      })
       return {
         case_id: "case",
         evidence_file_id: "file",
@@ -1308,10 +1365,12 @@ it("updates an eligible empty legacy import and opens its usable results", async
   })
   const done = mount()
   await open(false)
-  expect(screen.getByText(/updated reader identifies 1 payments/)).toBeVisible()
+  expect(
+    screen.getByText(/current reading identifies 1 payments/)
+  ).toBeVisible()
   fireEvent.click(
     screen.getByRole("button", {
-      name: "Update saved reading and open results",
+      name: "Save 1 payments to Transactions",
     })
   )
   await waitFor(() =>
@@ -1348,13 +1407,17 @@ it("does not offer to import the same active reading twice", async () => {
   const done = mount()
   await open(false)
   expect(
-    screen.getByText("This statement has already been imported")
+    screen.getByText("These payments have not reached Transactions")
   ).toBeVisible()
   expect(
     screen.queryByRole("button", { name: "Confirm import of 1 transactions" })
   ).not.toBeInTheDocument()
-  expect(screen.getByText(/No usable transactions were created/)).toBeVisible()
-  fireEvent.click(screen.getByRole("button", { name: "Open imported records" }))
+  expect(
+    screen.getByText(/those readings are not payments in Transactions/)
+  ).toBeVisible()
+  fireEvent.click(
+    screen.getByRole("button", { name: "Review saved incomplete records" })
+  )
   expect(done).toHaveBeenCalledTimes(1)
   expect(done).toHaveBeenCalledWith(
     expect.objectContaining({
@@ -1705,9 +1768,7 @@ it("marks a valid flagged row checked without typing a reason and retains that d
   )
   const done = mount()
   await open()
-  fireEvent.click(
-    screen.getByRole("button", { name: "Mark checked" })
-  )
+  fireEvent.click(screen.getByRole("button", { name: "Mark checked" }))
   expect(
     screen.queryByRole("button", { name: "Mark checked" })
   ).not.toBeInTheDocument()

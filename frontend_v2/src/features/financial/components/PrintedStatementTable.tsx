@@ -35,13 +35,27 @@ export function PrintedStatementTable({
         {value.expected_text}
       </button>
     ) : null
+  // A layout-specific reader can identify a complete payment even when the
+  // generic printed-header matcher cannot reconstruct its Spanish headings.
+  // That presentation limitation is not an investigator review problem.
+  const readable = remaining.filter(
+    (row) =>
+      row.kind === "transaction" &&
+      !row.issues?.length &&
+      !!row.fields?.date &&
+      !!row.fields?.description &&
+      /^\d+$/.test(row.fields?.amount_minor || "") &&
+      ["credit", "debit"].includes(row.fields?.direction || "")
+  )
   const unresolved = remaining.filter(
     (row) =>
-      row.kind === "transaction" ||
+      (row.kind === "transaction" && !readable.includes(row)) ||
       row.kind === "unresolved" ||
       !!row.issues?.length
   )
-  const additional = remaining.filter((row) => !unresolved.includes(row))
+  const additional = remaining.filter(
+    (row) => !unresolved.includes(row) && !readable.includes(row)
+  )
   return (
     <div className="space-y-4">
       {positioned.length > 0 && (
@@ -123,6 +137,17 @@ export function PrintedStatementTable({
           </div>
         </section>
       ))}
+      {readable.length > 0 && (
+        <section className="space-y-2" aria-label="Payments on this page">
+          <h5 className="font-semibold">Payments on this page</h5>
+          <PositionedStatementRows
+            rows={readable}
+            onCell={onCell}
+            selectedRowId={selectedRowId}
+            rowTools={rowTools}
+          />
+        </section>
+      )}
       {unresolved.length > 0 && (
         <section className="rounded border border-amber-500 p-3 space-y-2">
           <h5 className="font-semibold">Rows needing a layout check</h5>
@@ -155,7 +180,7 @@ export function PrintedStatementTable({
           ))}
         </section>
       )}
-      {!sections.length && !positioned.length && (
+      {!sections.length && !positioned.length && !readable.length && (
         <p className="text-sm">
           A transaction table could not be reconstructed for this page. Check
           the original and the extracted text below.

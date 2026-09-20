@@ -71,6 +71,11 @@ export function resetPaymentTableView(
     statement_count?: number
   }
 ) {
+  // An explicit result link must show its payments even if the previous screen
+  // was narrowed to a category that none of these new payments has yet.
+  useFinancialDraftStore
+    .getState()
+    .put(financialDraftKey(caseId, "investigation-category"), "")
   useFinancialDraftStore
     .getState()
     .put(financialDraftKey(caseId, paymentTableDraftName(params, true)), {

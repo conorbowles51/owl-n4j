@@ -233,7 +233,9 @@ it("imports from the review summary without opening corrections or resolving eve
     "43 records selected · 3 with missing or invalid fields"
   )
   expect(screen.getByLabelText("Credit ready:0")).not.toBeVisible()
-  const importNow = screen.getByRole("button", { name: "Import statement now" })
+  const importNow = screen.getByRole("button", {
+    name: /Import .* payments and view Transactions/,
+  })
   importNow.scrollIntoView({ block: "center" })
   await page.screenshot({
     path: "/tmp/statement-review-direct-import-light.png",

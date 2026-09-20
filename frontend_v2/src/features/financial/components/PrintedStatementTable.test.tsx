@@ -2,6 +2,55 @@ import { render, screen, fireEvent, within } from "@testing-library/react"
 import { expect, it, vi } from "vitest"
 import { PrintedStatementTable } from "./PrintedStatementTable"
 
+it("shows a fully read payment without inventing a layout problem when its headings are not reconstructed", () => {
+  const onCell = vi.fn()
+  const amount = {
+    column_index: 2,
+    expected_text: "1.73",
+    locator: { kind: "page_only", page: 1 },
+  }
+  render(
+    <PrintedStatementTable
+      onCell={onCell}
+      rows={[
+        {
+          id: "bbva-payment",
+          page_number: 1,
+          table_index: 0,
+          row_index: 1,
+          kind: "transaction",
+          issues: [],
+          fields: {
+            date: "2021-02-02",
+            description: "Interest",
+            direction: "credit",
+            amount_minor: "173",
+          },
+          source_cells: [
+            {
+              column_index: 0,
+              expected_text: "02/FEB",
+              locator: { kind: "page_only", page: 1 },
+            },
+            amount,
+          ],
+        },
+      ]}
+    />
+  )
+  expect(
+    screen.getByRole("region", { name: "Payments on this page" })
+  ).toBeVisible()
+  expect(
+    screen.queryByText("Rows needing a layout check")
+  ).not.toBeInTheDocument()
+  expect(
+    screen.queryByText(/A transaction table could not be reconstructed/)
+  ).not.toBeInTheDocument()
+  fireEvent.click(screen.getByRole("button", { name: "1.73" }))
+  expect(onCell).toHaveBeenCalledWith("bbva-payment", amount.locator)
+})
+
 it("opens the requested flagged row for review without changing its source click", () => {
   const onCell = vi.fn(),
     onReviewRow = vi.fn()

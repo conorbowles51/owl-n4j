@@ -183,6 +183,7 @@ const proposalSchema = z.object({
       incomplete_count: z.number().optional(),
       currency: z.string().nullable().optional(),
       refresh_available: z.boolean().optional(),
+      refresh_transaction_count: z.number().optional(),
       details: z
         .object({
           holder: z.string(),
@@ -644,6 +645,7 @@ function StatementReview({
         )
       )}
       {query.data.current_import &&
+        query.data.current_import.transaction_count > 0 &&
         !query.data.current_import.excluded_as_duplicate && (
           <Button
             variant="outline"
@@ -657,9 +659,8 @@ function StatementReview({
               })
             }
           >
-            {query.data.current_import.incomplete_count
-              ? "Open imported records"
-              : "Open imported transactions"}
+            View {query.data.current_import.transaction_count} payments in
+            Transactions
           </Button>
         )}
       {query.data.current_import?.evidence_file_id === fileId &&
@@ -669,25 +670,29 @@ function StatementReview({
             aria-label="Recorded statement import"
           >
             <h3 className="font-semibold">
-              This statement has already been imported
+              {query.data.current_import.transaction_count
+                ? `${query.data.current_import.transaction_count} payments saved to Transactions`
+                : query.data.current_import.incomplete_count
+                  ? "These payments have not reached Transactions"
+                  : "Statement balances saved"}
             </h3>
             <p>
-              {query.data.current_import.transaction_count} usable transactions
+              {query.data.current_import.transaction_count} usable payments
               {query.data.current_import.incomplete_count
-                ? ` and ${query.data.current_import.incomplete_count} incomplete records were saved. Incomplete records appear separately in Transactions and do not count in totals.`
+                ? ` were saved. The earlier import also retained ${query.data.current_import.incomplete_count} readings with missing values.`
                 : " were saved."}
               {query.data.current_import.transaction_count === 0 &&
                 !!query.data.current_import.incomplete_count &&
-                " No usable transactions were created. Read the statement again to recover missed values, or open the incomplete records to correct them."}
+                " The PDF is retained, but those readings are not payments in Transactions."}
             </p>
+            {canEdit && query.data.current_import.refresh_available && (
+              <RefreshStoredReading data={query.data} onImported={onImported} />
+            )}
             {canEdit && (
               <ImportedStatementDetails
                 caseId={caseId}
                 sourceId={query.data.current_import.source_document_id}
               />
-            )}
-            {canEdit && query.data.current_import.refresh_available && (
-              <RefreshStoredReading data={query.data} onImported={onImported} />
             )}
             {query.data.current_import.details_reason && (
               <p>
@@ -747,6 +752,8 @@ function RefreshStoredReading({
   onImported: (result?: StatementImportReceipt) => void
 }) {
   const client = useQueryClient()
+  const paymentCount =
+    data.current_import?.refresh_transaction_count ?? data.transaction_count
   const update = useMutation({
     retry: false,
     mutationFn: async () => {
@@ -755,7 +762,11 @@ function RefreshStoredReading({
           `/api/financial/statement-import/sources/${data.current_import!.source_document_id}/refresh-reading?case_id=${data.case_id}`,
           {
             method: "POST",
-            body: { expected_revision: data.current_import!.revision },
+            body: {
+              expected_revision: data.current_import!.revision,
+              expected_reading_revision: data.revision,
+              currency: data.currency,
+            },
           }
         )
       )
@@ -774,14 +785,17 @@ function RefreshStoredReading({
   return (
     <div className="rounded border p-3 space-y-2">
       <p>
-        The updated reader identifies {data.transaction_count} payments and the
-        statement balances. Update this import to replace the empty records. Its
-        earlier reading stays in history.
+        The current reading identifies {paymentCount} payments in{" "}
+        {data.currency}. Save these to Transactions with your saved account
+        details and balances. The earlier reading stays in history; this does
+        not add duplicate payments.
       </p>
       <Button disabled={update.isPending} onClick={() => update.mutate()}>
         {update.isPending
           ? "Updating saved reading…"
-          : "Update saved reading and open results"}
+          : paymentCount
+            ? `Save ${paymentCount} payments to Transactions`
+            : "Save statement balances and open account"}
       </Button>
       {update.isError && <p role="alert">{update.error.message}</p>}
     </div>
@@ -1402,14 +1416,16 @@ function EditableStatement({
     retry: false,
     mutationFn: async () => {
       const result = receipt.parse(
-        await fetchAPI(
-          `/api/financial/statement-import/${fileId}/confirm?${new URLSearchParams({ case_id: caseId })}`,
-          {
-            method: "POST",
-            body: importRequest(),
-            timeout: 120000,
-          }
-        )
+        await (batchReview?.confirm
+          ? batchReview.confirm(importRequest())
+          : fetchAPI(
+              `/api/financial/statement-import/${fileId}/confirm?${new URLSearchParams({ case_id: caseId })}`,
+              {
+                method: "POST",
+                body: importRequest(),
+                timeout: 120000,
+              }
+            ))
       )
       if (
         result.case_id !== caseId ||
@@ -1993,17 +2009,32 @@ function EditableStatement({
                       : "Confirm once to import this statement. You do not need to accept each line separately."}
               </p>
             </div>
-            <Button disabled={!!importDisabled} onClick={submitImport}>
+            <Button
+              disabled={!!importDisabled}
+              onClick={() => {
+                if (batchReview && !batchReview.confirm) submitImport()
+                else if (!importDisabled) confirm.mutate()
+              }}
+            >
               {confirm.isPending || saveBatchReview.isPending
                 ? "Saving statement…"
-                : batchReview
+                : batchReview && !batchReview.confirm
                   ? "Save and return to batch"
                   : included.length
-                    ? "Import statement now"
+                    ? `Import ${included.length - incompleteCount} payments and view Transactions`
                     : data.can_record_account_closure
                       ? "Save closure now"
                       : "Save balances now"}
             </Button>
+            {batchReview?.confirm && (
+              <Button
+                variant="outline"
+                disabled={!!importDisabled}
+                onClick={submitImport}
+              >
+                Save draft and return to batch
+              </Button>
+            )}
             {confirm.isError && (
               <p className="w-full" role="alert">
                 {confirm.error.message}
@@ -2287,7 +2318,11 @@ function EditableStatement({
               {data.current_import?.evidence_file_id === fileId
                 ? canEdit
                   ? "Edit imported transactions"
-                  : "Open imported transactions"
+                  : data.current_import.transaction_count
+                    ? "Open imported transactions"
+                    : data.current_import.incomplete_count
+                      ? "Review saved incomplete records"
+                      : "View saved account and balances"
                 : "Edit import values"}
             </Button>
           )}
@@ -2892,8 +2927,11 @@ function EditableStatement({
             </p>
             {data.current_import.evidence_file_id === fileId ? (
               <p>
-                Open the transactions to work with this import. Reprocess the
-                statement to prepare a replacement reading.
+                {data.current_import.refresh_available
+                  ? "Use Save payments above to add the current reading to Transactions."
+                  : data.current_import.transaction_count
+                    ? "Open Transactions to work with the saved payments."
+                    : "The saved account, balances and original PDF remain available in this statement."}
               </p>
             ) : (
               <label className="flex gap-2">
@@ -3049,7 +3087,9 @@ function EditableStatement({
                 <strong>{included.length}</strong>{" "}
                 {data.assignment_only
                   ? "transactions to assign"
-                  : "transactions to import"}
+                  : data.current_import?.evidence_file_id === fileId
+                    ? "payment readings in the current PDF"
+                    : "transactions to import"}
               </>
             )}
           </span>

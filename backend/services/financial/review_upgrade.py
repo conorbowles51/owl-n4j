@@ -37,6 +37,24 @@ def attach_upgrade(proposal, snapshot):
     saved = proposal.get('saved_review')
     if saved and saved['request'].get('expected_revision') != proposal['revision']:
         upgraded = upgrade_request(saved['request'], proposal)
+        if not upgraded:
+            # A metadata/parser improvement can change the revision even when
+            # every saved row equals the new extraction. There are no row edits
+            # to discard or remap in that case. Keep saved account details as-is.
+            from services.financial.import_batches import initial_request
+            from services.financial.statement_import import DraftImportRow
+            request = saved['request']
+            current = initial_request(proposal)
+            try:
+                same_rows = (
+                    request.get('statement_id') == proposal.get('statement_id') and
+                    request.get('currency') == proposal.get('currency') and
+                    [DraftImportRow.model_validate(r) for r in request['rows']] ==
+                    [DraftImportRow.model_validate(r) for r in current['rows']])
+            except (ValueError, KeyError):
+                same_rows = False
+            if same_rows:
+                upgraded = {**deepcopy(request), 'expected_revision': proposal['revision']}
         if upgraded:
             # Keep review_revision as the stored concurrency token until save.
             proposal['saved_review'] = {**saved, 'request': upgraded, 'upgraded_from_revision': saved['request']['expected_revision']}

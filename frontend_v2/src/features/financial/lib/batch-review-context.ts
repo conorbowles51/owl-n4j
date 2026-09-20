@@ -7,6 +7,7 @@ export const BatchReviewContext = createContext<{
   draftRevision?: string
   draft?: import("./statement-review-draft").StatementDraft
   save: (request: unknown) => Promise<unknown>
+  confirm?: (request: unknown) => Promise<unknown>
   saved: () => void
   nextProblem?: () => Promise<void>
   previousProblem?: () => Promise<void>
