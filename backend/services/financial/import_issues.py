@@ -60,6 +60,14 @@ def retained_issues(proposal, request, *, arithmetic=None, coverage=None):
     from services.financial.review_arithmetic import arithmetic_problems
     originals = {r['id']: r for r in proposal['rows']}
     issues = []
+    for original in proposal['rows']:
+        count = original['fields'].get('printed_transaction_count')
+        direction = original['fields'].get('total_direction')
+        if original['kind'] == 'statement_total' and isinstance(count, str) and count.isdigit() and direction in ('credit', 'debit'):
+            actual = sum(not row.excluded and row.direction == direction for row in request.rows)
+            if actual != int(count):
+                issues.append(dict(kind='transaction_count', row_id=original['id'], page=original.get('page_number'),
+                    message=f'The statement lists {count} {"charges" if direction == "debit" else "credits"}; {actual} are selected. Check for missing transactions.'))
     if not any(not row.excluded for row in request.rows):
         omitted = sum(row['kind'] == 'transaction' and not row['excluded'] for row in proposal['rows'])
         if omitted:

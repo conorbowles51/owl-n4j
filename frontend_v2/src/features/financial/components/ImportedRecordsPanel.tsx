@@ -41,10 +41,12 @@ export function ImportedRecordsPanel({
   caseId,
   params,
   onOpen,
+  onReviewFile,
 }: {
   caseId: string
   params: LedgerQueryParams
   onOpen: (id: string) => void
+  onReviewFile?: (fileId: string) => void
 }) {
   const [active, setActive] = useState<ImportedRecord | null>(null)
   const [page, setPage] = useState(0)
@@ -84,11 +86,30 @@ export function ImportedRecordsPanel({
       </p>
     )
   if (!query.data.total) return null
+  const files = [
+    ...new Map(
+      query.data.records.map((r) => [r.evidence_file_id, r.filename])
+    ).entries(),
+  ]
   return (
     <section
       className="rounded-lg border border-amber-500/40 bg-amber-50/50 p-3 dark:bg-amber-950/15"
       aria-label="Imported records with missing values"
     >
+      <p className="text-sm mb-2">
+        These readings are saved, but cannot be counted as payments yet. If the
+        PDF contains balances or other text, review the statement instead of
+        filling in each empty record.
+      </p>
+      {onReviewFile && files.length === 1 && (
+        <Button
+          variant="outline"
+          className="mb-2"
+          onClick={() => onReviewFile(files[0][0])}
+        >
+          Review statement: {files[0][1]}
+        </Button>
+      )}
       <details open={!!active}>
         <summary className="cursor-pointer text-sm font-medium">
           {query.data.total} imported{" "}

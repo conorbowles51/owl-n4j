@@ -60,6 +60,9 @@ def add_period_checks(choices, sources, currency):
             if layout == 'andrews-share-statement':
                 from services.financial.statement_import_andrews import propose_andrews_statement
                 rows = propose_andrews_statement(selected, chosen_currency, choice)['rows']
+            elif layout == 'bbva-mexico-cash-management':
+                from services.financial.statement_import_bbva import propose_bbva_statement
+                rows = propose_bbva_statement(selected, chosen_currency, choice)['rows']
             elif layout in ('capital-one-card', 'merrick-card'):
                 from services.financial.statement_import_card import propose_card_table
                 from services.financial.statement_import_merrick import propose_merrick_table

@@ -11,7 +11,8 @@ _PREFIXES = {'US$': 'USD', 'CA$': 'CAD', 'C$': 'CAD', 'AU$': 'AUD', 'A$': 'AUD',
 _MARKER = r'(?:[A-Z]{3}|US\$|CA\$|C\$|AU\$|A\$|NZ\$|HK\$|S\$|[€£$¥])'
 _AMOUNT = re.compile(r'^[=(+\-−\s]*(?P<marker>' + _MARKER + r')\s*[+\-−]?\s*\d[\d.,\s]*\)?$')
 _SUFFIX = re.compile(r'^[+\-−(\s]*\d[\d.,\s]*\)?\s*(?P<marker>' + _MARKER + r')$')
-_LABEL = re.compile(r'^(?:(?:statement|account)\s+)?currency\s*:?\s*(.*)$', re.I)
+_LABEL = re.compile(r'^(?:(?:(?:statement|account)\s+)?currency|moneda)\s*:?\s*(.*)$', re.I)
+_CURRENCY_NAMES = {'EURO': 'EUR', 'EUROS': 'EUR', 'PESOS MEXICANOS': 'MXN'}
 _US_LAYOUTS = {'capital-one-card', 'merrick-card', 'andrews-share-statement'}
 
 
@@ -36,9 +37,11 @@ def detect_statement_currency(sources, *, layout_id=None, header_text=''):
     labelled = set()
     for cells in rows:
         joined = ' '.join(cells)
-        match = _LABEL.fullmatch(joined)
-        if match and (code := _code(match[1].strip().upper())):
-            labelled.add(code)
+        for candidate in [joined, *cells]:
+            match = _LABEL.fullmatch(candidate)
+            value = match[1].strip().upper() if match else ''
+            if match and (code := _code(_CURRENCY_NAMES.get(value, value))):
+                labelled.add(code)
     if len(labelled) == 1:
         return next(iter(labelled))
     if labelled:

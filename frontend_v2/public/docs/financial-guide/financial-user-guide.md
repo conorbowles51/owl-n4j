@@ -714,6 +714,14 @@ One readable balance is enough. A missing opening or closing balance stays unkno
 
 Recognised balance labels include Opening/Closing Balance and Spanish Saldo inicial/Saldo anterior/Saldo final. An unreadable amount can be corrected in **Printed balance** without a mandatory note. An unrecognised layout may still need further extraction support; available credit and minimum payments are not used as balances.
 
+### BBVA Mexico statements
+
+For the supported **Cash Management** layout, Loupe reads the account, statement period and printed currency, then separates **Detalle de Movimientos Realizados** from balances, charts, glossary entries and tax information. **Cargos** are money out and **Abonos** are money in. The operation date and liquidation date are kept separately. Wrapped descriptions, including continuations onto the next page, stay with their transaction.
+
+A statement that looks mostly like balances can still contain charges. For example, an opening balance of €60.00, an account fee of €30.00 and VAT of €4.80 produce a closing balance of €25.20. Loupe should show two transactions, not hundreds of empty records. When the same layout contains no payments, its printed balances can be saved without creating transactions. The printed transaction counts are also compared with the selected payments; differences remain visible.
+
+If an earlier import produced only incomplete records, use **Review statement: [filename]** above the incomplete-record list to return to its PDF. Select **Reprocess statement** with **Use the PDF text where available**, check the new reading, and choose to replace the previous import. The earlier reading and its corrections remain in history. Reprocessing alone does not replace an import.
+
 ### Read the automatic checks
 
 At the top of the review, **Statement checks** shows the result for the values currently selected for import. Checks run again after you edit, exclude or restore a row. You can import while concerns remain. If the check request fails, select **Retry statement checks** to see the latest result.

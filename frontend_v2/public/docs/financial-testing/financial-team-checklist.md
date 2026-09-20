@@ -2,7 +2,7 @@
 
 Follow this guide in order for your first test of Financial. It starts with two invented statements and ends with a saved report that a colleague can open. You do not need previous experience of Loupe.
 
-**Updated: 19 September 2026.** Use the full **User guide** for detailed explanations of each tool. This testing guide tells you what to try and what result to check. A result is only a pass after you have checked it yourself.
+**Updated: 20 September 2026.** Use the full **User guide** for detailed explanations of each tool. This testing guide tells you what to try and what result to check. A result is only a pass after you have checked it yourself.
 
 Screenshots show light mode using the supplied test statements. The controls are the same in dark mode.
 
@@ -662,3 +662,15 @@ Use disposable test cases for these checks.
 4. Select **Import [number] records** once. You should not need to open each period or resolve each reading issue first. After completion, check that usable transactions are available, incomplete records retain their sources outside totals, and issues remain accessible. Existing imports must not be duplicated.
 5. In a separate individual review containing an unreadable amount, select **Import statement now** above the PDF without opening corrections. Check the same separation between usable transactions and incomplete records after import.
 6. Record elapsed user time, number of manual corrections and any unexpected detours for a representative document. Do not use automated test runtime as the time a person needs to process a PDF.
+
+## BBVA balances and small charges
+
+Use a separate test case and a BBVA Mexico **Cash Management** statement supplied for testing. This check does not establish support for every BBVA product.
+
+1. Prepare the PDF with **Use the PDF text where available**. Check that the account, dates and currency agree with its printed headings.
+2. For the September 2024 euro sample, expect two charges: €30.00 and €4.80. Both operation dates are 2 September; both liquidation dates are 1 September. The second description continues with **16%** on the next page.
+3. Check the opening balance (€60.00), closing balance (€25.20), total charges (€34.80) and two-charge count. Glossary, summary chart and tax-certificate lines must not appear as payments.
+4. Import once. Expect two usable transactions and no incomplete records. Open each source and check its printed amount. Repeating the confirmation must not duplicate the transactions.
+5. Test a genuinely empty statement of the same layout. Expect its printed balances to save with zero transactions, without requiring any empty rows to be filled in.
+6. For a previously incorrect import, use **Review statement: [filename]**, reprocess the PDF, then explicitly replace the old import. Expect only the corrected payments in the active list; the earlier reading must remain in history.
+7. Record any unexplained differences or missing charges with the filename and page. Do not enter zeros to make an unreadable amount appear complete.

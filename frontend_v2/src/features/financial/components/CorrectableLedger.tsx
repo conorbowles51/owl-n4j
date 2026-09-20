@@ -21,6 +21,7 @@ export function CorrectableLedger(props: {
   onAdjudicate: (row: LedgerTransaction) => void
   investigation?: boolean
   heldOut?: boolean
+  onReviewStatement?: (fileId: string) => void
 }) {
   return (
     <CorrectableLedgerContent
@@ -35,10 +36,12 @@ function CorrectableLedgerContent({
   onAdjudicate,
   heldOut = false,
   investigation = false,
+  onReviewStatement,
 }: {
   caseId: string | undefined
   onAdjudicate: (row: LedgerTransaction) => void
   investigation?: boolean
+  onReviewStatement?: (fileId: string) => void
   heldOut?: boolean
 }) {
   const { canEdit } = useFinancialAccess()
@@ -95,6 +98,7 @@ function CorrectableLedgerContent({
           caseId={caseId}
           params={params}
           onOpen={(transactionId) => setSource({ caseId, transactionId })}
+          onReviewFile={onReviewStatement}
         />
       )}
       <div

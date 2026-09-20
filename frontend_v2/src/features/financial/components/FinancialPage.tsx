@@ -1,4 +1,6 @@
 import { PaymentCategoryFilter } from "./PaymentCategoryFilter"
+import { useAuthStore } from "@/features/auth/hooks/use-auth"
+import { useStatementWorkspace } from "../stores/statement-workspace"
 import "../financial-workspace.css"
 import { useUIStore } from "@/stores/ui.store"
 import { resetPaymentTableView } from "../lib/payment-table-draft"
@@ -127,6 +129,14 @@ function FinancialPageContent() {
     null
   )
   const reviewingAccounts = !!caseId && accountReviewCase === caseId
+  const reviewStatement = (fileId: string) => {
+    const user = useAuthStore.getState().user
+    useStatementWorkspace
+      .getState()
+      .select(`${user?.id || user?.username}:${caseId}`, fileId)
+    setAccountReviewCase(null)
+    store.setMainView("statements")
+  }
   useEffect(() => {
     const panel = useUIStore.getState()
     if (store.mainView !== "statements" && panel.graphPanelTab === "detail")
@@ -948,12 +958,26 @@ function FinancialPageContent() {
                         importReceipt.transaction_count}{" "}
                       imported records
                     </strong>{" "}
-                    from {importReceipt.filename || "your statement"}. Showing
-                    this statement’s payments.
+                    from {importReceipt.filename || "your statement"}.
+                    {importReceipt.transaction_count
+                      ? " Showing this statement’s payments."
+                      : " No usable payments were identified in this import."}
                     {!!importReceipt.incomplete_count &&
                       ` ${importReceipt.incomplete_count} records have missing values and are kept outside totals.`}
                   </p>
                   <div className="flex gap-2">
+                    {importReceipt.incomplete_count ===
+                      (importReceipt.record_count ??
+                        importReceipt.transaction_count) && (
+                      <Button
+                        variant="outline"
+                        onClick={() =>
+                          reviewStatement(importReceipt.evidence_file_id)
+                        }
+                      >
+                        Review source statement
+                      </Button>
+                    )}
                     {importReceipt.account_id && (
                       <Button
                         variant="outline"
@@ -979,6 +1003,7 @@ function FinancialPageContent() {
             <ErrorBoundary level="section">
               <CorrectableLedger
                 investigation
+                onReviewStatement={reviewStatement}
                 key={caseId}
                 caseId={caseId}
                 onAdjudicate={setAdjudicationRow}

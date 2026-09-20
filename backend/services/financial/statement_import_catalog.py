@@ -51,6 +51,9 @@ def statement_catalog(sources):
     from services.financial.statement_import_andrews import andrews_catalog, is_andrews_fee_summary, unassigned_andrews_groups
     andrews, handled, incomplete = andrews_catalog(sources)
     groups = {statement['id']: statement for statement in andrews}
+    from services.financial.statement_import_bbva import bbva_catalog
+    bbva, bbva_handled = bbva_catalog(sources)
+    groups.update({statement['id']: statement for statement in bbva})
     groups.update({statement['id']: statement for statement in unassigned_andrews_groups(sources, handled)})
     unclassified = []
     information = []
@@ -58,6 +61,8 @@ def statement_catalog(sources):
     capital_pages, information_pages = _capital_page_contexts(sources)
     for source in sources:
         address = (source['page_number'], source['table_index'])
+        if address in bbva_handled:
+            continue
         if address in handled:
             if address in incomplete:
                 unclassified.append(dict(page_number=address[0], table_index=address[1]))

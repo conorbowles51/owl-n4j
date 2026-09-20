@@ -196,7 +196,7 @@ class BatchImportTests(TestCase):
             item=db.scalar(select(Item).where(Item.batch_id==batch))
             self.assertEqual(next(row for row in item.review_request['rows'] if row['id']==payment['id'])['date'],'')
 
-    def test_incomplete_progress_is_saved_but_cannot_be_bulk_imported(self):
+    def test_incomplete_progress_can_be_bulk_imported_with_missing_values_retained(self):
         f=self.f; batch=self.create(); self.advance(batch)
         item=self.status(batch)['items'][0]
         raw=service.initial_request(f.preview())
@@ -210,14 +210,18 @@ class BatchImportTests(TestCase):
             saved=db.get(Item, UUID(item['id']))
             self.assertEqual(saved.review_request['holder'], '')
             self.assertEqual(result['review_revision'], service._digest(saved.review_request))
-            with self.assertRaisesRegex(PdfMappingError, 'no new statement records'):
-                service.queue_import(db, case_id=f.case.id, batch_id=batch,
-                    expected_revision=service.ready_revision([saved]), actor=f.actor)
-        restored=service.initial_request(f.preview())
+            self.assertTrue(saved.summary['can_import'])
+            service.queue_import(db, case_id=f.case.id, batch_id=batch,
+                expected_revision=service.ready_revision([saved]), actor=f.actor)
+        self.advance(batch)
+        after = self.status(batch)
+        self.assertEqual(after['counts']['imported'], 1)
+        from postgres.models.financial import FinancialSourceDocument
         with f.SessionLocal() as db:
-            result=service.save_review(db, case_id=f.case.id, batch_id=batch, item_id=UUID(item['id']),
-                request=StatementReviewDraft.model_validate(restored), expected_review_revision=result['review_revision'])
-            self.assertEqual(result['status'], 'ready')
+            source = db.scalar(select(FinancialSourceDocument).where(FinancialSourceDocument.evidence_file_id == f.file.id))
+            self.assertEqual(len(list(db.scalars(select(FinancialTransaction)))), 11)
+            self.assertEqual(source.metadata_['statement_incomplete_records'][0]['fields']['amount_minor'], '')
+            self.assertEqual(source.metadata_['statement_import_request']['holder'], '')
 
     def test_next_problem_crosses_list_pages_and_never_crosses_cases(self):
         f=self.f; batch=self.create(); self.advance(batch)

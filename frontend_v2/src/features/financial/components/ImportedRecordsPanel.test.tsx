@@ -43,7 +43,7 @@ const record = {
     reason: "",
   },
 }
-const mount = (open = vi.fn()) =>
+const mount = (open = vi.fn(), review = vi.fn()) =>
   render(
     <QueryClientProvider
       client={
@@ -55,7 +55,12 @@ const mount = (open = vi.fn()) =>
         })
       }
     >
-      <ImportedRecordsPanel caseId="case" params={{}} onOpen={open} />
+      <ImportedRecordsPanel
+        caseId="case"
+        params={{}}
+        onOpen={open}
+        onReviewFile={review}
+      />
     </QueryClientProvider>
   )
 beforeEach(() => {
@@ -63,6 +68,23 @@ beforeEach(() => {
   vi.mocked(fetchAPI).mockReset()
 })
 afterEach(cleanup)
+it("offers a way back to the PDF before opening hundreds of incomplete records", async () => {
+  vi.mocked(fetchAPI).mockResolvedValue({
+    records: [record],
+    total: 250,
+  } as never)
+  const review = vi.fn()
+  mount(vi.fn(), review)
+  fireEvent.click(
+    await screen.findByRole("button", {
+      name: "Review statement: Statement.pdf",
+    })
+  )
+  expect(review).toHaveBeenCalledWith("file")
+  expect(
+    screen.getByText(/instead of filling in each empty record/)
+  ).toBeVisible()
+})
 it("retains missing values and an unfinished correction, then opens the saved transaction", async () => {
   vi.mocked(fetchAPI).mockImplementation(async (_url, options) =>
     options?.method === "POST"
