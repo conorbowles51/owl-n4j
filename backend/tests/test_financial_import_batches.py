@@ -16,6 +16,32 @@ from tests.test_financial_statement_import import StatementImportTests as Fixtur
 
 
 class BatchImportTests(TestCase):
+    def test_refresh_statement_list_keeps_saved_review_and_imports(self):
+        batch = self.create(); self.advance(batch)
+        item = self.status(batch)['items'][0]
+        raw = service.initial_request(self.f.preview())
+        raw['holder'] = 'Saved reviewer wording'
+        with self.f.SessionLocal() as db:
+            service.save_review(db, case_id=self.f.case.id, batch_id=batch, item_id=UUID(item['id']),
+                request=StatementReviewDraft.model_validate(raw), expected_review_revision=service._digest({}))
+            with self.assertRaisesRegex(PdfMappingError, 'not found'):
+                service.refresh_statement_list(db, case_id=uuid4(), batch_id=batch)
+            self.assertEqual(service.refresh_statement_list(db, case_id=self.f.case.id, batch_id=batch)['files'], 1)
+            self.assertTrue(service.refresh_statement_list(db, case_id=self.f.case.id, batch_id=batch)['already_processing'])
+        self.advance(batch)
+        status = self.status(batch)
+        self.assertEqual(status['items'][0]['holder'], raw['holder'])
+        self.assertEqual(status['total'], 1)
+        with self.f.SessionLocal() as db:
+            service.queue_import(db, case_id=self.f.case.id, batch_id=batch, expected_revision=status['ready_revision'], actor=self.f.actor)
+        self.advance(batch)
+        with self.f.SessionLocal() as db:
+            service.refresh_statement_list(db, case_id=self.f.case.id, batch_id=batch)
+        self.advance(batch)
+        self.assertEqual(self.status(batch)['counts']['imported'], 1)
+        with self.f.SessionLocal() as db:
+            self.assertEqual(len(list(db.scalars(select(FinancialTransaction)))), 12)
+
     def test_legacy_saved_review_upgrades_and_imports_without_losing_edits(self):
         from unittest.mock import patch
         from services.financial.statement_progress import save_progress

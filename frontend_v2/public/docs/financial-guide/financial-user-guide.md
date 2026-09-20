@@ -308,6 +308,8 @@ If a file has not been read, select **Read statement** beside its name. If readi
 
 A file with saved imports shows its current imported payment count, account and recorded periods. This count is read from the case and remains available after reopening your browser. A PDF can contain other periods that have not been imported yet. Open the file to check those periods; the count does not mean the whole PDF is complete. Replaced or excluded payments are not included in this count.
 
+If an older batch missed periods that the current reader recognises, select **Check for additional statement periods** in that batch. Loupe updates the statement list from its saved PDF reading without uploading another copy. Existing imports, exclusions and saved review edits are kept. Newly found periods appear for review and bulk import; this action does not import them automatically.
+
 If an import contains incomplete records, the file list counts them separately from usable transactions. **Open imported records** takes you to those records in Transactions. A saved record with no usable amount is not a payment in the totals. If every record is incomplete, the review explicitly says that no usable transactions were created.
 
 ### Set the currency for several statements

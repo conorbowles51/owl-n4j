@@ -42,7 +42,9 @@ def imported_batch_scope(session, *, case_id, batch_id):
             if len(matches) != 1:
                 raise PdfMappingError('This earlier batch does not identify one source for each imported statement. Open its statements individually to inspect their transactions.', 409)
             selected.add(str(matches[0].id))
-    source_ids = sorted(selected)
+    from services.financial.batch_import_history import current_imports
+    current = current_imports(session, case_id, [UUID(identifier) for identifier in selected])
+    source_ids = sorted({current[identifier]['source_document_id'] for identifier in selected})
     counts = session.execute(select(FinancialTransaction.account_id, func.count(),
         func.min(FinancialTransaction.ordering_date), func.max(FinancialTransaction.ordering_date))
         .where(FinancialTransaction.case_id == case_id,

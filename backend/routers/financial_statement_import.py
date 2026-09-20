@@ -446,6 +446,15 @@ def imported_financial_batch_scope(batch_id: UUID, case_id: UUID = Query(...), d
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
 
+@router.post('/batches/{batch_id}/refresh-statements', dependencies=[Depends(case_access_dependency(lambda request,payload: ('case','edit')))])
+def refresh_financial_batch_statements(batch_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    try:
+        return import_batches.refresh_statement_list(db, case_id=case_id, batch_id=batch_id)
+    except PdfMappingError as exc:
+        db.rollback()
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
 class SaveFinancialBatchReview(BaseModel):
     model_config = ConfigDict(extra='forbid')
     expected_review_revision: str = Field(pattern=r'^[a-f0-9]{64}$')

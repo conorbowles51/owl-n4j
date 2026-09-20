@@ -6,7 +6,7 @@ inferred. Recognised undated interest charges retain the absence of a date.
 """
 import re
 from services.financial.statement_import_proposal import exact_amount
-from services.financial.statement_layout_context import _cycle, card_row_dates
+from services.financial.statement_layout_context import _cycle, card_row_dates, statement_layout_context
 from services.financial.card_table_columns import card_row_columns
 from datetime import date
 from services.financial.statement_import_card_balances import summary_balances
@@ -33,7 +33,7 @@ def _rewards_information(row, source):
 
 def propose_card_table(source, currency, statement):
     balances, issues = summary_balances(source, currency)
-    context = source.get('layout_context')
+    context = source.get('layout_context') or statement_layout_context(source['rows'], continuation_statement=statement)
     observed = {item['row_index']: item for item in (context or {}).get('rows', [])}
     result = []
     fees = False

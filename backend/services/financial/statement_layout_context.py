@@ -20,6 +20,7 @@ _SECTION = re.compile(r'^(.+?) #(\d{4}): (Payments, Credits and Adjustments|Tran
 CAPITAL_ONE_CARD_HEADING = re.compile(
     r'(?:Platinum MasterCard Account Ending in|Platinum Mastercard ending in|Platinum Card ending in|'
     r'World Elite Mastercard Account Ending in|World Elite MasterCard Account Ending in|'
+    r'Quicksilver Credit Card \| World Elite Mastercard ending in|'
     r'(?:Platinum Card|Secured Card|Platinum Secured Card) \| Platinum Mastercard ending in) (\d{4})')
 
 
@@ -73,12 +74,14 @@ def card_row_dates(text, posting_text, start, end):
     return reading, possible, postings, basis
 
 
-def statement_layout_context(rows):
+def statement_layout_context(rows, *, continuation_statement=None):
     """Return None unless institution, unique cycle and printed card agree."""
     flat = [(r['row_index'], c) for r in rows for c in r['cells']]
     marks = [(i,c) for i,c in flat if c['expected_text'].strip() in (
         'Visit www.capitalone.com to see detailed transactions.',
         'Visit capitalone.com to see detailed transactions.')]
+    if continuation_statement is not None and marks:
+        return None  # This fallback only handles the verified continuation layout.
     cycles = []
     for row in rows:
         cells = row['cells']
@@ -93,14 +96,27 @@ def statement_layout_context(rows):
             if reading:
                 cycles.append((row['row_index'],cell,reading,count_source))
     cards = [(i,c) for i,c in flat if CAPITAL_ONE_CARD_HEADING.fullmatch(c['expected_text'].strip())]
-    if len(marks)!=1 or len(cycles)!=1 or len(cards)!=1:
+    if len(cycles)!=1 or len(cards)!=1:
         return None
     cycle_row, cycle_cell, (start,end), count_cell = cycles[0]
+    continuation = None
+    if not marks and continuation_statement:
+        headings = [(i, c) for i, c in flat if c['expected_text'].strip() == 'Transactions (Continued)']
+        totals = [(i, c, match) for i, c in flat if (match := re.fullmatch(r'(.+?) #(\d{4}): Total (Transactions)', c['expected_text'].strip()))]
+        card = CAPITAL_ONE_CARD_HEADING.fullmatch(cards[0][1]['expected_text'].strip())[1]
+        if (len(headings) == len(totals) == 1 and headings[0][0] < totals[0][0]
+                and totals[0][2][2] == card == continuation_statement.get('account_reference', '')[-4:]
+                and continuation_statement.get('layout_id') == 'capital-one-card'
+                and (start.isoformat(), end.isoformat()) == (continuation_statement.get('period_start'), continuation_statement.get('period_end'))):
+            continuation = (headings[0], totals[0])
+    if len(marks) != 1 and not continuation:
+        return None
     def citation(row, cell):
         return dict(row_index=row, **cell)
-    context=[];unresolved=[];section=None;columns=None;header_row=None;header_cells=None
+    context=[];unresolved=[];section=continuation[1] if continuation else None;columns=None;header_row=None;header_cells=None
+    section_start = continuation[0][0] if continuation else marks[0][0]
     for row in rows:
-        if row['row_index'] <= max(cycle_row, marks[0][0], cards[0][0]):
+        if row['row_index'] <= max(cycle_row, section_start, cards[0][0]):
             continue
         cells=row['cells'];labels=[_SECTION.fullmatch(c['expected_text'].strip()) for c in cells]
         sections=[(c,m) for c,m in zip(cells,labels) if m]
@@ -157,7 +173,7 @@ def statement_layout_context(rows):
             amount_source=citation(row['row_index'],mapped_columns['Amount']),
             direction=None,requires_source_review=True))
     return dict(layout_id='capital-one-platinum-card-sections',version=1,
-        institution_source=citation(*marks[0]),printed_card_source=citation(*cards[0]),
+        institution_source=citation(*(cards[0] if continuation else marks[0])),printed_card_source=citation(*cards[0]),
         cycle_source=citation(cycle_row,cycle_cell),
         cycle_count_source=citation(cycle_row,count_cell) if count_cell else None,start_date=start.isoformat(),end_date=end.isoformat(),
         rows=context,unresolved_rows=unresolved,applied=False,

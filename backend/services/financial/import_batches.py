@@ -630,3 +630,23 @@ def retry_file(session, *, case_id, batch_id, source_id):
     target.update(status='waiting',expected_revision=financial_file_visibility(source)['financial_visibility_revision'])
     target.pop('error',None)
     batch.files=files;batch.status='preparing';session.commit()
+
+
+def refresh_statement_list(session, *, case_id, batch_id):
+    """Discover newly supported periods from saved geometry, keeping reviews."""
+    batch = batch_for(session, case_id, batch_id, True)
+    if batch.status == 'preparing':
+        return dict(queued=True, already_processing=True)
+    files = deepcopy(batch.files)
+    count = 0
+    for file in files:
+        if file['status'] == 'checked':
+            # Processing skips Evidence intake; the worker reuses the existing
+            # text/geometry and prepare_reviews keeps edited/imported items.
+            file['status'] = 'processing'
+            count += 1
+    if count:
+        batch.files = files
+        batch.status = 'preparing'
+        session.commit()
+    return dict(queued=bool(count), files=count, already_processing=False)

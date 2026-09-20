@@ -184,6 +184,24 @@ it("confirms the displayed ready list and filters problems across the batch", as
     await screen.findByText(/2 statements available.*14 transactions/)
   ).toBeVisible()
 })
+it("checks for additional periods without confirming another import", async () => {
+  mount()
+  fireEvent.click(
+    await screen.findByRole("button", {
+      name: "Check for additional statement periods",
+    })
+  )
+  await waitFor(() =>
+    expect(fetchAPI).toHaveBeenCalledWith(
+      "/api/financial/statement-import/batches/batch/refresh-statements?case_id=case",
+      { method: "POST" }
+    )
+  )
+  expect(
+    vi.mocked(fetchAPI).mock.calls.some(([url]) => url.includes("/confirm?"))
+  ).toBe(false)
+})
+
 it("offers saving a balance-only batch without asking to import zero records", async () => {
   vi.mocked(fetchAPI).mockResolvedValue({
     ...batch,

@@ -182,6 +182,14 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
       }),
     onSuccess: refresh,
   })
+  const updateStatements = useMutation({
+    retry: false,
+    mutationFn: () =>
+      fetchAPI(`${prefix}/${batchId}/refresh-statements?case_id=${caseId}`, {
+        method: "POST",
+      }),
+    onSuccess: refresh,
+  })
   const openImported = useMutation({
     mutationFn: async () => {
       const result = z
@@ -494,7 +502,7 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
           ))}
         </ul>
       </details>
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <label className="text-sm">
           <input
             type="checkbox"
@@ -513,6 +521,23 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
         >
           Refresh batch
         </Button>
+        {canEdit && (
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={
+              query.data.status === "preparing" || updateStatements.isPending
+            }
+            onClick={() => updateStatements.mutate()}
+          >
+            {updateStatements.isPending
+              ? "Updating statement list…"
+              : "Check for additional statement periods"}
+          </Button>
+        )}
+        {updateStatements.isError && (
+          <p role="alert">{updateStatements.error.message}</p>
+        )}
       </div>
       <div className="space-y-2">
         {canEdit && (

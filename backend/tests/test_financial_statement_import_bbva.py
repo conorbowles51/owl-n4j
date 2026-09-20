@@ -323,6 +323,13 @@ class BbvaImportTests(TestCase):
         from uuid import uuid4
         from services.financial.pdf_candidates import PdfMappingError
         from services.financial.legacy_statement_refresh import refresh_available
+        from services.financial import import_batches
+        from postgres.models.financial_import_batches import FinancialImportBatchItem
+        with f.SessionLocal() as db:
+            batch_id = import_batches.create_batch(db, case_id=f.case.id, request_id=uuid4(), file_ids=[f.file.id], folder_ids=[], actor=f.actor)
+            db.add(FinancialImportBatchItem(id=uuid4(), batch_id=batch_id, file_id=f.file.id,
+                statement_key=proposal['statement_id'] or '', status='imported', summary={'source_document_id': old['source_document_id']}))
+            db.commit()
         with self.assertRaisesRegex(PdfMappingError, 'not found'):
             refresh_legacy_import(**{**args, 'case_id': uuid4()})
         with self.assertRaisesRegex(PdfMappingError, 'changed'):
@@ -349,6 +356,10 @@ class BbvaImportTests(TestCase):
             self.assertEqual(current['source_document_id'], new['source_document_id'])
             self.assertEqual(current['transaction_count'], 2)
             self.assertEqual(current['records'], [])
+            from services.financial.batch_transaction_scope import imported_batch_scope
+            opened = imported_batch_scope(db, case_id=f.case.id, batch_id=batch_id)
+            self.assertEqual(opened['transaction_count'], 2)
+            self.assertEqual(opened['source_document_ids'], [new['source_document_id']])
 
     def test_printed_count_mismatch_remains_visible_in_batch_and_import(self):
         from services.financial.import_batches import assess

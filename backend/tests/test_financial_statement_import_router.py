@@ -42,6 +42,21 @@ class StatementImportAuthorizationTests(unittest.TestCase):
             self.assertEqual(save.call_args.kwargs['currency'], 'MXN')
             self.assertEqual(self.client.post(url, json={**body, 'statements': []}).status_code, 422)
 
+    def test_refresh_statement_list_requires_case_edit(self):
+        batch_id = uuid4()
+        url = f'/api/financial/statement-import/batches/{batch_id}/refresh-statements?case_id={self.db.case.id}'
+        with patch.object(module.import_batches, 'refresh_statement_list', return_value={'queued': True}) as refresh:
+            self.assertEqual(self.client.post(url).status_code, 401)
+            self.user(None)
+            self.assertEqual(self.client.post(url).status_code, 403)
+            self.user({'case': {'view': True, 'edit': False}})
+            self.assertEqual(self.client.post(url).status_code, 403)
+            refresh.assert_not_called()
+            self.user({'case': {'view': True, 'edit': True}})
+            self.assertEqual(self.client.post(url).status_code, 200)
+            self.assertEqual(refresh.call_args.kwargs['case_id'], self.db.case.id)
+            self.assertEqual(refresh.call_args.kwargs['batch_id'], batch_id)
+
     def test_imported_details_require_case_edit_permission(self):
         url = f'/api/financial/statement-import/sources/{self.file_id}/details?case_id={self.db.case.id}'
         body = dict(expected_revision='a'*64, holder='Holder', account_number='00123', institution='Bank')

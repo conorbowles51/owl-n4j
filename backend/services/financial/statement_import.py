@@ -252,6 +252,12 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
         chosen_currency = currency or saved_currency or detected_currency
         addresses = {(item['page_number'], item['table_index']) for item in selected['sources']}
         sources = [source for source in all_sources if (source['page_number'], source['table_index']) in addresses]
+        if selected.get('layout_id') == 'capital-one-card':
+            from services.financial.statement_layout_context import statement_layout_context
+            # Bind continuation columns to the chosen printed account/period
+            # and include their source context in the saved review revision.
+            sources = [{**source, 'layout_context': source.get('layout_context') or
+                statement_layout_context(source['rows'], continuation_statement=selected)} for source in sources]
         metadata.update(account_type=selected.get('account_type', 'credit_card'), institution=selected['institution'], account_number=selected['account_reference'],
                         period_start=selected['period_start'], period_end=selected['period_end'],
                         period=(selected['period_start'] + ' - ' + selected['period_end']) if selected['period_start'] else selected.get('printed_statement_date') or selected.get('printed_closing_date', ''))

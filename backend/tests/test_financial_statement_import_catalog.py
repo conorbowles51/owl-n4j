@@ -70,6 +70,30 @@ class StatementCatalogTests(unittest.TestCase):
         value['rows'] += source([['Secured Card | Platinum Mastercard ending in 9999']])['rows']
         self.assertEqual(statement_catalog([value])['statements'], [])
 
+    def test_world_elite_to_quicksilver_product_change_keeps_every_printed_period(self):
+        from services.financial.statement_import_card import propose_card_table
+        from services.financial.statement_layout_context import statement_layout_context
+        old = page(1, 'Mar. 24, 2021 - Apr. 22, 2021 | 30 days in Billing Cycle', '9392')
+        old['rows'][0]['cells'][0]['expected_text'] = 'World Elite Mastercard Account Ending in 9392'
+        new = page(4, 'Apr 23, 2021 - May 23, 2021 | 31 days in Billing Cycle', '9392')
+        new['rows'][0]['cells'][0]['expected_text'] = 'Quicksilver Credit Card | World Elite Mastercard ending in 9392'
+        extra = source([['EXAMPLE PERSON #9392: Transactions'], ['Trans Date', 'Post Date', 'Description', 'Amount'],
+            ['May 2', 'May 3', 'EXAMPLE SHOP', '$12.34']])['rows']
+        new['rows'] += [{**row, 'row_index': row['row_index'] + 3} for row in extra]
+        new['layout_context'] = statement_layout_context(new['rows'])
+        choices = statement_catalog([old, new])
+        self.assertEqual(len(choices['statements']), 2)
+        self.assertTrue(choices['complete_coverage'])
+        choice = choices['statements'][1]
+        self.assertEqual(choice['period_start'], '2021-04-23')
+        self.assertEqual(choice['account_reference'], '****9392')
+        rows = [row for row in propose_card_table(new, 'USD', choice)['rows'] if not row['excluded']]
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['fields']['amount_minor'], '1234')
+        self.assertEqual(rows[0]['fields']['date'], '2021-05-02')
+        new['rows'][0]['cells'][0]['expected_text'] += ' unverified text'
+        self.assertEqual(statement_catalog([new])['statements'], [])
+
     def test_world_elite_collection_separates_periods_and_keeps_summary_and_terms_out_of_payments(self):
         from services.financial.statement_import_card import propose_card_table
         from services.financial.statement_layout_context import statement_layout_context
@@ -98,3 +122,29 @@ class StatementCatalogTests(unittest.TestCase):
         self.assertEqual(payments[0]['fields']['date'], '2020-12-04')
         self.assertEqual(payments[0]['fields']['amount_minor'], '6331')
         self.assertEqual(payments[0]['fields']['direction'], 'debit')
+
+    def test_continued_transactions_need_the_matching_printed_total_account_and_cycle(self):
+        from copy import deepcopy
+        from services.financial.statement_import_card import propose_card_table
+        main = page(1, 'Nov 23, 2023 - Dec 23, 2023 | 31 days in Billing Cycle', '9392')
+        continuation = page(2, 'Nov 23, 2023 - Dec 23, 2023 | 31 days in Billing Cycle', '9392')
+        continuation['rows'] = continuation['rows'][:2]
+        extra = source([['Transactions (Continued)'], ['Trans Date', 'Post Date', 'Description', 'Amount'],
+            ['Dec 13', 'Dec 14', 'EXAMPLE SHOP', '$11.65'], ['EXAMPLE PERSON #9392: Total Transactions', '$11.65']])['rows']
+        continuation['rows'] += [{**row, 'row_index': row['row_index'] + 2} for row in extra]
+        choice = statement_catalog([main, continuation])['statements'][0]
+        payments = [row for row in propose_card_table(continuation, 'USD', choice)['rows'] if not row['excluded']]
+        self.assertEqual(len(payments), 1)
+        self.assertEqual(payments[0]['fields']['amount_minor'], '1165')
+        self.assertEqual(payments[0]['fields']['date'], '2023-12-13')
+        self.assertEqual(payments[0]['fields']['booking_date'], '2023-12-14')
+        self.assertEqual(payments[0]['layout_context']['section_source']['expected_text'], 'EXAMPLE PERSON #9392: Total Transactions')
+        for changed in ('account', 'period', 'missing_total'):
+            with self.subTest(changed=changed):
+                bad = deepcopy(continuation)
+                if changed == 'account': bad['rows'][-1]['cells'][0]['expected_text'] = 'EXAMPLE PERSON #9999: Total Transactions'
+                elif changed == 'period': bad['rows'][1]['cells'][0]['expected_text'] = 'Oct 24, 2023 - Nov 22, 2023 | 30 days in Billing Cycle'
+                else: bad['rows'].pop()
+                unknown = [row for row in propose_card_table(bad, 'USD', choice)['rows'] if not row['excluded']]
+                self.assertTrue(unknown[0]['issues'])
+                self.assertNotIn('amount_minor', unknown[0]['fields'])
