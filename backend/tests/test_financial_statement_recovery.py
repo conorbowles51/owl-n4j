@@ -61,6 +61,41 @@ class EmptyImportRecoveryTests(TestCase):
             from services.financial.batch_import_history import current_imports
             self.assertEqual(current_imports(db, f.case.id, [source_id])[str(source_id)]['balance_status'], 'difference')
 
+    def test_empty_import_with_changed_draft_has_an_explicit_comparison_and_save_path(self):
+        from services.financial.pdf_candidates import _digest
+        from postgres.models.evidence import EvidenceFile
+        f = self.f
+        with f.SessionLocal() as db:
+            wrong = read_statement_import(db, case_id=f.case.id, evidence_file_id=f.file.id, currency='USD')
+        receipt = f.confirm(initial_request(wrong))
+        source_id = UUID(receipt['source_document_id'])
+        proposal = f.preview()
+        old_draft = initial_request(proposal)
+        old_draft['expected_revision'] = '0'*64
+        next(r for r in old_draft['rows'] if not r['excluded'])['amount_minor'] = '999999'
+        token = _digest(old_draft)
+        with f.SessionLocal() as db:
+            file = db.get(EvidenceFile, f.file.id)
+            file.metadata_ = {**(file.metadata_ or {}), 'financial_review_progress': {proposal.get('statement_id') or '':
+                dict(request=old_draft, review_revision=token, saved_at='2026-09-20T12:00:00Z', saved_by=dict(name='Reviewer'))}}
+            db.commit()
+        proposal = f.preview()
+        self.assertFalse(proposal['current_import']['refresh_available'])
+        self.assertTrue(proposal['current_import']['refresh_review_required'])
+        args = dict(session_factory=f.SessionLocal, case_id=f.case.id, source_id=source_id,
+            expected_revision=proposal['current_import']['revision'], currency=proposal['currency'],
+            expected_reading_revision=proposal['revision'], actor=f.actor, resolve_path=Path)
+        with self.assertRaises(PdfMappingError): refresh_legacy_import(**args)
+        with self.assertRaisesRegex(PdfMappingError, 'draft changed'):
+            refresh_legacy_import(**args, compared_review_revision='f'*64)
+        result = refresh_legacy_import(**args, compared_review_revision=token)
+        self.assertEqual(result['transaction_count'], 12)
+        self.assertFalse(refresh_legacy_import(**args, compared_review_revision=token)['created'])
+        with f.SessionLocal() as db:
+            history = db.get(EvidenceFile, f.file.id).metadata_['financial_review_history']
+            self.assertEqual(history[-1]['request'], old_draft)
+            self.assertEqual(len(list_transactions(db, f.case.id)), 12)
+
     def test_metadata_change_with_identical_saved_rows_does_not_require_rechecking_payments(self):
         from services.financial.review_upgrade import attach_upgrade
         p = self.f.preview()

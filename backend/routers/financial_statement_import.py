@@ -96,6 +96,7 @@ class StatementCoverageRequest(_Contract):
 
 
 class RefreshStoredReadingRequest(_Contract):
+    compared_review_revision: _Digest | None = None
     expected_revision: _Digest
     expected_reading_revision: _Digest | None = None
     currency: str | None = Field(default=None, pattern=r'^[A-Z]{3}$')
@@ -108,7 +109,8 @@ def refresh_stored_reading(source_id: UUID, body: RefreshStoredReadingRequest, c
     try:
         return refresh_legacy_import(session_factory=sessionmaker(bind=db.get_bind()), case_id=case_id,
             source_id=source_id, expected_revision=body.expected_revision, actor=actor_from_user(user), resolve_path=_resolve_stored_path,
-            expected_reading_revision=body.expected_reading_revision, currency=body.currency)
+            expected_reading_revision=body.expected_reading_revision, currency=body.currency,
+            compared_review_revision=body.compared_review_revision)
     except PdfMappingError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
     except Exception:

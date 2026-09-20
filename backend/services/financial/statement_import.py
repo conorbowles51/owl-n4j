@@ -472,7 +472,11 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
     if current_import and current and current.evidence_file_id == file.id and not excluded_copy:
         from services.financial.legacy_statement_refresh import refresh_available, refresh_payment_count
         current_import['refresh_available'] = refresh_available(session, current, result)
-        if current_import['refresh_available']:
+        saved = result.get('saved_review')
+        current_import['refresh_review_required'] = bool(not current_import['refresh_available'] and saved
+            and saved['request'].get('expected_revision') != result['revision']
+            and refresh_available(session, current, {**result, 'saved_review': None}))
+        if current_import['refresh_available'] or current_import['refresh_review_required']:
             current_import['refresh_transaction_count'] = refresh_payment_count(current, result)
     if _apply_assignments:
         from services.financial.statement_row_assignment import assigned_proposal

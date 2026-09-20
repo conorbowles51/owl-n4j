@@ -1384,6 +1384,30 @@ it("updates an eligible empty legacy import and opens its usable results", async
   )
 })
 
+it("lets an empty legacy import compare an older draft and save its current payments", async () => {
+  const base = vi.mocked(fetchAPI).getMockImplementation()!
+  vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
+    if (String(url).includes("/refresh-reading") && options?.method === "POST") {
+      expect(options.body).toMatchObject({compared_review_revision:"c".repeat(64)})
+      return {case_id:"case",evidence_file_id:"file",source_document_id:"updated",transaction_count:1,incomplete_count:0,applied:true} as never
+    }
+    if (String(url).includes("/statement-import/") && !options?.method)
+      return {...data, saved_review: {review_revision:"c".repeat(64),saved_at:"2026-09-20T12:00:00Z",saved_by:{name:"Reviewer"},
+        request:{expected_revision:"older",holder:"Saved holder",account_number:"00123",institution:"Bank",period_start:"",period_end:"",rows:[]}},
+        current_import:{source_document_id:"previous",evidence_file_id:"file",revision:"b".repeat(64),transaction_count:0,incomplete_count:250,refresh_available:false,refresh_review_required:true,refresh_transaction_count:1}} as never
+    return base(url,options)
+  })
+  const done = mount()
+  await open(false)
+  const save = screen.getByRole("button",{name:"Save 1 payments to Transactions"})
+  expect(save).toBeDisabled()
+  expect(screen.getAllByRole("region",{name:"Previous saved review"})).toHaveLength(1)
+  fireEvent.click(screen.getByLabelText("I have compared the previous saved review"))
+  expect(save).toBeEnabled()
+  fireEvent.click(save)
+  await waitFor(()=>expect(done).toHaveBeenCalledWith(expect.objectContaining({transaction_count:1})))
+})
+
 it("does not offer to import the same active reading twice", async () => {
   const base = vi.mocked(fetchAPI).getMockImplementation()!
   vi.mocked(fetchAPI).mockImplementation(async (url, options) => {

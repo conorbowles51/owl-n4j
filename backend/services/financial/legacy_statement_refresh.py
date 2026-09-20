@@ -77,7 +77,7 @@ def refresh_request(document, proposal):
 
 
 def refresh_legacy_import(*, session_factory, case_id, source_id, expected_revision, actor, resolve_path,
-        currency=None, expected_reading_revision=None):
+        currency=None, expected_reading_revision=None, compared_review_revision=None):
     from services.financial.statement_import import read_statement_import, confirm_statement_import, StatementImportRequest
     from services.financial.duplicate_decisions import duplicate_revision
     from services.financial.statement_details import saved_currency
@@ -100,6 +100,19 @@ def refresh_legacy_import(*, session_factory, case_id, source_id, expected_revis
             currency=currency or saved_currency(source), statement_id=source.metadata_.get('statement_import_statement_id'))
         if expected_reading_revision and proposal['revision'] != expected_reading_revision:
             raise PdfMappingError('The statement reading changed. Reload it before saving its payments.', 409)
+        if compared_review_revision:
+            saved = proposal.get('saved_review')
+            if not saved or saved['review_revision'] != compared_review_revision:
+                raise PdfMappingError('The saved draft changed. Compare its latest values before saving payments.', 409)
+            if not refresh_available(session, source, {**proposal, 'saved_review': None}):
+                raise PdfMappingError('Saved payment corrections need an individual source comparison. No payments were changed.', 409)
+            # The explicit comparison replaces only the unfinished draft. Its
+            # prior values remain in history even if the later import fails.
+            from services.financial.statement_progress import save_progress
+            from services.financial.statement_import import StatementReviewDraft
+            proposal['saved_review'] = save_progress(session, case_id=case_id, evidence_file_id=source.evidence_file_id,
+                request=StatementReviewDraft.model_validate(refresh_request(source, proposal)),
+                expected_review_revision=compared_review_revision, actor=actor)
         if not refresh_available(session, source, proposal):
             raise PdfMappingError('This import has saved payment corrections or needs a source comparison. Its records have been kept.', 409)
         raw = refresh_request(source, proposal)

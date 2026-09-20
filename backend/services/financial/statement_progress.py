@@ -42,7 +42,11 @@ def save_progress(session, *, case_id, evidence_file_id, request, expected_revie
     if proposal['revision'] != request.expected_revision:
         raise PdfMappingError('The statement reading changed. Reopen it before saving. Your earlier saved review is retained.', 409)
     if (proposal.get('current_import') or {}).get('evidence_file_id') == str(evidence_file_id):
-        raise PdfMappingError('This statement is imported. Open its transactions to record further corrections.', 409)
+        from services.financial.legacy_statement_refresh import refresh_available
+        from postgres.models.financial import FinancialSourceDocument
+        source = session.get(FinancialSourceDocument, UUID(proposal['current_import']['source_document_id']))
+        if source is None or not refresh_available(session, source, {**proposal, 'saved_review': None}):
+            raise PdfMappingError('This statement is imported. Open its transactions to record further corrections.', 409)
     check_proposed_rows(proposal, [r.model_dump() for r in request.rows])
     payload = request.model_dump(mode='json')
     saved = dict(request=payload, review_revision=_digest(payload), saved_at=datetime.now(timezone.utc).isoformat(),

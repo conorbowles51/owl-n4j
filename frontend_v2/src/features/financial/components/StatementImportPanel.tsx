@@ -185,6 +185,7 @@ const proposalSchema = z.object({
       incomplete_count: z.number().optional(),
       currency: z.string().nullable().optional(),
       refresh_available: z.boolean().optional(),
+      refresh_review_required: z.boolean().optional(),
       refresh_transaction_count: z.number().optional(),
       details: z
         .object({
@@ -667,7 +668,7 @@ function StatementReview({
                 !!query.data.current_import.incomplete_count &&
                 " The PDF is retained, but those readings are not payments in Transactions."}
             </p>
-            {canEdit && query.data.current_import.refresh_available && (
+            {canEdit && (query.data.current_import.refresh_available || query.data.current_import.refresh_review_required) && (
               <RefreshStoredReading data={query.data} onImported={onImported} />
             )}
             {canEdit && (
@@ -734,6 +735,9 @@ function RefreshStoredReading({
   onImported: (result?: StatementImportReceipt) => void
 }) {
   const client = useQueryClient()
+  const [compared, setCompared] = useState(false)
+  const comparisonRequired = !!data.current_import?.refresh_review_required
+  const priorDraft = serverStatementDraft(data.saved_review?.request)
   const paymentCount =
     data.current_import?.refresh_transaction_count ?? data.transaction_count
   const update = useMutation({
@@ -748,6 +752,7 @@ function RefreshStoredReading({
               expected_revision: data.current_import!.revision,
               expected_reading_revision: data.revision,
               currency: data.currency,
+              ...(comparisonRequired && compared ? { compared_review_revision: data.saved_review?.review_revision } : {}),
             },
           }
         )
@@ -773,7 +778,15 @@ function RefreshStoredReading({
         The earlier reading stays in history; this does not add duplicate
         payments.
       </p>
-      <Button disabled={update.isPending} onClick={() => update.mutate()}>
+      {comparisonRequired && priorDraft && (
+        <>
+          <SavedReviewConflict draft={priorDraft} checked={compared} onChecked={setCompared}
+            formatAmount={(value) => `${displayAmount(value, exponent(data.currency))} ${data.currency}`} />
+          <p className="text-sm">Saving uses the current PDF reading instead of the earlier unfinished draft.
+            Your saved account details and balances are kept; the earlier draft remains in history.</p>
+        </>
+      )}
+      <Button disabled={update.isPending || (comparisonRequired && !compared)} onClick={() => update.mutate()}>
         {update.isPending
           ? "Updating saved reading…"
           : paymentCount
@@ -1794,7 +1807,7 @@ function EditableStatement({
             keep unfinished work in the case before leaving.
           </p>
         )}
-        {savedReadingChanged && (
+        {savedReadingChanged && !data.current_import?.refresh_review_required && (
           <SavedReviewConflict
             draft={recovered!}
             formatAmount={(value) =>

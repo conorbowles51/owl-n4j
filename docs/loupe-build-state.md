@@ -1,3 +1,11 @@
+## 20 September older draft comparison no longer hides empty-import recovery
+
+Live validation of 4e490c2 saved all 137 January MXN payments and displayed the correct 425,297.47 incoming and 3,062,458.84 outgoing totals, with 50-row pagination. February MXN exposed a separate dead end: a prior saved draft still matched the former reader, so new v30 values required comparison, while the already-imported status removed the save-progress action. The current reader has 136 valid payments; the older import has 751 incomplete records and none usable.
+
+Eligible empty imports with an older saved draft now show its comparison next to the Save payments action. Explicit comparison sends the exact saved-draft revision; stale comparisons are refused. The previous draft is kept in review history, the current reading replaces that unfinished draft, and the existing recovery saves the usable payments with source-bound account and balance corrections. This never bypasses protection for existing payment corrections. A failed final import still leaves the compared draft and its prior history saved, so the user can retry.
+
+51 backend recovery/progress tests and 49 statement component tests pass, including the previously hidden action, changed-draft refusal, old-value history, exactly one comparison control and idempotent recovery. Production build and scoped lint pass. Live final verification follows publication; the full 588-file corpus remains unverified.
+
 ## 20 September live six-file follow-up and unrestricted statement currency choices
 
 The deployed 2937364 repair was exercised while logged in as Alex in Neil finance. Four actual ARRENDO statements were saved and reopened: February USD has 17 payments, January USD has 15, and January/February EUR save their 1,817.77 opening and closing balances with no invented payments. Source highlighting, saved account/balance details, full reload and all-account/holder navigation were checked. Earlier readings remain in history. Alex's manually entered account number was preserved, including its difference from the printed value.
