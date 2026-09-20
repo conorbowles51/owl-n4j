@@ -151,6 +151,7 @@ export function PaymentLabelsEditor({
               {label}
               <input
                 aria-label={`Edit ${label}`}
+                autoFocus={field === fields[0][0]}
                 maxLength={field === "category" ? 120 : 512}
                 list={
                   field === "category" ? "payment-category-names" : undefined

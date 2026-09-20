@@ -109,6 +109,7 @@ it("confirms a suggestion without requiring an edit or reason", async () => {
     },
   ] as Awaited<ReturnType<typeof readSelectedPayments>>)
   const close = mount(["payment"])
+  expect(await screen.findByLabelText("Edit Category")).toHaveFocus()
   fireEvent.click(
     await screen.findByRole("button", { name: "Confirm suggestion" })
   )

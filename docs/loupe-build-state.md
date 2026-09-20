@@ -1,3 +1,7 @@
+## 21 September live description suggestions verified
+
+Authenticated readback of build 0eeab81 in finance sunday confirms 672 identical transaction IDs and unchanged pre-existing non-label fields (including amounts, currency, running balances, dates and source references). It exposes 588 suggested categories, 423 suggested To names and 23 suggested From names; all suggested categories are available in the category filter. The live table displays the correct merchant/category suggestions, edit controls and Not printed card balances. Opening a category editor while scrolled down exposed a focus gap, corrected so the first editable field receives focus and scrolls into view.
+
 ## 21 September description-based payment labels and clearer balance gaps
 
 The live finance sunday batch was imported under Neil's explicit instruction: 53 statement periods from three PDFs, 672 usable transactions, no unresolved records, and all 53 opening/closing balance checks matching. A read-only audit of the imported ledger reproduced empty counterparties and categories; 653 card entries and 11 BBVA entries have no stored running balance. Visual review of the two supplied BBVA movement tables confirms blank balance cells between selected printed balances.
