@@ -36,3 +36,16 @@ class StatementFileStatusTests(DuplicateTestCase):
         self.db.get(EvidenceFile, document.evidence_file_id).case_id = self.other_case.id
         self.db.commit()
         self.assertEqual(statement_file_status(self.db, case_id=self.case.id)['files'], [])
+
+    def test_incomplete_records_without_a_period_are_visible_and_not_counted_as_payments(self):
+        document = self.make_document()
+        document.document_type = 'statement_review'
+        document.metadata_ = {'statement_incomplete_records': [dict(id='one'), dict(id='two'), dict(id='resolved', resolved_transaction_id='saved')]}
+        self.db.commit()
+        item = statement_file_status(self.db, case_id=self.case.id)['files'][0]
+        self.assertEqual(item['current_transactions'], 0)
+        self.assertEqual(item['incomplete_count'], 2)
+        self.assertEqual(item['periods'], [])
+        document.status = 'superseded'
+        self.db.commit()
+        self.assertEqual(statement_file_status(self.db, case_id=self.case.id)['files'], [])

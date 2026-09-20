@@ -11,7 +11,7 @@ from services.financial.money import get_currency
 from services.financial.pdf_candidates import _digest
 from services.financial.source_dates import assess_date_text
 
-VERSION = 'statement-review-v28'
+VERSION = 'statement-review-v29'
 _HEADERS = {
     'date': 'date', 'transaction date': 'date', 'trans date': 'date',
     'booking date': 'booking_date', 'posting date': 'booking_date',
@@ -81,7 +81,7 @@ def exact_amount(text, currency):
     """
     value = text.strip().replace('\u00a0', ' ')
     code = get_currency(currency)
-    symbols = {'EUR': '€', 'GBP': '£', 'USD': '$', 'CAD': '$', 'AUD': '$', 'NZD': '$'}
+    symbols = {'EUR': '€', 'GBP': '£', 'USD': '$', 'MXN': '$', 'CAD': '$', 'AUD': '$', 'NZD': '$'}
     marker = re.match(r'^[=(+\-−\s]*(\$|€|£|[A-Z]{3})', value)
     if marker and (marker[1] in {'$', '€', '£'} and marker[1] != symbols.get(currency)
                    or marker[1] not in {'$', '€', '£'} and marker[1] != currency):
@@ -258,7 +258,7 @@ def propose_table(source, currency, *, page_has_transaction_table=False):
                     layouts = _printed_layouts(source, header, source['rows'][index+1:], roles)
                 # Exclude only explicit statement metadata above a recognised table.
                 for earlier in result:
-                    if earlier['kind'] == 'unresolved' and _statement_heading({'cells': earlier['source_cells']}):
+                    if earlier['kind'] in ('unresolved', 'unclassified') and _statement_heading({'cells': earlier['source_cells']}):
                         earlier.update(kind='header', excluded=True, issues=[])
                 item.update(kind='header', excluded=True)
             result.append(item)
@@ -273,7 +273,7 @@ def propose_table(source, currency, *, page_has_transaction_table=False):
                     len(row['cells']) == 1 and row['cells'][0]['expected_text'].strip() == 'TRANSACTION HISTORY'):
                 item.update(kind='header', excluded=True)
             else:
-                item.update(kind='unresolved', issues=['This text was not matched to transaction columns. Check the original text below; leave it out if it is not a payment.'])
+                item.update(kind='unclassified', excluded=True, issues=[])
             result.append(item)
             continue
         if source.get('table_source') == 'text_alignment':
@@ -360,7 +360,7 @@ def propose_table(source, currency, *, page_has_transaction_table=False):
         result.append(item)
     if any(r['fields'].get('standalone_balance') for r in result):
         for item in result:
-            if item['kind'] == 'unresolved' and (_statement_heading({'cells': item['source_cells']})
+            if item['kind'] in ('unresolved', 'unclassified') and (_statement_heading({'cells': item['source_cells']})
                                                 or _statement_page_number({'cells': item['source_cells']})):
                 item.update(kind='header', excluded=True, issues=[])
     return dict(version=VERSION, case_id=source['case_id'], evidence_file_id=source['evidence_file_id'],

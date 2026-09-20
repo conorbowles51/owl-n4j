@@ -1,3 +1,5 @@
+import { ImportedStatementDetails } from "./ImportedStatementDetails"
+import { useFinancialAccess } from "../hooks/use-financial-access"
 import { SourceCustodyPanel } from "./SourceCustodyPanel"
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
@@ -59,18 +61,22 @@ const source = z.object({
   file_bytes_verified: z.literal(false),
   limitation: z.string(),
   reviewed_controls: retainedControls.nullable().optional(),
+  can_edit_import_details: z.boolean().default(false),
 })
 export function StatementSourceButton({
   caseId,
   periodId,
   sourceDocumentId,
+  onReviewStatement,
   label = "Inspect statement source",
 }: {
   caseId: string
   periodId: string
   sourceDocumentId: string
+  onReviewStatement?: (fileId: string) => void
   label?: string
 }) {
+  const { canEdit } = useFinancialAccess()
   const [opened, setOpened] = useState(false),
     [viewFile, setViewFile] = useState(false),
     [controlRole, setControlRole] = useState<string | null>(null)
@@ -133,6 +139,13 @@ export function StatementSourceButton({
                   freshly verify the file bytes or its financial readings.
                 </p>
               </details>
+              {canEdit && query.data.can_edit_import_details && (
+                <ImportedStatementDetails
+                  caseId={caseId}
+                  sourceId={sourceDocumentId}
+                  withSource
+                />
+              )}
               {query.data.reviewed_controls && (
                 <section
                   aria-label="Retained statement controls"
@@ -217,7 +230,11 @@ export function StatementSourceButton({
                     .filter((control) => control.role === controlRole)
                     .map((control) => (
                       <div key={control.role} className="space-y-2">
-                        <p>Original text: {control.original_text}</p>
+                        <p>
+                          {control.original_text
+                            ? `Original text: ${control.original_text}`
+                            : "Balance entered by a reviewer from this PDF page."}
+                        </p>
                         <TransactionSourceHighlight
                           sourceDocumentId={query.data.evidence_file_id}
                           locatorPayload={control.locator}
@@ -225,6 +242,24 @@ export function StatementSourceButton({
                       </div>
                     ))}
                 </section>
+              )}
+              {onReviewStatement && (
+                <div className="rounded border p-3 space-y-2">
+                  <p className="text-sm">
+                    If transactions were missed or the extraction is wrong, open
+                    the statement review and use Read the statement again.
+                    Confirm replacement only after checking the new reading.
+                  </p>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setOpened(false)
+                      onReviewStatement(query.data.evidence_file_id)
+                    }}
+                  >
+                    Review or reread statement
+                  </Button>
+                </div>
               )}
               <Button onClick={() => setViewFile(true)}>
                 Open statement file

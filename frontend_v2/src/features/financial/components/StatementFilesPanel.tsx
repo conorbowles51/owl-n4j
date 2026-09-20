@@ -400,15 +400,17 @@ export function StatementFilesPanel({
                   ? "Removed from Financial"
                   : saved?.wire_review_count
                     ? `${saved.wire_review_count} saved wire ${saved.wire_review_count === 1 ? "review" : "reviews"}`
-                    : saved?.periods.length && !saved.current_transactions
-                      ? `Statement saved · ${saved.periods.length} recorded ${saved.periods.length === 1 ? "period" : "periods"} · no payments`
-                      : saved
-                        ? `${saved.current_transactions} imported payments · ${saved.periods.length} recorded periods`
-                        : file.status === "processed"
-                          ? imports.data && !imports.data.truncated
-                            ? "Ready to review"
-                            : "Ready to open"
-                          : file.status}
+                    : saved?.incomplete_count
+                      ? `${saved.current_transactions} usable transactions · ${saved.incomplete_count} incomplete records to check`
+                      : saved?.periods.length && !saved.current_transactions
+                        ? `Statement saved · ${saved.periods.length} recorded ${saved.periods.length === 1 ? "period" : "periods"} · no payments`
+                        : saved
+                          ? `${saved.current_transactions} imported payments · ${saved.periods.length} recorded periods`
+                          : file.status === "processed"
+                            ? imports.data && !imports.data.truncated
+                              ? "Ready to review"
+                              : "Ready to open"
+                            : file.status}
               </span>
               {saved?.periods
                 .slice(0, register ? undefined : 3)

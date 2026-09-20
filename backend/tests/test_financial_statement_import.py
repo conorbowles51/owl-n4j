@@ -64,6 +64,23 @@ class StatementImportTests(TransactionPersistenceTestCase):
         self.assertFalse(repeated['created'])
         self.assertEqual(repeated['transaction_count'], saved['transaction_count'])
 
+    def test_reopened_import_returns_manual_details_without_changing_extraction(self):
+        request = self.request()
+        request.update(account_number='001234567890', holder='Corrected holder',
+                       institution='Corrected bank', details_reason='')
+        receipt = self.confirm(request)
+        reopened = self.preview()
+        self.assertEqual(reopened['metadata']['account_number'], 'TEST123')
+        self.assertEqual(reopened['current_import']['details'], {
+            key: request[key] for key in ('account_number', 'holder', 'institution', 'period_start', 'period_end')})
+        with self.SessionLocal() as db:
+            from postgres.models.financial import FinancialAccount
+            account = db.get(FinancialAccount, UUID(receipt['account_id']))
+            self.assertEqual(account.identifier_as_printed, '001234567890')
+            document = db.get(FinancialSourceDocument, UUID(receipt['source_document_id']))
+            self.assertEqual(document.metadata_['statement_import_request']['account_number'], '001234567890')
+        self.assertFalse(self.confirm(request)['created'])
+
     def excluded_import(self):
         from copy import deepcopy
         from services.financial.duplicate_decisions import decide_duplicate, duplicate_revision

@@ -740,6 +740,7 @@ function FinancialPageContent() {
                 )}
               <ErrorBoundary level="section">
                 <FinancialAccounts
+                  onReviewStatement={reviewStatement}
                   key={caseId}
                   caseId={caseId}
                   onOpenAccount={(accountId, dates) => {
@@ -755,6 +756,7 @@ function FinancialPageContent() {
             <div hidden={reviewingAccounts}>
               {caseId && (
                 <StatementRegister
+                  onReviewStatement={reviewStatement}
                   caseId={caseId}
                   onOpenTransactions={(accountId, dates) => {
                     const scope = { accountId, ...dates }
@@ -793,6 +795,7 @@ function FinancialPageContent() {
               </summary>
               <ErrorBoundary level="section">
                 <StatementChecksPanel
+                  onReviewStatement={reviewStatement}
                   key={`checks:${caseId}`}
                   caseId={caseId}
                 />

@@ -133,11 +133,13 @@ export function StatementChecksPanel({
   autoLoad = false,
   accountId,
   onOpenTransactions,
+  onReviewStatement,
 }: {
   caseId: string | undefined
   autoLoad?: boolean
   accountId?: string
   onOpenTransactions?: (start?: string, end?: string) => void
+  onReviewStatement?: (fileId: string) => void
 }) {
   const [opened, setOpened] = useState(autoLoad),
     [offset, setOffset] = useState(0),
@@ -373,6 +375,7 @@ export function StatementChecksPanel({
                       periodId={period.period_id}
                       sourceDocumentId={period.source_document_id}
                       label="Open statement and balances"
+                      onReviewStatement={onReviewStatement}
                     />
                     {onOpenTransactions && (
                       <Button

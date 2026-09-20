@@ -84,6 +84,16 @@ export function PreviousStatementReviews({
     onSuccess: (result) => onCompared(result.revision),
   })
   const draft = serverStatementDraft(query.data?.request)
+  const savedBalances = z
+    .record(
+      z.string(),
+      z.object({
+        amount_minor: z.string().nullable(),
+        page: z.number().nullable().optional(),
+      })
+    )
+    .optional()
+    .safeParse(query.data?.request._saved_balance_corrections)
   const matching = recovery.reviews.filter((r) =>
     [r.filename, r.account, r.holder, r.period_start, r.period_end]
       .join(" ")
@@ -173,6 +183,18 @@ export function PreviousStatementReviews({
               </p>
               {draft.detailsReason && (
                 <p>Account or period correction: {draft.detailsReason}</p>
+              )}
+              {savedBalances.success && savedBalances.data && (
+                <div aria-label="Balances corrected after import">
+                  <p className="font-medium">Balances corrected after import</p>
+                  {Object.entries(savedBalances.data).map(([role, balance]) => (
+                    <p key={role}>
+                      {role === "opening" ? "Opening" : "Closing"} balance:{" "}
+                      {money(balance.amount_minor)}
+                      {balance.page ? ` · PDF page ${balance.page}` : ""}
+                    </p>
+                  ))}
+                </div>
               )}
               <div className="max-h-80 overflow-auto">
                 <table className="w-full text-left">

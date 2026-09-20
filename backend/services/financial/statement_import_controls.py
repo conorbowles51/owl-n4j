@@ -5,6 +5,9 @@ from services.financial.import_issues import usable_balance
 
 
 def _control(role, row, original):
+    if original.get('manual_balance'):
+        return dict(role=role, row_id=row['id'], original_text='', reviewed_value=row['balance_minor'],
+            locator=dict(kind='page_only', page=row['manual_page']), reason=row['reason'])
     column = int(original['fields']['balance_column'])
     cells = [cell for cell in original['source_cells'] if cell['column_index'] == column]
     if len(cells) != 1:
@@ -33,25 +36,35 @@ def retain_import_controls(document, period, request, originals, openings, closi
 def read_import_controls(period, document, evidence):
     """Validate against the retained review, not today's extraction or guesses."""
     metadata = document.metadata_ or {}
+    from services.financial.statement_details import reviewed_controls
     record = metadata.get('statement_import_controls')
     if record is None:
-        return None  # Older imports did not retain this contract.
+        return reviewed_controls(period, document, None)
     original = metadata['statement_import_original']
     request = metadata['statement_import_request']
     if (_digest(record) != metadata['statement_import_controls_sha256']
             or _digest(original) != metadata['statement_import_original_sha256']
             or _digest(request) != metadata['statement_import_request_sha256']):
         raise ValueError('The retained balance review has changed.')
-    if (record['period_id'] != str(period.id) or record['account_id'] != str(period.account_id)
+    original_account_id = str(period.account_id)
+    if metadata.get('statement_details_review'):
+        reviewed_controls(period, document, None)  # Validate current binding before reading its history.
+        original_account_id = metadata['statement_details_history'][0]['before']['account_id']
+    if (record['period_id'] != str(period.id) or record['account_id'] != original_account_id
             or record['source_document_id'] != str(document.id)
             or record['currency'] != period.currency or request['currency'] != period.currency
             or original['currency'] != period.currency
             or original['case_id'] != str(period.case_id)
             or original['evidence_file_id'] != str(evidence.id)
             or record['balance_convention'] not in ('liability_owed', 'asset_balance')
-            or original['metadata'].get('balance_convention') != record['balance_convention']):
+            or (original['metadata'].get('balance_convention') or 'asset_balance') != record['balance_convention']):
         raise ValueError('The balance review does not match this statement.')
     originals = {row['id']: row for row in original['rows']}
+    from services.financial.manual_balances import manual_balance
+    for row in request['rows']:
+        balance = manual_balance(row, original)
+        if balance:
+            originals[row['id']] = balance
     expected = []
     for role in ('opening', 'closing'):
         matches = [row for row in request['rows'] if row['excluded'] and usable_balance(row['balance_minor'], record['balance_convention'])
@@ -80,8 +93,8 @@ def read_import_controls(period, document, evidence):
             raise ValueError('The account closure source exceeds the document.')
         closure_citation = dict(date=closure['date'], original_text=' '.join(c['expected_text'] for c in closure['source_cells']), locator=locator.to_json())
     reasons = [f"{c['role'].title()}: {c['reason']}" for c in expected if c['reason']]
-    return dict(import_source_document_id=str(document.id), finalization_id=None,
+    return reviewed_controls(period, document, dict(import_source_document_id=str(document.id), finalization_id=None,
                 currency=record['currency'], balance_convention=record['balance_convention'],
                 reason='; '.join(reasons) or 'Account-summary balances accepted at import.',
                 controls=expected, account_closure=closure_citation,
-                scope='Amounts and PDF locations saved with this import. Corrections preserve the original printed text.')
+                scope='Amounts and PDF locations saved with this import. Corrections preserve the original printed text.'))

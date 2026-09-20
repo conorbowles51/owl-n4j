@@ -119,7 +119,7 @@ beforeEach(() => {
 it("confirms the displayed ready list and filters problems across the batch", async () => {
   mount()
   fireEvent.click(
-    await screen.findByRole("button", { name: "Import 14 records" })
+    await screen.findByRole("button", { name: "Import 14 transactions" })
   )
   await waitFor(() =>
     expect(fetchAPI).toHaveBeenCalledWith(
@@ -138,7 +138,7 @@ it("confirms the displayed ready list and filters problems across the batch", as
     )
   )
   expect(
-    await screen.findByText(/2 statements available.*14 records/)
+    await screen.findByText(/2 statements available.*14 transactions/)
   ).toBeVisible()
 })
 it("offers saving a balance-only batch without asking to import zero records", async () => {
@@ -159,6 +159,26 @@ it("offers saving a balance-only batch without asking to import zero records", a
       { method: "POST", body: { expected_ready_revision: "a".repeat(64) } }
     )
   )
+})
+
+it("shows usable payments separately from incomplete records and retained source text", async () => {
+  vi.mocked(fetchAPI).mockResolvedValue({
+    ...batch,
+    available_records: 250,
+    available_transactions: 2,
+    available_incomplete: 248,
+    items: [{ ...item, unclassified_count: 400 }],
+  } as never)
+  mount()
+  expect(
+    await screen.findByRole("button", {
+      name: "Import 2 transactions and 248 incomplete records",
+    })
+  ).toBeVisible()
+  expect(screen.getByText(/400 lines of other extracted text/)).toBeVisible()
+  expect(
+    screen.getByText(/Incomplete records will be saved separately/)
+  ).toBeVisible()
 })
 it("opens the exact problem row, reloads server corrections and returns after saving", async () => {
   mount()
@@ -190,7 +210,7 @@ it("refuses a response for a different case", async () => {
   mount()
   expect(await screen.findByRole("alert")).toHaveTextContent("another case")
   expect(
-    screen.queryByRole("button", { name: "Import 14 records" })
+    screen.queryByRole("button", { name: "Import 14 transactions" })
   ).not.toBeInTheDocument()
 })
 
@@ -319,7 +339,7 @@ it("keeps completed assignments separate from ready imports and removes the skip
   ).toBeVisible()
   expect(screen.getByText(/unassigned page review is complete/)).toBeVisible()
   expect(
-    screen.getByRole("button", { name: "Import 0 records" })
+    screen.getByRole("button", { name: "Import 0 transactions" })
   ).toBeDisabled()
   expect(screen.queryByRole("button", { name: /Leave unimported/ })).toBeNull()
 })

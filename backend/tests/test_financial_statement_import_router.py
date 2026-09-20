@@ -26,6 +26,40 @@ class StatementImportAuthorizationTests(unittest.TestCase):
     def endpoint(self,suffix=''):
         return f'/api/financial/statement-import/{self.file_id}{suffix}?case_id={self.db.case.id}'
 
+    def test_bulk_currency_requires_case_edit_and_selected_revisions(self):
+        url = f'/api/financial/statement-import/batches/{uuid4()}/currency?case_id={self.db.case.id}'
+        body = dict(currency='MXN', statements=[dict(id=str(uuid4()), revision='a'*64)])
+        with patch.object(module.import_batches, 'set_selected_currency', return_value={}) as save, patch.object(module, 'actor_from_user'):
+            self.assertEqual(self.client.post(url, json=body).status_code, 401)
+            self.user(None)
+            self.assertEqual(self.client.post(url, json=body).status_code, 403)
+            self.user({'case': {'view': True, 'edit': False}})
+            self.assertEqual(self.client.post(url, json=body).status_code, 403)
+            save.assert_not_called()
+            self.user({'case': {'view': True, 'edit': True}})
+            self.assertEqual(self.client.post(url, json=body).status_code, 200)
+            self.assertEqual(save.call_args.kwargs['case_id'], self.db.case.id)
+            self.assertEqual(save.call_args.kwargs['currency'], 'MXN')
+            self.assertEqual(self.client.post(url, json={**body, 'statements': []}).status_code, 422)
+
+    def test_imported_details_require_case_edit_permission(self):
+        url = f'/api/financial/statement-import/sources/{self.file_id}/details?case_id={self.db.case.id}'
+        body = dict(expected_revision='a'*64, holder='Holder', account_number='00123', institution='Bank')
+        with patch.object(module, 'read_statement_details', return_value={}) as read, patch.object(module, 'update_statement_details', return_value={}) as save, patch.object(module, 'actor_from_user'):
+            self.assertEqual(self.client.get(url).status_code, 401)
+            self.assertEqual(self.client.put(url, json=body).status_code, 401)
+            self.user(None)
+            self.assertEqual(self.client.get(url).status_code, 403)
+            self.assertEqual(self.client.put(url, json=body).status_code, 403)
+            self.user({'case': {'view': True, 'edit': False}})
+            self.assertEqual(self.client.get(url).status_code, 200)
+            self.assertEqual(self.client.put(url, json=body).status_code, 403)
+            save.assert_not_called()
+            self.user({'case': {'view': True, 'edit': True}})
+            self.assertEqual(self.client.put(url, json=body).status_code, 200)
+            self.assertEqual(save.call_args.kwargs['case_id'], self.db.case.id)
+            self.assertEqual(save.call_args.kwargs['request'].account_number, '00123')
+
     def test_unauthenticated_requests_do_not_reach_statement_services(self):
         with patch.object(module,'read_statement_import') as read, patch.object(module,'confirm_statement_import') as write, patch.object(module,'create_statement_version') as version:
             self.assertEqual(self.client.get(self.endpoint()).status_code,401)

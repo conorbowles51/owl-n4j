@@ -19,6 +19,7 @@ export function AccountStatementReview({
   account,
   onBack,
   onOpenTransactions,
+  onReviewStatement,
   datesFirst = false,
 }: {
   caseId: string
@@ -31,6 +32,7 @@ export function AccountStatementReview({
   }
   onBack: () => void
   onOpenTransactions: (dates?: AccountReviewDates) => void
+  onReviewStatement?: (fileId: string) => void
   datesFirst?: boolean
 }) {
   const [start, setStart] = useState("")
@@ -49,6 +51,7 @@ export function AccountStatementReview({
       caseId={caseId}
       accountId={account.id}
       autoLoad
+      onReviewStatement={onReviewStatement}
       onOpenTransactions={(startDate, endDate) =>
         onOpenTransactions(
           startDate && endDate ? { startDate, endDate } : undefined

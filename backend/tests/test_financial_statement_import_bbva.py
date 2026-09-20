@@ -102,6 +102,18 @@ class BbvaProposalTests(TestCase):
         self.assertFalse(any(not r['excluded'] for r in p['rows']))
         self.assertEqual(check_statement_rows(p['rows'])['balance_status'], 'matches')
 
+    def test_older_bancomer_balance_only_layout_keeps_balances_and_metadata(self):
+        sources = statement(empty=True)
+        for s in sources:
+            for row in s['rows']:
+                for cell in row['cells']:
+                    cell['expected_text'] = cell['expected_text'].replace('BBVA MEXICO, S.A.', 'BBVA BANCOMER, S.A.').replace('60.00', '1,817.77')
+        choice, proposal = self.proposal(sources)
+        self.assertEqual(choice['account_reference'], '0000012345')
+        self.assertFalse(any(not r['excluded'] for r in proposal['rows']))
+        self.assertEqual([r['fields']['balance'] for r in proposal['rows'] if r['kind'] == 'balance'], ['181777', '181777'])
+        self.assertEqual(check_statement_rows(proposal['rows'])['balance_status'], 'matches')
+
     def test_operational_balances_are_not_mixed_with_liquidation_balances(self):
         sources = statement()
         for row in sources[1]['rows']:
@@ -202,6 +214,29 @@ class BbvaImportTests(TestCase):
     def test_balance_only_import_and_retry_save_the_account_and_no_fake_payments(self):
         self.check_import(True, 0, 6000)
 
+    def test_later_account_and_balance_changes_keep_the_original_citations(self):
+        from uuid import UUID
+        from copy import deepcopy
+        from postgres.models.financial import FinancialSourceDocument, FinancialStatementPeriod
+        from services.financial.statement_details import read_statement_details, update_statement_details, StatementDetailsRequest
+        from services.financial.statement_import_controls import read_import_controls
+        _, request = self.prepare()
+        receipt = self.fixture.confirm(request)
+        source_id = UUID(receipt['source_document_id'])
+        with self.fixture.SessionLocal() as db:
+            original = deepcopy(db.get(FinancialSourceDocument, source_id).metadata_['statement_import_controls'])
+            view = read_statement_details(db, case_id=self.fixture.case.id, source_id=source_id)
+            changed = update_statement_details(db, case_id=self.fixture.case.id, source_id=source_id,
+                request=StatementDetailsRequest(expected_revision=view['revision'], holder=view['details']['holder'],
+                    institution=view['details']['institution'], account_number='00987654321', closing={'amount_minor': '2500', 'page': 2}),
+                actor=self.fixture.actor)
+            source = db.get(FinancialSourceDocument, source_id)
+            period = db.get(FinancialStatementPeriod, UUID(changed['period_id']))
+            controls = read_import_controls(period, source, self.fixture.file)
+            self.assertEqual(source.metadata_['statement_import_controls'], original)
+            self.assertEqual(next(c for c in controls['controls'] if c['role'] == 'opening')['original_text'], original['controls'][0]['original_text'])
+            self.assertEqual(next(c for c in controls['controls'] if c['role'] == 'closing')['reviewed_value'], '2500')
+
     def test_reprocessed_import_replaces_incomplete_rows_and_preserves_the_old_reading(self):
         from pathlib import Path
         from uuid import uuid4
@@ -215,6 +250,9 @@ class BbvaImportTests(TestCase):
         f = self.fixture
         with patch('services.financial.statement_import_bbva.bbva_catalog', return_value=([], set())):
             _, request = self.prepare()
+            # Reproduce the old importer, which selected all unclassified text.
+            for row in request['rows']:
+                row['excluded'] = False
             old = f.confirm(request)
         self.assertGreater(old['incomplete_count'], 250)
         self.assertEqual(old['transaction_count'], 0)

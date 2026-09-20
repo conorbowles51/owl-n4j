@@ -24,30 +24,31 @@ class AutomaticStatementProposalTests(unittest.TestCase):
                        ['Balance', 'EUR', 'USD'], ['Minimum payment', '50.00']])
         result = propose_table(data, 'EUR')
         self.assertEqual([r['kind'] for r in result['rows']],
-                         ['header', 'balance', 'balance', 'unresolved', 'unresolved', 'unresolved'])
+                         ['header', 'balance', 'balance', 'unclassified', 'unclassified', 'unclassified'])
         self.assertEqual(result['rows'][1]['fields']['balance'], '0')
         self.assertEqual(result['rows'][2]['fields']['balance'], '123456')
         self.assertEqual(result['rows'][2]['source_cells'], data['rows'][2]['cells'])
-        self.assertEqual(result['transaction_count'], 3)
+        self.assertEqual(result['transaction_count'], 0)
 
     def test_page_counters_are_retained_without_becoming_payments(self):
         data = source([['Page 1 of 31'], ['Page 2 / 31'], ['Page 3 of 31 fee 100.00']])
         result = propose_table(data, 'EUR', page_has_transaction_table=True)
-        self.assertEqual([r['excluded'] for r in result['rows']], [True, True, False])
+        self.assertEqual([r['excluded'] for r in result['rows']], [True, True, True])
         self.assertEqual(result['rows'][0]['source_cells'], data['rows'][0]['cells'])
-        self.assertEqual(result['transaction_count'], 1)
+        self.assertEqual(result['transaction_count'], 0)
         # A page-number-like payment description does not discard a payment.
         payment = source([['Date', 'Description', 'Credit'], ['2024-01-01', 'Page 1 of 31', '100.00']])
         self.assertFalse(propose_table(payment, 'EUR')['rows'][1]['excluded'])
-        self.assertFalse(propose_table(source([['Page 1 of 31']]), 'EUR')['rows'][0]['excluded'])
+        self.assertTrue(propose_table(source([['Page 1 of 31']]), 'EUR')['rows'][0]['excluded'])
 
-    def test_separate_page_headings_are_not_payments_but_unknown_text_needs_review(self):
+    def test_separate_page_headings_and_unknown_text_are_not_counted_as_payments(self):
         data=source([['Account Name: Example Person'],['TRANSACTION HISTORY'],['Unexplained value 100.00']])
         result=propose_table(data,'USD',page_has_transaction_table=True)
         self.assertTrue(result['rows'][0]['excluded'])
         self.assertTrue(result['rows'][1]['excluded'])
-        self.assertFalse(result['rows'][2]['excluded'])
-        self.assertEqual(result['rows'][2]['kind'],'unresolved')
+        self.assertTrue(result['rows'][2]['excluded'])
+        self.assertEqual(result['rows'][2]['kind'],'unclassified')
+        self.assertEqual(result['rows'][2]['source_cells'], data['rows'][2]['cells'])
 
     def test_complete_nexus_without_manual_columns_or_row_selection(self):
         original=statement(); before=deepcopy(original)
@@ -74,10 +75,18 @@ class AutomaticStatementProposalTests(unittest.TestCase):
             ['2023-03-18','Opening Balance','100','','100']])
         self.assertFalse(propose_table(data,'EUR')['rows'][1]['excluded'])
 
-    def test_unknown_table_is_retained_as_exception(self):
-        result=propose_table(source([['Reference','Unlabelled value'],['abc','100']]),'EUR')
-        self.assertEqual(result['needs_attention'],2)
-        self.assertTrue(all(not r['excluded'] for r in result['rows']))
+    def test_unknown_table_is_retained_as_source_text_without_inventing_payments(self):
+        original = source([['Reference','Unlabelled value'],['abc','100']])
+        result=propose_table(original,'EUR')
+        self.assertEqual(result['needs_attention'],0)
+        self.assertEqual(result['transaction_count'],0)
+        self.assertTrue(all(r['excluded'] and r['kind'] == 'unclassified' for r in result['rows']))
+        self.assertEqual([r['source_cells'] for r in result['rows']], [r['cells'] for r in original['rows']])
+
+    def test_explicit_mxn_currency_accepts_peso_symbols_without_converting_values(self):
+        self.assertEqual(exact_amount('$1,234.56', 'MXN'), '123456')
+        with self.assertRaises(ValueError):
+            exact_amount('USD 1,234.56', 'MXN')
 
     def test_ambiguous_date_and_signed_amount_require_attention(self):
         result=propose_table(source([['Date','Description','Amount'],['01/02/2023','Payment','-20.00']]),'EUR')
@@ -215,4 +224,6 @@ class TextPositionStatementTests(unittest.TestCase):
     def test_unknown_rows_before_a_header_are_not_silently_discarded(self):
         data=self.fixture();data['rows'][0]['cells'][0]['expected_text']='2021-03-01 Unlabelled payment 450.00'
         row=propose_table(data,'USD')['rows'][0]
-        self.assertFalse(row['excluded']);self.assertTrue(row['issues'])
+        self.assertTrue(row['excluded'])
+        self.assertEqual(row['kind'], 'unclassified')
+        self.assertEqual(row['source_cells'], data['rows'][0]['cells'])

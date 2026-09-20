@@ -298,7 +298,7 @@ You do not need to assign columns, select every payment, save a batch or finaliz
 4. Wait for a file to show **Ready to review**, then select its filename. It opens in the main statement viewer.
 5. Select **Back to all statement files**, then another filename to switch files. Alternatively use the right-hand file switcher. Use **Search filenames** to narrow the list. The added time and short identifier distinguish files with the same name.
 6. Return to a file to continue its review. Changes are saved when you switch; its selected statement period and page are remembered during this session.
-7. To import together, select the files in the main list, or choose **Select all [number] shown files**. Select **Prepare statements from [number] files**. Loupe prepares every recognised account and period in those PDFs and opens one batch. **Import [number] records** confirms the available records together; reading issues can be checked afterwards. A batch containing only balances or closure notices offers **Save [number] statements**. Uploading or preparing files does not itself confirm an import.
+7. To import together, select the files in the main list, or choose **Select all [number] shown files**. Select **Prepare statements from [number] files**. Loupe prepares every recognised account and period in those PDFs and opens one batch. The import button states how many transactions and incomplete records will be saved. Incomplete records stay outside totals. A batch containing only balances or closure notices offers **Save [number] statements**. Uploading or preparing files does not itself confirm an import.
 
 File selection is kept when you search or filter the list. The selected count tells you how many selected files are hidden by the current filters. **Clear selection** clears the whole selection. If preparation fails, your selection stays in place and retry checks the same request, so an uncertain response does not start another batch.
 
@@ -307,6 +307,31 @@ For individual review, **Import statement now** is above the PDF. It saves all s
 If a file has not been read, select **Read statement** beside its name. If reading failed, select **Retry reading**. These actions read the PDF already in the case; you do not need to upload it again. Wait for **Ready to review**, then select the filename. Files being processed cannot be started again from this panel.
 
 A file with saved imports shows its current imported payment count, account and recorded periods. This count is read from the case and remains available after reopening your browser. A PDF can contain other periods that have not been imported yet. Open the file to check those periods; the count does not mean the whole PDF is complete. Replaced or excluded payments are not included in this count.
+
+If an import contains incomplete records, the file list counts them separately from usable transactions. **Open imported records** takes you to those records in Transactions. A saved record with no usable amount is not a payment in the totals. If every record is incomplete, the review explicitly says that no usable transactions were created.
+
+### Set the currency for several statements
+
+In the batch, select **Set currency for selected statements**. Search by filename, account or dates, then select individual statements or **Select all [number] matching statements**. This selection covers every page of matching results. Choose USD, MXN or EUR and select **Apply [currency] to [number] statements**. Hidden selections remain selected and are counted explicitly. Saved account and row corrections are kept. This changes the currency label without converting amounts. It applies to unimported statements; an already imported statement requires a corrected replacement import to change its currency.
+
+### Enter missing balances before import
+
+Select **Show items to check**. When a statement has no transactions and needs a balance, this takes you directly to **Statement balances**. Select **Add opening balance** or **Add closing balance**, enter the printed amount and choose its PDF page. You can also edit a balance that was already read. Leave an unknown amount blank; a printed zero is **0.00**.
+
+Select **Save statement balances**. In a batch, this saves the statement for the batch's later import and returns to the list. In an individual review, it saves the account and statement balances directly. Neither action invents transactions. A missing holder can be entered in **Account holder** and saved with the review; you do not need to re-enter balances or give a reason for every field.
+
+Text that has not been identified as a payment stays under **Other extracted page text**, outside the transaction count. If it contains a missed payment, use **Add a missed transaction** or the correction controls after comparing the PDF. A matching balance does not prove that every payment has been captured.
+
+### Add or correct account details and balances after import
+
+1. From a statement's balance check, select **Open statement and balances**, then **Edit account and balances**. The original PDF stays beside the fields. You can also select **Edit account and balances** in an already imported statement's review.
+2. Enter the account holder, account number or bank. Account numbers keep leading zeros.
+3. Enter the printed opening or closing balance, then choose its PDF page. Leave a balance blank when it is unknown; enter **0.00** only when the statement prints zero. For credit cards, enter the printed amount owed.
+4. Select **Save changes**. A confirmation appears in the same view. Reopen the editor to check the saved values. These edits preserve the existing payments and retain the earlier details; a reason is not required for each field.
+
+Before import, **Save account details** saves your current review, including the account number you entered. After import, use the saved-details editor above. You do not need to read the PDF again to correct an account number or balance.
+
+If the extraction missed transactions, open **Read the statement again**, choose the reading method and select **Reprocess statement**. Compare the new reading, then explicitly replace the earlier import. Earlier account and balance corrections remain available in **Compare earlier values**; they are not silently assigned to new extraction rows.
 
 If a request fails, select **Refresh files** and inspect what arrived before uploading another copy. A connection failure can occur after the server received a file. Closing the browser tab can stop uploads that have not yet been sent. Refreshing the page clears the upload queue shown on screen. Uploaded files remain in the case. The open statement, period, page and saved review draft are restored in the same browser tab.
 

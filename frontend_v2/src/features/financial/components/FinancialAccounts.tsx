@@ -16,9 +16,11 @@ import {
 export function FinancialAccounts({
   caseId,
   onOpenAccount,
+  onReviewStatement,
 }: {
   caseId: string | undefined
   onOpenAccount: (accountId: string, dates?: AccountReviewDates) => void
+  onReviewStatement?: (fileId: string) => void
 }) {
   const [reviewAccount, setReviewAccount] = useState<
     z.infer<typeof candidateAccounts>["items"][number] | null
@@ -58,6 +60,7 @@ export function FinancialAccounts({
             key={reviewAccount.id}
             caseId={caseId}
             account={reviewAccount}
+            onReviewStatement={onReviewStatement}
             onBack={() => setReviewOpen(false)}
             onOpenTransactions={(dates) =>
               onOpenAccount(reviewAccount.id, dates)

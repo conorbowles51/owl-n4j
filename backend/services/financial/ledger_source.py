@@ -106,6 +106,7 @@ def statement_source(session, *, case_id, period_id):
         raise LedgerSourceError('The evidence file recorded digest differs from the statement source.')
     return dict(case_id=str(case_id), period_id=str(period.id), source_document_id=str(document.id),
         evidence_file_id=str(evidence.id), filename=evidence.original_filename,
+        can_edit_import_details=document.document_type == 'statement_review' and document.status == 'admitted',
         recorded_digest_matches=True, file_bytes_verified=False,
         reviewed_controls=_statement_controls(session, period, document, evidence),
         limitation='Registered source file and any retained finalization control readings. These citations do not revalidate current financial readings.')

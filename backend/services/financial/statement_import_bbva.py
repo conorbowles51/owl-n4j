@@ -64,7 +64,7 @@ def bbva_catalog(sources):
     for page, items in pages.items():
         texts = [norm(c['expected_text']) for s in items for r in s['rows'] for c in r['cells']]
         if ('ESTADO DE CUENTA' not in texts
-                or not any('BBVA MEXICO, S.A.' in t for t in texts)):
+                or not any(re.search(r'BBVA (?:MEXICO|BANCOMER),? S\.?A\.?', t) for t in texts)):
             continue
         products = {t for t in texts if t.startswith('CASH MANAGEMENT ')}
         numbered = {tuple(map(int, m.groups())) for t in texts

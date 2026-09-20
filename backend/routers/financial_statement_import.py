@@ -29,6 +29,29 @@ def files(case_id: UUID = Query(...), db: Session = Depends(get_db)):
     return statement_file_status(db, case_id=case_id)
 
 
+from services.financial.statement_details import StatementDetailsRequest, read_statement_details, update_statement_details
+
+
+@router.get('/sources/{source_id}/details')
+def statement_details(source_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    try:
+        return read_statement_details(db, case_id=case_id, source_id=source_id)
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+@router.put('/sources/{source_id}/details', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
+def save_statement_details(source_id: UUID, body: StatementDetailsRequest, case_id: UUID = Query(...),
+        user=Depends(get_current_db_user), db: Session = Depends(get_db)):
+    try:
+        return update_statement_details(db, case_id=case_id, source_id=source_id, request=body, actor=actor_from_user(user))
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception:
+        logger.exception('Statement details could not be saved')
+        raise HTTPException(status_code=500, detail='The changes could not be saved. Your previous values are unchanged.')
+
+
 @router.get('/incomplete-records')
 def incomplete_records(case_id: UUID = Query(...), account_id: UUID | None = Query(None),
         start_date: date | None = Query(None), end_date: date | None = Query(None),
@@ -336,6 +359,28 @@ class ConfirmFinancialBatch(BaseModel):
 class FinancialBatchCurrency(BaseModel):
     model_config = ConfigDict(extra='forbid')
     currency: str = Field(pattern=r'^[A-Z]{3}$')
+
+
+class SelectedCurrencyStatement(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    id: UUID
+    revision: str = Field(pattern=r'^[a-f0-9]{64}$')
+
+
+class SelectedStatementCurrency(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    currency: Literal['USD', 'MXN', 'EUR']
+    statements: list[SelectedCurrencyStatement] = Field(min_length=1, max_length=10000)
+
+
+@router.post('/batches/{batch_id}/currency', dependencies=[Depends(case_access_dependency(lambda request,payload: ('case','edit')))])
+def set_batch_statement_currency(batch_id: UUID, body: SelectedStatementCurrency, case_id: UUID = Query(...),
+        user=Depends(get_current_db_user), db: Session = Depends(get_db)):
+    try:
+        return import_batches.set_selected_currency(db, case_id=case_id, batch_id=batch_id,
+            selections=body.statements, currency=body.currency, actor=actor_from_user(user))
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
 
 @router.post('/batches', dependencies=[Depends(case_access_dependency(lambda request,payload: ('case','edit'))), Depends(case_access_dependency(lambda request,payload: ('evidence','upload')))])

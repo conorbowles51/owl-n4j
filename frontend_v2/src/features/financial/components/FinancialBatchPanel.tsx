@@ -1,4 +1,5 @@
 import { BatchStatementImportChoice } from "./BatchStatementImportChoice"
+import { BatchCurrencyEditor } from "./BatchCurrencyEditor"
 import { coverageReview } from "../hooks/use-statement-coverage-review"
 import { useEffect, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
@@ -29,6 +30,7 @@ const itemSchema = z.object({
   transaction_count: z.number(),
   record_count: z.number().optional(),
   incomplete_count: z.number().optional(),
+  unclassified_count: z.number().optional(),
   problem_count: z.number().optional(),
   can_import: z.boolean().optional(),
   balance_status: z.string().optional(),
@@ -46,6 +48,8 @@ const itemSchema = z.object({
       message: z.string(),
       row_id: z.string().nullish(),
       page: z.number().nullish(),
+      field: z.string().optional(),
+      kind: z.string().optional(),
     })
   ),
 })
@@ -65,6 +69,8 @@ const batchSchema = z.object({
   counts: z.record(z.string(), z.number()),
   available_statements: z.number().optional(),
   available_records: z.number().optional(),
+  available_transactions: z.number().optional(),
+  available_incomplete: z.number().optional(),
   issues_count: z.number().optional(),
   ready_transactions: z.number(),
   ready_revision: z.string(),
@@ -263,6 +269,8 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
   const problems = batch.issues_count ?? batch.counts.attention ?? 0
   const available = batch.available_statements ?? batch.counts.ready ?? 0
   const availableRecords = batch.available_records ?? batch.ready_transactions
+  const availablePayments = batch.available_transactions ?? availableRecords
+  const incompleteRecords = batch.available_incomplete ?? 0
   return (
     <section aria-label="Financial processing batch" className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -331,11 +339,16 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
         <div>
           <p className="font-medium">
             {available} {available === 1 ? "statement" : "statements"} available
-            · {availableRecords} records
+            · {availablePayments} transactions
+            {incompleteRecords
+              ? ` · ${incompleteRecords} incomplete records`
+              : ""}
           </p>
           <p className="text-sm text-muted-foreground">
-            Import now and return to any issues later. Incomplete records and
-            their originals are retained; unreadable values stay out of totals.
+            {incompleteRecords
+              ? "Incomplete records will be saved separately for review and kept outside totals."
+              : "Account details, statement balances and transaction sources will be saved together."}{" "}
+            Text not identified as a payment stays with the original statement.
           </p>
         </div>
         <Button
@@ -346,7 +359,9 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
             ? "Confirming…"
             : available && !availableRecords
               ? `Save ${available} ${available === 1 ? "statement" : "statements"}`
-              : `Import ${availableRecords} records`}
+              : incompleteRecords
+                ? `Import ${availablePayments} transactions and ${incompleteRecords} incomplete records`
+                : `Import ${availablePayments} transactions`}
         </Button>
       </div>
       {(confirm.isError || error) && (
@@ -447,6 +462,14 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
         </Button>
       </div>
       <div className="space-y-2">
+        {canEdit && (
+          <BatchCurrencyEditor
+            key={batchId}
+            caseId={caseId}
+            batchId={batchId}
+            onSaved={refresh}
+          />
+        )}
         {batch.items.map((item) => (
           <article
             key={item.id}
@@ -590,26 +613,68 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
                   refresh={refresh}
                 />
               )}
-            {item.problems.map((problem, index) => (
-              <div
-                className="flex flex-wrap items-center gap-2 text-sm"
-                key={index}
-              >
-                <span>
-                  {problem.page ? `PDF page ${problem.page}: ` : ""}
-                  {problem.message}
-                </span>
-                {problem.row_id && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => change(batchId, item.id, problem.row_id!)}
+            {!!item.unclassified_count && (
+              <p className="text-sm text-muted-foreground">
+                {item.unclassified_count} lines of other extracted text are
+                retained with the statement, outside the transaction count. Open
+                the statement to inspect them or add a missed payment.
+              </p>
+            )}
+            {item.problems.length > 0 && (
+              <details open={item.problems.length <= 3} className="text-sm">
+                <summary className="cursor-pointer font-medium">
+                  {item.problems.every(
+                    (problem) => problem.kind === "statement_detail"
+                  ) && item.problems.length
+                    ? "Missing account details — statement can still be imported"
+                    : !item.currency
+                      ? "Choose currency to prepare this statement"
+                      : `${item.problem_count ?? item.problems.length} checks · ${item.can_import ? "import is available" : "open review for the next step"}`}
+                </summary>
+                {item.problems.map((problem, index) => (
+                  <div
+                    className="flex flex-wrap items-center gap-2 text-sm"
+                    key={index}
                   >
-                    Go to this row
-                  </Button>
+                    <span>
+                      {problem.page ? `PDF page ${problem.page}: ` : ""}
+                      {problem.message}
+                    </span>
+                    {problem.row_id && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          change(batchId, item.id, problem.row_id!)
+                        }
+                      >
+                        Go to this row
+                      </Button>
+                    )}
+                    {!problem.row_id &&
+                      ["holder", "account_number", "period"].includes(
+                        problem.field || ""
+                      ) && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => change(batchId, item.id)}
+                        >
+                          Edit{" "}
+                          {problem.field === "holder"
+                            ? "account holder"
+                            : problem.field === "account_number"
+                              ? "account number"
+                              : "statement dates"}
+                        </Button>
+                      )}
+                  </div>
+                ))}
+                {(item.problem_count ?? 0) > item.problems.length && (
+                  <p>Open the statement to review the remaining checks.</p>
                 )}
-              </div>
-            ))}
+              </details>
+            )}
           </article>
         ))}
       </div>
@@ -767,6 +832,13 @@ function BatchStatementReview({
           value={{
             batchId,
             rowId,
+            field: !rowId
+              ? (item.problems.find((problem) =>
+                  ["holder", "account_number", "period"].includes(
+                    problem.field || ""
+                  )
+                )?.field as "holder" | "account_number" | "period" | undefined)
+              : undefined,
             draftRevision: item.review_revision,
             save,
             saved: onBack,

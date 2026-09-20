@@ -558,4 +558,27 @@
 <li>Test a genuinely empty statement of the same layout. Expect its printed balances to save with zero transactions, without requiring any empty rows to be filled in.</li>
 <li>For a previously incorrect import, use <strong>Review statement: [filename]</strong>, reprocess the PDF, then explicitly replace the old import. Expect only the corrected payments in the active list; the earlier reading must remain in history.</li>
 <li>Record any unexplained differences or missing charges with the filename and page. Do not enter zeros to make an unreadable amount appear complete.</li>
-</ol></main></html>
+</ol>
+<h2 id="save-account-details-and-missing-balances-without-reprocessing">Save account details and missing balances without reprocessing</h2>
+<h3>Before import and across a batch</h3>
+<ol>
+<li>Open a statement with no identified payments or balances. Select <strong>Show items to check</strong>. Expect focus on the balance controls, not the disabled confirmation footer.</li>
+<li>Add the opening and closing balances with their source pages. Test a printed zero separately from an unknown blank. <strong>Save statement balances</strong> should become available when a valid printed balance is present. In a batch it saves for later bulk import; an individual review saves directly.</li>
+<li>Add a missing holder and save the batch review. Reopen it and check that the holder persists and its missing-holder warning clears.</li>
+<li>Search a large batch by a currency token in filenames. Select all matching statements across pages, change the search and check the hidden-selection count. Apply USD, MXN or EUR. Reopen a selected statement: currency, manual account edits and corrected amounts must persist. Unselected and imported statements must remain unchanged. This is not currency conversion.</li>
+<li>Check the batch counts: usable transactions and incomplete records must be separate. Ordinary unmatched source text must not inflate either count; it remains available in the statement. A damaged amount inside a recognised transaction table must still be flagged.</li>
+<li>For the older BBVA Bancomer Cash Management format, check the actual source account, period, opening/closing balances and movements before accepting it. The automated regression uses synthetic geometry; it does not establish that every historical BBVA file is supported.</li>
+</ol>
+<h3>After import</h3>
+<p>Use an editable test case, not the investigation&#x27;s only copy.</p>
+<ol>
+<li>Before import, enter a missing account number beginning with zeros. Select <strong>Save account details</strong>, leave the review and reopen it. Expect exactly the same number.</li>
+<li>Import the statement, reopen it and check the saved number again. The original extraction must not replace the manual value.</li>
+<li>From the balance check, select <strong>Open statement and balances → Edit account and balances</strong>. Expect labelled fields beside the original PDF, in the same view.</li>
+<li>Correct the number and add a missing balance with its printed PDF page. Select <strong>Save changes</strong>. Reopen the editor, statement list and balance check; all should show the saved changes. The payment count and existing payments must be unchanged.</li>
+<li>Save a printed zero balance and reopen. It must remain zero. Clear it and save; it must become missing, not zero. A balance difference must remain visible.</li>
+<li>In a second authorised session, change the same statement after the first session opened its editor. The first session&#x27;s stale save must fail clearly and keep its unsaved text. Repeat with a viewer: the edit control must be absent and a direct save request forbidden.</li>
+<li>Test an incomplete-only import. Expect <strong>0 usable transactions</strong> and its separate incomplete-record count, including after selecting <strong>Open imported records</strong>. The file list must not describe these as usable payments or a statement with no records.</li>
+<li>Reprocess a test copy after saving account and balance corrections. Under <strong>Compare earlier values</strong>, check the previous account number and the balances with their PDF pages. They must remain available for comparison without overwriting the new reading.</li>
+</ol>
+<p>Local automated checks do not replace these tests against the deployed version and the team&#x27;s actual saved imports.</p></main></html>

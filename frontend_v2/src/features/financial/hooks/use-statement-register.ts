@@ -21,6 +21,7 @@ const importStates = z.object({
     z.object({
       evidence_file_id: z.string(),
       current_transactions: z.number().int().nonnegative(),
+      incomplete_count: z.number().int().nonnegative().default(0),
       receipt_review_count: z.number().int().nonnegative().default(0),
       wire_review_count: z.number().int().nonnegative().default(0),
       periods: z.array(

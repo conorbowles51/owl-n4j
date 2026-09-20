@@ -17,6 +17,7 @@ from services.financial.review_arithmetic import check_proposed_rows, arithmetic
 
 log = logging.getLogger(__name__)
 TERMINAL_FILES = {'checked', 'error'}
+REVIEW_MODEL = 'recognised-payments-2026-09-20'
 
 
 def batch_for(session, case_id, batch_id, lock=False):
@@ -88,7 +89,11 @@ def assess(proposal, request=None):
                 row_id = raw['rows'][path[1]]['id'] if len(path)>1 and path[0]=='rows' and isinstance(path[1],int) and path[1]<len(raw['rows']) else None
                 label = {'holder':'account holder','account_number':'account number','currency':'statement currency','amount_minor':'amount','date':'date'}.get(str(path[-1]) if path else '', 'statement details')
                 message=issue['msg'].removeprefix('Value error, ')
-                if 'isoformat' in message:
+                if path == ('rows',) and not raw['rows']:
+                    if not proposal['currency']:
+                        continue  # The currency action already explains the next step.
+                    message='No transactions or balances were identified. Open the statement to add its printed balances or missing transactions.'
+                elif 'isoformat' in message:
                     message='Enter the complete date shown on the statement.'
                 elif issue['type']=='string_pattern_mismatch':
                     message=f'Check the {label} against the statement and enter a usable value.'
@@ -125,8 +130,19 @@ def assess(proposal, request=None):
         holder=raw.get('holder',''), institution=raw.get('institution',''), account=raw.get('account_number',''), period_start=raw.get('period_start',''),period_end=raw.get('period_end',''),
         balance_status=balance['balance_status'], checks=balance['checks'],
         can_import=can_import, balance_exception=accepted_difference(balance, raw), problems=problems[:50], problem_count=len(problems))
+    summary['review_model'] = REVIEW_MODEL
+    summary['unclassified_count'] = sum(row['kind'] == 'unclassified' and reviewed.get(row['id'], {}).get('excluded', row['excluded']) for row in rows)
+    if can_import:
+        from services.financial.import_issues import incomplete_records
+        incomplete = len(incomplete_records(proposal, validated))
+        summary.update(record_count=summary['transaction_count'], incomplete_count=incomplete,
+            transaction_count=summary['transaction_count'] - incomplete)
     if current:
         retained = current.get('issues', problems)
+        details = current.get('details', {})
+        summary.update({key: details[key] for key in ('holder', 'institution', 'period_start', 'period_end') if key in details})
+        if 'account_number' in details:
+            summary['account'] = details['account_number']
         summary.update(transaction_count=current['transaction_count'], record_count=current.get('record_count', current['transaction_count']),
             incomplete_count=current.get('incomplete_count', 0), problems=retained[:50], problem_count=len(retained), can_import=False,
             source_document_id=current['source_document_id'], account_id=current['account_id'])
@@ -204,16 +220,17 @@ def checked_batch_items(session, case_id, items):
     from postgres.models.financial import FinancialSourceDocument
     imported_ids = [UUID(i.summary['source_document_id']) for i in items
                     if i.status == 'imported' and i.summary.get('source_document_id')]
-    retained = {str(source_id): (issues or [], records or []) for source_id, issues, records in session.execute(
+    retained = {str(source_id): (issues or [], records or [], review or {}) for source_id, issues, records, review in session.execute(
         select(FinancialSourceDocument.id, FinancialSourceDocument.metadata_['statement_import_issues'],
-               FinancialSourceDocument.metadata_['statement_incomplete_records']).where(
+               FinancialSourceDocument.metadata_['statement_incomplete_records'],
+               FinancialSourceDocument.metadata_['statement_details_review']).where(
             FinancialSourceDocument.case_id == case_id, FinancialSourceDocument.id.in_(imported_ids)))} if imported_ids else {}
     result = []
     for item in items:
         summary = deepcopy(item.summary)
         state = item.status
         if state in ('ready', 'attention'):
-            if 'can_import' not in summary:
+            if 'can_import' not in summary or (summary.get('review_model') != REVIEW_MODEL and not item.review_request):
                 try:
                     proposal = read_statement_import(session, case_id=case_id, evidence_file_id=item.file_id,
                         currency=summary.get('currency') or None, statement_id=item.statement_key or None, _cache=cache)
@@ -233,16 +250,114 @@ def checked_batch_items(session, case_id, items):
             summary.update(coverage_review=review, problems=problems, problem_count=len(problems) + extra_count)
             state = 'attention' if problems else 'ready'
         if state == 'imported' and summary.get('source_document_id') in retained:
-            issues, records = retained[summary['source_document_id']]
+            issues, records, review = retained[summary['source_document_id']]
+            details = review.get('details', {})
+            if details:
+                summary.update(holder=details.get('holder', ''), account=details.get('account_number', ''),
+                    institution=details.get('institution', ''))
+                issues = [issue for issue in issues if not (issue.get('kind') == 'statement_detail' and
+                    details.get(issue.get('field')))]
             unresolved = sum(not r.get('resolved_transaction_id') for r in records)
             previous = summary.get('incomplete_count', unresolved)
             summary.update(problems=issues[:50], problem_count=len(issues), incomplete_count=unresolved,
                 transaction_count=summary.get('transaction_count', 0) + previous - unresolved)
         summary['disposition_revision'] = _digest(dict(status=item.status, request=item.review_request,
             decision=item.summary.get('import_decision')))
+        summary['currency_revision'] = currency_revision(item, summary)
         result.append(SimpleNamespace(id=item.id, file_id=item.file_id, statement_key=item.statement_key,
             status=state, summary=summary, review_request=item.review_request))
     return result
+
+
+def currency_revision(item, summary=None):
+    return _digest(dict(status=item.status, revision=(summary if summary is not None else item.summary).get('revision'), request=item.review_request))
+
+
+def set_selected_currency(session, *, case_id, batch_id, selections, currency, actor):
+    """Change unimported statements atomically; preserve all saved corrections."""
+    if currency not in ('USD', 'MXN', 'EUR'):
+        raise PdfMappingError('Choose USD, MXN or EUR for this selection.', 422)
+    try:
+        batch = batch_for(session, case_id, batch_id, True)
+        if batch.worker_token and batch.lease_until and batch.lease_until.replace(tzinfo=timezone.utc) > datetime.now(timezone.utc):
+            raise PdfMappingError('The batch is still processing. Your selection is kept; retry when processing finishes.', 409)
+        expected = {str(selection.id): selection.revision for selection in selections}
+        if len(expected) != len(selections):
+            raise PdfMappingError('Select each statement once.', 422)
+        items = list(session.scalars(select(Item).where(Item.batch_id == batch.id, Item.id.in_([UUID(i) for i in expected])).order_by(Item.file_id, Item.id).with_for_update()))
+        if len(items) != len(expected):
+            raise PdfMappingError('A selected statement is not in this batch. Refresh the selection.', 404)
+        cache = {}
+        for item in items:
+            if item.status not in ('ready', 'attention'):
+                raise PdfMappingError('A selected statement changed or was already imported. Refresh the selection; no currencies were changed.', 409)
+            file = session.scalar(select(EvidenceFile).where(EvidenceFile.id == item.file_id, EvidenceFile.case_id == case_id).with_for_update().execution_options(populate_existing=True))
+            if file is None:
+                raise PdfMappingError('A selected file is not in this case.', 404)
+            old = read_statement_import(session, case_id=case_id, evidence_file_id=item.file_id,
+                currency=item.summary.get('currency') or None, statement_id=item.statement_key or None, _cache=cache)
+            if old.get('current_import') or currency_revision(item, old) != expected[str(item.id)]:
+                raise PdfMappingError('A selected statement reading changed or was imported. Refresh the selection.', 409)
+            saved = old.get('saved_review')
+            raw = item.review_request or (saved or {}).get('request') or initial_request(old)
+            if saved and item.review_request and saved['request'] != item.review_request:
+                raise PdfMappingError('A selected statement has different saved reviews. Open it to compare those corrections first.', 409)
+            if raw['expected_revision'] != old['revision']:
+                raise PdfMappingError('A selected statement has corrections from an earlier reading. Open its saved review first.', 409)
+            new = read_statement_import(session, case_id=case_id, evidence_file_id=item.file_id,
+                currency=currency, statement_id=item.statement_key or None, _cache=cache)
+            baseline = initial_request(old)
+            merged = initial_request(new)
+            old_rows = {r['id']: r for r in baseline['rows']}
+            new_rows = {r['id']: r for r in merged['rows']}
+            for row in raw['rows']:
+                changes = {key: value for key, value in row.items() if value != old_rows.get(row['id'], {}).get(key)}
+                if row['id'] not in new_rows:
+                    if row.get('manual_page'):
+                        merged['rows'].append(deepcopy(row))
+                    elif changes:
+                        raise PdfMappingError('The new currency changes a corrected row. Open that statement to compare it; no selected currencies were changed.', 409)
+                else:
+                    if old['currency'] not in ('', 'USD', 'MXN', 'EUR') and any(k in changes for k in ('amount_minor', 'balance_minor')):
+                        raise PdfMappingError('A corrected amount uses a different currency format. Change that statement individually.', 409)
+                    new_rows[row['id']].update(changes)
+                    if old['currency'] in ('USD', 'MXN', 'EUR'):
+                        # These currencies have the same decimal scale. The
+                        # explicit choice relabels saved amounts, never clears
+                        # them merely because a printed currency marker differs.
+                        for key in ('amount_minor', 'balance_minor'):
+                            value = row.get(key)
+                            if isinstance(value, str) and value.lstrip('-').isdigit():
+                                new_rows[row['id']][key] = value
+                        if row.get('direction'):
+                            new_rows[row['id']]['direction'] = row['direction']
+            for key, value in raw.items():
+                if key not in ('rows', 'currency', 'expected_revision', 'statement_id', 'balance_exception_revision', 'coverage_review_revision') and value != baseline.get(key):
+                    merged[key] = deepcopy(value)
+            merged.update(currency=currency, expected_revision=new['revision'], statement_id=new.get('statement_id'))
+            check_proposed_rows(new, merged['rows'])
+            # A currency decision also saves the current draft for individual
+            # review, so leaving the batch cannot restore the old currency.
+            record = dict(request=merged, review_revision=_digest(merged), saved_at=datetime.now(timezone.utc).isoformat(),
+                saved_by=dict(user_id=str(actor.user_id), name=actor.name))
+            metadata = deepcopy(file.metadata_ or {})
+            previous = metadata.get('financial_review_progress', {}).get(item.statement_key or '')
+            if previous:
+                metadata.setdefault('financial_review_history', []).append(previous)
+            metadata.setdefault('financial_review_progress', {})[item.statement_key or ''] = record
+            file.metadata_ = metadata
+            new['saved_review'] = record
+            state, summary = assess(new, merged)
+            history = list(item.summary.get('currency_history', []))
+            history.append(dict(before=old['currency'], after=currency, at=record['saved_at'], actor=record['saved_by']))
+            item.status = state
+            item.review_request = merged
+            item.summary = {**item.summary, **summary, 'currency_history': history}
+        session.commit()
+        return dict(case_id=str(case_id), batch_id=str(batch_id), updated=len(items), currency=currency)
+    except Exception:
+        session.rollback()
+        raise
 
 
 def next_problem(session, *, case_id, batch_id, item_id, direction="next"):
@@ -271,7 +386,9 @@ def batch_status(session, *, case_id, batch_id, offset=0, limit=100, only_proble
     counts={state:sum(i.status==state for i in items) for state in ('ready','attention','pending_import','imported','skipped','assigned')}
     return dict(id=str(batch.id),case_id=str(case_id),status=batch.status,files=batch.files,counts=counts,
         available_statements=sum(import_available(i) for i in items),
-        available_records=sum(i.summary.get('transaction_count', 0) for i in items if import_available(i)),
+        available_records=sum(i.summary.get('record_count', i.summary.get('transaction_count', 0)) for i in items if import_available(i)),
+        available_transactions=sum(i.summary.get('transaction_count', 0) for i in items if import_available(i)),
+        available_incomplete=sum(i.summary.get('incomplete_count', 0) for i in items if import_available(i)),
         issues_count=sum(i.summary.get('problem_count', 0) for i in items if i.status != 'skipped'),
         ready_transactions=sum(i.summary.get('transaction_count',0) for i in items if i.status=='ready'),
         ready_revision=ready_revision(items),total=len(shown),offset=offset,

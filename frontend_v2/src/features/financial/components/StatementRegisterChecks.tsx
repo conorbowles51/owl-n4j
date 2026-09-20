@@ -37,9 +37,11 @@ function issues(account: StatementCoverageAccount) {
 export function StatementRegisterChecks({
   caseId,
   onOpenTransactions,
+  onReviewStatement,
 }: {
   caseId: string
   onOpenTransactions: (accountId: string, dates?: AccountReviewDates) => void
+  onReviewStatement?: (fileId: string) => void
 }) {
   const [offset, setOffset] = useState(0)
   const [selected, setSelected] = useState<StatementCoverageAccount | null>(
@@ -298,6 +300,14 @@ export function StatementRegisterChecks({
               key={`${caseId}:${selected.account_id}`}
               caseId={caseId}
               datesFirst
+              onReviewStatement={
+                onReviewStatement
+                  ? (fileId) => {
+                      setSelected(null)
+                      onReviewStatement(fileId)
+                    }
+                  : undefined
+              }
               account={{
                 id: selected.account_id,
                 holder: selected.holder ?? null,

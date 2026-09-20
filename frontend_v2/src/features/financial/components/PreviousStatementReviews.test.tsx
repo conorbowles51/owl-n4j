@@ -52,6 +52,7 @@ const detail = {
     institution: "Synthetic Bank",
     period_start: "2023-01-01",
     period_end: "2023-12-31",
+    _saved_balance_corrections: { opening: { amount_minor: "6000", page: 1 } },
     rows: [row],
   },
 }
@@ -95,6 +96,9 @@ it("opens unmatched bulk corrections in pages and records a file comparison only
     target: { value: "old" },
   })
   await screen.findByText("Corrected payment")
+  expect(
+    screen.getByLabelText("Balances corrected after import")
+  ).toHaveTextContent("Opening balance: 60.00 EUR · PDF page 1")
   expect(screen.getByText("125.00 EUR")).toBeInTheDocument()
   expect(screen.getByText("Checked the PDF")).toBeInTheDocument()
   fireEvent.click(screen.getByRole("button", { name: "Next saved rows" }))

@@ -1,3 +1,4 @@
+import { ImportedStatementDetails } from "./ImportedStatementDetails"
 import { useStatementCoverageReview } from "../hooks/use-statement-coverage-review"
 import { StatementCoverageReview } from "./StatementCoverageReview"
 import { useBatchReview } from "../lib/batch-review-context"
@@ -73,6 +74,7 @@ const row = z.object({
   kind: z.string(),
 })
 const proposalSchema = z.object({
+  statement_page_numbers: z.array(z.number()).default([]),
   document_review: paymentDocumentProposal.optional(),
   reading_failure: z.string().nullish(),
   case_id: z.string(),
@@ -177,6 +179,17 @@ const proposalSchema = z.object({
       filename: z.string().nullable().optional(),
       revision: z.string(),
       transaction_count: z.number(),
+      record_count: z.number().optional(),
+      incomplete_count: z.number().optional(),
+      details: z
+        .object({
+          holder: z.string(),
+          account_number: z.string(),
+          institution: z.string(),
+          period_start: z.string(),
+          period_end: z.string(),
+        })
+        .optional(),
       excluded_as_duplicate: z.boolean().default(false),
       retained_filename: z.string().nullable().optional(),
       details_reason: z.string().default(""),
@@ -642,7 +655,9 @@ function StatementReview({
               })
             }
           >
-            Open imported transactions
+            {query.data.current_import.incomplete_count
+              ? "Open imported records"
+              : "Open imported transactions"}
           </Button>
         )}
       {query.data.current_import?.evidence_file_id === fileId &&
@@ -655,13 +670,20 @@ function StatementReview({
               This statement has already been imported
             </h3>
             <p>
-              {query.data.current_import.transaction_count} current transactions
-              remain in use. Select <strong>Open imported transactions</strong>{" "}
-              to
-              {canEdit
-                ? "investigate them or correct a value against its source."
-                : "inspect them against their sources."}
+              {query.data.current_import.transaction_count} usable transactions
+              {query.data.current_import.incomplete_count
+                ? ` and ${query.data.current_import.incomplete_count} incomplete records were saved. Incomplete records appear separately in Transactions and do not count in totals.`
+                : " were saved."}
+              {query.data.current_import.transaction_count === 0 &&
+                !!query.data.current_import.incomplete_count &&
+                " No usable transactions were created. Read the statement again to recover missed values, or open the incomplete records to correct them."}
             </p>
+            {canEdit && (
+              <ImportedStatementDetails
+                caseId={caseId}
+                sourceId={query.data.current_import.source_document_id}
+              />
+            )}
             {query.data.current_import.details_reason && (
               <p>
                 Account or statement detail decision:{" "}
@@ -701,7 +723,7 @@ function StatementReview({
           <h3 className="font-semibold">Original extraction</h3>
         )}
         <EditableStatement
-          key={`${query.data.revision}:${batchReview?.draftRevision ?? "individual"}`}
+          key={`${query.data.revision}:${batchReview?.draftRevision ?? "individual"}:${query.data.current_import?.revision ?? "unimported"}:${JSON.stringify(query.data.current_import?.details)}`}
           data={query.data}
           caseId={caseId}
           fileId={fileId}
@@ -838,9 +860,14 @@ function EditableStatement({
   })
   const { canEdit: caseCanEdit } = useFinancialAccess()
   const excludedCopy = !!data.current_import?.excluded_as_duplicate
+  const importedHere = data.current_import?.evidence_file_id === fileId
+  const importedDetails = importedHere
+    ? data.current_import?.details
+    : undefined
   const canEdit =
     caseCanEdit &&
     !excludedCopy &&
+    !importedHere &&
     !batchReview?.readOnly &&
     !(batchReview && data.current_import)
   const owner = useAuthStore((state) => state.user?.id || state.user?.username)
@@ -854,14 +881,15 @@ function EditableStatement({
       ),
     [data.saved_review?.request, data.previous_saved_review?.request]
   )
-  const [saved] = useState(
-    () =>
-      readStatementDraft(draftKey, data.revision) ??
-      (batchReview?.draft?.revision === data.revision
-        ? batchReview.draft
-        : !batchReview && recovered?.revision === data.revision
-          ? recovered
-          : null)
+  const [saved] = useState(() =>
+    importedHere
+      ? null
+      : (readStatementDraft(draftKey, data.revision) ??
+        (batchReview?.draft?.revision === data.revision
+          ? batchReview.draft
+          : !batchReview && recovered?.revision === data.revision
+            ? recovered
+            : null))
   )
   const savedReadingChanged =
     !batchReview &&
@@ -876,6 +904,12 @@ function EditableStatement({
   const statementControls = useRef<HTMLDivElement>(null)
   const printedControls = useRef<HTMLDivElement>(null)
   const confirmationControls = useRef<HTMLDivElement>(null)
+  const balanceControls = useRef<HTMLDivElement>(null)
+  const balancePages = data.statement_page_numbers.length
+    ? data.statement_page_numbers
+    : data.page_numbers.length
+      ? data.page_numbers
+      : [...new Set(data.rows.map((row) => row.page_number))]
   const pageKey = `${owner}:${caseId}:${fileId}:${data.revision}`
   const rememberedPage = useStatementWorkspace.getState().pages[pageKey]
   const initialPage = data.page_numbers.includes(rememberedPage)
@@ -915,9 +949,13 @@ function EditableStatement({
         ...saved.rows.filter((row) => row.manual_page),
       ]
     }),
-    [holder, setHolder] = useState(saved?.holder ?? data.metadata.holder),
+    [holder, setHolder] = useState(
+      importedDetails?.holder ?? saved?.holder ?? data.metadata.holder
+    ),
     [account, setAccount] = useState(
-      saved?.account ?? data.metadata.account_number
+      importedDetails?.account_number ??
+        saved?.account ??
+        data.metadata.account_number
     )
   const [focus, setFocus] = useState<{
       rowId: string
@@ -940,13 +978,19 @@ function EditableStatement({
     saved?.amountText ?? {}
   )
   const [institution, setInstitution] = useState(
-    saved?.institution ?? data.metadata.institution
+    importedDetails?.institution ??
+      saved?.institution ??
+      data.metadata.institution
   )
   const [periodStart, setPeriodStart] = useState(
-      saved?.periodStart ?? data.metadata.period_start
+      importedDetails?.period_start ??
+        saved?.periodStart ??
+        data.metadata.period_start
     ),
     [periodEnd, setPeriodEnd] = useState(
-      saved?.periodEnd ?? data.metadata.period_end
+      importedDetails?.period_end ??
+        saved?.periodEnd ??
+        data.metadata.period_end
     ),
     [detailsReason, setDetailsReason] = useState(saved?.detailsReason ?? "")
   const [balanceException, setBalanceException] = useState(
@@ -998,10 +1042,25 @@ function EditableStatement({
       table_index: 0,
       row_index: 0,
       source_cells: [],
-      fields: {},
-      issues: ["Manually added transaction. Record the source page."],
-      excluded: false,
-      kind: "manual_entry",
+      fields:
+        added.id === "manual:opening-balance" ||
+        added.id === "manual:closing-balance"
+          ? {
+              description:
+                added.id === "manual:opening-balance"
+                  ? "Opening Balance"
+                  : "Closing Balance",
+            }
+          : {},
+      issues: added.excluded
+        ? []
+        : ["Manually added transaction. Record the source page."],
+      excluded: added.excluded,
+      kind:
+        added.id === "manual:opening-balance" ||
+        added.id === "manual:closing-balance"
+          ? "balance"
+          : "manual_entry",
     })
   const update = (id: string, patch: Partial<Edit>) =>
     setRows((current) =>
@@ -1029,7 +1088,8 @@ function EditableStatement({
   const changed = useCallback(
     (r: Edit) => {
       if (r.manual_page) return true
-      const initial = initialById.get(r.id)!
+      const initial = initialById.get(r.id)
+      if (!initial) return true
       return (
         Boolean(r.date_unprinted) !== Boolean(initial.date_unprinted) ||
         JSON.stringify(r.date_values ?? {}) !==
@@ -1231,8 +1291,19 @@ function EditableStatement({
     detailProblems.push({
       message:
         "Enter at least one printed opening or closing balance to save a statement without transactions.",
+      field: "Statement balances",
     })
   const focusDetail = (field: string) => {
+    if (field === "Statement balances") {
+      const control =
+        balanceControls.current?.querySelector<HTMLElement>("input,button")
+      control?.focus({ preventScroll: true })
+      balanceControls.current?.scrollIntoView({
+        block: "center",
+        behavior: "smooth",
+      })
+      return
+    }
     const input = Array.from(
       statementControls.current?.querySelectorAll<
         HTMLInputElement | HTMLTextAreaElement
@@ -1300,7 +1371,7 @@ function EditableStatement({
     },
   })
   useEffect(() => {
-    if (confirm.isSuccess) {
+    if (confirm.isSuccess || importedHere) {
       if (draftKey)
         try {
           sessionStorage.removeItem(draftKey)
@@ -1356,6 +1427,7 @@ function EditableStatement({
     coverageDecision,
     amountText,
     confirm.isSuccess,
+    importedHere,
   ])
   const serverChecks = useStatementChecks(caseId, fileId, {
     expected_revision: data.revision,
@@ -1639,10 +1711,20 @@ function EditableStatement({
     )
   }
   const initialBatchRow = useRef(batchReview?.rowId)
+  const initialBatchField = useRef(batchReview?.field)
   useEffect(() => {
     if (initialBatchRow.current) {
       openInlineRow(initialBatchRow.current)
       initialBatchRow.current = undefined
+    }
+    if (initialBatchField.current) {
+      const label = {
+        holder: "Account holder",
+        account_number: "Account number",
+        period: "Period start",
+      }[initialBatchField.current]
+      if (label) focusDetail(label)
+      initialBatchField.current = undefined
     }
     // Apply the requested problem once, without reopening it after each edit.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1651,7 +1733,7 @@ function EditableStatement({
     <div ref={statementControls} className="space-y-4 pt-4">
       <header>
         <h3 className="text-lg font-semibold">Review {data.filename}</h3>
-        {draftSaved && !excludedCopy && !saveBatchReview.isSuccess && (
+        {draftSaved && canEdit && !saveBatchReview.isSuccess && (
           <p className="text-xs text-muted-foreground" role="status">
             Recent edits are saved in this browser tab. Use Save progress to
             keep unfinished work in the case before leaving.
@@ -1779,7 +1861,9 @@ function EditableStatement({
         <p className="text-sm">
           {data.assignment_only
             ? "Check which account owns these payments, then assign them to its statement. Select any value to compare it with the PDF."
-            : "Import this statement now, or review a value beside its original. Reading issues remain available after import; you do not need to resolve each one first."}
+            : importedHere
+              ? "The account details below are the saved values. Use Edit account and balances above to change them. The original extracted rows remain below for comparison."
+              : "Import this statement now, or review a value beside its original. Reading issues remain available after import; you do not need to resolve each one first."}
         </p>
       </header>
       {data.assignment_only && (
@@ -1831,18 +1915,26 @@ function EditableStatement({
                         : "Ready to confirm"}
               </h4>
               <p>
-                {included.length} records selected
+                {included.length
+                  ? `${included.length} records selected`
+                  : hasStatementBalance
+                    ? "Statement balances only"
+                    : "No transactions identified"}
                 {incompleteCount
                   ? ` · ${incompleteCount} with missing or invalid fields`
                   : ""}
                 .
               </p>
               <p>
-                {serverChecks.pending
-                  ? "Checking these values. You can keep reviewing the PDF while this runs."
-                  : attentionCount || unresolvedDifference
-                    ? "You can import now and check these issues later. Records with missing or invalid fields are retained outside calculated totals."
-                    : "Confirm once to import this statement. You do not need to accept each line separately."}
+                {!included.length &&
+                !hasStatementBalance &&
+                !data.can_record_account_closure
+                  ? "Add a printed opening or closing balance below to save this statement."
+                  : serverChecks.pending
+                    ? "Checking these values. You can keep reviewing the PDF while this runs."
+                    : attentionCount || unresolvedDifference
+                      ? "You can import now and check these issues later. Records with missing or invalid fields are retained outside calculated totals."
+                      : "Confirm once to import this statement. You do not need to accept each line separately."}
               </p>
             </div>
             <Button disabled={!!importDisabled} onClick={submitImport}>
@@ -1937,12 +2029,22 @@ function EditableStatement({
             )}
             <Button
               variant="outline"
-              onClick={() =>
-                confirmationControls.current?.scrollIntoView({
-                  block: "start",
-                  behavior: "smooth",
-                })
-              }
+              onClick={() => {
+                const balanceProblem = detailProblems.find(
+                  (problem) => problem.field === "Statement balances"
+                )
+                const field =
+                  balanceProblem?.field ??
+                  detailProblems.find((problem) => problem.field)?.field
+                if (field && canEdit) focusDetail(field)
+                else if (blockedRows.length && canEdit)
+                  reviewRow(blockedRows[0].row.id)
+                else
+                  confirmationControls.current?.scrollIntoView({
+                    block: "start",
+                    behavior: "smooth",
+                  })
+              }}
             >
               {attentionCount ? "Show items to check" : "Go to confirmation"}
             </Button>
@@ -2812,6 +2914,34 @@ function EditableStatement({
             </label>
           )}
         </div>
+        {!data.assignment_only &&
+          canEdit &&
+          (!data.current_import || replacePrevious) && (
+            <div className="flex flex-wrap items-center gap-2 text-sm">
+              <Button
+                variant="outline"
+                disabled={
+                  assignmentSaving ||
+                  saveBatchReview.isPending ||
+                  confirm.isPending ||
+                  (savedReadingChanged && !previousReviewChecked)
+                }
+                onClick={() => saveBatchReview.mutate("progress")}
+              >
+                {saveBatchReview.isPending
+                  ? "Saving details…"
+                  : "Save account details"}
+              </Button>
+              <span className="text-muted-foreground">
+                Saves these details and your current corrections to the case.
+                Import also saves them.
+              </span>
+              {saveBatchReview.isSuccess &&
+                savedServerSnapshot === currentRequestSnapshot.current && (
+                  <p role="status">Account details saved to the case.</p>
+                )}
+            </div>
+          )}
         {!data.assignment_only && warnings.length > 0 && (
           <div className="rounded border border-amber-500 p-3">
             <h4 className="font-semibold">Check statement details</h4>
@@ -2882,7 +3012,12 @@ function EditableStatement({
             under Credit or Debit before importing.
           </p>
         )}
-        <div className="flex flex-wrap gap-5 text-sm">
+        <div
+          ref={balanceControls}
+          role="group"
+          aria-label="Statement balances"
+          className="flex flex-wrap gap-5 text-sm"
+        >
           {(["opening", "closing"] as const).map((role) => {
             const controls = rows.filter(
               (item) =>
@@ -2937,16 +3072,104 @@ function EditableStatement({
                         : `${displayAmount(control.balance_minor, digits)} ${data.currency}`}
                     </button>
                   ))
+                ) : canEdit ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      const id = `manual:${role}-balance`
+                      const pages = balancePages
+                      setRows((current) => [
+                        ...current,
+                        {
+                          id,
+                          excluded: true,
+                          manual_page: pages.includes(currentPage)
+                            ? currentPage
+                            : pages[0],
+                          date: "",
+                          description: `${role} balance`,
+                          counterparty: "",
+                          amount_minor: "0",
+                          direction: "",
+                          balance_minor: null,
+                          reason: "",
+                        },
+                      ])
+                      requestAnimationFrame(() =>
+                        focusDetail(`Statement ${role} balance`)
+                      )
+                    }}
+                  >
+                    Add {role} balance
+                  </Button>
                 ) : (
                   <span className="text-muted-foreground">Not identified</span>
                 )}
+                {canEdit &&
+                  controls.map((control) => (
+                    <div key={`input-${control.id}`} className="space-y-1">
+                      <label className="block text-sm capitalize">
+                        {role} balance {data.currency}
+                        <input
+                          aria-label={`Statement ${role} balance${controls.length > 1 ? ` ${control.id}` : ""}`}
+                          className="block border rounded bg-background p-2"
+                          inputMode="decimal"
+                          value={
+                            amountText[`balance:${control.id}`] ??
+                            (control.balance_minor === null
+                              ? ""
+                              : displayAmount(control.balance_minor, digits))
+                          }
+                          onChange={(event) => {
+                            const value = event.target.value
+                            setAmountText((previous) => ({
+                              ...previous,
+                              [`balance:${control.id}`]: value,
+                            }))
+                            const parsed = minorAmount(
+                              value.replace(/^-/, ""),
+                              digits
+                            )
+                            update(control.id, {
+                              balance_minor:
+                                value === ""
+                                  ? null
+                                  : parsed
+                                    ? `${value.startsWith("-") && parsed !== "0" ? "-" : ""}${parsed}`
+                                    : "invalid",
+                            })
+                          }}
+                        />
+                      </label>
+                      {control.manual_page && (
+                        <label className="block text-sm">
+                          Printed on page{" "}
+                          <select
+                            aria-label={`${role} balance source page`}
+                            className="border rounded bg-background p-2"
+                            value={control.manual_page}
+                            onChange={(event) => {
+                              const page = Number(event.target.value)
+                              update(control.id, { manual_page: page })
+                              showPage(page)
+                            }}
+                          >
+                            {balancePages.map((page) => (
+                              <option key={page}>{page}</option>
+                            ))}
+                          </select>
+                        </label>
+                      )}
+                    </div>
+                  ))}
               </div>
             )
           })}
         </div>
         <p className="text-sm text-muted-foreground">
           {canEdit
-            ? "Select an opening or closing amount to check its source or correct it."
+            ? "Enter balances here, then save the review or import. Leave an unknown balance blank; a printed zero is 0.00."
             : "Select an opening or closing amount to check its source."}
         </p>
         {!excludedCopy && !data.assignment_only && (
@@ -3058,6 +3281,7 @@ function EditableStatement({
           </Button>
         </details>
         {!excludedCopy &&
+          !importedHere &&
           !data.assignment_only &&
           !(batchReview && data.current_import) && (
             <div
@@ -3112,8 +3336,8 @@ function EditableStatement({
               <p>
                 {data.can_record_account_closure && included.length === 0
                   ? "Save the account, statement period and printed closure notice. No transaction rows were found in this section. This does not supply a missing closing balance."
-                  : hasStatementBalance && included.length === 0
-                    ? "Save the account, statement period and printed balances without adding transactions. Missing balances stay unknown; any difference stays flagged."
+                  : included.length === 0
+                    ? "Save the account, statement period and printed balances without adding transactions. Enter any missing printed balance in Statement balances above."
                     : batchReview
                       ? `Save these ${included.length} records to the batch for import together. Issues can be checked later.`
                       : `Import ${included.length} records with their originals. You can correct values later. Incomplete records stay visible outside calculated totals.`}
@@ -3130,12 +3354,16 @@ function EditableStatement({
                 {batchReview
                   ? saveBatchReview.isPending
                     ? "Saving checked statement…"
-                    : "Save for bulk import"
+                    : included.length === 0
+                      ? data.can_record_account_closure
+                        ? "Save account closure"
+                        : "Save statement balances"
+                      : "Save for bulk import"
                   : confirm.isPending
                     ? "Importing statement…"
                     : data.can_record_account_closure && included.length === 0
                       ? "Save account closure"
-                      : hasStatementBalance && included.length === 0
+                      : included.length === 0
                         ? "Save statement balances"
                         : `Confirm import of ${included.length} transactions`}
               </Button>

@@ -36,7 +36,7 @@ def saved_ancestor_reviews(session, file):
 
     def add(previous, saved, origin, statement_id=None):
         request = saved.get('request') or {}
-        if not request.get('rows'):
+        if not request.get('rows') and not request.get('_saved_balance_corrections'):
             return
         key = request.get('statement_id') or statement_id or ''
         # The same request may have been copied into multiple batches or saved
@@ -65,6 +65,17 @@ def saved_ancestor_reviews(session, file):
             .order_by(FinancialSourceDocument.id))
         for source in sources:
             imported = source.metadata_ or {}
+            details = imported.get('statement_details_review')
+            if details and imported.get('statement_import_request') and _digest(details) == imported.get('statement_details_review_sha256'):
+                request = deepcopy(imported['statement_import_request'])
+                request.update(details['details'])
+                # Later balances have their own page citations. Never pretend
+                # they came from one of the old extraction's transaction rows.
+                request['_saved_balance_corrections'] = details['balances']
+                latest = imported['statement_details_history'][-1]
+                add(previous, dict(request=request, saved_at=latest['at'],
+                    saved_by=dict(user_id=latest['actor_id'], name=latest['actor_name'])),
+                    'Account and balances corrected after import')
             corrected = [r for r in imported.get('statement_incomplete_records', [])
                          if r.get('correction')]
             if not corrected or not imported.get('statement_import_request'):

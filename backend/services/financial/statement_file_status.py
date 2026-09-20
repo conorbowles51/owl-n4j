@@ -49,6 +49,20 @@ def statement_file_status(session, *, case_id):
             end=period.period_end.isoformat() if period.period_end else None,
             source_status=source.status,
         ))
+    # Incomplete imports can have no statement period (for example, no usable
+    # currency). They still belong in the file register, with an honest count.
+    incomplete_sources = session.execute(select(Source.evidence_file_id, Source.metadata_['statement_incomplete_records'])
+        .join(EvidenceFile, Source.evidence_file_id == EvidenceFile.id)
+        .where(Source.case_id == case_id, EvidenceFile.case_id == case_id,
+               Source.status == 'admitted', Source.document_type == 'statement_review')
+        .order_by(Source.id).limit(5001)).all()
+    truncated = truncated or len(incomplete_sources) > 5000
+    for file_id, records in incomplete_sources[:5000]:
+        count = sum(not row.get('resolved_transaction_id') for row in records or [])
+        if count:
+            key = str(file_id)
+            item = files.setdefault(key, dict(evidence_file_id=key, current_transactions=0, periods=[]))
+            item['incomplete_count'] = item.get('incomplete_count', 0) + count
     from postgres.models.workspace_entry import WorkspaceEntry, WorkspaceEntryLink
     from services.financial.payment_document_proposal import SCHEMA
     reviews = session.execute(select(WorkspaceEntryLink, WorkspaceEntry)

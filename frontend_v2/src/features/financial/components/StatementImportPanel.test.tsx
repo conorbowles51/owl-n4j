@@ -113,18 +113,19 @@ function mount() {
   )
   return done
 }
-async function open() {
+async function open(corrections = true) {
   fireEvent.click(screen.getByRole("button", { name: "Import a statement" }))
   await screen.findByRole("option", { name: "statement.pdf" })
   fireEvent.change(screen.getByLabelText("Uploaded statement"), {
     target: { value: "file" },
   })
   await screen.findByText("Review statement.pdf")
-  fireEvent.click(
-    screen.getByText("Show corrections and import choices", {
-      selector: "button",
-    })
-  )
+  if (corrections)
+    fireEvent.click(
+      screen.getByText("Show corrections and import choices", {
+        selector: "button",
+      })
+    )
 }
 beforeEach(() => {
   vi.mocked(useStatementCoverageReview).mockReturnValue({
@@ -491,7 +492,10 @@ it("saves an incomplete individual review to the case and restores it without br
   fireEvent.change(screen.getByLabelText("Description 1:0:1"), {
     target: { value: "Corrected source description" },
   })
-  fireEvent.click(screen.getByRole("button", { name: "Save progress" }))
+  fireEvent.change(screen.getByLabelText("Account number"), {
+    target: { value: "0012345" },
+  })
+  fireEvent.click(screen.getByRole("button", { name: "Save account details" }))
   await screen.findByText(
     "Progress saved to the case. You can reopen this statement on another device."
   )
@@ -505,6 +509,7 @@ it("saves an incomplete individual review to the case and restores it without br
       selector: "button",
     })
   )
+  expect(screen.getByLabelText("Account number")).toHaveValue("0012345")
   expect(screen.getByLabelText("Date 1:0:1")).toHaveValue("")
   expect(screen.getByLabelText("Description 1:0:1")).toHaveValue(
     "Corrected source description"
@@ -1279,29 +1284,127 @@ it("does not offer to import the same active reading twice", async () => {
           filename: "original-statement.pdf",
           evidence_file_id: "file",
           revision: "b".repeat(64),
-          transaction_count: 1,
+          transaction_count: 0,
+          record_count: 250,
+          incomplete_count: 250,
+          details: { ...data.metadata, account_number: "00123456789" },
         },
       } as never
     return base(url, options)
   })
   const done = mount()
-  await open()
+  await open(false)
   expect(
     screen.getByText("This statement has already been imported")
   ).toBeVisible()
   expect(
-    screen.getByRole("button", { name: "Confirm import of 1 transactions" })
-  ).toBeDisabled()
-  fireEvent.click(
-    screen.getByRole("button", { name: "Open imported transactions" })
-  )
+    screen.queryByRole("button", { name: "Confirm import of 1 transactions" })
+  ).not.toBeInTheDocument()
+  expect(screen.getByText(/No usable transactions were created/)).toBeVisible()
+  fireEvent.click(screen.getByRole("button", { name: "Open imported records" }))
   expect(done).toHaveBeenCalledTimes(1)
   expect(done).toHaveBeenCalledWith(
     expect.objectContaining({
       case_id: "case",
       account_id: "saved-account",
       source_document_id: "previous",
+      record_count: 250,
+      incomplete_count: 250,
       filename: "original-statement.pdf",
+    })
+  )
+  expect(screen.getByLabelText("Account number")).toHaveValue("00123456789")
+  expect(screen.getByLabelText("Account number")).toHaveAttribute("readOnly")
+  expect(sent).toHaveLength(0)
+})
+
+it("adds missing statement balances in labelled fields without inventing payments", async () => {
+  mount()
+  await open()
+  fireEvent.click(screen.getByRole("button", { name: "Add opening balance" }))
+  fireEvent.change(screen.getByLabelText("Statement opening balance"), {
+    target: { value: "0.00" },
+  })
+  fireEvent.click(screen.getByRole("button", { name: "Add closing balance" }))
+  fireEvent.change(screen.getByLabelText("Statement closing balance"), {
+    target: { value: "10.00" },
+  })
+  fireEvent.click(
+    screen.getByRole("button", { name: /Confirm import of 1 transactions/ })
+  )
+  await waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0]).toMatchObject({
+    rows: expect.arrayContaining([
+      expect.objectContaining({
+        id: "manual:opening-balance",
+        excluded: true,
+        manual_page: 1,
+        balance_minor: "0",
+      }),
+      expect.objectContaining({
+        id: "manual:closing-balance",
+        excluded: true,
+        manual_page: 1,
+        balance_minor: "1000",
+      }),
+    ]),
+  })
+})
+
+it("takes a balance-only review directly to its missing balance and saves it to the batch", async () => {
+  const { BatchReviewContext } = await import("../lib/batch-review-context")
+  const save = vi.fn().mockResolvedValue({ status: "ready" }),
+    saved = vi.fn()
+  const base = vi.mocked(fetchAPI).getMockImplementation()!
+  vi.mocked(fetchAPI).mockImplementation(async (url, options) =>
+    url.includes("/statement-import/file?")
+      ? ({
+          ...data,
+          rows: [data.rows[0]],
+          transaction_count: 0,
+          page_numbers: [1, 2],
+        } as never)
+      : base(url, options)
+  )
+  useStatementWorkspace.getState().select("anonymous:case", "file")
+  render(
+    <QueryClientProvider
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
+    >
+      <BatchReviewContext.Provider value={{ save, saved }}>
+        <StatementImportPanel caseId="case" onImported={vi.fn()} />
+      </BatchReviewContext.Provider>
+    </QueryClientProvider>
+  )
+  await screen.findByText("Review statement.pdf")
+  const submit = screen.getByRole("button", { name: "Save statement balances" })
+  expect(submit).toBeDisabled()
+  fireEvent.click(screen.getByRole("button", { name: "Show items to check" }))
+  expect(
+    screen.getByRole("button", { name: "Add opening balance" })
+  ).toHaveFocus()
+  fireEvent.click(screen.getByRole("button", { name: "Add opening balance" }))
+  const opening = screen.getByLabelText("Statement opening balance")
+  await waitFor(() => expect(opening).toHaveFocus())
+  fireEvent.change(opening, { target: { value: "1817.77" } })
+  fireEvent.change(screen.getByLabelText("opening balance source page"), {
+    target: { value: "2" },
+  })
+  expect(submit).toBeEnabled()
+  fireEvent.click(submit)
+  await waitFor(() => expect(saved).toHaveBeenCalledOnce())
+  expect(save).toHaveBeenCalledWith(
+    expect.objectContaining({
+      rows: expect.arrayContaining([
+        expect.objectContaining({
+          id: "manual:opening-balance",
+          balance_minor: "181777",
+          manual_page: 2,
+          excluded: true,
+        }),
+      ]),
     })
   )
   expect(sent).toHaveLength(0)

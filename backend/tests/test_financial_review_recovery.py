@@ -70,6 +70,24 @@ class ReviewRecoveryTests(TestCase):
         self.assertEqual(proposal['review_recovery']['reviews'][0]['origin'], 'Bulk review')
         self.assertNotEqual(next(r for r in proposal['rows'] if not r['excluded'])['fields']['description'], 'Earlier corrected wording')
 
+    def test_post_import_details_and_balances_remain_available_after_rereading(self):
+        from uuid import UUID
+        from services.financial.statement_details import read_statement_details, update_statement_details, StatementDetailsRequest
+        receipt = self.f.confirm()
+        with self.f.SessionLocal() as db:
+            source_id = UUID(receipt['source_document_id'])
+            view = read_statement_details(db, case_id=self.f.case.id, source_id=source_id)
+            update_statement_details(db, case_id=self.f.case.id, source_id=source_id,
+                request=StatementDetailsRequest(expected_revision=view['revision'], holder=view['details']['holder'],
+                    account_number='00123456789', institution=view['details']['institution'],
+                    opening={'amount_minor': '6000', 'page': 1}), actor=self.f.actor)
+        self.new_version()
+        records = review_recovery.saved_ancestor_reviews(self.f.db, self.f.file)
+        late = next(r for r in records if r['origin'] == 'Account and balances corrected after import')
+        self.assertEqual(late['request']['account_number'], '00123456789')
+        self.assertEqual(late['request']['_saved_balance_corrections']['opening'], {'amount_minor': '6000', 'page': 1})
+        self.assertEqual(late['saved_by']['user_id'], str(self.f.actor.user_id))
+
     def test_changed_period_requires_saved_comparison_and_never_attaches_the_old_rows(self):
         item = self.batch_draft('a' * 64)
         self.new_version()

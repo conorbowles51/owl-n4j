@@ -140,6 +140,11 @@ def check_proposed_rows(proposal, edits):
                        'date_basis': fields.get('date_basis') if edit.get('date_unprinted') else None}})
     for row in edits:
         if row['id'] not in originals:
+            from services.financial.manual_balances import manual_balance
+            balance = manual_balance(row, proposal)
+            if balance:
+                effective.append(balance)
+                continue
             if not row['id'].startswith('manual:') or row.get('manual_page') not in proposal.get('page_numbers', []):
                 raise PdfMappingError('A manually added transaction needs a page from this PDF.', 422)
             effective.append(dict(id=row['id'], kind='manual_entry', excluded=row['excluded'], issues=[],

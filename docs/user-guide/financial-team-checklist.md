@@ -674,3 +674,29 @@ Use a separate test case and a BBVA Mexico **Cash Management** statement supplie
 5. Test a genuinely empty statement of the same layout. Expect its printed balances to save with zero transactions, without requiring any empty rows to be filled in.
 6. For a previously incorrect import, use **Review statement: [filename]**, reprocess the PDF, then explicitly replace the old import. Expect only the corrected payments in the active list; the earlier reading must remain in history.
 7. Record any unexplained differences or missing charges with the filename and page. Do not enter zeros to make an unreadable amount appear complete.
+
+## Save account details and missing balances without reprocessing
+
+### Before import and across a batch
+
+1. Open a statement with no identified payments or balances. Select **Show items to check**. Expect focus on the balance controls, not the disabled confirmation footer.
+2. Add the opening and closing balances with their source pages. Test a printed zero separately from an unknown blank. **Save statement balances** should become available when a valid printed balance is present. In a batch it saves for later bulk import; an individual review saves directly.
+3. Add a missing holder and save the batch review. Reopen it and check that the holder persists and its missing-holder warning clears.
+4. Search a large batch by a currency token in filenames. Select all matching statements across pages, change the search and check the hidden-selection count. Apply USD, MXN or EUR. Reopen a selected statement: currency, manual account edits and corrected amounts must persist. Unselected and imported statements must remain unchanged. This is not currency conversion.
+5. Check the batch counts: usable transactions and incomplete records must be separate. Ordinary unmatched source text must not inflate either count; it remains available in the statement. A damaged amount inside a recognised transaction table must still be flagged.
+6. For the older BBVA Bancomer Cash Management format, check the actual source account, period, opening/closing balances and movements before accepting it. The automated regression uses synthetic geometry; it does not establish that every historical BBVA file is supported.
+
+### After import
+
+Use an editable test case, not the investigation's only copy.
+
+1. Before import, enter a missing account number beginning with zeros. Select **Save account details**, leave the review and reopen it. Expect exactly the same number.
+2. Import the statement, reopen it and check the saved number again. The original extraction must not replace the manual value.
+3. From the balance check, select **Open statement and balances → Edit account and balances**. Expect labelled fields beside the original PDF, in the same view.
+4. Correct the number and add a missing balance with its printed PDF page. Select **Save changes**. Reopen the editor, statement list and balance check; all should show the saved changes. The payment count and existing payments must be unchanged.
+5. Save a printed zero balance and reopen. It must remain zero. Clear it and save; it must become missing, not zero. A balance difference must remain visible.
+6. In a second authorised session, change the same statement after the first session opened its editor. The first session's stale save must fail clearly and keep its unsaved text. Repeat with a viewer: the edit control must be absent and a direct save request forbidden.
+7. Test an incomplete-only import. Expect **0 usable transactions** and its separate incomplete-record count, including after selecting **Open imported records**. The file list must not describe these as usable payments or a statement with no records.
+8. Reprocess a test copy after saving account and balance corrections. Under **Compare earlier values**, check the previous account number and the balances with their PDF pages. They must remain available for comparison without overwriting the new reading.
+
+Local automated checks do not replace these tests against the deployed version and the team's actual saved imports.

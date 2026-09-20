@@ -211,7 +211,8 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
     choices = cache[currencies_key]
     detected = {choice.get('currency', '') for choice in choices if not choice.get('document_kind')}
     detected_currency = (next(iter(detected)) if len(detected) == 1 else '') if choices else detect_statement_currency(all_sources, header_text=header)
-    chosen_currency = currency or detected_currency
+    saved_currency = ((file.metadata_ or {}).get('financial_review_progress', {}).get(statement_id or '', {}).get('request') or {}).get('currency')
+    chosen_currency = currency or saved_currency or detected_currency
     from services.financial.review_recovery import recovery_state
     from services.financial.statement_review_checks import add_period_checks
     checks_key = ('checks', source_key, chosen_currency)
@@ -247,7 +248,8 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
     sources = all_sources
     if selected:
         detected_currency = selected.get('currency', '')
-        chosen_currency = currency or detected_currency
+        saved_currency = ((file.metadata_ or {}).get('financial_review_progress', {}).get(statement_id or '', {}).get('request') or {}).get('currency')
+        chosen_currency = currency or saved_currency or detected_currency
         addresses = {(item['page_number'], item['table_index']) for item in selected['sources']}
         sources = [source for source in all_sources if (source['page_number'], source['table_index']) in addresses]
         metadata.update(account_type=selected.get('account_type', 'credit_card'), institution=selected['institution'], account_number=selected['account_reference'],
@@ -389,12 +391,16 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
             filename=current_file.original_filename if current_file else None,
             revision=duplicate_revision(session, current), transaction_count=session.scalar(select(func.count()).select_from(FinancialTransaction).where(FinancialTransaction.source_document_id == current.id, FinancialTransaction.ledger_status == 'admitted')))
         recorded_review = (current.metadata_ or {}).get('statement_import_request', {})
+        from services.financial.statement_details import saved_details
+        current_import['details'] = saved_details(current)
         current_import['review_decisions'] = [
             dict(description=row.get('description', ''), date=row.get('date', ''),
                  excluded=bool(row.get('excluded')), reason=row['reason'])
             for row in recorded_review.get('rows', []) if row.get('reason')]
         current_import['details_reason'] = recorded_review.get('details_reason', '')
         current_import['issues'] = (current.metadata_ or {}).get('statement_import_issues', [])
+        current_import['issues'] = [issue for issue in current_import['issues'] if not (
+            issue.get('kind') == 'statement_detail' and current_import['details'].get(issue.get('field')))]
         current_import['incomplete_count'] = sum(not r.get('resolved_transaction_id') for r in (current.metadata_ or {}).get('statement_incomplete_records', []))
         current_import['record_count'] = current_import['transaction_count'] + current_import['incomplete_count']
         current_import['excluded_as_duplicate'] = excluded_copy is not None
@@ -565,6 +571,11 @@ def check_import_request(proposal, request):
     # original proposal, full reviewed request, actor and time automatically.
     # Replacing an existing import still requires its explicit reason.
     originals = {row['id']: row for row in proposal['rows']}
+    from services.financial.manual_balances import manual_balance
+    for row in request.rows:
+        balance = manual_balance(row.model_dump(), proposal)
+        if balance:
+            originals[row.id] = balance
     if not any(not row.excluded for row in request.rows):
         controls = [row for row in request.rows if row.id in originals and originals[row.id]['kind'] == 'balance'
                     and originals[row.id]['fields'].get('description', '').lower() in ('opening balance', 'closing balance')]
@@ -582,7 +593,7 @@ def check_import_request(proposal, request):
             originals[row.id] = dict(id=row.id, page_number=row.manual_page, table_index=None,
                 row_index=None, source_revision=proposal['revision'], source_cells=[], fields={},
                 issues=['Manually added transaction'], excluded=False, kind='manual_entry')
-        elif row.manual_page is not None:
+        elif row.manual_page is not None and not originals[row.id].get('manual_balance'):
             raise PdfMappingError('The page of an extracted row cannot be reassigned.', 422)
     for row in request.rows:
         original = originals[row.id]
@@ -759,10 +770,10 @@ def confirm_statement_import(*, session_factory, case_id, evidence_file_id, requ
                 closing = BalanceObservation.printed(Money(balance_sign * int(closings[0].balance_minor), currency)) if len(closings) == 1 and currency else BalanceObservation.absent()
                 period = record_statement_period(session, run, StatementPeriodDraft(account_id=account.id,
                     source_document_id=document.id, currency=currency, bounds=bounds, opening=opening, closing=closing)) if currency else None
-                if period and proposal['metadata'].get('balance_convention') in ('liability_owed', 'asset_balance'):
+                if period and (proposal['metadata'].get('balance_convention') in ('liability_owed', 'asset_balance') or any(r.get('manual_balance') for r in originals.values())):
                     from services.financial.statement_import_controls import retain_import_controls
                     retain_import_controls(document, period, request, originals, openings, closings,
-                                           balance_convention=proposal['metadata']['balance_convention'])
+                                           balance_convention=proposal['metadata'].get('balance_convention', 'asset_balance'))
                 drafts = []
                 incomplete_ids = {r['id'] for r in incomplete}
                 for position, row in enumerate(r for r in request.rows if not r.excluded):

@@ -77,6 +77,8 @@ def _revision(document, fingerprint, rows, sequence):
              (document.metadata_ or {}).get("admissibility_reservations"),
              sequence,
              [[str(item) for item in row] for row in rows]]
+    if (document.metadata_ or {}).get("statement_details_review_sha256"):
+        value.append(document.metadata_["statement_details_review_sha256"])
     return hashlib.sha256(json.dumps(value, separators=(",", ":")).encode()).hexdigest()
 
 

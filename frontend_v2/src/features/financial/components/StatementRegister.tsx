@@ -13,10 +13,12 @@ export function StatementRegister({
   caseId,
   children,
   onOpenTransactions,
+  onReviewStatement,
 }: {
   caseId: string
   children: ReactNode
   onOpenTransactions: (accountId: string, dates?: AccountReviewDates) => void
+  onReviewStatement?: (fileId: string) => void
 }) {
   const [params] = useSearchParams()
   const owner = useAuthStore(
@@ -34,6 +36,7 @@ export function StatementRegister({
           key={caseId}
           caseId={caseId}
           onOpenTransactions={onOpenTransactions}
+          onReviewStatement={onReviewStatement}
         />
       )}
       <div hidden={open}>
