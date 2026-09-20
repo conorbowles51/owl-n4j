@@ -319,11 +319,15 @@ describe("FinancialPage", () => {
     expect(tabs[0]).toHaveAttribute("aria-selected", "true")
   })
 
-  it("opens statement checks and coverage without waiting for graph results", () => {
+  it("keeps case-wide checks in Review accounts, outside statement review", () => {
     graphLoading()
     renderPage()
     selectTab("Statements & accounts")
-    fireEvent.click(screen.getByText("Checks across all accounts"))
+    expect(screen.queryByText("Account checks")).not.toBeInTheDocument()
+    fireEvent.click(
+      screen.getByRole("button", { name: "Review accounts" })
+    )
+    fireEvent.click(screen.getByText("Account checks"))
     expect(
       screen.getByRole("button", { name: "Check statement balances" })
     ).toBeInTheDocument()
@@ -335,6 +339,10 @@ describe("FinancialPage", () => {
         /No (?:admitted rows in the ledger|imported payments yet)/i
       )
     ).not.toBeInTheDocument()
+    fireEvent.click(
+      screen.getByRole("button", { name: "Statement files" })
+    )
+    expect(screen.queryByText("Account checks")).not.toBeInTheDocument()
   })
 
   it("retains the selected PDF when switching financial tabs and transaction modes", () => {

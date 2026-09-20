@@ -68,7 +68,7 @@ function Location() {
   const location = useLocation()
   return <output aria-label="Location">{location.search}</output>
 }
-function mount() {
+function mount(entry = "/cases/case/financial?view=statements&batch=batch") {
   return render(
     <QueryClientProvider
       client={
@@ -80,9 +80,7 @@ function mount() {
         })
       }
     >
-      <MemoryRouter
-        initialEntries={["/cases/case/financial?view=statements&batch=batch"]}
-      >
+      <MemoryRouter initialEntries={[entry]}>
         <FinancialBatchPanel caseId="case" />
         <Location />
       </MemoryRouter>
@@ -116,6 +114,51 @@ beforeEach(() => {
     return batch as never
   })
 })
+it("distinguishes repeated file runs and opens the selected saved batch", async () => {
+  vi.mocked(fetchAPI).mockImplementation(async (url) => {
+    if (url.includes("/list?"))
+      return {
+        case_id: "case",
+        batches: [
+          {
+            id: "latest-run",
+            status: "preparing",
+            created_at: "2026-09-20T17:00:00Z",
+            file_count: 588,
+            created_by: "Alex",
+            checked_files: 587,
+            failed_files: 1,
+            filenames: ["Checking EUR.pdf"],
+          },
+          {
+            id: "earlier-run",
+            status: "review",
+            created_at: "2026-09-19T17:00:00Z",
+            file_count: 588,
+            created_by: "Reviewer",
+            checked_files: 588,
+            failed_files: 0,
+            filenames: ["Checking USD.pdf"],
+          },
+        ],
+      } as never
+    return { ...batch, id: "earlier-run" } as never
+  })
+  mount("/cases/case/financial?view=statements")
+  expect(await screen.findByText("Latest batch")).toBeVisible()
+  expect(screen.getByText(/Started by Alex/)).toBeVisible()
+  expect(
+    screen.getByText(/587 of 588 files checked.*1 files could not be read/)
+  ).toBeVisible()
+  expect(screen.getByText(/Checking USD.pdf/)).toBeVisible()
+  fireEvent.click(screen.getByRole("button", { name: "Open batch earlier-" }))
+  await waitFor(() =>
+    expect(screen.getByLabelText("Location")).toHaveTextContent(
+      "batch=earlier-run"
+    )
+  )
+})
+
 it("confirms the displayed ready list and filters problems across the batch", async () => {
   mount()
   fireEvent.click(

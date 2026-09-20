@@ -143,3 +143,37 @@ it("retains edits after a failed save and requires a page only for changed balan
       .mock.calls.filter(([, options]) => options?.method === "PUT")
   ).toHaveLength(1)
 })
+
+it("corrects the saved currency without changing amounts or asking to re-import", async () => {
+  const data = {
+    ...initial(),
+    balances: {
+      opening: { amount_minor: "6000", page: 2 },
+      closing: { amount_minor: "2520", page: 2 },
+    },
+  }
+  vi.mocked(fetchAPI).mockImplementation(async (_url, options) => {
+    if (options?.method === "PUT") {
+      expect(options.body).toMatchObject({
+        currency: "MXN",
+        expected_revision: data.revision,
+      })
+      expect(options.body).not.toHaveProperty("opening")
+      expect(options.body).not.toHaveProperty("closing")
+      return { ...data, currency: "MXN", revision: "b".repeat(64) } as never
+    }
+    return data as never
+  })
+  mount()
+  fireEvent.click(
+    screen.getByRole("button", { name: "Edit account and balances" })
+  )
+  fireEvent.change(await screen.findByLabelText("Saved statement currency"), {
+    target: { value: "MXN" },
+  })
+  expect(screen.getByLabelText("Saved opening balance")).toHaveValue("60.00")
+  expect(screen.getByLabelText("Saved closing balance")).toHaveValue("25.20")
+  expect(screen.getByText(/no exchange-rate conversion/)).toBeVisible()
+  fireEvent.click(screen.getByRole("button", { name: "Save changes" }))
+  await screen.findByText(/Changes saved/)
+})

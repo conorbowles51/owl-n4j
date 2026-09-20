@@ -391,8 +391,9 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
             filename=current_file.original_filename if current_file else None,
             revision=duplicate_revision(session, current), transaction_count=session.scalar(select(func.count()).select_from(FinancialTransaction).where(FinancialTransaction.source_document_id == current.id, FinancialTransaction.ledger_status == 'admitted')))
         recorded_review = (current.metadata_ or {}).get('statement_import_request', {})
-        from services.financial.statement_details import saved_details
+        from services.financial.statement_details import saved_details, saved_currency
         current_import['details'] = saved_details(current)
+        current_import['currency'] = saved_currency(current)
         current_import['review_decisions'] = [
             dict(description=row.get('description', ''), date=row.get('date', ''),
                  excluded=bool(row.get('excluded')), reason=row['reason'])
@@ -460,6 +461,11 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
                 transaction_count=0 if reading_failure else sum(not row['excluded'] for row in rows),
                 needs_attention=sum(bool(row['issues']) for row in rows) + len(issues),
                 revision=revision, current_import=current_import, applied=False)
+    from services.financial.review_upgrade import attach_upgrade
+    attach_upgrade(result, snapshot)
+    if current_import and current and current.evidence_file_id == file.id and not excluded_copy:
+        from services.financial.legacy_statement_refresh import refresh_available
+        current_import['refresh_available'] = refresh_available(session, current, result)
     if _apply_assignments:
         from services.financial.statement_row_assignment import assigned_proposal
         return assigned_proposal(session, file, result, cache)
@@ -695,7 +701,9 @@ def confirm_statement_import(*, session_factory, case_id, evidence_file_id, requ
                     if current_file is None:
                         raise PdfMappingError('The existing import has no available evidence file to compare. Open its source history before replacing it.', 409)
                     current_root = (current_file.metadata_ or {}).get('statement_root_evidence_id', str(current_file.id))
-                    if not parent or root != current_root or request.replaces_source_document_id != existing.id:
+                    from services.financial.legacy_statement_refresh import refresh_available
+                    same_file_refresh = existing.evidence_file_id == file.id and refresh_available(session, existing, proposal)
+                    if (not same_file_refresh and (not parent or root != current_root)) or request.replaces_source_document_id != existing.id:
                         raise PdfMappingError('This statement already has imported transactions. Open them to correct values, or reprocess a new version.', 409)
                     from postgres.models.financial import FinancialStatementPeriod
                     session.execute(select(FinancialStatementPeriod).where(FinancialStatementPeriod.source_document_id == existing.id).with_for_update()).all()

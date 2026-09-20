@@ -60,6 +60,24 @@ class StatementImportAuthorizationTests(unittest.TestCase):
             self.assertEqual(save.call_args.kwargs['case_id'], self.db.case.id)
             self.assertEqual(save.call_args.kwargs['request'].account_number, '00123')
 
+    def test_refresh_reading_requires_case_edit_and_passes_revision(self):
+        self.db.get_bind = lambda: None
+        url = f'/api/financial/statement-import/sources/{self.file_id}/refresh-reading?case_id={self.db.case.id}'
+        body = dict(expected_revision='a'*64)
+        with patch('services.financial.legacy_statement_refresh.refresh_legacy_import', return_value={}) as refresh, patch.object(module, 'actor_from_user'), patch.object(module, 'sessionmaker'):
+            self.assertEqual(self.client.post(url, json=body).status_code, 401)
+            self.user(None)
+            self.assertEqual(self.client.post(url, json=body).status_code, 403)
+            self.user({'case': {'view': True, 'edit': False}})
+            self.assertEqual(self.client.post(url, json=body).status_code, 403)
+            refresh.assert_not_called()
+            self.user({'case': {'view': True, 'edit': True}})
+            self.assertEqual(self.client.post(url, json=body).status_code, 200)
+            self.assertEqual(refresh.call_args.kwargs['case_id'], self.db.case.id)
+            self.assertEqual(refresh.call_args.kwargs['source_id'], self.file_id)
+            self.assertEqual(refresh.call_args.kwargs['expected_revision'], body['expected_revision'])
+            self.assertEqual(self.client.post(url, json={'expected_revision': 'stale'}).status_code, 422)
+
     def test_unauthenticated_requests_do_not_reach_statement_services(self):
         with patch.object(module,'read_statement_import') as read, patch.object(module,'confirm_statement_import') as write, patch.object(module,'create_statement_version') as version:
             self.assertEqual(self.client.get(self.endpoint()).status_code,401)

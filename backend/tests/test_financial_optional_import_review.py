@@ -55,7 +55,7 @@ class OptionalImportReviewTests(TestCase):
             self.assertEqual(record['fields']['amount_minor'], '')
             self.assertEqual(imported_records(db, case_id=uuid4())['total'], 0)
             self.assertTrue(all(t.amount_minor > 0 for t in db.scalars(select(FinancialTransaction))))
-        corrected = {**record['fields'], 'amount_minor':'12500000', 'reason':'Read the amount beside the original date.'}
+        corrected = {**record['fields'], 'amount_minor':'12500000', 'reason':''}
         request = CompleteImportedRecord(row=corrected, currency='EUR', version=0)
         args = dict(session_factory=self.f.SessionLocal, case_id=self.f.case.id,
             source_id=UUID(receipt['source_document_id']), request=request, actor=self.f.actor)
@@ -142,6 +142,26 @@ class OptionalImportReviewTests(TestCase):
             currency_issues = [i for i in source.metadata_['statement_import_issues'] if i.get('field') == 'currency']
             self.assertEqual(len(currency_issues), 11)
             self.assertNotIn(record['id'], [i['row_id'] for i in currency_issues])
+
+    def test_setting_statement_currency_after_import_materializes_usable_records_together(self):
+        from services.financial.statement_details import StatementDetailsRequest, read_statement_details, update_statement_details
+        proposal, _ = self.proposal()
+        proposal['currency'] = ''
+        receipt = self.save(proposal)
+        source_id = UUID(receipt['source_document_id'])
+        with self.f.SessionLocal() as db:
+            before = read_statement_details(db, case_id=self.f.case.id, source_id=source_id)
+            request = StatementDetailsRequest(expected_revision=before['revision'], currency='EUR',
+                **{key: before['details'][key] for key in ('holder', 'account_number', 'institution')})
+            after = update_statement_details(db, case_id=self.f.case.id, source_id=source_id, request=request, actor=self.f.actor)
+            self.assertEqual(imported_records(db, case_id=self.f.case.id)['total'], 0)
+            rows = list(db.scalars(select(FinancialTransaction)))
+            self.assertEqual(len(rows), 12)
+            self.assertTrue(all(row.currency == 'EUR' and str(row.statement_period_id) == after['period_id'] for row in rows))
+            self.assertEqual(update_statement_details(db, case_id=self.f.case.id, source_id=source_id, request=request, actor=self.f.actor), after)
+            source = db.get(FinancialSourceDocument, source_id)
+            self.assertEqual(source.metadata_['statement_import_request']['currency'], '')
+            self.assertFalse(any(issue.get('kind') == 'missing_field' for issue in source.metadata_['statement_import_issues']))
 
     def test_bulk_imports_flagged_records_and_legacy_batch_assessment(self):
         from services.financial import import_batches as service

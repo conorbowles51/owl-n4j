@@ -181,6 +181,8 @@ const proposalSchema = z.object({
       transaction_count: z.number(),
       record_count: z.number().optional(),
       incomplete_count: z.number().optional(),
+      currency: z.string().nullable().optional(),
+      refresh_available: z.boolean().optional(),
       details: z
         .object({
           holder: z.string(),
@@ -583,7 +585,7 @@ function StatementReview({
   return (
     <div className="space-y-3">
       <StatementCurrencyControl
-        currency={query.data.currency}
+        currency={query.data.current_import?.currency || query.data.currency}
         detectedCurrency={query.data.detected_currency}
         disabled={
           !canEdit || !!batchReview?.readOnly || !!query.data.current_import
@@ -684,6 +686,9 @@ function StatementReview({
                 sourceId={query.data.current_import.source_document_id}
               />
             )}
+            {canEdit && query.data.current_import.refresh_available && (
+              <RefreshStoredReading data={query.data} onImported={onImported} />
+            )}
             {query.data.current_import.details_reason && (
               <p>
                 Account or statement detail decision:{" "}
@@ -720,7 +725,7 @@ function StatementReview({
         )}
       <div>
         {query.data.current_import?.evidence_file_id === fileId && (
-          <h3 className="font-semibold">Original extraction</h3>
+          <h3 className="font-semibold">Current reading of the PDF</h3>
         )}
         <EditableStatement
           key={`${query.data.revision}:${batchReview?.draftRevision ?? "individual"}:${query.data.current_import?.revision ?? "unimported"}:${JSON.stringify(query.data.current_import?.details)}`}
@@ -730,6 +735,55 @@ function StatementReview({
           onImported={onImported}
         />
       </div>
+    </div>
+  )
+}
+
+function RefreshStoredReading({
+  data,
+  onImported,
+}: {
+  data: Proposal
+  onImported: (result?: StatementImportReceipt) => void
+}) {
+  const client = useQueryClient()
+  const update = useMutation({
+    retry: false,
+    mutationFn: async () => {
+      const result = receipt.parse(
+        await fetchAPI(
+          `/api/financial/statement-import/sources/${data.current_import!.source_document_id}/refresh-reading?case_id=${data.case_id}`,
+          {
+            method: "POST",
+            body: { expected_revision: data.current_import!.revision },
+          }
+        )
+      )
+      if (
+        result.case_id !== data.case_id ||
+        result.evidence_file_id !== data.evidence_file_id
+      )
+        throw Error("The updated reading does not belong to this statement.")
+      return result
+    },
+    onSuccess: (result) => {
+      void client.invalidateQueries()
+      onImported({ ...result, filename: data.filename })
+    },
+  })
+  return (
+    <div className="rounded border p-3 space-y-2">
+      <p>
+        The updated reader identifies {data.transaction_count} payments and the
+        statement balances. Update this import to replace the empty records. Its
+        earlier reading stays in history.
+      </p>
+      <Button disabled={update.isPending} onClick={() => update.mutate()}>
+        {update.isPending
+          ? "Updating saved reading…"
+          : "Update saved reading and open results"}
+      </Button>
+      {update.isError && <p role="alert">{update.error.message}</p>}
     </div>
   )
 }
@@ -1518,7 +1572,9 @@ function EditableStatement({
       (showExcluded ||
         !r.excluded ||
         originals.get(r.id)?.kind === "balance") &&
-      (!onlyIssues || originals.get(r.id)?.issues.length || changed(r))
+      (!onlyIssues ||
+        rowProblems(r).length > 0 ||
+        (!!originals.get(r.id)?.issues.length && !r.reason && !changed(r)))
   )
   const currentCorrectionPage = Math.min(
     correctionPage,
@@ -2576,7 +2632,10 @@ function EditableStatement({
                                 }
                               />
                             </label>
-                            {original.issues.map((s, i) => (
+                            {(!r.reason && !changed(r)
+                              ? original.issues
+                              : []
+                            ).map((s, i) => (
                               <p
                                 key={i}
                                 className="text-amber-700 dark:text-amber-300 mt-1"
@@ -2584,6 +2643,25 @@ function EditableStatement({
                                 {s}
                               </p>
                             ))}
+                            {!r.excluded &&
+                              original.issues.length > 0 &&
+                              !r.reason &&
+                              !changed(r) &&
+                              rowProblems(r).length === 0 && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="mt-2"
+                                  onClick={() =>
+                                    update(r.id, {
+                                      reason:
+                                        "Checked against the original statement.",
+                                    })
+                                  }
+                                >
+                                  Mark checked
+                                </Button>
+                              )}
                             {r.manual_page && (
                               <label className="block mt-2">
                                 Source page
@@ -2860,7 +2938,7 @@ function EditableStatement({
           </label>
           <div>
             <p>Statement currency</p>
-            <strong>{data.currency}</strong>
+            <strong>{data.current_import?.currency || data.currency}</strong>
             <p className="text-sm">{data.metadata.period}</p>
           </div>
         </div>

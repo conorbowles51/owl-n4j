@@ -25,8 +25,9 @@ def correct_transaction(session, *, case_id, transaction_id, amount_minor, direc
                         expected_revision, actor, reason, resolve_path=None, fields=None):
     """Commit an exact replacement or roll back every effect, including grading."""
     try:
-        if not isinstance(actor, Actor) or not isinstance(reason, str) or not reason.strip():
-            raise CorrectionPreviewError("A named actor and a stated reason are required.")
+        if not isinstance(actor, Actor) or not isinstance(reason, str):
+            raise CorrectionPreviewError("A named actor is required to save a correction.")
+        reason = reason.strip() or 'Transaction values corrected by the investigator.'
         preview = preview_amount_correction(session, case_id=case_id, transaction_id=transaction_id,
                                             amount_minor=amount_minor, direction=direction, resolve_path=resolve_path, fields=fields)
         if preview["document_revision"] != expected_revision:

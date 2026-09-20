@@ -1,10 +1,11 @@
 """Detect the currency of one statement from its own saved source cells."""
 import re
+import unicodedata
 
 from services.financial.money import get_currency, MoneyError
 
 
-_DOLLARS = {'USD', 'CAD', 'AUD', 'NZD', 'SGD', 'HKD', 'BBD', 'BSD', 'BMD', 'XCD', 'FJD', 'TTD', 'JMD'}
+_DOLLARS = {'USD', 'MXN', 'CAD', 'AUD', 'NZD', 'SGD', 'HKD', 'BBD', 'BSD', 'BMD', 'XCD', 'FJD', 'TTD', 'JMD'}
 _SYMBOLS = {'€': {'EUR'}, '£': {'GBP'}, '$': _DOLLARS, '¥': {'JPY', 'CNY'}}
 _PREFIXES = {'US$': 'USD', 'CA$': 'CAD', 'C$': 'CAD', 'AU$': 'AUD', 'A$': 'AUD',
              'NZ$': 'NZD', 'HK$': 'HKD', 'S$': 'SGD'}
@@ -12,7 +13,9 @@ _MARKER = r'(?:[A-Z]{3}|US\$|CA\$|C\$|AU\$|A\$|NZ\$|HK\$|S\$|[€£$¥])'
 _AMOUNT = re.compile(r'^[=(+\-−\s]*(?P<marker>' + _MARKER + r')\s*[+\-−]?\s*\d[\d.,\s]*\)?$')
 _SUFFIX = re.compile(r'^[+\-−(\s]*\d[\d.,\s]*\)?\s*(?P<marker>' + _MARKER + r')$')
 _LABEL = re.compile(r'^(?:(?:(?:statement|account)\s+)?currency|moneda)\s*:?\s*(.*)$', re.I)
-_CURRENCY_NAMES = {'EURO': 'EUR', 'EUROS': 'EUR', 'PESOS MEXICANOS': 'MXN'}
+_CURRENCY_NAMES = {'EURO': 'EUR', 'EUROS': 'EUR', 'PESOS MEXICANOS': 'MXN',
+    'DOLARES AMERICANOS': 'USD', 'DOLARES ESTADOUNIDENSES': 'USD', 'US DOLLARS': 'USD',
+    'U.S. DOLLARS': 'USD', 'MEXICAN PESOS': 'MXN'}
 _US_LAYOUTS = {'capital-one-card', 'merrick-card', 'andrews-share-statement'}
 
 
@@ -34,12 +37,19 @@ def detect_statement_currency(sources, *, layout_id=None, header_text=''):
     rows = [[c['expected_text'].strip() for c in row['cells']]
             for source in sources for row in source['rows']]
     rows.extend([[line.strip()] for line in header_text.splitlines()])
+    mexican_issuer = layout_id == 'bbva-mexico-cash-management' or any(
+        re.search(r'BBVA (?:MEXICO|BANCOMER),? S\.?A\.?', ' '.join(cells), re.I) for cells in rows)
     labelled = set()
     for cells in rows:
         joined = ' '.join(cells)
         for candidate in [joined, *cells]:
             match = _LABEL.fullmatch(candidate)
             value = match[1].strip().upper() if match else ''
+            value = ''.join(c for c in unicodedata.normalize('NFKD', value) if not unicodedata.combining(c))
+            value = ' '.join(value.split())
+            if mexican_issuer:
+                value = {'PESOS': 'MXN', 'MONEDA NACIONAL': 'MXN', 'NACIONAL': 'MXN',
+                    'M.N.': 'MXN', 'DOLAR': 'USD', 'DOLARES': 'USD'}.get(value, value)
             if match and (code := _code(_CURRENCY_NAMES.get(value, value))):
                 labelled.add(code)
     if len(labelled) == 1:

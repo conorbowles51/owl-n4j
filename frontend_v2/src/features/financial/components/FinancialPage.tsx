@@ -789,24 +789,30 @@ function FinancialPageContent() {
                 </StatementRegister>
               )}
             </div>
-            <details className="rounded border p-3 space-y-3">
-              <summary className="cursor-pointer font-medium">
-                Checks across all accounts
-              </summary>
-              <ErrorBoundary level="section">
-                <StatementChecksPanel
-                  onReviewStatement={reviewStatement}
-                  key={`checks:${caseId}`}
-                  caseId={caseId}
-                />
-              </ErrorBoundary>
-              <ErrorBoundary level="section">
-                <StatementCoveragePanel
-                  key={`coverage:${caseId}`}
-                  caseId={caseId}
-                />
-              </ErrorBoundary>
-            </details>
+            {reviewingAccounts && (
+              <details className="rounded border p-3 space-y-3">
+                <summary className="cursor-pointer font-medium">
+                  Account checks
+                </summary>
+                <p className="text-sm text-muted-foreground">
+                  Check balances and missing statement periods across this case.
+                  To review one statement, open it from Statement files.
+                </p>
+                <ErrorBoundary level="section">
+                  <StatementChecksPanel
+                    onReviewStatement={reviewStatement}
+                    key={`checks:${caseId}`}
+                    caseId={caseId}
+                  />
+                </ErrorBoundary>
+                <ErrorBoundary level="section">
+                  <StatementCoveragePanel
+                    key={`coverage:${caseId}`}
+                    caseId={caseId}
+                  />
+                </ErrorBoundary>
+              </details>
+            )}
           </div>
         </RetainedFinancialTab>
 

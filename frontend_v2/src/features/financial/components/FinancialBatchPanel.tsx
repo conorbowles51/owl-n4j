@@ -85,6 +85,10 @@ const listSchema = z.object({
       status: z.string(),
       created_at: z.string(),
       file_count: z.number(),
+      created_by: z.string().optional(),
+      filenames: z.array(z.string()).optional(),
+      checked_files: z.number().optional(),
+      failed_files: z.number().optional(),
     })
   ),
 })
@@ -107,6 +111,7 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
   const { canEdit, canUpload } = useFinancialAccess()
   const user = useAuthStore((state) => state.user)
   const [error, setError] = useState("")
+  const [visibleBatches, setVisibleBatches] = useState(8)
   const prefix = `/api/financial/statement-import/batches`
   const query = useQuery({
     queryKey: ["financial-batch", caseId, batchId, offset, onlyProblems],
@@ -221,22 +226,70 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
       >
         <h3 className="font-semibold">Processing batches</h3>
         <p className="text-sm text-muted-foreground">
-          Send files or folders from Evidence to prepare statements together and
-          import the ready ones in one step.
+          Each batch is a separate preparation run. Open a batch to continue its
+          saved review. The most recent run is first.
         </p>
         {batches.isError && <p role="alert">{batches.error.message}</p>}
-        {batches.data?.slice(0, 8).map((batch) => (
-          <Button
+        {batches.data?.slice(0, visibleBatches).map((batch, index) => (
+          <div
             key={batch.id}
+            className="flex flex-wrap items-center justify-between gap-3 rounded border p-3"
+          >
+            <div className="min-w-0 space-y-1">
+              <p className="font-medium">
+                {batch.file_count} files ·{" "}
+                {new Date(batch.created_at).toLocaleString()}
+                {index === 0 && (
+                  <span className="ml-2 text-xs text-muted-foreground">
+                    Latest batch
+                  </span>
+                )}
+              </p>
+              <p className="text-sm text-muted-foreground">
+                Batch {batch.id.slice(0, 8)}
+                {batch.created_by
+                  ? ` · Started by ${batch.created_by}`
+                  : ""} ·{" "}
+                {batch.status === "preparing"
+                  ? "Processing continues"
+                  : "Available for review"}
+              </p>
+              {batch.checked_files !== undefined && (
+                <p className="text-sm">
+                  {batch.checked_files} of {batch.file_count} files checked
+                  {batch.failed_files
+                    ? ` · ${batch.failed_files} files could not be read`
+                    : ""}
+                </p>
+              )}
+              {!!batch.filenames?.length && (
+                <p className="max-w-3xl break-words text-xs text-muted-foreground">
+                  {batch.filenames.join(" · ")}
+                  {batch.file_count > batch.filenames.length
+                    ? ` · and ${batch.file_count - batch.filenames.length} more`
+                    : ""}
+                </p>
+              )}
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              aria-label={`Open batch ${batch.id.slice(0, 8)}`}
+              onClick={() => change(batch.id)}
+            >
+              Open batch
+            </Button>
+          </div>
+        ))}
+        {batches.data && batches.data.length > visibleBatches && (
+          <Button
             variant="outline"
             size="sm"
-            onClick={() => change(batch.id)}
+            onClick={() => setVisibleBatches((count) => count + 8)}
           >
-            {batch.file_count} files ·{" "}
-            {new Date(batch.created_at).toLocaleString()} ·{" "}
-            {batch.status === "preparing" ? "Processing" : "Open batch"}
+            Show older batches
           </Button>
-        ))}
+        )}
       </section>
     )
   if (itemId)

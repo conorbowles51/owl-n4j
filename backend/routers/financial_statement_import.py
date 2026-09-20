@@ -94,6 +94,24 @@ class StatementCoverageRequest(_Contract):
     period_end: str = Field(default='', max_length=32)
 
 
+class RefreshStoredReadingRequest(_Contract):
+    expected_revision: _Digest
+
+
+@router.post('/sources/{source_id}/refresh-reading', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
+def refresh_stored_reading(source_id: UUID, body: RefreshStoredReadingRequest, case_id: UUID = Query(...),
+        user=Depends(get_current_db_user), db: Session = Depends(get_db)):
+    from services.financial.legacy_statement_refresh import refresh_legacy_import
+    try:
+        return refresh_legacy_import(session_factory=sessionmaker(bind=db.get_bind()), case_id=case_id,
+            source_id=source_id, expected_revision=body.expected_revision, actor=actor_from_user(user), resolve_path=_resolve_stored_path)
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception:
+        logger.exception('Stored statement reading could not be updated')
+        raise HTTPException(status_code=500, detail='The update could not be confirmed. Retry to check its result without importing twice.')
+
+
 @router.post('/{evidence_file_id}/coverage-check')
 def check_import_coverage(evidence_file_id: UUID, body: StatementCoverageRequest, case_id: UUID = Query(...),
                           db: Session = Depends(get_db)):
@@ -397,7 +415,10 @@ def list_financial_batches(case_id: UUID = Query(...), db: Session = Depends(get
     from sqlalchemy import select
     from postgres.models.financial_import_batches import FinancialImportBatch
     batches=db.scalars(select(FinancialImportBatch).where(FinancialImportBatch.case_id==case_id).order_by(FinancialImportBatch.created_at.desc()).limit(100))
-    return dict(case_id=str(case_id),batches=[dict(id=str(b.id),status=b.status,created_at=b.created_at.isoformat(),file_count=len(b.files)) for b in batches])
+    return dict(case_id=str(case_id),batches=[dict(id=str(b.id),status=b.status,created_at=b.created_at.isoformat(),file_count=len(b.files),
+        created_by=(b.actor or {}).get('name', ''), filenames=[f['filename'] for f in b.files[:3]],
+        checked_files=sum(f['status'] == 'checked' for f in b.files),
+        failed_files=sum(f['status'] == 'error' for f in b.files)) for b in batches])
 
 
 @router.get('/batches/{batch_id}')
@@ -457,7 +478,7 @@ def get_financial_batch_item(batch_id: UUID,item_id: UUID,case_id: UUID=Query(..
         item=db.scalar(select(FinancialImportBatchItem).where(FinancialImportBatchItem.batch_id==batch_id,FinancialImportBatchItem.id==item_id))
         if item is None: raise PdfMappingError('Statement not found in this batch.',404)
         item=import_batches.checked_batch_items(db,case_id,[item])[0]
-        return dict(id=str(item.id),file_id=str(item.file_id),statement_id=item.statement_key or None,status=item.status,review_request=item.review_request,review_revision=import_batches._digest(item.review_request or {}),**item.summary)
+        return dict(id=str(item.id),file_id=str(item.file_id),statement_id=item.statement_key or None,status=item.status,review_request=item.review_request,review_revision=item.review_revision,**item.summary)
     except PdfMappingError as exc:
         raise HTTPException(status_code=exc.status_code,detail=str(exc)) from exc
 

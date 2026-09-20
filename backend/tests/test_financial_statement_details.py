@@ -111,6 +111,71 @@ class StatementDetailsTests(TestCase):
             db.commit()
         with self.assertRaisesRegex(PdfMappingError, 'current imported'): self.save(request)
 
+    def test_currency_change_preserves_values_categories_exclusions_and_originals(self):
+        from postgres.models.financial import AdjudicationEvent
+        with self.f.SessionLocal() as db:
+            source = db.get(FinancialSourceDocument, self.source_id)
+            original = deepcopy(source.metadata_['statement_import_request'])
+            rows = list(db.scalars(select(FinancialTransaction).order_by(FinancialTransaction.id)))
+            rows[0].metadata_ = {'investigation_labels': {'category': 'Fees', 'from_name': 'Sender', 'version': 1}}
+            rows[0].ledger_status = 'quarantined'; rows[0].quarantine_reason = 'adjudicated'
+            prior = {row.id: (row.ref_id, row.amount_minor, row.currency) for row in rows}
+            db.commit()
+        request = self.request(currency='MXN')
+        saved = self.save(request)
+        self.assertEqual(saved['currency'], 'MXN')
+        self.assertEqual(self.save(request), saved)
+        self.assertEqual(self.f.preview()['current_import']['currency'], 'MXN')
+        with self.f.SessionLocal() as db:
+            source = db.get(FinancialSourceDocument, self.source_id)
+            self.assertEqual(source.metadata_['statement_import_request'], original)
+            current = list(db.scalars(select(FinancialTransaction).where(FinancialTransaction.superseded_by_id.is_(None))))
+            self.assertEqual(len(current), len(prior))
+            self.assertTrue(all(row.currency == 'MXN' for row in current))
+            for old_id, (reference, amount, currency) in prior.items():
+                old = db.get(FinancialTransaction, old_id)
+                self.assertEqual((old.ref_id, old.amount_minor, old.currency), (reference, amount, currency))
+                self.assertEqual(old.ledger_status, 'superseded')
+                new = db.get(FinancialTransaction, old.superseded_by_id)
+                self.assertEqual(new.amount_minor, amount)
+                self.assertEqual(new.metadata_, old.metadata_)
+            self.assertEqual(sum(row.ledger_status == 'quarantined' for row in current), 1)
+            period = db.get(FinancialStatementPeriod, UUID(saved['period_id']))
+            self.assertEqual(read_import_controls(period, source, self.f.file)['currency'], 'MXN')
+            self.assertEqual(len(list(db.scalars(select(AdjudicationEvent).where(
+                AdjudicationEvent.decision == 'correct_transaction')))), len(prior))
+        restored = self.save(self.request(currency='EUR'))
+        self.assertEqual(restored['currency'], 'EUR')
+        self.assertEqual(self.read(), restored)
+
+    def test_currency_late_failure_rolls_back_rows_and_period(self):
+        before = self.read()
+        with self.f.SessionLocal() as db:
+            ids = list(db.scalars(select(FinancialTransaction.id).order_by(FinancialTransaction.id)))
+        with patch('services.financial.reconcile.reconcile_period', side_effect=RuntimeError('injected')):
+            with self.assertRaises(RuntimeError): self.save(self.request(currency='MXN'))
+        self.assertEqual(self.read(), before)
+        with self.f.SessionLocal() as db:
+            self.assertEqual(list(db.scalars(select(FinancialTransaction.id).order_by(FinancialTransaction.id))), ids)
+
+    def test_currency_can_be_chosen_for_an_import_with_no_period(self):
+        # Unknown-currency imports retain records but could previously never add
+        # balances because the editor hid its fields until a period existed.
+        with self.f.SessionLocal() as db:
+            for row in db.scalars(select(FinancialTransaction)):
+                db.delete(row)
+            period = db.scalar(select(FinancialStatementPeriod))
+            db.delete(period)
+            source = db.get(FinancialSourceDocument, self.source_id)
+            metadata = deepcopy(source.metadata_)
+            metadata.pop('statement_import_controls', None); metadata.pop('statement_import_controls_sha256', None)
+            source.metadata_ = metadata
+            db.commit()
+        saved = self.save(self.request(currency='MXN', opening=dict(amount_minor='0', page=1), closing=dict(amount_minor='0', page=1)))
+        self.assertIsNotNone(saved['period_id'])
+        self.assertEqual(saved['currency'], 'MXN')
+        self.assertEqual(saved['balances']['opening']['amount_minor'], '0')
+
 
 class ManualBalanceImportTests(TestCase):
     def test_enter_missing_balances_before_import_without_creating_payments(self):

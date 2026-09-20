@@ -1272,6 +1272,59 @@ it("requires an explicit replacement decision and reason for an existing import"
   })
 })
 
+it("updates an eligible empty legacy import and opens its usable results", async () => {
+  const base = vi.mocked(fetchAPI).getMockImplementation()!
+  vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
+    if (
+      String(url).includes("/refresh-reading") &&
+      options?.method === "POST"
+    ) {
+      expect(options.body).toEqual({ expected_revision: "b".repeat(64) })
+      return {
+        case_id: "case",
+        evidence_file_id: "file",
+        source_document_id: "updated",
+        account_id: "saved-account",
+        transaction_count: 1,
+        record_count: 1,
+        incomplete_count: 0,
+        applied: true,
+      } as never
+    }
+    if (String(url).includes("/statement-import/") && !options?.method)
+      return {
+        ...data,
+        current_import: {
+          source_document_id: "previous",
+          account_id: "saved-account",
+          evidence_file_id: "file",
+          revision: "b".repeat(64),
+          transaction_count: 0,
+          incomplete_count: 250,
+          refresh_available: true,
+        },
+      } as never
+    return base(url, options)
+  })
+  const done = mount()
+  await open(false)
+  expect(screen.getByText(/updated reader identifies 1 payments/)).toBeVisible()
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: "Update saved reading and open results",
+    })
+  )
+  await waitFor(() =>
+    expect(done).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source_document_id: "updated",
+        transaction_count: 1,
+        incomplete_count: 0,
+      })
+    )
+  )
+})
+
 it("does not offer to import the same active reading twice", async () => {
   const base = vi.mocked(fetchAPI).getMockImplementation()!
   vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
@@ -1635,6 +1688,40 @@ it("allows importing an unchanged flagged reading without an acknowledgement", a
         id: "1:0:1",
         reason: "",
       },
+    ],
+  })
+})
+
+it("marks a valid flagged row checked without typing a reason and retains that decision on import", async () => {
+  const flagged = structuredClone(data)
+  flagged.rows[1].issues = [
+    "Check the inferred date against the printed statement period.",
+  ]
+  const base = vi.mocked(fetchAPI).getMockImplementation()!
+  vi.mocked(fetchAPI).mockImplementation((url, options) =>
+    url.includes("/statement-import/file?")
+      ? Promise.resolve(flagged as never)
+      : base(url, options)
+  )
+  const done = mount()
+  await open()
+  fireEvent.click(
+    screen.getByRole("button", { name: "Mark checked" })
+  )
+  expect(
+    screen.queryByRole("button", { name: "Mark checked" })
+  ).not.toBeInTheDocument()
+  fireEvent.click(
+    screen.getByRole("button", { name: "Hide corrections and import choices" })
+  )
+  fireEvent.click(
+    screen.getByRole("button", { name: "Confirm import of 1 transactions" })
+  )
+  await waitFor(() => expect(done).toHaveBeenCalledTimes(1))
+  expect(sent[0]).toMatchObject({
+    rows: [
+      { id: "1:0:0" },
+      { id: "1:0:1", reason: "Checked against the original statement." },
     ],
   })
 })

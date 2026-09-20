@@ -124,6 +124,7 @@ def check_proposed_rows(proposal, edits):
     """Overlay editable values without accepting client-supplied source controls."""
     from services.financial.pdf_candidates import PdfMappingError
     from services.financial.statement_review_checks import check_statement_rows
+    from services.financial.import_issues import row_reviewed
     reviewed = {r['id']: r for r in edits}
     originals = {r['id']: r for r in proposal['rows']}
     if len(reviewed) != len(edits) or not originals.keys() <= reviewed.keys():
@@ -133,7 +134,7 @@ def check_proposed_rows(proposal, edits):
         edit = reviewed[original['id']]
         fields = original['fields']
         effective.append({**original, 'excluded': edit['excluded'],
-            'issues': [] if edit.get('reason', '').strip() else original.get('issues', []),
+            'issues': [] if row_reviewed(original, edit) else original.get('issues', []),
             'fields': {**fields, **{k: edit[k] for k in ('date', 'description', 'direction', 'amount_minor')
                                   if k in edit and not (k == 'description' and original['kind'] in ('balance', 'statement_total'))},
                        'balance': edit.get('balance_minor', fields.get('balance')),

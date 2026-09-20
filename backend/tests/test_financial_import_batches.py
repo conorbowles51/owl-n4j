@@ -16,6 +16,39 @@ from tests.test_financial_statement_import import StatementImportTests as Fixtur
 
 
 class BatchImportTests(TestCase):
+    def test_legacy_saved_review_upgrades_and_imports_without_losing_edits(self):
+        from unittest.mock import patch
+        from services.financial.statement_progress import save_progress
+        batch = self.create(); self.advance(batch)
+        with patch('services.financial.statement_import.VERSION', 'statement-review-v28'):
+            old = self.f.preview()
+            raw = service.initial_request(old)
+            raw['holder'] = 'Saved investigator correction'
+            raw['account_number'] = '00123456789'
+            next(row for row in raw['rows'] if not row['excluded'])['description'] = 'Saved description'
+            with self.f.SessionLocal() as db:
+                save_progress(db, case_id=self.f.case.id, evidence_file_id=self.f.file.id,
+                    request=StatementReviewDraft.model_validate(raw), expected_review_revision='initial', actor=self.f.actor)
+                item = db.scalar(select(Item).where(Item.batch_id == batch))
+                item.review_request = raw
+                item.summary = {**item.summary, **service.assess(old, raw)[1], 'review_model': 'older'}
+                db.commit()
+        current = self.f.preview()
+        self.assertNotEqual(current['revision'], old['revision'])
+        self.assertEqual(current['saved_review']['request']['expected_revision'], current['revision'])
+        self.assertEqual(current['saved_review']['request']['holder'], raw['holder'])
+        status = self.status(batch)
+        self.assertTrue(status['items'][0]['can_import'])
+        with self.f.SessionLocal() as db:
+            service.queue_import(db, case_id=self.f.case.id, batch_id=batch, expected_revision=status['ready_revision'], actor=self.f.actor)
+        self.advance(batch)
+        self.assertEqual(self.status(batch)['counts']['imported'], 1)
+        with self.f.SessionLocal() as db:
+            from postgres.models.financial import FinancialSourceDocument
+            imported = db.scalar(select(FinancialSourceDocument).where(FinancialSourceDocument.document_type == 'statement_review'))
+            self.assertEqual(imported.metadata_['statement_import_request']['holder'], raw['holder'])
+            self.assertTrue(any(row.description == 'Saved description' for row in db.scalars(select(FinancialTransaction))))
+
     def test_saved_holder_correction_clears_the_batch_warning_for_balance_only_statement(self):
         batch = self.create(); self.advance(batch)
         item = self.status(batch)['items'][0]

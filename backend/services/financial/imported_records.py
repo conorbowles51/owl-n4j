@@ -3,7 +3,7 @@ from copy import deepcopy
 from datetime import date, datetime, timezone
 from types import SimpleNamespace
 from uuid import UUID
-from sqlalchemy import select
+from sqlalchemy import select, func
 from pydantic import BaseModel, ConfigDict, Field
 from postgres.models.financial import FinancialSourceDocument, FinancialStatementPeriod, FinancialTransaction
 from postgres.models.evidence import EvidenceFile
@@ -24,7 +24,8 @@ def imported_records(session, *, case_id, account_id=None, start_date=None, end_
     query = select(FinancialSourceDocument.id, FinancialSourceDocument.evidence_file_id,
         FinancialSourceDocument.metadata_['statement_account_id'].as_string(),
         FinancialSourceDocument.metadata_['statement_incomplete_records'],
-        FinancialSourceDocument.metadata_['statement_import_request']['currency'].as_string(),
+        func.coalesce(FinancialSourceDocument.metadata_['statement_details_review']['currency'].as_string(),
+            FinancialSourceDocument.metadata_['statement_import_request']['currency'].as_string()),
         EvidenceFile.original_filename).join(EvidenceFile, EvidenceFile.id == FinancialSourceDocument.evidence_file_id).where(
             FinancialSourceDocument.case_id == case_id, EvidenceFile.case_id == case_id,
             FinancialSourceDocument.status == 'admitted').order_by(FinancialSourceDocument.id)
@@ -82,8 +83,8 @@ def complete_record(*, session_factory, case_id, source_id, request, actor):
     from services.financial.transactions import record_transactions
     from services.financial.reconcile import reconcile_period
     currency = usable_currency(request.currency)
-    if not currency or request.row.excluded or not request.row.reason.strip():
-        raise PdfMappingError('Enter the missing values and a reason for the correction.', 422)
+    if not currency or request.row.excluded:
+        raise PdfMappingError('Enter the missing values before saving this payment.', 422)
     with session_factory() as session:
         exists = session.scalar(select(FinancialSourceDocument.id).where(FinancialSourceDocument.id == source_id,
             FinancialSourceDocument.case_id == case_id, FinancialSourceDocument.status == 'admitted'))
@@ -134,7 +135,9 @@ def complete_record(*, session_factory, case_id, source_id, request, actor):
                 correction_currency=currency, version=request.version + 1, corrected_by=str(actor.user_id),
                 corrected_at=datetime.now(timezone.utc).isoformat())
             corrected_rows = {r['id']: r['correction'] for r in metadata['statement_incomplete_records'] if r.get('correction')}
-            reviewed = {**raw, 'rows':[corrected_rows.get(r['id'], r) for r in raw['rows']]}
+            from services.financial.statement_details import saved_details, saved_currency
+            reviewed = {**raw, **saved_details(document), 'currency': saved_currency(document) or raw.get('currency', ''),
+                'rows':[corrected_rows.get(r['id'], r) for r in raw['rows']]}
             from services.financial.review_arithmetic import check_proposed_rows
             from services.financial.import_issues import retained_issues
             checks = check_proposed_rows(metadata['statement_import_original'], reviewed['rows'])

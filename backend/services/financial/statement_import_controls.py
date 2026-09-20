@@ -47,13 +47,15 @@ def read_import_controls(period, document, evidence):
             or _digest(request) != metadata['statement_import_request_sha256']):
         raise ValueError('The retained balance review has changed.')
     original_account_id = str(period.account_id)
+    original_currency = period.currency
     if metadata.get('statement_details_review'):
         reviewed_controls(period, document, None)  # Validate current binding before reading its history.
         original_account_id = metadata['statement_details_history'][0]['before']['account_id']
+        original_currency = metadata['statement_details_history'][0]['before']['currency']
     if (record['period_id'] != str(period.id) or record['account_id'] != original_account_id
             or record['source_document_id'] != str(document.id)
-            or record['currency'] != period.currency or request['currency'] != period.currency
-            or original['currency'] != period.currency
+            or record['currency'] != original_currency or request['currency'] != original_currency
+            or original['currency'] != original_currency
             or original['case_id'] != str(period.case_id)
             or original['evidence_file_id'] != str(evidence.id)
             or record['balance_convention'] not in ('liability_owed', 'asset_balance')

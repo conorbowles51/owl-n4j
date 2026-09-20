@@ -31,6 +31,19 @@ def usable_balance(value, convention=None):
     return minimum <= int(value) <= 9223372036854775807
 
 
+def row_reviewed(original, row):
+    """A saved value correction is a review even when its optional note is blank."""
+    value = row if isinstance(row, dict) else row.model_dump()
+    if value.get('reason', '').strip():
+        return True
+    fields = original.get('fields', {})
+    baseline = dict(date=fields.get('date') or fields.get('booking_date') or fields.get('value_date') or '',
+        description=fields.get('description', ''), counterparty=fields.get('counterparty', ''),
+        amount_minor=fields.get('amount_minor') or ('0' if original.get('excluded') else ''),
+        direction=fields.get('direction'), balance_minor=fields.get('balance'))
+    return any(key in value and value[key] != expected for key, expected in baseline.items())
+
+
 def incomplete_fields(row, request):
     from services.financial.statement_import import ImportRow
     problems = []
@@ -85,7 +98,7 @@ def retained_issues(proposal, request, *, arithmetic=None, coverage=None):
                 page=original.get('page_number', row.manual_page),
                 message=('The party name is too long to save as a transaction. Correct the name against the original.' if field == 'counterparty' else
                     f'The {field} is missing or unreadable. The record is retained outside calculated totals.')))
-        if not row.reason.strip():
+        if not row_reviewed(original, row):
             for message in original.get('issues', []):
                 issues.append(dict(kind='reading', row_id=row.id, page=original.get('page_number'), message=message))
     for field, label in [('holder', 'account holder'), ('account_number', 'account number')]:

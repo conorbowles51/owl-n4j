@@ -76,7 +76,8 @@ export function ImportedStatementDetails({
           </Button>
           {saved && (
             <p role="status">
-              Changes saved. The account details and balance checks are updated.
+              Changes saved. The statement details and balance checks are
+              updated.
             </p>
           )}
         </>
@@ -119,7 +120,7 @@ function DetailsForm({
   const client = useQueryClient()
   const [scope, applyScope] = useInvestigationScope(data.case_id)
   const [details, setDetails] = useState(data.details)
-  const currency = data.currency || ""
+  const [currency, setCurrency] = useState(data.currency || "")
   const initialAmount = (role: (typeof roles)[number]) =>
     data.balances[role].amount_minor === null
       ? ""
@@ -171,7 +172,12 @@ function DetailsForm({
           `/api/financial/statement-import/sources/${data.source_document_id}/details?case_id=${data.case_id}`,
           {
             method: "PUT",
-            body: { expected_revision: data.revision, ...details, ...changes },
+            body: {
+              expected_revision: data.revision,
+              ...details,
+              ...changes,
+              ...(currency !== data.currency && currency ? { currency } : {}),
+            },
           }
         )
       )
@@ -254,7 +260,31 @@ function DetailsForm({
               />
             </label>
           ))}
-          {data.period_id && currency && (
+          <label className="block text-sm">
+            Statement currency
+            <select
+              aria-label="Saved statement currency"
+              value={currency}
+              onChange={(event) => setCurrency(event.target.value)}
+              className="block w-full rounded border bg-background p-2"
+            >
+              {!currency && <option value="">Choose currency</option>}
+              {data.currency &&
+                !["USD", "MXN", "EUR"].includes(data.currency) && (
+                  <option value={data.currency}>{data.currency}</option>
+                )}
+              <option value="USD">USD — US dollars</option>
+              <option value="MXN">MXN — Mexican pesos</option>
+              <option value="EUR">EUR — Euros</option>
+            </select>
+          </label>
+          {currency !== data.currency && currency && (
+            <p role="status" className="text-sm">
+              All payments and balances in this statement will use {currency}.
+              The numbers stay the same; no exchange-rate conversion is applied.
+            </p>
+          )}
+          {currency && (
             <>
               <p className="text-sm">
                 Balances in {currency}.{" "}

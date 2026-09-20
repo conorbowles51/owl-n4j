@@ -312,7 +312,7 @@ If an import contains incomplete records, the file list counts them separately f
 
 ### Set the currency for several statements
 
-In the batch, select **Set currency for selected statements**. Search by filename, account or dates, then select individual statements or **Select all [number] matching statements**. This selection covers every page of matching results. Choose USD, MXN or EUR and select **Apply [currency] to [number] statements**. Hidden selections remain selected and are counted explicitly. Saved account and row corrections are kept. This changes the currency label without converting amounts. It applies to unimported statements; an already imported statement requires a corrected replacement import to change its currency.
+In the batch, select **Set currency for selected statements**. Search by filename, account or dates, then select individual statements or **Select all [number] matching statements**. This selection covers every page of matching results. Choose USD, MXN or EUR and select **Apply [currency] to [number] statements**. Hidden selections remain selected and are counted explicitly. Saved account and row corrections are kept. This changes the currency label without converting amounts. This batch action applies to unimported statements. For an imported statement, use **Edit account and balances** as described below.
 
 ### Enter missing balances before import
 
@@ -322,14 +322,21 @@ Select **Save statement balances**. In a batch, this saves the statement for the
 
 Text that has not been identified as a payment stays under **Other extracted page text**, outside the transaction count. If it contains a missed payment, use **Add a missed transaction** or the correction controls after comparing the PDF. A matching balance does not prove that every payment has been captured.
 
-### Add or correct account details and balances after import
+### Correct account details, currency and balances after import
 
 1. From a statement's balance check, select **Open statement and balances**, then **Edit account and balances**. The original PDF stays beside the fields. You can also select **Edit account and balances** in an already imported statement's review.
 2. Enter the account holder, account number or bank. Account numbers keep leading zeros.
-3. Enter the printed opening or closing balance, then choose its PDF page. Leave a balance blank when it is unknown; enter **0.00** only when the statement prints zero. For credit cards, enter the printed amount owed.
-4. Select **Save changes**. A confirmation appears in the same view. Reopen the editor to check the saved values. These edits preserve the existing payments and retain the earlier details; a reason is not required for each field.
+3. If needed, choose USD, MXN or EUR under **Statement currency**. This corrects the denomination without converting the numeric amounts. Existing payment categories and exclusions are kept. A currency choice also makes an incomplete record usable when currency was its only missing field.
+4. Enter the printed opening or closing balance, then choose its PDF page. Leave a balance blank when it is unknown; enter **0.00** only when the statement prints zero. For credit cards, enter the printed amount owed.
+5. Select **Save changes**. A confirmation appears in the same view. Reopen the editor to check the saved values. The earlier details and readings remain in history; a reason is not required for each field. Transactions, totals and balance checks use the saved currency.
 
 Before import, **Save account details** saves your current review, including the account number you entered. After import, use the saved-details editor above. You do not need to read the PDF again to correct an account number or balance.
+
+### Recover an older BBVA import containing empty records
+
+When an older BBVA Cash Management import contains only incomplete records and Loupe can now recognise its layout, its statement review offers **Update saved reading and open results**. The preview states the recognised payment count. Select the action to update the saved import using the PDF already in the case, then open its current results. The earlier reading stays in history and the batch count follows the replacement. You do not need to upload the document again.
+
+This shortcut is offered only when no saved payments or manual row or balance corrections would be displaced. Other previously edited imports need a source comparison. Repeating the same request after a connection failure does not import twice.
 
 If the extraction missed transactions, open **Read the statement again**, choose the reading method and select **Reprocess statement**. Compare the new reading, then explicitly replace the earlier import. Earlier account and balance corrections remain available in **Compare earlier values**; they are not silently assigned to new extraction rows.
 
@@ -773,7 +780,7 @@ If a Merrick card-payment row has lost its minus sign, Loupe asks you to check i
 
 Unchanged reading flags, missing account details and arithmetic differences do not by themselves stop import. Check the message beside the button for the action actually needed:
 
-- Routine pre-import edits and exclusion choices need no written reason. The original values, your corrections and who saved them are recorded automatically.
+- Routine statement edits, later transaction corrections and completion of missing fields need no written reason. Notes are optional; the original values, your corrections and who saved them are recorded automatically. Use **Mark checked** when a flagged transaction is already correct. Its resolved reading flag will no longer recur; any genuinely missing value or arithmetic difference stays visible.
 - If there are no payments selected, **Save statement balances** is available when at least one printed opening or closing balance has a usable amount. Otherwise select records or correct the reading.
 - If the source or saved review changed, reload and compare it with your saved corrections. Loupe does not overwrite someone else's changes.
 - If you are replacing an existing import, identify the import and explain the replacement.
@@ -785,7 +792,7 @@ An interrupted response does not mean the import failed. Reopen the statement or
 
 1. Open **Transactions**. Expand the amber message showing how many imported records have missing values.
 2. Select **Open record**. The original and the retained fields open together.
-3. Enter the missing amount, date, direction or currency from the source, and a short reason. Do not guess a missing value.
+3. Enter the missing amount, date, direction or currency from the source. A note is optional. Do not guess a missing value.
 4. Save the correction. The completed payment joins the table and totals; the original reading and correction remain recorded. Retrying the same save does not add another payment.
 5. Leave it for later when the source does not establish a value. Other payments remain available for investigation.
 
@@ -1074,7 +1081,7 @@ Covered dates describe the statement periods you have, not a guarantee that ever
 
 If native bank-file records have been loaded through a supported ingestion process, expand **Additional file checks**, select **Recheck native bank-file controls**, and inspect the results under **Calculation and further checks**. These checks use the available native file. Ask the administrator about loading native formats; the PDF upload control is not a general bank-file importer.
 
-For a case-wide review, expand **Checks across all accounts** at the bottom of **Statements & accounts**, then select **Check statement balances** or **Check statement coverage**. Those lists include all accounts; use their pagination to reach further results.
+For a case-wide review, select **Review accounts** in **Statements & accounts**, expand **Account checks**, then select **Check statement balances** or **Check statement coverage**. Those lists include all accounts; use their pagination to reach further results. These checks stay outside the individual statement review.
 
 ## Review duplicates
 

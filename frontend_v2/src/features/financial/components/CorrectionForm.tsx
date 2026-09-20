@@ -430,7 +430,7 @@ function CorrectionFormForm({
         </div>
       )}
       <label className="block text-sm">
-        Reason for correction
+        Note about this correction (optional)
         <textarea
           aria-label="Reason for correction"
           className="mt-1 block w-full rounded border bg-background p-2"
@@ -463,16 +463,10 @@ function CorrectionFormForm({
             disabled={
               busy ||
               !reviewed?.verification.can_record ||
-              !reviewed.verification.proposed_proof_class ||
-              !reason.trim()
+              !reviewed.verification.proposed_proof_class
             }
             onClick={() => {
-              if (
-                lock.current ||
-                !reviewed?.verification.can_record ||
-                !reason.trim()
-              )
-                return
+              if (lock.current || !reviewed?.verification.can_record) return
               lock.current = true
               record.mutate(
                 { reviewed, reason },

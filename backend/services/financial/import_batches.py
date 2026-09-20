@@ -17,7 +17,7 @@ from services.financial.review_arithmetic import check_proposed_rows, arithmetic
 
 log = logging.getLogger(__name__)
 TERMINAL_FILES = {'checked', 'error'}
-REVIEW_MODEL = 'recognised-payments-2026-09-20'
+REVIEW_MODEL = 'recognised-payments-saved-reviews-v2'
 
 
 def batch_for(session, case_id, batch_id, lock=False):
@@ -103,9 +103,10 @@ def assess(proposal, request=None):
         else:
             problems.append(dict(message=str(error), row_id=None))
     reviewed = {r['id']:r for r in raw['rows']}
+    from services.financial.import_issues import row_reviewed
     for row in rows:
         edit = reviewed.get(row['id'],{})
-        if row['issues'] and not edit.get('excluded', row['excluded']) and not edit.get('reason','').strip():
+        if row['issues'] and not edit.get('excluded', row['excluded']) and not row_reviewed(row, edit):
             problems.append(dict(message=' '.join(row['issues']),row_id=row['id'],page=row['page_number']))
     balance = check_proposed_rows(proposal, raw['rows'])
     if can_import:
@@ -217,28 +218,27 @@ def checked_batch_items(session, case_id, items):
         EvidenceFile.case_id == case_id, Item.status.in_(('ready','attention','pending_import')))).all()
     sources, prepared = comparison_sources(session, case_id, pending)
     cache = {}
-    from postgres.models.financial import FinancialSourceDocument
     imported_ids = [UUID(i.summary['source_document_id']) for i in items
                     if i.status == 'imported' and i.summary.get('source_document_id')]
-    retained = {str(source_id): (issues or [], records or [], review or {}) for source_id, issues, records, review in session.execute(
-        select(FinancialSourceDocument.id, FinancialSourceDocument.metadata_['statement_import_issues'],
-               FinancialSourceDocument.metadata_['statement_incomplete_records'],
-               FinancialSourceDocument.metadata_['statement_details_review']).where(
-            FinancialSourceDocument.case_id == case_id, FinancialSourceDocument.id.in_(imported_ids)))} if imported_ids else {}
+    from services.financial.batch_import_history import current_imports
+    retained = current_imports(session, case_id, imported_ids)
     result = []
     for item in items:
         summary = deepcopy(item.summary)
         state = item.status
+        projected_request = item.review_request
         if state in ('ready', 'attention'):
-            if 'can_import' not in summary or (summary.get('review_model') != REVIEW_MODEL and not item.review_request):
+            if 'can_import' not in summary or summary.get('review_model') != REVIEW_MODEL:
                 try:
                     proposal = read_statement_import(session, case_id=case_id, evidence_file_id=item.file_id,
                         currency=summary.get('currency') or None, statement_id=item.statement_key or None, _cache=cache)
-                    state, assessment = assess(proposal, item.review_request)
+                    from services.financial.review_upgrade import upgrade_request
+                    projected_request = upgrade_request(item.review_request, proposal) or item.review_request
+                    state, assessment = assess(proposal, projected_request)
                     summary.update(assessment)
                 except PdfMappingError as error:
                     summary.update(can_import=False, problems=[dict(message=str(error), row_id=None)], problem_count=1)
-            raw = {**prepared.get(item.id, item.review_request or summary_request(summary)), 'statement_id': item.statement_key or None}
+            raw = {**(projected_request or prepared.get(item.id) or summary_request(summary)), 'statement_id': item.statement_key or None}
             review = coverage_review(session, case_id=case_id, file_id=item.file_id, request=raw, sources=sources)
             problems = [p for p in summary.get('problems', []) if p.get('kind') not in ('coverage', 'coverage_load')]
             extra_count = max(0, summary.get('problem_count', 0) - len(summary.get('problems', [])))
@@ -250,7 +250,9 @@ def checked_batch_items(session, case_id, items):
             summary.update(coverage_review=review, problems=problems, problem_count=len(problems) + extra_count)
             state = 'attention' if problems else 'ready'
         if state == 'imported' and summary.get('source_document_id') in retained:
-            issues, records, review = retained[summary['source_document_id']]
+            current = retained[summary['source_document_id']]
+            issues, records, review = current['issues'], current['records'], current['review']
+            summary.update(source_document_id=current['source_document_id'], account_id=current['account_id'], currency=current['currency'])
             details = review.get('details', {})
             if details:
                 summary.update(holder=details.get('holder', ''), account=details.get('account_number', ''),
@@ -258,14 +260,14 @@ def checked_batch_items(session, case_id, items):
                 issues = [issue for issue in issues if not (issue.get('kind') == 'statement_detail' and
                     details.get(issue.get('field')))]
             unresolved = sum(not r.get('resolved_transaction_id') for r in records)
-            previous = summary.get('incomplete_count', unresolved)
             summary.update(problems=issues[:50], problem_count=len(issues), incomplete_count=unresolved,
-                transaction_count=summary.get('transaction_count', 0) + previous - unresolved)
+                transaction_count=current['transaction_count'], record_count=current['transaction_count'] + unresolved)
         summary['disposition_revision'] = _digest(dict(status=item.status, request=item.review_request,
             decision=item.summary.get('import_decision')))
         summary['currency_revision'] = currency_revision(item, summary)
         result.append(SimpleNamespace(id=item.id, file_id=item.file_id, statement_key=item.statement_key,
-            status=state, summary=summary, review_request=item.review_request))
+            status=state, summary=summary, review_request=projected_request,
+            review_revision=_digest(item.review_request or {})))
     return result
 
 
@@ -300,7 +302,9 @@ def set_selected_currency(session, *, case_id, batch_id, selections, currency, a
                 raise PdfMappingError('A selected statement reading changed or was imported. Refresh the selection.', 409)
             saved = old.get('saved_review')
             raw = item.review_request or (saved or {}).get('request') or initial_request(old)
-            if saved and item.review_request and saved['request'] != item.review_request:
+            from services.financial.review_upgrade import upgrade_request
+            raw = upgrade_request(raw, old) or raw
+            if saved and item.review_request and saved['request'] != raw:
                 raise PdfMappingError('A selected statement has different saved reviews. Open it to compare those corrections first.', 409)
             if raw['expected_revision'] != old['revision']:
                 raise PdfMappingError('A selected statement has corrections from an earlier reading. Open its saved review first.', 409)
@@ -434,7 +438,14 @@ def queue_import(session, *, case_id,batch_id,expected_revision,actor):
     if not ready: raise PdfMappingError('There are no new statement records available to import.',422)
     for item in ready:
         item.status='pending_import'
-        checked_summary = next(i.summary for i in checked if i.id == item.id)
+        projection = next(i for i in checked if i.id == item.id)
+        if projection.review_request != item.review_request:
+            metadata = deepcopy(item.summary)
+            metadata.setdefault('review_upgrade_history', []).append(dict(request=item.review_request,
+                at=datetime.now(timezone.utc).isoformat(), actor_id=str(actor.user_id)))
+            item.summary = metadata
+            item.review_request = projection.review_request
+        checked_summary = {**item.summary, **projection.summary}
         item.summary={**checked_summary,'import_actor':dict(name=actor.name,email=actor.email,user_id=str(actor.user_id))}
     batch.status='preparing'
     session.commit()

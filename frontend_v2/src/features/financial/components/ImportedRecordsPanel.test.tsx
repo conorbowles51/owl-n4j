@@ -100,9 +100,12 @@ it("retains missing values and an unfinished correction, then opens the saved tr
   fireEvent.change(screen.getByLabelText("Amount"), {
     target: { value: "125000.00" },
   })
-  fireEvent.change(screen.getByLabelText("Reason for correction"), {
-    target: { value: "Read against original" },
-  })
+  fireEvent.change(
+    screen.getByLabelText("Note about this correction (optional)"),
+    {
+      target: { value: "Read against original" },
+    }
+  )
   view.unmount()
   mount(open)
   await screen.findByText(/1 imported record has/)

@@ -301,7 +301,7 @@ class AmountCorrectionPreviewRequest(BaseModel):
 
 
 class AmountCorrectionRequest(AmountCorrectionPreviewRequest):
-    reason: str = Field(min_length=1, max_length=4000)
+    reason: str = Field(default='', max_length=4000)
     expected_revision: str = Field(pattern=r"^[a-f0-9]{64}$")
 
 

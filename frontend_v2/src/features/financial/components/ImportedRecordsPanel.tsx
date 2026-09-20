@@ -423,12 +423,11 @@ function ImportedRecordEditor({
             </label>
           )}
           <label className="block text-sm">
-            Reason for correction
+            Note about this correction (optional)
             <textarea
               className="mt-1 block w-full rounded border bg-background p-2"
               value={fields.reason}
               disabled={!canEdit}
-              required
               onChange={(e) => change({ reason: e.target.value })}
             />
           </label>

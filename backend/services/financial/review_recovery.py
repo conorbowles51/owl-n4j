@@ -69,6 +69,8 @@ def saved_ancestor_reviews(session, file):
             if details and imported.get('statement_import_request') and _digest(details) == imported.get('statement_details_review_sha256'):
                 request = deepcopy(imported['statement_import_request'])
                 request.update(details['details'])
+                if details.get('currency'):
+                    request['currency'] = details['currency']
                 # Later balances have their own page citations. Never pretend
                 # they came from one of the old extraction's transaction rows.
                 request['_saved_balance_corrections'] = details['balances']

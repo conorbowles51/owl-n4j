@@ -102,6 +102,24 @@ def bbva_catalog(sources):
         items = [s for s in sources if s['page_number'] in matched]
         names = {m[1].strip() for s in items for r in s['rows']
                  if (m := re.fullmatch(r'Nombre del Receptor\s*:\s*(.+)', text(r), re.I))}
+        if not names:
+            # Older statements lack the fiscal recipient footer. A company
+            # name in the address block above Información Financiera is still
+            # explicit holder evidence; address lines and bank legal footers
+            # must not be used as names.
+            for page in matched:
+                cells = [cell for source in items if source['page_number'] == page
+                    for row in source['rows'] for cell in row['cells']]
+                cutoffs = [box(cell)[1] for cell in cells if norm(cell['expected_text']) == 'INFORMACION FINANCIERA' and box(cell)]
+                if not cutoffs:
+                    continue
+                for cell in cells:
+                    rect = box(cell)
+                    size = (cell.get('locator') or {}).get('page_size')
+                    name = cell['expected_text'].strip()
+                    if (rect and size and rect[0] < size[0] / 2 and rect[1] < min(cutoffs)
+                            and re.fullmatch(r'.{3,180}\s(?:S\.?\s*A\.?\s*(?:P\.?\s*I\.?)?|S\.?\s*DE\s*R\.?\s*L\.?)\s*DE\s*C\.?\s*V\.?', norm(name))):
+                        names.add(name)
         identity = dict(layout_id=LAYOUT, institution='BBVA Mexico', account_reference=anchor['account'],
                         period_start=start, period_end=end)
         identifier = _digest(identity)

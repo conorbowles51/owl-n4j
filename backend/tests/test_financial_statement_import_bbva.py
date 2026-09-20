@@ -102,6 +102,26 @@ class BbvaProposalTests(TestCase):
         self.assertFalse(any(not r['excluded'] for r in p['rows']))
         self.assertEqual(check_statement_rows(p['rows'])['balance_status'], 'matches')
 
+    def test_older_holder_address_and_spanish_currency_labels(self):
+        sources = statement(empty=True)
+        for item in sources:
+            for row in item['rows']:
+                for cell in row['cells']:
+                    if cell['expected_text'].startswith('Nombre del Receptor'):
+                        cell['expected_text'] = 'Fiscal information'
+        sources.append(source([[(9000, 210000, 'EXAMPLE HOLDINGS SA DE CV')]], table=5))
+        choice, _ = self.proposal(sources)
+        self.assertEqual(choice['holder'], 'EXAMPLE HOLDINGS SA DE CV')
+        for label, code in [('DÓLARES', 'USD'), ('PESOS', 'MXN'), ('EUROS', 'EUR')]:
+            changed = deepcopy(sources)
+            for item in changed:
+                for row in item['rows']:
+                    for cell in row['cells']:
+                        if cell['expected_text'] == 'MONEDA EUROS':
+                            cell['expected_text'] = 'MONEDA ' + label
+            self.assertEqual(detect_statement_currency(changed, layout_id=choice['layout_id']), code)
+        self.assertEqual(detect_statement_currency([source([[(0, 100, 'MONEDA DÓLARES')]])]), '')
+
     def test_older_bancomer_balance_only_layout_keeps_balances_and_metadata(self):
         sources = statement(empty=True)
         for s in sources:
@@ -148,7 +168,7 @@ class BbvaProposalTests(TestCase):
         for s in sources:
             for r in s['rows']:
                 for c in r['cells']:
-                    if c['expected_text'] == 'MONEDA EUROS': c['expected_text'] = 'MONEDA DOLARES'
+                    if c['expected_text'] == 'MONEDA EUROS': c['expected_text'] = 'MONEDA SIN IDENTIFICAR'
         self.assertEqual(detect_statement_currency(sources), '')
 
     def test_continuation_cannot_borrow_another_accounts_period(self):
@@ -282,6 +302,53 @@ class BbvaImportTests(TestCase):
             retained = db.get(FinancialSourceDocument, UUID(old['source_document_id']))
             self.assertEqual(len(retained.metadata_['statement_incomplete_records']), old['incomplete_count'])
             self.assertEqual(imported_records(db, case_id=f.case.id, account_id=None, start_date=None, end_date=None)['total'], 0)
+
+    def test_legacy_empty_import_can_be_refreshed_in_place_without_reupload(self):
+        from pathlib import Path
+        from unittest.mock import patch
+        from services.financial.legacy_statement_refresh import refresh_legacy_import
+        from services.financial.statement_import import read_statement_import
+        from services.financial.imported_records import imported_records
+        from postgres.models.financial import FinancialSourceDocument, FinancialTransaction
+        f = self.fixture
+        with patch('services.financial.statement_import_bbva.bbva_catalog', return_value=([], set())):
+            _, request = self.prepare()
+            for row in request['rows']:
+                row['excluded'] = False
+            old = f.confirm(request)
+        proposal = read_statement_import(f.db, case_id=f.case.id, evidence_file_id=f.file.id)
+        self.assertTrue(proposal['current_import']['refresh_available'])
+        args = dict(session_factory=f.SessionLocal, case_id=f.case.id, source_id=UUID(old['source_document_id']),
+            expected_revision=proposal['current_import']['revision'], actor=f.actor, resolve_path=Path)
+        from uuid import uuid4
+        from services.financial.pdf_candidates import PdfMappingError
+        from services.financial.legacy_statement_refresh import refresh_available
+        with self.assertRaisesRegex(PdfMappingError, 'not found'):
+            refresh_legacy_import(**{**args, 'case_id': uuid4()})
+        with self.assertRaisesRegex(PdfMappingError, 'changed'):
+            refresh_legacy_import(**{**args, 'expected_revision': '0'*64})
+        with f.SessionLocal() as db:
+            original = db.get(FinancialSourceDocument, args['source_id'])
+            metadata = deepcopy(original.metadata_)
+            metadata['statement_incomplete_records'][0]['correction'] = {'description': 'Saved investigator correction'}
+            original.metadata_ = metadata
+            self.assertFalse(refresh_available(db, original, proposal))
+            db.rollback()
+        new = refresh_legacy_import(**args)
+        self.assertEqual((new['transaction_count'], new['incomplete_count']), (2, 0))
+        self.assertEqual(new['evidence_file_id'], str(f.file.id))
+        self.assertFalse(refresh_legacy_import(**args)['created'])
+        with f.SessionLocal() as db:
+            self.assertEqual(imported_records(db, case_id=f.case.id)['total'], 0)
+            self.assertEqual(len(list(db.scalars(select(FinancialTransaction)))), 2)
+            prior = db.get(FinancialSourceDocument, UUID(old['source_document_id']))
+            self.assertEqual(prior.status, 'superseded')
+            self.assertGreater(len(prior.metadata_['statement_incomplete_records']), 250)
+            from services.financial.batch_import_history import current_imports
+            current = current_imports(db, f.case.id, [prior.id])[str(prior.id)]
+            self.assertEqual(current['source_document_id'], new['source_document_id'])
+            self.assertEqual(current['transaction_count'], 2)
+            self.assertEqual(current['records'], [])
 
     def test_printed_count_mismatch_remains_visible_in_batch_and_import(self):
         from services.financial.import_batches import assess
