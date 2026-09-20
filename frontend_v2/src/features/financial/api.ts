@@ -215,6 +215,7 @@ export interface LedgerTransaction {
   label_version?: number
   account_type?: string
   account_label?: string
+  account_holder?: string
   key: string
   case_id: string
   account_id: string
@@ -283,6 +284,7 @@ export const LEDGER_TRANSACTION_FIELDS: readonly (keyof LedgerTransaction)[] = [
   "key",
   "case_id",
   "account_id",
+  "account_holder",
   "source_document_id",
   "ingestion_run_id",
   "statement_period_id",

@@ -1,4 +1,5 @@
 import { PaymentLabelsEditor } from "./PaymentLabelsEditor"
+import { retainPaymentTableView } from "../lib/payment-table-draft"
 import { useLedgerTransactions } from "../hooks/use-ledger-transactions"
 import { useMediaQuery } from "@/hooks/use-media-query"
 import { useState, type ReactNode } from "react"
@@ -42,7 +43,13 @@ export function InvestigationReadState({
     )
   return children
 }
-export function WorkspaceScope({ caseId }: { caseId: string }) {
+export function WorkspaceScope({
+  caseId,
+  datesOnly = false,
+}: {
+  caseId: string
+  datesOnly?: boolean
+}) {
   const [params, setParams] = useInvestigationScope(caseId)
   const accountRows = useLedgerTransactions(
     params.accountId ? caseId : undefined,
@@ -57,7 +64,7 @@ export function WorkspaceScope({ caseId }: { caseId: string }) {
       data-finance-tone="info"
     >
       <summary className="cursor-pointer font-medium">
-        Accounts and dates{" "}
+        {datesOnly ? "Date range" : "Accounts and dates"}{" "}
         <span className="ml-2 font-normal text-muted-foreground">
           {params.accountId
             ? accountLabel || "Selected account"
@@ -71,7 +78,11 @@ export function WorkspaceScope({ caseId }: { caseId: string }) {
           key={JSON.stringify(params)}
           caseId={caseId}
           initialParams={params}
-          onApply={setParams}
+          accountSelection={!datesOnly}
+          onApply={(next) => {
+            if (datesOnly) retainPaymentTableView(caseId, params, next)
+            setParams(next)
+          }}
         />
       </div>
     </details>

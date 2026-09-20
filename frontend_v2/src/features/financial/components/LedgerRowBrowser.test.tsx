@@ -140,7 +140,11 @@ it("filters inclusive exact ranges, rejects invalid precision and resets on curr
   expect(screen.getByRole("button", { name: "smaller" })).toBeInTheDocument()
 })
 
-vi.mock("./LedgerExportButton", () => ({ LedgerExportButton: () => null }))
+vi.mock("./LedgerExportButton", () => ({
+  LedgerExportButton: ({ tableView }: { tableView?: unknown }) => (
+    <output data-testid="export-filters">{JSON.stringify(tableView)}</output>
+  ),
+}))
 vi.mock("./SavePaymentSelection", () => ({ SavePaymentSelection: () => null }))
 const user = (id: string) =>
   ({ id, username: id }) as NonNullable<
@@ -358,4 +362,65 @@ it("shows only the imported batch sources and lets the investigator clear that s
   expect(
     screen.queryByRole("region", { name: "Imported batch transactions" })
   ).not.toBeInTheDocument()
+})
+
+it("loads every account then filters one holder across banks, preserving pagination, totals and export scope", () => {
+  const transactions = Array.from({ length: 125 }, (_, index) =>
+    row(`row-${index}`, {
+      case_id: "case",
+      account_id: index < 60 ? "a" : index < 120 ? "b" : "c",
+      account_label:
+        index < 60
+          ? "Example Company · Bank A · 001"
+          : index < 120
+            ? "Example Company · Bank B · 002"
+            : "Other Company · Bank A · 003",
+      account_holder:
+        index < 60
+          ? "Example Company"
+          : index < 120
+            ? " EXAMPLE  COMPANY "
+            : "Other Company",
+      amount_minor: "100",
+      currency: "USD",
+      description: `Payment ${index}`,
+    })
+  )
+  render(
+    <LedgerRowBrowser
+      investigation
+      transactions={transactions}
+      exportContext={{ caseId: "case", params: {} }}
+    />
+  )
+  const tableRows = () =>
+    screen
+      .getByRole("table", { name: "Investigation transactions" })
+      .querySelectorAll("tbody tr")
+  expect(tableRows()).toHaveLength(50)
+  expect(screen.getByText("1–50 of 125 matching rows")).toBeVisible()
+  fireEvent.change(screen.getByLabelText("Filter account holder"), {
+    target: { value: "example company" },
+  })
+  expect(screen.getByText("1–50 of 120 matching rows")).toBeVisible()
+  expect(screen.getByText("120.00 USD")).toBeVisible()
+  fireEvent.click(screen.getByRole("button", { name: "Next ledger rows" }))
+  expect(screen.getByText("51–100 of 120 matching rows")).toBeVisible()
+  fireEvent.change(screen.getByLabelText("Filter imported account"), {
+    target: { value: "b" },
+  })
+  expect(screen.getByText("1–50 of 60 matching rows")).toBeVisible()
+  expect(screen.getByText("60.00 USD")).toBeVisible()
+  expect(
+    JSON.parse(screen.getByTestId("export-filters").textContent!)
+  ).toMatchObject({ account_id: "b", account_holder: "example company" })
+  fireEvent.click(screen.getByRole("button", { name: "Next ledger rows" }))
+  expect(tableRows()).toHaveLength(10)
+  fireEvent.change(screen.getByLabelText("Filter account holder"), {
+    target: { value: "other company" },
+  })
+  expect(tableRows()).toHaveLength(5)
+  expect(screen.getByLabelText("Filter imported account")).toHaveValue("")
+  fireEvent.click(screen.getByRole("button", { name: "Clear payment filters" }))
+  expect(screen.getByText("1–50 of 125 matching rows")).toBeVisible()
 })

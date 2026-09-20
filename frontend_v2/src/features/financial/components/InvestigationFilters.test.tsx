@@ -79,3 +79,27 @@ it("keeps the restored choice and dates during failure and retries the same acco
   expect(screen.queryByRole("alert")).not.toBeInTheDocument()
   expect(api.mock.calls.at(-1)?.[0]).toContain("search=savings")
 })
+
+it("changes only dates when account selection is hidden", () => {
+  const apply = vi.fn()
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <InvestigationFilters
+        caseId="case"
+        accountSelection={false}
+        initialParams={{ accountId: "checking", startDate: "2020-01-01" }}
+        onApply={apply}
+      />
+    </QueryClientProvider>
+  )
+  expect(screen.queryByLabelText("Filter account")).not.toBeInTheDocument()
+  expect(api).not.toHaveBeenCalled()
+  fireEvent.click(screen.getByRole("button", { name: "Reset" }))
+  expect(apply).toHaveBeenLastCalledWith({ accountId: "checking" })
+  fireEvent.click(screen.getByRole("button", { name: "Apply" }))
+  expect(apply).toHaveBeenLastCalledWith({
+    accountId: "checking",
+    startDate: undefined,
+    endDate: undefined,
+  })
+})

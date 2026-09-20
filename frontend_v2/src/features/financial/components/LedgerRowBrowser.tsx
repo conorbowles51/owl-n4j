@@ -1,4 +1,6 @@
 import { PaymentLabelsEditor } from "./PaymentLabelsEditor"
+import { TransactionAccountFilters } from "./TransactionAccountFilters"
+import { holderKey } from "../lib/account-holder"
 import {
   usePaymentCategory,
   categoryName,
@@ -63,6 +65,8 @@ export function LedgerRowBrowser({
   const view = exportContext ? savedView : localView
   const setView = exportContext ? setSavedView : setLocalView
   const {
+    accountId = "",
+    accountHolder = "",
     search,
     currency,
     minimum,
@@ -104,6 +108,8 @@ export function LedgerRowBrowser({
   const rows = transactions.filter(
     (row) =>
       !invalidRange &&
+      (!accountId || row.account_id === accountId) &&
+      (!accountHolder || holderKey(row.account_holder) === accountHolder) &&
       (!category || categoryName(row) === category) &&
       (!sourceDocumentId || row.source_document_id === sourceDocumentId) &&
       (!importBatchId || batchSources.has(row.source_document_id)) &&
@@ -149,6 +155,14 @@ export function LedgerRowBrowser({
   const index = Math.min(page, Math.max(0, Math.ceil(rows.length / 50) - 1))
   return (
     <section aria-label="Browse ledger rows" className="space-y-3">
+      {investigation && (
+        <TransactionAccountFilters
+          rows={transactions}
+          accountId={accountId}
+          accountHolder={accountHolder}
+          onChange={changeView}
+        />
+      )}
       {importBatchId && (
         <div
           className="flex flex-wrap items-center justify-between gap-3 rounded border bg-card p-3"
@@ -621,6 +635,8 @@ export function LedgerRowBrowser({
             params={exportContext.params}
             tableView={{
               search,
+              ...(accountId ? { account_id: accountId } : {}),
+              ...(accountHolder ? { account_holder: accountHolder } : {}),
               ...(category ? { category } : {}),
               ...(sourceDocumentId
                 ? { source_document_id: sourceDocumentId }

@@ -13,9 +13,11 @@ export function InvestigationFilters({
   caseId,
   onApply,
   initialParams = {},
+  accountSelection = true,
 }: {
   caseId: string
   initialParams?: LedgerQueryParams
+  accountSelection?: boolean
   onApply: (p: LedgerQueryParams) => void
 }) {
   const [account, setAccount] = useState(initialParams.accountId ?? ""),
@@ -26,6 +28,7 @@ export function InvestigationFilters({
   const accounts = useQuery({
     queryKey: ["financial-ledger", caseId, "filter-accounts", search],
     retry: false,
+    enabled: accountSelection,
     queryFn: async () => {
       const data = candidateAccounts.parse(
         await fetchAPI(
@@ -74,35 +77,37 @@ export function InvestigationFilters({
           })
       }}
     >
-      <label className="min-w-56 flex-1">
-        Account
-        <select
-          aria-label="Filter account"
-          className="block w-full rounded border p-2 bg-background"
-          value={account}
-          onChange={(e) => {
-            setAccount(e.target.value)
-            setSelectedLabel(
-              e.target.selectedOptions[0]?.textContent || e.target.value
-            )
-          }}
-        >
-          <option value="">All accounts</option>
-          {account && !accounts.data?.items.some((a) => a.id === account) && (
-            <option value={account}>{selectedLabel}</option>
-          )}
-          {accounts.data?.items.map((a) => (
-            <option key={a.id} value={a.id}>
-              {a.display_label ||
-                [a.holder, a.identifier, a.institution]
-                  .filter(Boolean)
-                  .join(" · ") ||
-                a.id}{" "}
-              {a.currency}
-            </option>
-          ))}
-        </select>
-      </label>
+      {accountSelection && (
+        <label className="min-w-56 flex-1">
+          Account
+          <select
+            aria-label="Filter account"
+            className="block w-full rounded border p-2 bg-background"
+            value={account}
+            onChange={(e) => {
+              setAccount(e.target.value)
+              setSelectedLabel(
+                e.target.selectedOptions[0]?.textContent || e.target.value
+              )
+            }}
+          >
+            <option value="">All accounts</option>
+            {account && !accounts.data?.items.some((a) => a.id === account) && (
+              <option value={account}>{selectedLabel}</option>
+            )}
+            {accounts.data?.items.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.display_label ||
+                  [a.holder, a.identifier, a.institution]
+                    .filter(Boolean)
+                    .join(" · ") ||
+                  a.id}{" "}
+                {a.currency}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
       <label>
         From
         <input
@@ -130,27 +135,33 @@ export function InvestigationFilters({
         type="button"
         variant="outline"
         onClick={() => {
-          setAccount("")
+          setAccount(accountSelection ? "" : (initialParams.accountId ?? ""))
           setStart("")
           setEnd("")
-          onApply({})
+          onApply(
+            accountSelection ? {} : { accountId: initialParams.accountId }
+          )
         }}
       >
         Reset
       </Button>
       <details className="basis-full text-xs">
         <summary className="cursor-pointer">
-          Search accounts or check which dates are used
+          {accountSelection
+            ? "Search accounts or check which dates are used"
+            : "Which dates are used"}
         </summary>
-        <label>
-          Search account names or numbers
-          <input
-            aria-label="Search available accounts"
-            className="ml-2 border rounded p-1 bg-background"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </label>
+        {accountSelection && (
+          <label>
+            Search account names or numbers
+            <input
+              aria-label="Search available accounts"
+              className="ml-2 border rounded p-1 bg-background"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </label>
+        )}
         <p>
           The start and end dates are included. Payments without a transaction
           date are marked in the table. Check Statements for gaps in the

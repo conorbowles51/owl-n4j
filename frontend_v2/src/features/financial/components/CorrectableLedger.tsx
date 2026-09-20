@@ -63,7 +63,7 @@ function CorrectableLedgerContent({
       {caseId && !heldOut && (
         <>
           {investigation ? (
-            <WorkspaceScope caseId={caseId} />
+            <WorkspaceScope caseId={caseId} datesOnly />
           ) : (
             <InvestigationFilters
               key={JSON.stringify(params)}

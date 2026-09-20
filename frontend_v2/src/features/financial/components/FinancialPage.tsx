@@ -3,7 +3,10 @@ import { useAuthStore } from "@/features/auth/hooks/use-auth"
 import { useStatementWorkspace } from "../stores/statement-workspace"
 import "../financial-workspace.css"
 import { useUIStore } from "@/stores/ui.store"
-import { resetPaymentTableView } from "../lib/payment-table-draft"
+import {
+  resetPaymentTableView,
+  showAllImportedPayments,
+} from "../lib/payment-table-draft"
 import { useFinancialDraft } from "../stores/financial-drafts"
 import { useOtherRecordsView } from "../hooks/use-other-records-view"
 import { useFinancialViewNavigation } from "../hooks/use-financial-view-navigation"
@@ -125,6 +128,17 @@ function FinancialPageContent() {
   const [importReceipt, setImportReceipt] =
     useState<StatementImportReceipt | null>(null)
   const [, applyInvestigationScope] = useInvestigationScope(caseId)
+  const openAllPayments = () => {
+    if (caseId) showAllImportedPayments(caseId)
+    setImportReceipt(null)
+  }
+  const navigateFinancial = (view: FinancialMainView) => {
+    if (view === "transactions") {
+      openAllPayments()
+      store.setMode("transactions")
+    }
+    store.setMainView(view)
+  }
   const [accountReviewCase, setAccountReviewCase] = useState<string | null>(
     null
   )
@@ -611,13 +625,13 @@ function FinancialPageContent() {
       <Tabs
         key={`financial-tabs:${caseId}`}
         value={store.mainView}
-        onValueChange={(value) => store.setMainView(value as FinancialMainView)}
+        onValueChange={(value) => navigateFinancial(value as FinancialMainView)}
         className="flex min-h-0 flex-1 flex-col"
       >
         <FinancialAccessNotice />
         <FinancialNavigation
           value={store.mainView}
-          onChange={store.setMainView}
+          onChange={navigateFinancial}
         />
 
         <RetainedFinancialTab
@@ -945,13 +959,18 @@ function FinancialPageContent() {
               <div>
                 <h2 className="text-lg font-semibold">Transactions</h2>
                 <p className="text-sm text-muted-foreground">
-                  Find a payment, open its statement, or record what you
-                  noticed.
+                  All imported payments are available here. Filter by account or
+                  account holder, then open a payment to inspect its statement.
                 </p>
               </div>
-              <Button onClick={() => store.setMainView("statements")}>
-                Add statements
-              </Button>
+              <div className="flex flex-wrap gap-2">
+                <Button variant="outline" onClick={openAllPayments}>
+                  Show all imported payments
+                </Button>
+                <Button onClick={() => store.setMainView("statements")}>
+                  Add statements
+                </Button>
+              </div>
             </header>
             {importReceipt &&
               importReceipt.case_id === caseId &&

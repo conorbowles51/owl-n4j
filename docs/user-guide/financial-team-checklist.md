@@ -107,7 +107,7 @@ Before excluding the footer, check that its reading issue is visible but does no
 
 **Expected:** eight current transactions, with combined money in of **USD 1,855.00**, money out of **USD 895.00**, and difference of **USD 960.00**. The difference is money in minus money out, not a closing account balance. The transfer has one entry leaving checking and another entering savings.
 
-Select checking under **Account**, then **Apply** to check its six payments. Repeat for savings and its two payments. Select **Reset** afterwards to return to both accounts.
+Select checking under **Bank account** to check its six payments immediately. Repeat for savings and its two payments. Select **Show all imported payments** afterwards to return to both accounts. Choose their recorded holder under **Person or company** and confirm that accounts from different banks appear together when the holder name matches.
 
 If confirmation appears to fail, reopen the file and check its imported count before trying again. Do not repeatedly click confirmation or upload more copies to make the count change.
 
@@ -121,7 +121,7 @@ If confirmation appears to fail, reopen the file and check its imported count be
 2. Check that two outgoing payments remain: **USD 120.00 on 5 July 2020** and **USD 75.00 on 16 July 2020**. Together they total **USD 195.00**.
 3. Beside the USD 120 payment, select **Open transaction**. Check its date, amount, account and source filename.
 4. Select **Open source file**. Compare it with the USD 120 debit in checking.pdf. Close the source viewer and transaction details when finished.
-5. Open another financial tab, return to Transactions, then refresh the browser. Check that your **Example Supplies** search remains.
+5. Refresh the browser and check that the **Example Supplies** search remains. Open another financial tab, then select the main **Transactions** tab: it should return to all imported payments with the earlier search cleared.
 6. Select **Clear payment filters**. Use **Filters**, choose USD if needed, and set both the minimum and maximum amount to **120**. Check that the USD 120 outgoing payment is the result. Clear the filters again afterwards.
 
 **Expected:** each payment leads to the correct original file and value. Searching or changing tabs does not change the payment itself. If a value has no stored page position, the app must explain that rather than highlighting an unrelated location.

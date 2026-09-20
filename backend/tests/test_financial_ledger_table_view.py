@@ -3,6 +3,24 @@ from services.financial.ledger_table_view import capture_table_view
 from services.financial.ledger_summary import LedgerSummaryError
 
 class LedgerTableViewTests(TestCase):
+    def test_holder_filters_accounts_across_banks_and_matches_exported_selection(self):
+        a = '00000000-0000-4000-8000-000000000001'
+        b = '00000000-0000-4000-8000-000000000002'
+        ledger = {'readings': [
+            self.row('a', account_id=a, account_holder='Example Company', account_label='Bank A'),
+            self.row('b', account_id=b, account_holder=' EXAMPLE  COMPANY ', account_label='Bank B'),
+            self.row('other', account_id=b, account_holder='Other Company'),
+            self.row('unknown', account_id=b, account_holder=''),
+        ]}
+        view = capture_table_view(ledger, {'account_holder': 'example company'})
+        self.assertEqual(view['row_ids'], ['a', 'b'])
+        self.assertEqual(view['filters']['account_holder'], 'example company')
+        self.assertEqual(capture_table_view(ledger, {'account_holder': 'example company', 'account_id': b})['row_ids'], ['b'])
+        self.assertEqual(capture_table_view(ledger, {'account_holder': 'absent'})['row_ids'], [])
+        self.assertEqual(capture_table_view(ledger, {})['matching_rows'], 4)
+        with self.assertRaises(LedgerSummaryError):
+            capture_table_view(ledger, {'account_id': 'not-an-account'})
+
     def row(self,key,**values):
         return {'row':dict(key=key,ledger_status='admitted',proof_class='p3',currency='GBP',direction='credit',amount_minor='9007199254740993',ordering_date='2026-01-01',row_index=0,description='Invoice payment',**values)}
     def test_exact_sort_and_filters_retain_every_matching_id(self):

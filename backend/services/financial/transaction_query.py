@@ -138,6 +138,7 @@ class TransactionView:
     ordering_date_context: Optional[str] = None
     account_type: Optional[str] = None
     account_label: Optional[str] = None
+    account_holder: str = ""
     category: str = ""
     from_name: str = ""
     to_name: str = ""
@@ -152,6 +153,7 @@ class TransactionView:
             "key": self.key,
             "case_id": self.case_id,
             "account_id": self.account_id,
+            "account_holder": self.account_holder,
             **({"account_type": self.account_type} if self.account_type else {}),
             **({"account_label": self.account_label} if self.account_label else {}),
             "source_document_id": self.source_document_id,
@@ -200,6 +202,7 @@ def to_view(row: FinancialTransaction, *, account=None) -> TransactionView:
     return TransactionView(
         **payment_label_view(row, account),
         account_type=account_type,
+        account_holder=(account.holder_name or "") if account is not None and account.case_id == row.case_id else "",
         account_label=(" · ".join(v for v in [account.holder_name, account.institution_name, account.identifier_as_printed] if v) if account is not None and account.case_id == row.case_id else None),
         key=str(row.id),
         case_id=str(row.case_id),

@@ -1,10 +1,13 @@
 import type { LedgerQueryParams } from "../hooks/use-ledger-transactions"
+import { useInvestigationScopeStore } from "../stores/investigation-scope"
 import {
   financialDraftKey,
   useFinancialDraftStore,
 } from "../stores/financial-drafts"
 
 export const emptyPaymentTableView = {
+  accountId: "",
+  accountHolder: "",
   search: "",
   currency: "",
   minimum: "",
@@ -19,6 +22,30 @@ export const emptyPaymentTableView = {
   importBatchRevision: "",
   importSourceIds: [] as string[],
   importStatementCount: 0,
+}
+
+export function showAllImportedPayments(caseId: string) {
+  resetPaymentTableView(caseId, {})
+  useFinancialDraftStore
+    .getState()
+    .put(financialDraftKey(caseId, "investigation-category"), "")
+  useInvestigationScopeStore.getState().apply(caseId, {})
+}
+
+export function retainPaymentTableView(
+  caseId: string,
+  previous: LedgerQueryParams,
+  next: LedgerQueryParams
+) {
+  const store = useFinancialDraftStore.getState()
+  const current = store.drafts[
+    financialDraftKey(caseId, paymentTableDraftName(previous, true))
+  ] as typeof emptyPaymentTableView | undefined
+  store.put(financialDraftKey(caseId, paymentTableDraftName(next, true)), {
+    ...emptyPaymentTableView,
+    ...current,
+    page: 0,
+  })
 }
 export function paymentTableDraftName(
   params: LedgerQueryParams = {},

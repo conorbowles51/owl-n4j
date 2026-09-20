@@ -873,21 +873,21 @@ To correct a report, select **Correct this custody report**. Loupe fills in that
 2. Read the **Payments from [number] imported statements** notice above the table. It limits the table to that batch's imported source statements, including statements on other pages of the batch list.
 3. The date range covers the imported payments. If they belong to one account, that account is selected. If several accounts are involved, their payments are shown together.
 4. Search, open a payment or add a finding using the usual transaction controls. **Open import batch** returns to the batch list.
-5. To include other statement sources within the selected account and dates, select **Clear batch filter**. Adjust the account and date controls if you want a wider range.
+5. To include other statement sources within the selected account and dates, select **Clear batch filter**. Select **Show all imported payments** to return to every imported account and date in the case.
 6. To download the displayed results, expand **Download these transactions** and select **Download this table view**. Its recorded table selection uses the same batch and payment filters. The enclosing ledger record also retains the applied account/date history. If another import changes the batch's statement list, reopen **Open imported transactions** before downloading again.
 
 ## Read and filter transactions
 
 ### Choose the records to examine
 
-1. Open **Transactions**, then expand **Accounts and dates**.
-2. Choose an account in **Account**, or leave **All accounts** selected. Expand **Search accounts or check which dates are used** if the account you need is not listed.
-3. Enter **From** and **To** when restricting dates. Both endpoints are included.
-4. Select **Apply**, or **Reset** to return to all accounts and dates.
-5. The applied account and dates follow you between Transactions, People and businesses, Trends, Payment graph, Patterns and Payments and case events, including after a refresh in this browser tab. Read the scope displayed above the answer. Unsaved filter edits do not change the current result.
-6. Read **Payments matching your filters** for the selected payments and currency. To inspect verification details, open **More financial tools**, then **Import review**.
+1. Select the main **Transactions** tab. It opens all imported payments in this case automatically, across accounts and dates. You do not need to select an account or press Load first.
+2. Use **Person or company** to show the accounts with that recorded holder name, across banks. Names are grouped ignoring case and extra spaces; differently recorded names remain separate.
+3. Use **Bank account** to narrow to one account. Its label includes the holder, bank and account identifier where recorded. Both selectors update the table and its totals immediately.
+4. Expand **Date range** to enter **From** and **To**, then select **Apply**. Both dates are included and your holder/account table choices stay selected.
+5. Select **Show all imported payments** to clear the account, date, holder, category, statement, batch and other payment filters together. Saved findings, payment edits and selected payments remain.
+6. Use **Previous ledger rows** and **Next ledger rows** above 50 matches. Totals and table downloads cover every matching payment, including other pages. Different currencies remain separate.
 
-Searching the account chooser does not change the account already selected. Its name stays visible even when it falls outside the search results. If the lookup fails, your chosen account and dates are retained. Select **Try loading accounts again** to repeat that search, or use **Reset** to return to all accounts and dates.
+Opening a specific statement, account or batch keeps that explicit selection visible. Use **Show all imported payments** to widen it to the whole case. Selecting the main **Transactions** tab again starts with the whole case; a browser refresh preserves the filters you are currently using.
 
 An ordering date is the date Loupe uses to place a reading in sequence. For some undated items it can be the statement end, not a known transaction date. Read the row's date basis before relying on exact timing.
 
@@ -903,9 +903,9 @@ An ordering date is the date Loupe uses to place a reading in sequence. For some
 4. Use **Money in or out** to show credits or debits. For a credit card, check the row's card explanation before interpreting these as cash movements.
 5. Use **Sort payments** to change the order. Amount sorting needs one currency.
 6. Use **Previous ledger rows** and **Next ledger rows** when there are more than 50 matches.
-7. Select **Clear payment filters** to remove the search, currency, amount and sort settings. The account and date filters above remain as you applied them.
+7. Select **Clear payment filters** to remove the holder/account table choices, search, currency, category, amount and sort settings. An explicit account/date scope opened from another page remains; **Show all imported payments** clears that too.
 
-Your search, currency, amount limits, direction, sort order and table page are retained when you leave Financial or refresh in this browser tab. They are kept separately for each signed-in user, case and account/date view. Returning to a previous account/date view restores its table settings. **Clear payment filters** clears the saved settings for that view; it does not clear your selected payments.
+Your current holder, account, search, currency, amount limits, direction, sort order and table page survive a browser refresh. They are kept separately for each signed-in user and case. Choosing the main Transactions tab starts from all imported payments. **Clear payment filters** clears the saved table settings; it does not clear selected payments.
 
 When you open imported transactions from a statement, **Statement: filename** appears above the table. Only payments imported from that source are shown. Select **Clear statement filter** to include other statements in the same account/date view. The import notice also offers **Show this account’s payments**, which clears the statement restriction and opens all imported payments for that account. Your selected payments are retained. **Clear payment filters** also removes this statement restriction. Opening an account from Statements starts a fresh table view for that account.
 

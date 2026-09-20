@@ -333,6 +333,17 @@ class ListTransactionsTests(LedgerQueryTestCase):
 
 
 class ToViewTests(LedgerQueryTestCase):
+    def test_recorded_holder_is_separate_from_bank_label_and_case_scoped(self):
+        (row,) = self.write([self.draft()])
+        self.acct.holder_name = 'Example Company'
+        self.acct.institution_name = 'Example Bank'
+        payload = to_view(row, account=self.acct).to_json()
+        self.assertEqual(payload['account_holder'], 'Example Company')
+        self.assertIn('Example Bank', payload['account_label'])
+        self.assertEqual(to_view(row).to_json()['account_holder'], '')
+        self.acct.case_id = self.other_case.id
+        self.assertEqual(to_view(row, account=self.acct).to_json()['account_holder'], '')
+
     def test_lifts_the_locator_out_of_provenance(self):
         (row,) = self.write([self.draft(locator=UNLOCATED)])
 

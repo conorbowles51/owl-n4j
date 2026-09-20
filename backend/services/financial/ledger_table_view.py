@@ -7,6 +7,8 @@ class LedgerTableView(BaseModel):
     model_config = ConfigDict(extra='forbid', strict=True)
     search: Annotated[str, Field(max_length=256)] = ''
     category: Annotated[str, Field(max_length=120)] = ''
+    account_id: Annotated[str, Field(pattern=r'^$|^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')] = ''
+    account_holder: Annotated[str, Field(max_length=512)] = ''
     source_document_id: Annotated[str, Field(pattern=r'^$|^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')] = ''
     import_batch_id: Annotated[str, Field(pattern=r'^$|^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')] = ''
     import_batch_revision: Annotated[str, Field(pattern=r'^$|^[a-f0-9]{64}$')] = ''
@@ -47,6 +49,10 @@ def capture_table_view(ledger, request, *, batch_scope=None):
         # distinction from eligibility of the parent source for totals.
         if row['ledger_status'] != 'admitted':
             continue
+        if view.account_id and row.get('account_id') != view.account_id:
+            continue
+        if view.account_holder and ' '.join((row.get('account_holder') or '').split()).lower() != ' '.join(view.account_holder.split()).lower():
+            continue
         if view.source_document_id and row.get('source_document_id') != view.source_document_id:
             continue
         if batch_sources is not None and row.get('source_document_id') not in batch_sources:
@@ -68,7 +74,7 @@ def capture_table_view(ledger, request, *, batch_scope=None):
         if len({r['currency'] for r in rows}) > 1:
             raise LedgerSummaryError('Choose one currency before exporting an amount-sorted table.')
         rows.sort(key=lambda r: int(r['amount_minor']), reverse=view.sort == 'amount-desc')
-    result = dict(schema='loupe.financial.ledger_table_view/1',filters=view.model_dump(exclude={key for key in ('category', 'source_document_id', 'import_batch_id', 'import_batch_revision') if not getattr(view, key)}),
+    result = dict(schema='loupe.financial.ledger_table_view/1',filters=view.model_dump(exclude={key for key in ('category', 'account_id', 'account_holder', 'source_document_id', 'import_batch_id', 'import_batch_revision') if not getattr(view, key)}),
         row_ids=[r['key'] for r in rows],matching_rows=len(rows),
         limitation='Admitted ledger rows matching the recorded table filters, in display order, captured at export time. Display order does not establish bank sequence. The enclosing snapshot retains the full applied account/date scope and its history; its totals apply to that full scope. Source eligibility and proof classes are unchanged. All matching rows are included, not just the visible page.')
     if batch_sources is not None:

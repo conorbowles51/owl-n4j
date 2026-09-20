@@ -4,6 +4,7 @@ import {
 } from "../stores/financial-drafts"
 import { useEffect, useLayoutEffect } from "react"
 import { useSearchParams } from "react-router-dom"
+import { showAllImportedPayments } from "../lib/payment-table-draft"
 import {
   financialMainViews,
   type FinancialMainView,
@@ -24,6 +25,10 @@ export function useFinancialViewNavigation(caseId: string | undefined) {
     const view = financialMainViews.includes(requested as FinancialMainView)
       ? (requested as FinancialMainView)
       : "overview"
+    // A fresh visit to Financial uses the full case. Explicit statement/batch
+    // navigation and browser Back retain their intentionally selected scope.
+    if (!params.get("view") && view === "transactions")
+      showAllImportedPayments(caseId)
     useFinancialStore.getState().setMainView(view)
     const mode =
       params.get("dataset") === "other-records"

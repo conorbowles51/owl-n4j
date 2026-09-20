@@ -15,6 +15,7 @@ import {
 } from "react-router-dom"
 import { useFinancialViewNavigation } from "./use-financial-view-navigation"
 import { useFinancialStore } from "../stores/financial.store"
+import { useInvestigationScopeStore } from "../stores/investigation-scope"
 
 function Financial() {
   const { id } = useParams()
@@ -53,8 +54,39 @@ function setup(path = "/cases/first/financial") {
   )
 }
 beforeEach(() => {
+  useInvestigationScopeStore.getState().reset()
   useFinancialStore.getState().reset()
   useFinancialDraftStore.setState({ drafts: {} })
+})
+it("opens a remembered Transactions page on a fresh case visit with every account", () => {
+  useFinancialDraftStore
+    .getState()
+    .put(financialDraftKey("first", "last-view"), "transactions")
+  useInvestigationScopeStore
+    .getState()
+    .apply("first", { accountId: "previous-account" })
+  useInvestigationScopeStore
+    .getState()
+    .apply("second", { accountId: "another-case-account" })
+  setup()
+  expect(screen.getByLabelText("Financial tab")).toHaveTextContent(
+    "transactions"
+  )
+  expect(
+    Object.values(useInvestigationScopeStore.getState().scopes)
+  ).toContainEqual({})
+  expect(
+    Object.values(useInvestigationScopeStore.getState().scopes)
+  ).toContainEqual({ accountId: "another-case-account" })
+})
+it("keeps an explicit transaction view and its filters when reopening its URL", () => {
+  useInvestigationScopeStore
+    .getState()
+    .apply("first", { accountId: "chosen-account" })
+  setup("/cases/first/financial?view=transactions")
+  expect(Object.values(useInvestigationScopeStore.getState().scopes)).toEqual([
+    { accountId: "chosen-account" },
+  ])
 })
 it("uses browser Back to return through the financial views, including the initial view", async () => {
   setup()
