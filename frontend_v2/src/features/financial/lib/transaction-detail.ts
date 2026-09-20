@@ -6,6 +6,14 @@ export const transactionDetail = z.object({
   from_name: z.string().optional(),
   to_name: z.string().optional(),
   label_version: z.number().int().nonnegative().optional(),
+  label_sources: z
+    .object({
+      category: labelOrigin().optional(),
+      from_name: labelOrigin().optional(),
+      to_name: labelOrigin().optional(),
+    })
+    .optional(),
+  balance_status: z.enum(["recorded", "not_printed", "unavailable"]).optional(),
   account_type: z.string().optional(),
   account_label: z.string().optional(),
   key: z.string(),
@@ -38,3 +46,19 @@ export const transactionDetail = z.object({
   superseded_by_id: z.string().nullable(),
   locator: z.unknown().optional(),
 })
+
+function labelOrigin() {
+  return z.object({
+    source: z.enum([
+      "description",
+      "statement",
+      "account",
+      "investigator",
+      "missing",
+    ]),
+    explanation: z.string().optional(),
+    rule: z.string().optional(),
+    version: z.string().optional(),
+    value: z.string().optional(),
+  })
+}

@@ -77,3 +77,48 @@ it("keeps card debt separate from bank movements in the same currency", () => {
   expect(within(card).getByText("40.00 EUR")).toBeInTheDocument()
   expect(screen.queryByText("1,240.00 EUR")).not.toBeInTheDocument()
 })
+it("distinguishes suggestions and absent printed balances from an extracted zero", () => {
+  render(
+    <InvestigationTransactionTable
+      rows={[
+        {
+          ...row,
+          key: "inferred",
+          to_name: "Nike",
+          category: "Shopping",
+          running_balance_minor: null,
+          balance_status: "not_printed",
+          label_sources: {
+            to_name: {
+              source: "description",
+              explanation: "Merchant suggested from NIKE.",
+            },
+            category: { source: "description" },
+          },
+        },
+        {
+          ...row,
+          key: "missing",
+          balance_status: "unavailable",
+          running_balance_minor: null,
+        },
+        {
+          ...row,
+          key: "zero",
+          balance_status: "recorded",
+          running_balance_minor: "0",
+          category: "Reviewed",
+          label_sources: { category: { source: "investigator" } },
+        },
+      ]}
+      onOpen={vi.fn()}
+      selected={[]}
+      onToggle={vi.fn()}
+    />
+  )
+  expect(screen.getAllByText("Suggested")).toHaveLength(2)
+  expect(screen.getByText("Printed balance")).toBeInTheDocument()
+  expect(screen.getByText("Not printed")).toBeInTheDocument()
+  expect(screen.getByText("Not available")).toBeInTheDocument()
+  expect(screen.getByText("0.00 EUR")).toBeInTheDocument()
+})

@@ -42,7 +42,7 @@ export function paymentProfiles(rows: LedgerTransaction[]): PaymentProfile[] {
   >()
   for (const row of rows) {
     const counterparty =
-      (row.direction === "credit" ? row.from_name : row.to_name) ||
+      (row.direction === "credit" ? row.from_name : row.to_name) ??
       row.counterparty_raw
     for (const [id, name, kind] of [
       [

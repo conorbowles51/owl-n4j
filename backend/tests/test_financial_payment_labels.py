@@ -81,3 +81,34 @@ class PaymentLabelsTests(unittest.TestCase):
             view = to_view(row, account=row.account)
             self.assertEqual(view.from_name if row.direction == 'credit' else view.to_name, 'Reviewed business')
             self.assertNotEqual(view.to_name if row.direction == 'credit' else view.from_name, 'Reviewed business')
+
+    def test_description_suggestions_reach_filters_exports_and_survive_explicit_clear(self):
+        from routers.financial_ledger import get_ledger_categories
+        from services.financial.ledger_snapshot import render_ledger_report
+        row = next(r for r in self.rows if r.direction == 'debit')
+        row.description = 'NIKE.COM AP8008066453OR'
+        row.counterparty_raw = None
+        self.f.db.commit()
+        original = (row.amount_minor, row.currency, row.running_balance_minor, row.content_hash, copy.deepcopy(row.provenance))
+        view = to_view(row, account=row.account).to_json()
+        self.assertEqual((view['category'], view['to_name']), ('Shopping', 'Nike'))
+        self.assertEqual(view['label_sources']['to_name']['source'], 'description')
+        self.assertIn('Shopping', get_ledger_categories(case_id=self.f.case.id, db=self.f.db)['categories'])
+        snapshot = capture_ledger_snapshot(self.f.db, case_id=self.f.case.id)
+        document = json.loads(snapshot.content)
+        filtered = capture_table_view(document['ledger'], dict(category='Shopping'))
+        self.assertEqual(filtered['row_ids'], [str(row.id)])
+        html = render_ledger_report(snapshot)
+        self.assertIn('Nike (suggested)', html)
+        self.assertIn('Shopping (suggested)', html)
+        self.save([row], category='Shopping')
+        self.f.db.expire_all()
+        self.assertEqual(to_view(row, account=row.account).label_sources['category']['source'], 'investigator')
+        self.assertEqual(row.metadata_['investigation_label_history'][0]['before']['category'], 'Shopping')
+        self.assertEqual(row.metadata_['investigation_label_history'][0]['previous_label_sources']['category']['source'], 'description')
+        self.save([row], category='', to_name='')
+        self.f.db.expire_all()
+        view = to_view(row, account=row.account).to_json()
+        self.assertEqual((view['category'], view['to_name']), ('', ''))
+        self.assertNotIn('Shopping', get_ledger_categories(case_id=self.f.case.id, db=self.f.db)['categories'])
+        self.assertEqual(original, (row.amount_minor, row.currency, row.running_balance_minor, row.content_hash, row.provenance))

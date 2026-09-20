@@ -39,7 +39,7 @@ actor behind them.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from typing import Any, Optional
 from uuid import UUID
@@ -102,9 +102,8 @@ def list_transactions(
 class TransactionView:
     """One ledger row, shaped for a reader rather than for storage.
 
-    Every field is either a stored column unwrapped to a JSON-safe type, or
-    ``locator``, the one field this shape adds: lifted out of ``provenance``
-    so a caller never has to know the ledger keeps it there.
+    Stored readings remain unchanged. Description-based investigation labels
+    identify their rule and origin in label_sources, including in exports.
     """
 
     key: str
@@ -143,6 +142,8 @@ class TransactionView:
     from_name: str = ""
     to_name: str = ""
     label_version: int = 0
+    label_sources: dict = field(default_factory=dict)
+    balance_status: str = 'unavailable'
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -150,6 +151,8 @@ class TransactionView:
             "from_name": self.from_name,
             "to_name": self.to_name,
             "label_version": self.label_version,
+            "label_sources": self.label_sources,
+            "balance_status": self.balance_status,
             "key": self.key,
             "case_id": self.case_id,
             "account_id": self.account_id,
@@ -198,9 +201,11 @@ def to_view(row: FinancialTransaction, *, account=None) -> TransactionView:
     unwrap here.
     """
     from services.financial.payment_labels import payment_label_view
+    from services.financial.payment_inference import balance_reading_status
     account_type = account.account_type if account is not None and account.case_id == row.case_id else None
     return TransactionView(
         **payment_label_view(row, account),
+        balance_status=balance_reading_status(row),
         account_type=account_type,
         account_holder=(account.holder_name or "") if account is not None and account.case_id == row.case_id else "",
         account_label=(" · ".join(v for v in [account.holder_name, account.institution_name, account.identifier_as_printed] if v) if account is not None and account.case_id == row.case_id else None),

@@ -40,6 +40,20 @@ export function CategoryMoneyChart({
           transactions.
         </p>
       </div>
+      {rows.some(
+        (row) => row.label_sources?.category?.source === "description"
+      ) && (
+        <p className="text-sm text-muted-foreground">
+          Includes{" "}
+          {
+            rows.filter(
+              (row) => row.label_sources?.category?.source === "description"
+            ).length
+          }{" "}
+          payments with categories suggested from descriptions. Open a payment
+          to review or change its category.
+        </p>
+      )}
       {groups.slice(index * 12, (index + 1) * 12).map((group) => {
         const peers = groups.filter(
           (other) =>

@@ -92,6 +92,63 @@ it("offers no edit action to a read-only viewer", () => {
     screen.queryByRole("button", { name: "Save changes" })
   ).not.toBeInTheDocument()
 })
+it("confirms a suggestion without requiring an edit or reason", async () => {
+  vi.mocked(readSelectedPayments).mockResolvedValue([
+    {
+      transaction: {
+        ...paymentFixture,
+        category: "Shopping",
+        label_version: 0,
+        label_sources: {
+          category: {
+            source: "description",
+            explanation: "Suggested from Nike in the description.",
+          },
+        },
+      },
+    },
+  ] as Awaited<ReturnType<typeof readSelectedPayments>>)
+  const close = mount(["payment"])
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Confirm suggestion" })
+  )
+  await waitFor(() => expect(close).toHaveBeenCalled())
+  expect(fetchAPI).toHaveBeenCalledWith(
+    expect.stringContaining("/ledger/payment-labels"),
+    {
+      method: "PUT",
+      body: {
+        transactions: [{ id: "payment", version: 0 }],
+        category: "Shopping",
+      },
+    }
+  )
+})
+it("sends an explicit clear when the investigator rejects a suggestion", async () => {
+  vi.mocked(readSelectedPayments).mockResolvedValue([
+    {
+      transaction: {
+        ...paymentFixture,
+        category: "Shopping",
+        label_version: 0,
+        label_sources: { category: { source: "description" } },
+      },
+    },
+  ] as Awaited<ReturnType<typeof readSelectedPayments>>)
+  const close = mount(["payment"])
+  fireEvent.change(await screen.findByLabelText("Edit Category"), {
+    target: { value: "" },
+  })
+  fireEvent.click(screen.getByRole("button", { name: "Save changes" }))
+  await waitFor(() => expect(close).toHaveBeenCalled())
+  expect(fetchAPI).toHaveBeenCalledWith(
+    expect.stringContaining("/ledger/payment-labels"),
+    {
+      method: "PUT",
+      body: { transactions: [{ id: "payment", version: 0 }], category: "" },
+    }
+  )
+})
 it("keeps category amounts exact and bank/card currencies separate", () => {
   const base = paymentFixture
   const groups = categoryAmounts([

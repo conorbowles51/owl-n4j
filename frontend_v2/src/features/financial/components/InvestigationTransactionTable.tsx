@@ -3,6 +3,11 @@ import { chartRatio } from "../lib/investigator-workspace"
 import type { LedgerTransaction } from "../api"
 import { formatLedgerAmount } from "../lib/ledger-format"
 import { Button } from "@/components/ui/button"
+import { PaymentLabelOrigin } from "./PaymentLabelOrigin"
+import {
+  absentPaymentBalance,
+  paymentBalanceExplanation,
+} from "../lib/payment-balance"
 
 export function PaymentTotals({
   rows,
@@ -148,7 +153,7 @@ export function InvestigationTransactionTable({
             <th className="p-2">Category</th>
             <th className="p-2 text-right">{cards ? "Credit" : "Money in"}</th>
             <th className="p-2 text-right">{cards ? "Debit" : "Money out"}</th>
-            {hasBalance && <th className="p-2 text-right">Balance</th>}
+            {hasBalance && <th className="p-2 text-right">Printed balance</th>}
           </tr>
         </thead>
         <tbody>
@@ -242,24 +247,26 @@ export function InvestigationTransactionTable({
                   className="text-left underline underline-offset-2 decoration-muted-foreground/40"
                   onClick={() => openPaymentParty(row.case_id, row, "from")}
                 >
-                  {row.from_name ||
+                  {(row.from_name ??
                     (row.direction === "debit"
                       ? row.account_label
-                      : row.counterparty_raw) ||
-                    "Not recorded"}
+                      : row.counterparty_raw)) ||
+                    "Not identified"}
                 </button>
+                <PaymentLabelOrigin row={row} field="from_name" />
               </td>
               <td className="p-2 max-w-44 break-words">
                 <button
                   className="text-left underline underline-offset-2 decoration-muted-foreground/40"
                   onClick={() => openPaymentParty(row.case_id, row, "to")}
                 >
-                  {row.to_name ||
+                  {(row.to_name ??
                     (row.direction === "credit"
                       ? row.account_label
-                      : row.counterparty_raw) ||
-                    "Not recorded"}
+                      : row.counterparty_raw)) ||
+                    "Not identified"}
                 </button>
+                <PaymentLabelOrigin row={row} field="to_name" />
               </td>
               <td className="p-2">
                 <button
@@ -272,6 +279,7 @@ export function InvestigationTransactionTable({
                 >
                   {row.category || "Uncategorized"}
                 </button>
+                <PaymentLabelOrigin row={row} field="category" />
               </td>
               <td
                 className="finance-amount p-2 text-right tabular-nums"
@@ -291,9 +299,13 @@ export function InvestigationTransactionTable({
               </td>
               {hasBalance && (
                 <td className="p-2 text-right tabular-nums">
-                  {row.running_balance_minor === null
-                    ? "Not recorded"
-                    : money(row.running_balance_minor, row.currency)}
+                  {row.running_balance_minor == null ? (
+                    <span title={paymentBalanceExplanation(row)}>
+                      {absentPaymentBalance(row)}
+                    </span>
+                  ) : (
+                    money(row.running_balance_minor, row.currency)
+                  )}
                 </td>
               )}
             </tr>

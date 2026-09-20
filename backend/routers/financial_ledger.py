@@ -1297,8 +1297,21 @@ def read_source_custody(file_id: UUID, case_id: UUID = Query(...), db: Session =
 @router.get("/ledger-categories")
 def get_ledger_categories(case_id: UUID = Query(...), db: Session = Depends(get_db)):
     from sqlalchemy import select
-    from postgres.models.financial import FinancialTransaction
-    category = FinancialTransaction.metadata_['investigation_labels']['category'].as_string()
-    values = db.scalars(select(category).where(FinancialTransaction.case_id == case_id,
-        FinancialTransaction.ledger_status == 'admitted', category.is_not(None), category != '').distinct())
+    from postgres.models.financial import FinancialTransaction, FinancialAccount
+    from services.financial.payment_inference import infer_payment_labels
+    # Select only the fields needed for labels, not PDF provenance or source
+    # proposals. Include inferred categories so filters match the ledger view.
+    query = select(FinancialTransaction.metadata_, FinancialTransaction.description,
+        FinancialTransaction.direction, FinancialAccount.account_type, FinancialAccount.institution_name).outerjoin(
+            FinancialAccount, (FinancialAccount.id == FinancialTransaction.account_id) &
+            (FinancialAccount.case_id == FinancialTransaction.case_id)).where(
+                FinancialTransaction.case_id == case_id, FinancialTransaction.ledger_status == 'admitted',
+                FinancialTransaction.superseded_by_id.is_(None)).distinct()
+    values = set()
+    for metadata, description, direction, account_type, institution in db.execute(query):
+        labels = (metadata or {}).get('investigation_labels', {})
+        value = labels.get('category') if 'category' in labels else infer_payment_labels(
+            description, direction=direction, account_type=account_type, institution=institution).get('category', {}).get('value')
+        if value:
+            values.add(value)
     return dict(case_id=str(case_id), categories=sorted(values))

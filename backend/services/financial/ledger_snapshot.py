@@ -226,6 +226,15 @@ def render_ledger_report(snapshot):
     def text(value):
         return escape('Not recorded' if value is None else str(value), quote=True)
 
+    def payment_label(row, field):
+        value = row.get(field) or ('Uncategorized' if field == 'category' else '')
+        if (row.get('label_sources') or {}).get(field, {}).get('source') == 'description':
+            value += ' (suggested)'
+        return value
+
+    def absent_balance(row):
+        return 'Not printed' if row.get('balance_status') == 'not_printed' else 'Not available'
+
     def details(label, value):
         return '<details><summary>' + text(label) + '</summary><pre>' + text(
             json.dumps(value, ensure_ascii=False, sort_keys=True, indent=2)) + '</pre></details>'
@@ -286,6 +295,7 @@ def render_ledger_report(snapshot):
         '<p>' + text(ledger['limitation']) + '</p>',
         '<p>The transaction table shows currency amounts. Detailed readings retain exact integer minor units in brackets. '
         'Unsupported values remain explicitly unscaled. No exchange-rate conversion or transfer matching is applied.</p>',
+        '<p>Names and categories marked “suggested” are inferred from transaction descriptions; they are not confirmed identities or printed categories. Original readings and label origins are retained in the captured data.</p>',
         ]
     verification_parts = [
         '<p>Rows in verified totals: ' + text(ledger['included_rows']) + '; other captured readings: ' + text(ledger['excluded_rows']) + '.</p>',
@@ -315,10 +325,10 @@ def render_ledger_report(snapshot):
                 view['filters']['direction'] or 'Both', view['filters']['proof'] or 'All',
                 view['filters']['sort'], view['matching_rows']]]),
             table(['Date', 'Description', 'From', 'To', 'Category', 'Credit', 'Debit', 'Printed balance', 'Source reference'], [[
-                indexed[key]['ordering_date'], indexed[key]['description'], indexed[key].get('from_name', ''), indexed[key].get('to_name', ''), indexed[key].get('category') or 'Uncategorized',
+                indexed[key]['ordering_date'], indexed[key]['description'], payment_label(indexed[key], 'from_name'), payment_label(indexed[key], 'to_name'), payment_label(indexed[key], 'category'),
                 money_display(indexed[key]['amount_minor'], indexed[key]['currency'], exact=False) if indexed[key]['direction'] == 'credit' else '',
                 money_display(indexed[key]['amount_minor'], indexed[key]['currency'], exact=False) if indexed[key]['direction'] == 'debit' else '',
-                money_display(indexed[key]['running_balance_minor'], indexed[key]['currency'], exact=False) if indexed[key]['running_balance_minor'] is not None else 'Not recorded',
+                money_display(indexed[key]['running_balance_minor'], indexed[key]['currency'], exact=False) if indexed[key]['running_balance_minor'] is not None else absent_balance(indexed[key]),
                 indexed[key]['ref_id']] for key in view['row_ids']], widths=[9,19,10,10,10,11,11,10,10])]
     else:
         current = [reading['row'] for reading in ledger['readings']
@@ -326,10 +336,10 @@ def render_ledger_report(snapshot):
         current.sort(key=lambda row: (row['ordering_date'], row['row_index'], row['key']))
         parts += ['<h2>Current transactions</h2>',
             table(['Date', 'Description', 'From', 'To', 'Category', 'Credit', 'Debit', 'Printed balance', 'Source reference'], [[
-                row['ordering_date'], row['description'], row.get('from_name', ''), row.get('to_name', ''), row.get('category') or 'Uncategorized',
+                row['ordering_date'], row['description'], payment_label(row, 'from_name'), payment_label(row, 'to_name'), payment_label(row, 'category'),
                 money_display(row['amount_minor'], row['currency'], exact=False) if row['direction'] == 'credit' else '',
                 money_display(row['amount_minor'], row['currency'], exact=False) if row['direction'] == 'debit' else '',
-                money_display(row['running_balance_minor'], row['currency'], exact=False) if row['running_balance_minor'] is not None else 'Not recorded',
+                money_display(row['running_balance_minor'], row['currency'], exact=False) if row['running_balance_minor'] is not None else absent_balance(row),
                 row['ref_id']] for row in current])]
     notes = document.get('investigation_notes', [])
     if notes:

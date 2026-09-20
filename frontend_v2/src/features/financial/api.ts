@@ -209,6 +209,24 @@ export type QuarantineReason = (typeof QUARANTINE_REASONS)[number]
  * one of these fields reaches a component through that module.
  */
 export interface LedgerTransaction {
+  label_sources?: Partial<
+    Record<
+      "category" | "from_name" | "to_name",
+      {
+        source:
+          | "description"
+          | "statement"
+          | "account"
+          | "investigator"
+          | "missing"
+        explanation?: string
+        rule?: string
+        version?: string
+        value?: string
+      }
+    >
+  >
+  balance_status?: "recorded" | "not_printed" | "unavailable"
   category?: string
   from_name?: string
   to_name?: string
@@ -281,6 +299,8 @@ export const LEDGER_TRANSACTION_FIELDS: readonly (keyof LedgerTransaction)[] = [
   "from_name",
   "to_name",
   "label_version",
+  "label_sources",
+  "balance_status",
   "key",
   "case_id",
   "account_id",

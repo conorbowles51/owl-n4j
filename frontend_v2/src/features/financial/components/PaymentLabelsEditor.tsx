@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { readSelectedPayments } from "../lib/selected-payment-source"
 import { usePaymentCategories } from "../hooks/use-payment-categories"
 import { useFinancialAccess } from "../hooks/use-financial-access"
+import { PaymentLabelOrigin } from "./PaymentLabelOrigin"
 
 export function PaymentLabelsEditor({
   caseId,
@@ -41,8 +42,8 @@ export function PaymentLabelsEditor({
     },
   })
   const save = useMutation({
-    mutationFn: async () => {
-      if (!canEdit || !query.data || !Object.keys(changes).length)
+    mutationFn: async (edits: Record<string, string>) => {
+      if (!canEdit || !query.data || !Object.keys(edits).length)
         throw Error("Choose an edit first.")
       return fetchAPI(
         `/api/financial/ledger/payment-labels?${new URLSearchParams({ case_id: caseId })}`,
@@ -53,7 +54,7 @@ export function PaymentLabelsEditor({
               id: row.key,
               version: row.label_version ?? 0,
             })),
-            ...changes,
+            ...edits,
           },
         }
       )
@@ -86,6 +87,19 @@ export function PaymentLabelsEditor({
           ["category", "Category"],
         ]
       : [["category", "Category"]]
+  const suggested = Object.fromEntries(
+    fields
+      .filter(
+        ([field]) =>
+          ids.length === 1 &&
+          row?.label_sources?.[field as "from_name" | "to_name" | "category"]
+            ?.source === "description"
+      )
+      .map(([field]) => [
+        field,
+        String(row?.[field as "from_name" | "to_name" | "category"] ?? ""),
+      ])
+  )
   const suggestions = [
     ...new Set([
       ...(categories.data ?? []),
@@ -96,6 +110,13 @@ export function PaymentLabelsEditor({
       "Shopping",
       "Cash withdrawals",
       "Fees and interest",
+      "Bank fees",
+      "Interest income",
+      "Interest charges",
+      "Card payments",
+      "Transport",
+      "Groceries",
+      "Subscriptions",
       "Uncategorized",
     ]),
   ]
@@ -157,6 +178,13 @@ export function PaymentLabelsEditor({
                 }
                 disabled={save.isPending || query.isFetching}
               />
+              {ids.length === 1 && row && field !== "counterparty_name" && (
+                <PaymentLabelOrigin
+                  row={row}
+                  field={field as "from_name" | "to_name" | "category"}
+                  detail
+                />
+              )}
             </label>
           ))}
         </div>
@@ -175,10 +203,20 @@ export function PaymentLabelsEditor({
             !Object.keys(changes).length ||
             save.isPending
           }
-          onClick={() => save.mutate()}
+          onClick={() => save.mutate(changes)}
         >
           {save.isPending ? "Saving…" : "Save changes"}
         </Button>
+        {Object.keys(suggested).length > 0 && !Object.keys(changes).length && (
+          <Button
+            disabled={save.isPending || query.isFetching}
+            onClick={() => save.mutate(suggested)}
+          >
+            {Object.keys(suggested).length === 1
+              ? "Confirm suggestion"
+              : "Confirm suggestions"}
+          </Button>
+        )}
         <Button
           variant="outline"
           disabled={save.isPending || query.isFetching}

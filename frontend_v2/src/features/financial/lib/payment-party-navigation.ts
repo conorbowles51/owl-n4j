@@ -22,8 +22,8 @@ export function openPaymentParty(
   const ownAccount =
     side === "from" ? row.direction === "debit" : row.direction === "credit"
   const name =
-    (side === "from" ? row.from_name : row.to_name) ||
-    row.counterparty_raw ||
+    (side === "from" ? row.from_name : row.to_name) ??
+    row.counterparty_raw ??
     ""
   store.put(peopleKey, {
     search: "",

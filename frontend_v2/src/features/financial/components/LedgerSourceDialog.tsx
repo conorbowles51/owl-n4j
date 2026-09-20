@@ -1,4 +1,9 @@
 import { PaymentLabelsEditor } from "./PaymentLabelsEditor"
+import { PaymentLabelOrigin } from "./PaymentLabelOrigin"
+import {
+  absentPaymentBalance,
+  paymentBalanceExplanation,
+} from "../lib/payment-balance"
 import { NearbyPaymentSearch } from "./NearbyPaymentSearch"
 import { InvestigatorFindingEditor } from "./InvestigatorFindingEditor"
 import { useFinancialFindingIndex } from "../hooks/use-financial-finding-index"
@@ -213,11 +218,45 @@ export function LedgerSourceDialog({
                   </div>
                   <div>
                     <dt>From</dt>
-                    <dd>{data.transaction.from_name || "Not recorded"}</dd>
+                    <dd>
+                      {data.transaction.from_name || "Not identified"}
+                      <PaymentLabelOrigin
+                        row={data.transaction}
+                        field="from_name"
+                        detail
+                      />
+                    </dd>
                     <dt>To</dt>
-                    <dd>{data.transaction.to_name || "Not recorded"}</dd>
+                    <dd>
+                      {data.transaction.to_name || "Not identified"}
+                      <PaymentLabelOrigin
+                        row={data.transaction}
+                        field="to_name"
+                        detail
+                      />
+                    </dd>
                     <dt>Category</dt>
-                    <dd>{data.transaction.category || "Uncategorized"}</dd>
+                    <dd>
+                      {data.transaction.category || "Uncategorized"}
+                      <PaymentLabelOrigin
+                        row={data.transaction}
+                        field="category"
+                        detail
+                      />
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Printed balance</dt>
+                    <dd>
+                      {data.transaction.running_balance_minor != null
+                        ? `${formatLedgerAmount(data.transaction.running_balance_minor, data.transaction.currency).text} ${data.transaction.currency}`
+                        : absentPaymentBalance(data.transaction)}
+                    </dd>
+                    {data.transaction.running_balance_minor == null && (
+                      <p className="text-xs text-muted-foreground">
+                        {paymentBalanceExplanation(data.transaction)}
+                      </p>
+                    )}
                   </div>
                   <div>
                     <dt>Bank reference</dt>

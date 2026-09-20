@@ -34,6 +34,25 @@ const row = (
 })
 
 describe("investigator comparisons and charts", () => {
+  it("uses suggested names in profiles but respects an explicit cleared name", () => {
+    const suggested = {
+      ...row("suggested", "2023-03-18", "debit"),
+      to_name: "Nike",
+      category: "Shopping",
+      counterparty_raw: "Older reading",
+    }
+    const groups = paymentProfiles([
+      suggested,
+      { ...suggested, key: "cleared", to_name: "" },
+    ])
+    expect(groups.find((group) => group.id === "name:Nike")?.rows).toHaveLength(
+      1
+    )
+    expect(groups.some((group) => group.name === "Older reading")).toBe(false)
+    expect(groups.find((group) => group.id === "name:")?.rows[0].key).toBe(
+      "cleared"
+    )
+  })
   it("compares adjacent dated bank payments within the same account and currency", () => {
     const incoming = row("in", "2023-03-18", "credit")
     const outgoing = {

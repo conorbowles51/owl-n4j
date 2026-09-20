@@ -244,8 +244,10 @@ export function MoneyConnections({
         </div>
       )}
       <p className="text-xs text-muted-foreground">
-        Names are taken from the payment records. These connections do not
-        establish ownership or show that one receipt funded a later payment.
+        Names include statement readings, investigator edits and suggestions
+        from descriptions. Open a payment to check its name source. These
+        connections do not establish ownership or show that one receipt funded a
+        later payment.
       </p>
     </section>
   )
@@ -371,9 +373,9 @@ export function InvestigatorFollowMoney({ caseId }: { caseId: string }) {
                       </strong>
                       <p>{pair.incoming.ordering_date}</p>
                       <p className="text-xs text-muted-foreground">
-                        {pair.incoming.from_name ||
-                          pair.incoming.counterparty_raw ||
-                          pair.incoming.description}
+                        {(pair.incoming.from_name ??
+                          pair.incoming.counterparty_raw) ||
+                          "Name not identified"}
                       </p>
                     </td>
                     <td className="p-3">
@@ -391,9 +393,9 @@ export function InvestigatorFollowMoney({ caseId }: { caseId: string }) {
                       </strong>
                       <p>{pair.outgoing.ordering_date}</p>
                       <p className="text-xs text-muted-foreground">
-                        {pair.outgoing.to_name ||
-                          pair.outgoing.counterparty_raw ||
-                          pair.outgoing.description}
+                        {(pair.outgoing.to_name ??
+                          pair.outgoing.counterparty_raw) ||
+                          "Name not identified"}
                       </p>
                     </td>
                     <td className="p-3">
