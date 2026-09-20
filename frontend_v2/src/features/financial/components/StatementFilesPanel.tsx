@@ -3,10 +3,13 @@ import { FinancialFileAction } from "./FinancialFileAction"
 import { EvidenceFinancialPicker } from "./EvidenceFinancialPicker"
 import { useFinancialAccess } from "../hooks/use-financial-access"
 import { useRef, useState } from "react"
+import { useNavigate } from "react-router-dom"
 import { useQueryClient } from "@tanstack/react-query"
 import { z } from "zod"
 import { Button } from "@/components/ui/button"
 import { evidenceAPI } from "@/features/evidence/api"
+import { fetchAPI } from "@/lib/api-client"
+import { newReviewId } from "../lib/statement-review-id"
 import { useAuthStore } from "@/features/auth/hooks/use-auth"
 import { useFinancialStore } from "../stores/financial.store"
 import { useStatementWorkspace } from "../stores/statement-workspace"
@@ -24,7 +27,8 @@ export function StatementFilesPanel({
   register?: boolean
   onOpen?: () => void
 }) {
-  const { canUpload } = useFinancialAccess()
+  const { canUpload, canEdit } = useFinancialAccess()
+  const navigate = useNavigate()
   const owner = useAuthStore(
     (state) => state.user?.id || state.user?.username || "anonymous"
   )
@@ -36,6 +40,12 @@ export function StatementFilesPanel({
   const [removed, setRemoved] = useState(false)
   const [error, setError] = useState("")
   const [reading, setReading] = useState<Record<string, boolean>>({})
+  const [selection, setSelection] = useState<{ scope: string; ids: string[] }>({
+    scope,
+    ids: [],
+  })
+  const [preparing, setPreparing] = useState(false)
+  const batchRequest = useRef<{ selection: string; id: string } | null>(null)
   const queue = useStatementUploads((state) => state.queues[scope])
   const selected = useStatementWorkspace(
     (state) => state.selections[scope]?.fileId
@@ -85,15 +95,60 @@ export function StatementFilesPanel({
         return (
           removed ||
           status === "all" ||
-          (status === "imported" && !!saved?.current_transactions) ||
+          (status === "imported" &&
+            (!!saved?.current_transactions || !!saved?.periods.length)) ||
           (status === "review" &&
             imports.data &&
             !imports.data.truncated &&
-            !saved?.current_transactions) ||
+            !saved?.current_transactions &&
+            !saved?.periods.length) ||
           (status === "attention" &&
             ["failed", "unprocessed"].includes(file.status))
         )
       }) ?? []
+  const selectedIds = (selection.scope === scope ? selection.ids : []).filter(
+    (id) =>
+      files.data?.some((file) => file.id === id && !file.financial_removed)
+  )
+  const hiddenSelected = selectedIds.filter(
+    (id) => !visibleFiles.some((file) => file.id === id)
+  ).length
+  const selectFiles = (ids: string[]) => setSelection({ scope, ids })
+  const prepareSelected = async () => {
+    if (!canEdit || !canUpload || preparing || !selectedIds.length) return
+    const snapshot = JSON.stringify([scope, [...selectedIds].sort()])
+    if (batchRequest.current?.selection !== snapshot)
+      batchRequest.current = { selection: snapshot, id: newReviewId() }
+    setPreparing(true)
+    setError("")
+    try {
+      const batch = z.object({ id: z.string(), case_id: z.string() }).parse(
+        await fetchAPI(
+          `/api/financial/statement-import/batches?case_id=${caseId}`,
+          {
+            method: "POST",
+            body: {
+              request_id: batchRequest.current.id,
+              file_ids: selectedIds,
+              folder_ids: [],
+            },
+          }
+        )
+      )
+      if (batch.case_id !== caseId)
+        throw Error("The batch belongs to another case.")
+      void client.invalidateQueries({ queryKey: ["financial-batches", caseId] })
+      navigate(
+        `/cases/${caseId}/financial?view=statements&batch=${encodeURIComponent(batch.id)}`
+      )
+    } catch (failure) {
+      setError(
+        `${failure instanceof Error ? failure.message : "Preparation could not start."} Your selection is kept. Retry to check the same request.`
+      )
+    } finally {
+      setPreparing(false)
+    }
+  }
   return (
     <section
       aria-label="Statement files"
@@ -172,7 +227,8 @@ export function StatementFilesPanel({
       {canUpload && (
         <p className="text-xs text-muted-foreground">
           Up to 20 PDFs per selection. Keep the browser tab open while uploads
-          finish. Each statement is reviewed and confirmed separately.
+          finish. Select files below to prepare their statements together, or
+          open one file for individual review.
         </p>
       )}
       {error && <p role="alert">{error}</p>}
@@ -216,8 +272,8 @@ export function StatementFilesPanel({
               onChange={(e) => setStatus(e.target.value)}
             >
               <option value="all">All files</option>
-              <option value="imported">With imported payments</option>
-              <option value="review">Without imported payments</option>
+              <option value="imported">With imported statements</option>
+              <option value="review">Without imported statements</option>
               <option value="attention">Reading failed or not started</option>
             </select>
           </label>
@@ -226,21 +282,89 @@ export function StatementFilesPanel({
               {files.data.filter((file) => !file.financial_removed).length} PDFs
               in Financial ·{" "}
               {imports.data?.files.filter(
-                (file) => file.current_transactions > 0
+                (file) =>
+                  file.current_transactions > 0 || file.periods.length > 0
               ).length ?? "…"}{" "}
-              with imported payments
+              with imported statements
             </span>
           )}
         </div>
       )}
       {files.isPending && <p role="status">Loading statement files…</p>}
       {files.isError && <p role="alert">{files.error.message}</p>}
+      {register && !removed && canEdit && canUpload && (
+        <section
+          aria-label="Prepare selected statement files"
+          className="rounded border bg-card p-3 space-y-2"
+        >
+          <div className="flex flex-wrap items-center gap-2">
+            <span>
+              {selectedIds.length} {selectedIds.length === 1 ? "file" : "files"}{" "}
+              selected
+              {hiddenSelected ? ` · ${hiddenSelected} hidden by filters` : ""}
+            </span>
+            <Button
+              variant="outline"
+              disabled={preparing || !visibleFiles.length}
+              onClick={() =>
+                selectFiles([
+                  ...new Set([
+                    ...selectedIds,
+                    ...visibleFiles.map((file) => file.id),
+                  ]),
+                ])
+              }
+            >
+              Select all {visibleFiles.length} shown{" "}
+              {visibleFiles.length === 1 ? "file" : "files"}
+            </Button>
+            <Button
+              variant="ghost"
+              disabled={preparing || !selectedIds.length}
+              onClick={() => selectFiles([])}
+            >
+              Clear selection
+            </Button>
+            <Button
+              disabled={preparing || !selectedIds.length || files.isError}
+              onClick={() => void prepareSelected()}
+            >
+              {preparing
+                ? "Preparing statements…"
+                : `Prepare statements from ${selectedIds.length} ${selectedIds.length === 1 ? "file" : "files"}`}
+            </Button>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            All recognised accounts and periods go into one batch. Import them
+            together there; you can return to reading issues later. Existing
+            imports are recognised.
+          </p>
+        </section>
+      )}
       {visibleFiles.map((file) => {
         const saved = imports.data?.files.find(
           (item) => item.evidence_file_id === file.id
         )
         return (
           <div key={file.id} className="space-y-1">
+            {register && !removed && canEdit && canUpload && (
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  aria-label={`Select ${file.original_filename}`}
+                  checked={selectedIds.includes(file.id)}
+                  disabled={preparing}
+                  onChange={(event) =>
+                    selectFiles(
+                      event.target.checked
+                        ? [...selectedIds, file.id]
+                        : selectedIds.filter((id) => id !== file.id)
+                    )
+                  }
+                />
+                Include in bulk preparation
+              </label>
+            )}
             <button
               type="button"
               aria-pressed={selected === file.id}
@@ -265,7 +389,9 @@ export function StatementFilesPanel({
                 data-finance-tone={
                   file.status === "failed"
                     ? "debit"
-                    : saved?.current_transactions || saved?.wire_review_count
+                    : saved?.current_transactions ||
+                        saved?.periods.length ||
+                        saved?.wire_review_count
                       ? "info"
                       : "review"
                 }
@@ -274,13 +400,15 @@ export function StatementFilesPanel({
                   ? "Removed from Financial"
                   : saved?.wire_review_count
                     ? `${saved.wire_review_count} saved wire ${saved.wire_review_count === 1 ? "review" : "reviews"}`
-                    : saved
-                      ? `${saved.current_transactions} imported payments · ${saved.periods.length} recorded periods`
-                      : file.status === "processed"
-                        ? imports.data && !imports.data.truncated
-                          ? "Ready to review"
-                          : "Ready to open"
-                        : file.status}
+                    : saved?.periods.length && !saved.current_transactions
+                      ? `Statement saved · ${saved.periods.length} recorded ${saved.periods.length === 1 ? "period" : "periods"} · no payments`
+                      : saved
+                        ? `${saved.current_transactions} imported payments · ${saved.periods.length} recorded periods`
+                        : file.status === "processed"
+                          ? imports.data && !imports.data.truncated
+                            ? "Ready to review"
+                            : "Ready to open"
+                          : file.status}
               </span>
               {saved?.periods
                 .slice(0, register ? undefined : 3)

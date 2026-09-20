@@ -64,6 +64,32 @@ class BatchImportTests(TestCase):
         with f.SessionLocal() as db:
             self.assertEqual(len(list(db.scalars(select(FinancialTransaction)))),12)
 
+    def test_bulk_import_saves_balance_only_statement_and_file_status_without_payments(self):
+        from services.financial.statement_file_status import statement_file_status
+        from postgres.models.workspace_entry import WorkspaceEntry, WorkspaceEntryLink
+        Base.metadata.create_all(self.f.db.connection(), tables=[WorkspaceEntry.__table__, WorkspaceEntryLink.__table__])
+        self.f.db.commit()
+        self.f.standalone_balance_request([['Saldo final', '0,00 EUR']])
+        batch = self.create()
+        self.advance(batch)
+        before = self.status(batch)
+        self.assertEqual(before['ready_transactions'], 0)
+        self.assertTrue(before['items'][0]['can_import'])
+        with self.f.SessionLocal() as db:
+            queued = service.queue_import(db, case_id=self.f.case.id, batch_id=batch,
+                expected_revision=before['ready_revision'], actor=self.f.actor)
+        self.assertEqual(queued['queued'], 1)
+        self.advance(batch)
+        self.assertEqual(self.status(batch)['counts']['imported'], 1)
+        with self.f.SessionLocal() as db:
+            status = statement_file_status(db, case_id=self.f.case.id)
+            self.assertEqual(status['files'][0]['current_transactions'], 0)
+            self.assertEqual(len(status['files'][0]['periods']), 1)
+            self.assertEqual(list(db.scalars(select(FinancialTransaction))), [])
+        repeated = self.create()
+        self.advance(repeated)
+        self.assertEqual(self.status(repeated)['counts']['imported'], 1)
+
     def test_readiness_separates_flagged_rows_and_balance_differences(self):
         proposal=self.f.preview()
         status,clean=service.assess(proposal)
@@ -82,9 +108,9 @@ class BatchImportTests(TestCase):
         edited=service.initial_request(proposal)
         next(r for r in edited['rows'] if r['id']==payment['id'])['description']='Corrected description'
         status,summary=service.assess(proposal,edited)
-        self.assertEqual(status,'attention')
-        self.assertEqual(summary['problems'],[dict(message='Enter a reason for this payment change.',
-            row_id=payment['id'],page=payment['page_number'])])
+        self.assertEqual(status,'ready')
+        self.assertTrue(summary['can_import'])
+        self.assertEqual(summary['problems'], [])
         # An arithmetical mismatch never joins ready statements.
         changed=deepcopy(proposal)
         changed['rows'].append(dict(id='end',kind='balance',excluded=True,issues=[],page_number=1,fields=dict(description='Closing balance',balance='1')))

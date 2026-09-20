@@ -102,9 +102,12 @@ it("previews readable missing years beside their printed dates and refuses a cha
   fireEvent.change(screen.getByLabelText("Printed statement closing date"), {
     target: { value: "2021-01-25" },
   })
-  fireEvent.change(screen.getByLabelText("Reason for these corrections"), {
-    target: { value: "Date checked" },
-  })
+  fireEvent.change(
+    screen.getByLabelText("Note about these corrections (optional)"),
+    {
+      target: { value: "Date checked" },
+    }
+  )
   fireEvent.click(
     screen.getByRole("button", {
       name: "Select 1 readable dates missing a year",
@@ -161,9 +164,12 @@ it("previews and applies all selected pages without changing originals or replac
   fireEvent.change(screen.getByLabelText("Correction"), {
     target: { value: "switch" },
   })
-  fireEvent.change(screen.getByLabelText("Reason for these corrections"), {
-    target: { value: "Printed in the credit column" },
-  })
+  fireEvent.change(
+    screen.getByLabelText("Note about these corrections (optional)"),
+    {
+      target: { value: "Printed in the credit column" },
+    }
+  )
   fireEvent.click(screen.getByRole("button", { name: "Preview corrections" }))
   expect(apply).not.toHaveBeenCalled()
   fireEvent.click(screen.getByRole("button", { name: "Next correction page" }))
@@ -195,9 +201,12 @@ it("refuses an outdated preview and can restore an excluded row", () => {
   fireEvent.change(screen.getByLabelText("Correction"), {
     target: { value: "include" },
   })
-  fireEvent.change(screen.getByLabelText("Reason for these corrections"), {
-    target: { value: "Payment checked on the source" },
-  })
+  fireEvent.change(
+    screen.getByLabelText("Note about these corrections (optional)"),
+    {
+      target: { value: "Payment checked on the source" },
+    }
+  )
   fireEvent.click(screen.getByRole("button", { name: "Preview corrections" }))
   view.rerender(
     <StatementBulkCorrections
@@ -225,9 +234,9 @@ it("validates dates, selected identities, directions and unchanged values before
   expect(() =>
     previewCorrections(rows, ids, "date", "2020-02-30", "reason")
   ).toThrow("valid transaction date")
-  expect(() => previewCorrections(rows, ids, "date", "2020-02-29", "")).toThrow(
-    "reason"
-  )
+  expect(
+    previewCorrections(rows, ids, "date", "2020-02-29", "")[0].after.date
+  ).toBe("2020-02-29")
   expect(() =>
     previewCorrections(rows, new Set(["missing"]), "exclude", "", "reason")
   ).toThrow("changed")

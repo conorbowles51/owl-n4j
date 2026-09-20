@@ -999,9 +999,7 @@ function EditableStatement({
       row_index: 0,
       source_cells: [],
       fields: {},
-      issues: [
-        "Manually added transaction. Record the source page and reason.",
-      ],
+      issues: ["Manually added transaction. Record the source page."],
       excluded: false,
       kind: "manual_entry",
     })
@@ -1049,7 +1047,6 @@ function EditableStatement({
     },
     [initialById]
   )
-  const requiresReason = (r: Edit) => changed(r)
   const validDate = (value: string) =>
     /^\d{4}-\d{2}-\d{2}$/.test(value) &&
     Number(value.slice(0, 4)) > 0 &&
@@ -1088,6 +1085,10 @@ function EditableStatement({
       )
         problems.push("Complete the other printed dates.")
       if (!r.description.trim()) problems.push("Enter the description.")
+      if (r.counterparty.length > 512)
+        problems.push(
+          "The party name is too long. Check it against the original."
+        )
       if (!r.direction) problems.push("Choose Credit or Debit for the amount.")
       if (
         !/^\d+$/.test(r.amount_minor) ||
@@ -1098,14 +1099,6 @@ function EditableStatement({
           "Enter an amount greater than zero and within the supported range."
         )
     }
-    if (requiresReason(r) && !r.reason.trim())
-      problems.push(
-        changed(r)
-          ? "Explain your correction or decision in the reason field."
-          : r.excluded
-            ? "Check why this row was left out, then record your decision."
-            : "Check the flagged reading against the PDF and record your decision."
-      )
     return problems
   }
   const blockedRows = rows
@@ -1121,11 +1114,41 @@ function EditableStatement({
       )
     )
   })
-  const matchingEmptyBalances =
-    emptyStatementBalances.length === 2 &&
-    emptyStatementBalances[0].balance_minor !== null &&
-    emptyStatementBalances[0].balance_minor ===
-      emptyStatementBalances[1].balance_minor
+  const hasStatementBalance = emptyStatementBalances.some(
+    (r) =>
+      r.balance_minor !== null &&
+      /^-?\d+$/.test(r.balance_minor) &&
+      BigInt(r.balance_minor) >=
+        (data.metadata.balance_convention === "liability_owed"
+          ? -9223372036854775807n
+          : -9223372036854775808n) &&
+      BigInt(r.balance_minor) <= 9223372036854775807n
+  )
+  const emptyEntries = rows.filter((r) => {
+    const original = originals.get(r.id)
+    return (
+      !r.excluded &&
+      original?.kind === "unresolved" &&
+      !r.manual_page &&
+      !r.date &&
+      !r.date_unprinted &&
+      !Object.values(r.date_values ?? {}).some(Boolean) &&
+      !r.description.trim() &&
+      !r.counterparty.trim() &&
+      !r.amount_minor &&
+      !r.direction &&
+      r.balance_minor === null
+    )
+  })
+  const [setAsideIds, setSetAsideIds] = useState<string[]>([])
+  const setAsideEmptyEntries = () => {
+    const ids = new Set(emptyEntries.map((r) => r.id))
+    setRows((current) =>
+      current.map((r) => (ids.has(r.id) ? { ...r, excluded: true } : r))
+    )
+    setSetAsideIds([...ids])
+    setCorrectionPage(0)
+  }
   const detailProblems: { message: string; field?: string }[] = []
   if (coverageBlocked)
     detailProblems.push({
@@ -1179,11 +1202,6 @@ function EditableStatement({
       message: "The period end must be on or after the start.",
       field: "Period end",
     })
-  if (detailsChanged && !detailsReason.trim())
-    detailProblems.push({
-      message: "Explain the account or statement details you changed.",
-      field: "Reason for detail corrections",
-    })
   if (data.current_import) {
     if (data.current_import.evidence_file_id === fileId)
       detailProblems.push({
@@ -1197,7 +1215,7 @@ function EditableStatement({
             "Choose whether this reading should replace the previous import.",
           field: "Replace the previous import",
         })
-      if (!detailsReason.trim() && !detailsChanged)
+      if (!detailsReason.trim())
         detailProblems.push({
           message:
             "Explain why this reading should replace the previous import.",
@@ -1205,17 +1223,15 @@ function EditableStatement({
         })
     }
   }
-  if (included.length === 0 && !data.can_record_account_closure) {
-    if (!data.can_import_balances)
-      detailProblems.push({
-        message: "Select at least one transaction to import.",
-      })
-    else if (!matchingEmptyBalances)
-      detailProblems.push({
-        message:
-          "Check the opening and closing balances. They must match when there are no transactions.",
-      })
-  }
+  if (
+    included.length === 0 &&
+    !data.can_record_account_closure &&
+    !hasStatementBalance
+  )
+    detailProblems.push({
+      message:
+        "Enter at least one printed opening or closing balance to save a statement without transactions.",
+    })
   const focusDetail = (field: string) => {
     const input = Array.from(
       statementControls.current?.querySelectorAll<
@@ -1385,6 +1401,27 @@ function EditableStatement({
     balanceException.revision === serverChecks.revision &&
     !!balanceException.reason.trim()
   const unresolvedDifference = balanceMismatch && !differenceAccepted
+  const incompleteCount = data.currency
+    ? blockedRows.filter(({ row }) => !row.excluded).length
+    : included.length
+  const importDisabled =
+    !canEdit ||
+    confirm.isPending ||
+    saveBatchReview.isPending ||
+    assignmentSaving ||
+    (data.review_recovery?.required && !recoveryCompared) ||
+    (savedReadingChanged && (!previousReviewChecked || !!data.saved_review)) ||
+    (!!data.current_import && !replacePrevious) ||
+    (replacePrevious && !detailsReason.trim()) ||
+    !!data.reading_failure ||
+    (!included.length &&
+      !hasStatementBalance &&
+      !data.can_record_account_closure)
+  const submitImport = () => {
+    if (importDisabled) return
+    if (batchReview) saveBatchReview.mutate("done")
+    else confirm.mutate()
+  }
   const activeTransaction = included.findIndex((row) => row.id === focus?.rowId)
   const showTransaction = (index: number) => {
     const transaction = included[index]
@@ -1408,8 +1445,7 @@ function EditableStatement({
     (r) =>
       (showExcluded ||
         !r.excluded ||
-        originals.get(r.id)?.kind === "balance" ||
-        requiresReason(r)) &&
+        originals.get(r.id)?.kind === "balance") &&
       (!onlyIssues || originals.get(r.id)?.issues.length || changed(r))
   )
   const currentCorrectionPage = Math.min(
@@ -1452,8 +1488,7 @@ function EditableStatement({
       (row) =>
         showExcluded ||
         !row.excluded ||
-        originals.get(row.id)?.kind === "balance" ||
-        requiresReason(row)
+        originals.get(row.id)?.kind === "balance"
     )
     setCorrectionPage(
       Math.floor(balanceRows.findIndex((row) => row.id === id) / 50)
@@ -1744,7 +1779,7 @@ function EditableStatement({
         <p className="text-sm">
           {data.assignment_only
             ? "Check which account owns these payments, then assign them to its statement. Select any value to compare it with the PDF."
-            : "The system checks the extracted transactions and compares the balances where available. Review flagged items, then confirm the import. You can also select any value to check its source."}
+            : "Import this statement now, or review a value beside its original. Reading issues remain available after import; you do not need to resolve each one first."}
         </p>
       </header>
       {data.assignment_only && (
@@ -1795,15 +1830,37 @@ function EditableStatement({
                         ? "Check the differences below"
                         : "Ready to confirm"}
               </h4>
-              <p>{included.length} transactions selected.</p>
+              <p>
+                {included.length} records selected
+                {incompleteCount
+                  ? ` · ${incompleteCount} with missing or invalid fields`
+                  : ""}
+                .
+              </p>
               <p>
                 {serverChecks.pending
                   ? "Checking these values. You can keep reviewing the PDF while this runs."
                   : attentionCount || unresolvedDifference
-                    ? "Open the flagged items to check them against the PDF."
+                    ? "You can import now and check these issues later. Records with missing or invalid fields are retained outside calculated totals."
                     : "Confirm once to import this statement. You do not need to accept each line separately."}
               </p>
             </div>
+            <Button disabled={!!importDisabled} onClick={submitImport}>
+              {confirm.isPending || saveBatchReview.isPending
+                ? "Saving statement…"
+                : batchReview
+                  ? "Save and return to batch"
+                  : included.length
+                    ? "Import statement now"
+                    : data.can_record_account_closure
+                      ? "Save closure now"
+                      : "Save balances now"}
+            </Button>
+            {confirm.isError && (
+              <p className="w-full" role="alert">
+                {confirm.error.message}
+              </p>
+            )}
             {serverChecks.error && (
               <div role="alert" className="w-full">
                 <p>{serverChecks.error}</p>
@@ -1892,6 +1949,63 @@ function EditableStatement({
           </div>
         </section>
       )}
+      {canEdit &&
+        (!data.current_import || replacePrevious) &&
+        (emptyEntries.length > 0 || setAsideIds.length > 0) && (
+          <section
+            aria-label="Blank transaction rows"
+            className="rounded border bg-card p-3 space-y-2 text-sm"
+          >
+            {emptyEntries.length > 0 && (
+              <>
+                <p>
+                  {emptyEntries.length} rows have no transaction values entered.
+                  Exclude them together if their original text is not a payment.
+                  Partly filled rows stay selected.
+                </p>
+                <Button
+                  variant="outline"
+                  onClick={setAsideEmptyEntries}
+                  disabled={
+                    confirm.isPending ||
+                    saveBatchReview.isPending ||
+                    assignmentSaving
+                  }
+                >
+                  Exclude {emptyEntries.length} blank rows from import
+                </Button>
+              </>
+            )}
+            {setAsideIds.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2" role="status">
+                <span>
+                  {setAsideIds.length} blank rows excluded. Their original text
+                  is kept under Show excluded rows.
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={
+                    confirm.isPending ||
+                    saveBatchReview.isPending ||
+                    assignmentSaving
+                  }
+                  onClick={() => {
+                    const ids = new Set(setAsideIds)
+                    setRows((current) =>
+                      current.map((r) =>
+                        ids.has(r.id) ? { ...r, excluded: false } : r
+                      )
+                    )
+                    setSetAsideIds([])
+                  }}
+                >
+                  Undo excluding blank rows
+                </Button>
+              </div>
+            )}
+          </section>
+        )}
       {problemIds.length > 0 && (
         <div
           role="group"
@@ -2224,7 +2338,11 @@ function EditableStatement({
                         "Printed balance",
                         "Actions",
                       ].map((s) => (
-                        <th key={s} className="text-left p-2 border-b">
+                        <th
+                          key={s}
+                          scope="col"
+                          className="text-left p-2 border-b"
+                        >
                           {s}
                         </th>
                       ))}
@@ -2253,12 +2371,12 @@ function EditableStatement({
                             />
                           </td>
                           <td className="p-2 border-b align-top">
-                            {(sourceDateRoles(original.fields).length > 1 ||
-                              primaryDateRole(original.fields) !== "date") && (
-                              <span className="block text-xs mb-1">
-                                {dateLabels[primaryDateRole(original.fields)]}
-                              </span>
-                            )}
+                            <label
+                              htmlFor={`review-date-${r.id}`}
+                              className="block text-xs mb-1"
+                            >
+                              {dateLabels[primaryDateRole(original.fields)]}
+                            </label>
                             {r.date_unprinted && (
                               <span className="block text-xs mb-1">
                                 Date not printed
@@ -2272,6 +2390,7 @@ function EditableStatement({
                               </span>
                             )}
                             <input
+                              id={`review-date-${r.id}`}
                               aria-label={`Date ${r.id}`}
                               type="date"
                               disabled={r.excluded}
@@ -2327,7 +2446,14 @@ function EditableStatement({
                               ))}
                           </td>
                           <td className="p-2 border-b align-top min-w-56">
+                            <label
+                              htmlFor={`review-description-${r.id}`}
+                              className="block text-xs mb-1"
+                            >
+                              Description
+                            </label>
                             <input
+                              id={`review-description-${r.id}`}
                               aria-label={`Description ${r.id}`}
                               disabled={r.excluded}
                               className="border rounded p-1 bg-background w-full"
@@ -2384,9 +2510,9 @@ function EditableStatement({
                                 </select>
                               </label>
                             )}
-                            {(requiresReason(r) || !!r.reason) && (
+                            {(changed(r) || !!r.reason) && (
                               <label className="block mt-2">
-                                Reason for correction or decision
+                                Note about this change (optional)
                                 <input
                                   aria-label={`Reason ${r.id}`}
                                   value={r.reason}
@@ -2395,27 +2521,10 @@ function EditableStatement({
                                   }
                                   className="border rounded p-1 w-full bg-background"
                                 />
-                                {!changed(r) &&
-                                  !r.excluded &&
-                                  !r.reason.trim() &&
-                                  rowProblems(r).length === 1 && (
-                                    <Button
-                                      variant="outline"
-                                      size="sm"
-                                      className="mt-2"
-                                      onClick={() =>
-                                        update(r.id, {
-                                          reason:
-                                            "Checked against the original PDF; the extracted values are correct.",
-                                        })
-                                      }
-                                    >
-                                      I checked this row against the PDF
-                                    </Button>
-                                  )}
                               </label>
                             )}
-                            {focus?.rowId === r.id && (
+                            {(focus?.rowId === r.id ||
+                              original.kind === "unresolved") && (
                               <div className="flex flex-wrap gap-1 mt-2">
                                 {original.source_cells.map((c) => (
                                   <Button
@@ -2440,7 +2549,15 @@ function EditableStatement({
                               key={direction}
                               className="p-2 border-b align-top"
                             >
+                              <label
+                                htmlFor={`review-${direction}-${r.id}`}
+                                className="block text-xs mb-1"
+                              >
+                                {direction === "credit" ? "Credit" : "Debit"}{" "}
+                                {data.currency}
+                              </label>
                               <input
+                                id={`review-${direction}-${r.id}`}
                                 aria-label={`${direction === "credit" ? "Credit" : "Debit"} ${r.id}`}
                                 disabled={r.excluded}
                                 inputMode="decimal"
@@ -2468,7 +2585,14 @@ function EditableStatement({
                             </td>
                           ))}
                           <td className="p-2 border-b align-top whitespace-nowrap">
+                            <label
+                              htmlFor={`review-balance-${r.id}`}
+                              className="block text-xs mb-1"
+                            >
+                              Printed balance {data.currency}
+                            </label>
                             <input
+                              id={`review-balance-${r.id}`}
                               aria-label={`Balance ${r.id}`}
                               className="border rounded p-1 bg-background w-28"
                               inputMode="decimal"
@@ -2675,7 +2799,9 @@ function EditableStatement({
           </label>
           {!excludedCopy && (detailsChanged || data.current_import) && (
             <label>
-              Reason for detail corrections
+              {replacePrevious
+                ? "Reason for replacing the previous import"
+                : "Note about detail changes (optional)"}
               <input
                 aria-label="Reason for detail corrections"
                 readOnly={!canEdit}
@@ -2986,40 +3112,20 @@ function EditableStatement({
               <p>
                 {data.can_record_account_closure && included.length === 0
                   ? "Save the account, statement period and printed closure notice. No transaction rows were found in this section. This does not supply a missing closing balance."
-                  : data.can_import_balances && included.length === 0
-                    ? "Save this account's statement period and its opening and closing balances. No transaction rows were found in this section. Check the original before saving."
+                  : hasStatementBalance && included.length === 0
+                    ? "Save the account, statement period and printed balances without adding transactions. Missing balances stay unknown; any difference stays flagged."
                     : batchReview
                       ? `Save these ${included.length} records to the batch for import together. Issues can be checked later.`
                       : `Import ${included.length} records with their originals. You can correct values later. Incomplete records stay visible outside calculated totals.`}
               </p>
               <Button
-                disabled={
-                  !canEdit ||
-                  confirm.isPending ||
-                  saveBatchReview.isPending ||
-                  rows.some((r) => changed(r) && !r.reason.trim()) ||
-                  (detailsChanged && !detailsReason.trim()) ||
-                  (data.review_recovery?.required && !recoveryCompared) ||
-                  (savedReadingChanged &&
-                    (!previousReviewChecked || !!data.saved_review)) ||
-                  (!!data.current_import && !replacePrevious) ||
-                  (replacePrevious && !detailsReason.trim()) ||
-                  !!data.reading_failure ||
-                  (!included.length &&
-                    !data.can_import_balances &&
-                    !data.can_record_account_closure)
-                }
+                disabled={!!importDisabled}
                 aria-describedby={
                   blockedRows.length || detailProblems.length
                     ? "statement-import-blockers"
                     : undefined
                 }
-                onClick={() => {
-                  if (canEdit) {
-                    if (batchReview) saveBatchReview.mutate("done")
-                    else confirm.mutate()
-                  }
-                }}
+                onClick={submitImport}
               >
                 {batchReview
                   ? saveBatchReview.isPending
@@ -3029,7 +3135,7 @@ function EditableStatement({
                     ? "Importing statement…"
                     : data.can_record_account_closure && included.length === 0
                       ? "Save account closure"
-                      : data.can_import_balances && included.length === 0
+                      : hasStatementBalance && included.length === 0
                         ? "Save statement balances"
                         : `Confirm import of ${included.length} transactions`}
               </Button>
@@ -3058,8 +3164,9 @@ function EditableStatement({
                 >
                   <h4 className="font-semibold">Issues and edits</h4>
                   <p className="text-sm">
-                    Reading issues do not block import. If you changed a value,
-                    record the reason beside that edit.
+                    Reading issues do not block import. Your corrections and the
+                    original readings are saved automatically. Notes are
+                    optional.
                   </p>
                   {detailProblems.map((problem, index) => (
                     <div
@@ -3129,7 +3236,6 @@ function EditableStatement({
       {saveBatchReview.isError && (
         <p role="alert">{saveBatchReview.error.message}</p>
       )}
-      {confirm.isError && <p role="alert">{confirm.error.message}</p>}
       {confirm.isSuccess && (
         <p role="status">
           {confirm.data.account_closed_on

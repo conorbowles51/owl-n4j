@@ -43,7 +43,6 @@ export function previewCorrections(
   printedDates?: ReadonlyMap<string, string>
 ) {
   if (!selected.size) throw Error("Select the transactions to correct.")
-  if (!reason.trim()) throw Error("Enter the reason for these corrections.")
   if (reason.length > 2000)
     throw Error("Keep the reason under 2,000 characters.")
   if (

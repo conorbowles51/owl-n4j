@@ -439,9 +439,6 @@ class StatementImportTests(TransactionPersistenceTestCase):
         from datetime import date
         request = self.multi_date_request()
         request['rows'][1]['date_values'] = dict(booking_date='2023-01-05', value_date='2023-01-06')
-        with self.assertRaisesRegex(PdfMappingError, 'Explain the correction'):
-            self.confirm(request)
-        request['rows'][1]['reason'] = 'Checked the separate posting and value dates in the original.'
         result = self.confirm(request)
         self.db.expire_all()
         payment = self.db.scalar(select(FinancialTransaction).where(FinancialTransaction.source_document_id == UUID(result['source_document_id'])))
@@ -599,13 +596,21 @@ class StatementImportTests(TransactionPersistenceTestCase):
         self.assertEqual(read_closing(period).amount.minor_units, 4745000)
         self.assertTrue(read_closing(period).is_independent)
 
-    def test_bad_revision_or_unexplained_correction_writes_no_statement(self):
-        for change in ('revision','correction'):
-            request=self.request()
-            if change=='revision':request['expected_revision']='0'*64
-            else:request['rows'][2]['amount_minor']='1'
-            with self.assertRaises(PdfMappingError):self.confirm(request)
-        self.assertEqual(list(self.db.scalars(select(FinancialSourceDocument).where(FinancialSourceDocument.evidence_file_id==self.file.id))),[])
+    def test_bad_revision_writes_nothing_but_a_routine_correction_needs_no_note(self):
+        request = self.request()
+        request['expected_revision'] = '0' * 64
+        with self.assertRaises(PdfMappingError):
+            self.confirm(request)
+        self.assertEqual(list(self.db.scalars(select(FinancialSourceDocument).where(
+            FinancialSourceDocument.evidence_file_id == self.file.id))), [])
+        request = self.request()
+        request['rows'][2]['amount_minor'] = '1'
+        receipt = self.confirm(request)
+        with self.SessionLocal() as db:
+            document = db.get(FinancialSourceDocument, UUID(receipt['source_document_id']))
+            self.assertEqual(document.metadata_['statement_import_request']['rows'][2]['amount_minor'], '1')
+            self.assertEqual(document.metadata_['statement_import_request']['rows'][2]['reason'], '')
+            self.assertNotEqual(document.metadata_['statement_import_original']['rows'][2]['fields']['amount_minor'], '1')
 
     def test_changed_bytes_are_not_imported(self):
         request=self.request();self.path.write_bytes(b'changed')
@@ -911,18 +916,80 @@ class StatementImportTests(TransactionPersistenceTestCase):
         changed = next(t for t in transactions if str(t.transaction_date)=='2020-06-04')
         self.assertEqual(changed.provenance['statement_import_original']['source_cells'][0]['expected_text'],'O6 /O4')
 
-    def test_balance_only_cannot_hide_transactions_or_record_unexplained_movement(self):
+    def test_balance_only_keeps_differences_and_excluded_payments_in_the_record(self):
+        from services.financial.import_batches import assess
         p, request = self.andrews_request('0000', install=True)
-        self.assertFalse(p['can_import_balances'])
+        self.assertTrue(p['can_import_balances'])
         for r in request['rows']:
-            if not r['excluded']: r.update(excluded=True, reason='Test omitted payment')
-        with self.assertRaisesRegex(PdfMappingError, 'matching opening and closing'):
+            r['excluded'] = True
+        state, summary = assess(p, request)
+        self.assertTrue(summary['can_import'])
+        self.assertEqual(state, 'attention')
+        result = self.confirm(request)
+        self.assertEqual(result['transaction_count'], 0)
+        self.assertTrue(any(i.get('kind') == 'arithmetic' for i in result['issues']))
+        with self.SessionLocal() as db:
+            document = db.get(FinancialSourceDocument, UUID(result['source_document_id']))
+            self.assertEqual(document.metadata_['statement_import_original']['rows'], p['rows'])
+            self.assertTrue(all(r['excluded'] for r in document.metadata_['statement_import_request']['rows']))
+
+    def standalone_balance_request(self, grid):
+        from tests.test_financial_statement_import_proposal import source
+        from services.financial.import_batches import initial_request
+        reading = source(grid)
+        self.db.get(EvidenceTableGeometry, (self.file.id, 1)).payload = [dict(
+            table_source='drawn_geometry', geometry_source='cell_rectangles',
+            table=dict(page=1, table=rectangle(0, x=0, width=600, height=600), unlocated_values=0,
+                values=[dict(row=r['row_index'], column=c['column_index'], text=c['expected_text'],
+                             locator=rectangle(20+r['row_index']*20, x=20+c['column_index']*180, width=170, height=15))
+                        for r in reading['rows'] for c in r['cells']]))]
+        self.db.commit()
+        proposal = self.preview()
+        return proposal, initial_request(proposal)
+
+    def test_spanish_closing_balance_only_import_is_repeatable_and_does_not_invent_opening(self):
+        from postgres.models.financial import FinancialStatementPeriod
+        from services.financial.periods import read_opening, read_closing
+        from services.financial.import_batches import assess
+        proposal, request = self.standalone_balance_request([
+            ['Account Name: Test Company'], ['Saldo final', '1.234,56 EUR']])
+        self.assertEqual(proposal['transaction_count'], 0)
+        self.assertTrue(proposal['can_import_balances'])
+        # Routine account/detail corrections do not require a typed reason.
+        request.update(institution='BBVA', holder='Corrected holder',
+                       period_start='2021-01-01', period_end='2021-01-31')
+        self.assertTrue(assess(proposal, request)[1]['can_import'])
+        result = self.confirm(request)
+        self.assertEqual(result['transaction_count'], 0)
+        self.assertEqual(result.get('incomplete_count', 0), 0)
+        self.assertFalse(self.confirm(request)['created'])
+        with self.SessionLocal() as db:
+            period = db.scalar(select(FinancialStatementPeriod).where(
+                FinancialStatementPeriod.source_document_id == UUID(result['source_document_id'])))
+            self.assertIsNone(read_opening(period).amount)
+            self.assertEqual(read_closing(period).amount.minor_units, 123456)
+            document = db.get(FinancialSourceDocument, UUID(result['source_document_id']))
+            self.assertEqual(document.metadata_['statement_import_original']['rows'][-1]['source_cells'][1]['expected_text'], '1.234,56 EUR')
+            self.assertEqual(document.metadata_['statement_import_request']['holder'], 'Corrected holder')
+            self.assertEqual(document.metadata_['statement_import_request']['details_reason'], '')
+            self.assertEqual(list(db.scalars(select(FinancialTransaction))), [])
+
+    def test_balance_only_accepts_zero_and_flags_different_balances_without_blocking(self):
+        proposal, request = self.standalone_balance_request([
+            ['Saldo inicial', '0,00'], ['Saldo final', '50,00']])
+        result = self.confirm(request)
+        self.assertEqual(result['transaction_count'], 0)
+        self.assertTrue(any(i.get('kind') == 'arithmetic' for i in result['issues']))
+
+    def test_balance_only_requires_a_readable_balance_and_keeps_unreadable_source(self):
+        proposal, request = self.standalone_balance_request([['Saldo final', '1.2O0,00']])
+        self.assertTrue(proposal['can_import_balances'])
+        with self.assertRaisesRegex(PdfMappingError, 'at least one printed'):
             self.confirm(request)
-        p, request = self.andrews_request('0000', install=True, no_payments=True)
-        closing_id = next(r['id'] for r in p['rows'] if r['fields'].get('description') == 'Closing Balance')
-        next(r for r in request['rows'] if r['id'] == closing_id).update(balance_minor='12000', reason='Synthetic changed balance')
-        with self.assertRaisesRegex(PdfMappingError, 'matching opening and closing'):
-            self.confirm(request)
+        request['rows'][0]['balance_minor'] = '120000'
+        result = self.confirm(request)
+        self.assertEqual(result['transaction_count'], 0)
+        self.assertFalse(self.confirm(request)['created'])
 
     def test_andrews_reread_row_numbers_cannot_hide_an_existing_import_or_mix_shares(self):
         from copy import deepcopy

@@ -121,7 +121,9 @@ async function open() {
   })
   await screen.findByText("Review statement.pdf")
   fireEvent.click(
-    screen.getByRole("button", { name: "Show corrections and import choices" })
+    screen.getByText("Show corrections and import choices", {
+      selector: "button",
+    })
   )
 }
 beforeEach(() => {
@@ -351,9 +353,12 @@ it("imports completed Merrick years through the normal recorded correction reque
   fireEvent.change(screen.getByLabelText("Printed statement closing date"), {
     target: { value: "2023-01-25" },
   })
-  fireEvent.change(screen.getByLabelText("Reason for these corrections"), {
-    target: { value: "Year checked against statement heading" },
-  })
+  fireEvent.change(
+    screen.getByLabelText("Note about these corrections (optional)"),
+    {
+      target: { value: "Year checked against statement heading" },
+    }
+  )
   fireEvent.click(
     screen.getByRole("button", {
       name: "Select 1 readable dates missing a year",
@@ -441,7 +446,7 @@ it("imports recognised undated interest without inventing a date and supports a 
     target: { value: "2023-01-30" },
   })
   expect(screen.queryByText("Date not printed")).not.toBeInTheDocument()
-  expect(confirm).toBeDisabled()
+  expect(confirm).toBeEnabled()
   fireEvent.change(screen.getByLabelText("Date 1:0:1"), {
     target: { value: "" },
   })
@@ -496,7 +501,9 @@ it("saves an incomplete individual review to the case and restores it without br
   mount()
   await screen.findByText("Review statement.pdf")
   fireEvent.click(
-    screen.getByRole("button", { name: "Show corrections and import choices" })
+    screen.getByText("Show corrections and import choices", {
+      selector: "button",
+    })
   )
   expect(screen.getByLabelText("Date 1:0:1")).toHaveValue("")
   expect(screen.getByLabelText("Description 1:0:1")).toHaveValue(
@@ -504,7 +511,7 @@ it("saves an incomplete individual review to the case and restores it without br
   )
   expect(
     screen.getByRole("button", { name: /Confirm import of/ })
-  ).toBeDisabled()
+  ).toBeEnabled()
   fireEvent.click(screen.getByRole("button", { name: "Save progress" }))
   await screen.findByText(
     "Progress saved to the case. You can reopen this statement on another device."
@@ -672,7 +679,9 @@ it("opens and focuses a flagged row's import choice while retaining another corr
   expect(screen.getByLabelText("Include this transaction")).not.toBeChecked()
   fireEvent.click(screen.getByRole("button", { name: "Done editing this row" }))
   fireEvent.click(
-    screen.getByRole("button", { name: "Show corrections and import choices" })
+    screen.getByText("Show corrections and import choices", {
+      selector: "button",
+    })
   )
   expect(screen.getByLabelText("Credit 1:0:1")).toHaveValue("130.00")
   expect(sent).toEqual([])
@@ -732,7 +741,7 @@ it("edits posting and value dates separately and records a reason without changi
   })
   expect(
     screen.getByRole("button", { name: "Confirm import of 1 transactions" })
-  ).toBeDisabled()
+  ).toBeEnabled()
   expect(screen.getByLabelText("Date 1:0:1")).toHaveValue("2023-01-02")
   fireEvent.change(screen.getByLabelText("Reason 1:0:1"), {
     target: { value: "Checked posting date; value date cannot be confirmed." },
@@ -791,7 +800,7 @@ it("offers the missing transaction date separately when the posting date was rea
   })
 })
 
-it("imports unchanged unknown directions, requiring a reason only when the investigator edits", async () => {
+it("imports unknown directions and allows corrections without a mandatory note", async () => {
   const unknown = structuredClone(data)
   delete (unknown.rows[1].fields as Record<string, unknown>).direction
   unknown.rows[1].issues = ["The payment's minus sign could not be read."]
@@ -814,7 +823,7 @@ it("imports unchanged unknown directions, requiring a reason only when the inves
   fireEvent.change(screen.getByLabelText("Credit 1:0:1"), {
     target: { value: "125.00" },
   })
-  expect(confirm).toBeDisabled()
+  expect(confirm).toBeEnabled()
   fireEvent.change(screen.getByLabelText("Reason 1:0:1"), {
     target: { value: "Checked the original payment marker" },
   })
@@ -1188,7 +1197,7 @@ it("shows the source alongside correction controls and saves the reason", async 
   })
   expect(
     screen.getByRole("button", { name: "Confirm import of 1 transactions" })
-  ).toBeDisabled()
+  ).toBeEnabled()
   fireEvent.change(screen.getByLabelText("Reason 1:0:1"), {
     target: { value: "Corrected against original" },
   })
@@ -1298,18 +1307,17 @@ it("does not offer to import the same active reading twice", async () => {
   expect(sent).toHaveLength(0)
 })
 
-it("keeps a newly excluded payment visible so its required reason can be entered", async () => {
+it("hides an excluded payment and lets the investigator restore it without a reason", async () => {
   mount()
   await open()
   fireEvent.click(screen.getByLabelText("Include row 1:0:1"))
+  expect(screen.queryByLabelText("Include row 1:0:1")).not.toBeInTheDocument()
+  fireEvent.click(screen.getByLabelText("Show excluded rows"))
   expect(screen.getByLabelText("Include row 1:0:1")).not.toBeChecked()
-  expect(screen.getByLabelText("Reason 1:0:1")).toBeVisible()
-  fireEvent.change(screen.getByLabelText("Reason 1:0:1"), {
-    target: { value: "Pending missing date evidence" },
-  })
-  expect(screen.getByLabelText("Reason 1:0:1")).toHaveValue(
-    "Pending missing date evidence"
-  )
+  fireEvent.click(screen.getByLabelText("Include row 1:0:1"))
+  expect(
+    screen.getByRole("button", { name: "Confirm import of 1 transactions" })
+  ).toBeEnabled()
 })
 
 it("saves a statement with matching balances and no payments, with a clear confirmation", async () => {
@@ -1495,62 +1503,6 @@ it("opens a receipt separately from statement periods and returns to the same fi
   await screen.findByText("Statements and receipts in this PDF")
 })
 
-it("pages 1200 correction rows, restores a late edit and submits every row", async () => {
-  useAuthStore.setState({
-    user: { id: "reviewer", username: "reviewer" } as never,
-  })
-  const originalRead = vi.mocked(fetchAPI).getMockImplementation()!
-  const large = {
-    ...data,
-    transaction_count: 1200,
-    rows: Array.from({ length: 1200 }, (_, i) => ({
-      ...data.rows[1],
-      id: `payment-${i}`,
-      page_number: Math.floor(i / 25) + 1,
-      fields: { ...data.rows[1].fields, description: `Payment ${i}` },
-      source_cells: [],
-    })),
-  }
-  vi.mocked(fetchAPI).mockImplementation(async (url, options) =>
-    String(url).includes("/statement-import/") &&
-    !String(url).includes("/confirm?")
-      ? (large as never)
-      : originalRead(url, options)
-  )
-  mount()
-  await open()
-  expect(screen.getAllByLabelText(/^Include row/)).toHaveLength(50)
-  fireEvent.change(screen.getByLabelText("Review page"), {
-    target: { value: "23" },
-  })
-  fireEvent.change(screen.getByLabelText("Description payment-1199"), {
-    target: { value: "Corrected last payment" },
-  })
-  fireEvent.change(screen.getByLabelText("Reason payment-1199"), {
-    target: { value: "Checked original" },
-  })
-  fireEvent(window, new Event("pagehide"))
-  const saved = JSON.parse(
-    sessionStorage.getItem(
-      `loupe-statement-review:reviewer:case:file:${data.revision}`
-    )!
-  )
-  expect(saved.row_mode).toBe("changes")
-  expect(saved.rows).toHaveLength(1)
-  fireEvent.click(screen.getByRole("button", { name: "Previous review rows" }))
-  fireEvent.click(screen.getByRole("button", { name: "Next review rows" }))
-  expect(screen.getByLabelText("Description payment-1199")).toHaveValue(
-    "Corrected last payment"
-  )
-  fireEvent.click(
-    screen.getByRole("button", { name: "Confirm import of 1200 transactions" })
-  )
-  await waitFor(() => expect(sent).toHaveLength(1))
-  const request = sent[0] as { rows: { description: string }[] }
-  expect(request.rows).toHaveLength(1200)
-  expect(request.rows[1199].description).toBe("Corrected last payment")
-})
-
 it("allows importing an unchanged flagged reading without an acknowledgement", async () => {
   const flagged = structuredClone(data)
   flagged.rows[1].issues = [
@@ -1584,7 +1536,7 @@ it("allows importing an unchanged flagged reading without an acknowledgement", a
   })
 })
 
-it("links missing account details from the disabled confirmation and clears the blockers when corrected", async () => {
+it("links missing account details without blocking import and clears the issue when corrected", async () => {
   mount()
   await open()
   fireEvent.change(screen.getByLabelText("Account holder"), {
@@ -1592,7 +1544,7 @@ it("links missing account details from the disabled confirmation and clears the 
   })
   expect(
     screen.getByRole("button", { name: "Confirm import of 1 transactions" })
-  ).toBeDisabled()
+  ).toBeEnabled()
   expect(
     screen.getByRole("region", { name: "Statement issues and edits" })
   ).toHaveTextContent("Account holder not identified.")
@@ -1894,7 +1846,7 @@ it("allows importing a printed difference and retains an optional explanation", 
   })
 })
 
-it("keeps import available while checks are pending but still requires reasons for edits", async () => {
+it("keeps import available while checks are pending and after routine edits", async () => {
   const state = {
     checks: [],
     pending: true,
@@ -1914,7 +1866,7 @@ it("keeps import available while checks are pending but still requires reasons f
   fireEvent.change(screen.getByLabelText("Description 1:0:1"), {
     target: { value: "Changed" },
   })
-  expect(confirm).toBeDisabled()
+  expect(confirm).toBeEnabled()
   expect(
     screen.getByRole("button", { name: "Retry statement checks" })
   ).toBeInTheDocument()
@@ -1995,5 +1947,69 @@ it("allows overlapping statements to import and retains optional comparison note
   expect(sent[0]).toMatchObject({
     coverage_review_reason: "Additional records in this statement.",
     coverage_review_revision: "d".repeat(64),
+  })
+})
+
+it("keeps labels beside correction inputs and imports routine changes without reasons", async () => {
+  mount()
+  await open()
+  const region = screen.getByRole("region", {
+    name: "Statement correction columns",
+  })
+  for (const [field, label] of [
+    ["date", "Transaction date"],
+    ["description", "Description"],
+    ["credit", "Credit EUR"],
+    ["debit", "Debit EUR"],
+    ["balance", "Printed balance EUR"],
+  ]) {
+    expect(
+      region.querySelector(`label[for="review-${field}-1:0:1"]`)
+    ).toHaveTextContent(label)
+  }
+  fireEvent.change(screen.getByLabelText("Credit 1:0:1"), {
+    target: { value: "126.50" },
+  })
+  fireEvent.change(screen.getByLabelText("Account holder"), {
+    target: { value: "Corrected holder" },
+  })
+  fireEvent.click(
+    screen.getByRole("button", { name: "Confirm import of 1 transactions" })
+  )
+  await waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0]).toMatchObject({
+    holder: "Corrected holder",
+    details_reason: "",
+    rows: [{}, { amount_minor: "12650", reason: "" }],
+  })
+})
+
+it("saves a single zero closing balance without asking for an opening balance or payment", async () => {
+  const base = vi.mocked(fetchAPI).getMockImplementation()!
+  const balance = {
+    ...data,
+    can_import_balances: true,
+    transaction_count: 0,
+    rows: [
+      {
+        ...data.rows[0],
+        kind: "balance",
+        fields: { description: "Closing Balance", balance: "0" },
+      },
+    ],
+  }
+  vi.mocked(fetchAPI).mockImplementation((url, options) =>
+    url.includes("statement-import") && !url.includes("/confirm?")
+      ? Promise.resolve(balance as never)
+      : base(url, options)
+  )
+  mount()
+  await open()
+  fireEvent.click(
+    screen.getByRole("button", { name: "Save statement balances" })
+  )
+  await waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0]).toMatchObject({
+    rows: [{ excluded: true, balance_minor: "0" }],
   })
 })

@@ -406,10 +406,15 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
         snapshot['reading_failure'] = 'unseparated-statement-periods-v1'
     if row_addresses is not None:
         snapshot['statement_row_addresses'] = row_addresses
-    balance_only = (metadata.get('account_type') in ('savings', 'checking', 'other')
-                    and not any(not row['excluded'] for row in rows)
-                    and all(sum(row['kind'] == 'balance' and row['fields'].get('description', '').lower() == role + ' balance'
-                                for row in rows) == 1 for role in ('opening', 'closing')))
+    standalone_balances = [row for row in rows if row['fields'].get('standalone_balance') or row['fields'].get('normalized_balance_label')]
+    if standalone_balances:
+        # Only these newly recognised summaries need a new review revision.
+        # Existing transaction reviews keep their saved drafts.
+        snapshot['standalone_balances_v1'] = standalone_balances
+    # Saving a printed balance does not require a payment or a matching second
+    # balance. Missing controls remain unknown; differences remain review issues.
+    balance_only = any(row['kind'] == 'balance' and row['fields'].get('description', '').lower()
+                       in ('opening balance', 'closing balance') for row in rows)
     closure_only = bool(metadata.get('account_closure') and selected and selected.get('layout_id') == 'andrews-share-statement'
                         and not any(not row['excluded'] for row in rows)
                         and any(row['kind'] == 'balance' and row['fields'].get('description') == 'Opening Balance'
@@ -426,7 +431,7 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
                 assignment_only=bool(selected and selected.get('assignment_only')),
                 printed_main_account=selected.get('main_account_reference', '') if selected else '',
                 can_record_account_closure=closure_only,
-                can_import_balances=balance_only,
+                can_import_balances=balance_only and not closure_only,
                 page_numbers=all_page_numbers,
                 unassigned_page_numbers=unassigned_pages if selected else [],
                 information_pages=[dict(page_number=number, kind=kind) for number, kind in sorted(
@@ -546,16 +551,17 @@ def check_import_request(proposal, request):
         raise PdfMappingError("Reload the selected statement period before confirming.", 409)
     if request.expected_revision != proposal['revision']:
         raise PdfMappingError('The prepared statement changed. Reload its review before importing.', 409)
-    if any(getattr(request, field) != proposal['metadata'].get(field, '') for field in ('holder', 'account_number', 'institution', 'period_start', 'period_end')) and not request.details_reason.strip():
-        raise PdfMappingError('Explain the corrected account or statement details.', 422)
+    # Routine review edits need no typed explanation. The import retains the
+    # original proposal, full reviewed request, actor and time automatically.
+    # Replacing an existing import still requires its explicit reason.
     originals = {row['id']: row for row in proposal['rows']}
     if not any(not row.excluded for row in request.rows):
         controls = [row for row in request.rows if row.id in originals and originals[row.id]['kind'] == 'balance'
                     and originals[row.id]['fields'].get('description', '').lower() in ('opening balance', 'closing balance')]
-        if not proposal.get('can_record_account_closure') and (not proposal.get('can_import_balances') or len(controls) != 2
-                or any(row.balance_minor is None for row in controls)
-                or controls[0].balance_minor != controls[1].balance_minor):
-            raise PdfMappingError('A statement without transactions must have matching opening and closing balances. Check both against the PDF.', 422)
+        from services.financial.import_issues import usable_balance
+        if not proposal.get('can_record_account_closure') and not any(
+                usable_balance(row.balance_minor, proposal['metadata'].get('balance_convention')) for row in controls):
+            raise PdfMappingError('Enter at least one printed opening or closing balance to save a statement without transactions.', 422)
     submitted = {row.id for row in request.rows}
     if not set(originals) <= submitted:
         raise PdfMappingError('The review must account for every prepared row. Reload the statement.', 409)
@@ -586,16 +592,6 @@ def check_import_request(proposal, request):
                 raise PdfMappingError('An account-summary balance is not a transaction. Keep it outside the transaction list.', 422)
         if proposal['metadata'].get('balance_convention') == 'liability_owed' and row.balance_minor == '-9223372036854775808':
             raise PdfMappingError('This amount owed exceeds the supported balance range.', 422)
-        changed = row.excluded != original['excluded'] or (not row.excluded and (
-            row.date != (fields.get('date') or fields.get('booking_date') or fields.get('value_date') or '')
-            or row.description != fields.get('description', '')
-            or row.counterparty != fields.get('counterparty', '')
-            or row.amount_minor != (fields.get('amount_minor') or '')
-            or row.direction != fields.get('direction'))) or row.balance_minor != fields.get('balance')
-        changed = changed or any(value != fields.get(key, '') for key, value in row.date_values.items())
-        changed = changed or (not row.excluded and row.date_unprinted != originally_undated)
-        if changed and not row.reason.strip():
-            raise PdfMappingError(f"Explain the correction or decision for row {row.id}.", 422)
     return originals
 
 

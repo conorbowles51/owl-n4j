@@ -141,6 +141,25 @@ it("confirms the displayed ready list and filters problems across the batch", as
     await screen.findByText(/2 statements available.*14 records/)
   ).toBeVisible()
 })
+it("offers saving a balance-only batch without asking to import zero records", async () => {
+  vi.mocked(fetchAPI).mockResolvedValue({
+    ...batch,
+    available_statements: 1,
+    available_records: 0,
+    ready_transactions: 0,
+    items: [{ ...item, transaction_count: 0, can_import: true }],
+  } as never)
+  mount()
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Save 1 statement" })
+  )
+  await waitFor(() =>
+    expect(fetchAPI).toHaveBeenCalledWith(
+      "/api/financial/statement-import/batches/batch/confirm?case_id=case",
+      { method: "POST", body: { expected_ready_revision: "a".repeat(64) } }
+    )
+  )
+})
 it("opens the exact problem row, reloads server corrections and returns after saving", async () => {
   mount()
   fireEvent.click(await screen.findByRole("button", { name: "Go to this row" }))

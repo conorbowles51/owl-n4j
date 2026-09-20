@@ -18,6 +18,18 @@ def statement():
 
 
 class AutomaticStatementProposalTests(unittest.TestCase):
+    def test_standalone_balances_keep_sources_and_do_not_consume_other_summary_values(self):
+        data = source([['Account Name: Example'], ['Saldo inicial', '0,00 EUR'],
+                       ['Saldo final: 1.234,56 EUR'], ['Available credit', '2,000.00'],
+                       ['Balance', 'EUR', 'USD'], ['Minimum payment', '50.00']])
+        result = propose_table(data, 'EUR')
+        self.assertEqual([r['kind'] for r in result['rows']],
+                         ['header', 'balance', 'balance', 'unresolved', 'unresolved', 'unresolved'])
+        self.assertEqual(result['rows'][1]['fields']['balance'], '0')
+        self.assertEqual(result['rows'][2]['fields']['balance'], '123456')
+        self.assertEqual(result['rows'][2]['source_cells'], data['rows'][2]['cells'])
+        self.assertEqual(result['transaction_count'], 3)
+
     def test_page_counters_are_retained_without_becoming_payments(self):
         data = source([['Page 1 of 31'], ['Page 2 / 31'], ['Page 3 of 31 fee 100.00']])
         result = propose_table(data, 'EUR', page_has_transaction_table=True)

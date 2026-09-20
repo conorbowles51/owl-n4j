@@ -181,7 +181,9 @@ export function StatementBulkCorrections({
               </label>
             )}
             <label className="grow">
-              Reason for these corrections
+              {action === "reassign"
+                ? "Reason for moving these payments"
+                : "Note about these corrections (optional)"}
               <input
                 maxLength={2000}
                 className="block w-full border rounded bg-background p-2 mt-1"

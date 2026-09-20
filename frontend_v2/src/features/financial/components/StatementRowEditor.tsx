@@ -155,7 +155,7 @@ export function StatementRowEditor({
         />
       </label>
       <label className="block">
-        Reason for the correction or check
+        Note about this change (optional)
         <input
           aria-label="Reason for this row correction"
           className={fieldClass}

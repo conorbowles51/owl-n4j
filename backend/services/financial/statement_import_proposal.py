@@ -23,8 +23,54 @@ _HEADERS = {
     'withdrawals': 'debit', 'paid out': 'debit',
     'balance': 'balance', 'running balance': 'balance', 'amount': 'amount',
 }
-_CONTROLS = {'opening balance', 'balance brought forward', 'brought forward',
-             'closing balance', 'balance carried forward', 'carried forward'}
+_BALANCE_LABELS = {
+    'opening balance': 'Opening Balance', 'beginning balance': 'Opening Balance',
+    'previous balance': 'Opening Balance', 'balance brought forward': 'Opening Balance',
+    'brought forward': 'Opening Balance', 'saldo anterior': 'Opening Balance',
+    'saldo inicial': 'Opening Balance',
+    'closing balance': 'Closing Balance', 'ending balance': 'Closing Balance',
+    'balance carried forward': 'Closing Balance', 'carried forward': 'Closing Balance',
+    'saldo final': 'Closing Balance', 'saldo al cierre': 'Closing Balance',
+}
+
+
+def _standalone_balance(row, currency):
+    """Read an explicitly labelled balance without requiring a payments table.
+
+    Only a label and one amount are accepted. Available credit, minimum
+    payments, unlabelled numbers and multi-account summaries are not balances.
+    Source cells stay intact even when the amount needs correction.
+    """
+    cells = [c for c in row['cells'] if c['expected_text'].strip()]
+    if len(cells) == 2:
+        label, amount = cells
+        name = _BALANCE_LABELS.get(' '.join(label['expected_text'].lower().strip(' :').split()))
+        value = amount['expected_text'].strip()
+    elif len(cells) == 1:
+        amount = cells[0]
+        match = re.fullmatch(r'\s*(' + '|'.join(re.escape(k) for k in _BALANCE_LABELS)
+                            + r')\s*:?\s+(.+?)\s*', amount['expected_text'], re.I)
+        if not match:
+            return None
+        name = _BALANCE_LABELS[match[1].lower()]
+        value = match[2]
+    else:
+        return None
+    if not name:
+        return None
+    fields = dict(description=name, balance_column=str(amount['column_index']), standalone_balance='true')
+    # A suffix currency and an explicit comma-decimal amount are common on
+    # Spanish balance summaries. Ambiguous separators are left for review.
+    value = re.sub(r'\s+' + re.escape(currency) + r'$', '', value)
+    exponent = get_currency(currency).exponent
+    if exponent and re.fullmatch(r'[+-]?(?:\d{1,3}(?:\.\d{3})+|\d+),\d{' + str(exponent) + r'}', value):
+        value = value.replace('.', '').replace(',', '.')
+    issues = []
+    try:
+        fields['balance'] = exact_amount(value, currency)
+    except ValueError:
+        issues.append('Enter the printed balance shown in this line.')
+    return dict(kind='balance', excluded=True, fields=fields, issues=issues)
 
 
 def exact_amount(text, currency):
@@ -218,11 +264,16 @@ def propose_table(source, currency, *, page_has_transaction_table=False):
             result.append(item)
             continue
         if roles is None:
+            balance = _standalone_balance(row, currency)
+            if balance:
+                item.update(balance)
+                result.append(item)
+                continue
             if page_has_transaction_table and (_statement_heading(row) or
                     len(row['cells']) == 1 and row['cells'][0]['expected_text'].strip() == 'TRANSACTION HISTORY'):
                 item.update(kind='header', excluded=True)
             else:
-                item.update(kind='unresolved', issues=['The system could not identify this row from a transaction header.'])
+                item.update(kind='unresolved', issues=['This text was not matched to transaction columns. Check the original text below; leave it out if it is not a payment.'])
             result.append(item)
             continue
         if source.get('table_source') == 'text_alignment':
@@ -259,7 +310,7 @@ def propose_table(source, currency, *, page_has_transaction_table=False):
                 continue
         party = re.fullmatch(r'(?:wire|transfer|payment)\s+(?:from|to)\s+(.+)', fields['description'], re.I)
         fields['counterparty'] = party.group(1).strip() if party else ''
-        control = fields['description'].strip().lower() in _CONTROLS
+        control = fields['description'].strip().lower() in _BALANCE_LABELS
         amounts = []
         for role in ('credit', 'debit', 'amount', 'balance'):
             text = texts.get(role, '').strip()
@@ -278,6 +329,9 @@ def propose_table(source, currency, *, page_has_transaction_table=False):
                 except ValueError as exc:
                     item['issues'].append(str(exc))
         if control and not amounts and not any(texts.get(r, '').strip() not in ('', '-', '—') for r in ('credit', 'debit', 'amount')):
+            if fields['description'].strip().lower() not in ('opening balance', 'closing balance'):
+                fields['normalized_balance_label'] = 'true'
+            fields['description'] = _BALANCE_LABELS[fields['description'].strip().lower()]
             item.update(kind='balance', excluded=True)
             if 'balance' in fields:
                 previous_balance = int(fields['balance'])
@@ -304,6 +358,11 @@ def propose_table(source, currency, *, page_has_transaction_table=False):
                     item['issues'].append('The running balance does not match this payment. Check the amount, direction or a missing row.')
             previous_balance = int(fields['balance']) if 'balance' in fields and not item['issues'] else None
         result.append(item)
+    if any(r['fields'].get('standalone_balance') for r in result):
+        for item in result:
+            if item['kind'] == 'unresolved' and (_statement_heading({'cells': item['source_cells']})
+                                                or _statement_page_number({'cells': item['source_cells']})):
+                item.update(kind='header', excluded=True, issues=[])
     return dict(version=VERSION, case_id=source['case_id'], evidence_file_id=source['evidence_file_id'],
                 currency=currency, rows=result,
                 transaction_count=sum(not r['excluded'] for r in result),

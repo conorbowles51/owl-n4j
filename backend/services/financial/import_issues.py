@@ -60,6 +60,11 @@ def retained_issues(proposal, request, *, arithmetic=None, coverage=None):
     from services.financial.review_arithmetic import arithmetic_problems
     originals = {r['id']: r for r in proposal['rows']}
     issues = []
+    if not any(not row.excluded for row in request.rows):
+        omitted = sum(row['kind'] == 'transaction' and not row['excluded'] for row in proposal['rows'])
+        if omitted:
+            issues.append(dict(kind='omitted_transactions', row_id=None,
+                message=f'Balances saved without transactions. {omitted} possible payments were left out; their original readings are retained.'))
     for row in request.rows:
         if row.excluded:
             if row.balance_minor is not None and not usable_balance(row.balance_minor, proposal['metadata'].get('balance_convention')):

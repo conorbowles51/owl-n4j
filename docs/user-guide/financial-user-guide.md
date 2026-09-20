@@ -298,7 +298,11 @@ You do not need to assign columns, select every payment, save a batch or finaliz
 4. Wait for a file to show **Ready to review**, then select its filename. It opens in the main statement viewer.
 5. Select **Back to all statement files**, then another filename to switch files. Alternatively use the right-hand file switcher. Use **Search filenames** to narrow the list. The added time and short identifier distinguish files with the same name.
 6. Return to a file to continue its review. Changes are saved when you switch; its selected statement period and page are remembered during this session.
-7. Check and confirm statements individually, or choose the uploaded files through **Choose from Evidence** to prepare a bulk import. Uploading files does not automatically confirm transactions.
+7. To import together, select the files in the main list, or choose **Select all [number] shown files**. Select **Prepare statements from [number] files**. Loupe prepares every recognised account and period in those PDFs and opens one batch. **Import [number] records** confirms the available records together; reading issues can be checked afterwards. A batch containing only balances or closure notices offers **Save [number] statements**. Uploading or preparing files does not itself confirm an import.
+
+File selection is kept when you search or filter the list. The selected count tells you how many selected files are hidden by the current filters. **Clear selection** clears the whole selection. If preparation fails, your selection stays in place and retry checks the same request, so an uncertain response does not start another batch.
+
+For individual review, **Import statement now** is above the PDF. It saves all selected records without opening the correction table or acknowledging each flag. The summary identifies records with missing or invalid fields; those records remain available for later correction and stay outside calculated totals. A check that matches does not prove every transaction was captured.
 
 If a file has not been read, select **Read statement** beside its name. If reading failed, select **Retry reading**. These actions read the PDF already in the case; you do not need to upload it again. Wait for **Ready to review**, then select the filename. Files being processed cannot be started again from this panel.
 
@@ -317,7 +321,7 @@ If a request fails, select **Refresh files** and inspect what arrived before upl
 3. Select **Review selected PDFs**, check the filenames, then **Send [number] PDFs to Financial**. Loupe opens the batch in Financial. Processing continues on the server when you leave.
 4. Read **Available to import**, **Issues to check** and **Imported**. Each recognised account and period has its own entry. Issues do not remove an otherwise available statement from the import.
 5. Select **Import [number] records** once. Readings with usable values enter Transactions. An unreadable amount or date stays with its original under **Imported records with missing values**, outside calculated totals. Unknown amounts are never counted as zero.
-6. Use **Show statements with issues only** to find concerns when you want to examine them. Open the statement or affected row to compare it with the PDF. Before import, you can correct a value, give the reason and **Save for bulk import**; checking an unchanged flag is optional.
+6. Use **Show statements with issues only** to find concerns when you want to examine them. Open the statement or affected row to compare it with the PDF. Before import, you can correct a value and **Save for bulk import**; a correction note is optional; checking an unchanged flag is optional.
 7. After import, open **Transactions** to investigate or correct a record. The imported count and outstanding issues stay saved when you reopen the batch. Repeating an unchanged import does not add copies.
 8. To return later, open **Statements & accounts**, then its dated entry under **Processing batches**.
 
@@ -415,13 +419,13 @@ For scanned statements and statements without drawn table borders, Loupe compare
 4. Read the number beside **transactions to import**. Compare it with the payment rows on the original statement.
 5. Check the credit and debit totals. For a bank account, credits usually represent money in and debits money out. For a credit card, debits increase the amount owed and credits reduce it.
 
-For supported Merrick and Andrews statements, Loupe can fill **Account holder** from the name or joint names in the statement's mailing address. If it is blank, compare that address with the PDF, enter the complete name and explain the correction. Use the name printed for this statement, even when another statement in the file has the same account number. Saving the correction updates that period's import status.
+For supported Merrick and Andrews statements, Loupe can fill **Account holder** from the name or joint names in the statement's mailing address. If it is blank, compare that address with the PDF, enter the complete name. A note about the correction is optional. Use the name printed for this statement, even when another statement in the file has the same account number. Saving the correction updates that period's import status.
 
 Where a printed opening balance and an ending balance are available, the review recalculates the balance using your selected payments. Excluding a payment or changing its amount can show **Selected movements leave a balance difference**. Inspect the compared balance and check missing rows or corrections before confirming. Agreement is an arithmetic check, not proof that every payment was supplied.
 
 For a recognised Capital One or Merrick card statement, **Previous Balance** in the account summary supplies the **Opening amount owed**, and **New Balance** supplies the **Closing amount owed**. On Merrick statements, these values come from **Summary of Account Activity**. The minimum payment due and credit limit are not balances for this check. Charges increase the amount owed and payments reduce it.
 
-If a Merrick summary amount is missing its dollar sign, check it against the PDF. OCR can misread `$` as `3`, adding a digit to the amount. Loupe leaves that balance unresolved for you to correct rather than removing a digit automatically. Select **Edit opening amount owed** or **Edit closing amount owed**, enter the correct value and explain the correction.
+If a Merrick summary amount is missing its dollar sign, check it against the PDF. OCR can misread `$` as `3`, adding a digit to the amount. Loupe leaves that balance unresolved for you to correct rather than removing a digit automatically. Select **Edit opening amount owed** or **Edit closing amount owed**, enter the correct value. A note about the correction is optional.
 
 If a Merrick statement's **Statement Date** and **Billing Cycle Closing Date** have been read differently, the image reader can check the closing date again. It accepts a new reading only when readings at two image sizes agree with the separately printed statement date and year-to-date year. Otherwise the difference stays flagged. Compare both dates with the original PDF, then correct the dates that are wrong before confirming.
 
@@ -429,11 +433,11 @@ If the statement-date heading was not recognised, Loupe can use a clearly labell
 
 An interest-charge date that differs from the closing date is flagged for comparison. Check its printed month and day as well as the year. For example, a September date misread as August can look like a valid date, but still be wrong. The system keeps the reading for you to inspect; it does not replace it with the closing date.
 
-If a transaction date cannot be read but its row matches the printed Merrick columns, Loupe keeps the description, reference and any readable amount. The reader can also use other clearly dated payment rows to recognise a damaged date-column heading. It does not replace letters with digits in a payment date. The **Date** field stays blank and the row remains flagged. Select **Edit import values**, compare the date with the PDF, enter the full date and explain the correction. Leave the other fields as they are if they agree with the statement. If the date is still unreadable, use the rereading steps in section 7 rather than guessing it.
+If a transaction date cannot be read but its row matches the printed Merrick columns, Loupe keeps the description, reference and any readable amount. The reader can also use other clearly dated payment rows to recognise a damaged date-column heading. It does not replace letters with digits in a payment date. The **Date** field stays blank and the row remains flagged. Select **Edit import values**, compare the date with the PDF, enter the full date. A note about the correction is optional. Leave the other fields as they are if they agree with the statement. If the date is still unreadable, use the rereading steps in section 7 rather than guessing it.
 
 An **invalid month or day** warning means the date itself needs checking, such as a day read as `44`. Completing its year will not fix it. If a date is outside the closing month and previous month, compare both the transaction date and selected statement with the PDF. A missing-year warning is separate; use **Complete missing years** when the printed month and day are correct.
 
-On Merrick statements, a minus sign after the amount marks a credit. Loupe reads the sign with the amount when their positions match. If a card payment has no readable minus sign, its Credit and Debit fields stay blank. Select **Edit import values**, check the PDF, enter the amount in the correct column and give a reason. The import button stays unavailable until you resolve the missing value.
+On Merrick statements, a minus sign after the amount marks a credit. Loupe reads the sign with the amount when their positions match. If a card payment has no readable minus sign, its Credit and Debit fields stay blank. Select **Edit import values**, check the PDF, enter the amount in the correct column. A note is optional. An unresolved record can be imported for later correction and stays outside calculated totals.
 
 Merrick transaction amounts should show a decimal point and two digits after it. If OCR reads `2.75` as `275`, Loupe flags the amount instead of treating it as 275.00. Check the original and enter the value you can read there. Totals are marked incomplete while any included amount or credit/debit choice is unresolved.
 
@@ -445,7 +449,7 @@ To check or correct a balance before import:
 
 1. Select the amount beside **Opening amount owed**, **Closing amount owed**, **Opening balance** or **Closing balance**.
 2. Compare the highlighted PDF value with the **Printed balance** field that opens in the correction table.
-3. If the reading is wrong, enter the corrected amount and explain the change in **Reason for correction or decision**. Keep a card's amount owed in the form printed on the statement; do not negate it yourself.
+3. If the reading is wrong, enter the corrected amount. **Note about this change (optional)** lets you add context if useful. Keep a card's amount owed in the form printed on the statement; do not negate it yourself.
 4. Check the recalculated difference. A balance stays outside the transaction count.
 5. Confirm the statement import when its transactions and any flagged dates are ready. The original printed balance and your correction are both retained.
 
@@ -455,7 +459,7 @@ An unreadable or conflicting summary value needs review. Loupe leaves it unresol
 
 *Artificial card-statement example in light mode. The interest charge is included in card charges without claiming it happened on the statement end date.*
 
-If the review finds more than one opening or closing balance, it shows a link for each original page. Open each reading and compare the copies. Clear a repeated balance in the correction table and give a reason. Check for repeated payments too. Clearing a balance does not exclude any transactions.
+If the review finds more than one opening or closing balance, it shows a link for each original page. Open each reading and compare the copies. Clear a repeated balance in the correction table. You can add an optional note. Check for repeated payments too. Clearing a balance does not exclude any transactions.
 
 If a previously prepared Capital One file has transactions but no account-summary balances, use **Read the statement again**. This prepares the unboxed summary text as well as the drawn tables. Check the new reading before confirming any replacement.
 
@@ -467,12 +471,20 @@ A purchase can happen just before a billing period and appear on that statement 
 
 An opening balance, closing balance, column heading or disclosure paragraph is not a payment. Loupe excludes recognised examples from the proposed transaction count. Their source text remains available in the printed table or under **Other extracted page text**. To inspect their import treatment, open **Show corrections and import choices**, then select **Show excluded rows**.
 
+### Exclude blank rows from import
+
+If the review shows empty transaction fields for headings or other text, use **Exclude [number] blank rows from import** above the viewer. It applies across every correction page in this statement. It leaves out only unresolved entries with no date, description, party, amount or balance entered. Partly read payments and rows you have started correcting stay selected.
+
+The original text is retained. Use **Undo excluding blank rows** immediately, or **Show excluded rows** to inspect and restore individual entries. No explanation is required. Check the count after the action; do not exclude a line that is actually a payment. **Save progress** keeps the choices in the case, or confirm the import.
+
+Correction fields have their own visible labels, so their meaning remains clear when the table header has scrolled away. Unmatched rows show their original extracted text beside the fields.
+
 ### Correct a value beside its original
 
 1. Select the printed row or value in **Extracted statement**. Its source is highlighted in the PDF.
 2. Select **Edit this row**. A small editor opens directly beneath that row.
 3. Change the date, description, Credit, Debit or printed balance as needed. Leave **Include this transaction** unchecked for a row that is not a payment.
-4. Enter **Reason for the correction or check**. The original printed text stays visible and is retained.
+4. Add a **Note about this change (optional)** if useful. The original text, corrected values and who saved them are retained automatically.
 5. Select **Done editing this row**. **View correction** reopens a changed row. This closes the editor; it does not import the statement.
 6. Use **Previous problem** and **Next problem** to move between flagged rows in this statement. The separate transaction and page controls remain available.
 7. Select **Save progress** to keep even unfinished corrections in the case. This works in an individual review and a bulk review. Reopening the same statement restores the saved fields. In a bulk review, **Save and open next problem** saves first and opens the next statement needing attention, including another file. **Save and open previous problem** moves back. A conflict message means another user saved a newer review; your current edits remain visible so you can compare them before reopening.
@@ -485,7 +497,7 @@ Use this when several transactions have the same error. It does not change the o
 1. In statement review, select **Correct several rows** below the extracted table.
 2. Use **Find transactions** to narrow the list, then tick the rows to change. **Select all matching rows** includes matches on every page of this statement. The selected count remains visible.
 3. Choose **Exclude from import**, **Include in import**, **Switch credit and debit**, **Set transaction date** or **Set paid by / paid to**.
-4. Enter the new date or name when requested, and give the reason for the correction.
+4. Enter the new date or name when requested. **Note about these corrections (optional)** can be left blank.
 5. Select **Preview corrections**. Compare the current and proposed values. Use the correction-page controls to inspect larger selections. **View original** opens the corresponding row beside the PDF.
 6. Select **Apply corrections** only when the preview is right. The balances are checked again. Earlier explanations on each row are retained.
 7. Select **Save progress** to keep the corrections in the case, or confirm the import when the remaining checks are complete.
@@ -636,7 +648,7 @@ A masked card ending is only a partial account reference. Do not use a matching 
 1. Find the line under **Rows needing a layout check** and select **Review this row**.
 2. Loupe opens **Corrections and import choices**, moves to that row's **Use** checkbox and shows its original PDF location alongside the controls.
 3. If the line is a payment, enter the correct date, description and amount after comparing it with the PDF. If it is a footer, heading or other non-payment text, clear **Use** for that row.
-4. Enter **Reason for correction or decision**. For example: "Printed footer with no payment amount." Check the transaction count before confirming the import.
+4. Check the transaction count before confirming. An explanation is optional. Use **Show excluded rows** to restore a line you left out.
 
 This action opens the review controls; it does not save an import or alter the original file. Your unfinished choice and explanation return after a refresh in the same browser tab.
 
@@ -648,11 +660,11 @@ Before confirmation, use **Edit import values**. For a statement already importe
 2. Change only the fields that disagree with the printed statement. Dates need a full day, month and year. Amounts use a decimal point without thousands separators.
 3. Enter the positive amount in **Credit** or **Debit**, matching the printed statement. Entering an amount in the other column moves this transaction to that column. The unchanged extracted table stays above the corrections so you can compare your change with the source.
 4. Enter a printed balance only if one is shown. Leave it empty when the statement does not supply one. A missing value is not zero.
-5. Enter the row's correction reason, explaining what you changed and where you checked it.
-6. If you corrected the holder, account, bank or period, complete **Reason for detail corrections** too.
-7. Resolve any remaining required-field message before confirming.
+5. Add an optional note if the change needs an explanation. Routine corrections do not require one.
+6. Correct the holder, account, bank or period if needed. The original and changed details are saved automatically; a note is optional.
+7. Review any remaining messages. Missing readings can be imported for later correction; incomplete payments remain outside calculated totals.
 
-For example, if the PDF prints `61.62` and Loupe reads `61.26`, enter `61.62` and explain that you checked the printed amount on the cited page. The original extraction and your correction are both retained with the import.
+For example, if the PDF prints `61.62` and Loupe reads `61.26`, enter `61.62`. You can optionally note where you checked it. The original extraction and your correction are both retained with the import.
 
 ### Correct separate dates on the same payment
 
@@ -694,6 +706,14 @@ Do not guess an unreadable year, amount or direction to make the button availabl
 5. You return to **Transactions**, where the imported payments appear in the table and working totals.
 6. Use the account and date filters, open a transaction's source, or move to **People & businesses**, **Trends** or **Follow money** to investigate. **Follow money** also opens the existing transfer and pattern tools.
 
+### Save a statement containing balances but no payments
+
+A statement can be useful evidence even when it has no transactions. When Loupe recognises a printed opening or closing balance, check the account, dates and amount, then select **Save statement balances**. You can also save the reviewed statement for bulk import. No transaction is created. The file list shows **Statement saved** and includes it under **With imported statements**, even when there are no payments.
+
+One readable balance is enough. A missing opening or closing balance stays unknown; it is never filled with zero. Different opening and closing balances can be saved, with the difference retained for investigation. A printed zero is valid. If you deliberately left out possible payments, that choice remains recorded with the original readings.
+
+Recognised balance labels include Opening/Closing Balance and Spanish Saldo inicial/Saldo anterior/Saldo final. An unreadable amount can be corrected in **Printed balance** without a mandatory note. An unrecognised layout may still need further extraction support; available credit and minimum payments are not used as balances.
+
 ### Read the automatic checks
 
 At the top of the review, **Statement checks** shows the result for the values currently selected for import. Checks run again after you edit, exclude or restore a row. You can import while concerns remain. If the check request fails, select **Retry statement checks** to see the latest result.
@@ -707,21 +727,21 @@ At the top of the review, **Statement checks** shows the result for the values c
 If a difference appears:
 
 1. Select **Check this balance** or **View printed value** to open the affected reading beside its original PDF. For a fee or interest difference, **Check charge 1** and any further charge buttons open the individual charges. Compare both the charge and the total before deciding which reading is wrong.
-2. Correct a misread amount, date or credit/debit column, or add a missing transaction if necessary. Give the reason for a correction.
+2. Correct a misread amount, date or credit/debit column, or add a missing transaction if necessary. An explanatory note is optional.
 3. Wait for the checks to finish again. The individual review and bulk-import list use the same calculations.
 4. Optionally, if the values are correct but the PDF itself does not add up, select **I checked these differences against the PDF**. Enter **Why the difference remains**. Your explanation is retained with the import; the difference is not described as a match.
 5. If you change the numbers again, the checks run again. Your earlier explanation is retained; any new difference remains visible. It does not prevent importing unchanged readings.
 
 You do not need to approve every valid line separately. A matching calculation cannot establish that a statement contains every payment; keep any unresolved source questions in Findings.
 
-If a Merrick card-payment row has lost its minus sign, Loupe asks you to check its date and amount against the PDF. Enter the payment under **Credit / money in** when the original shows a credit. Correct its date if needed, then give the reason. The payment description identifies a possible problem; it does not supply the missing sign or date.
+If a Merrick card-payment row has lost its minus sign, Loupe asks you to check its date and amount against the PDF. Enter the payment under **Credit / money in** when the original shows a credit. Correct its date if needed; a note is optional. The payment description identifies a possible problem; it does not supply the missing sign or date.
 
 ### If Confirm import is disabled
 
 Unchanged reading flags, missing account details and arithmetic differences do not by themselves stop import. Check the message beside the button for the action actually needed:
 
-- If you edited a value or changed whether a row is included, give a short reason for that edit.
-- If there are no captured records selected, choose the records to import or retry the file reading.
+- Routine pre-import edits and exclusion choices need no written reason. The original values, your corrections and who saved them are recorded automatically.
+- If there are no payments selected, **Save statement balances** is available when at least one printed opening or closing balance has a usable amount. Otherwise select records or correct the reading.
 - If the source or saved review changed, reload and compare it with your saved corrections. Loupe does not overwrite someone else's changes.
 - If you are replacing an existing import, identify the import and explain the replacement.
 - Editing requires permission to edit this case.

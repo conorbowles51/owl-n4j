@@ -62,10 +62,10 @@ If a file says **Read statement**, select that action. If it says **Retry readin
 4. Find **Rows needing a layout check**. These sample files currently flag the line **SYNTHETIC TEST DOCUMENT. No real customer or payment.** It is the footer printed at the bottom of the PDF, not a payment.
 5. Beside that footer, select **Review this row**. The correction controls open at the matching row.
 6. Clear the checkbox in the **Use** column for that footer only.
-7. In its **Reason for correction or decision**, enter **This is the test document footer, not a payment.** Do not invent a date or amount for it.
+7. The row disappears from the correction list. Use **Show excluded rows** to inspect it or restore it. No reason is required; do not invent a date or amount.
 8. Check the import count. It should now say **6 transactions** and offer **Confirm import of 6 transactions**. Opening and closing balances must remain outside that count. Do not confirm yet; first try step 4.
 
-**Expected:** the table still shows the original statement. The footer remains available as an excluded reading, with your explanation. The six actual payments remain selected. If the footer is already excluded in a later build, check that there are six payments and continue without changing it.
+**Expected:** the table still shows the original statement. The footer remains available as an excluded reading, with its original text. The six actual payments remain selected. If the footer is already excluded in a later build, check that there are six payments and continue without changing it.
 
 ![Checking statement beside the extracted table, with the footer flagged below it](images/01-statement-check.png)
 
@@ -73,17 +73,17 @@ If a file says **Read statement**, select that action. If it says **Retry readin
 
 ![Correction controls used to exclude the test document footer](images/02-exclude-footer.png)
 
-*Clear Use on the footer row and record why. The excluded footer must not become a seventh payment.*
+*Clear Use on the footer row. An explanation is optional; The excluded footer must not become a seventh payment.*
 
-For a wrong payment value, use **Edit import values** or **Show corrections and import choices**. Correct the field against the original and give a reason. For this exercise, leave the correct payment amounts unchanged. If any other line is flagged, inspect it before importing and record the unexpected result in your test notes.
+For a wrong payment value, use **Edit import values** or **Show corrections and import choices**. Correct the field against the original; leave the optional note blank to check that it does not block import. For this exercise, leave the correct payment amounts unchanged. If any other line is flagged, inspect it before importing and record the unexpected result in your test notes.
 
-Before excluding the footer, check that its reading issue is visible but does not itself disable import. Use **Review row** to open the matching correction controls. Exclude the footer and record why you changed its treatment. The corrected count should then be reflected beside confirmation.
+Before excluding the footer, check that its reading issue is visible but does not itself disable import. Use **Review row** to open the matching correction controls. Exclude the footer without entering a reason. The corrected count should then be reflected beside confirmation.
 
 ## 4. Leave the review and return
 
 1. While the checking statement is still unconfirmed, open **Transactions**, then return to **Statements & accounts**.
 2. Reopen **checking.pdf** from **Statement files** if necessary.
-3. Check that the footer is still excluded and its reason remains.
+3. Check that the footer is still excluded and its original text remains available.
 4. Refresh this same browser tab. Reopen the statement if needed and check the same two details again.
 5. Open **savings.pdf** from the file list, then return to **checking.pdf**. The checking review should still be present.
 
@@ -484,7 +484,7 @@ Record the filename, account, period, action, expected result and actual result 
 
 1. Use an Andrews-style test statement with a **Credit Voucher** refund. Its description should be on one line and its amount and running balance immediately below. Include another refund with its amount at the end of the description line.
 2. Open the statement review. Expect one payment for each refund, with its printed amount and balance. The extracted view must retain the original lines. The amount line must not become another payment or part of the payment description.
-3. Select the amount on the second line, then **Edit this row**. Expect the refund's date, description, credit and balance in the editor. Make a description correction with a reason and select **Save for bulk import**.
+3. Select the amount on the second line, then **Edit this row**. Expect the refund's date, description, credit and balance in the editor. Make a description correction without a reason and select **Save for bulk import**.
 4. Reopen the saved review after clearing this tab's temporary storage. Expect the correction to remain. The original printed text must still be visible.
 5. Import the ready statement once. Open that refund in **Transactions**. Expect its amount and balance, the saved description correction, and a source highlight covering both the first line and the amount line.
 6. Repeat with an unreadable amount or an unrelated number further down the page. Expect a review problem. Loupe must not choose a value just because it would make the balances match.
@@ -639,3 +639,26 @@ Use an artificial case with at least two incoming and two outgoing payments. Inc
 10. Select every matching payment in a list with more than 50 rows. Assign a category, go to the next page and confirm those payments were included. The count should represent the whole selection, not just the visible page.
 11. With two editors open on the same payment, save a change in one and try to save the older edit in the other. The older edit should be rejected without overwriting the first person's work.
 12. Sign in as a user who can view but cannot edit the case. Categories and names should be visible, but saving changes should not be offered.
+
+
+## Empty entries, optional notes and balance-only statements
+
+Use disposable test cases for these checks.
+
+1. Open a review with empty, unrecognised entries on more than one correction page. Confirm each input has a visible label even after scrolling.
+2. Fill the description of one empty entry, leaving another payment partly filled. Choose **Exclude [number] blank rows from import**. Expect all wholly empty entries across the statement to be excluded, while both partly filled rows remain selected.
+3. Select **Undo excluding blank rows**. Check that the entries return without losing the description you entered. Exclude them again; use **Show excluded rows** to inspect their original text or restore one.
+4. Correct an amount and the account holder without typing a reason. Save progress, reopen the review and confirm the import. Expect the corrected values and original readings to be retained. Repeat through **Save for bulk import** to check the batch path.
+5. Open a balance-only test statement with a readable closing balance and no opening balance. Select **Save statement balances**. Expect an account/statement record, the printed closing balance, no invented opening balance and zero new transactions.
+6. Repeat with a printed zero balance. It must remain zero. Repeat with different opening and closing balances: saving must work, and the difference must remain flagged rather than labelled as reconciled.
+7. Try an unreadable balance with no payments. Expect an actionable request for a printed balance. Correct the amount without a note, then save. Repeating the same confirmation must not create a duplicate statement.
+8. Check Alex's **01 ARRENDO BBVA EUR ENE 2021.pdf** and the other balance-only files on the deployed build. Record whether their actual labels and amounts are recognised. Synthetic examples passing is not confirmation that every BBVA layout is supported.
+
+## Import a group without reviewing each statement first
+
+1. In the main **Statement files** list, select several disposable PDFs containing multiple periods. Use **Select all [number] shown files** for the current list.
+2. Search for one selected filename. Check that the count still includes selected files hidden by the search. Clearing the search must restore their selected checkboxes.
+3. Select **Prepare statements from [number] files**. Expect the financial batch screen to open directly and contain every recognised account and period. Preparation must not create imported transactions yet.
+4. Select **Import [number] records** once. You should not need to open each period or resolve each reading issue first. After completion, check that usable transactions are available, incomplete records retain their sources outside totals, and issues remain accessible. Existing imports must not be duplicated.
+5. In a separate individual review containing an unreadable amount, select **Import statement now** above the PDF without opening corrections. Check the same separation between usable transactions and incomplete records after import.
+6. Record elapsed user time, number of manual corrections and any unexpected detours for a representative document. Do not use automated test runtime as the time a person needs to process a PDF.

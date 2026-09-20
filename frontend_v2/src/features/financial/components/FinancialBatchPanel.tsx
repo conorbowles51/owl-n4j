@@ -344,7 +344,9 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
         >
           {confirm.isPending
             ? "Confirming…"
-            : `Import ${availableRecords} records`}
+            : available && !availableRecords
+              ? `Save ${available} ${available === 1 ? "statement" : "statements"}`
+              : `Import ${availableRecords} records`}
         </Button>
       </div>
       {(confirm.isError || error) && (
