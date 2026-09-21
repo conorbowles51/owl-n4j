@@ -50,7 +50,7 @@ Step-by-step instructions for reviewing financial records, investigating payment
 
 *Writing the finding requires a title and explanation. The two selected payments are already attached.*
 
-In **Trends**, switch between **Over time** and **By category**. Currency and account type stay visible in either view. Open a period or category to work with its payments. **View undated payments** shows records that cannot be placed on the chronological chart. The same selection, comparison and finding actions are available from these supporting lists.
+In **Transactions**, open **Charts** for monthly volume and category distribution. Select a month or category to filter the payments. **Trends** compares earlier and later periods, explains differences by counterparty or category, and opens the supporting payments for each observation.
 
 ## Categorize imported transactions and edit From and To
 
@@ -81,13 +81,13 @@ For a bank payment, **From** identifies the sender and **To** identifies the rec
 
 1. Choose **Category** at the top of Financial. **All categories** restores the full category scope; **Uncategorized** shows payments without an assigned category.
 2. The choice follows you through **Overview**, **Transactions**, **People & businesses**, **Follow money**, **Trends** and **Payment graph**. Account and date filters still apply.
-3. In **Trends**, the calendar chart shows the chosen category over time. Choose **All categories** to return to the combined chart.
+3. In **Transactions**, open **Charts** to see the chosen category over time. In **Trends**, compare that category between two periods. Choose **All categories** to examine all categories again.
 4. Under **Money by category**, compare incoming and outgoing amounts. Currencies and credit cards are kept separate. Select a category name to open its payments. Use **Use this category across financial views** to apply that category filter.
 5. In **Transactions**, open **Compare money by category** for the same comparison using the current table filters.
 6. When a payment list is opened from an investigation view, select payments and use **Categorize [number] payments**. With nothing selected, that button applies to all payments in that particular list; its count tells you how many.
 7. Selected-payment CSV downloads and transaction reports include **From**, **To** and **Category**. The detailed download also retains the history of label edits.
 
-![Trends for a selected category, with incoming and outgoing amounts.](images/45-category-trends.png)
+The category scope remains visible as you move between these analyses.
 
 ### Edit a name from the payment graph
 
@@ -158,7 +158,7 @@ Older manual reviews may use terms such as candidate, resolved reading or finali
 | Transactions | Search, filter and select payments. Open originals, compare entries, create findings, mark questions for follow-up and export a selection. |
 | People & businesses | Open a recorded name or account profile, inspect its payments and sources, and find linked findings. |
 | Follow money | Examine receipts followed by outgoing payments, and open transfer, pattern, graph, tracing and case-event tools. |
-| Trends | Compare amounts, counts and recorded balances on a calendar axis. Open a period's payments. |
+| Trends | Compare periods, identify the counterparties and categories driving changes, inspect recurring or larger payments, and record observations with their evidence. |
 | Findings | Create and revise questions, observations and conclusions. Record next actions and build reports with their evidence. |
 
 ### Start from Overview
@@ -1163,8 +1163,11 @@ A cross-case match does not merge cases or give access to restricted records. If
 2. Use **Sort by** to order the directory by payment count, recent activity or name. Choose one currency and account type before sorting by total amount.
 3. Select a profile. Read its money totals, payment count, first and last known payment dates, accounts and source-document count.
 4. Review **Accounts and references in these payments** and any linked findings. The displayed name is taken from the records; it does not independently identify the ultimate recipient or establish ownership.
-5. Select a payment description to inspect its source. Use **Compare [count] payments** or **Create finding** to work with the profile's payments.
-6. Select **Back to names and accounts** to return to the directory.
+5. Below the profile summary, use the same transaction explorer as in **Transactions**: search, account/holder, date, direction, amount, category and proof filters; **Charts**, **From & To** and **Money flow**; sorting, selection, inline edits and downloads. Charts start open. A chart selection filters the profile's table. Clearing filters keeps the payments limited to this profile. Each profile remembers its own filters.
+6. Select a payment description to inspect its original statement. Compare selected payments or create a finding. Downloads retain the profile and every active filter.
+7. Select **Back to names and accounts** to return to the directory.
+
+**Counterparty not identified** is a collection of payments missing names, not one person or business. Descriptions may still explain the type of payment, and references can help investigate it. Follow Money separates these payments into description groups without inventing a beneficiary.
 
 Use **Link recorded names to a person or business** for the existing identity-review tools. Within it, open **Link different names for the same person or business** when evidence supports a link. Original names remain separate until you record that decision.
 
@@ -1219,17 +1222,18 @@ Each arrow represents a recorded payment. The outgoing and incoming sides of a t
 
 ### Read trends
 
-1. Open **Trends**. Open **Accounts and dates** if you want to change the scope, then select **Apply**.
-2. Under **Amounts**, choose a currency and bank accounts or credit cards. Their conventions are kept separate.
-3. Choose **Monthly** or **Daily** under **Interval**. Under **Show**, choose amounts or payment count. Recorded balance is available for one account.
-4. Read the dates along the horizontal axis. Teal shows money in and rose shows money out. Read the labels alongside the colours. Card credits and charges are labelled separately.
-5. Select a date in the chart. Its payment list opens below. Read the statement-coverage message for that interval.
-6. Use **Compare with [previous period]** to open both sets of payments in date order. Open their originals and create a finding if you have an observation or question to record.
-7. Use **Earlier dates** and **Later dates** for long ranges. **Read the chart values as a table** provides the same displayed values as text.
+1. Open **Trends**. **Accounts and dates** controls which records are loaded. Include both periods and enough earlier history for the comparisons you want.
+2. Choose one **Currency and account type**. Bank payments and card charges/credits are kept separate. The initial comparison uses the latest populated month and the preceding month; choose other months or enter exact start/end dates.
+3. Read **Comparison coverage**. Open **Coverage by account** to see how much of each date range is covered by imported statement periods. Missing coverage or unusable dates limits what a difference can establish. Periods with different lengths are identified.
+4. Read **What changed?** for earlier/later money totals, payment counts and exact differences. **Explain money in/out change** selects the matching direction in **What drove the change?**
+5. Compare by **Counterparty** or **Category** to see which groups account for the difference. The signed contributions add up to the total change. Names suggested from descriptions remain marked; unnamed payments are not assumed to be one counterparty.
+6. Inspect **Counterparties first seen in these records**, **Recurring payments**, **Payments larger than the earlier pattern**, and **Transfer returns with matching references**. Each section explains its rule and evidence requirements. An empty result does not establish an absence of concerning activity.
+7. Select **View [count] supporting payments** to compare the exact records and open their original statements. **Record observation** opens a finding with the comparison dates, explanation, limitations and payment references filled in. Review it and save when ready.
+8. **Download comparison and evidence** saves the date ranges, rules, coverage, exact values and supporting transaction data as JSON. **Charts in Transactions** opens the ordinary chart explorer.
 
-An empty interval means no imported payments. It does not prove inactivity. Statement dates are checked separately. A recorded-balance point uses the last printed balance in its interval; it is not calculated by adding accounts together. Payments without a known payment date are identified and left out of the time chart.
+A first-seen name means first seen in the loaded records, not a proven new relationship. Recurrence requires at least three equal amounts to/from the same name in one account with 5–9 day or 25–35 day gaps. A larger-payment observation requires at least five earlier payments and an amount above both the earlier maximum and three times the median. These are explicit comparison rules, not judgments about legality or purpose.
 
-![A selected interval and the payments behind it](images/32-investigator-trends.png)
+Returned-transfer comparisons currently recognise explicitly described SPEI/SPID returns and require a unique earlier debit with the same account, amount and reference within seven days. Both entries remain in gross totals. Blank statement periods do not prove inactivity, and recorded statement coverage alone does not guarantee that every payment was read.
 
 ### Compare payments with case events
 

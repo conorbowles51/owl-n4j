@@ -7,7 +7,7 @@ payment. Explicit investigator labels always take precedence in payment_labels.
 import re
 import unicodedata
 
-VERSION = 'description-labels/1'
+VERSION = 'description-labels/2'
 
 
 def normalized(value):
@@ -176,6 +176,8 @@ def infer_payment_labels(description, *, direction, account_type=None, instituti
         category('Payroll', 'payroll', 'the payroll wording')
     elif re.search(r'\b(?:ATM WITHDRAWAL|CASH WITHDRAWAL|RETIRO (?:DE )?EFECTIVO|RETIRO CAJERO)\b', value):
         category('Cash withdrawals', 'cash-withdrawal', 'the cash withdrawal wording')
+    elif direction == 'credit' and re.match(r'(?:SPEI|SPID)\s+DEVUELTO', value):
+        category('Returned transfers', 'returned-transfer', 'the returned transfer wording; this is a return of an earlier payment, not a new payer')
     elif re.search(r'\b(?:TRANSFER|TRASPASO|SPEI|SPID|ORDEN DE PAGO|WIRE|ZELLE)\b', value):
         category('Transfers', 'transfer', 'the transfer wording')
     elif re.search(r'\b(?:DEPOSITO DE TERCERO|DEPOSIT)\b', value):
@@ -203,7 +205,14 @@ def infer_payment_labels(description, *, direction, account_type=None, instituti
     # Explicit directional names may be used only on the matching payment side.
     cue = 'FROM' if direction == 'credit' else 'TO'
     named = re.match(rf'^(?:WIRE|TRANSFER|PAYMENT|BANK TRANSFER)(?:\s+(?:TRANSFER|PAYMENT))?\s+{cue}\s+(.+?)(?:\s+(?:REF(?:ERENCE)?[.:#]|ACCOUNT\b|ACCT\b).*)?$', raw, re.I)
-    if named and _name(named[1]):
+    # CIE collection entries name the payee before REF, unlike a SPEI/SPID
+    # description where the bank name alone does not identify the beneficiary.
+    cie = re.match(r'^P14\s+(.+?)\s+REF\s*:\s*\d+\s+CIE\s*:\s*\d+\b', raw, re.I)
+    if direction == 'debit' and account_type != 'credit_card' and cie and _name(cie[1]):
+        suggest('counterparty', cie[1].strip(), 'bbva-cie-payee', 'Payee label printed before the REF and CIE references in the payment description. This label does not establish the ultimate beneficiary.')
+        if 'category' not in result:
+            category('Payments', 'cie-payment', 'the CIE payment reference')
+    elif named and _name(named[1]):
         suggest('counterparty', named[1].strip(), 'named-payment-party', f'The description explicitly says “{cue.lower()} {named[1].strip()}”. Verify the name against the source before linking an identity.')
     # BBVA: the receiving bank precedes the reference. The named beneficiary
     # follows the long numeric tracking code. Never use the intermediary bank.

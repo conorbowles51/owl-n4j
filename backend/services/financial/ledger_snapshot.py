@@ -320,6 +320,10 @@ def render_ledger_report(snapshot):
                              if f['id'] == source.get('evidence_file_id')), 'Selected statement')
             parts += ['<p>Statement filter: ' + text(filename) + '</p>']
         analysis_labels = []
+        if view['filters'].get('profile_id'):
+            analysis_labels.append(['People & businesses profile', view['filters']['profile_id']])
+        if view['filters'].get('profile_group'):
+            analysis_labels.append(['Profile currency / account type', view['filters']['profile_group']])
         def name_label(value):
             return value[5:] if value.startswith('name:') else 'Unidentified senders' if value == 'unknown:from' else 'Unidentified recipients' if value == 'unknown:to' else value
         for key, label in (('from_names', 'From (any selected sender)'), ('to_names', 'To (any selected recipient)'), ('perspective_names', 'Perspective group'), ('analysis_categories', 'Chart categories')):

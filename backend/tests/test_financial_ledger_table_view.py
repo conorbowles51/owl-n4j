@@ -3,6 +3,15 @@ from services.financial.ledger_table_view import capture_table_view
 from services.financial.ledger_summary import LedgerSummaryError
 
 class LedgerTableViewTests(TestCase):
+    def test_profile_scope_stays_in_exports_when_additional_filters_are_cleared(self):
+        ledger = {'readings': [self.row('one', account_id='a', from_name='Supplier', to_name='Owner'), self.row('two', account_id='b', from_name='Supplier', to_name='Owner'), self.row('unknown', account_id='a', from_name='', counterparty_raw='Rejected'), self.row('other', account_id='a', from_name='Other')]}
+        ledger['readings'][1]['row']['currency'] = 'USD'
+        self.assertEqual(capture_table_view(ledger, {'profile_id': 'name:Supplier'})['row_ids'], ['one','two'])
+        self.assertEqual(capture_table_view(ledger, {'profile_id': 'name:Supplier','profile_group':'GBP:bank'})['row_ids'], ['one'])
+        self.assertEqual(capture_table_view(ledger, {'profile_id': 'name:'})['row_ids'], ['unknown'])
+        self.assertEqual(capture_table_view(ledger, {'profile_id': 'account:b'})['row_ids'], ['two'])
+        self.assertEqual(capture_table_view(ledger, {'profile_id': 'name:Supplier','from_names':['name:Other']})['row_ids'], [])
+        self.assertNotIn('profile_id',capture_table_view(ledger,{})['filters'])
     def test_holder_filters_accounts_across_banks_and_matches_exported_selection(self):
         a = '00000000-0000-4000-8000-000000000001'
         b = '00000000-0000-4000-8000-000000000002'

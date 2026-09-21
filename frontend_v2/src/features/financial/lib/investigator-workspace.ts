@@ -28,6 +28,7 @@ export interface PaymentProfile {
   id: string
   name: string
   kind: "account" | "name"
+  unidentified: boolean
   rows: LedgerTransaction[]
   accounts: string[]
   sources: string[]
@@ -68,6 +69,7 @@ export function paymentProfiles(rows: LedgerTransaction[]): PaymentProfile[] {
     return {
       id,
       ...group,
+      unidentified: group.kind === "name" && !id.slice(5).trim(),
       accounts: [...new Set(group.rows.map((row) => row.account_id))],
       sources: [...new Set(group.rows.map((row) => row.source_document_id))],
       first: dates[0] ?? null,

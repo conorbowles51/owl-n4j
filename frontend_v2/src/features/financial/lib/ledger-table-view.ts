@@ -1,4 +1,6 @@
 export interface LedgerTableView {
+  profile_id?: string
+  profile_group?: string
   from_names?: string[]
   to_names?: string[]
   perspective_names?: string[]

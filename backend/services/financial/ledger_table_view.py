@@ -7,6 +7,8 @@ from services.financial.ledger_summary import LedgerSummaryError
 class LedgerTableView(BaseModel):
     model_config = ConfigDict(extra='forbid', strict=True)
     search: Annotated[str, Field(max_length=256)] = ''
+    profile_id: Annotated[str, Field(max_length=1024, pattern=r'^$|^(account|name):')] = ''
+    profile_group: Annotated[str, Field(pattern=r'^$|^[A-Z]{3}:(card|bank)$')] = ''
     category: Annotated[str, Field(max_length=120)] = ''
     account_id: Annotated[str, Field(pattern=r'^$|^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')] = ''
     account_holder: Annotated[str, Field(max_length=512)] = ''
@@ -69,6 +71,14 @@ def _period(row):
 
 def _analysis_match(row, view, selections):
     group = f"{row['currency']}:{'card' if row.get('account_type') == 'credit_card' else 'bank'}"
+    if view.profile_group and group != view.profile_group:
+        return False
+    if view.profile_id:
+        name = row.get('from_name' if row['direction'] == 'credit' else 'to_name')
+        if name is None:
+            name = row.get('counterparty_raw')
+        if view.profile_id not in (f"account:{row['account_id']}", f"name:{name or ''}"):
+            return False
     if view.analysis_group and group != view.analysis_group:
         return False
     if view.analysis_period and _period(row) != view.analysis_period:
@@ -139,7 +149,7 @@ def capture_table_view(ledger, request, *, batch_scope=None):
                 return (key[5:] if key.startswith('name:') else 'Not identified').lower()
             return (row.get(field) or ('Uncategorized' if field == 'category' else '')).lower()
         rows.sort(key=lambda row: label(row).encode('utf-16-be', errors='surrogatepass'), reverse=direction == 'desc')
-    result = dict(schema='loupe.financial.ledger_table_view/1',filters=view.model_dump(exclude={key for key in ('category', 'account_id', 'account_holder', 'source_document_id', 'import_batch_id', 'import_batch_revision', 'from_names', 'to_names', 'perspective_names', 'analysis_group', 'analysis_period', 'analysis_categories', 'flow_party', 'flow_kind') if not getattr(view, key)}),
+    result = dict(schema='loupe.financial.ledger_table_view/1',filters=view.model_dump(exclude={key for key in ('profile_id', 'profile_group', 'category', 'account_id', 'account_holder', 'source_document_id', 'import_batch_id', 'import_batch_revision', 'from_names', 'to_names', 'perspective_names', 'analysis_group', 'analysis_period', 'analysis_categories', 'flow_party', 'flow_kind') if not getattr(view, key)}),
         row_ids=[r['key'] for r in rows],matching_rows=len(rows),
         limitation='Admitted ledger rows matching the recorded table filters, in display order, captured at export time. Display order does not establish bank sequence. The enclosing snapshot retains the full applied account/date scope and its history; its totals apply to that full scope. Source eligibility and proof classes are unchanged. All matching rows are included, not just the visible page.')
     if batch_sources is not None:

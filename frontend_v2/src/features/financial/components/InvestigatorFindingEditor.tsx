@@ -33,12 +33,14 @@ export function InvestigatorFindingEditor({
   ids = [],
   entry,
   initial,
+  draftContext,
   onClose,
 }: {
   caseId: string
   ids?: string[]
   entry?: CaseworkEntry
   initial?: Partial<InvestigatorFindingDraft>
+  draftContext?: string
   onClose: () => void
 }) {
   const { canEdit } = useFinancialAccess()
@@ -50,7 +52,7 @@ export function InvestigatorFindingEditor({
     caseId,
     entry
       ? `finding-edit:${entry.id}:${entry.version}`
-      : `finding-compose:${selectionKey}:${initial?.kind || "question"}:${initial?.title || "new"}`,
+      : `finding-compose:${selectionKey}:${initial?.kind || "question"}:${initial?.title || "new"}${draftContext ? `:context:${draftContext}` : ""}`,
     entry ? findingDraft(entry) : { ...emptyFinding, ...initial }
   )
   const [review, setReview] = useState(false)

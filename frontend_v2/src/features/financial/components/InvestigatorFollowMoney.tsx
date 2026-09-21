@@ -28,6 +28,10 @@ import {
   WorkspaceScope,
 } from "./InvestigationWorkspaceParts"
 import { PaymentComparison } from "./PaymentComparison"
+import {
+  unidentifiedGroups,
+  unidentifiedPayment,
+} from "../lib/unidentified-payments"
 
 export function MoneyConnections({
   rows,
@@ -36,9 +40,9 @@ export function MoneyConnections({
   rows: LedgerTransaction[]
   onOpen: (ids: string[], title: string) => void
 }) {
-  const names = paymentProfiles(rows).filter(
-    (profile) => profile.kind === "name"
-  )
+  const names = paymentProfiles(
+    rows.filter((row) => !unidentifiedPayment(row))
+  ).filter((profile) => profile.kind === "name")
   const accounts = paymentProfiles(rows).filter(
     (profile) => profile.kind === "account"
   )
@@ -55,6 +59,10 @@ export function MoneyConnections({
   )
   const list = visibleNames.slice(page * 6, (page + 1) * 6)
   const card = group?.endsWith(":card")
+  const unnamed = unidentifiedGroups(
+    rows.filter((row) => paymentGroup(row) === group)
+  )
+  const unnamedCount = unnamed.reduce((sum, item) => sum + item.rows.length, 0)
   const totalLabel = (payments: LedgerTransaction[]) => {
     const amounts = payments.map((row) => minorAmount(row.amount_minor))
     if (amounts.some((value) => value === null)) return "Amount needs checking"
@@ -122,6 +130,14 @@ export function MoneyConnections({
                     <strong className="block text-sm break-words">
                       {profile.name}
                     </strong>
+                    {payments.some(
+                      (row) =>
+                        row.label_sources?.from_name?.source === "description"
+                    ) && (
+                      <span className="block text-xs text-muted-foreground">
+                        Includes names suggested from descriptions
+                      </span>
+                    )}
                     <span className="finance-amount text-xs">
                       {payments.length} payments · {totalLabel(payments)}
                     </span>
@@ -201,6 +217,14 @@ export function MoneyConnections({
                     <strong className="block text-sm break-words">
                       {profile.name}
                     </strong>
+                    {payments.some(
+                      (row) =>
+                        row.label_sources?.to_name?.source === "description"
+                    ) && (
+                      <span className="block text-xs text-muted-foreground">
+                        Includes names suggested from descriptions
+                      </span>
+                    )}
                     <span className="finance-amount text-xs">
                       {payments.length} payments · {totalLabel(payments)}
                     </span>
@@ -242,6 +266,55 @@ export function MoneyConnections({
             Next names
           </Button>
         </div>
+      )}
+      {unnamedCount > 0 && (
+        <section
+          aria-label="Payments without identified counterparties"
+          className="rounded-lg border bg-muted/20 p-4 space-y-3"
+        >
+          <h4 className="font-semibold">
+            {unnamedCount} payments without an identified counterparty
+          </h4>
+          <p className="text-sm text-muted-foreground">
+            These payments remain in the totals. They are grouped below by their
+            descriptions, not treated as one person or company. Open a group to
+            inspect its references and source statements.
+          </p>
+          <div className="grid gap-3 md:grid-cols-2">
+            {unnamed.map((item) => (
+              <button
+                key={`${item.direction}:${item.kind}`}
+                className="rounded border bg-background p-3 text-left hover:bg-muted/50"
+                onClick={() =>
+                  onOpen(
+                    item.rows.map((row) => row.key),
+                    item.label
+                  )
+                }
+              >
+                <strong className="block text-sm">{item.label}</strong>
+                <span className="block text-sm">
+                  {item.rows.length}{" "}
+                  {item.rows.length === 1 ? "payment" : "payments"} ·{" "}
+                  {totalLabel(item.rows)} ·{" "}
+                  {card
+                    ? item.direction === "credit"
+                      ? "Card credits"
+                      : "Card charges"
+                    : item.direction === "credit"
+                      ? "Money in"
+                      : "Money out"}
+                </span>
+                <span className="mt-1 block text-xs text-muted-foreground">
+                  {item.reason}
+                </span>
+                <span className="mt-2 block text-xs font-medium text-primary">
+                  View payments and references →
+                </span>
+              </button>
+            ))}
+          </div>
+        </section>
       )}
       <p className="text-xs text-muted-foreground">
         Names include statement readings, investigator edits and suggestions

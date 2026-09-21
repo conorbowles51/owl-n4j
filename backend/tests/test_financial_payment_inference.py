@@ -57,6 +57,21 @@ class PaymentInferenceTests(unittest.TestCase):
         self.assertNotIn('counterparty', self.infer('Transfer from Example Ltd', kind='checking'))
         self.assertNotIn('counterparty', self.infer('Transfer to third party', kind='checking'))
 
+    def test_cie_payees_are_taken_from_the_named_payment_not_an_intermediary(self):
+        text = 'P14 INTERCAM BANCO SA IB REF:00000000000111901872 CIE:1254405 Ref. GUIA:2297229'
+        self.assertEqual(self.infer(text, kind='checking')['counterparty']['value'], 'INTERCAM BANCO SA IB')
+        self.assertEqual(self.infer('P14 EXAMPLE SERVICES SA REF:000111 CIE:1234 Ref. GUIA:1', kind='checking')['counterparty']['value'], 'EXAMPLE SERVICES SA')
+        for description, direction, kind in [(text, 'credit', 'checking'), (text, 'debit', 'credit_card'), ('P14 REF:123 CIE:45', 'debit', 'checking'), ('T17 SPID ENVIADO BANORTE Ref. 123', 'debit', 'checking')]:
+            self.assertNotIn('counterparty', self.infer(description, direction, kind))
+        row = SimpleNamespace(account_id='a', case_id='case', metadata_={'investigation_labels': {'to_name': ''}}, description=text, direction='debit', counterparty_raw=None)
+        account = SimpleNamespace(id='a',case_id='case',holder_name='Owner',identifier_as_printed='1',account_type='checking',institution_name='BBVA')
+        self.assertEqual(payment_label_view(row, account)['to_name'], '')
+
+    def test_returned_transfers_are_not_a_new_payer(self):
+        result = self.infer('T22 SPID DEVUELTOBANORTE 0000000PAGO F1494 Ref. 0004700971 072', 'credit', 'checking')
+        self.assertEqual(result['category']['value'], 'Returned transfers')
+        self.assertNotIn('counterparty', result)
+
     def test_card_payments_rewards_and_merchant_credits_are_not_income(self):
         payment = self.infer('CAPITAL ONE MOBILE PYMTAuthDate', 'credit')
         self.assertEqual(payment['category']['value'], 'Card payments')

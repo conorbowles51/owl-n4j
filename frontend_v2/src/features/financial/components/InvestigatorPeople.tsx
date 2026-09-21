@@ -1,5 +1,5 @@
 import { useInvestigatorPayments } from "../hooks/use-investigator-payments"
-import { useMemo } from "react"
+import { useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { useFinancialDraft } from "../stores/financial-drafts"
 import {
@@ -10,7 +10,6 @@ import {
 import { PaymentTotals } from "./InvestigationTransactionTable"
 import {
   InvestigationReadState,
-  PaymentSet,
   WorkspaceHeading,
   WorkspaceScope,
 } from "./InvestigationWorkspaceParts"
@@ -18,9 +17,12 @@ import { LedgerCounterpartiesAnalysis } from "./LedgerCounterpartiesAnalysis"
 import type { FinancialMainView } from "../stores/financial.store"
 import { useFinancialStore } from "../stores/financial.store"
 import { useFinancialFindingIndex } from "../hooks/use-financial-finding-index"
+import { LedgerRowBrowser } from "./LedgerRowBrowser"
+import { LedgerSourceDialog } from "./LedgerSourceDialog"
 
 export function InvestigatorPeople({ caseId }: { caseId: string }) {
   const data = useInvestigatorPayments(caseId)
+  const [source, setSource] = useState<string | null>(null)
   const [returnPath, , clearReturn] = useFinancialDraft<{
     view: FinancialMainView
     people: Record<string, unknown>
@@ -126,10 +128,14 @@ export function InvestigatorPeople({ caseId }: { caseId: string }) {
                   <p className="finance-badge">
                     {selected.kind === "account"
                       ? "Account in these records"
-                      : "Name as recorded in payments"}
+                      : selected.unidentified
+                        ? "Payments to investigate"
+                        : "Name as recorded in payments"}
                   </p>
                   <h3 className="mt-1 text-xl font-semibold">
-                    {selected.name}
+                    {selected.unidentified
+                      ? "Payments without an identified counterparty"
+                      : selected.name}
                   </h3>
                 </div>
                 <Button
@@ -147,7 +153,9 @@ export function InvestigatorPeople({ caseId }: { caseId: string }) {
                 label={
                   selected.kind === "account"
                     ? "Activity on this account"
-                    : "Payments involving this recorded name"
+                    : selected.unidentified
+                      ? "Payments with missing counterparty names"
+                      : "Payments involving this recorded name"
                 }
               />
               <dl className="grid gap-4 text-sm sm:grid-cols-4">
@@ -170,10 +178,16 @@ export function InvestigatorPeople({ caseId }: { caseId: string }) {
               </dl>
               {selected.kind === "name" && (
                 <p className="rounded border bg-muted/20 p-3 text-sm">
-                  This name comes from the imported payment records. It does not
-                  by itself identify the ultimate recipient, an account owner or
-                  a verified person. Open the original payment references before
-                  making that connection.
+                  {selected.unidentified ? (
+                    "These payments have no identified counterparty. They are not one person or business. Use the descriptions, references and originals to investigate each payment."
+                  ) : (
+                    <>
+                      This name comes from the imported payment records. It does
+                      not by itself identify the ultimate recipient, an account
+                      owner or a verified person. Open the original payment
+                      references before making that connection.
+                    </>
+                  )}
                 </p>
               )}
               <details className="text-sm">
@@ -230,12 +244,24 @@ export function InvestigatorPeople({ caseId }: { caseId: string }) {
                 </p>
               )}
             </div>
-            <PaymentSet
+            <LedgerRowBrowser
               key={selected.id}
-              caseId={caseId}
-              rows={selected.rows}
-              title={`Payments: ${selected.name}`}
+              investigation
+              transactions={selected.rows}
+              exportContext={{
+                caseId,
+                params: data.params,
+                profile: { id: selected.id, group: view.currencyGroup },
+              }}
+              onSource={(row) => setSource(row.key)}
             />
+            {source && (
+              <LedgerSourceDialog
+                caseId={caseId}
+                transactionId={source}
+                onClose={() => setSource(null)}
+              />
+            )}
           </>
         ) : (
           <>
@@ -338,10 +364,14 @@ export function InvestigatorPeople({ caseId }: { caseId: string }) {
                   <p className="finance-badge">
                     {profile.kind === "account"
                       ? "Account"
-                      : "Recorded payment name"}
+                      : profile.unidentified
+                        ? "Payments to investigate"
+                        : "Recorded payment name"}
                   </p>
                   <h3 className="text-base font-semibold break-words">
-                    {profile.name}
+                    {profile.unidentified
+                      ? "Counterparty not identified"
+                      : profile.name}
                   </h3>
                   <p className="text-sm text-muted-foreground">
                     {profile.rows.length} payments · {profile.accounts.length}{" "}
@@ -354,7 +384,9 @@ export function InvestigatorPeople({ caseId }: { caseId: string }) {
                     {profile.last || "date unknown"}
                   </p>
                   <span className="inline-block text-sm font-medium text-primary">
-                    Open profile →
+                    {profile.unidentified
+                      ? "Investigate payments →"
+                      : "Open profile →"}
                   </span>
                 </button>
               ))}

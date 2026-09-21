@@ -50,7 +50,11 @@ export function LedgerRowBrowser({
   ...actions
 }: ComponentProps<typeof LedgerTable> & {
   investigation?: boolean
-  exportContext?: { caseId: string; params: LedgerQueryParams }
+  exportContext?: {
+    caseId: string
+    params: LedgerQueryParams
+    profile?: { id: string; group: string }
+  }
 }) {
   const { canEdit } = useFinancialAccess()
   const [category, setCategory] = usePaymentCategory(
@@ -70,8 +74,11 @@ export function LedgerRowBrowser({
   const [localView, setLocalView] = useState(emptyView)
   const [savedView, setSavedView] = useFinancialDraft(
     exportContext?.caseId ?? "none",
-    paymentTableDraftName(exportContext?.params, investigation),
-    emptyView
+    paymentTableDraftName(exportContext?.params, investigation) +
+      (exportContext?.profile
+        ? `:profile:${JSON.stringify(exportContext.profile)}`
+        : ""),
+    exportContext?.profile ? { ...emptyView, chartsOpen: true } : emptyView
   )
   const view = { ...emptyView, ...(exportContext ? savedView : localView) }
   const setView = exportContext ? setSavedView : setLocalView
@@ -742,6 +749,12 @@ export function LedgerRowBrowser({
             params={exportContext.params}
             tableView={{
               ...analysisTableView(view),
+              ...(exportContext.profile
+                ? {
+                    profile_id: exportContext.profile.id,
+                    profile_group: exportContext.profile.group,
+                  }
+                : {}),
               search,
               ...(accountId ? { account_id: accountId } : {}),
               ...(accountHolder ? { account_holder: accountHolder } : {}),
