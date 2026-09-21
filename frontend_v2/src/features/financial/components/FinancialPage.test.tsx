@@ -1,10 +1,5 @@
 import { useFinancialDraftStore } from "../stores/financial-drafts"
-import { financialDraftKey } from "../stores/financial-drafts"
 import { useInvestigationScopeStore } from "../stores/investigation-scope"
-import {
-  emptyPaymentTableView,
-  paymentTableDraftName,
-} from "../lib/payment-table-draft"
 // This existing workflow fixture has case editing and upload access.
 vi.mock("../hooks/use-financial-access", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../hooks/use-financial-access")>()),
@@ -309,7 +304,7 @@ describe("FinancialPage", () => {
     adjudicationIdle()
   })
 
-  it("opens Transactions with the whole case despite an earlier account, batch and category, and can return to all payments", () => {
+  it("retains Transactions on return and clears filters only with Reset view", () => {
     graphWithRows()
     ledgerWithRows([
       makeLedgerRow({ key: "one", account_id: "a" }),
@@ -318,39 +313,26 @@ describe("FinancialPage", () => {
     useInvestigationScopeStore
       .getState()
       .apply("case-1", { accountId: "a", startDate: "2020-01-01" })
-    const drafts = useFinancialDraftStore.getState()
-    drafts.put(
-      financialDraftKey("case-1", "investigation-category"),
-      "Old category"
-    )
-    drafts.put(financialDraftKey("case-1", paymentTableDraftName({}, true)), {
-      ...emptyPaymentTableView,
-      importBatchId: "old-batch",
-      search: "stale",
-    })
     renderPage()
     selectTab("Transactions")
+    expect(ledger.useLedgerTransactions).toHaveBeenCalledWith(
+      "case-1",
+      expect.objectContaining({ accountId: "a" })
+    )
+    fireEvent.change(screen.getByLabelText("Search payments"), {
+      target: { value: "my filter" },
+    })
+    selectTab("Findings & Observations")
+    selectTab("Transactions")
+    expect(screen.getByLabelText("Search payments")).toHaveValue("my filter")
+    expect(
+      Object.values(useInvestigationScopeStore.getState().scopes)[0]
+    ).toMatchObject({ accountId: "a" })
+    fireEvent.click(screen.getByRole("button", { name: "Reset view" }))
+    expect(screen.getByLabelText("Search payments")).toHaveValue("")
     expect(Object.values(useInvestigationScopeStore.getState().scopes)).toEqual(
       [{}]
     )
-    expect(ledger.useLedgerTransactions).toHaveBeenCalledWith("case-1", {})
-    expect(screen.getByLabelText("Search payments")).toHaveValue("")
-    expect(
-      screen.queryByRole("region", { name: "Imported batch transactions" })
-    ).not.toBeInTheDocument()
-    expect(screen.getByLabelText("Filter imported account")).toHaveValue("")
-    fireEvent.change(screen.getByLabelText("Filter imported account"), {
-      target: { value: "a" },
-    })
-    fireEvent.click(
-      screen.getByRole("button", { name: "Show all imported payments" })
-    )
-    expect(screen.getByLabelText("Filter imported account")).toHaveValue("")
-    expect(
-      useFinancialDraftStore.getState().drafts[
-        financialDraftKey("case-1", "investigation-category")
-      ]
-    ).toBe("")
   })
 
   it("opens on overview, with investigation pages and supporting tools available", () => {
@@ -365,7 +347,7 @@ describe("FinancialPage", () => {
       "People & businesses",
       "Follow money",
       "Trends",
-      "Findings",
+      "Findings & Observations",
     ])
     expect(tabs[0]).toHaveAttribute("aria-selected", "true")
   })

@@ -160,3 +160,55 @@ class FinancialImportRemovalTests(TestCase):
             self.remove(preview)
         self.f.db.rollback()
         self.assertEqual(len(list_transactions(self.f.db, self.f.case.id)), 12)
+
+    def test_http_preview_confirm_and_reopen_use_the_real_removal_writer(self):
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+        from postgres.base import Base
+        from postgres.models.case_membership import CaseMembership
+        from postgres.models.enums import CaseMembershipRole
+        from postgres.session import get_db
+        from routers.financial_statement_import import router
+        from routers.users import get_current_db_user
+
+        Base.metadata.create_all(self.f.engine, tables=[CaseMembership.__table__])
+        self.f.db.add(CaseMembership(case_id=self.f.case.id, user_id=self.f.user.id,
+            membership_role=CaseMembershipRole.owner, added_by_user_id=self.f.user.id,
+            permissions={'case': {'view': True, 'edit': True}}))
+        self.f.db.commit()
+
+        def database():
+            with self.f.SessionLocal() as session:
+                yield session
+
+        app = FastAPI()
+        app.include_router(router)
+        app.dependency_overrides[get_db] = database
+        app.dependency_overrides[get_current_db_user] = lambda: self.f.user
+        prefix = '/api/financial/statement-import'
+        query = f'?case_id={self.f.case.id}'
+        selection = {'batch_ids': [str(self.batch)], 'file_ids': [str(self.f.file.id)]}
+        original = self.f.path.read_bytes()
+        with TestClient(app) as client:
+            preview = client.post(f'{prefix}/removals/preview{query}', json=selection)
+            self.assertEqual(preview.status_code, 200, preview.text)
+            self.assertEqual(preview.json()['transaction_count'], 12)
+            stale = client.post(f'{prefix}/removals/confirm{query}',
+                json={**selection, 'expected_revision': '0'*64})
+            self.assertEqual(stale.status_code, 409, stale.text)
+            self.assertIn('changed since the preview', stale.json()['detail'])
+            self.assertEqual(len(list_transactions(self.f.db, self.f.case.id)), 12)
+            removed = client.post(f'{prefix}/removals/confirm{query}',
+                json={**selection, 'expected_revision': preview.json()['revision']})
+            self.assertEqual(removed.status_code, 200, removed.text)
+            self.assertTrue(removed.json()['removed'])
+            self.assertEqual(removed.json()['transaction_count'], 12)
+            self.f.db.expire_all()
+            self.assertEqual(list_transactions(self.f.db, self.f.case.id), [])
+            self.assertEqual(self.f.path.read_bytes(), original)
+            files = client.get(f'{prefix}/files{query}')
+            self.assertEqual(files.status_code, 200, files.text)
+            self.assertEqual(files.json()['files'], [])
+            batches = client.get(f'{prefix}/batches/list{query}')
+            self.assertEqual(batches.status_code, 200, batches.text)
+            self.assertEqual(batches.json()['batches'], [])

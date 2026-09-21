@@ -488,11 +488,13 @@ export function AnalysisFilterChips({
 }
 
 export function TransactionAnalysisPanels({
+  hideControls = false,
   rows,
   filters,
   panels,
   onChange,
 }: {
+  hideControls?: boolean
   rows: LedgerTransaction[]
   filters: AnalysisFilters
   panels: PanelState
@@ -505,32 +507,18 @@ export function TransactionAnalysisPanels({
         flowParty: "",
       })
     : []
-  const panel = (key: keyof PanelState, label: string) => (
-    <button
-      className={`rounded px-3 py-2 text-sm ${panels[key] ? "bg-primary/10 font-medium" : "hover:bg-muted"}`}
-      aria-expanded={panels[key]}
-      aria-controls={`analysis-${key}`}
-      onClick={() => onChange({ [key]: !panels[key] })}
-    >
-      {panels[key] ? "▾" : "▸"} {label}
-    </button>
-  )
   return (
     <section
       aria-label="Transaction analysis"
       className="rounded border bg-card"
     >
-      <div className="flex flex-wrap gap-1 border-b p-1">
-        {panel("chartsOpen", "Charts")}
-        {panel(
-          "partiesOpen",
-          `From & To${filters.fromNames.length + filters.toNames.length ? ` (${filters.fromNames.length + filters.toNames.length} selected)` : ""}`
-        )}
-        {panel(
-          "flowOpen",
-          `Money flow${filters.perspectiveNames.length ? ` (${filters.perspectiveNames.length} selected)` : ""}`
-        )}
-      </div>
+      {!hideControls && (
+        <TransactionAnalysisControls
+          filters={filters}
+          panels={panels}
+          onChange={onChange}
+        />
+      )}
       {panels.chartsOpen && (
         <div id="analysis-chartsOpen">
           <TransactionFilterCharts
@@ -599,5 +587,39 @@ export function TransactionAnalysisPanels({
         </div>
       )}
     </section>
+  )
+}
+
+export function TransactionAnalysisControls({
+  filters,
+  panels,
+  onChange,
+}: {
+  filters: AnalysisFilters
+  panels: PanelState
+  onChange: (value: Partial<AnalysisFilters & PanelState>) => void
+}) {
+  const panel = (key: keyof PanelState, label: string) => (
+    <button
+      className={`rounded px-3 py-2 text-sm ${panels[key] ? "bg-primary/10 font-medium" : "hover:bg-muted"}`}
+      aria-expanded={panels[key]}
+      aria-controls={`analysis-${key}`}
+      onClick={() => onChange({ [key]: !panels[key] })}
+    >
+      {panels[key] ? "▾" : "▸"} {label}
+    </button>
+  )
+  return (
+    <div className="flex flex-wrap gap-1 border-b p-1">
+      {panel("chartsOpen", "Charts")}
+      {panel(
+        "partiesOpen",
+        `From & To${filters.fromNames.length + filters.toNames.length ? ` (${filters.fromNames.length + filters.toNames.length} selected)` : ""}`
+      )}
+      {panel(
+        "flowOpen",
+        `Money flow${filters.perspectiveNames.length ? ` (${filters.perspectiveNames.length} selected)` : ""}`
+      )}
+    </div>
   )
 }

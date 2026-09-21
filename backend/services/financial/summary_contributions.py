@@ -3,10 +3,10 @@ from services.financial.ledger_summary import ledger_summary, LedgerSummaryError
 from services.financial.working_totals import working_totals_from_readings
 
 
-def summary_contributions(session, *, case_id, account_id=None, start_date=None, end_date=None, population='verified'):
+def summary_contributions(session, *, case_id, account_id=None, start_date=None, end_date=None, population='verified', account_ids=None, account_holders=None):
     if population not in ('verified', 'working'):
         raise LedgerSummaryError('Choose working or verified readings.')
-    captured = ledger_summary(session, case_id=case_id, account_id=account_id,
+    captured = ledger_summary(session, case_id=case_id, account_id=account_id, account_ids=account_ids, account_holders=account_holders,
         start_date=start_date, end_date=end_date, capture_readings=True)
     result = (working_totals_from_readings(captured) if population == 'working'
               else {k: v for k, v in captured.items() if k not in ('readings', 'history_captured')})

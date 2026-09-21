@@ -18,6 +18,7 @@ import { useFinancialAccess } from "../hooks/use-financial-access"
 import { useFinancialDraft } from "../stores/financial-drafts"
 import { useFinancialStore } from "../stores/financial.store"
 import {
+  findingKindLabel,
   captureFindingPayments,
   emptyFinding,
   findingBody,
@@ -52,9 +53,10 @@ export function InvestigatorFindingEditor({
     caseId,
     entry
       ? `finding-edit:${entry.id}:${entry.version}`
-      : `finding-compose:${selectionKey}:${initial?.kind || "question"}:${initial?.title || "new"}${draftContext ? `:context:${draftContext}` : ""}`,
+      : `finding-compose:${selectionKey}:${initial?.kind || emptyFinding.kind}:${initial?.title || "new"}${draftContext ? `:context:${draftContext}` : ""}`,
     entry ? findingDraft(entry) : { ...emptyFinding, ...initial }
   )
+  const kindLabel = findingKindLabel(draft.kind)
   const [review, setReview] = useState(false)
   const [uncertain, setUncertain] = useState(false)
   const create = useCreateCaseworkEntry(caseId)
@@ -102,18 +104,18 @@ export function InvestigatorFindingEditor({
         <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-auto">
           <DialogHeader>
             <DialogTitle>
-              {entry ? "Edit finding" : "Create finding"}
+              {`${entry ? "Edit" : "Create"} ${kindLabel.toLowerCase()}`}
             </DialogTitle>
             <DialogDescription>
-              Record your question, observation or conclusion with its
-              supporting payments.
+              Record your {kindLabel.toLowerCase()} with its supporting
+              payments.
             </DialogDescription>
           </DialogHeader>
           {save.isSuccess ? (
             <div className="space-y-3" role="status">
               <p>
                 Saved to this case. Colleagues with access can open it in
-                Findings.
+                Findings &amp; Observations.
               </p>
               <Button
                 onClick={() => {
@@ -121,7 +123,7 @@ export function InvestigatorFindingEditor({
                   onClose()
                 }}
               >
-                Open Findings
+                Open Findings &amp; Observations
               </Button>
               <Button variant="outline" onClick={onClose}>
                 Return to investigation
@@ -155,7 +157,7 @@ export function InvestigatorFindingEditor({
               </label>
               <details open={entry ? undefined : false}>
                 <summary className="cursor-pointer text-sm">
-                  Follow-up and finding details (optional)
+                  Follow-up and record details (optional)
                 </summary>
                 <div className="space-y-3 pt-3">
                   {" "}
@@ -163,7 +165,7 @@ export function InvestigatorFindingEditor({
                     <label>
                       Type
                       <select
-                        aria-label="Finding type"
+                        aria-label="Record type"
                         className="block w-full rounded border bg-background p-2"
                         value={draft.kind}
                         onChange={(e) =>
@@ -173,8 +175,8 @@ export function InvestigatorFindingEditor({
                           })
                         }
                       >
-                        <option value="question">Question</option>
-                        <option value="observation">Observation</option>
+                        <option value="question">Observation</option>
+                        <option value="observation">Finding</option>
                         <option value="conclusion">Conclusion</option>
                       </select>
                     </label>
@@ -238,7 +240,9 @@ export function InvestigatorFindingEditor({
                 disabled={!draft.title.trim() || !draft.explanation.trim()}
                 onClick={() => save.mutate()}
               >
-                {save.isPending ? "Saving finding…" : "Save finding"}
+                {save.isPending
+                  ? `Saving ${kindLabel.toLowerCase()}…`
+                  : `Save ${kindLabel.toLowerCase()}`}
               </Button>
             </fieldset>
           )}
@@ -249,7 +253,8 @@ export function InvestigatorFindingEditor({
                 <>
                   <p>
                     The save result could not be confirmed. Your draft is
-                    retained. Check Findings before saving another copy.
+                    retained. Check Findings &amp; Observations before saving
+                    another copy.
                   </p>
                   <Button
                     variant="outline"
@@ -258,7 +263,7 @@ export function InvestigatorFindingEditor({
                       onClose()
                     }}
                   >
-                    Check Findings
+                    Check Findings &amp; Observations
                   </Button>
                 </>
               )}

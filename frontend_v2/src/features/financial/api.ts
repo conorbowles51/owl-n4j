@@ -1,3 +1,4 @@
+import { appendAccountSelection } from "./lib/account-selection"
 import { fetchAPI } from "@/lib/api-client"
 import { verifyBulkCorrectionResponse } from "./lib/bulk-correction-file"
 
@@ -1429,12 +1430,15 @@ export const financialAPI = {
    */
   getLedgerTransactions: (params: {
     caseId: string
+    accountIds?: string[]
+    accountHolders?: string[]
     accountId?: string
     ledgerStatus?: LedgerStatus
     startDate?: string
     endDate?: string
   }) => {
     const qs = new URLSearchParams({ case_id: params.caseId })
+    appendAccountSelection(qs, params)
     if (params.accountId) qs.set("account_id", params.accountId)
     if (params.ledgerStatus) qs.set("ledger_status", params.ledgerStatus)
     if (params.startDate) qs.set("start_date", params.startDate)

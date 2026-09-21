@@ -12,8 +12,8 @@ class LedgerSnapshot:
     byte_count: int
 
 
-def capture_ledger_snapshot(session, *, case_id, account_id=None, start_date=None, end_date=None):
-    result=ledger_summary(session,case_id=case_id,account_id=account_id,start_date=start_date,
+def capture_ledger_snapshot(session, *, case_id, account_id=None, start_date=None, end_date=None, account_ids=None, account_holders=None):
+    result=ledger_summary(session,case_id=case_id,account_id=account_id, account_ids=account_ids, account_holders=account_holders,start_date=start_date,
         end_date=end_date,capture_readings=True)
     if not result['available']:
         raise LedgerSummaryError(result['reason'])
@@ -24,6 +24,7 @@ def capture_ledger_snapshot(session, *, case_id, account_id=None, start_date=Non
     content=json.dumps(document,sort_keys=True,separators=(',',':'),ensure_ascii=False,allow_nan=False)
     encoded=content.encode('utf-8')
     return LedgerSnapshot(content=content,sha256=hashlib.sha256(encoded).hexdigest(),byte_count=len(encoded))
+
 
 
 MAX_EXPORT_DECISIONS = 250000
@@ -92,7 +93,7 @@ def _capture_history(session, document, *, case_id):
     return document
 
 
-def capture_ledger_export(engine, *, case_id, account_id=None, start_date=None, end_date=None, generated_at=None, include_source_files=False, resolve_path=None, table_view=None, generated_by=None, privilege_marking="unmarked", include_case_financial_history=False):
+def capture_ledger_export(engine, *, case_id, account_id=None, start_date=None, end_date=None, generated_at=None, include_source_files=False, resolve_path=None, table_view=None, generated_by=None, privilege_marking="unmarked", include_case_financial_history=False, account_ids=None, account_holders=None):
     """Own a fresh PostgreSQL repeatable-read read-only transaction for both reads."""
     from datetime import datetime, timezone
     from sqlalchemy.engine import Engine
@@ -112,7 +113,7 @@ def capture_ledger_export(engine, *, case_id, account_id=None, start_date=None, 
         with connection.begin():
             connection.exec_driver_sql('SET TRANSACTION READ ONLY')
             with Session(bind=connection,autoflush=False) as session:
-                snapshot=capture_ledger_snapshot(session,case_id=case_id,account_id=account_id,start_date=start_date,end_date=end_date)
+                snapshot=capture_ledger_snapshot(session,case_id=case_id,account_id=account_id, account_ids=account_ids, account_holders=account_holders,start_date=start_date,end_date=end_date)
                 document=_capture_history(session,json.loads(snapshot.content),case_id=case_id)
                 from postgres.models.case import Case
                 case = session.get(Case, case_id)
@@ -163,6 +164,7 @@ def capture_ledger_export(engine, *, case_id, account_id=None, start_date=None, 
         decision_count=len(document['decisions']),included_rows=document['ledger']['included_rows'],
         excluded_rows=document['ledger']['excluded_rows'])
     return LedgerExport(snapshot,json.dumps(manifest,sort_keys=True,separators=(',',':')), source_files, include_source_files)
+
 
 
 def ledger_export_archive(export, *, include_pdf=False):
@@ -291,7 +293,7 @@ def render_ledger_report(snapshot):
         '<h1>Loupe ledger report</h1><p>Captured account postings and recorded decisions.</p>',
         '<h2>Scope and interpretation</h2>',
         table(['Case', 'Account', 'Ordering dates, inclusive'], [[(document.get('case_title') + ' (' + ledger['case_id'] + ')') if document.get('case_title') else ledger['case_id'],
-            ledger['account_id'] or 'All accounts', (ledger['start_date'] or 'Unbounded') + ' to ' + (ledger['end_date'] or 'Unbounded')]]),
+            ledger['account_id'] or ('Accounts: ' + ', '.join(ledger['account_ids']) if ledger.get('account_ids') else 'People: ' + ', '.join(ledger['account_holders']) if ledger.get('account_holders') else 'All accounts'), (ledger['start_date'] or 'Unbounded') + ' to ' + (ledger['end_date'] or 'Unbounded')]]),
         '<p>' + text(ledger['limitation']) + '</p>',
         '<p>The transaction table shows currency amounts. Detailed readings retain exact integer minor units in brackets. '
         'Unsupported values remain explicitly unscaled. No exchange-rate conversion or transfer matching is applied.</p>',

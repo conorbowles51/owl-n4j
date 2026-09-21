@@ -62,3 +62,22 @@ Local acceptance: 117 focused component tests, seven Chromium workflow tests, ei
 Live `43f465b` in the user-created **finance sunday** case: the 51-period file is compact, saved-period context is explicit, the December–January review opens its six payments, account checks open visibly, and the first-period source returns to 30 November–23 December 2020 with five payments rather than the prior selected period. Bulk removal previews 3 PDFs / 53 periods / 672 transactions / one batch; cancelling leaves all 672 payments available. No live imports were removed or reprocessed. The walkthrough also prompted moving the primary payment action into the first-screen context panel and connecting timeline sources to the same period-specific review handoff. Those follow-ups pass six Chromium and 57 account/timeline/navigation tests; see the maintained reference for live verification status.
 
 Final live `c350c0c` verification also passed: account timeline → second period → source → review opens 24 December 2020–23 January 2021 with the six-payment action beside its saved status in the first screenful. That action opens six matching transactions. Workspace navigation and dedicated removal selection remain visible on return. No removal confirmation or reprocessing was performed. Full-corpus and unrelated conditional journeys remain subject to the acceptance limits above.
+
+## 21–22 September: investigator working-session fixes
+
+The latest reports are one workflow: remove bad imports safely, choose several people/accounts, investigate beside the transaction table, correct a selection, and return without losing work. Scope includes every item below; completion requires the checks, not just the controls.
+
+- Removal: named confirmation route must reach the removal writer; short errors, bounded scrolling and reachable recovery actions for one and many PDFs. Actual confirmation is tested in an isolated database; live client records must not be deleted for a demonstration.
+- Shared account filters: multiple Person or company selections and multiple Bank account selections, with any-match within each group and intersection between groups; preserve them across Financial and carry them through totals and exports.
+- Working toolbar: search, Category and Filters beside Charts, From & To and Money flow; keep it visible near the transaction table.
+- Search: ordinary text filtering and Boolean AND/OR/NOT, phrases, parentheses and field searches; invalid syntax is explained and export uses the same selection.
+- Single and bulk transaction editing: choose specific fields, preview the affected rows, save atomically; From, To, Category, amounts, dates, descriptions, references and balance. Preserve source readings and correction history. Update totals, filters and selected replacement rows.
+- Tab continuity: navigation retains state; Reset view explicitly clears presentation state without deleting saved casework or unfinished editors.
+- Amount ordering: allow mixed currencies and order by the displayed numeric amount, accounting for each currency’s decimal places; no currency conversion.
+
+Implementation and acceptance evidence will be recorded here after the combined browser journey and deployment checks.
+
+
+Additional accepted scope: Findings & Observations terminology and direct actions; Follow money must distinguish recorded directions from an assumed funding relationship, offer FIFO/LIFO and one-to-many timing comparisons, and allow explicit cross-currency transfer hypotheses with original amounts and the implied rate visible. The detailed workflow and methodological limits are recorded in [the reference](financial-workflows/README.md#working-session-acceptance--22-september-2026). This is not automatic confirmation that two FX legs belong together. Both original currencies and all calculation inputs remain inspectable.
+
+Implemented and locally verified: removal routing/scroll/recovery; shared holder/account selection through ledger/totals/exports; toolbar text/Boolean search and category filters; reviewed single/bulk edits; retained tabs with explicit reset; amount-size sorting across currencies; Finding/Observation creation and editing; explained flow methods and selected FX legs with onward allocation. Deployment and live checks are recorded after revision verification. No live client rows have been edited, removed or reprocessed by these tests.

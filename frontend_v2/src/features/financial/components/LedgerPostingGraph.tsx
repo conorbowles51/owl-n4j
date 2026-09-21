@@ -1,3 +1,4 @@
+import { appendAccountSelection } from "../lib/account-selection"
 import {
   usePaymentCategory,
   categoryName,
@@ -88,6 +89,8 @@ function GraphScope({
       caseId,
       "posting-graph",
       account,
+      params.accountIds,
+      params.accountHolders,
       start,
       end,
       population,
@@ -96,6 +99,7 @@ function GraphScope({
     retry: false,
     queryFn: async () => {
       const search = new URLSearchParams({ population })
+      appendAccountSelection(search, params)
       if (account) search.set("account_id", account)
       if (start) search.set("start_date", start)
       if (end) search.set("end_date", end)

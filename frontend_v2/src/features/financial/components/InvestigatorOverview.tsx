@@ -140,15 +140,15 @@ export function InvestigatorOverview({ caseId }: { caseId: string }) {
                   variant="outline"
                   onClick={() => navigate("findings")}
                 >
-                  Open Findings
+                  Open Findings &amp; Observations
                 </Button>
               </div>
               {findings.isPending ? (
                 <p role="status">Loading findings…</p>
               ) : findings.isError ? (
                 <p role="alert">
-                  Saved findings could not be loaded. Open Findings to try
-                  again.
+                  Saved findings could not be loaded. Open Findings &amp;
+                  Observations to try again.
                 </p>
               ) : findings.data?.entries.length ? (
                 <ul className="divide-y">
@@ -180,7 +180,7 @@ export function InvestigatorOverview({ caseId }: { caseId: string }) {
                   </p>
                   {canEdit && (
                     <Button variant="outline" onClick={() => setFinding(true)}>
-                      Create a question
+                      Create observation
                     </Button>
                   )}
                 </>

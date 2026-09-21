@@ -1,3 +1,4 @@
+import { appendAccountSelection } from "../lib/account-selection"
 import { SavePaymentSelection } from "./SavePaymentSelection"
 import { useState } from "react"
 import { useMutation } from "@tanstack/react-query"
@@ -89,6 +90,7 @@ function TimelineScope({
     retry: false,
     mutationFn: async () => {
       const query = new URLSearchParams({ population })
+      appendAccountSelection(query, params)
       if (params.accountId) query.set("account_id", params.accountId)
       if (params.startDate) query.set("start_date", params.startDate)
       if (params.endDate) query.set("end_date", params.endDate)

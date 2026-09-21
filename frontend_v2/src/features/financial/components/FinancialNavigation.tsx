@@ -1,3 +1,7 @@
+import { Fragment } from "react"
+import { useParams } from "react-router-dom"
+import { resetFinancialView } from "../lib/reset-financial-view"
+import { toast } from "sonner"
 import { useEffect, useState, type ReactNode, type ComponentProps } from "react"
 import { TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
@@ -18,7 +22,7 @@ const primary: [FinancialMainView, string][] = [
   ["counterparties", "People & businesses"],
   ["follow-money", "Follow money"],
   ["trends", "Trends"],
-  ["findings", "Findings"],
+  ["findings", "Findings & Observations"],
 ]
 const analysis: [FinancialMainView, string][] = [
   ["transfers", "Compare transfers"],
@@ -87,8 +91,16 @@ export function FinancialNavigation({
 // Open a tool on first use, then keep its working form and results during tab changes.
 export function RetainedFinancialTab({
   active,
+  children,
+  onReset,
   ...props
-}: ComponentProps<typeof TabsContent> & { active: boolean }) {
+}: ComponentProps<typeof TabsContent> & {
+  active: boolean
+  onReset?: () => void
+}) {
+  const { caseId: routeCaseId, id } = useParams()
+  const caseId = routeCaseId ?? id
+  const [resetVersion, setResetVersion] = useState(0)
   const [opened, setOpened] = useState(active)
   useEffect(() => {
     if (active) setOpened(true)
@@ -98,7 +110,25 @@ export function RetainedFinancialTab({
       {...props}
       forceMount={active || opened ? true : undefined}
       style={!active ? { display: "none" } : undefined}
-    />
+    >
+      <div className="flex shrink-0 justify-end border-b bg-background px-4 py-1">
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          title="Reset this tab’s filters and layout. Saved casework stays unchanged."
+          onClick={() => {
+            if (caseId) resetFinancialView(caseId, props.value)
+            onReset?.()
+            setResetVersion((version) => version + 1)
+            toast.success("View reset. Saved casework is unchanged.")
+          }}
+        >
+          Reset view
+        </Button>
+      </div>
+      <Fragment key={resetVersion}>{children}</Fragment>
+    </TabsContent>
   )
 }
 

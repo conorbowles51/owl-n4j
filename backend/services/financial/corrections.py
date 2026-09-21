@@ -22,7 +22,7 @@ from services.financial.transactions import choose_ordering_date, ORDERING_PRECE
 
 
 def correct_transaction(session, *, case_id, transaction_id, amount_minor, direction,
-                        expected_revision, actor, reason, resolve_path=None, fields=None):
+                        expected_revision, actor, reason, resolve_path=None, fields=None, commit=True):
     """Commit an exact replacement or roll back every effect, including grading."""
     try:
         if not isinstance(actor, Actor) or not isinstance(reason, str):
@@ -123,7 +123,8 @@ def correct_transaction(session, *, case_id, transaction_id, amount_minor, direc
                   "adjudication_id": str(event.id), "applied": True,
                   "proof_class": document.proof_class, "ledger_status": replacement.ledger_status,
                   "native_controls_rechecked": preview["native_controls_rechecked"]}
-        session.commit()
+        if commit:
+            session.commit()
         return result
     except Exception:
         session.rollback()

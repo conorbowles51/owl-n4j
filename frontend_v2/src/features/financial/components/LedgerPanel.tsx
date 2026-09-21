@@ -67,7 +67,7 @@ export function LedgerPanel({
   splitAmounts?: boolean
   investigation?: boolean
 }) {
-  const { data, isPending, isError, error } = useLedgerTransactions(
+  const { data, isPending, isFetching, isError, error } = useLedgerTransactions(
     caseId,
     params
   )
@@ -143,6 +143,11 @@ export function LedgerPanel({
 
   return (
     <div className="space-y-3">
+      {isFetching && (
+        <p role="status" className="text-sm text-muted-foreground">
+          Updating transactions for these filters…
+        </p>
+      )}
       {hasScopeFilter && (
         <p
           className="text-xs text-muted-foreground"
@@ -179,7 +184,17 @@ export function LedgerPanel({
         </p>
       )}
 
-      {rows.length === 0 ? (
+      {rows.length === 0 && investigation && (
+        <p className="rounded border p-3" role="status">
+          {hasScopeFilter
+            ? "No payments match these filters"
+            : "No imported payments yet"}
+          {hasScopeFilter
+            ? ". Change the filters below to see other payments."
+            : ". Add statements to import their payments."}
+        </p>
+      )}
+      {rows.length === 0 && !investigation ? (
         <EmptyState
           icon={ScrollText}
           title={
@@ -206,7 +221,7 @@ export function LedgerPanel({
         />
       ) : (
         <LedgerRowBrowser
-          key={JSON.stringify([caseId, params])}
+          key={caseId}
           transactions={rows}
           exportContext={
             caseId &&

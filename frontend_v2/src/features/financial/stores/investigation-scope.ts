@@ -3,7 +3,10 @@ import { createJSONStorage, persist } from "zustand/middleware"
 import { useAuthStore } from "@/features/auth/hooks/use-auth"
 import type { LedgerQueryParams } from "../hooks/use-ledger-transactions"
 
-type Scope = Pick<LedgerQueryParams, "accountId" | "startDate" | "endDate">
+type Scope = Pick<
+  LedgerQueryParams,
+  "accountId" | "accountIds" | "accountHolders" | "startDate" | "endDate"
+>
 export type AnalysisPopulation = "working" | "verified"
 const emptyScope: Scope = {}
 const ownerKey = () => {
@@ -32,6 +35,8 @@ export const useInvestigationScopeStore = create<{
             ...state.scopes,
             [scopeKey(caseId)]: {
               accountId: scope.accountId,
+              accountIds: scope.accountIds,
+              accountHolders: scope.accountHolders,
               startDate: scope.startDate,
               endDate: scope.endDate,
             },

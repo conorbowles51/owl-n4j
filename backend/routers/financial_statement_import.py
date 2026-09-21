@@ -1,3 +1,4 @@
+from typing import Annotated
 """Automatic statement review; permissions remain scoped to the selected case."""
 import logging
 from datetime import date
@@ -54,13 +55,13 @@ def save_statement_details(source_id: UUID, body: StatementDetailsRequest, case_
 
 
 @router.get('/incomplete-records')
-def incomplete_records(case_id: UUID = Query(...), account_id: UUID | None = Query(None),
+def incomplete_records(account_ids: Annotated[list[UUID] | None, Query()] = None, account_holders: Annotated[list[str] | None, Query()] = None, case_id: UUID = Query(...), account_id: UUID | None = Query(None),
         start_date: date | None = Query(None), end_date: date | None = Query(None),
         offset: int = Query(0, ge=0), limit: int = Query(50, ge=1, le=100), db: Session = Depends(get_db)):
     from services.financial.imported_records import imported_records
     if start_date and end_date and start_date > end_date:
         raise HTTPException(status_code=422, detail='The end date must be on or after the start date.')
-    return imported_records(db, case_id=case_id, account_id=account_id,
+    return imported_records(db, case_id=case_id, account_id=account_id, account_ids=account_ids, account_holders=account_holders,
         start_date=start_date, end_date=end_date, offset=offset, limit=limit)
 
 
@@ -170,7 +171,9 @@ def save_payment_review(evidence_file_id: UUID, body: PaymentDocumentReviewReque
         raise HTTPException(status_code=500, detail='The review could not be confirmed. Retry the same save to check its outcome without creating another note.')
 
 
-@router.post('/{evidence_file_id}/confirm', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
+# Match a file UUID in the router itself so named operations such as
+# /removals/confirm cannot be captured as a single-statement import.
+@router.post('/{evidence_file_id:uuid}/confirm', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
 def confirm(evidence_file_id: UUID, body: StatementImportRequest, case_id: UUID = Query(...),
             user=Depends(get_current_db_user), db: Session = Depends(get_db)):
     try:

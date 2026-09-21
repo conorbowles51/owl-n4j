@@ -19,7 +19,7 @@ class LedgerSummaryError(ValueError):
     pass
 
 
-def ledger_summary(session, *, case_id, account_id=None, start_date=None, end_date=None, grouping=None, capture_readings=False):
+def ledger_summary(session, *, case_id, account_id=None, start_date=None, end_date=None, grouping=None, capture_readings=False, account_ids=None, account_holders=None):
     if type(capture_readings) is not bool:
         raise LedgerSummaryError("Reading capture must be explicit.")
     if grouping not in (None, "daily", "monthly"):
@@ -43,6 +43,8 @@ def ledger_summary(session, *, case_id, account_id=None, start_date=None, end_da
         FinancialTransaction.case_id == case_id)
     if account_id is not None:
         query = query.where(FinancialTransaction.account_id == account_id)
+    from services.financial.account_selection import apply_account_selection
+    query = apply_account_selection(query, session, case_id, account_ids, account_holders)
     if start_date is not None:
         query = query.where(FinancialTransaction.ordering_date >= start_date)
     if end_date is not None:
@@ -54,6 +56,8 @@ def ledger_summary(session, *, case_id, account_id=None, start_date=None, end_da
         available=False, reason=None, considered_rows=None, included_rows=None, excluded_rows=None, has_credit_card_readings=False,
         exclusions=None, currencies=[], applied=False,
         limitation="Current ledger account postings only, with admitted source documents and included row/source proof classes. Currency totals are separate. Internal transfers are not matched or netted; net postings are not an account balance. Missing evidence and incomplete extraction are not measured by these totals.")
+    if account_ids or account_holders:
+        result.update(account_ids=[str(id) for id in (account_ids or [])], account_holders=account_holders or [])
     if capture_readings:
         result['readings'] = []
         result['history_captured'] = False
@@ -135,9 +139,10 @@ def ledger_summary(session, *, case_id, account_id=None, start_date=None, end_da
     return result
 
 
-def ledger_counterparties(session, *, case_id, account_id=None, start_date=None, end_date=None):
+
+def ledger_counterparties(session, *, case_id, account_id=None, start_date=None, end_date=None, account_ids=None, account_holders=None):
     """Group exact source labels, not inferred people or matched transfers."""
-    result = ledger_summary(session, case_id=case_id, account_id=account_id,
+    result = ledger_summary(session, case_id=case_id, account_id=account_id, account_ids=account_ids, account_holders=account_holders,
         start_date=start_date, end_date=end_date, capture_readings=True)
     readings = result.pop('readings')
     result.pop('history_captured')

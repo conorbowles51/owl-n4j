@@ -1,88 +1,112 @@
-import type { LedgerTransaction } from "../api"
+import { useQuery } from "@tanstack/react-query"
+import { fetchAPI } from "@/lib/api-client"
 import { holderKey } from "../lib/account-holder"
+import {
+  selectedAccountIds,
+  type AccountSelection,
+} from "../lib/account-selection"
+import {
+  candidateAccounts,
+  candidateUrl,
+  assertCandidateScope,
+} from "../lib/candidate-contract"
+import { AccountMultiSelect } from "./AccountMultiSelect"
 
 export function TransactionAccountFilters({
-  rows,
-  accountId,
-  accountHolder,
+  caseId,
+  selection,
   onChange,
 }: {
-  rows: LedgerTransaction[]
-  accountId: string
-  accountHolder: string
-  onChange: (values: { accountId: string; accountHolder: string }) => void
+  caseId: string
+  selection: AccountSelection
+  onChange: (values: AccountSelection) => void
 }) {
+  const query = useQuery({
+    queryKey: ["financial-ledger", caseId, "account-filter-directory"],
+    queryFn: async () => {
+      const items = []
+      let offset = 0
+      for (;;) {
+        const data = candidateAccounts.parse(
+          await fetchAPI(
+            `${candidateUrl("ledger-accounts", caseId)}&offset=${offset}`
+          )
+        )
+        assertCandidateScope(data, caseId)
+        items.push(...data.items)
+        if (!data.has_more) return items
+        if (!data.items.length)
+          throw Error("The account list could not be fully loaded.")
+        offset += data.items.length
+      }
+    },
+  })
   const holders = new Map<string, string>()
   const accounts = new Map<string, string>()
-  for (const row of rows) {
-    const holder = holderKey(row.account_holder)
-    if (holder && !holders.has(holder))
-      holders.set(holder, row.account_holder!.trim().replace(/\s+/g, " "))
-    if (row.account_id && (!accountHolder || holder === accountHolder))
-      accounts.set(row.account_id, row.account_label || row.account_id)
+  for (const account of query.data ?? []) {
+    const holder = holderKey(account.holder ?? undefined)
+    if (holder) holders.set(holder, account.holder!.trim().replace(/\s+/g, " "))
+    accounts.set(
+      account.id,
+      [
+        account.display_label ||
+          [account.holder, account.institution, account.identifier]
+            .filter(Boolean)
+            .join(" · ") ||
+          account.id,
+        account.currency,
+      ]
+        .filter(Boolean)
+        .join(" · ")
+    )
   }
+  const options = (values: Map<string, string>) =>
+    [...values]
+      .sort((a, b) => a[1].localeCompare(b[1]))
+      .map(([value, label]) => ({ value, label }))
   return (
-    <div
-      className="flex flex-wrap items-end gap-3"
-      aria-label="Filter imported accounts"
-    >
-      <label className="min-w-52 flex-1">
-        Person or company
-        <select
-          aria-label="Filter account holder"
-          className="block w-full rounded border bg-background p-2"
-          value={accountHolder}
-          onChange={(e) =>
-            onChange({ accountHolder: e.target.value, accountId: "" })
+    <section aria-label="Filter imported accounts" className="w-full space-y-2">
+      <div className="flex flex-wrap items-start gap-3">
+        <AccountMultiSelect
+          label="Person or company"
+          allLabel="All account holders"
+          options={options(holders)}
+          selected={selection.accountHolders ?? []}
+          onChange={(accountHolders) =>
+            onChange({ ...selection, accountHolders })
           }
-        >
-          <option value="">All account holders</option>
-          {accountHolder && !holders.has(accountHolder) && (
-            <option value={accountHolder}>{accountHolder}</option>
-          )}
-          {[...holders]
-            .sort((a, b) => a[1].localeCompare(b[1]))
-            .map(([key, label]) => (
-              <option key={key} value={key}>
-                {label}
-              </option>
-            ))}
-        </select>
-      </label>
-      <label className="min-w-64 flex-1">
-        Bank account
-        <select
-          aria-label="Filter imported account"
-          className="block w-full rounded border bg-background p-2"
-          value={accountId}
-          onChange={(e) =>
-            onChange({ accountHolder, accountId: e.target.value })
+        />
+        <AccountMultiSelect
+          label="Bank account"
+          allLabel="All accounts, across banks"
+          options={options(accounts)}
+          selected={selectedAccountIds(selection)}
+          onChange={(accountIds) =>
+            onChange({ ...selection, accountId: undefined, accountIds })
           }
-        >
-          <option value="">
-            {accountHolder
-              ? "All this holder’s accounts, across banks"
-              : "All accounts, across banks"}
-          </option>
-          {accountId && !accounts.has(accountId) && (
-            <option value={accountId}>
-              Selected account (outside this view)
-            </option>
-          )}
-          {[...accounts]
-            .sort((a, b) => a[1].localeCompare(b[1]))
-            .map(([key, label]) => (
-              <option key={key} value={key}>
-                {label}
-              </option>
-            ))}
-        </select>
-      </label>
-      {accountHolder && (
-        <p className="basis-full text-xs text-muted-foreground">
-          Grouped by the recorded account holder name.
+        />
+      </div>
+      {selection.accountHolders?.length ||
+      selectedAccountIds(selection).length ? (
+        <p className="text-xs text-muted-foreground">
+          Matches any selected person or company and any selected account.
+          People include their accounts across banks. These account filters
+          follow you across Financial.
+        </p>
+      ) : null}
+      {query.isPending && <p role="status">Loading accounts…</p>}
+      {query.isError && (
+        <p role="alert">
+          The account list could not be loaded.{" "}
+          <button
+            type="button"
+            className="underline"
+            onClick={() => void query.refetch()}
+          >
+            Try again
+          </button>
         </p>
       )}
-    </div>
+    </section>
   )
 }

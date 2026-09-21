@@ -1,3 +1,4 @@
+import { appendAccountSelection } from "../lib/account-selection"
 import { sha256 } from "@noble/hashes/sha2.js"
 import { sameTableView, type LedgerTableView } from "../lib/ledger-table-view"
 import { useEffect, useRef, useState } from "react"
@@ -22,6 +23,8 @@ export function LedgerExportButton({
       key={JSON.stringify([
         caseId,
         params.accountId,
+        params.accountIds,
+        params.accountHolders,
         params.startDate,
         params.endDate,
         tableView,
@@ -66,6 +69,7 @@ function ScopedExport({
       const encodedView = tableView ? JSON.stringify(tableView) : ""
       const useBody = encodeURIComponent(encodedView).length > 2000
       if (tableView && !useBody) search.set("table_view", encodedView)
+      appendAccountSelection(search, params)
       if (params.accountId) search.set("account_id", params.accountId)
       if (params.startDate) search.set("start_date", params.startDate)
       if (params.endDate) search.set("end_date", params.endDate)
@@ -97,7 +101,21 @@ function ScopedExport({
             : `Export failed (${response.status}).`
         )
       }
+      const accountDigest = Array.from(
+        sha256(
+          new TextEncoder().encode(
+            JSON.stringify({
+              account_ids: params.accountIds ?? [],
+              account_holders: params.accountHolders ?? [],
+            })
+          )
+        ),
+        (v) => v.toString(16).padStart(2, "0")
+      ).join("")
       if (
+        ((params.accountIds?.length || params.accountHolders?.length) &&
+          response.headers.get("X-Loupe-Account-Selection-Sha256") !==
+            accountDigest) ||
         response.headers.get("X-Loupe-Case-Review-History") !==
           (includeCaseHistory ? "true" : "false") ||
         response.headers.get("X-Loupe-Privilege-Marking") !== marking ||

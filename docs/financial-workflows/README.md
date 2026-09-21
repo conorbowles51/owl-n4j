@@ -1,6 +1,6 @@
 # Loupe financial investigator workflow reference
 
-Owner: the product workflow, not an individual component. Updated 21 September 2026.
+Owner: the product workflow, not an individual component. Updated 22 September 2026.
 
 This reference records the agreed investigator journey and maps the implemented controls to it. **A diagram is not acceptance evidence.** Use the acceptance register below to distinguish a designed path, an automated check and an observed live result. Earlier checked plans do not override a newly reported usability failure.
 
@@ -16,7 +16,7 @@ flowchart TD
   O --> P[People & businesses: investigate a recorded name]
   O --> F[Follow money: compare movements]
   O --> R[Trends: explain changes between periods]
-  O --> N[Findings: retrieve and report saved work]
+  O --> N[Findings & Observations: retrieve and report saved work]
   S -->|Import confirmed payments| T
   S -->|Balance-only statement| A[Account coverage and balances]
   A -->|Open original period| S
@@ -39,7 +39,7 @@ flowchart TD
   H --> S
 ```
 
-Every primary section is directly reachable from the top navigation. Clicking **Transactions** starts with all imported case payments. Explicit drill-downs may narrow to a statement, account, date range or saved set; that scope must be visible and removable. Totals remain separated by currency and bank/card account type.
+Every primary section is directly reachable from the top navigation. The first visit to **Transactions** starts with all imported case payments; returning retains its filters, selection, panels and page. **Reset view** explicitly resets presentation state. Explicit drill-downs may narrow to a statement, account, date range or saved set; that scope must be visible and removable. Totals remain separated by currency and bank/card account type.
 
 ## 1. Establish the evidence: files, batches and import
 
@@ -159,7 +159,12 @@ flowchart TD
   DETAIL -->|Close| RESULTS
   RESULTS -->|Select row / page / all matching| SET[Explicit payment selection]
   SET -->|Categorize / recategorize| CAT[Choose existing category or create one → save]
-  SET -->|Save finding / named set| FINDING[Observation with linked evidence]
+  SET -->|Create finding or Create observation| FINDING[Typed record with linked evidence]
+  SET -->|Edit selected transactions| BULK[Enable fields → review exact changes → atomic save]
+  BULK -->|Error: retain values / reload selection| BULK
+  BULK --> RESULTS
+  RESULTS -->|Switch tab and return| RESULTS
+  RESULTS -->|Reset view| ALL
   SET -->|Compare payments| COMPARE[Selected supporting payments and originals]
   RESULTS -->|Export| EXPORT[Export matching or selected scope]
   RESULTS -->|Incomplete records warning| INCOMPLETE[Readings outside totals → source/statement review]
@@ -233,8 +238,8 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-  N[Findings list] -->|Search / filter / paginate / refresh| N
-  N -->|Create or edit| E[Title + observation + attached evidence]
+  N[Findings & Observations list] -->|Search / filter / paginate / refresh| N
+  N -->|Create finding / Edit| E[Title + Finding or Observation + attached evidence]
   E -->|Save| SAVED[Shared case finding]
   E -->|Leave and return| DRAFT[Retained draft, not a saved finding]
   DRAFT --> E
@@ -285,3 +290,33 @@ Local validation for this change: 117 focused component tests, seven Chromium wo
 The live walkthrough prompted a final layout/handoff follow-up: remove a duplicate back control, place View payments beside the saved status, and expose the period review link from both timeline and balance sources. Six Chromium checks and 57 account/timeline/navigation component checks pass for that follow-up. Live observations above are from the actual authenticated case at `/cases/1c75e65e-d28d-4de2-8eb1-0c03b218700e/financial`; they do not imply all other branches have been re-exercised.
 
 Final live verification, `c350c0c`, 21 September 2026: Review accounts → Capital One → timeline period 2 → Inspect statement source → Review or reread statement opens 24 December 2020–23 January 2021, with its six saved payments. At the observed 1243×913 viewport, the period, imported status and primary View payments button are visible together without scrolling. The button opens exactly six matching payments; returning to Statements keeps the visible workspace navigation, and Remove imports opens its dedicated selection/explanation screen. The final code build and scoped lint passed. The removal demonstration remained cancelled; the 672-payment case was preserved.
+
+
+## Working-session acceptance — 22 September 2026
+
+The transaction toolbar keeps text/Boolean search, Category, Filters and Charts / From & To / Money flow together beside the table. Multiple holders include their accounts across banks; multiple account selections are any-match, intersected with selected holders. The shared server filters apply to transactions, incomplete records, summaries, snapshots and export. Export verifies the account-selection digest. Account choices load through all directory pages. Amount ordering uses displayed amount size with currency decimal exponents, without FX conversion.
+
+Single-row **Edit transaction**, **Edit selected transactions** and **Categorize selected** open the same reviewed edit workflow. Enabled fields only are changed. Amount/date/source corrections retain original readings and append correction history; labels apply to the resulting current rows in the same database transaction. A stale selection or failure rolls back the entire save. Categories can be entered and added to the library. Account identity and currency remain statement/account properties, not arbitrary per-payment overrides.
+
+**Create finding** stores a Finding; **Create observation** replaces Mark for follow-up and uses observation modal/save wording. Both and selected export are directly visible with a transaction selection. Existing kind tags remain compatible: former `financial-observation` entries display Finding; former `financial-question` entries display Observation. New entries additionally have explicit `financial-entry-finding` / `financial-entry-observation` tags. The destination is **Findings & Observations**, with **Edit** per entry. Navigation retains tab state. Reset clears that view’s filters/layout rather than saved records or unfinished statement/finding/report drafts.
+
+```mermaid
+flowchart TD
+  FLOW[Follow money] --> CONCEPT[Choose money flow concept]
+  CONCEPT --> MAP[Recorded counterparties: independent receipts and payments]
+  MAP --> ORIGINAL[Open payments and original statements]
+  CONCEPT --> METHOD[FIFO / LIFO: select receipt and acknowledge assumptions]
+  METHOD --> ALLOCATION[Receipt allocations and remaining tracked funds]
+  CONCEPT --> SPLIT[Select receipt and window: compare smaller outgoing payments]
+  CONCEPT --> FX[Choose outgoing and receiving legs in different currencies]
+  FX --> RATE[Show original amounts and their implied exchange rate]
+  RATE --> METHOD
+  ALLOCATION --> ORIGINAL
+  SPLIT --> ORIGINAL
+  ORIGINAL --> BASIS[Record interpretation and supporting basis]
+  BASIS --> OBS[Save observation with cited inputs and outputs]
+```
+
+The recorded diagram explains that arrows show independent directions, not receipt-to-withdrawal causation; totals include unnamed counterparties. FIFO/LIFO exploration explicitly assumes zero opening funds and source-document/row order for same-day entries, and requires acknowledgment. It excludes undated, card, noncurrent and unusable rows. It identifies withdrawals not covered by preceding imported receipts. Full opening-fund and attributed-claim analysis remains available in the existing tracing workbench. Split-payment results are timing candidates, never claimed as confirmed funding. Cross-currency investigation uses two explicitly chosen legs; the ratio is derived from their recorded amounts and may include fees, not a market FX quote or automatically verified link. Onward allocations remain in the received currency. Saved observations retain the full applied calculation input order and supporting citations. No automatic multi-hop FX matching or evidence of legal applicability is claimed.
+
+Local checks cover real database removal preview/conflict/confirmation with original PDFs retained, atomic edit rollback/source history, holder/account intersections and new ingestions, Boolean query and export ordering, plus Chromium account selection/return/reset, edit review/recovery, Finding/Observation save labels, cross-currency onward flow and one/eight-file removal dialogs at small viewport. Deployment/live evidence is recorded separately below; a synthetic browser check is not full live-corpus acceptance.

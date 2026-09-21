@@ -48,4 +48,4 @@ class SummaryContributionRoutes(unittest.IsolatedAsyncioTestCase):
             with patch('services.financial.summary_contributions.summary_contributions', return_value={'contributions': []}) as call:
                 result = await route(case, account, None, None, 'db', True)
             self.assertEqual(result, {'contributions': []})
-            call.assert_called_once_with('db', case_id=case, account_id=account, start_date=None, end_date=None, population=population)
+            call.assert_called_once_with('db', case_id=case, account_id=account, account_ids=None, account_holders=None, start_date=None, end_date=None, population=population)

@@ -63,12 +63,13 @@ class LedgerTableViewTests(TestCase):
         ledger={'readings':[a,b]};before=deepcopy(ledger)
         self.assertEqual(capture_table_view(ledger,{})['row_ids'],['a'])
         self.assertEqual(ledger,before)
-    def test_stable_ledger_order_and_mixed_currency_sort_refusal(self):
+    def test_stable_ledger_order_and_mixed_currency_sort(self):
         a=self.row('a');b=self.row('b');c=self.row('c');c['row']['ordering_date']='2026-01-02'
         self.assertEqual(capture_table_view({'readings':[c,b,a]}, {})['row_ids'],['a','b','c'])
         self.assertEqual(capture_table_view({'readings':[c,b,a]},dict(sort='newest'))['row_ids'],['c','a','b'])
         b['row']['currency']='USD'
-        with self.assertRaises(LedgerSummaryError):capture_table_view({'readings':[a,b]},dict(sort='amount-desc'))
+        b['row']['currency']='JPY'; b['row']['amount_minor']='100000000000000'
+        self.assertEqual(capture_table_view({'readings':[a,b]},dict(sort='amount-desc'))['row_ids'], ['b','a'])
         for invalid in [dict(search='x'*257),dict(sort='raw_sql'),dict(extra=True)]:
             with self.assertRaises(LedgerSummaryError):capture_table_view({'readings':[]},invalid)
 

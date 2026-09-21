@@ -515,3 +515,34 @@ def put_payment_labels(body: PaymentLabelsRequest, case_id: UUID = Query(...),
     except Exception:
         logger.exception("Payment labels could not be saved for case %s", case_id)
         raise HTTPException(status_code=500, detail="The categories and names could not be saved. Reload before retrying.")
+
+
+from services.financial.payment_edits import PaymentEditRequest, preview_payment_edits, save_payment_edits
+
+
+@router.post('/ledger/payment-edits/preview')
+def preview_selected_payment_edits(body: PaymentEditRequest, case_id: UUID = Query(...),
+        db: Session = Depends(get_db)):
+    try:
+        return preview_payment_edits(db, case_id=case_id, request=body)
+    except (PaymentLabelsError, CorrectionPreviewError) as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception:
+        logger.exception('Transaction edit preview failed')
+        raise HTTPException(status_code=500, detail='The edit preview could not be loaded. Your changes have not been saved.')
+
+
+@router.post('/ledger/payment-edits/confirm')
+def confirm_selected_payment_edits(body: PaymentEditRequest, case_id: UUID = Query(...),
+        db: Session = Depends(get_db), current_user=Depends(get_current_db_user)):
+    try:
+        return save_payment_edits(db, case_id=case_id, request=body, actor=actor_from_user(current_user))
+    except (PaymentLabelsError, CorrectionPreviewError, ActorError) as exc:
+        raise HTTPException(status_code=getattr(exc, 'status_code', 422), detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception:
+        logger.exception('Transaction edits failed')
+        raise HTTPException(status_code=500, detail='The transaction changes could not be saved. Reload the selection before trying again.')

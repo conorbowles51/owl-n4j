@@ -38,7 +38,7 @@ class PaymentLabelsRequest(BaseModel):
         return value
 
 
-def update_payment_labels(session, *, case_id, request, actor):
+def update_payment_labels(session, *, case_id, request, actor, commit=True):
     changes = request.model_dump(exclude_unset=True, exclude={'transactions', 'add_to_library'})
     if not changes or any(value is None for value in changes.values()):
         raise PaymentLabelsError('Choose a category or enter a name. Use an empty value to clear it.', 422)
@@ -88,7 +88,10 @@ def update_payment_labels(session, *, case_id, request, actor):
                 before=before, after=row_changes, version=current['version'],
                 previous_label_sources={key: effective['label_sources'][key] for key in row_changes})]
             row.metadata_ = metadata
-        session.commit()
+        if commit:
+            session.commit()
+        else:
+            session.flush()
         return dict(case_id=str(case_id), updated=len(rows))
     except Exception:
         session.rollback()

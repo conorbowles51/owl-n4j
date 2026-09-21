@@ -16,6 +16,8 @@ import { financialAPI, type LedgerStatus } from "../api"
 
 export interface LedgerQueryParams {
   accountId?: string
+  accountIds?: string[]
+  accountHolders?: string[]
   /**
    * Left unset means `admitted` — the population every total in this ledger is
    * filtered to. The default is the endpoint's, not this hook's; see
@@ -38,10 +40,14 @@ export function useLedgerTransactions(
       financialAPI.getLedgerTransactions({
         caseId: caseId!,
         accountId: params?.accountId,
+        accountIds: params?.accountIds,
+        accountHolders: params?.accountHolders,
         ledgerStatus: params?.ledgerStatus,
         startDate: params?.startDate,
         endDate: params?.endDate,
       }),
+    placeholderData: (previous, query) =>
+      query?.queryKey[1] === caseId ? previous : undefined,
     enabled: !!caseId,
   })
 }

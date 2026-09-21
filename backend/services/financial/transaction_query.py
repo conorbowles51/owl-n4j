@@ -61,6 +61,7 @@ def list_transactions(
     case_id: UUID,
     *,
     account_id: Optional[UUID] = None,
+    account_ids=None, account_holders=None,
     ledger_status: Optional[LedgerStatus] = None,
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
@@ -86,6 +87,8 @@ def list_transactions(
     )
     if account_id is not None:
         stmt = stmt.where(FinancialTransaction.account_id == account_id)
+    from services.financial.account_selection import apply_account_selection
+    stmt = apply_account_selection(stmt, session, case_id, account_ids, account_holders)
     if start_date is not None:
         stmt = stmt.where(FinancialTransaction.ordering_date >= start_date)
     if end_date is not None:
@@ -96,6 +99,7 @@ def list_transactions(
         FinancialTransaction.id.asc(),
     )
     return list(session.scalars(stmt).all())
+
 
 
 @dataclass(frozen=True)

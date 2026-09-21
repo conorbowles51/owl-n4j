@@ -109,6 +109,8 @@ class PermissionResolverTests(unittest.TestCase):
             {
                 "/api/financial/candidates/{candidate_id}/review": ["POST"],
                 "/api/financial/ledger/payment-labels": ["PUT"],
+                "/api/financial/ledger/payment-edits/preview": ["POST"],
+                "/api/financial/ledger/payment-edits/confirm": ["POST"],
                 "/api/financial/ledger/category-library": ["POST"],
                 "/api/financial/sources/{file_id}/custody": ["POST"],
                 "/api/financial/candidate-mappings": ["POST"],
@@ -650,3 +652,30 @@ class NotFoundWordingTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class PaymentEditHttpTests(unittest.TestCase):
+    def test_preview_confirm_and_case_edit_authorization(self):
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+        from types import SimpleNamespace
+        from tests.test_route_authorization import _CaseAccessDb
+        from postgres.session import get_db
+        from routers.users import get_current_db_user
+        db=_CaseAccessDb(); app=FastAPI();app.include_router(financial_adjudication.router)
+        app.dependency_overrides[get_db]=lambda:db
+        app.dependency_overrides[get_current_db_user]=lambda:SimpleNamespace(id=uuid.uuid4(),name='Investigator',email='investigator@example.test',global_role='user',is_active=True)
+        body=dict(transactions=[dict(id=str(uuid.uuid4()),version=0)],changes=dict(from_name='Reviewed sender',amount='123.45'))
+        client=TestClient(app)
+        with patch.object(financial_adjudication,'preview_payment_edits',return_value=dict(revision='a'*64)) as preview, patch.object(financial_adjudication,'save_payment_edits',return_value=dict(updated=1)) as save:
+            db.membership=SimpleNamespace(permissions={'case':{'view':True,'edit':True}})
+            prefix=f'/api/financial/ledger/payment-edits'
+            result=client.post(f'{prefix}/preview?case_id={db.case.id}',json=body)
+            self.assertEqual(result.status_code,200,result.text);save.assert_not_called()
+            body['expected_revision']=result.json()['revision']
+            result=client.post(f'{prefix}/confirm?case_id={db.case.id}',json=body)
+            self.assertEqual(result.status_code,200,result.text);self.assertEqual(save.call_count,1)
+            preview.reset_mock();save.reset_mock()
+            db.membership=SimpleNamespace(permissions={'case':{'view':True,'edit':False}})
+            self.assertEqual(client.post(f'{prefix}/preview?case_id={db.case.id}',json=body).status_code,403)
+            self.assertEqual(client.post(f'{prefix}/confirm?case_id={db.case.id}',json=body).status_code,403)
+            preview.assert_not_called();save.assert_not_called()

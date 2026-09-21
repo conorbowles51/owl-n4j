@@ -1,3 +1,4 @@
+from typing import Annotated
 """
 Financial Ledger Router - read access to the relational ledger.
 
@@ -195,8 +196,12 @@ def run_ledger_trace(body: LedgerTraceInput, case_id: UUID = Query(...), db: Ses
 
 @router.get("/ledger-export")
 def download_ledger_export(case_id: UUID = Query(...), account_id: Optional[UUID] = Query(None),
-        start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None), db: Session = Depends(get_db), include_source_files: bool = False, include_pdf: bool = False, table_view: Optional[str] = Query(None, max_length=4096), privilege_marking: Literal["unmarked","confidential","privileged_confidential"] = "unmarked", include_case_financial_history: bool = False, current_user=Depends(get_current_db_user)):
+        start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None), db: Session = Depends(get_db), include_source_files: bool = False, include_pdf: bool = False, table_view: Optional[str] = Query(None, max_length=4096), privilege_marking: Literal["unmarked","confidential","privileged_confidential"] = "unmarked", include_case_financial_history: bool = False, current_user=Depends(get_current_db_user), account_ids: Annotated[list[UUID] | None, Query()] = None, account_holders: Annotated[list[str] | None, Query()] = None):
     try:
+        import hashlib
+        import json
+        account_scope = dict(account_ids=[str(value) for value in (account_ids or [])], account_holders=account_holders or [])
+        account_scope_digest = hashlib.sha256(json.dumps(account_scope, ensure_ascii=False, separators=(',', ':')).encode('utf-8')).hexdigest()
         view_options = {}
         view_header = ''
         view_digest = ''
@@ -215,13 +220,13 @@ def download_ledger_export(case_id: UUID = Query(...), account_id: Optional[UUID
         if include_case_financial_history:
             view_options['include_case_financial_history'] = True
         source_options = dict(include_source_files=True, resolve_path=_resolve_stored_path) if include_source_files else {}
-        exported=capture_ledger_export(db.get_bind(),case_id=case_id,account_id=account_id,
+        exported=capture_ledger_export(db.get_bind(),case_id=case_id,account_id=account_id, account_ids=account_ids, account_holders=account_holders,
             start_date=start_date,end_date=end_date,privilege_marking=privilege_marking,
             generated_by=dict(id=str(current_user.id),name=current_user.name,email=current_user.email) if getattr(current_user,'id',None) else None,**source_options,**view_options)
         content=ledger_export_archive(exported, **({"include_pdf":True} if include_pdf else {}))
         receipt=record_prepared_export(db.get_bind(),case_id=case_id,kind='ledger_exports',content=content,
             actor=dict(id=str(current_user.id),name=current_user.name,email=current_user.email) if getattr(current_user,'id',None) else None,
-            scope=dict(snapshot_sha256=exported.snapshot.sha256,account_id=str(account_id) if account_id else None,
+            scope=dict(**account_scope,snapshot_sha256=exported.snapshot.sha256,account_id=str(account_id) if account_id else None,
                 start_date=start_date.isoformat() if start_date else None,end_date=end_date.isoformat() if end_date else None,
                 privilege_marking=privilege_marking,include_source_files=include_source_files,include_pdf=include_pdf,
                 include_case_financial_history=include_case_financial_history,table_view=view_options.get('table_view')))
@@ -235,6 +240,7 @@ def download_ledger_export(case_id: UUID = Query(...), account_id: Optional[UUID
             "X-Loupe-Privilege-Marking": privilege_marking,
             "X-Loupe-Table-View": view_header if len(view_header) <= 3500 else "",
             "X-Loupe-Table-View-Sha256": view_digest,
+            "X-Loupe-Account-Selection-Sha256": account_scope_digest,
             "Cache-Control": "no-store", "X-Loupe-Source-Files": "true" if include_source_files else "false", "X-Content-Type-Options": "nosniff",
             "X-Loupe-Case-Id": str(case_id), "X-Loupe-Account-Id": str(account_id) if account_id else "",
             "X-Loupe-Start-Date": start_date.isoformat() if start_date else "",
@@ -244,6 +250,7 @@ def download_ledger_export(case_id: UUID = Query(...), account_id: Optional[UUID
     except Exception:
         logger.exception("Ledger export failed for case %s",case_id)
         raise HTTPException(status_code=500,detail="Ledger export could not be prepared.")
+
 
 
 class LedgerTableExportRequest(BaseModel):
@@ -257,12 +264,13 @@ def download_filtered_ledger_export(body: LedgerTableExportRequest, case_id: UUI
         end_date: Optional[date] = Query(None), db: Session = Depends(get_db),
         include_source_files: bool = False, include_pdf: bool = False,
         privilege_marking: Literal['unmarked', 'confidential', 'privileged_confidential'] = 'unmarked',
-        include_case_financial_history: bool = False, current_user=Depends(get_current_db_user)):
+        include_case_financial_history: bool = False, current_user=Depends(get_current_db_user), account_ids: Annotated[list[UUID] | None, Query()] = None, account_holders: Annotated[list[str] | None, Query()] = None):
     # Large multi-select filters belong in the request body, not a URL or response header.
-    return download_ledger_export(case_id=case_id, account_id=account_id, start_date=start_date,
+    return download_ledger_export(case_id=case_id, account_id=account_id, account_ids=account_ids, account_holders=account_holders, start_date=start_date,
         end_date=end_date, db=db, include_source_files=include_source_files, include_pdf=include_pdf,
         table_view=body.table_view, privilege_marking=privilege_marking,
         include_case_financial_history=include_case_financial_history, current_user=current_user)
+
 
 
 class TraceSupportDownload(BaseModel):
@@ -407,10 +415,10 @@ async def assemble_saved_trace_support(case_id: UUID = Query(...), scenarios: Op
 
 @router.get("/ledger-counterparties")
 async def get_ledger_counterparties(case_id: UUID = Query(...), account_id: Optional[UUID] = Query(None),
-        start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None), db: Session = Depends(get_db)):
+        start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None), db: Session = Depends(get_db), account_ids: Annotated[list[UUID] | None, Query()] = None, account_holders: Annotated[list[str] | None, Query()] = None):
     from services.financial.ledger_summary import ledger_counterparties
     try:
-        return ledger_counterparties(db, case_id=case_id, account_id=account_id, start_date=start_date, end_date=end_date)
+        return ledger_counterparties(db, case_id=case_id, account_id=account_id, account_ids=account_ids, account_holders=account_holders, start_date=start_date, end_date=end_date)
     except LedgerSummaryError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception:
@@ -418,12 +426,13 @@ async def get_ledger_counterparties(case_id: UUID = Query(...), account_id: Opti
         raise HTTPException(status_code=500, detail="Ledger counterparty summary could not be calculated.")
 
 
+
 @router.get("/ledger-trends")
 async def get_ledger_trends(case_id: UUID = Query(...), account_id: Optional[UUID] = Query(None),
         start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None),
-        grouping: Literal["daily", "monthly"] = Query("monthly"), db: Session = Depends(get_db)):
+        grouping: Literal["daily", "monthly"] = Query("monthly"), db: Session = Depends(get_db), account_ids: Annotated[list[UUID] | None, Query()] = None, account_holders: Annotated[list[str] | None, Query()] = None):
     try:
-        return ledger_summary(db, case_id=case_id, account_id=account_id, start_date=start_date,
+        return ledger_summary(db, case_id=case_id, account_id=account_id, account_ids=account_ids, account_holders=account_holders, start_date=start_date,
             end_date=end_date, grouping=grouping)
     except LedgerSummaryError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -432,13 +441,14 @@ async def get_ledger_trends(case_id: UUID = Query(...), account_id: Optional[UUI
         raise HTTPException(status_code=500, detail="Ledger trends could not be calculated.")
 
 
+
 @router.get("/ledger-working-analysis")
 async def get_working_ledger_analysis(case_id: UUID = Query(...), account_id: Optional[UUID] = Query(None),
         start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None),
-        grouping: Literal["daily", "monthly", "counterparty"] = Query("monthly"), db: Session = Depends(get_db)):
+        grouping: Literal["daily", "monthly", "counterparty"] = Query("monthly"), db: Session = Depends(get_db), account_ids: Annotated[list[UUID] | None, Query()] = None, account_holders: Annotated[list[str] | None, Query()] = None):
     from services.financial.working_totals import working_ledger_analysis
     try:
-        return working_ledger_analysis(db, case_id=case_id, account_id=account_id,
+        return working_ledger_analysis(db, case_id=case_id, account_id=account_id, account_ids=account_ids, account_holders=account_holders,
             start_date=start_date, end_date=end_date, grouping=grouping)
     except LedgerSummaryError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -447,17 +457,18 @@ async def get_working_ledger_analysis(case_id: UUID = Query(...), account_id: Op
         raise HTTPException(status_code=500, detail="Working analysis could not be calculated.")
 
 
+
 @router.get("/ledger-working-summary")
 async def get_working_ledger_summary(case_id: UUID = Query(...), account_id: Optional[UUID] = Query(None),
         start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None),
-        db: Session = Depends(get_db), include_contributions: bool = False):
+        db: Session = Depends(get_db), include_contributions: bool = False, account_ids: Annotated[list[UUID] | None, Query()] = None, account_holders: Annotated[list[str] | None, Query()] = None):
     from services.financial.working_totals import working_ledger_summary
     try:
         if include_contributions:
             from services.financial.summary_contributions import summary_contributions
-            return summary_contributions(db, case_id=case_id, account_id=account_id,
+            return summary_contributions(db, case_id=case_id, account_id=account_id, account_ids=account_ids, account_holders=account_holders,
                 start_date=start_date, end_date=end_date, population='working')
-        return working_ledger_summary(db, case_id=case_id, account_id=account_id, start_date=start_date, end_date=end_date)
+        return working_ledger_summary(db, case_id=case_id, account_id=account_id, account_ids=account_ids, account_holders=account_holders, start_date=start_date, end_date=end_date)
     except LedgerSummaryError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception:
@@ -465,21 +476,23 @@ async def get_working_ledger_summary(case_id: UUID = Query(...), account_id: Opt
         raise HTTPException(status_code=500, detail="Working totals could not be calculated.")
 
 
+
 @router.get("/ledger-summary")
 async def get_ledger_summary(case_id: UUID = Query(...), account_id: Optional[UUID] = Query(None),
         start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None),
-        db: Session = Depends(get_db), include_contributions: bool = False):
+        db: Session = Depends(get_db), include_contributions: bool = False, account_ids: Annotated[list[UUID] | None, Query()] = None, account_holders: Annotated[list[str] | None, Query()] = None):
     try:
         if include_contributions:
             from services.financial.summary_contributions import summary_contributions
-            return summary_contributions(db, case_id=case_id, account_id=account_id,
+            return summary_contributions(db, case_id=case_id, account_id=account_id, account_ids=account_ids, account_holders=account_holders,
                 start_date=start_date, end_date=end_date, population='verified')
-        return ledger_summary(db, case_id=case_id, account_id=account_id, start_date=start_date, end_date=end_date)
+        return ledger_summary(db, case_id=case_id, account_id=account_id, account_ids=account_ids, account_holders=account_holders, start_date=start_date, end_date=end_date)
     except LedgerSummaryError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception:
         logger.exception("Ledger summary failed for case %s", case_id)
         raise HTTPException(status_code=500, detail="Ledger summary could not be calculated.")
+
 
 
 @router.get("/requested-statement-coverage")
@@ -555,10 +568,10 @@ async def get_statement_coverage(case_id: UUID = Query(...), offset: int = Query
 
 
 @router.get("/ledger-accounts")
-async def get_candidate_accounts(case_id: UUID = Query(...), search: str = Query("", max_length=128),
+async def get_candidate_accounts(case_id: UUID = Query(...), search: str = Query("", max_length=128), offset: int = 0,
                                   db: Session = Depends(get_db)):
     try:
-        return list_candidate_accounts(db, case_id=case_id, search=search)
+        return list_candidate_accounts(db, case_id=case_id, search=search, offset=offset)
     except CandidateStoreError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
     except Exception:
@@ -693,8 +706,7 @@ async def get_ledger_transactions(
     end_date: Optional[date] = Query(
         None, description="Latest ordering_date, inclusive"
     ),
-    db: Session = Depends(get_db),
-):
+    db: Session = Depends(get_db), account_ids: Annotated[list[UUID] | None, Query()] = None, account_holders: Annotated[list[str] | None, Query()] = None):
     """Rows from the relational ledger for one case, defaulting to admitted rows.
 
     ``ordering_date`` -- not any one of the four printed dates a row may also
@@ -718,7 +730,7 @@ async def get_ledger_transactions(
         rows = list_transactions(
             db,
             case_id,
-            account_id=account_id,
+            account_id=account_id, account_ids=account_ids, account_holders=account_holders,
             ledger_status=status,
             start_date=start_date,
             end_date=end_date,
@@ -737,6 +749,7 @@ async def get_ledger_transactions(
         "transactions": transactions,
         "total": len(transactions),
     }
+
 
 
 @router.get("/runs")
@@ -1100,16 +1113,17 @@ def calculate_ledger_transfer_scenario(body: LedgerTransferScenario, case_id: UU
 @router.get('/ledger-posting-graph')
 def get_ledger_posting_graph(case_id: UUID = Query(...), account_id: Optional[UUID] = Query(None),
         start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None),
-        population: Literal['working', 'verified'] = Query('working'), db: Session = Depends(get_db)):
+        population: Literal['working', 'verified'] = Query('working'), db: Session = Depends(get_db), account_ids: Annotated[list[UUID] | None, Query()] = None, account_holders: Annotated[list[str] | None, Query()] = None):
     from services.financial.ledger_graph import ledger_posting_graph
     try:
-        captured = capture_ledger_export(db.get_bind(), case_id=case_id, account_id=account_id, start_date=start_date, end_date=end_date)
+        captured = capture_ledger_export(db.get_bind(), case_id=case_id, account_id=account_id, account_ids=account_ids, account_holders=account_holders, start_date=start_date, end_date=end_date)
         return ledger_posting_graph(captured, population=population)
     except LedgerSummaryError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception:
         logger.exception('Posting graph failed for case %s', case_id)
         raise HTTPException(status_code=500, detail='Posting graph could not be prepared.')
+
 
 
 @router.get("/cross-case-duplicates")
@@ -1174,10 +1188,10 @@ def run_network_trace(body: NetworkTraceInput,case_id: UUID = Query(...),db: Ses
 @router.get('/ledger-timeline')
 def get_ledger_timeline(case_id: UUID = Query(...), account_id: Optional[UUID] = Query(None),
         start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None),
-        population: Literal['working', 'verified'] = Query('working'), db: Session = Depends(get_db)):
+        population: Literal['working', 'verified'] = Query('working'), db: Session = Depends(get_db), account_ids: Annotated[list[UUID] | None, Query()] = None, account_holders: Annotated[list[str] | None, Query()] = None):
     from services.financial.ledger_timeline import ledger_timeline
     try:
-        captured = capture_ledger_export(db.get_bind(), case_id=case_id, account_id=account_id, start_date=start_date, end_date=end_date)
+        captured = capture_ledger_export(db.get_bind(), case_id=case_id, account_id=account_id, account_ids=account_ids, account_holders=account_holders, start_date=start_date, end_date=end_date)
         return ledger_timeline(captured, population=population)
     except LedgerSummaryError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -1186,21 +1200,23 @@ def get_ledger_timeline(case_id: UUID = Query(...), account_id: Optional[UUID] =
         raise HTTPException(status_code=500, detail='Ledger timeline could not be prepared.')
 
 
+
 @router.get('/pattern-review')
 def get_pattern_review(case_id: UUID = Query(...), account_id: Optional[UUID] = Query(None),
         start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None),
         population: Literal['working', 'verified'] = Query('working'), window_days: int = Query(3,ge=0,le=30),
         threshold_minor: Optional[int] = Query(None,ge=1,le=9223372036854775807),
-        threshold_currency: Optional[str] = Query(None,pattern='^[A-Z]{3}$'), db: Session = Depends(get_db), cross_account: bool = False):
+        threshold_currency: Optional[str] = Query(None,pattern='^[A-Z]{3}$'), db: Session = Depends(get_db), cross_account: bool = False, account_ids: Annotated[list[UUID] | None, Query()] = None, account_holders: Annotated[list[str] | None, Query()] = None):
     from services.financial.pattern_review import screen_ledger_patterns
     try:
-        captured = capture_ledger_export(db.get_bind(), case_id=case_id, account_id=account_id, start_date=start_date, end_date=end_date)
+        captured = capture_ledger_export(db.get_bind(), case_id=case_id, account_id=account_id, account_ids=account_ids, account_holders=account_holders, start_date=start_date, end_date=end_date)
         return screen_ledger_patterns(captured, population=population, window_days=window_days, threshold_minor=threshold_minor, threshold_currency=threshold_currency, **(dict(cross_account=True) if cross_account else {}))
     except LedgerSummaryError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception:
         logger.exception('Pattern review failed for case %s', case_id)
         raise HTTPException(status_code=500, detail='Pattern review could not be prepared.')
+
 
 
 from services.financial.claim_comparison import ClaimComparisonInput, compare_ledger_claim
@@ -1248,15 +1264,16 @@ def get_counterparty_parties(case_id: UUID = Query(...), db: Session = Depends(g
 @router.get('/counterparty-party-analysis')
 def get_counterparty_party_analysis(case_id: UUID = Query(...),account_id: Optional[UUID] = Query(None),
         start_date: Optional[date] = Query(None),end_date: Optional[date] = Query(None),
-        population: Literal['working','verified'] = Query('working'),db: Session = Depends(get_db)):
+        population: Literal['working','verified'] = Query('working'),db: Session = Depends(get_db), account_ids: Annotated[list[UUID] | None, Query()] = None, account_holders: Annotated[list[str] | None, Query()] = None):
     from services.financial.counterparty_parties import counterparty_party_analysis
     try:
-        return counterparty_party_analysis(capture_ledger_export(db.get_bind(),case_id=case_id,account_id=account_id,start_date=start_date,end_date=end_date),population=population)
+        return counterparty_party_analysis(capture_ledger_export(db.get_bind(),case_id=case_id,account_id=account_id, account_ids=account_ids, account_holders=account_holders,start_date=start_date,end_date=end_date),population=population)
     except (AccountPartyError,LedgerSummaryError) as exc:
         raise HTTPException(status_code=getattr(exc,'status_code',422),detail=str(exc))
     except Exception:
         logger.exception('Reviewed counterparty analysis failed for case %s',case_id)
         raise HTTPException(status_code=500,detail='Reviewed counterparty analysis could not be prepared.')
+
 
 from services.financial.indirect_review import IndirectReviewInput, indirect_methods, evaluate_indirect_review
 

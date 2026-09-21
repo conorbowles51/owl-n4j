@@ -19,7 +19,7 @@ class CompleteImportedRecord(BaseModel):
     currency: str = Field(pattern=r'^[A-Z]{3}$')
 
 
-def imported_records(session, *, case_id, account_id=None, start_date=None, end_date=None, offset=0, limit=50):
+def imported_records(session, *, case_id, account_id=None, start_date=None, end_date=None, offset=0, limit=50, account_ids=None, account_holders=None):
     # Select only the small retained-record arrays, never each full PDF proposal.
     query = select(FinancialSourceDocument.id, FinancialSourceDocument.evidence_file_id,
         FinancialSourceDocument.metadata_['statement_account_id'].as_string(),
@@ -31,6 +31,13 @@ def imported_records(session, *, case_id, account_id=None, start_date=None, end_
             FinancialSourceDocument.status == 'admitted').order_by(FinancialSourceDocument.id)
     if account_id:
         query = query.where(FinancialSourceDocument.metadata_['statement_account_id'].as_string() == str(account_id))
+    if account_ids:
+        query = query.where(FinancialSourceDocument.metadata_['statement_account_id'].as_string().in_([str(id) for id in account_ids]))
+    if account_holders:
+        from postgres.models.financial import FinancialAccount
+        names = {' '.join(name.split()).lower() for name in account_holders}
+        ids = [str(id) for id, name in session.execute(select(FinancialAccount.id, FinancialAccount.holder_name).where(FinancialAccount.case_id == case_id)) if ' '.join((name or '').split()).lower() in names]
+        query = query.where(FinancialSourceDocument.metadata_['statement_account_id'].as_string().in_(ids))
     records = []
     for source_id, file_id, account, items, currency, filename in session.execute(query):
         for item in items or []:

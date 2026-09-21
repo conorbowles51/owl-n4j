@@ -136,10 +136,7 @@ function FinancialPageContent() {
     setImportReceipt(null)
   }
   const navigateFinancial = (view: FinancialMainView) => {
-    if (view === "transactions") {
-      openAllPayments()
-      store.setMode("transactions")
-    }
+    if (view === "transactions") store.setMode("transactions")
     store.setMainView(view)
   }
   const [params, setParams] = useSearchParams()
@@ -641,7 +638,6 @@ function FinancialPageContent() {
           store.mode === "transactions" &&
           [
             "overview",
-            "transactions",
             "counterparties",
             "follow-money",
             "trends",
@@ -732,6 +728,7 @@ function FinancialPageContent() {
         */}
         <RetainedFinancialTab
           value="statements"
+          onReset={() => showStatementSection("files")}
           forceMount
           style={
             store.mainView !== "statements" ? { display: "none" } : undefined

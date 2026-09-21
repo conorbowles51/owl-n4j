@@ -10,7 +10,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog"
-import { fetchAPI } from "@/lib/api-client"
+import { ApiError, fetchAPI } from "@/lib/api-client"
 import { useAuthStore } from "@/features/auth/hooks/use-auth"
 import { useFinancialAccess } from "../hooks/use-financial-access"
 import { useStatementWorkspace } from "../stores/statement-workspace"
@@ -36,6 +36,22 @@ const receiptSchema = previewSchema.extend({
   restart_file_ids: z.array(z.string()),
 })
 const batchSchema = z.object({ id: z.string(), case_id: z.string() })
+
+function removalError(failure: unknown, fallback: string) {
+  if (failure instanceof ApiError) {
+    if (failure.status === 401)
+      return "Your session has expired. Sign in again before continuing."
+    if (failure.status === 403)
+      return "You do not have permission to change financial imports in this case."
+    if (failure.status === 422 || failure.status >= 500) return fallback
+  }
+  // Validation arrays and response-schema errors are technical details, not
+  // instructions an investigator can act on. Keep business refusals readable.
+  const message = failure instanceof Error ? failure.message.trim() : ""
+  return message && message.length <= 500 && !/^[{[]/.test(message)
+    ? message
+    : fallback
+}
 
 async function prepareRetainedPdfs(
   caseId: string,
@@ -111,9 +127,10 @@ export function FinancialRemovalAction({
       setPreview(result)
     } catch (failure) {
       setError(
-        failure instanceof Error
-          ? failure.message
-          : "Could not load the removal preview."
+        removalError(
+          failure,
+          "The removal preview could not be loaded. Refresh the preview to try again."
+        )
       )
     } finally {
       setBusy(false)
@@ -156,9 +173,12 @@ export function FinancialRemovalAction({
       onRemoved?.()
     } catch (failure) {
       setError(
-        failure instanceof Error
-          ? failure.message
-          : "The operation could not be confirmed. Refresh before trying again."
+        removalError(
+          failure,
+          removed
+            ? "Try Process PDFs afresh again."
+            : "Removal could not be confirmed. Refresh the preview to check the current state before trying again."
+        )
       )
     } finally {
       // Refresh every financial view, including totals, profiles and coverage.
@@ -186,93 +206,120 @@ export function FinancialRemovalAction({
           if (!busy) setOpen(value)
         }}
       >
-        <DialogContent className="max-w-2xl">
-          <DialogTitle>
-            {receipt
-              ? "Financial imports removed"
-              : "Remove financial imports?"}
-          </DialogTitle>
-          <DialogDescription>
-            {receipt
-              ? "The removed records no longer appear in active financial totals. You can process the retained PDFs again in this case."
-              : "Review the affected files and records before confirming. This applies to everyone working in this case."}
-          </DialogDescription>
-          {busy && (
-            <p role="status">
-              {preview ? "Saving…" : "Checking affected imports…"}
-            </p>
-          )}
-          {preview && (
-            <div className="space-y-3">
-              <p className="font-medium">
-                {preview.file_count} PDFs · {preview.statement_count} statement
-                periods · {preview.transaction_count} transactions ·{" "}
-                {preview.incomplete_count} incomplete records
-              </p>
-              <p className="text-sm">
-                {preview.archived_batch_count} processing{" "}
-                {preview.archived_batch_count === 1 ? "batch" : "batches"} will
-                be removed.
-                {preview.updated_batch_count > 0 &&
-                  ` ${preview.updated_batch_count} shared batches will keep their other files and saved reviews.`}
-              </p>
-              <ul className="max-h-48 overflow-y-auto list-disc pl-5 text-sm">
-                {preview.files.map((file) => (
-                  <li key={file.id}>{file.filename}</li>
-                ))}
-              </ul>
-              <p className="text-sm">
-                All {preview.reading_count} saved readings and copies of these
-                PDFs are included. Original PDFs, case notes, findings and cited
-                import history are retained. Processing afresh reads the PDFs
-                again without reusing the removed imports or review corrections.
-              </p>
-              {preview.blocked_reason && !receipt && (
-                <p role="alert">{preview.blocked_reason}</p>
-              )}
-            </div>
-          )}
-          {error && (
-            <p role="alert">
+        <DialogContent
+          className="flex max-h-[calc(100dvh-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl"
+          showCloseButton={!busy}
+        >
+          <div className="shrink-0 space-y-2 p-6 pb-4 pr-12">
+            <DialogTitle>
               {receipt
-                ? "The imports were removed, but fresh processing could not start. "
-                : ""}
-              {error}
-            </p>
-          )}
-          <div className="flex flex-wrap gap-2">
-            {!receipt && (
-              <Button
-                disabled={busy || !preview?.can_remove}
-                onClick={() => void remove(false)}
-              >
-                Remove imports
-              </Button>
+                ? "Financial imports removed"
+                : "Remove financial imports?"}
+            </DialogTitle>
+            <DialogDescription>
+              {receipt
+                ? "The removed records no longer appear in active financial totals. You can process the retained PDFs again in this case."
+                : "Review the affected files and records before confirming. This applies to everyone working in this case."}
+            </DialogDescription>
+          </div>
+          <div
+            role="region"
+            aria-label="Removal details"
+            tabIndex={0}
+            className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain px-6 pb-4 break-words"
+          >
+            {busy && (
+              <p role="status">
+                {preview ? "Saving…" : "Checking affected imports…"}
+              </p>
             )}
-            {canUpload && (
-              <Button
-                disabled={busy || !preview?.can_remove}
-                onClick={() => void remove(true)}
-              >
-                {receipt ? "Process PDFs afresh" : "Remove and process afresh"}
-              </Button>
+            {preview && (
+              <div className="space-y-3">
+                <p className="font-medium">
+                  {preview.file_count}{" "}
+                  {preview.file_count === 1 ? "PDF" : "PDFs"} ·{" "}
+                  {preview.statement_count} statement{" "}
+                  {preview.statement_count === 1 ? "period" : "periods"} ·{" "}
+                  {preview.transaction_count} transactions ·{" "}
+                  {preview.incomplete_count} incomplete records
+                </p>
+                <p className="text-sm">
+                  {preview.archived_batch_count} processing{" "}
+                  {preview.archived_batch_count === 1 ? "batch" : "batches"}{" "}
+                  {receipt ? "removed." : "will be removed."}
+                  {preview.updated_batch_count > 0 &&
+                    ` ${preview.updated_batch_count} shared batches will keep their other files and saved reviews.`}
+                </p>
+                <ul className="list-disc pl-5 text-sm">
+                  {preview.files.map((file) => (
+                    <li key={file.id}>{file.filename}</li>
+                  ))}
+                </ul>
+                <p className="text-sm">
+                  All {preview.reading_count} saved readings and copies of these
+                  PDFs are included. Original PDFs, case notes, findings and
+                  cited import history are retained. Processing afresh reads the
+                  PDFs again without reusing the removed imports or review
+                  corrections.
+                </p>
+                {preview.blocked_reason && !receipt && (
+                  <p role="alert">{preview.blocked_reason}</p>
+                )}
+              </div>
             )}
-            {!receipt && (
+          </div>
+          <div
+            role="group"
+            aria-label="Removal actions"
+            className="shrink-0 space-y-3 border-t p-4 sm:px-6"
+          >
+            {error && (
+              <p
+                role="alert"
+                className="max-h-28 overflow-y-auto rounded border border-destructive/30 bg-destructive/5 p-3 text-sm break-words"
+              >
+                {receipt
+                  ? "The imports were removed, but fresh processing could not start. "
+                  : ""}
+                {error}
+              </p>
+            )}
+            <div className="flex flex-wrap gap-2">
+              {!receipt && (
+                <Button
+                  disabled={busy || !preview?.can_remove}
+                  onClick={() => void remove(false)}
+                >
+                  Remove imports
+                </Button>
+              )}
+              {canUpload && (
+                <Button
+                  disabled={busy || !preview?.can_remove}
+                  onClick={() => void remove(true)}
+                >
+                  {receipt
+                    ? "Process PDFs afresh"
+                    : "Remove and process afresh"}
+                </Button>
+              )}
+              {!receipt && (
+                <Button
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() => void load()}
+                >
+                  Refresh preview
+                </Button>
+              )}
               <Button
                 variant="outline"
                 disabled={busy}
-                onClick={() => void load()}
+                onClick={() => setOpen(false)}
               >
-                Refresh preview
+                {receipt ? "Close" : "Cancel"}
               </Button>
-            )}
-            <Button
-              variant="outline"
-              disabled={busy}
-              onClick={() => setOpen(false)}
-            >
-              {receipt ? "Close" : "Cancel"}
-            </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
@@ -308,9 +355,10 @@ export function ProcessRemovedFile({
             )
           } catch (failure) {
             setError(
-              failure instanceof Error
-                ? failure.message
-                : "Could not prepare this PDF."
+              removalError(
+                failure,
+                "Fresh processing could not start. Your PDF is retained; try again."
+              )
             )
           } finally {
             setBusy(false)

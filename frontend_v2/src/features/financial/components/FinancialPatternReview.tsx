@@ -1,3 +1,4 @@
+import { appendAccountSelection } from "../lib/account-selection"
 import { useFinancialAccess } from "../hooks/use-financial-access"
 import { RetainedFinancialTool } from "./FinancialNavigation"
 import { useFinancialDraft } from "../stores/financial-drafts"
@@ -187,6 +188,7 @@ function PatternScope({
         q.set("threshold_minor", thresholdMinor)
         q.set("threshold_currency", currency)
       }
+      appendAccountSelection(q, params)
       if (params.accountId) q.set("account_id", params.accountId)
       if (params.startDate) q.set("start_date", params.startDate)
       if (params.endDate) q.set("end_date", params.endDate)

@@ -6,6 +6,7 @@ from services.financial.ledger_summary import LedgerSummaryError
 
 class LedgerTableView(BaseModel):
     model_config = ConfigDict(extra='forbid', strict=True)
+    search_mode: Literal['text', 'boolean'] = 'text'
     search: Annotated[str, Field(max_length=256)] = ''
     profile_id: Annotated[str, Field(max_length=1024, pattern=r'^$|^(account|name):')] = ''
     profile_group: Annotated[str, Field(pattern=r'^$|^[A-Z]{3}:(card|bank)$')] = ''
@@ -105,7 +106,11 @@ def capture_table_view(ledger, request, *, batch_scope=None):
         view = LedgerTableView.model_validate(request)
     except ValidationError as exc:
         raise LedgerSummaryError('Invalid table-view filters.') from exc
-    query = view.search.strip().lower()
+    from services.financial.transaction_search import transaction_search
+    try:
+        matches_search = transaction_search(view.search, view.search_mode)
+    except ValueError as exc:
+        raise LedgerSummaryError(str(exc)) from exc
     selections = {key: set(getattr(view, key)) for key in ('from_names', 'to_names', 'perspective_names', 'analysis_categories')}
     if view.import_batch_id and (not batch_scope or batch_scope['batch_id'] != view.import_batch_id or batch_scope['revision'] != view.import_batch_revision):
         raise LedgerSummaryError('The imported batch changed. Reopen its transactions before downloading.')
@@ -133,17 +138,16 @@ def capture_table_view(ledger, request, *, batch_scope=None):
             continue
         if not _analysis_match(row, view, selections):
             continue
-        if query and not any(isinstance(row.get(k), str) and query in row[k].lower() for k in (
-                'ordering_date','description','from_name','to_name','category','counterparty_raw','bank_reference','ref_id','key','account_id','source_document_id')):
+        if not matches_search(row):
             continue
         rows.append(row)
     rows.sort(key=lambda r: (r['ordering_date'], r['row_index'], r['key']))
     if view.sort == 'newest':
         rows.sort(key=lambda r: r['ordering_date'], reverse=True)
     if view.sort.startswith('amount'):
-        if len({r['currency'] for r in rows}) > 1:
-            raise LedgerSummaryError('Choose one currency before exporting an amount-sorted table.')
-        rows.sort(key=lambda r: int(r['amount_minor']), reverse=view.sort == 'amount-desc')
+        from decimal import Decimal
+        from services.financial.money import get_currency
+        rows.sort(key=lambda row: Decimal(str(row['amount_minor'])).scaleb(-get_currency(row['currency']).exponent), reverse=view.sort == 'amount-desc')
     if view.sort.split('-')[0] in ('description', 'from', 'to', 'category'):
         field, direction = view.sort.split('-')
         def label(row):

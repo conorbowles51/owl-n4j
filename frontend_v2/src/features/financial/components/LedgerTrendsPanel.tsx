@@ -1,3 +1,4 @@
+import { appendAccountSelection } from "../lib/account-selection"
 import { LinkedPayments } from "./LinkedPayments"
 import { LedgerFlowChart } from "./LedgerFlowChart"
 import { useState } from "react"
@@ -61,6 +62,8 @@ export function LedgerTrendsPanel({
         caseId,
         population,
         params.accountId,
+        params.accountIds,
+        params.accountHolders,
         params.startDate,
         params.endDate,
       ])}
@@ -96,6 +99,8 @@ function TrendScope({
       population,
       "trends",
       account,
+      params.accountIds,
+      params.accountHolders,
       start,
       end,
       grouping,
@@ -104,6 +109,7 @@ function TrendScope({
     retry: false,
     queryFn: async () => {
       const search = new URLSearchParams({ grouping })
+      appendAccountSelection(search, params)
       if (account) search.set("account_id", account)
       if (start) search.set("start_date", start)
       if (end) search.set("end_date", end)

@@ -1,3 +1,4 @@
+import { useInvestigationScopeStore } from "../stores/investigation-scope"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import type { ReactNode } from "react"
 import {
@@ -23,6 +24,17 @@ function render(children: ReactNode) {
     ),
   })
 }
+vi.mock("@/lib/api-client", async (original) => ({
+  ...(await original<typeof import("@/lib/api-client")>()),
+  fetchAPI: vi.fn(async (url: string) => ({
+    case_id: new URL(url, "http://test").searchParams.get("case_id"),
+    items: [],
+    has_more: false,
+    total: 0,
+    entries: [],
+    categories: [],
+  })),
+}))
 vi.mock("./LedgerTable", () => ({
   LedgerTable: ({
     transactions,
@@ -70,7 +82,7 @@ it("sorts exact amounts and passes the original selected row to source actions",
   fireEvent.click(screen.getByRole("button", { name: "smaller" }))
   expect(source).toHaveBeenCalledWith(second)
 })
-it("refuses amount ordering across currencies and searches recorded references", () => {
+it("allows amount ordering across currencies and searches recorded references", () => {
   render(
     <LedgerRowBrowser
       transactions={[
@@ -80,8 +92,8 @@ it("refuses amount ordering across currencies and searches recorded references",
     />
   )
   expect(
-    screen.getByRole("option", { name: "Largest amount first (one currency)" })
-  ).toBeDisabled()
+    screen.getByRole("option", { name: "Largest amount first" })
+  ).not.toBeDisabled()
   fireEvent.change(screen.getByLabelText("Search payments"), {
     target: { value: "invoice 123" },
   })
@@ -141,8 +153,16 @@ it("filters inclusive exact ranges, rejects invalid precision and resets on curr
 })
 
 vi.mock("./LedgerExportButton", () => ({
-  LedgerExportButton: ({ tableView }: { tableView?: unknown }) => (
-    <output data-testid="export-filters">{JSON.stringify(tableView)}</output>
+  LedgerExportButton: ({
+    tableView,
+    params,
+  }: {
+    tableView?: unknown
+    params?: unknown
+  }) => (
+    <output data-testid="export-filters">
+      {JSON.stringify({ ...(tableView as object), ...(params as object) })}
+    </output>
   ),
 }))
 vi.mock("./SavePaymentSelection", () => ({ SavePaymentSelection: () => null }))
@@ -152,6 +172,7 @@ const user = (id: string) =>
   >
 beforeEach(() => {
   useFinancialDraftStore.setState({ drafts: {} })
+  useInvestigationScopeStore.getState().reset()
   useAuthStore.setState({ user: user("reviewer-a") })
 })
 
@@ -399,28 +420,32 @@ it("loads every account then filters one holder across banks, preserving paginat
       .querySelectorAll("tbody tr")
   expect(tableRows()).toHaveLength(50)
   expect(screen.getByText("1–50 of 125 matching rows")).toBeVisible()
-  fireEvent.change(screen.getByLabelText("Filter account holder"), {
-    target: { value: "example company" },
-  })
+  act(() =>
+    useInvestigationScopeStore
+      .getState()
+      .apply("case", { accountHolders: ["example company"] })
+  )
   expect(screen.getByText("1–50 of 120 matching rows")).toBeVisible()
   expect(screen.getByText("120.00 USD")).toBeVisible()
   fireEvent.click(screen.getByRole("button", { name: "Next ledger rows" }))
   expect(screen.getByText("51–100 of 120 matching rows")).toBeVisible()
-  fireEvent.change(screen.getByLabelText("Filter imported account"), {
-    target: { value: "b" },
-  })
-  expect(screen.getByText("1–50 of 60 matching rows")).toBeVisible()
+  act(() =>
+    useInvestigationScopeStore
+      .getState()
+      .apply("case", { accountHolders: ["example company"], accountIds: ["b"] })
+  )
+  expect(screen.getByText("51–60 of 60 matching rows")).toBeVisible()
   expect(screen.getByText("60.00 USD")).toBeVisible()
   expect(
     JSON.parse(screen.getByTestId("export-filters").textContent!)
-  ).toMatchObject({ account_id: "b", account_holder: "example company" })
-  fireEvent.click(screen.getByRole("button", { name: "Next ledger rows" }))
-  expect(tableRows()).toHaveLength(10)
-  fireEvent.change(screen.getByLabelText("Filter account holder"), {
-    target: { value: "other company" },
-  })
-  expect(tableRows()).toHaveLength(5)
-  expect(screen.getByLabelText("Filter imported account")).toHaveValue("")
-  fireEvent.click(screen.getByRole("button", { name: "Clear payment filters" }))
-  expect(screen.getByText("1–50 of 125 matching rows")).toBeVisible()
+  ).toMatchObject({ accountIds: ["b"], accountHolders: ["example company"] })
+  act(() =>
+    useInvestigationScopeStore.getState().apply("case", {
+      accountHolders: ["example company", "other company"],
+      accountIds: ["b", "c"],
+    })
+  )
+  expect(screen.getByText("51–65 of 65 matching rows")).toBeVisible()
+  act(() => useInvestigationScopeStore.getState().apply("case", {}))
+  expect(screen.getByText("51–100 of 125 matching rows")).toBeVisible()
 })

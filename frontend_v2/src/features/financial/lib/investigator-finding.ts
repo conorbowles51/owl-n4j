@@ -4,6 +4,11 @@ import type {
 } from "@/features/workspace/casework-api"
 import { readSelectedPayments } from "./selected-payment-source"
 
+// Stored kind keys are retained for existing casework: the former observation
+// action is Create Finding; the former question action is Create Observation.
+export const findingKindLabel = (kind: string) =>
+  kind === "question" ? "Observation" : "Finding"
+
 export type FindingKind = "question" | "observation" | "conclusion"
 export interface InvestigatorFindingDraft {
   title: string
@@ -18,7 +23,7 @@ export const emptyFinding: InvestigatorFindingDraft = {
   explanation: "",
   nextAction: "",
   owner: "",
-  kind: "question",
+  kind: "observation",
   progress: "open",
 }
 const escape = (text: string) => text.replace(/^(\\*## )/gm, "\\$1")
@@ -56,12 +61,13 @@ export function findingTags(
     ...new Set([
       ...previous.filter(
         (tag) =>
-          !/^financial-(?:(?:question|observation|conclusion)(?:-(?:open|in-progress|complete))?|open|in-progress|complete)$/.test(
+          !/^financial-(?:entry-(?:finding|observation)|(?:question|observation|conclusion)(?:-(?:open|in-progress|complete))?|open|in-progress|complete)$/.test(
             tag
           )
       ),
       "financial",
       "financial-workspace",
+      `financial-entry-${draft.kind === "question" ? "observation" : "finding"}`,
       `financial-${draft.kind}`,
       `financial-${draft.progress}`,
       `financial-${draft.kind}-${draft.progress}`,

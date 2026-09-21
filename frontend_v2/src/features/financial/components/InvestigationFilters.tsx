@@ -1,12 +1,7 @@
-import { useEffect, useState } from "react"
-import { useQuery } from "@tanstack/react-query"
+import { useState } from "react"
 import { Button } from "@/components/ui/button"
-import { fetchAPI } from "@/lib/api-client"
-import {
-  candidateAccounts,
-  candidateUrl,
-  assertCandidateScope,
-} from "../lib/candidate-contract"
+import { TransactionAccountFilters } from "./TransactionAccountFilters"
+import type { AccountSelection } from "../lib/account-selection"
 import type { LedgerQueryParams } from "../hooks/use-ledger-transactions"
 
 export function InvestigationFilters({
@@ -20,48 +15,13 @@ export function InvestigationFilters({
   accountSelection?: boolean
   onApply: (p: LedgerQueryParams) => void
 }) {
-  const [account, setAccount] = useState(initialParams.accountId ?? ""),
-    [start, setStart] = useState(initialParams.startDate ?? ""),
-    [end, setEnd] = useState(initialParams.endDate ?? ""),
-    [search, setSearch] = useState("")
-  const [selectedLabel, setSelectedLabel] = useState("Selected account")
-  const accounts = useQuery({
-    queryKey: ["financial-ledger", caseId, "filter-accounts", search],
-    retry: false,
-    enabled: accountSelection,
-    queryFn: async () => {
-      const data = candidateAccounts.parse(
-        await fetchAPI(
-          `${candidateUrl("ledger-accounts", caseId)}&${new URLSearchParams({ search })}`
-        )
-      )
-      assertCandidateScope(data, caseId)
-      return data
-    },
+  const [selection, setSelection] = useState<AccountSelection>({
+    accountId: initialParams.accountId,
+    accountIds: initialParams.accountIds,
+    accountHolders: initialParams.accountHolders,
   })
-  const selectedAccount = accounts.data?.items.find(
-    (item) => item.id === account
-  )
-  const resolvedLabel = selectedAccount
-    ? [
-        selectedAccount.display_label ||
-          [
-            selectedAccount.holder,
-            selectedAccount.identifier,
-            selectedAccount.institution,
-          ]
-            .filter(Boolean)
-            .join(" · ") ||
-          selectedAccount.id,
-        selectedAccount.currency,
-      ]
-        .filter(Boolean)
-        .join(" ")
-    : undefined
-  useEffect(() => {
-    // Keep a resolved account name when a later search no longer includes it.
-    if (resolvedLabel) setSelectedLabel(resolvedLabel)
-  }, [resolvedLabel])
+  const [start, setStart] = useState(initialParams.startDate ?? "")
+  const [end, setEnd] = useState(initialParams.endDate ?? "")
   const invalid = !!start && !!end && start > end
   return (
     <form
@@ -71,42 +31,18 @@ export function InvestigationFilters({
         e.preventDefault()
         if (!invalid)
           onApply({
-            accountId: account || undefined,
+            ...selection,
             startDate: start || undefined,
             endDate: end || undefined,
           })
       }}
     >
       {accountSelection && (
-        <label className="min-w-56 flex-1">
-          Account
-          <select
-            aria-label="Filter account"
-            className="block w-full rounded border p-2 bg-background"
-            value={account}
-            onChange={(e) => {
-              setAccount(e.target.value)
-              setSelectedLabel(
-                e.target.selectedOptions[0]?.textContent || e.target.value
-              )
-            }}
-          >
-            <option value="">All accounts</option>
-            {account && !accounts.data?.items.some((a) => a.id === account) && (
-              <option value={account}>{selectedLabel}</option>
-            )}
-            {accounts.data?.items.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.display_label ||
-                  [a.holder, a.identifier, a.institution]
-                    .filter(Boolean)
-                    .join(" · ") ||
-                  a.id}{" "}
-                {a.currency}
-              </option>
-            ))}
-          </select>
-        </label>
+        <TransactionAccountFilters
+          caseId={caseId}
+          selection={selection}
+          onChange={setSelection}
+        />
       )}
       <label>
         From
@@ -135,33 +71,18 @@ export function InvestigationFilters({
         type="button"
         variant="outline"
         onClick={() => {
-          setAccount(accountSelection ? "" : (initialParams.accountId ?? ""))
+          setSelection(accountSelection ? {} : selection)
           setStart("")
           setEnd("")
-          onApply(
-            accountSelection ? {} : { accountId: initialParams.accountId }
-          )
+          onApply(accountSelection ? {} : selection)
         }}
       >
         Reset
       </Button>
       <details className="basis-full text-xs">
         <summary className="cursor-pointer">
-          {accountSelection
-            ? "Search accounts or check which dates are used"
-            : "Which dates are used"}
+          {accountSelection ? "Which dates are used" : "Which dates are used"}
         </summary>
-        {accountSelection && (
-          <label>
-            Search account names or numbers
-            <input
-              aria-label="Search available accounts"
-              className="ml-2 border rounded p-1 bg-background"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </label>
-        )}
         <p>
           The start and end dates are included. Payments without a transaction
           date are marked in the table. Check Statements for gaps in the
@@ -170,24 +91,6 @@ export function InvestigationFilters({
       </details>
       {invalid && (
         <p role="alert">The start date must be on or before the end date.</p>
-      )}
-      {accounts.isError && (
-        <div role="alert" className="space-y-2">
-          <p>
-            Account list unavailable. Your chosen account and dates are
-            retained.
-          </p>
-          <Button
-            type="button"
-            variant="outline"
-            disabled={accounts.isFetching}
-            onClick={() => void accounts.refetch()}
-          >
-            {accounts.isFetching
-              ? "Retrying accounts…"
-              : "Try loading accounts again"}
-          </Button>
-        </div>
       )}
     </form>
   )

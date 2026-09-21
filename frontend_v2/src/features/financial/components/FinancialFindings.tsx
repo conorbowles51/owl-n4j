@@ -1,6 +1,10 @@
 import type { CaseworkEntry } from "@/features/workspace/casework-api"
 import { InvestigatorFindingEditor } from "./InvestigatorFindingEditor"
-import { findingDraft, findingPaymentIds } from "../lib/investigator-finding"
+import {
+  findingDraft,
+  findingPaymentIds,
+  findingKindLabel,
+} from "../lib/investigator-finding"
 import { useFinancialStore } from "../stores/financial.store"
 import { useFinancialAccess } from "../hooks/use-financial-access"
 import { FinancialReportBuilder } from "./FinancialReportBuilder"
@@ -77,7 +81,9 @@ export function FinancialFindings({
     >
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-2xl font-semibold">Findings</h2>
+          <h2 className="text-2xl font-semibold">
+            Findings &amp; Observations
+          </h2>
           <p className="text-sm text-muted-foreground mt-1">
             Record what the evidence shows, what remains unknown and what needs
             to happen next.
@@ -100,8 +106,8 @@ export function FinancialFindings({
             }}
           >
             <option value="financial">All saved work</option>
-            <option value="financial-question">Questions</option>
-            <option value="financial-observation">Observations</option>
+            <option value="financial-question">Observations</option>
+            <option value="financial-observation">Findings</option>
             <option value="financial-conclusion">Conclusions</option>
             <option value="financial-report">Reports</option>
           </select>
@@ -161,9 +167,8 @@ export function FinancialFindings({
               : "Build the investigation record"}
           </h3>
           <p className="text-sm text-muted-foreground">
-            Create a question to follow up, record an observation, or select
-            payments to support a conclusion. Saved findings can be revised and
-            included in a report.
+            Create a finding or observation and attach the payments that support
+            it. Saved findings can be revised and included in a report.
           </p>
           <Button
             variant="outline"
@@ -191,7 +196,7 @@ export function FinancialFindings({
             <div>
               <p className="finance-badge capitalize">
                 {entry.tags.includes("financial-workspace")
-                  ? `${findingDraft(entry).kind} · ${findingDraft(entry).progress.replace("-", " ")}`
+                  ? `${findingKindLabel(findingDraft(entry).kind)} · ${findingDraft(entry).progress.replace("-", " ")}`
                   : entry.tags.includes("financial-report")
                     ? "Saved report"
                     : "Saved note or analysis"}
@@ -209,7 +214,7 @@ export function FinancialFindings({
                 size="sm"
                 onClick={() => setEditing(entry)}
               >
-                Edit finding
+                Edit
               </Button>
             )}
           </div>

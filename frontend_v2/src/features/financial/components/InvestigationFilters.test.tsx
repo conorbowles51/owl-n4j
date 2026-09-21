@@ -1,28 +1,31 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { fireEvent, render, screen, within } from "@testing-library/react"
 import { beforeEach, expect, it, vi } from "vitest"
 import { InvestigationFilters } from "./InvestigationFilters"
 const api = vi.hoisted(() => vi.fn())
 vi.mock("@/lib/api-client", () => ({ fetchAPI: api }))
-const account = (id: string, label: string) => ({
+const account = (id: string, holder: string) => ({
   id,
-  display_label: label,
+  display_label: id,
   identifier: id,
-  holder: label,
+  holder,
   institution: "Example Bank",
   currency: "USD",
   provisional: false,
 })
-const response = (
-  items = [
-    account("checking", "Example checking"),
-    account("savings", "Example savings"),
-  ]
-) => ({ case_id: "case", items, has_more: false })
+const response = () => ({
+  case_id: "case",
+  items: [
+    account("checking", "Example Company"),
+    account("savings", "Example Company"),
+    account("other", "Other Company"),
+  ],
+  has_more: false,
+})
 beforeEach(() => {
   api.mockReset().mockResolvedValue(response())
 })
-function mount() {
+function mount(accountSelection = true) {
   const apply = vi.fn()
   render(
     <QueryClientProvider
@@ -33,73 +36,74 @@ function mount() {
       <InvestigationFilters
         caseId="case"
         initialParams={{ accountId: "checking", startDate: "2020-01-01" }}
+        accountSelection={accountSelection}
         onApply={apply}
       />
     </QueryClientProvider>
   )
   return apply
 }
-it("retains a restored account name when searching other accounts and keeps its exact applied ID", async () => {
+it("selects multiple people and accounts, retains selection during search and applies the exact scope", async () => {
   const apply = mount()
-  await screen.findByRole("option", { name: "Example checking USD" })
-  api.mockResolvedValue(response([account("savings", "Example savings")]))
-  fireEvent.change(screen.getByLabelText("Search available accounts"), {
+  fireEvent.click(
+    screen.getByLabelText("Bank account filter").querySelector("summary")!
+  )
+  const savings = await screen.findByRole("checkbox", { name: "savings · USD" })
+  fireEvent.click(savings)
+  fireEvent.change(screen.getByLabelText("Search bank account"), {
     target: { value: "savings" },
   })
-  await waitFor(() => expect(api).toHaveBeenCalledTimes(2))
+  expect(savings).toBeChecked()
   expect(
-    screen.getByRole("option", { name: "Example checking USD" })
+    screen.getByRole("button", {
+      name: "Remove checking · USD from bank account filter",
+    })
   ).toBeInTheDocument()
-  expect(screen.getByLabelText("Filter account")).toHaveValue("checking")
+  fireEvent.click(
+    screen.getByLabelText("Person or company filter").querySelector("summary")!
+  )
+  fireEvent.click(screen.getByRole("checkbox", { name: "Example Company" }))
+  fireEvent.click(screen.getByRole("checkbox", { name: "Other Company" }))
   fireEvent.click(screen.getByRole("button", { name: "Apply" }))
-  expect(apply).toHaveBeenCalledWith({
-    accountId: "checking",
+  expect(apply).toHaveBeenLastCalledWith({
+    accountId: undefined,
+    accountIds: ["checking", "savings"],
+    accountHolders: ["example company", "other company"],
     startDate: "2020-01-01",
     endDate: undefined,
   })
 })
-it("keeps the restored choice and dates during failure and retries the same account search", async () => {
-  mount()
-  await screen.findByRole("option", { name: "Example checking USD" })
+it("keeps restored selections and dates during failure, then reloads the directory", async () => {
   api.mockRejectedValueOnce(Error("503"))
-  fireEvent.change(screen.getByLabelText("Search available accounts"), {
-    target: { value: "savings" },
-  })
-  await screen.findByRole("alert")
-  expect(screen.getByLabelText("Filter account")).toHaveValue("checking")
-  expect(
-    screen.getByRole("option", { name: "Example checking USD" })
-  ).toBeInTheDocument()
+  const apply = mount()
+  const error = await screen.findByRole("alert")
   expect(screen.getByLabelText("Transactions from")).toHaveValue("2020-01-01")
-  api.mockResolvedValue(response([account("savings", "Example savings")]))
+  fireEvent.click(within(error).getByRole("button", { name: "Try again" }))
   fireEvent.click(
-    screen.getByRole("button", { name: "Try loading accounts again" })
+    screen.getByLabelText("Bank account filter").querySelector("summary")!
   )
-  await screen.findByRole("option", { name: "Example savings USD" })
-  expect(screen.queryByRole("alert")).not.toBeInTheDocument()
-  expect(api.mock.calls.at(-1)?.[0]).toContain("search=savings")
+  expect(
+    await screen.findByRole("checkbox", { name: "checking · USD" })
+  ).toBeChecked()
+  fireEvent.click(screen.getByRole("button", { name: "Apply" }))
+  expect(apply).toHaveBeenLastCalledWith(
+    expect.objectContaining({ accountId: "checking", startDate: "2020-01-01" })
+  )
 })
-
 it("changes only dates when account selection is hidden", () => {
-  const apply = vi.fn()
-  render(
-    <QueryClientProvider client={new QueryClient()}>
-      <InvestigationFilters
-        caseId="case"
-        accountSelection={false}
-        initialParams={{ accountId: "checking", startDate: "2020-01-01" }}
-        onApply={apply}
-      />
-    </QueryClientProvider>
-  )
-  expect(screen.queryByLabelText("Filter account")).not.toBeInTheDocument()
+  const apply = mount(false)
+  expect(screen.queryByLabelText("Bank account filter")).not.toBeInTheDocument()
   expect(api).not.toHaveBeenCalled()
   fireEvent.click(screen.getByRole("button", { name: "Reset" }))
-  expect(apply).toHaveBeenLastCalledWith({ accountId: "checking" })
+  expect(apply).toHaveBeenLastCalledWith(
+    expect.objectContaining({ accountId: "checking" })
+  )
   fireEvent.click(screen.getByRole("button", { name: "Apply" }))
-  expect(apply).toHaveBeenLastCalledWith({
-    accountId: "checking",
-    startDate: undefined,
-    endDate: undefined,
-  })
+  expect(apply).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      accountId: "checking",
+      startDate: undefined,
+      endDate: undefined,
+    })
+  )
 })

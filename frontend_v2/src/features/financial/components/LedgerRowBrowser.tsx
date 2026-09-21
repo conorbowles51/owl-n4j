@@ -1,3 +1,10 @@
+import { matchesAccountSelection } from "../lib/account-selection"
+import { compareDisplayedAmounts } from "../lib/transaction-search"
+import { transactionSearch } from "../lib/transaction-search"
+import { TransactionAnalysisControls } from "./TransactionAnalysisPanels"
+import { useInvestigationScope } from "../stores/investigation-scope"
+import { retainPaymentTableView } from "../lib/payment-table-draft"
+import { PaymentCategoryFilter } from "./PaymentCategoryFilter"
 import { TransactionNotesCsv } from "./TransactionNotesCsv"
 import { downloadCsv, transactionCsv } from "../lib/transaction-csv"
 import {
@@ -10,10 +17,9 @@ import {
   filterAnalysis,
   sortAnalysisRows,
 } from "../lib/transaction-analysis"
-import { PaymentLabelsEditor } from "./PaymentLabelsEditor"
+import { PaymentEditsEditor } from "./PaymentEditsEditor"
 import { PaymentCategoryManager } from "./PaymentCategoryManager"
 import { TransactionAccountFilters } from "./TransactionAccountFilters"
-import { holderKey } from "../lib/account-holder"
 import {
   usePaymentCategory,
   categoryName,
@@ -57,6 +63,9 @@ export function LedgerRowBrowser({
     profile?: { id: string; group: string }
   }
 }) {
+  const [accountScope, applyAccountScope] = useInvestigationScope(
+    exportContext?.caseId
+  )
   const { canEdit } = useFinancialAccess()
   const [category, setCategory] = usePaymentCategory(
     exportContext?.caseId ?? "none"
@@ -85,9 +94,8 @@ export function LedgerRowBrowser({
   const view = { ...emptyView, ...(exportContext ? savedView : localView) }
   const setView = exportContext ? setSavedView : setLocalView
   const {
-    accountId = "",
-    accountHolder = "",
     search,
+    searchMode = "text",
     currency,
     minimum,
     maximum,
@@ -118,7 +126,7 @@ export function LedgerRowBrowser({
         ? [...new Set([...previous, row.key])]
         : previous.filter((id) => id !== row.key)
     )
-  const query = search.trim().toLowerCase()
+  const searchResult = transactionSearch(search, searchMode)
   const minMinor = minimum.trim() ? correctionMinor(minimum, currency) : ""
   const maxMinor = maximum.trim() ? correctionMinor(maximum, currency) : ""
   const invalidRange =
@@ -129,8 +137,7 @@ export function LedgerRowBrowser({
   const baseRows = transactions.filter(
     (row) =>
       !invalidRange &&
-      (!accountId || row.account_id === accountId) &&
-      (!accountHolder || holderKey(row.account_holder) === accountHolder) &&
+      matchesAccountSelection(row, accountScope) &&
       (!category || categoryName(row) === category) &&
       (!sourceDocumentId || row.source_document_id === sourceDocumentId) &&
       (!importBatchId || batchSources.has(row.source_document_id)) &&
@@ -141,116 +148,30 @@ export function LedgerRowBrowser({
       (!currency || row.currency === currency) &&
       (!direction || row.direction === direction) &&
       (!proof || row.proof_class === proof) &&
-      (!query ||
-        [
-          row.ordering_date,
-          row.description,
-          row.from_name,
-          row.to_name,
-          row.category,
-          row.counterparty_raw,
-          row.bank_reference,
-          row.ref_id,
-          row.key,
-          row.account_id,
-          row.source_document_id,
-        ].some(
-          (value) =>
-            typeof value === "string" && value.toLowerCase().includes(query)
-        ))
+      searchResult.matches(row)
   )
   const rows = investigation ? filterAnalysis(baseRows, view) : baseRows
   sortAnalysisRows(rows, sort)
-  const amountAllowed = new Set(rows.map((row) => row.currency)).size <= 1
+  const mixedCurrencies = new Set(rows.map((row) => row.currency)).size > 1
   if (sort === "newest")
     rows.sort((a, b) => b.ordering_date.localeCompare(a.ordering_date))
   if (sort === "oldest")
     rows.sort((a, b) => a.ordering_date.localeCompare(b.ordering_date))
-  if (sort.startsWith("amount") && amountAllowed)
+  if (sort.startsWith("amount"))
     rows.sort((a, b) => {
-      const left = exactAmount(a),
-        right = exactAmount(b)
-      if (left === null) return right === null ? 0 : 1
-      if (right === null) return -1
-      const order = left < right ? -1 : left > right ? 1 : 0
+      const order = compareDisplayedAmounts(a, b)
       return sort === "amount-desc" ? -order : order
     })
   const index = Math.min(
     page,
     Math.max(0, Math.ceil(rows.length / pageSize) - 1)
   )
-  return (
-    <section aria-label="Browse ledger rows" className="space-y-3">
-      {investigation && (
-        <TransactionAccountFilters
-          rows={transactions}
-          accountId={accountId}
-          accountHolder={accountHolder}
-          onChange={changeView}
-        />
-      )}
-      {importBatchId && (
-        <div
-          className="flex flex-wrap items-center justify-between gap-3 rounded border bg-card p-3"
-          role="region"
-          aria-label="Imported batch transactions"
-        >
-          <p>
-            Payments from{" "}
-            <strong>{importStatementCount} imported statements</strong> in this
-            batch. Account, date and payment filters also apply.
-          </p>
-          <div className="flex gap-3 items-center">
-            {exportContext && (
-              <a
-                className="underline"
-                href={`/cases/${exportContext.caseId}/financial?view=statements&batch=${importBatchId}`}
-              >
-                Open import batch
-              </a>
-            )}
-            <Button
-              variant="outline"
-              onClick={() =>
-                changeView({
-                  importBatchId: "",
-                  importBatchRevision: "",
-                  importSourceIds: [],
-                  importStatementCount: 0,
-                })
-              }
-            >
-              Clear batch filter
-            </Button>
-          </div>
-        </div>
-      )}
-      {sourceDocumentId && (
-        <div
-          className="flex flex-wrap items-center justify-between gap-3 rounded border bg-card p-3"
-          role="region"
-          aria-label="Selected statement transactions"
-        >
-          <p>
-            Statement: <strong>{sourceFilename || "Selected statement"}</strong>
-          </p>
-          <Button
-            variant="outline"
-            onClick={() =>
-              changeView({ sourceDocumentId: "", sourceFilename: "" })
-            }
-          >
-            Clear statement filter
-          </Button>
-        </div>
-      )}
-      {notesCsv && exportContext && (
-        <TransactionNotesCsv
-          caseId={exportContext.caseId}
-          rows={transactions}
-          onClose={() => setNotesCsv(false)}
-        />
-      )}
+  const transactionToolbar = (
+    <div
+      className="sticky top-0 z-20 max-h-[55vh] overflow-y-auto rounded border bg-background p-3 shadow-sm"
+      role="region"
+      aria-label="Transaction tools and filters"
+    >
       <div className="flex flex-wrap items-end gap-3">
         {investigation && exportContext && canEdit && (
           <Button variant="outline" onClick={() => setManageCategories(true)}>
@@ -263,13 +184,42 @@ export function LedgerRowBrowser({
             aria-label="Search payments"
             className="block w-full min-w-52 rounded border bg-background p-2"
             maxLength={256}
+            aria-invalid={!!searchResult.error}
             value={search}
             onChange={(e) => {
               changeView({ search: e.target.value })
             }}
-            placeholder="Description, name or reference"
+            placeholder={
+              searchMode === "boolean"
+                ? '(from:"Acme" OR category:Transfers) AND NOT refund'
+                : "Description, name, reference or amount"
+            }
           />
         </label>
+        <label className="text-sm">
+          Search mode
+          <select
+            aria-label="Transaction search mode"
+            className="block rounded border bg-background p-2"
+            value={searchMode}
+            onChange={(event) => changeView({ searchMode: event.target.value })}
+          >
+            <option value="text">Text filter</option>
+            <option value="boolean">Boolean search</option>
+          </select>
+        </label>
+        {search && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => changeView({ search: "" })}
+          >
+            Clear search
+          </Button>
+        )}
+        {exportContext && (
+          <PaymentCategoryFilter caseId={exportContext.caseId} />
+        )}
         {investigation && (
           <>
             <Button
@@ -316,7 +266,6 @@ export function LedgerRowBrowser({
                     currency: e.target.value,
                     minimum: "",
                     maximum: "",
-                    sort: sort.startsWith("amount") ? "ledger" : sort,
                   })
                 }}
               >
@@ -349,12 +298,8 @@ export function LedgerRowBrowser({
                 <option value="to-desc">Recipient Z–A</option>
                 <option value="category-asc">Category A–Z</option>
                 <option value="category-desc">Category Z–A</option>
-                <option value="amount-desc" disabled={!amountAllowed}>
-                  Largest amount first (one currency)
-                </option>
-                <option value="amount-asc" disabled={!amountAllowed}>
-                  Smallest amount first (one currency)
-                </option>
+                <option value="amount-desc">Largest amount first</option>
+                <option value="amount-asc">Smallest amount first</option>
               </select>
             </label>
             <Button
@@ -365,23 +310,7 @@ export function LedgerRowBrowser({
               }}
             >
               Clear payment filters
-            </Button>
-            <label>
-              Category
-              <select
-                aria-label="Category filter"
-                className="block rounded border bg-background p-2"
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
-              >
-                <option value="">All categories</option>
-                {[...new Set(transactions.map(categoryName))]
-                  .sort()
-                  .map((value) => (
-                    <option key={value}>{value}</option>
-                  ))}
-              </select>
-            </label>{" "}
+            </Button>{" "}
             <label>
               Minimum amount {currency}
               <input
@@ -454,6 +383,103 @@ export function LedgerRowBrowser({
           </div>
         </details>
       </div>
+      {searchMode === "boolean" && (
+        <p className="mt-2 text-xs text-muted-foreground">
+          AND, OR, NOT, quoted phrases and parentheses. Adjacent terms mean AND.
+          Fields: from:, to:, category:, description:, reference:, date:,
+          currency:, account:, amount:.
+        </p>
+      )}
+      {searchResult.error && (
+        <p role="alert" className="mt-2 text-sm text-destructive">
+          {searchResult.error}
+        </p>
+      )}
+      {investigation && (
+        <TransactionAnalysisControls
+          filters={view}
+          panels={view}
+          onChange={changeView}
+        />
+      )}
+    </div>
+  )
+  return (
+    <section aria-label="Browse ledger rows" className="space-y-3">
+      {investigation && exportContext && (
+        <TransactionAccountFilters
+          caseId={exportContext.caseId}
+          selection={accountScope}
+          onChange={(selection) => {
+            const next = { ...accountScope, ...selection }
+            retainPaymentTableView(exportContext.caseId, accountScope, next)
+            applyAccountScope(next)
+          }}
+        />
+      )}
+      {importBatchId && (
+        <div
+          className="flex flex-wrap items-center justify-between gap-3 rounded border bg-card p-3"
+          role="region"
+          aria-label="Imported batch transactions"
+        >
+          <p>
+            Payments from{" "}
+            <strong>{importStatementCount} imported statements</strong> in this
+            batch. Account, date and payment filters also apply.
+          </p>
+          <div className="flex gap-3 items-center">
+            {exportContext && (
+              <a
+                className="underline"
+                href={`/cases/${exportContext.caseId}/financial?view=statements&batch=${importBatchId}`}
+              >
+                Open import batch
+              </a>
+            )}
+            <Button
+              variant="outline"
+              onClick={() =>
+                changeView({
+                  importBatchId: "",
+                  importBatchRevision: "",
+                  importSourceIds: [],
+                  importStatementCount: 0,
+                })
+              }
+            >
+              Clear batch filter
+            </Button>
+          </div>
+        </div>
+      )}
+      {sourceDocumentId && (
+        <div
+          className="flex flex-wrap items-center justify-between gap-3 rounded border bg-card p-3"
+          role="region"
+          aria-label="Selected statement transactions"
+        >
+          <p>
+            Statement: <strong>{sourceFilename || "Selected statement"}</strong>
+          </p>
+          <Button
+            variant="outline"
+            onClick={() =>
+              changeView({ sourceDocumentId: "", sourceFilename: "" })
+            }
+          >
+            Clear statement filter
+          </Button>
+        </div>
+      )}
+      {notesCsv && exportContext && (
+        <TransactionNotesCsv
+          caseId={exportContext.caseId}
+          rows={transactions}
+          onClose={() => setNotesCsv(false)}
+        />
+      )}
+      {!investigation && transactionToolbar}
       <div
         className="flex flex-wrap gap-2 text-xs"
         aria-label="Applied payment filters"
@@ -527,7 +553,15 @@ export function LedgerRowBrowser({
           </div>
           <AnalysisFilterChips filters={view} onChange={changeView} />
           <PaymentTotals rows={rows} label="Payments matching your filters" />
+          {transactionToolbar}
+          {sort.startsWith("amount") && mixedCurrencies && (
+            <p className="text-xs text-muted-foreground">
+              Sorted by amount size across currencies. Money in or out does not
+              change this order; currencies are not converted.
+            </p>
+          )}
           <TransactionAnalysisPanels
+            hideControls
             rows={baseRows}
             filters={view}
             panels={view}
@@ -572,6 +606,14 @@ export function LedgerRowBrowser({
                   {canEdit && (
                     <>
                       <Button
+                        onClick={() => {
+                          setEditNames(true)
+                          setLabelIds(selection)
+                        }}
+                      >
+                        Edit selected transactions
+                      </Button>
+                      <Button
                         variant="outline"
                         onClick={() => {
                           setEditNames(false)
@@ -585,25 +627,18 @@ export function LedgerRowBrowser({
                       </Button>
                     </>
                   )}
-                  <details>
-                    <summary className="cursor-pointer rounded border px-3 py-2 text-sm">
-                      More actions
-                    </summary>
-                    <div className="flex flex-wrap gap-2 p-2">
-                      {canEdit && (
-                        <Button
-                          variant="outline"
-                          onClick={() => setFinding("question")}
-                        >
-                          Mark for follow-up
-                        </Button>
-                      )}
-                      <ExportSelectedPayments
-                        caseId={exportContext.caseId}
-                        ids={selection}
-                      />
-                    </div>
-                  </details>
+                  {canEdit && (
+                    <Button
+                      variant="outline"
+                      onClick={() => setFinding("question")}
+                    >
+                      Create observation
+                    </Button>
+                  )}
+                  <ExportSelectedPayments
+                    caseId={exportContext.caseId}
+                    ids={selection}
+                  />
                 </div>
                 {compare && (
                   <PaymentComparison
@@ -679,11 +714,19 @@ export function LedgerRowBrowser({
         </>
       )}
       {labelIds && exportContext && (
-        <PaymentLabelsEditor
+        <PaymentEditsEditor
           key={labelIds.join(",")}
           caseId={exportContext.caseId}
           ids={labelIds}
-          names={editNames}
+          initialField={editNames ? undefined : "category"}
+          onSaved={(replacements) => {
+            const mapping = new Map(
+              replacements.map((row) => [row.previous_id, row.id])
+            )
+            setSelection((previous) =>
+              previous.map((id) => mapping.get(id) ?? id)
+            )
+          }}
           onClose={() => setLabelIds(null)}
         />
       )}
@@ -708,7 +751,6 @@ export function LedgerRowBrowser({
         </p>
       ) : investigation && exportContext ? (
         <TransactionExplorerTable
-          amountAllowed={amountAllowed}
           findings={findings.data}
           rows={rows.slice(index * pageSize, (index + 1) * pageSize)}
           selected={selection}
@@ -759,7 +801,7 @@ export function LedgerRowBrowser({
           </summary>
           <LedgerExportButton
             caseId={exportContext.caseId}
-            params={exportContext.params}
+            params={{ ...exportContext.params, ...accountScope }}
             tableView={{
               ...analysisTableView(view),
               ...(exportContext.profile
@@ -769,8 +811,7 @@ export function LedgerRowBrowser({
                   }
                 : {}),
               search,
-              ...(accountId ? { account_id: accountId } : {}),
-              ...(accountHolder ? { account_holder: accountHolder } : {}),
+              search_mode: searchMode as "text" | "boolean",
               ...(category ? { category } : {}),
               ...(sourceDocumentId
                 ? { source_document_id: sourceDocumentId }
@@ -786,8 +827,7 @@ export function LedgerRowBrowser({
               proof,
               minimum_minor: minMinor ?? "",
               maximum_minor: maxMinor ?? "",
-              sort:
-                sort.startsWith("amount") && !amountAllowed ? "ledger" : sort,
+              sort,
             }}
           />
         </details>

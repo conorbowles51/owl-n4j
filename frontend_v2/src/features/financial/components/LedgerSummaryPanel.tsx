@@ -1,3 +1,4 @@
+import { appendAccountSelection } from "../lib/account-selection"
 import { formatLedgerAmount } from "../lib/ledger-format"
 import { useState } from "react"
 import { SummaryContributions } from "./SummaryContributions"
@@ -91,6 +92,8 @@ export function LedgerSummaryPanel({
     caseId,
     population,
     params.accountId,
+    params.accountIds,
+    params.accountHolders,
     params.startDate,
     params.endDate,
   ])
@@ -104,12 +107,15 @@ export function LedgerSummaryPanel({
       caseId,
       working ? "working-summary" : "summary",
       account,
+      params.accountIds,
+      params.accountHolders,
       start,
       end,
     ],
     retry: false,
     queryFn: async () => {
       const search = new URLSearchParams({ include_contributions: "true" })
+      appendAccountSelection(search, params)
       if (account) search.set("account_id", account)
       if (start) search.set("start_date", start)
       if (end) search.set("end_date", end)

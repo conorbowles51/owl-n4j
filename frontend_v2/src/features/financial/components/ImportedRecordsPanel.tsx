@@ -1,3 +1,4 @@
+import { appendAccountSelection } from "../lib/account-selection"
 import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { z } from "zod"
@@ -58,6 +59,7 @@ export function ImportedRecordsPanel({
         offset: String(page * 50),
         limit: "50",
       })
+      appendAccountSelection(search, params)
       if (params.accountId) search.set("account_id", params.accountId)
       if (params.startDate) search.set("start_date", params.startDate)
       if (params.endDate) search.set("end_date", params.endDate)

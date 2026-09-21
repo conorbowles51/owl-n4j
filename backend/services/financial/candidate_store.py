@@ -36,15 +36,15 @@ def list_candidate_mappings(session, *, case_id, limit=25, offset=0):
             candidate_count=row.candidate_count, created_at=row.created_at.isoformat()) for row, filename in rows[:limit]])
 
 
-def list_candidate_accounts(session, *, case_id, search="", limit=100):
-    if not isinstance(search, str) or len(search)>128 or type(limit) is not int or not 1 <= limit <= 100:
+def list_candidate_accounts(session, *, case_id, search="", limit=100, offset=0):
+    if not isinstance(search, str) or len(search)>128 or type(limit) is not int or not 1 <= limit <= 100 or type(offset) is not int or offset < 0:
         raise CandidateStoreError("Invalid account search.", 422)
     query = select(FinancialAccount).where(FinancialAccount.case_id == case_id)
     if search.strip():
         query = query.where(or_(*(field.icontains(search.strip(), autoescape=True) for field in (
             FinancialAccount.identifier_as_printed, FinancialAccount.holder_name, FinancialAccount.institution_name,
             FinancialAccount.metadata_["display_label"].as_string()))))
-    rows = list(session.scalars(query.order_by(FinancialAccount.id).limit(limit+1)))
+    rows = list(session.scalars(query.order_by(FinancialAccount.id).offset(offset).limit(limit+1)))
     return dict(case_id=str(case_id), has_more=len(rows)>limit,
         items=[dict(id=str(row.id), identifier=row.identifier_as_printed, holder=row.holder_name,
                     institution=row.institution_name, currency=row.currency,

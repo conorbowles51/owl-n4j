@@ -151,6 +151,14 @@ export function TransactionExplorerTable({
                         row.account_holder ||
                         row.account_id}
                     </span>
+                    {onEdit && (
+                      <button
+                        className="mt-1 rounded border px-2 py-1 text-xs font-medium hover:bg-muted"
+                        onClick={() => onEdit(row)}
+                      >
+                        Edit transaction
+                      </button>
+                    )}
                     {rowFindings.length > 0 && (
                       <button
                         className="mt-1 text-[10px] underline"
@@ -162,7 +170,7 @@ export function TransactionExplorerTable({
                             f.tags.includes("financial-question") &&
                             !f.tags.includes("financial-complete")
                         )
-                          ? " · follow-up"
+                          ? " · observation"
                           : ""}
                       </button>
                     )}
@@ -198,14 +206,6 @@ export function TransactionExplorerTable({
                       {row.category || "Uncategorized"}
                     </button>
                     <PaymentLabelOrigin row={row} field="category" />
-                    {onEdit && (
-                      <button
-                        className="mt-1 block text-[10px] text-muted-foreground underline"
-                        onClick={() => onEdit(row)}
-                      >
-                        Edit names / category
-                      </button>
-                    )}
                   </td>
                   <td className="p-2 text-right tabular-nums">
                     <strong
@@ -288,7 +288,7 @@ export function TransactionExplorerTable({
                               className="underline"
                               onClick={() => onEdit(row)}
                             >
-                              Edit names and category
+                              Edit transaction
                             </button>
                           )}
                         </div>

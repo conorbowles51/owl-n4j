@@ -26,6 +26,44 @@ class StatementImportAuthorizationTests(unittest.TestCase):
     def endpoint(self,suffix=''):
         return f'/api/financial/statement-import/{self.file_id}{suffix}?case_id={self.db.case.id}'
 
+    def test_removal_confirmation_routes_selection_to_removal_not_statement_import(self):
+        prefix = f'/api/financial/statement-import/removals'
+        with patch('services.financial.import_removal.preview_removal', return_value={'revision': 'a'*64}) as preview, \
+                patch('services.financial.import_removal.remove_imports', return_value={'removed': True}) as remove, \
+                patch.object(module, 'confirm_statement_import') as import_statement, \
+                patch.object(module, 'actor_from_user'):
+            for selection in (
+                {'file_ids': [str(self.file_id)], 'batch_ids': []},
+                {'file_ids': [str(uuid4()) for _ in range(8)], 'batch_ids': []},
+                {'file_ids': [], 'batch_ids': [str(uuid4()), str(uuid4())]},
+            ):
+                self.user({'case': {'view': True, 'edit': True}})
+                response = self.client.post(f'{prefix}/preview?case_id={self.db.case.id}', json=selection)
+                self.assertEqual(response.status_code, 200, response.text)
+                response = self.client.post(f'{prefix}/confirm?case_id={self.db.case.id}',
+                    json={**selection, 'expected_revision': response.json()['revision']})
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertTrue(response.json()['removed'])
+                self.assertEqual(remove.call_args.kwargs['case_id'], self.db.case.id)
+                self.assertEqual([str(value) for value in remove.call_args.kwargs['file_ids']], selection['file_ids'])
+                self.assertEqual([str(value) for value in remove.call_args.kwargs['batch_ids']], selection['batch_ids'])
+                self.assertEqual(remove.call_args.kwargs['expected_revision'], 'a'*64)
+            import_statement.assert_not_called()
+
+    def test_removal_routes_require_case_edit_and_valid_revision(self):
+        prefix = '/api/financial/statement-import/removals'
+        body = {'file_ids': [str(self.file_id)], 'expected_revision': 'a'*64}
+        with patch('services.financial.import_removal.remove_imports') as remove:
+            url = f'{prefix}/confirm?case_id={self.db.case.id}'
+            self.assertEqual(self.client.post(url, json=body).status_code, 401)
+            self.user(None)
+            self.assertEqual(self.client.post(url, json=body).status_code, 403)
+            self.user({'case': {'view': True, 'edit': False}})
+            self.assertEqual(self.client.post(url, json=body).status_code, 403)
+            self.user({'case': {'view': True, 'edit': True}})
+            self.assertEqual(self.client.post(url, json={**body, 'expected_revision': 'stale'}).status_code, 422)
+            remove.assert_not_called()
+
     def test_bulk_currency_requires_case_edit_and_selected_revisions(self):
         url = f'/api/financial/statement-import/batches/{uuid4()}/currency?case_id={self.db.case.id}'
         body = dict(currency='MXN', statements=[dict(id=str(uuid4()), revision='a'*64)])

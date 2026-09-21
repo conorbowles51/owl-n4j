@@ -1,3 +1,4 @@
+import { appendAccountSelection } from "../lib/account-selection"
 import { sha256Hex } from "@/lib/browser-crypto"
 import { LinkedPayments } from "./LinkedPayments"
 import { LedgerFlowChart } from "./LedgerFlowChart"
@@ -76,6 +77,8 @@ export function LedgerCounterpartiesPanel({
         population,
         identities,
         params.accountId,
+        params.accountIds,
+        params.accountHolders,
         params.startDate,
         params.endDate,
       ])}
@@ -114,6 +117,8 @@ function CounterpartyScope({
       "counterparties",
       identities,
       account,
+      params.accountIds,
+      params.accountHolders,
       start,
       end,
     ],
@@ -127,6 +132,7 @@ function CounterpartyScope({
             ? { grouping: "counterparty" }
             : {}
       )
+      appendAccountSelection(search, params)
       if (account) search.set("account_id", account)
       if (start) search.set("start_date", start)
       if (end) search.set("end_date", end)

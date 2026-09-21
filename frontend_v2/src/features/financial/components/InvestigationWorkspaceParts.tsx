@@ -1,3 +1,4 @@
+import { accountSelectionSummary } from "../lib/account-selection"
 import { PaymentLabelsEditor } from "./PaymentLabelsEditor"
 import { retainPaymentTableView } from "../lib/payment-table-draft"
 import { useLedgerTransactions } from "../hooks/use-ledger-transactions"
@@ -66,9 +67,11 @@ export function WorkspaceScope({
       <summary className="cursor-pointer font-medium">
         {datesOnly ? "Date range" : "Accounts and dates"}{" "}
         <span className="ml-2 font-normal text-muted-foreground">
-          {params.accountId
+          {params.accountId &&
+          !params.accountIds?.length &&
+          !params.accountHolders?.length
             ? accountLabel || "Selected account"
-            : "All accounts"}{" "}
+            : accountSelectionSummary(params)}{" "}
           · {params.startDate || "First available date"} to{" "}
           {params.endDate || "latest available date"}
         </span>

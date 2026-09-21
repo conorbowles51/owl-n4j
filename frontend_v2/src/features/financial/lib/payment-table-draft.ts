@@ -16,6 +16,7 @@ export const emptyPaymentTableView = {
   accountId: "",
   accountHolder: "",
   search: "",
+  searchMode: "text",
   currency: "",
   minimum: "",
   maximum: "",
@@ -60,7 +61,9 @@ export function paymentTableDraftName(
 ) {
   return `payment-table:${JSON.stringify([
     investigation,
-    params.accountId ?? null,
+    params.accountIds?.length || params.accountHolders?.length
+      ? [params.accountIds ?? [], params.accountHolders ?? []]
+      : (params.accountId ?? null),
     params.startDate ?? null,
     params.endDate ?? null,
     params.ledgerStatus ?? "admitted",

@@ -16,6 +16,7 @@ export interface LedgerTableView {
   source_document_id?: string
   import_batch_id?: string
   import_batch_revision?: string
+  search_mode?: "text" | "boolean"
   search: string
   currency: string
   direction: string

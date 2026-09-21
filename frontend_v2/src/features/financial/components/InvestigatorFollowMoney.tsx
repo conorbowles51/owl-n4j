@@ -1,3 +1,4 @@
+import { MoneyFlowExplorer } from "./MoneyFlowExplorer"
 import { useInvestigatorPayments } from "../hooks/use-investigator-payments"
 import { useMemo, useState } from "react"
 import {
@@ -101,6 +102,36 @@ export function MoneyConnections({
           </select>
         )}
       </div>
+      {!!rows.length && (
+        <div className="rounded-lg border bg-muted/20 p-3 space-y-2 text-sm">
+          <p>
+            This is a summary of independent transactions for{" "}
+            {group?.split(":")[0]} {card ? "credit cards" : "bank accounts"}.
+            Left:{" "}
+            {totalLabel(
+              rows.filter(
+                (r) => paymentGroup(r) === group && r.direction === "credit"
+              )
+            )}{" "}
+            in credits. Right:{" "}
+            {totalLabel(
+              rows.filter(
+                (r) => paymentGroup(r) === group && r.direction === "debit"
+              )
+            )}{" "}
+            in debits. Totals include the unidentified counterparties listed
+            below.
+          </p>
+          <p>
+            The arrows show the direction of each payment into or out of these
+            accounts. They do not connect a particular receipt to a withdrawal.
+            A bank appearing on both sides may reflect different interest, fee
+            or transfer entries; open its payments to see the descriptions.
+            Choose a tracing concept above to test how receipts could relate to
+            later payments.
+          </p>
+        </div>
+      )}
       {!rows.length ? (
         <p>No imported payments in this scope.</p>
       ) : (
@@ -352,189 +383,202 @@ export function InvestigatorFollowMoney({ caseId }: { caseId: string }) {
       />
       <WorkspaceScope caseId={caseId} />
       <InvestigationReadState data={data}>
-        <MoneyConnections
+        <MoneyFlowExplorer
+          caseId={caseId}
           rows={data.rows}
           onOpen={(ids, title) => setOpen({ ids, title })}
+          overview={
+            <MoneyConnections
+              rows={data.rows}
+              onOpen={(ids, title) => setOpen({ ids, title })}
+            />
+          }
         />
-        <section className="rounded-xl border bg-card p-5 space-y-4">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <h3 className="text-lg font-semibold">
-                Receipts followed by an outgoing payment
-              </h3>
-              <p className="text-sm text-muted-foreground">
-                {comparisons.length} comparisons to examine in the selected
-                accounts and dates.
-              </p>
+        <details>
+          <summary className="cursor-pointer font-medium">
+            Adjacent payments · timing comparisons
+          </summary>
+          <section className="rounded-xl border bg-card p-5 space-y-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h3 className="text-lg font-semibold">
+                  Receipts followed by an outgoing payment
+                </h3>
+                <p className="text-sm text-muted-foreground">
+                  {comparisons.length} comparisons to examine in the selected
+                  accounts and dates.
+                </p>
+              </div>
+              <label className="text-sm">
+                Maximum gap
+                <select
+                  className="block rounded border bg-background p-2"
+                  value={view.days}
+                  onChange={(e) =>
+                    setView({ days: Number(e.target.value), page: 0 })
+                  }
+                >
+                  {[1, 3, 7, 14, 30].map((days) => (
+                    <option key={days} value={days}>
+                      {days} days
+                    </option>
+                  ))}
+                </select>
+              </label>
             </div>
-            <label className="text-sm">
-              Maximum gap
-              <select
-                className="block rounded border bg-background p-2"
-                value={view.days}
-                onChange={(e) =>
-                  setView({ days: Number(e.target.value), page: 0 })
+            <p className="text-sm">
+              Each comparison uses adjacent dated payments in the same bank
+              account and currency. A receipt is followed by a payment within{" "}
+              {view.days} days. This is a starting point for review, not a
+              confirmed transfer. Credit card entries and unknown payment dates
+              are not compared.
+            </p>
+            {!!comparisons.length && (
+              <Button
+                variant="outline"
+                onClick={() =>
+                  setOpen({
+                    ids: [
+                      ...new Set(
+                        comparisons.flatMap((pair) => [
+                          pair.incoming.key,
+                          pair.outgoing.key,
+                        ])
+                      ),
+                    ],
+                    title: "All payments in these comparisons",
+                  })
                 }
               >
-                {[1, 3, 7, 14, 30].map((days) => (
-                  <option key={days} value={days}>
-                    {days} days
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-          <p className="text-sm">
-            Each comparison uses adjacent dated payments in the same bank
-            account and currency. A receipt is followed by a payment within{" "}
-            {view.days} days. This is a starting point for review, not a
-            confirmed transfer. Credit card entries and unknown payment dates
-            are not compared.
-          </p>
-          {!!comparisons.length && (
-            <Button
-              variant="outline"
-              onClick={() =>
-                setOpen({
-                  ids: [
-                    ...new Set(
-                      comparisons.flatMap((pair) => [
-                        pair.incoming.key,
-                        pair.outgoing.key,
-                      ])
-                    ),
-                  ],
-                  title: "All payments in these comparisons",
-                })
-              }
-            >
-              Compare all supporting payments
-            </Button>
-          )}
-          <div className="overflow-x-auto">
-            <table
-              className="finance-table w-full text-sm"
-              aria-label="Receipts and subsequent payments"
-            >
-              <thead className="text-left bg-muted/30">
-                <tr>
-                  <th className="p-3">Receipt</th>
-                  <th className="p-3">Later outgoing payment</th>
-                  <th className="p-3">Gap</th>
-                  <th className="p-3">Amount difference</th>
-                  <th className="p-3">Evidence</th>
-                </tr>
-              </thead>
-              <tbody>
-                {comparisons.slice(page * 20, (page + 1) * 20).map((pair) => (
-                  <tr
-                    key={`${pair.incoming.key}:${pair.outgoing.key}`}
-                    className="border-t align-top"
-                  >
-                    <td className="p-3">
-                      <strong
-                        className="finance-amount"
-                        data-finance-tone="credit"
-                      >
+                Compare all supporting payments
+              </Button>
+            )}
+            <div className="overflow-x-auto">
+              <table
+                className="finance-table w-full text-sm"
+                aria-label="Receipts and subsequent payments"
+              >
+                <thead className="text-left bg-muted/30">
+                  <tr>
+                    <th className="p-3">Receipt</th>
+                    <th className="p-3">Later outgoing payment</th>
+                    <th className="p-3">Gap</th>
+                    <th className="p-3">Amount difference</th>
+                    <th className="p-3">Evidence</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {comparisons.slice(page * 20, (page + 1) * 20).map((pair) => (
+                    <tr
+                      key={`${pair.incoming.key}:${pair.outgoing.key}`}
+                      className="border-t align-top"
+                    >
+                      <td className="p-3">
+                        <strong
+                          className="finance-amount"
+                          data-finance-tone="credit"
+                        >
+                          {
+                            formatLedgerAmount(
+                              pair.incoming.amount_minor,
+                              pair.incoming.currency
+                            ).text
+                          }{" "}
+                          {pair.incoming.currency}
+                        </strong>
+                        <p>{pair.incoming.ordering_date}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {(pair.incoming.from_name ??
+                            pair.incoming.counterparty_raw) ||
+                            "Name not identified"}
+                        </p>
+                      </td>
+                      <td className="p-3">
+                        <strong
+                          className="finance-amount"
+                          data-finance-tone="debit"
+                        >
+                          {
+                            formatLedgerAmount(
+                              pair.outgoing.amount_minor,
+                              pair.outgoing.currency
+                            ).text
+                          }{" "}
+                          {pair.outgoing.currency}
+                        </strong>
+                        <p>{pair.outgoing.ordering_date}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {(pair.outgoing.to_name ??
+                            pair.outgoing.counterparty_raw) ||
+                            "Name not identified"}
+                        </p>
+                      </td>
+                      <td className="p-3">
+                        {pair.days} days
+                        {pair.days === 0 && (
+                          <p className="text-xs">Same-day order unconfirmed</p>
+                        )}
+                      </td>
+                      <td className="p-3">
                         {
                           formatLedgerAmount(
-                            pair.incoming.amount_minor,
+                            String(pair.difference),
                             pair.incoming.currency
                           ).text
                         }{" "}
                         {pair.incoming.currency}
-                      </strong>
-                      <p>{pair.incoming.ordering_date}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {(pair.incoming.from_name ??
-                          pair.incoming.counterparty_raw) ||
-                          "Name not identified"}
-                      </p>
-                    </td>
-                    <td className="p-3">
-                      <strong
-                        className="finance-amount"
-                        data-finance-tone="debit"
-                      >
-                        {
-                          formatLedgerAmount(
-                            pair.outgoing.amount_minor,
-                            pair.outgoing.currency
-                          ).text
-                        }{" "}
-                        {pair.outgoing.currency}
-                      </strong>
-                      <p>{pair.outgoing.ordering_date}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {(pair.outgoing.to_name ??
-                          pair.outgoing.counterparty_raw) ||
-                          "Name not identified"}
-                      </p>
-                    </td>
-                    <td className="p-3">
-                      {pair.days} days
-                      {pair.days === 0 && (
-                        <p className="text-xs">Same-day order unconfirmed</p>
-                      )}
-                    </td>
-                    <td className="p-3">
-                      {
-                        formatLedgerAmount(
-                          String(pair.difference),
-                          pair.incoming.currency
-                        ).text
-                      }{" "}
-                      {pair.incoming.currency}
-                    </td>
-                    <td className="p-3">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() =>
-                          setOpen({
-                            ids: [pair.incoming.key, pair.outgoing.key],
-                            title: "Receipt and subsequent payment",
-                          })
-                        }
-                      >
-                        Compare payments
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          {!comparisons.length && (
-            <p className="rounded border p-4 text-sm">
-              No adjacent receipt/payment pairs meet these settings. Change the
-              gap or accounts, or select payments yourself in Transactions.
-            </p>
-          )}
-          {comparisons.length > 20 && (
-            <div className="flex items-center gap-3">
-              <Button
-                variant="outline"
-                disabled={!page}
-                onClick={() => setView({ ...view, page: page - 1 })}
-              >
-                Previous comparisons
-              </Button>
-              <span>
-                {page * 20 + 1} to{" "}
-                {Math.min(comparisons.length, (page + 1) * 20)} of{" "}
-                {comparisons.length}
-              </span>
-              <Button
-                variant="outline"
-                disabled={(page + 1) * 20 >= comparisons.length}
-                onClick={() => setView({ ...view, page: page + 1 })}
-              >
-                Next comparisons
-              </Button>
+                      </td>
+                      <td className="p-3">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() =>
+                            setOpen({
+                              ids: [pair.incoming.key, pair.outgoing.key],
+                              title: "Receipt and subsequent payment",
+                            })
+                          }
+                        >
+                          Compare payments
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-          )}
-        </section>
+            {!comparisons.length && (
+              <p className="rounded border p-4 text-sm">
+                No adjacent receipt/payment pairs meet these settings. Change
+                the gap or accounts, or select payments yourself in
+                Transactions.
+              </p>
+            )}
+            {comparisons.length > 20 && (
+              <div className="flex items-center gap-3">
+                <Button
+                  variant="outline"
+                  disabled={!page}
+                  onClick={() => setView({ ...view, page: page - 1 })}
+                >
+                  Previous comparisons
+                </Button>
+                <span>
+                  {page * 20 + 1} to{" "}
+                  {Math.min(comparisons.length, (page + 1) * 20)} of{" "}
+                  {comparisons.length}
+                </span>
+                <Button
+                  variant="outline"
+                  disabled={(page + 1) * 20 >= comparisons.length}
+                  onClick={() => setView({ ...view, page: page + 1 })}
+                >
+                  Next comparisons
+                </Button>
+              </div>
+            )}
+          </section>
+        </details>
       </InvestigationReadState>
       <section className="space-y-3">
         <h3 className="text-lg font-semibold">Continue the investigation</h3>
