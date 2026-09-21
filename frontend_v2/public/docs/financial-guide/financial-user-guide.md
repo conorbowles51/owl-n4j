@@ -885,7 +885,7 @@ To correct a report, select **Correct this custody report**. Loupe fills in that
 3. Use **Bank account** to narrow to one account. Its label includes the holder, bank and account identifier where recorded. Both selectors update the table and its totals immediately.
 4. Expand **Date range** to enter **From** and **To**, then select **Apply**. Both dates are included and your holder/account table choices stay selected.
 5. Select **Show all imported payments** to clear the account, date, holder, category, statement, batch and other payment filters together. Saved findings, payment edits and selected payments remain.
-6. Use **Previous ledger rows** and **Next ledger rows** above 50 matches. Totals and table downloads cover every matching payment, including other pages. Different currencies remain separate.
+6. Use **Rows per page**, **Previous ledger rows** and **Next ledger rows** to browse long lists. Totals and table downloads cover every matching payment, including other pages. Different currencies remain separate.
 
 Opening a specific statement, account or batch keeps that explicit selection visible. Use **Show all imported payments** to widen it to the whole case. Selecting the main **Transactions** tab again starts with the whole case; a browser refresh preserves the filters you are currently using.
 
@@ -902,7 +902,7 @@ An ordering date is the date Loupe uses to place a reading in sequence. For some
 3. Open **Filters** to enter a minimum or maximum amount. Choose a currency first. Both amount limits are included.
 4. Use **Money in or out** to show credits or debits. For a credit card, check the row's card explanation before interpreting these as cash movements.
 5. Use **Sort payments** to change the order. Amount sorting needs one currency.
-6. Use **Previous ledger rows** and **Next ledger rows** when there are more than 50 matches.
+6. Use **Previous ledger rows** and **Next ledger rows** when matches span several pages.
 7. Select **Clear payment filters** to remove the holder/account table choices, search, currency, category, amount and sort settings. An explicit account/date scope opened from another page remains; **Show all imported payments** clears that too.
 
 Your current holder, account, search, currency, amount limits, direction, sort order and table page survive a browser refresh. They are kept separately for each signed-in user and case. Choosing the main Transactions tab starts from all imported payments. **Clear payment filters** clears the saved table settings; it does not clear selected payments.
@@ -912,6 +912,30 @@ When you open imported transactions from a statement, **Statement: filename** ap
 **Download this table view** retains the selected statement and all matching payments, including matches on other table pages. The downloaded report names the statement filter. The accompanying account/date snapshot still includes the wider account history, which is described separately in the download.
 
 The total labelled **Payments matching your filters** covers all matching table pages. It changes when you search. It does not include unprocessed PDFs. Changing currency clears the previous amount range.
+
+### Analyse From, To and a group of names without leaving Transactions
+
+Open **From & To** above the table. Each side has a searchable list with transaction counts and amounts. Select several senders or recipients; Loupe includes any selected name on a side, and requires both sides when both have selections. The opposite list, summaries, charts and table update together. Clicking a From or To name in the table also applies that filter. Remove an individual filter chip or use **Clear analysis filters**.
+
+Open **Money flow** and select one or more **Perspective names**. **Inflow to group** has its recipient inside the selection; **Outflow from group** has its sender inside. **Internal entries** have both names selected and each entry is counted once. They are excluded from the external counterparty chart. These are groups of displayed names, including marked suggestions; selecting names does not merge people or prove that separate bank postings are one transfer. Existing From/To filters also apply.
+
+Each currency and bank/card type has separate figures. Select an inflow, outflow or internal card, or a counterparty bar, to show its transactions. The flow panel retains the comparison before that direction/counterparty selection; the totals above the table describe the narrowed list. Remove the visible chips to widen it again. Card entries describe charges and credits rather than bank cash movements.
+
+Open **Charts** for monthly volume and category distribution. Choose the chart's currency and account type. Chart amounts are never converted or added across currencies. Click a month or category to filter the table; multiple selected categories mean any of those categories. Charts retain the month/category comparison so you can change the selection. Entries without printed dates are available through the separate undated count.
+
+You can collapse any analysis panel. Its filter chips remain visible and continue to apply. Opening a statement source or refreshing the page preserves the analysis selections.
+
+### Read the summary and compact table
+
+Every summary row names its currency, account type, included accounts and transaction count. **Net movement** is bank money in minus money out. **Change in card debt** is card charges minus card credits. These are movements in the selected transactions, not opening or closing statement balances.
+
+Select a column heading to sort by date, description, sender, recipient, category or amount. Amount sorting requires one currency. **Rows per page** offers 25, 50, 100 or 250; every matching row still contributes to totals and downloads. Use **Details** beside a date for the full description, transaction reference, account, printed balance and note action. Click the description to open the original statement. Use **Edit names / category** to correct investigation labels in place.
+
+**Download CSV** contains every filtered transaction, with explicit currencies and a blank notes column. Source-backed downloads remain under **Download these transactions** and preserve the From/To, perspective and chart filters too.
+
+### Import transaction notes from CSV
+
+Select **Notes CSV**, then download the reference template. Keep the transaction references, enter notes in the **notes** column, and remove rows without notes. Upload the CSV and check its preview before selecting **Import matching notes**. Quoted commas and multiline notes are supported. Unmatched or ambiguous references are skipped; notes match transactions in the current account/date range. Use up to 2,000 notes and a 2 MB file. Existing notes and financial values are kept. Identical notes already imported through this tool are skipped on retry. Saved notes appear on their transactions and in Findings.
 
 ### Open a payment and its source
 

@@ -218,3 +218,15 @@ class LedgerSnapshotTests(LedgerSummaryTests):
         self.assertIn('source-reference',report)
         self.assertIn('&lt;script&gt;this payment&lt;/script&gt;',report)
         self.assertNotIn('<script>',report)
+
+    def test_long_analysis_export_uses_scoped_body_and_digest_instead_of_large_header(self):
+        import hashlib
+        from routers import financial_ledger as router
+        from services.financial.ledger_snapshot import LedgerExport
+        view = json.dumps({'perspective_names': ['name:Company ' + str(i) for i in range(500)]})
+        with patch.object(router, 'capture_ledger_export', return_value=LedgerExport(self.capture(), '{}')) as captured, patch.object(router, 'record_prepared_export', return_value=dict(export_id='test', entry_sha256='a'*64, sequence=1)):
+            response = router.download_filtered_ledger_export(router.LedgerTableExportRequest(table_view=view), case_id=self.case.id, account_id=None, start_date=None, end_date=None, db=self.db)
+            self.assertEqual(response.headers['x-loupe-table-view'], '')
+            self.assertEqual(response.headers['x-loupe-table-view-sha256'], hashlib.sha256(view.encode()).hexdigest())
+            self.assertEqual(captured.call_args.kwargs['case_id'], self.case.id)
+            self.assertEqual(len(captured.call_args.kwargs['table_view']['perspective_names']), 500)

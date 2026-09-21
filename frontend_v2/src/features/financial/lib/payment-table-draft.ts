@@ -1,3 +1,4 @@
+import { emptyAnalysisFilters } from "./transaction-analysis"
 import type { LedgerQueryParams } from "../hooks/use-ledger-transactions"
 import { useInvestigationScopeStore } from "../stores/investigation-scope"
 import {
@@ -6,6 +7,12 @@ import {
 } from "../stores/financial-drafts"
 
 export const emptyPaymentTableView = {
+  ...emptyAnalysisFilters,
+  pageSize: 50,
+  expandedRows: [] as string[],
+  chartsOpen: false,
+  partiesOpen: false,
+  flowOpen: false,
   accountId: "",
   accountHolder: "",
   search: "",

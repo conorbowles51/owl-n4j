@@ -91,3 +91,25 @@ class LedgerTableViewTests(TestCase):
                 capture_table_view(ledger, filters, batch_scope=invalid)
         with self.assertRaises(LedgerSummaryError):
             capture_table_view(ledger, {'import_batch_id': batch_id}, batch_scope=scope)
+
+    def test_connected_analysis_filters_and_internal_external_drills(self):
+        def row(key, **changes):
+            result = self.row(key, from_name='Our Co', to_name='Supplier', account_holder='Our Co', account_type='checking')
+            result['row'].update(changes)
+            return result
+        ledger = {'readings': [row('out', direction='debit'), row('in', from_name='Client', to_name='Our Co'), row('internal', direction='debit', to_name='Sister Co'), row('unrelated', from_name='Other'), row('card', account_type='credit_card'), row('eur', currency='EUR')]}
+        filters = {'from_names': ['name:Our Co', 'name:Other'], 'to_names': ['name:Supplier'], 'perspective_names': ['name:Our Co'], 'analysis_group': 'GBP:bank'}
+        self.assertEqual(capture_table_view(ledger, filters)['row_ids'], ['out'])
+        perspective = {'perspective_names': ['name:Our Co', 'name:Sister Co'], 'analysis_group': 'GBP:bank'}
+        self.assertEqual(capture_table_view(ledger, {**perspective, 'flow_kind': 'internal'})['row_ids'], ['internal'])
+        self.assertEqual(capture_table_view(ledger, {**perspective, 'flow_kind': 'outgoing', 'flow_party': 'name:Supplier'})['row_ids'], ['out'])
+        self.assertEqual(capture_table_view(ledger, {**perspective, 'flow_kind': 'incoming'})['row_ids'], ['in'])
+        self.assertEqual(capture_table_view(ledger, filters)['filters']['from_names'], filters['from_names'])
+        with self.assertRaises(LedgerSummaryError):
+            capture_table_view(ledger, {'flow_kind': 'internal'})
+
+    def test_chart_filters_and_name_order_preserve_missing_dates_and_explicitly_cleared_names(self):
+        ledger = {'readings': [self.row('a', category='Rent', to_name='Zebra'), self.row('b', category='Fees', to_name='Alpha'), self.row('c', ordering_date_context='statement_end_ordering_only', to_name='', counterparty_raw='Old name')]}
+        self.assertEqual(capture_table_view(ledger, {'analysis_categories': ['Rent', 'Fees'], 'analysis_period': '2026-01', 'sort': 'to-asc'})['row_ids'], ['b', 'a'])
+        self.assertEqual(capture_table_view(ledger, {'analysis_period': 'undated', 'to_names': ['unknown:to']})['row_ids'], ['c'])
+        self.assertEqual(capture_table_view(ledger, {'analysis_period': '2026-02'})['row_ids'], [])

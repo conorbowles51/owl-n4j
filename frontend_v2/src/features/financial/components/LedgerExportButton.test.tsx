@@ -216,3 +216,33 @@ it("captures the chosen marking and rejects a differently marked response", asyn
   )
   expect(makeUrl).not.toHaveBeenCalled()
 })
+
+it("posts large name selections and verifies the exact filter digest without relying on oversized headers", async () => {
+  const { sha256 } = await import("@noble/hashes/sha2.js")
+  const view = {
+    search: "",
+    currency: "USD",
+    direction: "",
+    proof: "",
+    sort: "ledger",
+    perspective_names: Array.from(
+      { length: 120 },
+      (_, i) => `name:Company ${i}`
+    ),
+  }
+  const digest = Array.from(
+    sha256(new TextEncoder().encode(JSON.stringify(view))),
+    (v) => v.toString(16).padStart(2, "0")
+  ).join("")
+  const { fetch, click } = mount({ "X-Loupe-Table-View-Sha256": digest }, view)
+  fireEvent.click(
+    screen.getByRole("button", { name: "Download this table view" })
+  )
+  await screen.findByText(/Download started/)
+  expect(fetch.mock.calls[0][1]?.method).toBe("POST")
+  expect(JSON.parse(fetch.mock.calls[0][1]?.body as string)).toEqual({
+    table_view: JSON.stringify(view),
+  })
+  expect(String(fetch.mock.calls[0][0])).not.toContain("table_view=")
+  expect(click).toHaveBeenCalledTimes(1)
+})

@@ -1,5 +1,6 @@
 import { openPaymentParty } from "../lib/payment-party-navigation"
-import { chartRatio } from "../lib/investigator-workspace"
+import { paymentGroup } from "../lib/investigator-workspace"
+import { amountGroupName, amountOf } from "../lib/transaction-analysis"
 import type { LedgerTransaction } from "../api"
 import { formatLedgerAmount } from "../lib/ledger-format"
 import { Button } from "@/components/ui/button"
@@ -16,76 +17,116 @@ export function PaymentTotals({
   rows: LedgerTransaction[]
   label: string
 }) {
-  const totals = new Map<string, { credit: bigint; debit: bigint }>()
+  const totals = new Map<
+    string,
+    {
+      credit: bigint
+      debit: bigint
+      count: number
+      accounts: Set<string>
+      labels: Set<string>
+    }
+  >()
   let unreadable = 0
   for (const row of rows) {
-    if (
-      !/^\d+$/.test(String(row.amount_minor)) ||
-      (typeof row.amount_minor === "number" &&
-        !Number.isSafeInteger(row.amount_minor)) ||
-      !["credit", "debit"].includes(row.direction)
-    ) {
+    const amount = amountOf(row)
+    if (amount === null) {
       unreadable++
       continue
     }
-    const group = `${row.currency}:${row.account_type === "credit_card" ? "card" : "bank"}`
-    const total = totals.get(group) ?? { credit: 0n, debit: 0n }
-    total[row.direction as "credit" | "debit"] += BigInt(row.amount_minor)
+    const group = paymentGroup(row)
+    const total = totals.get(group) ?? {
+      credit: 0n,
+      debit: 0n,
+      count: 0,
+      accounts: new Set<string>(),
+      labels: new Set<string>(),
+    }
+    total[row.direction as "credit" | "debit"] += amount
+    total.count++
+    total.accounts.add(row.account_id)
+    if (row.account_label) total.labels.add(row.account_label)
     totals.set(group, total)
   }
   return (
     <section
       aria-label={label}
-      className="space-y-2 rounded border bg-card p-3"
+      className="space-y-3 rounded border bg-card p-3"
     >
       <h3 className="text-sm font-medium">
-        {label} · {rows.length} transactions
+        {label} · {rows.length.toLocaleString()} transactions
       </h3>
       {[...totals].map(([group, total]) => {
         const [currency, kind] = group.split(":")
+        const card = kind === "card"
+        const net = card
+          ? total.debit - total.credit
+          : total.credit - total.debit
         return (
-          <dl
+          <section
             key={group}
-            className="finance-metrics grid grid-cols-3 gap-3 text-sm"
+            aria-label={amountGroupName(group)}
+            className="space-y-1"
           >
-            {[
-              [kind === "card" ? "Card credits" : "Money in", total.credit],
-              [kind === "card" ? "Card charges" : "Money out", total.debit],
-              ["Difference", total.credit - total.debit],
-            ].map(([title, amount], index) => (
-              <div
-                key={String(title)}
-                className="finance-metric"
-                data-finance-tone={["credit", "debit", "info"][index]}
+            <div className="flex flex-wrap items-center gap-x-3 text-xs">
+              <h4 className="font-semibold">{amountGroupName(group)}</h4>
+              <span className="text-muted-foreground">
+                {total.count.toLocaleString()} transactions ·{" "}
+                {total.accounts.size}{" "}
+                {total.accounts.size === 1 ? "account" : "accounts"}
+              </span>
+              <span
+                className="truncate text-muted-foreground"
+                title={[...total.labels].join("; ")}
               >
-                <dt className="text-muted-foreground">{String(title)}</dt>
-                <dd className="font-semibold">
-                  {formatLedgerAmount(String(amount), currency).text} {currency}
-                </dd>
-                {index < 2 && (
-                  <div
-                    role="img"
-                    aria-label={`${String(title)} compared with ${index === 0 ? "outgoing" : "incoming"} amounts`}
-                    className="mt-2 h-3 rounded bg-background/70"
-                  >
-                    <div
-                      className="h-full rounded"
-                      style={{
-                        width: `${chartRatio(BigInt(amount), total.credit > total.debit ? total.credit || 1n : total.debit || 1n) * 100}%`,
-                        backgroundColor: `var(--finance-${index === 0 ? "credit" : "debit"})`,
-                      }}
-                    />
+                {[...total.labels].join("; ")}
+              </span>
+            </div>
+            <dl className="grid grid-cols-3 gap-2 text-sm">
+              {[
+                [
+                  card ? "Card credits" : "Money in",
+                  total.credit,
+                  card ? "Reduce card debt" : "Received by these accounts",
+                ],
+                [
+                  card ? "Card charges" : "Money out",
+                  total.debit,
+                  card ? "Increase card debt" : "Paid from these accounts",
+                ],
+                [
+                  card ? "Change in card debt" : "Net movement",
+                  net,
+                  card ? "Charges minus credits" : "Money in minus money out",
+                ],
+              ].map(([title, amount, help], index) => (
+                <div
+                  key={String(title)}
+                  className="rounded-md border px-3 py-2"
+                  style={{
+                    backgroundColor: `color-mix(in srgb, var(--finance-${["credit", "debit", "info"][index]}) 8%, transparent)`,
+                  }}
+                >
+                  <dt className="text-xs text-muted-foreground">
+                    {String(title)}
+                  </dt>
+                  <dd className="font-semibold tabular-nums">
+                    {formatLedgerAmount(String(amount), currency).text}{" "}
+                    {currency}
+                  </dd>
+                  <div className="text-[11px] text-muted-foreground">
+                    {String(help)}
                   </div>
-                )}
-              </div>
-            ))}
-          </dl>
+                </div>
+              ))}
+            </dl>
+          </section>
         )
       })}
-      {rows.some((row) => row.account_type === "credit_card") && (
-        <p className="text-xs">
-          Card charges increase the amount owed. Card credits reduce it. They
-          are shown separately from bank payments.
+      {totals.size > 1 && (
+        <p className="text-xs text-muted-foreground">
+          Each row is a separate currency and account type. These amounts are
+          not added together.
         </p>
       )}
       {unreadable > 0 && (

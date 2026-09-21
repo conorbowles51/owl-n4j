@@ -1,3 +1,4 @@
+import { sha256 } from "@noble/hashes/sha2.js"
 import { sameTableView, type LedgerTableView } from "../lib/ledger-table-view"
 import { useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
@@ -62,7 +63,9 @@ function ScopedExport({
     try {
       const search = new URLSearchParams()
       search.set("privilege_marking", marking)
-      if (tableView) search.set("table_view", JSON.stringify(tableView))
+      const encodedView = tableView ? JSON.stringify(tableView) : ""
+      const useBody = encodeURIComponent(encodedView).length > 2000
+      if (tableView && !useBody) search.set("table_view", encodedView)
       if (params.accountId) search.set("account_id", params.accountId)
       if (params.startDate) search.set("start_date", params.startDate)
       if (params.endDate) search.set("end_date", params.endDate)
@@ -74,7 +77,14 @@ function ScopedExport({
       const response = await fetch(
         `${candidateUrl("ledger-export", caseId)}&${search}`,
         {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          method: useBody ? "POST" : "GET",
+          body: useBody
+            ? JSON.stringify({ table_view: encodedView })
+            : undefined,
+          headers: {
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            ...(useBody ? { "Content-Type": "application/json" } : {}),
+          },
           credentials: "include",
           signal: controller.signal,
         }
@@ -91,7 +101,15 @@ function ScopedExport({
         response.headers.get("X-Loupe-Case-Review-History") !==
           (includeCaseHistory ? "true" : "false") ||
         response.headers.get("X-Loupe-Privilege-Marking") !== marking ||
-        !sameTableView(response.headers.get("X-Loupe-Table-View"), tableView) ||
+        !(response.headers.get("X-Loupe-Table-View-Sha256")
+          ? response.headers.get("X-Loupe-Table-View-Sha256") ===
+            Array.from(sha256(new TextEncoder().encode(encodedView)), (v) =>
+              v.toString(16).padStart(2, "0")
+            ).join("")
+          : sameTableView(
+              response.headers.get("X-Loupe-Table-View"),
+              tableView
+            )) ||
         response.headers.get("content-type")?.split(";")[0] !==
           "application/zip" ||
         response.headers.get("X-Loupe-Case-Id") !== caseId ||

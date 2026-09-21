@@ -1,3 +1,15 @@
+import { TransactionNotesCsv } from "./TransactionNotesCsv"
+import { downloadCsv, transactionCsv } from "../lib/transaction-csv"
+import {
+  AnalysisFilterChips,
+  TransactionAnalysisPanels,
+} from "./TransactionAnalysisPanels"
+import { TransactionExplorerTable } from "./TransactionExplorerTable"
+import {
+  analysisTableView,
+  filterAnalysis,
+  sortAnalysisRows,
+} from "../lib/transaction-analysis"
 import { PaymentLabelsEditor } from "./PaymentLabelsEditor"
 import { TransactionAccountFilters } from "./TransactionAccountFilters"
 import { holderKey } from "../lib/account-holder"
@@ -15,10 +27,7 @@ import {
   emptyPaymentTableView as emptyView,
   paymentTableDraftName,
 } from "../lib/payment-table-draft"
-import {
-  InvestigationTransactionTable,
-  PaymentTotals,
-} from "./InvestigationTransactionTable"
+import { PaymentTotals } from "./InvestigationTransactionTable"
 import { SavePaymentSelection } from "./SavePaymentSelection"
 import { useFinancialDraft } from "../stores/financial-drafts"
 import { correctionMinor } from "../lib/correction-contract"
@@ -47,6 +56,8 @@ export function LedgerRowBrowser({
   const [category, setCategory] = usePaymentCategory(
     exportContext?.caseId ?? "none"
   )
+  const [notesCsv, setNotesCsv] = useState(false)
+  const [editNames, setEditNames] = useState(false)
   const [labelIds, setLabelIds] = useState<string[] | null>(null)
   const findings = useFinancialFindingIndex(
     investigation ? exportContext?.caseId : undefined
@@ -62,7 +73,7 @@ export function LedgerRowBrowser({
     paymentTableDraftName(exportContext?.params, investigation),
     emptyView
   )
-  const view = exportContext ? savedView : localView
+  const view = { ...emptyView, ...(exportContext ? savedView : localView) }
   const setView = exportContext ? setSavedView : setLocalView
   const {
     accountId = "",
@@ -75,6 +86,7 @@ export function LedgerRowBrowser({
     proof,
     sort,
     page,
+    pageSize,
     sourceDocumentId = "",
     sourceFilename = "",
     importBatchId = "",
@@ -105,7 +117,7 @@ export function LedgerRowBrowser({
     maxMinor === null ||
     (!!minMinor && !!maxMinor && BigInt(minMinor) > BigInt(maxMinor))
   const batchSources = new Set(importSourceIds)
-  const rows = transactions.filter(
+  const baseRows = transactions.filter(
     (row) =>
       !invalidRange &&
       (!accountId || row.account_id === accountId) &&
@@ -138,6 +150,8 @@ export function LedgerRowBrowser({
             typeof value === "string" && value.toLowerCase().includes(query)
         ))
   )
+  const rows = investigation ? filterAnalysis(baseRows, view) : baseRows
+  sortAnalysisRows(rows, sort)
   const amountAllowed = new Set(rows.map((row) => row.currency)).size <= 1
   if (sort === "newest")
     rows.sort((a, b) => b.ordering_date.localeCompare(a.ordering_date))
@@ -152,7 +166,10 @@ export function LedgerRowBrowser({
       const order = left < right ? -1 : left > right ? 1 : 0
       return sort === "amount-desc" ? -order : order
     })
-  const index = Math.min(page, Math.max(0, Math.ceil(rows.length / 50) - 1))
+  const index = Math.min(
+    page,
+    Math.max(0, Math.ceil(rows.length / pageSize) - 1)
+  )
   return (
     <section aria-label="Browse ledger rows" className="space-y-3">
       {investigation && (
@@ -218,6 +235,13 @@ export function LedgerRowBrowser({
           </Button>
         </div>
       )}
+      {notesCsv && exportContext && (
+        <TransactionNotesCsv
+          caseId={exportContext.caseId}
+          rows={transactions}
+          onClose={() => setNotesCsv(false)}
+        />
+      )}
       <div className="flex flex-wrap items-end gap-3">
         <label>
           Search payments
@@ -232,6 +256,32 @@ export function LedgerRowBrowser({
             placeholder="Description, name or reference"
           />
         </label>
+        {investigation && (
+          <>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!rows.length}
+              onClick={() =>
+                downloadCsv(
+                  transactionCsv(rows),
+                  "loupe-filtered-transactions.csv"
+                )
+              }
+            >
+              Download CSV ({rows.length.toLocaleString()})
+            </Button>
+            {canEdit && exportContext && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setNotesCsv(true)}
+              >
+                Notes CSV
+              </Button>
+            )}
+          </>
+        )}
         <details className="rounded border p-2 text-sm">
           <summary className="cursor-pointer">
             Filters
@@ -277,6 +327,14 @@ export function LedgerRowBrowser({
                 <option value="ledger">Recorded date order</option>
                 <option value="oldest">Oldest first</option>
                 <option value="newest">Newest first</option>
+                <option value="description-asc">Description A–Z</option>
+                <option value="description-desc">Description Z–A</option>
+                <option value="from-asc">Sender A–Z</option>
+                <option value="from-desc">Sender Z–A</option>
+                <option value="to-asc">Recipient A–Z</option>
+                <option value="to-desc">Recipient Z–A</option>
+                <option value="category-asc">Category A–Z</option>
+                <option value="category-desc">Category Z–A</option>
                 <option value="amount-desc" disabled={!amountAllowed}>
                   Largest amount first (one currency)
                 </option>
@@ -443,7 +501,24 @@ export function LedgerRowBrowser({
       )}
       {investigation && exportContext && (
         <>
+          <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+            <strong>
+              {rows.length.toLocaleString()} of{" "}
+              {transactions.length.toLocaleString()} imported transactions
+            </strong>
+            <span className="text-xs text-muted-foreground">
+              Totals and analysis include every matching transaction, across all
+              pages.
+            </span>
+          </div>
+          <AnalysisFilterChips filters={view} onChange={changeView} />
           <PaymentTotals rows={rows} label="Payments matching your filters" />
+          <TransactionAnalysisPanels
+            rows={baseRows}
+            filters={view}
+            panels={view}
+            onChange={changeView}
+          />
           <div className="space-y-3">
             <div className="flex flex-wrap items-center gap-2">
               <span>
@@ -484,7 +559,10 @@ export function LedgerRowBrowser({
                     <>
                       <Button
                         variant="outline"
-                        onClick={() => setLabelIds(selection)}
+                        onClick={() => {
+                          setEditNames(false)
+                          setLabelIds(selection)
+                        }}
                       >
                         Categorize selected
                       </Button>
@@ -591,6 +669,7 @@ export function LedgerRowBrowser({
           key={labelIds.join(",")}
           caseId={exportContext.caseId}
           ids={labelIds}
+          names={editNames}
           onClose={() => setLabelIds(null)}
         />
       )}
@@ -608,20 +687,48 @@ export function LedgerRowBrowser({
           account/date range.
         </p>
       ) : investigation && exportContext ? (
-        <InvestigationTransactionTable
-          compact
-          showAccount={new Set(rows.map((row) => row.account_id)).size > 1}
+        <TransactionExplorerTable
+          amountAllowed={amountAllowed}
           findings={findings.data}
-          rows={rows.slice(index * 50, index * 50 + 50)}
+          rows={rows.slice(index * pageSize, (index + 1) * pageSize)}
           selected={selection}
+          expanded={view.expandedRows}
+          sort={sort}
+          onSort={(sort) => changeView({ sort })}
+          onExpand={(expandedRows) =>
+            setView((previous) => ({ ...previous, expandedRows }))
+          }
           onToggle={toggle}
           onOpen={actions.onSource}
           onNote={actions.onNote}
-          onCategorize={canEdit ? (row) => setLabelIds([row.key]) : undefined}
+          onEdit={
+            canEdit
+              ? (row) => {
+                  setEditNames(true)
+                  setLabelIds([row.key])
+                }
+              : undefined
+          }
+          onCategory={
+            canEdit
+              ? (row) => {
+                  setEditNames(false)
+                  setLabelIds([row.key])
+                }
+              : undefined
+          }
+          onParty={(side, key) => {
+            const field = side === "from" ? "fromNames" : "toNames"
+            changeView({
+              [field]: view[field].includes(key)
+                ? view[field].filter((n) => n !== key)
+                : [...view[field], key],
+            })
+          }}
         />
       ) : (
         <LedgerTable
-          transactions={rows.slice(index * 50, index * 50 + 50)}
+          transactions={rows.slice(index * pageSize, (index + 1) * pageSize)}
           {...actions}
         />
       )}
@@ -634,6 +741,7 @@ export function LedgerRowBrowser({
             caseId={exportContext.caseId}
             params={exportContext.params}
             tableView={{
+              ...analysisTableView(view),
               search,
               ...(accountId ? { account_id: accountId } : {}),
               ...(accountHolder ? { account_holder: accountHolder } : {}),
@@ -658,28 +766,46 @@ export function LedgerRowBrowser({
           />
         </details>
       )}
-      {rows.length > 50 && (
-        <div className="flex items-center gap-3">
-          <Button
-            variant="outline"
-            disabled={!index}
-            onClick={() => changeView({ page: index - 1 })}
+      <div className="flex flex-wrap items-center gap-3 text-sm">
+        <label>
+          Rows per page{" "}
+          <select
+            aria-label="Rows per page"
+            className="rounded border bg-background p-1"
+            value={pageSize}
+            onChange={(e) => changeView({ pageSize: Number(e.target.value) })}
           >
-            Previous ledger rows
-          </Button>
-          <span>
-            {index * 50 + 1}–{Math.min((index + 1) * 50, rows.length)} of{" "}
-            {rows.length} matching rows
-          </span>
-          <Button
-            variant="outline"
-            disabled={(index + 1) * 50 >= rows.length}
-            onClick={() => changeView({ page: index + 1 })}
-          >
-            Next ledger rows
-          </Button>
-        </div>
-      )}
+            {[25, 50, 100, 250].map((n) => (
+              <option key={n} value={n}>
+                {n}
+              </option>
+            ))}
+          </select>
+        </label>
+        {rows.length > pageSize && (
+          <div className="flex items-center gap-3">
+            <Button
+              variant="outline"
+              disabled={!index}
+              onClick={() => changeView({ page: index - 1 })}
+            >
+              Previous ledger rows
+            </Button>
+            <span>
+              {index * pageSize + 1}–
+              {Math.min((index + 1) * pageSize, rows.length)} of {rows.length}{" "}
+              matching rows
+            </span>
+            <Button
+              variant="outline"
+              disabled={(index + 1) * pageSize >= rows.length}
+              onClick={() => changeView({ page: index + 1 })}
+            >
+              Next ledger rows
+            </Button>
+          </div>
+        )}
+      </div>
     </section>
   )
 }

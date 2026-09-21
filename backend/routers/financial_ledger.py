@@ -199,8 +199,11 @@ def download_ledger_export(case_id: UUID = Query(...), account_id: Optional[UUID
     try:
         view_options = {}
         view_header = ''
+        view_digest = ''
         if isinstance(table_view, str):
             import json
+            import hashlib
+            view_digest = hashlib.sha256(table_view.encode('utf-8')).hexdigest()
             from pydantic import ValidationError
             from services.financial.ledger_table_view import LedgerTableView
             try:
@@ -230,7 +233,8 @@ def download_ledger_export(case_id: UUID = Query(...), account_id: Optional[UUID
             "X-Loupe-Case-Review-History": "true" if include_case_financial_history else "false",
             "X-Loupe-PDF-Report": "true" if include_pdf else "false",
             "X-Loupe-Privilege-Marking": privilege_marking,
-            "X-Loupe-Table-View": view_header,
+            "X-Loupe-Table-View": view_header if len(view_header) <= 3500 else "",
+            "X-Loupe-Table-View-Sha256": view_digest,
             "Cache-Control": "no-store", "X-Loupe-Source-Files": "true" if include_source_files else "false", "X-Content-Type-Options": "nosniff",
             "X-Loupe-Case-Id": str(case_id), "X-Loupe-Account-Id": str(account_id) if account_id else "",
             "X-Loupe-Start-Date": start_date.isoformat() if start_date else "",
@@ -240,6 +244,25 @@ def download_ledger_export(case_id: UUID = Query(...), account_id: Optional[UUID
     except Exception:
         logger.exception("Ledger export failed for case %s",case_id)
         raise HTTPException(status_code=500,detail="Ledger export could not be prepared.")
+
+
+class LedgerTableExportRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid', strict=True)
+    table_view: Annotated[str, Field(min_length=2, max_length=2 * 1024 * 1024)]
+
+
+@router.post('/ledger-export')
+def download_filtered_ledger_export(body: LedgerTableExportRequest, case_id: UUID = Query(...),
+        account_id: Optional[UUID] = Query(None), start_date: Optional[date] = Query(None),
+        end_date: Optional[date] = Query(None), db: Session = Depends(get_db),
+        include_source_files: bool = False, include_pdf: bool = False,
+        privilege_marking: Literal['unmarked', 'confidential', 'privileged_confidential'] = 'unmarked',
+        include_case_financial_history: bool = False, current_user=Depends(get_current_db_user)):
+    # Large multi-select filters belong in the request body, not a URL or response header.
+    return download_ledger_export(case_id=case_id, account_id=account_id, start_date=start_date,
+        end_date=end_date, db=db, include_source_files=include_source_files, include_pdf=include_pdf,
+        table_view=body.table_view, privilege_marking=privilege_marking,
+        include_case_financial_history=include_case_financial_history, current_user=current_user)
 
 
 class TraceSupportDownload(BaseModel):

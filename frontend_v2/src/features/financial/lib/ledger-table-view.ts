@@ -1,4 +1,12 @@
 export interface LedgerTableView {
+  from_names?: string[]
+  to_names?: string[]
+  perspective_names?: string[]
+  analysis_group?: string
+  analysis_period?: string
+  analysis_categories?: string[]
+  flow_party?: string
+  flow_kind?: string
   category?: string
   account_id?: string
   account_holder?: string
@@ -19,7 +27,9 @@ export function sameTableView(header: string | null, view?: LedgerTableView) {
     const parsed = JSON.parse(header ?? "null")
     return (
       parsed !== null &&
-      Object.entries(view).every(([key, value]) => parsed[key] === value)
+      Object.entries(view).every(
+        ([key, value]) => JSON.stringify(parsed[key]) === JSON.stringify(value)
+      )
     )
   } catch {
     return false
