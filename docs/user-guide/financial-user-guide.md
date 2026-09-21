@@ -56,21 +56,28 @@ In **Transactions**, open **Charts** for monthly volume and category distributio
 
 Categories help you group payments for your investigation. For example, use **Travel**, **Repayments** or a name specific to your case. Your category and names are saved with the transaction. The original description, amounts and PDF are kept.
 
+### Add a reusable category
+
+1. Open **Transactions** and select **Manage categories** beside the search controls. The same control is available in People & businesses profiles.
+2. Enter **Category name**, choose a colour, then select **Add Category**.
+3. Wait for the saved message. The new category is available across all cases, including before any transactions use it. Creating a category does not assign transactions to it.
+4. Search the category library to find an existing category. Matching names are reused rather than creating duplicates.
+
 ### Assign a category to several payments
 
 1. Open **Transactions**. Search or filter until you can see the payments you want.
 2. Tick the payments, or select **Select all [number] matching payments**. This selects all matches, including later pages.
 3. Select **Categorize selected**.
-4. In **Category**, choose a suggested name or type your own.
+4. Use **Choose category** to select an existing category, or type a new name in **Category**. A new name is added to the shared library when you save.
 5. Check the number of selected transactions, then select **Save changes**. If some selected payments are hidden by your filters, they are included too. Use **Review selected payments** first if you need to check the selection.
-6. The category now appears in the transaction table. Refreshing or returning later keeps it.
+6. The category now appears in the transaction table and updates the charts and category filters. Refreshing or returning later keeps it. This replaces automatic suggestions and previously assigned categories for every selected transaction. Choose **Uncategorized** to remove the category.
 
 ### Edit a single payment's names or category
 
-1. Select its description in the transaction table to open **Transaction details**.
-2. Select **Edit names and category**.
+1. Click a transaction's category in the table to open **Change transaction category**. You can change automatically suggested categories as well as your own assignments.
+2. To edit names too, select its description to open **Transaction details**, then select **Edit names and category**.
 3. Enter **From**, **To** or **Category**, then select **Save changes**. Only fields you change are updated.
-4. Leave Category empty to remove it. Clearing an edited name restores the name available from the original reading and account details. **Not recorded** means no name is available; it does not identify the other party.
+4. Choose **Uncategorized**, or leave Category empty, to remove it. An explicit clear is kept; an automatic suggestion does not overwrite your choice. **Not recorded** means no name is available; it does not identify the other party.
 5. To correct a date or amount, select **Correct a value** instead. Compare the value with the PDF and follow that correction form.
 
 For a bank payment, **From** identifies the sender and **To** identifies the recipient. For a credit card, these names follow the charge or credit recorded on the card account. Card charges and credits are labelled separately from money moving into or out of a bank account.

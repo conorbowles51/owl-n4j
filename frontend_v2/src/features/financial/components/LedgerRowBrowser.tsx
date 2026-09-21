@@ -11,6 +11,7 @@ import {
   sortAnalysisRows,
 } from "../lib/transaction-analysis"
 import { PaymentLabelsEditor } from "./PaymentLabelsEditor"
+import { PaymentCategoryManager } from "./PaymentCategoryManager"
 import { TransactionAccountFilters } from "./TransactionAccountFilters"
 import { holderKey } from "../lib/account-holder"
 import {
@@ -61,6 +62,7 @@ export function LedgerRowBrowser({
     exportContext?.caseId ?? "none"
   )
   const [notesCsv, setNotesCsv] = useState(false)
+  const [manageCategories, setManageCategories] = useState(false)
   const [editNames, setEditNames] = useState(false)
   const [labelIds, setLabelIds] = useState<string[] | null>(null)
   const findings = useFinancialFindingIndex(
@@ -250,6 +252,11 @@ export function LedgerRowBrowser({
         />
       )}
       <div className="flex flex-wrap items-end gap-3">
+        {investigation && exportContext && canEdit && (
+          <Button variant="outline" onClick={() => setManageCategories(true)}>
+            Manage categories
+          </Button>
+        )}
         <label>
           Search payments
           <input
@@ -678,6 +685,12 @@ export function LedgerRowBrowser({
           ids={labelIds}
           names={editNames}
           onClose={() => setLabelIds(null)}
+        />
+      )}
+      {manageCategories && exportContext && (
+        <PaymentCategoryManager
+          caseId={exportContext.caseId}
+          onClose={() => setManageCategories(false)}
         />
       )}
       {investigation && findings.isError && (

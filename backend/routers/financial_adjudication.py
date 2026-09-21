@@ -489,6 +489,20 @@ def append_source_custody(file_id: UUID, body: CustodyRequest, case_id: UUID = Q
 
 
 from services.financial.payment_labels import PaymentLabelsRequest, PaymentLabelsError, update_payment_labels
+from services.financial.category_library import CreatePaymentCategoryRequest, ensure_category
+
+
+@router.post('/ledger/category-library')
+def create_payment_category(body: CreatePaymentCategoryRequest, case_id: UUID = Query(...),
+                            db: Session = Depends(get_db), current_user=Depends(get_current_db_user)):
+    try:
+        category = ensure_category(db, name=body.name, color=body.color, actor=actor_from_user(current_user))
+        db.commit()
+        return dict(case_id=str(case_id), category=category)
+    except Exception:
+        db.rollback()
+        logger.exception('Category could not be created')
+        raise HTTPException(status_code=500, detail='The category could not be saved. Your draft is retained.')
 
 
 @router.put("/ledger/payment-labels")

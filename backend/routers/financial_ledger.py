@@ -1338,3 +1338,12 @@ def get_ledger_categories(case_id: UUID = Query(...), db: Session = Depends(get_
         if value:
             values.add(value)
     return dict(case_id=str(case_id), categories=sorted(values))
+
+
+@router.get('/ledger/category-library')
+def get_payment_category_library(case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    from services.financial.category_library import category_library
+    categories = {item['name'].casefold(): item for item in category_library(db)}
+    for name in get_ledger_categories(case_id=case_id, db=db)['categories']:
+        categories.setdefault(name.casefold(), dict(name=name, color='#8060a9', scope='case'))
+    return dict(case_id=str(case_id), categories=sorted(categories.values(), key=lambda item: item['name'].casefold()))

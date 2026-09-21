@@ -22,6 +22,7 @@ class PaymentLabelsRequest(BaseModel):
     model_config = ConfigDict(extra='forbid')
     transactions: list[LabelTarget] = Field(min_length=1)
     category: str | None = Field(default=None, max_length=120)
+    add_to_library: bool = False
     from_name: str | None = Field(default=None, max_length=512)
     to_name: str | None = Field(default=None, max_length=512)
     counterparty_name: str | None = Field(default=None, max_length=512)
@@ -38,7 +39,7 @@ class PaymentLabelsRequest(BaseModel):
 
 
 def update_payment_labels(session, *, case_id, request, actor):
-    changes = request.model_dump(exclude_unset=True, exclude={'transactions'})
+    changes = request.model_dump(exclude_unset=True, exclude={'transactions', 'add_to_library'})
     if not changes or any(value is None for value in changes.values()):
         raise PaymentLabelsError('Choose a category or enter a name. Use an empty value to clear it.', 422)
     ids = [target.id for target in request.transactions]
@@ -63,6 +64,11 @@ def update_payment_labels(session, *, case_id, request, actor):
                 raise PaymentLabelsError('A selected payment has been replaced or excluded. Reload the selection.')
             if current.get('version', 0) != versions[row.id]:
                 raise PaymentLabelsError('Someone edited a selected payment. Reload the selection before saving.')
+        if request.add_to_library:
+            if not changes.get('category'):
+                raise PaymentLabelsError('Enter a category to add to the library.', 422)
+            from services.financial.category_library import ensure_category
+            changes['category'] = ensure_category(session, name=changes['category'], actor=actor)['name']
         for row in rows:
             metadata = dict(row.metadata_ or {})
             current = dict(metadata.get('investigation_labels', {}))

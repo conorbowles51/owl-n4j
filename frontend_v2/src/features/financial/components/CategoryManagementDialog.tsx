@@ -33,6 +33,10 @@ interface CategoryManagementDialogProps {
   onOpenChange: (open: boolean) => void
   categories: FinancialCategory[]
   onCreateCategory: (name: string, color: string) => Promise<unknown>
+  sharedPayments?: boolean
+  loading?: boolean
+  loadError?: string
+  onReload?: () => void
 }
 
 function CategoryManagementForm({
@@ -41,7 +45,15 @@ function CategoryManagementForm({
   onOpenChange,
   categories,
   onCreateCategory,
+  sharedPayments = false,
+  loading = false,
+  loadError,
+  onReload,
 }: CategoryManagementDialogProps) {
+  const [search, setSearch] = useState("")
+  const visible = categories.filter((category) =>
+    category.name.toLocaleLowerCase().includes(search.toLocaleLowerCase())
+  )
   const [draft, setDraft, clearDraft] = useFinancialDraft(
     caseId,
     "evidence-category-create",
@@ -58,7 +70,15 @@ function CategoryManagementForm({
   )
 
   const handleCreate = async () => {
-    if (locked.current || saving || !newName.trim() || duplicate) return
+    if (
+      locked.current ||
+      saving ||
+      loading ||
+      loadError ||
+      !newName.trim() ||
+      duplicate
+    )
+      return
     locked.current = true
     setSaving(true)
     setError("")
@@ -66,7 +86,7 @@ function CategoryManagementForm({
     try {
       await onCreateCategory(newName.trim(), newColor)
       setSaved(
-        `Category "${newName.trim()}" saved. Choose it from a record's Category menu to apply it.`
+        `Category "${newName.trim()}" saved. ${sharedPayments ? "It is available across all cases. Choose it on a transaction or apply it to a selection." : "Choose it from a record's Category menu to apply it."}`
       )
       clearDraft()
     } catch (cause) {
@@ -93,15 +113,31 @@ function CategoryManagementForm({
             Manage Categories
           </DialogTitle>
           <DialogDescription>
-            Use categories to organise other financial records. Create a
-            category here, then choose it from a record's Category menu.
+            {sharedPayments
+              ? "Create categories for use across all cases. Assign them by clicking a transaction’s category, or select transactions to categorize them together."
+              : "Use categories to organise other financial records. Create a category here, then choose it from a record's Category menu."}
           </DialogDescription>
         </DialogHeader>
 
         {/* Existing categories */}
-        <ScrollArea className="max-h-48">
+        <Input
+          aria-label="Search categories"
+          placeholder="Search categories"
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+        />
+        {loading && <p role="status">Loading categories…</p>}
+        {loadError && (
+          <p role="alert">
+            {loadError}{" "}
+            <button className="underline" onClick={onReload}>
+              Reload categories
+            </button>
+          </p>
+        )}
+        <ScrollArea className="h-48">
           <div className="space-y-1">
-            {categories.map((cat) => (
+            {visible.map((cat) => (
               <div
                 key={cat.name}
                 className="flex items-center gap-2 rounded-md border border-border px-3 py-2"
@@ -113,9 +149,11 @@ function CategoryManagementForm({
                 <span className="flex-1 text-sm">{cat.name}</span>
               </div>
             ))}
-            {categories.length === 0 && (
+            {!loading && !loadError && visible.length === 0 && (
               <p className="py-4 text-center text-xs text-muted-foreground">
-                No categories yet
+                {search
+                  ? "No categories match your search"
+                  : "No categories yet"}
               </p>
             )}
           </div>
@@ -194,7 +232,9 @@ function CategoryManagementForm({
             variant="primary"
             size="sm"
             onClick={handleCreate}
-            disabled={!newName.trim() || duplicate || saving}
+            disabled={
+              !newName.trim() || duplicate || saving || loading || !!loadError
+            }
           >
             <Plus className="size-3.5" />
             {saving ? "Saving..." : "Add Category"}

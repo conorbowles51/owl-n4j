@@ -109,6 +109,7 @@ class PermissionResolverTests(unittest.TestCase):
             {
                 "/api/financial/candidates/{candidate_id}/review": ["POST"],
                 "/api/financial/ledger/payment-labels": ["PUT"],
+                "/api/financial/ledger/category-library": ["POST"],
                 "/api/financial/sources/{file_id}/custody": ["POST"],
                 "/api/financial/candidate-mappings": ["POST"],
                 "/api/financial/candidate-sources/{evidence_file_id}/model-nominations": ["POST"],

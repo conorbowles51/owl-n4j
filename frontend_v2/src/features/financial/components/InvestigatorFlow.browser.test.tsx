@@ -151,7 +151,10 @@ it("opens the original, chooses related payments, saves their finding and return
       return citation(outgoing) as never
     if (url.includes("/ledger?"))
       return { case_id: "case", total: 2, transactions: rows } as never
-    if (url.includes("/ledger-categories"))
+    if (
+      url.includes("/ledger-categories") ||
+      url.includes("/ledger/category-library")
+    )
       return { case_id: "case", categories: [] } as never
     if (url.endsWith("/entries") && options?.method === "POST") {
       saved = options.body as Record<string, unknown>

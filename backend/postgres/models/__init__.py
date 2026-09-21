@@ -1,3 +1,4 @@
+from postgres.models.financial_category import FinancialCategory
 from postgres.models.financial_custody import FinancialCustodyEvent
 from postgres.models.financial_audit import FinancialAuditEvent
 # Postgres/models/__init__.py
@@ -93,6 +94,7 @@ from postgres.models.workspace import (
 )
 
 __all__ = [
+    "FinancialCategory",
     "FinancialAuditEvent",
     "FinancialStatementReviewDraft", "FinancialCandidateMapping", "FinancialExtractionCandidate", "FinancialCandidateReview", "FinancialCandidateFinalization", "FinancialCandidateTransaction",
     "User", "Case", "CaseMembership", "RejectedMergePair",

@@ -14,10 +14,21 @@ vi.mock("../lib/selected-payment-source", () => ({
 }))
 beforeEach(() => {
   vi.resetAllMocks()
-  vi.mocked(fetchAPI).mockResolvedValue({
-    case_id: "case",
-    categories: ["Travel"],
-  })
+  vi.mocked(fetchAPI).mockImplementation(async (_url, options) =>
+    options?.method === "PUT"
+      ? {
+          case_id: "case",
+          updated: (options.body as { transactions: unknown[] }).transactions
+            .length,
+        }
+      : {
+          case_id: "case",
+          categories: [
+            { name: "Travel", color: "#8060a9" },
+            { name: "Shopping", color: "#8060a9" },
+          ],
+        }
+  )
   vi.mocked(readSelectedPayments).mockImplementation(
     async (_caseId, ids) =>
       ids.map((id) => ({
@@ -68,6 +79,7 @@ it("loads selections across transport pages and saves one atomic bulk category e
       body: {
         transactions: ids.map((id) => ({ id, version: 3 })),
         category: "Investigation travel",
+        add_to_library: true,
       },
     }
   )
