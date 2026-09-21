@@ -319,7 +319,24 @@ def render_ledger_report(snapshot):
             filename = next((f['original_filename'] for f in (document.get('processing_provenance') or {}).get('evidence_registrations', [])
                              if f['id'] == source.get('evidence_file_id')), 'Selected statement')
             parts += ['<p>Statement filter: ' + text(filename) + '</p>']
+        analysis_labels = []
+        def name_label(value):
+            return value[5:] if value.startswith('name:') else 'Unidentified senders' if value == 'unknown:from' else 'Unidentified recipients' if value == 'unknown:to' else value
+        for key, label in (('from_names', 'From (any selected sender)'), ('to_names', 'To (any selected recipient)'), ('perspective_names', 'Perspective group'), ('analysis_categories', 'Chart categories')):
+            if view['filters'].get(key):
+                analysis_labels.append([label, '; '.join(name_label(value) for value in view['filters'][key])])
+        if view['filters'].get('analysis_group'):
+            currency, kind = view['filters']['analysis_group'].split(':')
+            analysis_labels.append(['Currency and account type', currency + (' · Credit cards' if kind == 'card' else ' · Bank accounts')])
+        if view['filters'].get('analysis_period'):
+            analysis_labels.append(['Chart month', 'No printed date' if view['filters']['analysis_period'] == 'undated' else view['filters']['analysis_period']])
+        if view['filters'].get('flow_kind'):
+            analysis_labels.append(['Flow selection', {'incoming': 'Inflow to group', 'outgoing': 'Outflow from group', 'internal': 'Internal entries within group'}[view['filters']['flow_kind']]])
+        if view['filters'].get('flow_party'):
+            analysis_labels.append(['External counterparty', name_label(view['filters']['flow_party'])])
         parts += ['<h2>Exported table view</h2>', '<p>' + text(view['limitation']) + '</p>',
+            ('<h3>Active analysis filters</h3>' + table(['Filter', 'Selection'], analysis_labels) + '<p>Selections on the same side are alternatives; From, To, perspective and chart filters apply together. Card entries represent charges and credits. Internal entries have both names in the selected group and are counted once per ledger row.</p>') if analysis_labels else '',
+
             table(['Search', 'Category', 'Currency', 'Direction', 'Proof class', 'Display order', 'Matching rows'], [[
                 view['filters']['search'] or 'None', view['filters'].get('category') or 'All', view['filters']['currency'] or 'All',
                 view['filters']['direction'] or 'Both', view['filters']['proof'] or 'All',

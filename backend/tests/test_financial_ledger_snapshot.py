@@ -230,3 +230,16 @@ class LedgerSnapshotTests(LedgerSummaryTests):
             self.assertEqual(response.headers['x-loupe-table-view-sha256'], hashlib.sha256(view.encode()).hexdigest())
             self.assertEqual(captured.call_args.kwargs['case_id'], self.case.id)
             self.assertEqual(len(captured.call_args.kwargs['table_view']['perspective_names']), 500)
+
+    def test_analysis_filters_are_visible_and_escaped_in_the_readable_report(self):
+        from services.financial.ledger_snapshot import LedgerSnapshot, render_ledger_report
+        from services.financial.ledger_table_view import capture_table_view
+        self.add()
+        snapshot = self.capture()
+        document = json.loads(snapshot.content)
+        document['table_view'] = capture_table_view(document['ledger'], {'from_names': ['name:<Client & Co>'], 'to_names': ['name:Supplier'], 'perspective_names': ['name:<Client & Co>'], 'analysis_group': 'USD:bank', 'analysis_categories': ['Rent'], 'analysis_period': '2026-01', 'flow_kind': 'outgoing', 'flow_party': 'name:Supplier'})
+        content = json.dumps(document)
+        report = render_ledger_report(LedgerSnapshot(content, hashlib.sha256(content.encode()).hexdigest(), len(content.encode())))
+        for expected in ('Active analysis filters', '&lt;Client &amp; Co&gt;', 'Perspective group', 'USD · Bank accounts', 'Chart month', '2026-01', 'Outflow from group', 'External counterparty', 'Rent'):
+            self.assertIn(expected, report)
+        self.assertNotIn('<Client & Co>', report)
