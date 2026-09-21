@@ -26,6 +26,8 @@ def _ancestors(session, file):
             EvidenceFile.id == identifier, EvidenceFile.case_id == file.case_id))
         if previous is None:
             break
+        if (previous.metadata_ or {}).get('financial_import_removal'):
+            break  # A deliberate fresh start must not recover withdrawn drafts.
         yield previous
         parent = (previous.metadata_ or {}).get('statement_parent_evidence_id')
 

@@ -1,5 +1,5 @@
 """Resolve case folders and reuse or prepare existing PDFs for financial review."""
-from uuid import NAMESPACE_URL, uuid5
+from uuid import NAMESPACE_URL, UUID, uuid5
 from sqlalchemy import select, or_, exists
 from postgres.models.evidence import EvidenceFile, EvidenceFolder, EvidenceDocumentText, EvidenceTableGeometry
 from services.financial.pdf_candidates import PdfMappingError
@@ -42,21 +42,28 @@ async def prepare_existing_financial_file(session, *, case_id, evidence_file_id,
         raise PdfMappingError('File not found in this case.', 404)
     if not file.original_filename.lower().endswith('.pdf'):
         raise PdfMappingError('Financial statement review accepts PDFs. The file remains in Evidence.', 422)
-    # An explicit send restores a removed file, using the revision the user saw.
-    set_financial_file_visibility(session, case_id=case_id, evidence_file_id=file.id,
-        removed=False, expected_revision=expected_revision, actor=actor)
+    reset = (file.metadata_ or {}).get('financial_import_removal')
     target = file
-    if file.status == 'processed' and has_financial_reading(session, file):
-        return dict(case_id=str(case_id), source_file_id=str(file.id), evidence_file_id=str(file.id), outcome='ready')
-    if file.status == 'processed':
-        # Preserve completed general evidence processing. A stable request ID
-        # reuses this financial reading version after a failed/uncertain request.
-        target = create_statement_version(session, case_id=case_id, evidence_file_id=file.id,
-            request_id=uuid5(NAMESPACE_URL, f'loupe-financial-intake:{case_id}:{file.id}'),
-            actor=actor, resolve_path=resolve_path)
-        require_financial_file(target)
-        if target.status == 'processed' and has_financial_reading(session, target):
-            return dict(case_id=str(case_id), source_file_id=str(file.id), evidence_file_id=str(target.id), outcome='ready')
+    if reset:
+        if financial_file_visibility(file)['financial_visibility_revision'] != expected_revision:
+            raise PdfMappingError('The removal changed. Refresh files before preparing them again.', 409)
+        target = create_statement_version(session, case_id=case_id,
+            evidence_file_id=UUID(reset['restart_file_id']),
+            request_id=uuid5(NAMESPACE_URL, f"loupe-financial-reset:{case_id}:{reset['id']}:{file.sha256}"),
+            reset_revision=reset['id'], actor=actor, resolve_path=resolve_path)
+    else:
+        # Explicitly sending a hidden, unimported file restores its file-list choice.
+        set_financial_file_visibility(session, case_id=case_id, evidence_file_id=file.id,
+            removed=False, expected_revision=expected_revision, actor=actor)
+        if file.status == 'processed' and has_financial_reading(session, file):
+            return dict(case_id=str(case_id), source_file_id=str(file.id), evidence_file_id=str(file.id), outcome='ready')
+        if file.status == 'processed':
+            target = create_statement_version(session, case_id=case_id, evidence_file_id=file.id,
+                request_id=uuid5(NAMESPACE_URL, f'loupe-financial-intake:{case_id}:{file.id}'),
+                actor=actor, resolve_path=resolve_path)
+    require_financial_file(target)
+    if target.status == 'processed' and has_financial_reading(session, target):
+        return dict(case_id=str(case_id), source_file_id=str(file.id), evidence_file_id=str(target.id), outcome='ready')
     if target.status == 'processing':
         return dict(case_id=str(case_id), source_file_id=str(file.id), evidence_file_id=str(target.id), outcome='processing')
     result = await process_files(session, case_id=case_id, file_ids=[target.id], preparation_mode='pdf_review',

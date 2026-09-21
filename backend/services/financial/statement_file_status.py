@@ -38,6 +38,8 @@ def statement_file_status(session, *, case_id):
     ).all()) if periods else {}
     files = {}
     for period, source, account in periods:
+        if (source.metadata_ or {}).get('financial_import_removal'):
+            continue
         key = str(source.evidence_file_id)
         item = files.setdefault(key, dict(evidence_file_id=key, current_transactions=0, periods=[]))
         item['current_transactions'] += int(counts.get(period.id, 0))

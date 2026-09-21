@@ -25,6 +25,8 @@ def batch_for(session, case_id, batch_id, lock=False):
     batch = session.scalar(query.with_for_update() if lock else query)
     if batch is None:
         raise PdfMappingError('Financial processing batch not found in this case.', 404)
+    if batch.status == 'removed':
+        raise PdfMappingError('This batch was removed. Return to statement files to start a fresh batch.', 409)
     return batch
 
 
@@ -32,6 +34,8 @@ def create_batch(session, *, case_id, request_id, file_ids, folder_ids, actor):
     selection = resolve_financial_selection(session, case_id=case_id, file_ids=file_ids, folder_ids=folder_ids)
     existing = session.get(Batch, request_id)
     if existing:
+        if existing.status == 'removed':
+            raise PdfMappingError('This batch was removed. Start a new preparation run.', 409)
         if existing.case_id != case_id or existing.created_by != actor.user_id:
             raise PdfMappingError('This request belongs to another batch.', 409)
         if {f['source_id'] for f in existing.files} != {f['id'] for f in selection['files']}:
@@ -212,6 +216,7 @@ def ready_revision(items):
 
 def checked_batch_items(session, case_id, items):
     """Project current coverage concerns without making a GET write changes."""
+    items = [item for item in items if item.status != "removed"]
     from services.financial.statement_import_overlap import coverage_review, summary_request, requires_decision, comparison_sources
     pending = session.execute(select(Item, EvidenceFile).join(Batch, Batch.id == Item.batch_id)
         .join(EvidenceFile, EvidenceFile.id == Item.file_id).where(Batch.case_id == case_id,
@@ -420,7 +425,7 @@ def save_review(session, *, case_id, batch_id, item_id, request, expected_review
         session.execute(select(EvidenceFile).where(EvidenceFile.id == file_id,
             EvidenceFile.case_id == case_id).with_for_update().execution_options(populate_existing=True)).all()
     item=session.scalar(select(Item).where(Item.id==item_id,Item.batch_id==batch.id).with_for_update())
-    if item is None: raise PdfMappingError('Statement not found in this batch.',404)
+    if item is None or item.status == 'removed': raise PdfMappingError('Statement not found in this batch.',404)
     if _digest(item.review_request or {}) != expected_review_revision:
         raise PdfMappingError('Another user saved changes to this review. Reopen it from the batch before saving.',409)
     if item.status in ('pending_import','imported'): raise PdfMappingError('This statement is already being imported or was imported.',409)
@@ -519,7 +524,7 @@ def leave_unimported(session, *, case_id, batch_id, item_id, action, reason, exp
     if item is None:
         raise PdfMappingError('Statement not found in this batch.', 404)
     revision = _digest(dict(status=item.status, request=item.review_request, decision=item.summary.get('import_decision')))
-    if revision != expected_revision or item.status in ('imported','pending_import','assigned'):
+    if revision != expected_revision or item.status in ('imported','pending_import','assigned','removed'):
         raise PdfMappingError('The statement changed. Refresh the batch before changing its import choice.', 409)
     if (action == 'restore' and item.status != 'skipped') or (action == 'skip' and item.status == 'skipped'):
         raise PdfMappingError('The import choice has already changed. Refresh the batch.', 409)

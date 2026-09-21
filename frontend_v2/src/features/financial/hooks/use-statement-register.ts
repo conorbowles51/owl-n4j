@@ -8,6 +8,7 @@ export const statementFile = z.object({
   status: z.string(),
   created_at: z.string().optional(),
   financial_removed: z.boolean().default(false),
+  financial_imports_removed: z.boolean().optional(),
   financial_visibility_revision: z.string().default("initial"),
 })
 export type StatementFile = z.infer<typeof statementFile>

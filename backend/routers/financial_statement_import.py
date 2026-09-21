@@ -416,11 +416,41 @@ def create_financial_batch(body: CreateFinancialBatch, case_id: UUID = Query(...
         db.rollback();raise HTTPException(status_code=exc.status_code,detail=str(exc)) from exc
 
 
+class FinancialRemovalSelection(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    batch_ids: list[UUID] = Field(default_factory=list, max_length=1000)
+    file_ids: list[UUID] = Field(default_factory=list, max_length=10000)
+
+
+class ConfirmFinancialRemoval(FinancialRemovalSelection):
+    expected_revision: str = Field(pattern=r'^[a-f0-9]{64}$')
+
+
+@router.post('/removals/preview', dependencies=[Depends(case_access_dependency(lambda request,payload: ('case','edit')))])
+def preview_financial_removal(body: FinancialRemovalSelection, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    from services.financial.import_removal import preview_removal
+    try:
+        return preview_removal(db, case_id=case_id, **body.model_dump())
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+@router.post('/removals/confirm', dependencies=[Depends(case_access_dependency(lambda request,payload: ('case','edit')))])
+def confirm_financial_removal(body: ConfirmFinancialRemoval, case_id: UUID = Query(...),
+        user=Depends(get_current_db_user), db: Session = Depends(get_db)):
+    from services.financial.import_removal import remove_imports
+    try:
+        return remove_imports(db, case_id=case_id, actor=actor_from_user(user), **body.model_dump())
+    except PdfMappingError as exc:
+        db.rollback()
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
 @router.get('/batches/list')
 def list_financial_batches(case_id: UUID = Query(...), db: Session = Depends(get_db)):
     from sqlalchemy import select
     from postgres.models.financial_import_batches import FinancialImportBatch
-    batches=db.scalars(select(FinancialImportBatch).where(FinancialImportBatch.case_id==case_id).order_by(FinancialImportBatch.created_at.desc()).limit(100))
+    batches=db.scalars(select(FinancialImportBatch).where(FinancialImportBatch.case_id==case_id, FinancialImportBatch.status != 'removed').order_by(FinancialImportBatch.created_at.desc()).limit(100))
     return dict(case_id=str(case_id),batches=[dict(id=str(b.id),status=b.status,created_at=b.created_at.isoformat(),file_count=len(b.files),
         created_by=(b.actor or {}).get('name', ''), filenames=[f['filename'] for f in b.files[:3]],
         checked_files=sum(f['status'] == 'checked' for f in b.files),

@@ -9,7 +9,7 @@ from services.financial.pdf_candidates import PdfMappingError
 
 
 def create_statement_version(session, *, case_id, evidence_file_id, request_id, actor, resolve_path,
-                             reading_mode='automatic'):
+                             reading_mode='automatic', reset_revision=None):
     if reading_mode not in ('automatic', 'page_images'):
         raise PdfMappingError('Choose a supported statement reading method.', 422)
     from postgres.models.case import Case
@@ -19,7 +19,11 @@ def create_statement_version(session, *, case_id, evidence_file_id, request_id, 
     if original is None:
         raise PdfMappingError('Statement not found in this case.', 404)
     from services.financial.file_visibility import require_financial_file
-    require_financial_file(original)
+    if reset_revision is not None:
+        if (original.metadata_ or {}).get('financial_import_removal', {}).get('id') != reset_revision:
+            raise PdfMappingError('The removal changed. Refresh files before processing again.', 409)
+    else:
+        require_financial_file(original)
     if not original.original_filename.lower().endswith('.pdf'):
         raise PdfMappingError('Statement reprocessing requires a PDF.', 422)
     existing = session.scalar(select(EvidenceFile).where(EvidenceFile.case_id == case_id,

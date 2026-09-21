@@ -1,3 +1,7 @@
+import {
+  FinancialRemovalAction,
+  ProcessRemovedFile,
+} from "./FinancialRemovalAction"
 import { useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { z } from "zod"
@@ -24,7 +28,6 @@ const answer = z.object({
 export function FinancialFileAction({
   caseId,
   file,
-  imported = false,
 }: {
   caseId: string
   file: StatementFile
@@ -39,6 +42,16 @@ export function FinancialFileAction({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
   if (!canEdit) return null
+  if (!file.financial_removed)
+    return (
+      <FinancialRemovalAction
+        caseId={caseId}
+        fileIds={[file.id]}
+        label={`Remove from Financial: ${file.original_filename}`}
+      />
+    )
+  if (file.financial_imports_removed)
+    return <ProcessRemovedFile caseId={caseId} fileId={file.id} />
   const change = async (removed: boolean) => {
     setBusy(true)
     setError("")
@@ -108,12 +121,7 @@ export function FinancialFileAction({
       <Button
         variant="outline"
         size="sm"
-        disabled={busy || imported}
-        title={
-          imported
-            ? "This file has imported financial records. Open its transactions or statement review to correct them."
-            : undefined
-        }
+        disabled={busy}
         aria-label={`${file.financial_removed ? "Restore to Financial" : "Remove from Financial"}: ${file.original_filename}`}
         onClick={() =>
           file.financial_removed ? void change(false) : setOpen(true)

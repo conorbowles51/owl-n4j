@@ -6,6 +6,7 @@ import {
   within,
 } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { MemoryRouter } from "react-router-dom"
 import { beforeEach, expect, it, vi } from "vitest"
 import { StatementFilesPanel } from "./StatementFilesPanel"
 import { fetchAPI } from "@/lib/api-client"
@@ -26,6 +27,7 @@ let file = {
   case_id: "case",
   original_filename: "letter.pdf",
   status: "processed",
+  financial_imports_removed: false,
   financial_removed: false,
   financial_visibility_revision: "initial",
 }
@@ -36,7 +38,9 @@ function mount() {
         new QueryClient({ defaultOptions: { queries: { retry: false } } })
       }
     >
-      <StatementFilesPanel caseId="case" />
+      <MemoryRouter>
+        <StatementFilesPanel caseId="case" />
+      </MemoryRouter>
     </QueryClientProvider>
   )
 }
@@ -46,11 +50,35 @@ beforeEach(() => {
   useStatementWorkspace.setState({ selections: {}, reviewChoices: {} })
   file = {
     ...file,
+    financial_imports_removed: false,
     financial_removed: false,
     financial_visibility_revision: "initial",
   }
   vi.mocked(fetchAPI).mockReset()
   vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
+    const preview = {
+      case_id: "case",
+      revision: "a".repeat(64),
+      file_count: 1,
+      reading_count: 1,
+      transaction_count: 17,
+      incomplete_count: 0,
+      statement_count: 1,
+      batch_count: 1,
+      archived_batch_count: 1,
+      updated_batch_count: 0,
+      can_remove: true,
+      files: [{ id: "file", filename: "letter.pdf" }],
+    }
+    if (url.includes("/removals/preview")) return preview
+    if (url.includes("/removals/confirm")) {
+      file = {
+        ...file,
+        financial_removed: true,
+        financial_imports_removed: true,
+      }
+      return { ...preview, removed: true, restart_file_ids: ["file"] }
+    }
     if (url.includes("/visibility?")) {
       const body = options?.body as { removed: boolean }
       file = {
@@ -65,7 +93,7 @@ beforeEach(() => {
     return { files: [file] } as never
   })
 })
-it("removes a file for the case, clears its open review, and restores it from Removed files", async () => {
+it("removes imported records only after a preview, retains the PDF and offers fresh processing", async () => {
   useStatementWorkspace.getState().select("anonymous:case", "file")
   mount()
   fireEvent.click(
@@ -74,46 +102,41 @@ it("removes a file for the case, clears its open review, and restores it from Re
     })
   )
   const dialog = screen.getByRole("dialog")
-  expect(dialog).toHaveTextContent("The original stays in Evidence")
-  fireEvent.click(
-    within(dialog).getByRole("button", { name: "Remove from Financial" })
+  await within(dialog).findByText(/17 transactions/)
+  expect(dialog).toHaveTextContent(
+    "Original PDFs, case notes, findings and cited import history are retained"
   )
+  expect(
+    vi.mocked(fetchAPI).mock.calls.some(([url]) => url.includes("/confirm"))
+  ).toBe(false)
+  fireEvent.click(
+    within(dialog).getByRole("button", { name: "Remove imports" })
+  )
+  await waitFor(() => expect(file.financial_removed).toBe(true))
   await waitFor(() =>
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+    expect(
+      useStatementWorkspace.getState().selections["anonymous:case"]?.fileId
+    ).toBeNull()
   )
-  expect(
-    useStatementWorkspace.getState().selections["anonymous:case"]?.fileId
-  ).toBeNull()
   fireEvent.click(screen.getByRole("button", { name: /Removed files/ }))
-  fireEvent.click(
-    await screen.findByRole("button", {
-      name: "Restore to Financial: letter.pdf",
-    })
-  )
-  await waitFor(() => expect(file.financial_removed).toBe(false))
-  fireEvent.click(
-    screen.getByRole("button", { name: "Back to financial files" })
-  )
   expect(
-    await screen.findByRole("button", {
-      name: "Remove from Financial: letter.pdf",
-    })
+    await screen.findByRole("button", { name: "Process PDF afresh" })
   ).toBeEnabled()
-  const writes = vi
-    .mocked(fetchAPI)
-    .mock.calls.filter(([url]) => url.includes("/visibility?"))
-  expect(writes.map(([, options]) => options?.body)).toEqual([
-    { removed: true, expected_revision: "initial" },
-    { removed: false, expected_revision: "removed" },
-  ])
+  expect(
+    vi
+      .mocked(fetchAPI)
+      .mock.calls.find(([url]) => url.includes("/removals/confirm"))?.[1]?.body
+  ).toEqual({
+    batch_ids: [],
+    file_ids: ["file"],
+    expected_revision: "a".repeat(64),
+  })
 })
-it("keeps the file visible when removal is rejected because it has imported records", async () => {
+it("keeps the imports visible when the preview has become stale", async () => {
   const base = vi.mocked(fetchAPI).getMockImplementation()!
   vi.mocked(fetchAPI).mockImplementation((url, options) =>
-    url.includes("/visibility?")
-      ? Promise.reject(
-          Error("This file already has imported financial records.")
-        )
+    url.includes("/removals/confirm")
+      ? Promise.reject(Error("These imports changed since the preview."))
       : base(url, options)
   )
   mount()
@@ -122,13 +145,13 @@ it("keeps the file visible when removal is rejected because it has imported reco
       name: "Remove from Financial: letter.pdf",
     })
   )
-  fireEvent.click(
-    within(screen.getByRole("dialog")).getByRole("button", {
-      name: "Remove from Financial",
-    })
-  )
+  const confirm = await screen.findByRole("button", {
+    name: "Remove imports",
+  })
+  await waitFor(() => expect(confirm).toBeEnabled())
+  fireEvent.click(confirm)
   expect(await screen.findByRole("alert")).toHaveTextContent(
-    "already has imported financial records"
+    "changed since the preview"
   )
   expect(file.financial_removed).toBe(false)
 })

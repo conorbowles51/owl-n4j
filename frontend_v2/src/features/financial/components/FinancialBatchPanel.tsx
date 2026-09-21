@@ -1,3 +1,4 @@
+import { FinancialRemovalAction } from "./FinancialRemovalAction"
 import { BatchStatementImportChoice } from "./BatchStatementImportChoice"
 import { BatchCurrencyEditor } from "./BatchCurrencyEditor"
 import { coverageReview } from "../hooks/use-statement-coverage-review"
@@ -112,6 +113,7 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
   const user = useAuthStore((state) => state.user)
   const [error, setError] = useState("")
   const [visibleBatches, setVisibleBatches] = useState(8)
+  const [selectedBatches, setSelectedBatches] = useState<string[]>([])
   const prefix = `/api/financial/statement-import/batches`
   const query = useQuery({
     queryKey: ["financial-batch", caseId, batchId, offset, onlyProblems],
@@ -237,12 +239,58 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
           Each batch is a separate preparation run. Open a batch to continue its
           saved review. The most recent run is first.
         </p>
+        {canEdit && (
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!batches.data?.length}
+              onClick={() =>
+                setSelectedBatches(
+                  batches.data?.slice(0, visibleBatches).map((b) => b.id) ?? []
+                )
+              }
+            >
+              Select all shown batches
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={!selectedBatches.length}
+              onClick={() => setSelectedBatches([])}
+            >
+              Clear batch selection
+            </Button>
+            <FinancialRemovalAction
+              caseId={caseId}
+              batchIds={selectedBatches.filter((id) =>
+                batches.data?.some((b) => b.id === id)
+              )}
+              label={`Remove ${selectedBatches.length} selected batches`}
+              onRemoved={() => setSelectedBatches([])}
+            />
+          </div>
+        )}
         {batches.isError && <p role="alert">{batches.error.message}</p>}
         {batches.data?.slice(0, visibleBatches).map((batch, index) => (
           <div
             key={batch.id}
             className="flex flex-wrap items-center justify-between gap-3 rounded border p-3"
           >
+            {canEdit && (
+              <input
+                type="checkbox"
+                aria-label={`Select batch ${batch.id.slice(0, 8)}`}
+                checked={selectedBatches.includes(batch.id)}
+                onChange={(event) =>
+                  setSelectedBatches((ids) =>
+                    event.target.checked
+                      ? [...ids, batch.id]
+                      : ids.filter((id) => id !== batch.id)
+                  )
+                }
+              />
+            )}
             <div className="min-w-0 space-y-1">
               <p className="font-medium">
                 {batch.file_count} files ·{" "}
@@ -345,6 +393,11 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
           </p>
         </div>
         <div className="flex gap-2">
+          <FinancialRemovalAction
+            caseId={caseId}
+            batchIds={[batchId]}
+            label="Remove this batch / imports"
+          />
           {importedCount > 0 && (
             <Button
               disabled={openImported.isPending}

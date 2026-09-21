@@ -11,7 +11,8 @@ from services.financial.pdf_candidates import PdfMappingError
 
 def financial_file_visibility(file):
     value = (getattr(file, "metadata_", None) or {}).get('financial_file_visibility') or {}
-    return dict(financial_removed=value.get('removed') is True,
+    return dict(financial_imports_removed=bool((getattr(file, 'metadata_', None) or {}).get('financial_import_removal')),
+                financial_removed=value.get('removed') is True,
                 financial_visibility_revision=value.get('revision', 'initial'))
 
 
@@ -30,6 +31,8 @@ def set_financial_file_visibility(session, *, case_id, evidence_file_id, removed
         raise PdfMappingError('File not found in this case.', 404)
     if not file.original_filename.lower().endswith('.pdf'):
         raise PdfMappingError('This action is for PDFs in the financial file list.', 422)
+    if not removed and (file.metadata_ or {}).get('financial_import_removal'):
+        raise PdfMappingError('These imports were removed. Use Process PDF afresh to start without the old readings or reviews.', 409)
     current = financial_file_visibility(file)
     if current['financial_removed'] == removed:
         return dict(case_id=str(case_id), evidence_file_id=str(file.id), **current)
@@ -55,4 +58,4 @@ def set_financial_file_visibility(session, *, case_id, evidence_file_id, removed
         extra=dict(action='financial_file_visibility', removed=removed, revision=revision, actor=actor_data)))
     session.commit()
     return dict(case_id=str(case_id), evidence_file_id=str(file.id),
-        financial_removed=removed, financial_visibility_revision=revision)
+        **financial_file_visibility(file))

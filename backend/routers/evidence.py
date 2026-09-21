@@ -652,6 +652,7 @@ class EvidenceRecord(BaseModel):
     status: str
     financial_removed: bool = False
     financial_visibility_revision: str = "initial"
+    financial_imports_removed: bool = False
     processing_stale: bool = False
     is_duplicate: bool = False
     duplicate_of: Optional[str] = None

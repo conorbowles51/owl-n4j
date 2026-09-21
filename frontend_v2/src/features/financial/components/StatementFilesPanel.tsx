@@ -1,3 +1,4 @@
+import { FinancialRemovalAction } from "./FinancialRemovalAction"
 import { useStatementRegister } from "../hooks/use-statement-register"
 import { FinancialFileAction } from "./FinancialFileAction"
 import { EvidenceFinancialPicker } from "./EvidenceFinancialPicker"
@@ -292,7 +293,7 @@ export function StatementFilesPanel({
       )}
       {files.isPending && <p role="status">Loading statement files…</p>}
       {files.isError && <p role="alert">{files.error.message}</p>}
-      {register && !removed && canEdit && canUpload && (
+      {register && !removed && canEdit && (
         <section
           aria-label="Prepare selected statement files"
           className="rounded border bg-card p-3 space-y-2"
@@ -326,13 +327,20 @@ export function StatementFilesPanel({
               Clear selection
             </Button>
             <Button
-              disabled={preparing || !selectedIds.length || files.isError}
+              disabled={
+                !canUpload || preparing || !selectedIds.length || files.isError
+              }
               onClick={() => void prepareSelected()}
             >
               {preparing
                 ? "Preparing statements…"
                 : `Prepare statements from ${selectedIds.length} ${selectedIds.length === 1 ? "file" : "files"}`}
             </Button>
+            <FinancialRemovalAction
+              caseId={caseId}
+              fileIds={selectedIds}
+              label={`Remove ${selectedIds.length} selected files / imports`}
+            />
           </div>
           <p className="text-sm text-muted-foreground">
             All recognised accounts and periods go into one batch. Import them
@@ -347,7 +355,7 @@ export function StatementFilesPanel({
         )
         return (
           <div key={file.id} className="space-y-1">
-            {register && !removed && canEdit && canUpload && (
+            {register && !removed && canEdit && (
               <label className="flex items-center gap-2 text-sm">
                 <input
                   type="checkbox"
@@ -362,7 +370,7 @@ export function StatementFilesPanel({
                     )
                   }
                 />
-                Include in bulk preparation
+                Select for preparation or removal
               </label>
             )}
             <button

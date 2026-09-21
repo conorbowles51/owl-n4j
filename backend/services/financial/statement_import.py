@@ -107,6 +107,8 @@ def _existing_statement(session, case_id, file, statement_id, addresses=(), row_
     row_addresses = {tuple(value) for value in row_addresses} if row_addresses is not None else None
     matches = []
     for item in candidates:
+        if (item.metadata_ or {}).get('financial_import_removal'):
+            continue
         if excluded_duplicates:
             retained = session.get(FinancialSourceDocument, item.superseded_by_id)
             replacement_request = (retained.metadata_ or {}).get('statement_import_request', {}) if retained else {}
