@@ -104,7 +104,11 @@ def statement_source(session, *, case_id, period_id):
             or re.fullmatch(r'[a-f0-9]{64}', document.sha256_at_ingestion) is None
             or evidence.sha256 != document.sha256_at_ingestion):
         raise LedgerSourceError('The evidence file recorded digest differs from the statement source.')
+    statement_id = (document.metadata_ or {}).get('statement_import_statement_id')
+    if not isinstance(statement_id, str) or re.fullmatch(r'[a-f0-9]{64}', statement_id) is None:
+        statement_id = None
     return dict(case_id=str(case_id), period_id=str(period.id), source_document_id=str(document.id),
+        statement_id=statement_id,
         evidence_file_id=str(evidence.id), filename=evidence.original_filename,
         can_edit_import_details=document.document_type == 'statement_review' and document.status == 'admitted',
         recorded_digest_matches=True, file_bytes_verified=False,

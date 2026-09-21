@@ -417,8 +417,22 @@ describe("FinancialPage", () => {
         name: "Statement files",
       })
     )
+    expect(screen.getByText("unfinished-statement.pdf")).not.toBeVisible()
+    fireEvent.click(screen.getByRole("button", { name: "Remove imports…" }))
+    expect(
+      screen.getByRole("heading", { name: "Remove imports or start again" })
+    ).toBeVisible()
+    expect(screen.getByText("unfinished-statement.pdf")).not.toBeVisible()
+    fireEvent.click(
+      within(
+        screen.getByRole("group", { name: "Statement workspace" })
+      ).getByRole("button", { name: "Statement files" })
+    )
+    fireEvent.click(
+      screen.getByRole("button", { name: "Continue last statement review" })
+    )
     expect(screen.getByLabelText("PDF document")).toBe(input)
-    expect(screen.getByText("unfinished-statement.pdf")).toBeInTheDocument()
+    expect(screen.getByText("unfinished-statement.pdf")).toBeVisible()
     selectTab("Transactions")
     fireEvent.click(
       screen.getByRole("button", { name: "Other financial records" })

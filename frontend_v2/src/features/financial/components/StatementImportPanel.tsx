@@ -46,7 +46,6 @@ import {
   type DateRole,
 } from "../lib/statement-date-fields"
 import { useStatementWorkspace } from "../stores/statement-workspace"
-import { useUIStore } from "@/stores/ui.store"
 
 const cell = z.object({
   column_index: z.number(),
@@ -331,23 +330,17 @@ export function StatementImportPanel({
       {!batchReview && (
         <div className="flex flex-wrap justify-between items-center gap-3">
           <div>
-            <h2 className="font-semibold">Bank statements</h2>
+            <h2 className="font-semibold">Statement review</h2>
             <p className="text-sm text-muted-foreground">
               {canEdit
-                ? "Add a statement, check any problems, then import its transactions."
+                ? "Check a statement against its PDF. Imported payments are available in Transactions; account and balance corrections can be saved here."
                 : "Open a statement to compare its extracted values with the original PDF."}
             </p>
           </div>
           <div className="flex gap-2">
-            <Button
-              variant="outline"
-              onClick={() => useUIStore.getState().expandGraphPanelTo("detail")}
-            >
-              Statement files
-            </Button>
-            <Button onClick={() => setOpen(!open)}>
+            <Button variant="outline" onClick={() => setOpen(!open)}>
               {open
-                ? "Close statement review"
+                ? "All files & imports"
                 : canEdit
                   ? "Import a statement"
                   : "Open statements"}
@@ -356,7 +349,7 @@ export function StatementImportPanel({
         </div>
       )}
       <div hidden={!open && !batchReview}>
-        {open && !batchReview && (
+        {!batchReview && (
           <div className="space-y-3">
             {canUpload && (
               <Button variant="outline" onClick={() => setUpload((v) => !v)}>
@@ -382,7 +375,7 @@ export function StatementImportPanel({
               </p>
             )}
             <label className="block text-sm">
-              Or open an uploaded statement
+              PDF being reviewed
               <select
                 aria-label="Uploaded statement"
                 className="block border rounded bg-background p-2 w-full"
@@ -568,6 +561,47 @@ function StatementReview({
     )
   return (
     <div className="space-y-3">
+      <section
+        aria-label="Current statement context"
+        className="rounded-lg border bg-muted/20 p-4 space-y-2"
+      >
+        <p className="text-sm font-medium">
+          {query.data.statement_choices.length > 1
+            ? `This PDF contains ${query.data.statement_choices.length} statement periods. You are viewing one period below.`
+            : "You are viewing one statement."}
+        </p>
+        <h3 className="text-lg font-semibold">
+          {[
+            query.data.current_import?.details?.holder ??
+              query.data.metadata.holder,
+            query.data.current_import?.details?.account_number ??
+              query.data.metadata.account_number,
+          ]
+            .filter(Boolean)
+            .join(" · ") || "Account details need review"}
+        </h3>
+        <p className="text-sm">
+          {query.data.current_import?.details?.period_start ||
+            query.data.metadata.period_start ||
+            "Start date not recorded"}
+          {" to "}
+          {query.data.current_import?.details?.period_end ||
+            query.data.metadata.period_end ||
+            "End date not recorded"}
+          {" · "}
+          {query.data.current_import?.currency || query.data.currency}
+        </p>
+        <p className="text-sm">
+          {query.data.current_import?.excluded_as_duplicate
+            ? "This copy is excluded. Its payments are not counted in Transactions."
+            : query.data.current_import?.transaction_count
+              ? `Already imported: ${query.data.current_import.transaction_count} payments from this period are in Transactions. You do not need to import this period again.`
+              : query.data.current_import &&
+                  !query.data.current_import.incomplete_count
+                ? "This period’s account and balances are saved. It has no imported payments."
+                : "This period has no usable imported payments yet. Review its readings below, then save the payments to Transactions."}
+        </p>
+      </section>
       <StatementCurrencyControl
         currency={query.data.current_import?.currency || query.data.currency}
         detectedCurrency={query.data.detected_currency}
@@ -631,7 +665,7 @@ function StatementReview({
         query.data.current_import.transaction_count > 0 &&
         !query.data.current_import.excluded_as_duplicate && (
           <Button
-            variant="outline"
+            variant="primary"
             onClick={() =>
               onImported({
                 ...query.data.current_import!,
@@ -643,7 +677,7 @@ function StatementReview({
             }
           >
             View {query.data.current_import.transaction_count} payments in
-            Transactions
+            Transactions for this period
           </Button>
         )}
       {query.data.current_import?.evidence_file_id === fileId &&
@@ -668,9 +702,14 @@ function StatementReview({
                 !!query.data.current_import.incomplete_count &&
                 " The PDF is retained, but those readings are not payments in Transactions."}
             </p>
-            {canEdit && (query.data.current_import.refresh_available || query.data.current_import.refresh_review_required) && (
-              <RefreshStoredReading data={query.data} onImported={onImported} />
-            )}
+            {canEdit &&
+              (query.data.current_import.refresh_available ||
+                query.data.current_import.refresh_review_required) && (
+                <RefreshStoredReading
+                  data={query.data}
+                  onImported={onImported}
+                />
+              )}
             {canEdit && (
               <ImportedStatementDetails
                 caseId={caseId}
@@ -713,7 +752,9 @@ function StatementReview({
         )}
       <div>
         {query.data.current_import?.evidence_file_id === fileId && (
-          <h3 className="font-semibold">Current reading of the PDF</h3>
+          <h3 className="font-semibold">
+            Compare this period with the original PDF
+          </h3>
         )}
         <EditableStatement
           key={`${query.data.revision}:${batchReview?.draftRevision ?? "individual"}:${query.data.current_import?.revision ?? "unimported"}:${JSON.stringify(query.data.current_import?.details)}`}
@@ -752,7 +793,12 @@ function RefreshStoredReading({
               expected_revision: data.current_import!.revision,
               expected_reading_revision: data.revision,
               currency: data.currency,
-              ...(comparisonRequired && compared ? { compared_review_revision: data.saved_review?.review_revision } : {}),
+              ...(comparisonRequired && compared
+                ? {
+                    compared_review_revision:
+                      data.saved_review?.review_revision,
+                  }
+                : {}),
             },
           }
         )
@@ -780,13 +826,25 @@ function RefreshStoredReading({
       </p>
       {comparisonRequired && priorDraft && (
         <>
-          <SavedReviewConflict draft={priorDraft} checked={compared} onChecked={setCompared}
-            formatAmount={(value) => `${displayAmount(value, exponent(data.currency))} ${data.currency}`} />
-          <p className="text-sm">Saving uses the current PDF reading instead of the earlier unfinished draft.
-            Your saved account details and balances are kept; the earlier draft remains in history.</p>
+          <SavedReviewConflict
+            draft={priorDraft}
+            checked={compared}
+            onChecked={setCompared}
+            formatAmount={(value) =>
+              `${displayAmount(value, exponent(data.currency))} ${data.currency}`
+            }
+          />
+          <p className="text-sm">
+            Saving uses the current PDF reading instead of the earlier
+            unfinished draft. Your saved account details and balances are kept;
+            the earlier draft remains in history.
+          </p>
         </>
       )}
-      <Button disabled={update.isPending || (comparisonRequired && !compared)} onClick={() => update.mutate()}>
+      <Button
+        disabled={update.isPending || (comparisonRequired && !compared)}
+        onClick={() => update.mutate()}
+      >
         {update.isPending
           ? "Updating saved reading…"
           : paymentCount
@@ -1807,16 +1865,17 @@ function EditableStatement({
             keep unfinished work in the case before leaving.
           </p>
         )}
-        {savedReadingChanged && !data.current_import?.refresh_review_required && (
-          <SavedReviewConflict
-            draft={recovered!}
-            formatAmount={(value) =>
-              `${displayAmount(value, digits)} ${data.currency}`
-            }
-            checked={previousReviewChecked}
-            onChecked={setPreviousReviewChecked}
-          />
-        )}
+        {savedReadingChanged &&
+          !data.current_import?.refresh_review_required && (
+            <SavedReviewConflict
+              draft={recovered!}
+              formatAmount={(value) =>
+                `${displayAmount(value, digits)} ${data.currency}`
+              }
+              checked={previousReviewChecked}
+              onChecked={setPreviousReviewChecked}
+            />
+          )}
         {data.review_recovery && (
           <PreviousStatementReviews
             caseId={caseId}

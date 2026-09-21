@@ -496,3 +496,143 @@ it("sets aside empty entries across all pages, preserves partial readings and ed
     reason: "",
   })
 })
+
+it("keeps a 51-period PDF manageable from file list through saved-period review and removal preview", async () => {
+  const { StatementRegister } = await import("./StatementRegister")
+  await page.viewport(1280, 900)
+  const owner =
+    useAuthStore.getState().user?.id ||
+    useAuthStore.getState().user?.username ||
+    "anonymous"
+  useStatementWorkspace.getState().setReviewChoice(`${owner}:case:file`, {
+    statementId: "period-2",
+    currency: "",
+  })
+  const choices = Array.from({ length: 51 }, (_, i) => ({
+    id: `period-${i + 1}`,
+    institution: "Example Bank",
+    account_reference: "12345",
+    period_start: `2023-${String((i % 12) + 1).padStart(2, "0")}-01`,
+    period_end: `2023-${String((i % 12) + 1).padStart(2, "0")}-28`,
+    page_numbers: [i + 1],
+  }))
+  const periods = choices.map((choice, i) => ({
+    id: choice.id,
+    account_id: "account",
+    account_label: "Example Ltd · 12345",
+    start: choice.period_start,
+    end: choice.period_end,
+    source_status: "admitted",
+    index: i,
+  }))
+  const writes: string[] = []
+  vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
+    if (options?.method === "POST") writes.push(url)
+    if (url.startsWith("/api/evidence?"))
+      return {
+        files: [
+          {
+            id: "file",
+            case_id: "case",
+            original_filename: "statement.pdf",
+            status: "processed",
+          },
+        ],
+      } as never
+    if (url.includes("statement-import/files?"))
+      return {
+        case_id: "case",
+        truncated: false,
+        files: [
+          { evidence_file_id: "file", current_transactions: 653, periods },
+        ],
+      } as never
+    if (url.includes("/removals/preview"))
+      return {
+        case_id: "case",
+        revision: "f".repeat(64),
+        file_count: 1,
+        reading_count: 1,
+        transaction_count: 653,
+        incomplete_count: 0,
+        statement_count: 51,
+        batch_count: 1,
+        archived_batch_count: 1,
+        updated_batch_count: 0,
+        files: [{ id: "file", filename: "statement.pdf" }],
+        can_remove: true,
+      } as never
+    if (url.includes("statement-import/file?"))
+      return {
+        ...data,
+        statement_id: "period-2",
+        statement_choices: choices,
+        current_import: {
+          source_document_id: "document",
+          evidence_file_id: "file",
+          revision: "e".repeat(64),
+          transaction_count: 6,
+          currency: "EUR",
+        },
+      } as never
+    return data as never
+  })
+  render(
+    <MemoryRouter>
+      <QueryClientProvider
+        client={
+          new QueryClient({ defaultOptions: { queries: { retry: false } } })
+        }
+      >
+        <StatementRegister caseId="case">
+          <StatementImportPanel caseId="case" onImported={vi.fn()} />
+        </StatementRegister>
+      </QueryClientProvider>
+    </MemoryRouter>
+  )
+  const review = await screen.findByRole("button", {
+    name: "Review statement.pdf",
+  })
+  const remove = screen.getByRole("button", {
+    name: "Remove from Financial: statement.pdf",
+  })
+  expect(
+    screen.getByText(
+      "49 more periods in this PDF. Open the file to choose a period."
+    )
+  ).toBeVisible()
+  expect(remove.getBoundingClientRect().bottom).toBeLessThan(window.innerHeight)
+  fireEvent.click(review)
+  const context = await screen.findByRole("region", {
+    name: "Current statement context",
+  })
+  expect(context).toHaveTextContent("This PDF contains 51 statement periods")
+  expect(context).toHaveTextContent(
+    "Already imported: 6 payments from this period"
+  )
+  expect(
+    screen.getByRole("button", {
+      name: "View 6 payments in Transactions for this period",
+    })
+  ).toBeVisible()
+  fireEvent.click(screen.getByRole("button", { name: "All files & imports" }))
+  expect(
+    screen.getByRole("button", { name: "Review statement.pdf" })
+  ).toBeVisible()
+  fireEvent.click(
+    screen.getByRole("button", { name: "Select all 1 shown file" })
+  )
+  fireEvent.click(
+    screen.getByRole("button", { name: "Review removal of 1 selected file" })
+  )
+  expect(
+    await screen.findByRole("dialog", { name: "Remove financial imports?" })
+  ).toBeVisible()
+  expect(
+    await screen.findByText(/51 statement periods · 653 transactions/)
+  ).toBeVisible()
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }))
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+  expect(writes).toHaveLength(1)
+  expect(writes[0]).toContain("/removals/preview")
+})

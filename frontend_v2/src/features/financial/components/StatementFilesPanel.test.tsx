@@ -227,7 +227,7 @@ it("shows saved import counts and periods after reopening the file list", async 
   )
   mount()
   expect(
-    await screen.findByText("12 imported payments · 1 recorded periods")
+    await screen.findByText("12 imported payments · 1 recorded period")
   ).toBeInTheDocument()
   expect(
     screen.getByText(/Business account · 2023-01-01 to 2023-12-31/)

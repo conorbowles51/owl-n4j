@@ -23,10 +23,14 @@ export function StatementFilesPanel({
   caseId,
   register = false,
   onOpen,
+  removalMode = false,
+  onFinishRemoval,
 }: {
   caseId: string
   register?: boolean
   onOpen?: () => void
+  removalMode?: boolean
+  onFinishRemoval?: () => void
 }) {
   const { canUpload, canEdit } = useFinancialAccess()
   const navigate = useNavigate()
@@ -85,7 +89,9 @@ export function StatementFilesPanel({
   }
   const visibleFiles =
     files.data
-      ?.filter((file) => file.financial_removed === removed)
+      ?.filter(
+        (file) => file.financial_removed === (removalMode ? false : removed)
+      )
       ?.filter((file) =>
         file.original_filename.toLowerCase().includes(search.toLowerCase())
       )
@@ -94,6 +100,7 @@ export function StatementFilesPanel({
           (item) => item.evidence_file_id === file.id
         )
         return (
+          removalMode ||
           removed ||
           status === "all" ||
           (status === "imported" &&
@@ -156,14 +163,27 @@ export function StatementFilesPanel({
       className={register ? "space-y-4" : "h-full overflow-auto p-3 space-y-3"}
     >
       <h2 className="font-semibold">
-        {register ? "Files in this case" : "Statement files"}
+        {removalMode
+          ? "Remove imports or start again"
+          : register
+            ? "Files in this case"
+            : "Statement files"}
       </h2>
       <p className="text-sm text-muted-foreground">
-        {canUpload
-          ? "Upload PDFs together, then select a ready file to open it in the statement viewer."
-          : "Select a ready file to open its original PDF and extracted statement."}{" "}
-        Supported wire reports and deposit receipts open their own review.
+        {removalMode
+          ? "Select the PDFs you want to remove. The next screen shows exactly which statements and transactions will be affected. You can remove the imports, or remove them and process the same PDFs afresh."
+          : canUpload
+            ? "Upload PDFs together, then select a ready file to open it in the statement viewer."
+            : "Select a ready file to open its original PDF and extracted statement."}{" "}
+        {!removalMode &&
+          "Supported wire reports and deposit receipts open their own review."}
       </p>
+      {removalMode && (
+        <p className="text-sm">
+          Original PDFs, case notes, findings and import history are retained.
+          No new case is needed.
+        </p>
+      )}
       {canUpload && (
         <input
           ref={input}
@@ -186,7 +206,7 @@ export function StatementFilesPanel({
           }}
         />
       )}
-      <div className="flex flex-wrap gap-2">
+      <div className={removalMode ? "hidden" : "flex flex-wrap gap-2"}>
         <EvidenceFinancialPicker caseId={caseId} />
         {canUpload && (
           <Button
@@ -219,13 +239,13 @@ export function StatementFilesPanel({
             : `Removed files (${files.data?.filter((file) => file.financial_removed).length ?? 0})`}
         </Button>
       </div>
-      {removed && (
+      {removed && !removalMode && (
         <p className="text-sm">
           These files were removed from Financial. Their originals remain in
           Evidence. Restore a file to review it here again.
         </p>
       )}
-      {canUpload && (
+      {canUpload && !removalMode && (
         <p className="text-xs text-muted-foreground">
           Up to 20 PDFs per selection. Keep the browser tab open while uploads
           finish. Select files below to prepare their statements together, or
@@ -263,7 +283,7 @@ export function StatementFilesPanel({
         value={search}
         onChange={(event) => setSearch(event.target.value)}
       />
-      {register && !removed && (
+      {register && !removed && !removalMode && (
         <div className="flex flex-wrap items-center gap-3 text-sm">
           <label>
             Show files{" "}
@@ -293,9 +313,9 @@ export function StatementFilesPanel({
       )}
       {files.isPending && <p role="status">Loading statement files…</p>}
       {files.isError && <p role="alert">{files.error.message}</p>}
-      {register && !removed && canEdit && (
+      {register && (!removed || removalMode) && canEdit && (
         <section
-          aria-label="Prepare selected statement files"
+          aria-label="Selected statement files"
           className="rounded border bg-card p-3 space-y-2"
         >
           <div className="flex flex-wrap items-center gap-2">
@@ -326,26 +346,41 @@ export function StatementFilesPanel({
             >
               Clear selection
             </Button>
-            <Button
-              disabled={
-                !canUpload || preparing || !selectedIds.length || files.isError
-              }
-              onClick={() => void prepareSelected()}
-            >
-              {preparing
-                ? "Preparing statements…"
-                : `Prepare statements from ${selectedIds.length} ${selectedIds.length === 1 ? "file" : "files"}`}
-            </Button>
+            {!removalMode && (
+              <Button
+                disabled={
+                  !canUpload ||
+                  preparing ||
+                  !selectedIds.length ||
+                  files.isError
+                }
+                onClick={() => void prepareSelected()}
+              >
+                {preparing
+                  ? "Preparing statements…"
+                  : `Prepare statements from ${selectedIds.length} ${selectedIds.length === 1 ? "file" : "files"}`}
+              </Button>
+            )}
             <FinancialRemovalAction
               caseId={caseId}
               fileIds={selectedIds}
-              label={`Remove ${selectedIds.length} selected files / imports`}
+              label={
+                selectedIds.length
+                  ? `Review removal of ${selectedIds.length} selected ${selectedIds.length === 1 ? "file" : "files"}`
+                  : "Select files to remove"
+              }
+              onRemoved={() => selectFiles([])}
             />
+            {removalMode && (
+              <Button variant="outline" onClick={onFinishRemoval}>
+                Back to files
+              </Button>
+            )}
           </div>
           <p className="text-sm text-muted-foreground">
-            All recognised accounts and periods go into one batch. Import them
-            together there; you can return to reading issues later. Existing
-            imports are recognised.
+            {removalMode
+              ? "Tick individual files below or select all shown files, then review the removal. Nothing is removed until you confirm."
+              : "Select files to prepare their statements together or remove their imports. One PDF can contain many statement periods; you can import them together in a batch."}
           </p>
         </section>
       )}
@@ -354,8 +389,11 @@ export function StatementFilesPanel({
           (item) => item.evidence_file_id === file.id
         )
         return (
-          <div key={file.id} className="space-y-1">
-            {register && !removed && canEdit && (
+          <div
+            key={file.id}
+            className="rounded-lg border bg-card p-3 space-y-2"
+          >
+            {register && (!removed || removalMode) && canEdit && (
               <label className="flex items-center gap-2 text-sm">
                 <input
                   type="checkbox"
@@ -370,16 +408,21 @@ export function StatementFilesPanel({
                     )
                   }
                 />
-                Select for preparation or removal
+                {removalMode
+                  ? `Select ${file.original_filename}`
+                  : "Select file"}
               </label>
             )}
             <button
               type="button"
               aria-pressed={selected === file.id}
-              disabled={removed || file.status !== "processed"}
+              aria-label={
+                register ? `Review ${file.original_filename}` : undefined
+              }
+              disabled={removalMode || removed || file.status !== "processed"}
               className={
                 register
-                  ? "grid w-full gap-3 rounded-lg border bg-card p-4 text-left text-sm hover:bg-accent aria-pressed:border-primary disabled:opacity-60 md:grid-cols-[minmax(220px,1fr)_minmax(220px,1fr)]"
+                  ? "grid w-full gap-2 rounded p-2 text-left text-sm hover:bg-accent disabled:opacity-60 md:grid-cols-[minmax(220px,1fr)_minmax(220px,1fr)]"
                   : "block w-full rounded border p-3 text-left text-sm hover:bg-accent aria-pressed:border-primary aria-pressed:bg-accent disabled:opacity-60"
               }
               onClick={() => {
@@ -413,25 +456,29 @@ export function StatementFilesPanel({
                       : saved?.periods.length && !saved.current_transactions
                         ? `Statement saved · ${saved.periods.length} recorded ${saved.periods.length === 1 ? "period" : "periods"} · no payments`
                         : saved
-                          ? `${saved.current_transactions} imported payments · ${saved.periods.length} recorded periods`
+                          ? `${saved.current_transactions} imported payments · ${saved.periods.length} recorded ${saved.periods.length === 1 ? "period" : "periods"}`
                           : file.status === "processed"
                             ? imports.data && !imports.data.truncated
                               ? "Ready to review"
                               : "Ready to open"
                             : file.status}
               </span>
-              {saved?.periods
-                .slice(0, register ? undefined : 3)
-                .map((period) => (
-                  <span key={period.id} className="block text-xs mt-1">
-                    {period.account_label} ·{" "}
-                    {period.start || "Start not recorded"} to{" "}
-                    {period.end || "End not recorded"}
-                    {period.source_status !== "admitted"
-                      ? " · source excluded"
-                      : ""}
-                  </span>
-                ))}
+              {saved?.periods.slice(0, 2).map((period) => (
+                <span key={period.id} className="block text-xs mt-1">
+                  {period.account_label} ·{" "}
+                  {period.start || "Start not recorded"} to{" "}
+                  {period.end || "End not recorded"}
+                  {period.source_status !== "admitted"
+                    ? " · source excluded"
+                    : ""}
+                </span>
+              ))}
+              {(saved?.periods.length ?? 0) > 2 && (
+                <span className="text-xs">
+                  {saved!.periods.length - 2} more periods in this PDF. Open the
+                  file to choose a period.
+                </span>
+              )}
               {!!saved?.receipt_review_count && (
                 <p>
                   {saved.receipt_review_count} saved receipt{" "}
@@ -439,9 +486,7 @@ export function StatementFilesPanel({
                 </p>
               )}
               {saved && !saved.wire_review_count && (
-                <span className="block text-xs mt-1">
-                  Open to review this file and any other statement periods.
-                </span>
+                <span className="block text-xs mt-1">Review statement →</span>
               )}
               {file.created_at && (
                 <span className="block text-xs text-muted-foreground">
@@ -450,13 +495,15 @@ export function StatementFilesPanel({
                 </span>
               )}
             </button>
-            <FinancialFileAction
-              caseId={caseId}
-              file={file}
-              imported={
-                !!saved?.periods.length || !!saved?.current_transactions
-              }
-            />
+            {!removalMode && (
+              <FinancialFileAction
+                caseId={caseId}
+                file={file}
+                imported={
+                  !!saved?.periods.length || !!saved?.current_transactions
+                }
+              />
+            )}
             {!!saved?.wire_review_count && (
               <a
                 className="inline-block underline text-sm"

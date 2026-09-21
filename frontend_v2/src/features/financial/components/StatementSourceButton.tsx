@@ -2,6 +2,8 @@ import { ImportedStatementDetails } from "./ImportedStatementDetails"
 import { useFinancialAccess } from "../hooks/use-financial-access"
 import { SourceCustodyPanel } from "./SourceCustodyPanel"
 import { useState } from "react"
+import { useAuthStore } from "@/features/auth/hooks/use-auth"
+import { useStatementWorkspace } from "../stores/statement-workspace"
 import { useQuery } from "@tanstack/react-query"
 import { z } from "zod"
 import { Button } from "@/components/ui/button"
@@ -57,6 +59,10 @@ const source = z.object({
   source_document_id: z.string(),
   evidence_file_id: z.string().uuid(),
   filename: z.string(),
+  statement_id: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/)
+    .nullish(),
   recorded_digest_matches: z.literal(true),
   file_bytes_verified: z.literal(false),
   limitation: z.string(),
@@ -254,6 +260,17 @@ export function StatementSourceButton({
                     variant="outline"
                     onClick={() => {
                       setOpened(false)
+                      const user = useAuthStore.getState().user
+                      const owner = user?.id || user?.username || "anonymous"
+                      useStatementWorkspace
+                        .getState()
+                        .setReviewChoice(
+                          `${owner}:${caseId}:${query.data.evidence_file_id}`,
+                          {
+                            statementId: query.data.statement_id || "",
+                            currency: "",
+                          }
+                        )
                       onReviewStatement(query.data.evidence_file_id)
                     }}
                   >

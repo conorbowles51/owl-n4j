@@ -29,6 +29,13 @@ class StatementSourceTests(fixture.DuplicateTestCase):
     def test_other_case_is_not_disclosed(self):
         with self.assertRaises(LedgerSourceError) as ctx:self.read(case_id=self.other_case.id)
         self.assertEqual(ctx.exception.status_code,404)
+    def test_source_resolves_the_selected_period_in_a_multi_statement_pdf(self):
+        self.document.metadata_ = {'statement_import_statement_id': 'a' * 64}
+        self.db.commit()
+        self.assertEqual(self.read()['statement_id'], 'a' * 64)
+        self.document.metadata_ = {'statement_import_statement_id': 'not-an-extraction-id'}
+        self.db.commit()
+        self.assertIsNone(self.read()['statement_id'])
     def test_cross_case_links_are_not_disclosed(self):
         for linked in (self.document,self.file):
             original=linked.case_id;linked.case_id=self.other_case.id;self.db.commit()

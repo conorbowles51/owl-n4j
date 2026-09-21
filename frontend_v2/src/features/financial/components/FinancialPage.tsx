@@ -23,6 +23,8 @@ import {
 } from "./FinancialNavigation"
 import { FinancialFindings } from "./FinancialFindings"
 import { FinancialAccounts } from "./FinancialAccounts"
+import { StatementRegisterChecks } from "./StatementRegisterChecks"
+import { ReferencedAccounts } from "./ReferencedAccounts"
 import { useInvestigationScope } from "../stores/investigation-scope"
 import {
   StatementImportPanel,
@@ -43,10 +45,11 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react"
-import { useParams } from "react-router-dom"
+import { useParams, useSearchParams } from "react-router-dom"
 import { BarChart3, DollarSign, Users } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
@@ -139,18 +142,44 @@ function FinancialPageContent() {
     }
     store.setMainView(view)
   }
-  const [accountReviewCase, setAccountReviewCase] = useState<string | null>(
-    null
+  const [params, setParams] = useSearchParams()
+  type StatementSection = "files" | "accounts" | "batches" | "remove"
+  const [statementSection, setStatementSection] = useState<{
+    caseId: string | undefined
+    section: StatementSection
+  }>({ caseId, section: "files" })
+  const section = params.get("batch")
+    ? "batches"
+    : statementSection.caseId === caseId
+      ? statementSection.section
+      : "files"
+  const reviewingAccounts = section === "accounts"
+  const statementScroll = useRef<HTMLDivElement>(null)
+  const owner = useAuthStore(
+    (state) => state.user?.id || state.user?.username || "anonymous"
   )
-  const reviewingAccounts = !!caseId && accountReviewCase === caseId
+  const workspaceScope = `${owner}:${caseId}`
+  const workspaceReview = useStatementWorkspace(
+    (state) => state.selections[workspaceScope]
+  )
+  const showStatementSection = (next: StatementSection) => {
+    setStatementSection({ caseId, section: next })
+    if (next === "files" || next === "remove")
+      useStatementWorkspace.getState().setOpen(workspaceScope, false)
+    setParams((current) => {
+      const updated = new URLSearchParams(current)
+      for (const key of ["batch", "batchItem", "batchRow"]) updated.delete(key)
+      return updated
+    })
+  }
   const reviewStatement = (fileId: string) => {
-    const user = useAuthStore.getState().user
-    useStatementWorkspace
-      .getState()
-      .select(`${user?.id || user?.username}:${caseId}`, fileId)
-    setAccountReviewCase(null)
+    showStatementSection("files")
+    useStatementWorkspace.getState().select(workspaceScope, fileId)
     store.setMainView("statements")
   }
+  useEffect(() => {
+    statementScroll.current?.scrollTo?.({ top: 0 })
+  }, [section, workspaceReview?.open, workspaceReview?.fileId])
   useEffect(() => {
     const panel = useUIStore.getState()
     if (store.mainView !== "statements" && panel.graphPanelTab === "detail")
@@ -710,34 +739,53 @@ function FinancialPageContent() {
           className="flex min-h-0 flex-1 flex-col data-[state=inactive]:hidden"
           active={store.mainView === "statements"}
         >
-          <div className="min-h-0 flex-1 space-y-4 overflow-auto p-4">
+          <div
+            ref={statementScroll}
+            className="min-h-0 flex-1 space-y-4 overflow-auto p-4"
+          >
             <header className="space-y-1">
               <h2 className="text-2xl font-semibold">Statements & accounts</h2>
               <p className="text-sm text-muted-foreground">
                 {canEdit
-                  ? "Upload and check statements here. After confirmation, their payments are available in Transactions."
+                  ? "Manage the PDFs behind your investigation: import payments, check account coverage, or remove a bad import and process it again."
                   : "Open the original statements and review their accounts and extracted payments."}
               </p>
             </header>
             <div
-              className="flex flex-wrap gap-2"
+              className="sticky top-0 z-10 flex flex-wrap items-center gap-2 border-b bg-background py-2"
               role="group"
               aria-label="Statement workspace"
             >
               <Button
-                variant={reviewingAccounts ? "outline" : "primary"}
-                aria-pressed={!reviewingAccounts}
-                onClick={() => setAccountReviewCase(null)}
+                variant={section === "files" ? "primary" : "outline"}
+                aria-pressed={section === "files"}
+                onClick={() => showStatementSection("files")}
               >
                 Statement files
               </Button>
               <Button
                 variant={reviewingAccounts ? "primary" : "outline"}
                 aria-pressed={reviewingAccounts}
-                onClick={() => setAccountReviewCase(caseId ?? null)}
+                onClick={() => showStatementSection("accounts")}
               >
                 Review accounts
               </Button>
+              <Button
+                variant={section === "batches" ? "primary" : "outline"}
+                aria-pressed={section === "batches"}
+                onClick={() => showStatementSection("batches")}
+              >
+                Processing batches
+              </Button>
+              {canEdit && (
+                <Button
+                  variant={section === "remove" ? "primary" : "outline"}
+                  aria-pressed={section === "remove"}
+                  onClick={() => showStatementSection("remove")}
+                >
+                  Remove imports…
+                </Button>
+              )}
             </div>
             <div hidden={!reviewingAccounts}>
               {importReceipt &&
@@ -752,26 +800,10 @@ function FinancialPageContent() {
                     were added.
                   </p>
                 )}
-              <ErrorBoundary level="section">
-                <FinancialAccounts
-                  onReviewStatement={reviewStatement}
-                  key={caseId}
-                  caseId={caseId}
-                  onOpenAccount={(accountId, dates) => {
-                    const scope = { accountId, ...dates }
-                    if (caseId) resetPaymentTableView(caseId, scope)
-                    applyInvestigationScope(scope)
-                    store.setMode("transactions")
-                    store.setMainView("transactions")
-                  }}
-                />
-              </ErrorBoundary>
-            </div>
-            <div hidden={reviewingAccounts}>
               {caseId && (
-                <StatementRegister
-                  onReviewStatement={reviewStatement}
+                <StatementRegisterChecks
                   caseId={caseId}
+                  onReviewStatement={reviewStatement}
                   onOpenTransactions={(accountId, dates) => {
                     const scope = { accountId, ...dates }
                     resetPaymentTableView(caseId, scope)
@@ -779,6 +811,40 @@ function FinancialPageContent() {
                     store.setMode("transactions")
                     store.setMainView("transactions")
                   }}
+                />
+              )}
+              <details className="rounded border p-3 my-3">
+                <summary className="cursor-pointer font-medium">
+                  Find an account by name, number or bank
+                </summary>
+                <ErrorBoundary level="section">
+                  <FinancialAccounts
+                    onReviewStatement={reviewStatement}
+                    key={caseId}
+                    caseId={caseId}
+                    onOpenAccount={(accountId, dates) => {
+                      const scope = { accountId, ...dates }
+                      if (caseId) resetPaymentTableView(caseId, scope)
+                      applyInvestigationScope(scope)
+                      store.setMode("transactions")
+                      store.setMainView("transactions")
+                    }}
+                  />
+                </ErrorBoundary>
+              </details>
+            </div>
+            <div hidden={reviewingAccounts}>
+              {caseId && (
+                <StatementRegister
+                  mode={
+                    section === "batches"
+                      ? "batches"
+                      : section === "remove"
+                        ? "remove"
+                        : "files"
+                  }
+                  onBackToFiles={() => showStatementSection("files")}
+                  caseId={caseId}
                 >
                   <StatementImportPanel
                     key={caseId}
@@ -793,7 +859,7 @@ function FinancialPageContent() {
                         (result?.record_count ?? result?.transaction_count) ===
                         0
                       ) {
-                        setAccountReviewCase(caseId ?? null)
+                        setStatementSection({ caseId, section: "accounts" })
                         store.setMainView("statements")
                       } else {
                         store.setMainView("transactions")
@@ -803,6 +869,17 @@ function FinancialPageContent() {
                 </StatementRegister>
               )}
             </div>
+            {reviewingAccounts && caseId && (
+              <ReferencedAccounts
+                caseId={caseId}
+                onOpenTransactions={(accountId) => {
+                  resetPaymentTableView(caseId, { accountId })
+                  applyInvestigationScope({ accountId })
+                  store.setMode("transactions")
+                  store.setMainView("transactions")
+                }}
+              />
+            )}
             {reviewingAccounts && (
               <details className="rounded border p-3 space-y-3">
                 <summary className="cursor-pointer font-medium">

@@ -155,3 +155,47 @@ it("opens the retained closure notice separately from balances", async () => {
   expect(screen.getByText(/Control source.*"page":1/)).toBeVisible()
   expect(screen.queryByRole("button", { name: /Inspect closing/ })).toBeNull()
 })
+
+it.each(["b".repeat(64), null])(
+  "opens the selected period, clearing an unrelated previous selection (%s)",
+  async (statementId) => {
+    const { useStatementWorkspace } =
+      await import("../stores/statement-workspace")
+    const { useAuthStore } = await import("@/features/auth/hooks/use-auth")
+    const user = useAuthStore.getState().user
+    const scope = `${user?.id || user?.username || "anonymous"}:case:${answer.evidence_file_id}`
+    useStatementWorkspace
+      .getState()
+      .setReviewChoice(scope, { statementId: "a".repeat(64), currency: "EUR" })
+    vi.spyOn(globalThis, "fetch").mockImplementation(
+      async () =>
+        new Response(JSON.stringify({ ...answer, statement_id: statementId }))
+    )
+    const open = vi.fn()
+    render(
+      <QueryClientProvider
+        client={
+          new QueryClient({ defaultOptions: { queries: { retry: false } } })
+        }
+      >
+        <StatementSourceButton
+          caseId="case"
+          periodId="period"
+          sourceDocumentId="document"
+          onReviewStatement={open}
+        />
+      </QueryClientProvider>
+    )
+    fireEvent.click(
+      screen.getByRole("button", { name: "Inspect statement source" })
+    )
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Review or reread statement" })
+    )
+    expect(open).toHaveBeenCalledWith(answer.evidence_file_id)
+    expect(useStatementWorkspace.getState().reviewChoices[scope]).toEqual({
+      statementId: statementId || "",
+      currency: "",
+    })
+  }
+)

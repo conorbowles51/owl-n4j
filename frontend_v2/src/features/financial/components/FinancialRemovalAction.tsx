@@ -61,12 +61,14 @@ export function FinancialRemovalAction({
   batchIds = [],
   fileIds = [],
   label = "Remove selected",
+  accessibleLabel,
   onRemoved,
 }: {
   caseId: string
   batchIds?: string[]
   fileIds?: string[]
   label?: string
+  accessibleLabel?: string
   onRemoved?: () => void
 }) {
   const { canEdit, canUpload } = useFinancialAccess()
@@ -172,6 +174,7 @@ export function FinancialRemovalAction({
       <Button
         variant="outline"
         size="sm"
+        aria-label={accessibleLabel}
         disabled={busy || (!batchIds.length && !fileIds.length)}
         onClick={() => void load(true)}
       >
@@ -207,8 +210,9 @@ export function FinancialRemovalAction({
                 {preview.incomplete_count} incomplete records
               </p>
               <p className="text-sm">
-                {preview.archived_batch_count} processing batches will be
-                removed.
+                {preview.archived_batch_count} processing{" "}
+                {preview.archived_batch_count === 1 ? "batch" : "batches"} will
+                be removed.
                 {preview.updated_batch_count > 0 &&
                   ` ${preview.updated_batch_count} shared batches will keep their other files and saved reviews.`}
               </p>

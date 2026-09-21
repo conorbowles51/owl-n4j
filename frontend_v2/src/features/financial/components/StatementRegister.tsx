@@ -1,4 +1,3 @@
-import { ReferencedAccounts } from "./ReferencedAccounts"
 import { useSearchParams } from "react-router-dom"
 import { FinancialBatchPanel } from "./FinancialBatchPanel"
 import { Button } from "@/components/ui/button"
@@ -6,19 +5,17 @@ import { useAuthStore } from "@/features/auth/hooks/use-auth"
 import { useStatementWorkspace } from "../stores/statement-workspace"
 import { StatementFilesPanel } from "./StatementFilesPanel"
 import type { ReactNode } from "react"
-import { StatementRegisterChecks } from "./StatementRegisterChecks"
-import type { AccountReviewDates } from "./AccountStatementReview"
 
 export function StatementRegister({
   caseId,
   children,
-  onOpenTransactions,
-  onReviewStatement,
+  mode = "files",
+  onBackToFiles,
 }: {
   caseId: string
   children: ReactNode
-  onOpenTransactions: (accountId: string, dates?: AccountReviewDates) => void
-  onReviewStatement?: (fileId: string) => void
+  mode?: "files" | "batches" | "remove"
+  onBackToFiles?: () => void
 }) {
   const [params] = useSearchParams()
   const owner = useAuthStore(
@@ -27,38 +24,31 @@ export function StatementRegister({
   const scope = `${owner}:${caseId}`
   const review = useStatementWorkspace((state) => state.selections[scope])
   const open = !!review?.open
-  if (params.get("batch")) return <FinancialBatchPanel caseId={caseId} />
+  const batches = mode === "batches" || !!params.get("batch")
   return (
     <div className="space-y-4">
-      {!open && <FinancialBatchPanel caseId={caseId} />}
-      {!open && (
-        <StatementRegisterChecks
-          key={caseId}
+      {batches && <FinancialBatchPanel caseId={caseId} />}
+      <div hidden={batches || (open && mode !== "remove")}>
+        <StatementFilesPanel
           caseId={caseId}
-          onOpenTransactions={onOpenTransactions}
-          onReviewStatement={onReviewStatement}
+          register
+          removalMode={mode === "remove"}
+          onFinishRemoval={onBackToFiles}
         />
-      )}
-      <div hidden={open}>
-        <StatementFilesPanel caseId={caseId} register />
       </div>
-      {!open && (
-        <ReferencedAccounts
-          key={caseId}
-          caseId={caseId}
-          onOpenTransactions={onOpenTransactions}
-        />
-      )}
-      <div hidden={!open} className="space-y-3">
+      <div hidden={batches || !open || mode === "remove"} className="space-y-3">
         <Button
           variant="outline"
-          onClick={() => useStatementWorkspace.getState().setOpen(scope, false)}
+          onClick={() => {
+            useStatementWorkspace.getState().setOpen(scope, false)
+            onBackToFiles?.()
+          }}
         >
           Back to all statement files
         </Button>
         {children}
       </div>
-      {!open && review?.fileId && (
+      {!batches && !open && mode === "files" && review && (
         <Button
           variant="outline"
           onClick={() => useStatementWorkspace.getState().setOpen(scope, true)}

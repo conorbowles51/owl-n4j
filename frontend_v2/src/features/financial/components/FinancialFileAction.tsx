@@ -47,7 +47,8 @@ export function FinancialFileAction({
       <FinancialRemovalAction
         caseId={caseId}
         fileIds={[file.id]}
-        label={`Remove from Financial: ${file.original_filename}`}
+        label="Remove imports…"
+        accessibleLabel={`Remove from Financial: ${file.original_filename}`}
       />
     )
   if (file.financial_imports_removed)
