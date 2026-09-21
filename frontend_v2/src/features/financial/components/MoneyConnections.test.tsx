@@ -24,6 +24,7 @@ it("separates unnamed transaction descriptions from named counterparties and ope
     make("rent", "W01 TRASPASO A TERCEROS RENTA 21 BMRCASH"),
     make("returned", "T22 SPID DEVUELTOBANORTE Ref. 1", "credit"),
     make("tax", "C20 I.S.R. RETENIDO"),
+    make("tax-fee", "C50 IVA COM SDO INFERIOR MIN 16%"),
     make(
       "intercam",
       "P14 INTERCAM BANCO SA IB REF:123 CIE:123",
@@ -35,7 +36,7 @@ it("separates unnamed transaction descriptions from named counterparties and ope
   render(<MoneyConnections rows={rows} onOpen={onOpen} />)
   expect(screen.queryByText("Name not recorded")).not.toBeInTheDocument()
   expect(
-    screen.getByText("3 payments without an identified counterparty")
+    screen.getByText("4 payments without an identified counterparty")
   ).toBeInTheDocument()
   expect(
     screen.getByRole("button", { name: /INTERCAM BANCO/ })
@@ -49,6 +50,8 @@ it("separates unnamed transaction descriptions from named counterparties and ope
     ["rent"],
     "Transfers to third parties"
   )
+  fireEvent.click(screen.getByRole("button", { name: /Tax entries/ }))
+  expect(onOpen).toHaveBeenLastCalledWith(["tax", "tax-fee"], "Tax entries")
 })
 it("honours an explicit name clear and keeps currencies separate", () => {
   const row = {

@@ -29,7 +29,7 @@ export function unidentifiedPayment(row: LedgerTransaction) {
       reason:
         "The description records a returned transfer. It does not name the original beneficiary; compare its reference with the outgoing payment.",
     }
-  if (/\b(?:I\.?S\.?R\.?\s+RETENIDO|IVA\s+COMISION)\b/.test(description))
+  if (/\b(?:I\.?S\.?R\.?\s+RETENIDO|IVA)\b/.test(description))
     return {
       kind: "tax",
       label: "Tax entries",
