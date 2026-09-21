@@ -16,10 +16,12 @@ export function StatementCoveragePanel({
   caseId,
   autoLoad = false,
   accountId,
+  onReviewStatement,
 }: {
   caseId: string | undefined
   autoLoad?: boolean
   accountId?: string
+  onReviewStatement?: (fileId: string) => void
 }) {
   const [opened, setOpened] = useState(autoLoad),
     [offset, setOffset] = useState(0)
@@ -156,6 +158,7 @@ export function StatementCoveragePanel({
                           caseId={caseId}
                           currency={currency}
                           periods={account.periods}
+                          onReviewStatement={onReviewStatement}
                           gaps={
                             account.currencies.find(
                               (group) => group.currency === currency
@@ -195,6 +198,7 @@ export function StatementCoveragePanel({
                             periodId={period.period_id}
                             sourceDocumentId={period.source_document_id}
                             label="Open statement and dates"
+                            onReviewStatement={onReviewStatement}
                           />
                         </div>
                       ))}

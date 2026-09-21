@@ -37,15 +37,6 @@ export function StatementRegister({
         />
       </div>
       <div hidden={batches || !open || mode === "remove"} className="space-y-3">
-        <Button
-          variant="outline"
-          onClick={() => {
-            useStatementWorkspace.getState().setOpen(scope, false)
-            onBackToFiles?.()
-          }}
-        >
-          Back to all statement files
-        </Button>
         {children}
       </div>
       {!batches && !open && mode === "files" && review && (

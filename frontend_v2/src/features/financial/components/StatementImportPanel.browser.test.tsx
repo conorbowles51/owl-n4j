@@ -20,7 +20,13 @@ vi.mock("../hooks/use-financial-access", async (importOriginal) => ({
     error: false,
   }),
 }))
-import { fireEvent, render, screen, waitFor } from "@testing-library/react"
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { beforeEach, expect, it, vi } from "vitest"
 import { StatementImportPanel } from "./StatementImportPanel"
@@ -610,11 +616,13 @@ it("keeps a 51-period PDF manageable from file list through saved-period review 
   expect(context).toHaveTextContent(
     "Already imported: 6 payments from this period"
   )
-  expect(
-    screen.getByRole("button", {
-      name: "View 6 payments in Transactions for this period",
-    })
-  ).toBeVisible()
+  const payments = within(context).getByRole("button", {
+    name: "View 6 payments in Transactions for this period",
+  })
+  expect(payments).toBeVisible()
+  expect(payments.getBoundingClientRect().bottom).toBeLessThan(
+    window.innerHeight
+  )
   fireEvent.click(screen.getByRole("button", { name: "All files & imports" }))
   expect(
     screen.getByRole("button", { name: "Review statement.pdf" })

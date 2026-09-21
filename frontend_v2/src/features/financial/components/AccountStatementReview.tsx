@@ -82,7 +82,12 @@ export function AccountStatementReview({
         </p>
       </header>
       {!datesFirst && balanceChecks}
-      <StatementCoveragePanel caseId={caseId} accountId={account.id} autoLoad />
+      <StatementCoveragePanel
+        caseId={caseId}
+        accountId={account.id}
+        autoLoad
+        onReviewStatement={onReviewStatement}
+      />
       <section
         aria-label="Check a date range"
         className="space-y-3 rounded border p-4"

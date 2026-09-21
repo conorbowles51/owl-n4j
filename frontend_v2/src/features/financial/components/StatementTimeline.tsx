@@ -25,12 +25,14 @@ export function StatementTimeline({
   periods,
   gaps,
   overlaps,
+  onReviewStatement,
 }: {
   caseId: string
   currency: string
   periods: CoveragePeriod[]
   gaps: Gap[]
   overlaps: { period_id: string }[]
+  onReviewStatement?: (fileId: string) => void
 }) {
   const [selected, setSelected] = useState<string | null>(null)
   const rows = periods
@@ -154,6 +156,7 @@ export function StatementTimeline({
             caseId={caseId}
             periodId={active.period_id}
             sourceDocumentId={active.source_document_id}
+            onReviewStatement={onReviewStatement}
           />
         </section>
       )}

@@ -417,12 +417,14 @@ export function StatementFilesPanel({
               type="button"
               aria-pressed={selected === file.id}
               aria-label={
-                register ? `Review ${file.original_filename}` : undefined
+                register
+                  ? `${removalMode ? "Imported file" : "Review"} ${file.original_filename}`
+                  : undefined
               }
               disabled={removalMode || removed || file.status !== "processed"}
               className={
                 register
-                  ? "grid w-full gap-2 rounded p-2 text-left text-sm hover:bg-accent disabled:opacity-60 md:grid-cols-[minmax(220px,1fr)_minmax(220px,1fr)]"
+                  ? `grid w-full gap-2 rounded p-2 text-left text-sm md:grid-cols-[minmax(220px,1fr)_minmax(220px,1fr)] ${removalMode ? "" : "hover:bg-accent disabled:opacity-60"}`
                   : "block w-full rounded border p-3 text-left text-sm hover:bg-accent aria-pressed:border-primary aria-pressed:bg-accent disabled:opacity-60"
               }
               onClick={() => {
@@ -475,8 +477,9 @@ export function StatementFilesPanel({
               ))}
               {(saved?.periods.length ?? 0) > 2 && (
                 <span className="text-xs">
-                  {saved!.periods.length - 2} more periods in this PDF. Open the
-                  file to choose a period.
+                  {removalMode
+                    ? `All ${saved!.periods.length} periods will be included in the removal preview.`
+                    : `${saved!.periods.length - 2} more periods in this PDF. Open the file to choose a period.`}
                 </span>
               )}
               {!!saved?.receipt_review_count && (
@@ -485,7 +488,7 @@ export function StatementFilesPanel({
                   {saved.receipt_review_count === 1 ? "review" : "reviews"}
                 </p>
               )}
-              {saved && !saved.wire_review_count && (
+              {saved && !saved.wire_review_count && !removalMode && (
                 <span className="block text-xs mt-1">Review statement →</span>
               )}
               {file.created_at && (

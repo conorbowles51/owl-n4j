@@ -601,6 +601,26 @@ function StatementReview({
                 ? "This period’s account and balances are saved. It has no imported payments."
                 : "This period has no usable imported payments yet. Review its readings below, then save the payments to Transactions."}
         </p>
+        {query.data.current_import &&
+          query.data.current_import.transaction_count > 0 &&
+          !query.data.current_import.excluded_as_duplicate && (
+            <Button
+              variant="primary"
+              onClick={() =>
+                onImported({
+                  ...query.data.current_import!,
+                  case_id: caseId,
+                  account_id:
+                    query.data.current_import!.account_id || undefined,
+                  filename:
+                    query.data.current_import!.filename || query.data.filename,
+                })
+              }
+            >
+              View {query.data.current_import.transaction_count} payments in
+              Transactions for this period
+            </Button>
+          )}
       </section>
       <StatementCurrencyControl
         currency={query.data.current_import?.currency || query.data.currency}
@@ -661,25 +681,6 @@ function StatementReview({
           />
         )
       )}
-      {query.data.current_import &&
-        query.data.current_import.transaction_count > 0 &&
-        !query.data.current_import.excluded_as_duplicate && (
-          <Button
-            variant="primary"
-            onClick={() =>
-              onImported({
-                ...query.data.current_import!,
-                case_id: caseId,
-                account_id: query.data.current_import!.account_id || undefined,
-                filename:
-                  query.data.current_import!.filename || query.data.filename,
-              })
-            }
-          >
-            View {query.data.current_import.transaction_count} payments in
-            Transactions for this period
-          </Button>
-        )}
       {query.data.current_import?.evidence_file_id === fileId &&
         !query.data.current_import.excluded_as_duplicate && (
           <section
