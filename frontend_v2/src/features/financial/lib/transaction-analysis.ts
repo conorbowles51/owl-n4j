@@ -9,6 +9,7 @@ export interface AnalysisFilters {
   perspectiveNames: string[]
   analysisGroup: string
   analysisPeriod: string
+  analysisDirection: "" | "credit" | "debit"
   analysisCategories: string[]
   flowParty: string
   flowKind: FlowKind
@@ -19,6 +20,7 @@ export const emptyAnalysisFilters: AnalysisFilters = {
   perspectiveNames: [],
   analysisGroup: "",
   analysisPeriod: "",
+  analysisDirection: "",
   analysisCategories: [],
   flowParty: "",
   flowKind: "",
@@ -73,6 +75,12 @@ export function filterAnalysis(
     perspective = new Set(filters.perspectiveNames)
   const categories = new Set(filters.analysisCategories)
   return rows.filter((row) => {
+    if (
+      omit !== "drill" &&
+      filters.analysisDirection &&
+      row.direction !== filters.analysisDirection
+    )
+      return false
     if (filters.analysisGroup && paymentGroup(row) !== filters.analysisGroup)
       return false
     if (
@@ -292,6 +300,9 @@ export function analysisTableView(filters: AnalysisFilters) {
     ...(filters.analysisGroup ? { analysis_group: filters.analysisGroup } : {}),
     ...(filters.analysisPeriod
       ? { analysis_period: filters.analysisPeriod }
+      : {}),
+    ...(filters.analysisDirection
+      ? { analysis_direction: filters.analysisDirection }
       : {}),
     ...(filters.analysisCategories.length
       ? { analysis_categories: filters.analysisCategories }

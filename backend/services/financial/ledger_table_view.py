@@ -25,6 +25,7 @@ class LedgerTableView(BaseModel):
     perspective_names: list[Annotated[str, Field(max_length=1024)]] = Field(default_factory=list, max_length=5000)
     analysis_group: Annotated[str, Field(pattern=r'^$|^[A-Z]{3}:(card|bank)$')] = ''
     analysis_period: Annotated[str, Field(pattern=r'^$|^undated$|^\d{4}-(0[1-9]|1[0-2])$')] = ''
+    analysis_direction: Literal['', 'credit', 'debit'] = ''
     analysis_categories: list[Annotated[str, Field(max_length=120)]] = Field(default_factory=list, max_length=1000)
     flow_party: Annotated[str, Field(max_length=1024)] = ''
     flow_kind: Literal['', 'incoming', 'outgoing', 'internal'] = ''
@@ -80,6 +81,8 @@ def _analysis_match(row, view, selections):
         if view.profile_id not in (f"account:{row['account_id']}", f"name:{name or ''}"):
             return False
     if view.analysis_group and group != view.analysis_group:
+        return False
+    if view.analysis_direction and row['direction'] != view.analysis_direction:
         return False
     if view.analysis_period and _period(row) != view.analysis_period:
         return False
@@ -149,7 +152,7 @@ def capture_table_view(ledger, request, *, batch_scope=None):
                 return (key[5:] if key.startswith('name:') else 'Not identified').lower()
             return (row.get(field) or ('Uncategorized' if field == 'category' else '')).lower()
         rows.sort(key=lambda row: label(row).encode('utf-16-be', errors='surrogatepass'), reverse=direction == 'desc')
-    result = dict(schema='loupe.financial.ledger_table_view/1',filters=view.model_dump(exclude={key for key in ('profile_id', 'profile_group', 'category', 'account_id', 'account_holder', 'source_document_id', 'import_batch_id', 'import_batch_revision', 'from_names', 'to_names', 'perspective_names', 'analysis_group', 'analysis_period', 'analysis_categories', 'flow_party', 'flow_kind') if not getattr(view, key)}),
+    result = dict(schema='loupe.financial.ledger_table_view/1',filters=view.model_dump(exclude={key for key in ('profile_id', 'profile_group', 'category', 'account_id', 'account_holder', 'source_document_id', 'import_batch_id', 'import_batch_revision', 'from_names', 'to_names', 'perspective_names', 'analysis_group', 'analysis_period', 'analysis_direction', 'analysis_categories', 'flow_party', 'flow_kind') if not getattr(view, key)}),
         row_ids=[r['key'] for r in rows],matching_rows=len(rows),
         limitation='Admitted ledger rows matching the recorded table filters, in display order, captured at export time. Display order does not establish bank sequence. The enclosing snapshot retains the full applied account/date scope and its history; its totals apply to that full scope. Source eligibility and proof classes are unchanged. All matching rows are included, not just the visible page.')
     if batch_sources is not None:

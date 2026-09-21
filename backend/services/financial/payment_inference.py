@@ -7,7 +7,7 @@ payment. Explicit investigator labels always take precedence in payment_labels.
 import re
 import unicodedata
 
-VERSION = 'description-labels/2'
+VERSION = 'description-labels/3'
 
 
 def normalized(value):
@@ -93,7 +93,7 @@ MERCHANTS = [
     (r'AMTRAK(?=[^A-Z]|$)', 'Amtrak', 'Travel'),
     (r'SPIRIT AI(?:R|\s)', 'Spirit Airlines', 'Travel'),
     (r'(?:ETOLL\s+)?AVIS(?=[^A-Z]|$)', 'Avis', 'Travel'),
-    (r'BUDGET\.COM|ETOLL\s+BGT\b', 'Budget', 'Travel'),
+    (r'BUDGET(?:\.COM|\s+RENT\s+A\s+CAR)|ETOLL\s+BGT\b', 'Budget', 'Travel'),
     (r'PARKMOBILE(?=[^A-Z]|$)', 'ParkMobile', 'Parking and tolls'),
     (r'ENTERPRISE\s*RENT[ -]A[ -]CAR', 'Enterprise Rent-A-Car', 'Travel'),
     (r'FOUR\s*SEASONS(?=[^A-Z]|$)', 'Four Seasons', 'Travel'),
@@ -225,7 +225,53 @@ def infer_payment_labels(description, *, direction, account_type=None, instituti
         depositor = re.match(r'^(?:W\d{2}\s+)?DEPOSITO DE TERCERO\s+(.+?)\s+BMRCASH\b', raw, re.I)
         if depositor and _name(depositor[1]):
             suggest('counterparty', depositor[1].strip(), 'bbva-depositor', 'Name printed after “DEPOSITO DE TERCERO” in the description.')
+    if account_type == 'credit_card' and 'counterparty' not in result:
+        merchant = card_merchant_descriptor(raw)
+        if merchant and result.get('category', {}).get('value') not in (
+                'Taxes', 'Interest income', 'Interest charges', 'Bank fees',
+                'Payroll', 'Cash withdrawals', 'Transfers', 'Deposits'):
+            suggest('counterparty', merchant, 'card-statement-descriptor',
+                'Merchant label from the card payment description, not a verified legal identity. '
+                'Location or store text is retained when its boundary is unclear. '
+                'The original description remains available; a processor prefix does not establish the ultimate recipient.')
+            if direction == 'credit' and 'category' not in result:
+                category('Merchant credits', 'merchant-credit-descriptor', 'the merchant descriptor on this card credit')
     return result
+
+
+def card_merchant_descriptor(raw):
+    """Use a readable merchant descriptor beyond the known-brand list.
+
+    Card descriptors often concatenate merchant, city and state. Keep that
+    printed label rather than guessing where a legal name ends. Require a
+    processor, business wording, or the issuer's merchant/location format;
+    reference-only strings and generic account movements are not merchants.
+    """
+    value = normalized(raw)
+    if not 4 <= len(value) <= 180:
+        return None
+    if re.match(r'^(?:\d|[A-Z]{1,4}\s*\d{3,})', value):
+        return None
+    if re.match(r'^CLKBANK\*COM_', value) or re.search(r'\*[A-F0-9]{12,}', value):
+        return None
+    if re.match(r'^(?:(?:CAPITAL ONE|CARD|BANK)\s+)?(?:PAYMENTS?|PYMT|PMT|MOBILE|ONLINE|AUTOPAY|AUTOMATIC|ELECTRONIC|CREDIT|DEBIT|REFUND|REVERSAL|ADJUSTMENT|CASH|BALANCE|INTEREST|FINANCE CHARGE|TRANSFER|WIRE|ATM|UNKNOWN|REFERENCE|REF\b|NOT RECORDED)\b', value):
+        return None
+    processor = re.match(r'^(?:TST|SQ|PAYPAL|SP|SPO|PY|MED)\s*\*\s*(.+)', value)
+    # Ten-digit North American phone numbers or the printed city/state suffix.
+    states = r'(?:AL|AK|AZ|AR|CA|CO|CT|DE|DC|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY|AB|BC|MB|NB|NL|NS|NT|NU|ON|PE|QC|SK|YT)'
+    phone_pattern = r'(?<!\d)(?:\d{3}[-. ]?){2}\d{4}(?=[A-Z -]*' + states + r'$)'
+    phone = re.search(phone_pattern, value)
+    location = re.search(r'[A-Z]{3}' + states + r'$', value)
+    business = re.search(r'\b(?:PARKING|COLPARK|PARKX|DENTAL|DENTISTRY|HOSPITAL|ORTHODONTIC|MEDICAL|SALON|LASH|BROW|BARBER|STORAGE|RESTAURANT|PIZZA|CAFE|CAR WASH|DETAILING|MINI GOLF|COUNTY FAIR|AMUSEMENT)\b', value)
+    if not (processor or phone or location or business):
+        return None
+    label = re.sub(r'^(?:TST|SQ|PAYPAL|SP|SPO|PY|MED)\s*\*\s*', '', raw, flags=re.I)
+    label = re.sub(phone_pattern + states + r'$', '', label, flags=re.I).strip()
+    label = re.sub(phone_pattern, ' ', label, flags=re.I).strip()
+    # A processor plus an opaque reference still does not identify a merchant.
+    if not re.search(r'[A-Za-z]{3}', label) or re.search(r'\d{10,}', label):
+        return None
+    return ' '.join(label.split())
 
 
 def _name(value):

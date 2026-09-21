@@ -1,9 +1,9 @@
 import { useState } from "react"
+import { TransactionFilterCharts } from "./TransactionFilterCharts"
 import type { LedgerTransaction } from "../api"
 import { formatLedgerAmount } from "../lib/ledger-format"
-import { paymentGroup, chartRatio } from "../lib/investigator-workspace"
+import { chartRatio } from "../lib/investigator-workspace"
 import {
-  activitySeries,
   amountGroupName,
   emptyAnalysisFilters,
   filterAnalysis,
@@ -21,16 +21,6 @@ type PanelState = {
 }
 const money = (value: bigint, group: string) =>
   `${formatLedgerAmount(value.toString(), group.split(":")[0]).text} ${group.split(":")[0]}`
-const colors = [
-  "#257e70",
-  "#4777b9",
-  "#ab536c",
-  "#a97020",
-  "#785caa",
-  "#328393",
-  "#a75132",
-  "#6b7b34",
-]
 const toggleName = (names: string[], name: string) =>
   names.includes(name) ? names.filter((n) => n !== name) : [...names, name]
 
@@ -190,201 +180,6 @@ function PartyList({
         </div>
       )}
     </section>
-  )
-}
-
-function Charts({
-  rows,
-  filters,
-  onChange,
-}: {
-  rows: LedgerTransaction[]
-  filters: AnalysisFilters
-  onChange: (value: Partial<AnalysisFilters>) => void
-}) {
-  const groups = [...new Set(rows.map(paymentGroup))].sort()
-  const [choice, setChoice] = useState("")
-  const group = groups.includes(choice) ? choice : (groups[0] ?? "")
-  const chartRows = rows.filter((row) => paymentGroup(row) === group)
-  const data = activitySeries(chartRows)
-  const maximum = data.months.reduce(
-    (max, m) => (m.credit + m.debit > max ? m.credit + m.debit : max),
-    0n
-  )
-  const volume = data.categories.reduce(
-    (sum, c) => sum + c.credit + c.debit,
-    0n
-  )
-  let position = 0
-  const segments = data.categories.map((c, i) => {
-    const start = position
-    position += chartRatio(c.credit + c.debit, volume) * 100
-    return `${colors[i % colors.length]} ${start}% ${position}%`
-  })
-  return (
-    <div className="space-y-3 p-3">
-      <div className="flex flex-wrap items-center gap-3 text-xs">
-        <label>
-          Chart currency and account type{" "}
-          <select
-            aria-label="Chart currency and account type"
-            className="ml-2 rounded border bg-background p-1"
-            value={group}
-            onChange={(e) => setChoice(e.target.value)}
-          >
-            {groups.map((g) => (
-              <option key={g} value={g}>
-                {amountGroupName(g)}
-              </option>
-            ))}
-          </select>
-        </label>
-        <span>
-          {chartRows.length.toLocaleString()} transactions before month/category
-          selection. Click a month or category to filter the table.
-        </span>
-      </div>
-      {!chartRows.length ? (
-        <p>No transactions to chart.</p>
-      ) : (
-        <div className="grid gap-4 xl:grid-cols-[3fr_2fr]">
-          <section className="min-w-0" aria-label="Monthly transaction volume">
-            <h4 className="text-sm font-medium">
-              Monthly volume · {amountGroupName(group)}
-            </h4>
-            <p className="text-xs text-muted-foreground">
-              Total credits and debits shown separately; no currency conversion.
-              {data.omittedEmptyMonths &&
-                " Only months with transactions are shown because the date span exceeds 50 years."}
-            </p>
-            <div
-              className="mt-2 flex gap-1 overflow-x-auto border-b pb-1"
-              style={{ height: 176 }}
-            >
-              {data.months.map((m) => (
-                <button
-                  key={m.month}
-                  aria-label={`${m.month}: ${m.count} transactions, credits ${money(m.credit, group)}, debits ${money(m.debit, group)}`}
-                  aria-pressed={
-                    filters.analysisPeriod === m.month &&
-                    filters.analysisGroup === group
-                  }
-                  title={`${m.month}: credits ${money(m.credit, group)}; debits ${money(m.debit, group)}`}
-                  className={`flex min-w-9 flex-1 flex-col justify-end rounded-t px-1 text-[10px] hover:bg-muted ${filters.analysisPeriod === m.month ? "bg-primary/10 ring-1 ring-inset ring-primary" : ""}`}
-                  onClick={() =>
-                    onChange({
-                      analysisGroup: group,
-                      analysisPeriod:
-                        filters.analysisPeriod === m.month ? "" : m.month,
-                    })
-                  }
-                >
-                  <span
-                    className="mx-auto flex w-full max-w-10 flex-col-reverse overflow-hidden rounded-t"
-                    style={{
-                      height: Math.max(
-                        m.count ? 2 : 0,
-                        chartRatio(m.credit + m.debit, maximum) * 125
-                      ),
-                    }}
-                  >
-                    <span
-                      style={{
-                        height: `${chartRatio(m.credit, m.credit + m.debit) * 100}%`,
-                        background: "var(--finance-credit)",
-                      }}
-                    />
-                    <span
-                      style={{
-                        height: `${chartRatio(m.debit, m.credit + m.debit) * 100}%`,
-                        background: "var(--finance-debit)",
-                      }}
-                    />
-                  </span>
-                  <span className="mt-1 whitespace-nowrap">{m.month}</span>
-                </button>
-              ))}
-            </div>
-            <div className="mt-2 flex flex-wrap gap-3 text-xs">
-              <span style={{ color: "var(--finance-credit)" }}>
-                ● Credits / money in
-              </span>
-              <span style={{ color: "var(--finance-debit)" }}>
-                ● Debits / money out
-              </span>
-              {data.undated > 0 && (
-                <button
-                  className="underline"
-                  onClick={() =>
-                    onChange({
-                      analysisGroup: group,
-                      analysisPeriod: "undated",
-                    })
-                  }
-                >
-                  {data.undated} transactions without a printed date
-                </button>
-              )}
-            </div>
-          </section>
-          <section className="min-w-0" aria-label="Category distribution">
-            <h4 className="text-sm font-medium">
-              Category distribution · {amountGroupName(group)}
-            </h4>
-            <p className="text-xs text-muted-foreground">
-              Share of total volume (credits + debits), not net movement.
-            </p>
-            <div className="mt-2 flex items-start gap-3">
-              <div
-                role="img"
-                aria-label={`Category volume ${money(volume, group)}; exact amounts listed alongside`}
-                className="mt-3 flex h-28 w-28 shrink-0 items-center justify-center rounded-full"
-                style={{
-                  background: volume
-                    ? `conic-gradient(${segments.join(",")})`
-                    : "var(--muted)",
-                }}
-              >
-                <span className="flex h-20 w-20 items-center justify-center rounded-full bg-card text-xs">
-                  {data.categories.length} categories
-                </span>
-              </div>
-              <div className="max-h-48 min-w-0 flex-1 overflow-auto text-xs">
-                {data.categories.map((c, i) => (
-                  <button
-                    key={c.category}
-                    aria-pressed={filters.analysisCategories.includes(
-                      c.category
-                    )}
-                    className={`flex w-full items-center justify-between gap-2 rounded p-1.5 text-left hover:bg-muted ${filters.analysisCategories.includes(c.category) ? "bg-primary/10" : ""}`}
-                    onClick={() =>
-                      onChange({
-                        analysisGroup: group,
-                        analysisCategories: toggleName(
-                          filters.analysisCategories,
-                          c.category
-                        ),
-                      })
-                    }
-                  >
-                    <span>
-                      <span style={{ color: colors[i % colors.length] }}>
-                        ●{" "}
-                      </span>
-                      {c.category}{" "}
-                      <span className="text-muted-foreground">({c.count})</span>
-                    </span>
-                    <span className="whitespace-nowrap tabular-nums">
-                      {money(c.credit + c.debit, group)}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          </section>
-        </div>
-      )}
-    </div>
   )
 }
 
@@ -584,6 +379,7 @@ export function AnalysisFilterChips({
     filters.analysisCategories.length +
     Number(!!filters.analysisGroup) +
     Number(!!filters.analysisPeriod) +
+    Number(!!filters.analysisDirection) +
     Number(!!filters.flowParty) +
     Number(!!filters.flowKind)
   if (!active) return null
@@ -631,6 +427,17 @@ export function AnalysisFilterChips({
           {filters.analysisPeriod === "undated"
             ? "No printed date"
             : filters.analysisPeriod}{" "}
+          ×
+        </button>
+      )}
+      {filters.analysisDirection && (
+        <button
+          className="rounded-full border px-2 py-1"
+          onClick={() => onChange({ analysisDirection: "" })}
+        >
+          {filters.analysisDirection === "credit"
+            ? "Credits / money in"
+            : "Debits / money out"}{" "}
           ×
         </button>
       )}
@@ -691,13 +498,6 @@ export function TransactionAnalysisPanels({
   panels: PanelState
   onChange: (value: Partial<AnalysisFilters & PanelState>) => void
 }) {
-  const visible = panels.chartsOpen
-    ? filterAnalysis(rows, {
-        ...filters,
-        analysisPeriod: "",
-        analysisCategories: [],
-      })
-    : []
   const flowRows = panels.flowOpen
     ? filterAnalysis(rows, {
         ...filters,
@@ -733,7 +533,11 @@ export function TransactionAnalysisPanels({
       </div>
       {panels.chartsOpen && (
         <div id="analysis-chartsOpen">
-          <Charts rows={visible} filters={filters} onChange={onChange} />
+          <TransactionFilterCharts
+            rows={rows}
+            filters={filters}
+            onChange={onChange}
+          />
         </div>
       )}
       {panels.partiesOpen && (

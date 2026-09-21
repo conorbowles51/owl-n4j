@@ -6,6 +6,7 @@ export interface LedgerTableView {
   perspective_names?: string[]
   analysis_group?: string
   analysis_period?: string
+  analysis_direction?: "credit" | "debit"
   analysis_categories?: string[]
   flow_party?: string
   flow_kind?: string

@@ -50,7 +50,7 @@ Step-by-step instructions for reviewing financial records, investigating payment
 
 *Writing the finding requires a title and explanation. The two selected payments are already attached.*
 
-In **Transactions**, open **Charts** for monthly volume and category distribution. Select a month or category to filter the payments. **Trends** compares earlier and later periods, explains differences by counterparty or category, and opens the supporting payments for each observation.
+In **Transactions**, open **Charts** for monthly volume and category distribution. Select a coloured bar segment to filter by month and direction, or a doughnut slice to filter by category. These selections update the totals, name lists, money flow and payment table. **Trends** compares earlier and later periods, explains differences by counterparty or category, and opens the supporting payments for each observation.
 
 ## Categorize imported transactions and edit From and To
 
@@ -921,7 +921,7 @@ Open **Money flow** and select one or more **Perspective names**. **Inflow to gr
 
 Each currency and bank/card type has separate figures. Select an inflow, outflow or internal card, or a counterparty bar, to show its transactions. The flow panel retains the comparison before that direction/counterparty selection; the totals above the table describe the narrowed list. Remove the visible chips to widen it again. Card entries describe charges and credits rather than bank cash movements.
 
-Open **Charts** for monthly volume and category distribution. Choose the chart's currency and account type. Chart amounts are never converted or added across currencies. Click a month or category to filter the table; multiple selected categories mean any of those categories. Charts retain the month/category comparison so you can change the selection. Entries without printed dates are available through the separate undated count.
+Open **Charts** for monthly volume and category distribution. Choose the chart's currency and account type. Chart amounts are never converted or added across currencies. Click a coloured bar segment to select its month and credit/debit direction, or click the month label for both directions. Click a doughnut slice or category list entry to select that category. Multiple selected categories mean any of those categories. These filters update the totals, From & To lists, money flow, transaction table and downloads together. Click again or remove the visible filter chip to clear a selection. The month chart responds to selected categories; the category chart responds to the selected month and direction. All categories are available through search and Previous/Next categories, eight per page. Previous/Next months browses twelve months at a time without changing your filters. Entries without printed dates are available through the separate undated count.
 
 You can collapse any analysis panel. Its filter chips remain visible and continue to apply. Opening a statement source or refreshing the page preserves the analysis selections.
 
@@ -1163,7 +1163,7 @@ A cross-case match does not merge cases or give access to restricted records. If
 2. Use **Sort by** to order the directory by payment count, recent activity or name. Choose one currency and account type before sorting by total amount.
 3. Select a profile. Read its money totals, payment count, first and last known payment dates, accounts and source-document count.
 4. Review **Accounts and references in these payments** and any linked findings. The displayed name is taken from the records; it does not independently identify the ultimate recipient or establish ownership.
-5. Below the profile summary, use the same transaction explorer as in **Transactions**: search, account/holder, date, direction, amount, category and proof filters; **Charts**, **From & To** and **Money flow**; sorting, selection, inline edits and downloads. Charts start open. A chart selection filters the profile's table. Clearing filters keeps the payments limited to this profile. Each profile remembers its own filters.
+5. Below the profile summary, use the same transaction explorer as in **Transactions**: search, account/holder, date, direction, amount, category and proof filters; **Charts**, **From & To** and **Money flow**; sorting, selection, inline edits and downloads. Charts start open. A chart selection filters the profile's totals, name lists, money flow, table and downloads. Clearing filters keeps the payments limited to this profile. Each profile remembers its own filters.
 6. Select a payment description to inspect its original statement. Compare selected payments or create a finding. Downloads retain the profile and every active filter.
 7. Select **Back to names and accounts** to return to the directory.
 
@@ -2026,3 +2026,9 @@ These two saves are separate: one preserves the editor you are still filling in;
 Finalized manual PDF rows remain P3. Finalization does not certify complete extraction, identify every account holder or promote readings into verified totals. To change a written amount later, use a ledger correction. Do not attempt to reopen the original source selection as if it were an unsaved form.
 
 Your unfinished finalization explanation stays in this browser tab. After a refresh, load the preview and check both confirmations again. If the reviewed rows or statement controls changed, check the updated preview before selecting **Use explanation for this preview**, or edit the reason to describe the current selection. A failed or interrupted request keeps the explanation; the saved receipt is the confirmation that finalization succeeded.
+
+### Missing counterparty names and merchant descriptions
+
+The **Counterparty not identified** group explains why names are missing, with counts for card repayments, unnamed transfers, tax entries and other unclear descriptions. These payments do not represent one person or business. Card repayment descriptions may identify the issuer without identifying the funding account.
+
+Readable merchant descriptors can supply suggested names beyond the built-in brand list. They are marked **Suggested**, preserve the original description and do not establish legal identity or ownership. Location or store text stays in the label when its boundary is unclear. Printed counterparty fields and investigator edits take precedence, including names an investigator deliberately cleared. Opaque references and location-only entries remain available for review.

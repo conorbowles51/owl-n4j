@@ -196,7 +196,7 @@ it("keeps reciprocal filters, perspective, charts, source and export connected o
   fireEvent.click(
     within(
       screen.getByRole("region", { name: "Category distribution" })
-    ).getByRole("button", { name: /Rent/ })
+    ).getByRole("button", { name: /^Category: Rent / })
   )
   expect(screen.getByText("1 of 5 imported transactions")).toBeVisible()
   fireEvent.click(
@@ -240,3 +240,107 @@ it("keeps reciprocal filters, perspective, charts, source and export connected o
     element: screen.getByRole("table", { name: "Investigation transactions" }),
   })
 }, 30000)
+
+it("filters every dashboard panel through bar segments and doughnut slices, and exposes all 27 categories", async () => {
+  await page.viewport(1440, 1100)
+  const many = Array.from(
+    { length: 27 },
+    (_, i): LedgerTransaction => ({
+      ...rows[1],
+      key: `category-${i + 1}`,
+      ref_id: `TX-CAT-${i + 1}`,
+      description: `Purchase ${i + 1}`,
+      category: `Category ${String(i + 1).padStart(2, "0")}`,
+      to_name: `Merchant ${i + 1}`,
+      ordering_date: i === 26 ? "2024-02-03" : "2024-01-03",
+      amount_minor: "100",
+    })
+  )
+  many.push({
+    ...many[0],
+    key: "credit",
+    direction: "credit",
+    from_name: "Merchant 1",
+    to_name: "Trading Co",
+    amount_minor: "500",
+  })
+  many.push({
+    ...many[0],
+    key: "later",
+    ordering_date: "2024-02-10",
+    amount_minor: "700",
+  })
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <main className="financial-workspace p-4 bg-background text-foreground">
+        <LedgerRowBrowser
+          investigation
+          transactions={many}
+          exportContext={{ caseId: "segments", params: {} }}
+        />
+      </main>
+    </QueryClientProvider>
+  )
+  fireEvent.click(screen.getByRole("button", { name: "▸ Charts" }))
+  expect(screen.getByText("1–8 of 27 categories")).toBeVisible()
+  fireEvent.click(screen.getByRole("button", { name: "Next categories" }))
+  expect(screen.getByText("9–16 of 27 categories")).toBeVisible()
+  fireEvent.click(screen.getByRole("button", { name: "Next categories" }))
+  fireEvent.click(screen.getByRole("button", { name: "Next categories" }))
+  expect(screen.getByText("25–27 of 27 categories")).toBeVisible()
+  fireEvent.click(
+    screen.getByRole("button", { name: /^Category: Category 27 / })
+  )
+  expect(screen.getByText("1 of 29 imported transactions")).toBeVisible()
+  fireEvent.click(
+    screen.getByRole("button", { name: "Clear analysis filters" })
+  )
+  fireEvent.change(screen.getByLabelText("Search chart categories"), {
+    target: { value: "Category 27" },
+  })
+  expect(screen.getByText("1–1 of 1 matching (27 total)")).toBeVisible()
+  fireEvent.change(screen.getByLabelText("Search chart categories"), {
+    target: { value: "" },
+  })
+  fireEvent.click(
+    screen.getByRole("button", { name: /^Filter category Category 01:/ })
+  )
+  expect(screen.getByText("3 of 29 imported transactions")).toBeVisible()
+  fireEvent.click(
+    screen.getByRole("button", { name: "2024-01: Money out 1.00 USD" })
+  )
+  expect(screen.getByText("1 of 29 imported transactions")).toBeVisible()
+  fireEvent.click(screen.getByRole("button", { name: "▸ From & To" }))
+  expect(
+    within(screen.getByRole("region", { name: "Recipients (To)" })).getByRole(
+      "button",
+      { name: "Merchant 1" }
+    )
+  ).toBeVisible()
+  expect(
+    within(screen.getByRole("region", { name: "Recipients (To)" })).queryByRole(
+      "button",
+      { name: "Merchant 2" }
+    )
+  ).toBeNull()
+  expect(
+    JSON.parse(screen.getByTestId("captured-export").textContent!)
+  ).toMatchObject({
+    analysis_period: "2024-01",
+    analysis_direction: "debit",
+    analysis_categories: ["Category 01"],
+  })
+  fireEvent.click(
+    screen.getByRole("button", { name: "2024-01: Money out 1.00 USD" })
+  )
+  expect(screen.getByText("3 of 29 imported transactions")).toBeVisible()
+  fireEvent.keyDown(
+    screen.getByRole("button", { name: /^Filter category Category 27:/ }),
+    { key: "Enter" }
+  )
+  expect(screen.getByText("4 of 29 imported transactions")).toBeVisible()
+  await page.screenshot({
+    path: "../../../../../output/financial-chart-filters.png",
+    element: screen.getByRole("region", { name: "Transaction analysis" }),
+  })
+})

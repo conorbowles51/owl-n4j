@@ -19,6 +19,51 @@ import { useFinancialStore } from "../stores/financial.store"
 import { useFinancialFindingIndex } from "../hooks/use-financial-finding-index"
 import { LedgerRowBrowser } from "./LedgerRowBrowser"
 import { LedgerSourceDialog } from "./LedgerSourceDialog"
+import { unidentifiedGroups } from "../lib/unidentified-payments"
+import type { LedgerTransaction } from "../api"
+
+function UnidentifiedBreakdown({
+  rows,
+  detail = false,
+}: {
+  rows: LedgerTransaction[]
+  detail?: boolean
+}) {
+  const groups = new Map<
+    string,
+    { label: string; reason: string; count: number }
+  >()
+  for (const group of unidentifiedGroups(rows)) {
+    const previous = groups.get(group.kind)
+    groups.set(group.kind, {
+      label: group.label,
+      reason: group.reason,
+      count: (previous?.count ?? 0) + group.rows.length,
+    })
+  }
+  return (
+    <div className="rounded border bg-muted/20 p-3 text-sm space-y-2">
+      <p className="font-medium">Why names are missing</p>
+      <ul className="space-y-2">
+        {[...groups.values()]
+          .sort((a, b) => b.count - a.count)
+          .map((group) => (
+            <li key={group.label}>
+              <span>
+                {group.label}: <strong>{group.count}</strong>
+              </span>
+              {detail && (
+                <p className="text-xs text-muted-foreground">{group.reason}</p>
+              )}
+            </li>
+          ))}
+      </ul>
+      <p className="text-xs text-muted-foreground">
+        These payments do not represent one person or business.
+      </p>
+    </div>
+  )
+}
 
 export function InvestigatorPeople({ caseId }: { caseId: string }) {
   const data = useInvestigatorPayments(caseId)
@@ -176,6 +221,9 @@ export function InvestigatorPeople({ caseId }: { caseId: string }) {
                   <dd>{selected.sources.length}</dd>
                 </div>
               </dl>
+              {selected.unidentified && (
+                <UnidentifiedBreakdown rows={selected.rows} detail />
+              )}
               {selected.kind === "name" && (
                 <p className="rounded border bg-muted/20 p-3 text-sm">
                   {selected.unidentified ? (
@@ -379,6 +427,9 @@ export function InvestigatorPeople({ caseId }: { caseId: string }) {
                     {profile.sources.length} source documents
                   </p>
                   <PaymentTotals rows={profile.rows} label="Recorded amounts" />
+                  {profile.unidentified && (
+                    <UnidentifiedBreakdown rows={profile.rows} />
+                  )}
                   <p className="text-xs text-muted-foreground">
                     {profile.first || "Date unknown"} to{" "}
                     {profile.last || "date unknown"}

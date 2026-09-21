@@ -86,6 +86,47 @@ class PaymentInferenceTests(unittest.TestCase):
                 self.assertEqual(self.infer(description), {})
         self.assertEqual(self.infer('NIKE.COM', direction='invalid'), {})
 
+    def test_readable_card_merchants_do_not_depend_on_a_brand_whitelist(self):
+        for description, expected in [
+            ('LAVEDA LASH & BROW DCWASHINGTONDC', 'LAVEDA LASH & BROW DCWASHINGTONDC'),
+            ('SPA DENTAL GROUPWASHINGTONDC', 'SPA DENTAL GROUPWASHINGTONDC'),
+            ('TST* EXAMPLE RESTAURANT202-506-4603DC', 'EXAMPLE RESTAURANT'),
+            ('PAYPAL *EXAMPLE SHOP7174613351PA', 'EXAMPLE SHOP'),
+            ('V SHRED LLC8888747331NV', 'V SHRED LLC'),
+            ('SQ *LOCAL BAKERYgosq.comMD', 'LOCAL BAKERYgosq.comMD'),
+            ('MARKET@WORK 2067379149RENTONWA', 'MARKET@WORK RENTONWA'),
+            ('PAYPAL *EXAMPLE SHOP4029357733ON', 'EXAMPLE SHOP'),
+        ]:
+            with self.subTest(description=description):
+                inferred = self.infer(description)
+                self.assertEqual(inferred['counterparty']['value'], expected)
+                self.assertEqual(inferred['counterparty']['source'], 'description')
+                self.assertEqual(inferred['counterparty']['rule'], 'card-statement-descriptor')
+                self.assertIn('not a verified legal identity', inferred['counterparty']['explanation'])
+                self.assertNotIn('counterparty', self.infer(description, kind='checking'))
+        credit = self.infer('PAYPAL *EXAMPLE SHOP7174613351PA', 'credit')
+        self.assertEqual(credit['counterparty']['value'], 'EXAMPLE SHOP')
+        self.assertEqual(credit['category']['value'], 'Merchant credits')
+        self.assertEqual(self.infer('BUDGET RENT A CARWASHINGTONDC')['counterparty']['value'], 'Budget')
+
+    def test_card_account_movements_and_opaque_codes_do_not_become_merchants(self):
+        for description in ['COLUMBIA HEIGHTS', 'AAO0051HYATTSVILLEMD', 'AAO 0051HYATTSVILLEMD',
+                            '64224 -5530WISCONSINCHEVYCHASEMD', 'STERRASG31650198SGP',
+                            'PAYPAL *1234567890123CA', 'PAYMENT RECEIVED WASHINGTONDC',
+                            'BALANCE TRANSFER WASHINGTONDC', 'REFUND WASHINGTONDC',
+                            'CASH ADVANCE WASHINGTONDC', 'CAPITAL ONE ONLINE PYMTAuthDate',
+                            'CLKBANK*COM_CBWMAP2G800-390-6035ID', 'UPS*11d28ed5f72441cabc800-811-1648GA']:
+            with self.subTest(description=description):
+                self.assertNotIn('counterparty', self.infer(description, 'credit'))
+
+    def test_descriptor_suggestions_preserve_printed_and_manually_cleared_names(self):
+        account = SimpleNamespace(id='a', case_id='case', holder_name='Owner', identifier_as_printed='1', account_type='credit_card', institution_name='Card Bank')
+        row = SimpleNamespace(account_id='a', case_id='case', metadata_={}, description='SQ *LOCAL BAKERYgosq.comMD', direction='debit', counterparty_raw='Printed recipient')
+        self.assertEqual(payment_label_view(row, account)['to_name'], 'Printed recipient')
+        row.counterparty_raw = None
+        row.metadata_ = {'investigation_labels': {'to_name': ''}}
+        self.assertEqual(payment_label_view(row, account)['to_name'], '')
+
     def test_existing_readings_and_individual_manual_edits_take_precedence(self):
         account = SimpleNamespace(id='account', case_id='case', holder_name='Owner', identifier_as_printed='123', account_type='credit_card', institution_name='Capital One')
         row = SimpleNamespace(account_id='account', case_id='case', metadata_={}, description='NIKE.COM AP8008066453OR', direction='debit', counterparty_raw=None)

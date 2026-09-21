@@ -334,6 +334,8 @@ def render_ledger_report(snapshot):
             analysis_labels.append(['Currency and account type', currency + (' · Credit cards' if kind == 'card' else ' · Bank accounts')])
         if view['filters'].get('analysis_period'):
             analysis_labels.append(['Chart month', 'No printed date' if view['filters']['analysis_period'] == 'undated' else view['filters']['analysis_period']])
+        if view['filters'].get('analysis_direction'):
+            analysis_labels.append(['Chart segment', 'Credits / money in' if view['filters']['analysis_direction'] == 'credit' else 'Debits / money out'])
         if view['filters'].get('flow_kind'):
             analysis_labels.append(['Flow selection', {'incoming': 'Inflow to group', 'outgoing': 'Outflow from group', 'internal': 'Internal entries within group'}[view['filters']['flow_kind']]])
         if view['filters'].get('flow_party'):

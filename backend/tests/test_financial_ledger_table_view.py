@@ -3,6 +3,25 @@ from services.financial.ledger_table_view import capture_table_view
 from services.financial.ledger_summary import LedgerSummaryError
 
 class LedgerTableViewTests(TestCase):
+    def test_chart_segment_category_month_and_profile_intersect_in_export(self):
+        from copy import deepcopy
+        readings = [self.row(key, account_id='a', category='Rent', from_name='Owner', to_name='Supplier') for key in ['selected', 'credit', 'other-month', 'other-category', 'other-profile']]
+        for reading in readings:
+            reading['row']['direction'] = 'debit'
+        readings[1]['row']['direction'] = 'credit'
+        readings[2]['row']['ordering_date'] = '2026-02-01'
+        readings[3]['row']['category'] = 'Fees'
+        readings[4]['row']['to_name'] = 'Other'
+        ledger = {'readings': readings}
+        before = deepcopy(ledger)
+        view = capture_table_view(ledger, {'profile_id': 'name:Supplier', 'analysis_group': 'GBP:bank', 'analysis_categories': ['Rent'], 'analysis_period': '2026-01', 'analysis_direction': 'debit'})
+        self.assertEqual(view['row_ids'], ['selected'])
+        self.assertEqual(view['filters']['analysis_direction'], 'debit')
+        self.assertNotIn('analysis_direction', capture_table_view(ledger, {})['filters'])
+        self.assertEqual(ledger, before)
+        with self.assertRaises(LedgerSummaryError):
+            capture_table_view(ledger, {'analysis_direction': 'outgoing'})
+
     def test_profile_scope_stays_in_exports_when_additional_filters_are_cleared(self):
         ledger = {'readings': [self.row('one', account_id='a', from_name='Supplier', to_name='Owner'), self.row('two', account_id='b', from_name='Supplier', to_name='Owner'), self.row('unknown', account_id='a', from_name='', counterparty_raw='Rejected'), self.row('other', account_id='a', from_name='Other')]}
         ledger['readings'][1]['row']['currency'] = 'USD'
