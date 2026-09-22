@@ -173,8 +173,34 @@ class BbvaProposalTests(TestCase):
             if any('C50' in c['expected_text'] for c in row['cells']):
                 row['cells'][-1]['expected_text'] = '999.00'
         _, proposal = self.proposal(sources)
+        self.assertEqual(proposal['balance_basis'], 'operation')
         self.assertEqual(check_statement_rows(proposal['rows'])['balance_status'], 'matches')
         self.assertEqual([r['fields']['balance'] for r in proposal['rows'] if r['kind'] == 'balance'], ['6000', '2520'])
+
+    def test_prior_period_settlements_are_retained_outside_current_payment_totals(self):
+        sources = statement()
+        prior = source([
+            [(9000, 570000, 'Movimientos de Periodos Anteriores que se consideran en el Cálculo de Liquidación de este Periodo')],
+            [(9000, 40000, 'FECHA'), (520000, 50000, 'SALDO')],
+            [(9000, 40000, 'OPER'), (50000, 40000, 'LIQ.'), (90000, 150000, 'COD. DESCRIPCION'), (300000, 50000, 'CARGOS')],
+            [(9000, 40000, '31/AGO'), (50000, 40000, '02/SEP'), (90000, 150000, 'PAGO DE NOMINA'), (300000, 50000, '939.00')],
+            [(90000, 300000, 'A PRIOR PERIOD REFERENCE')],
+            [(9000, 200000, 'Total de Movimientos')],
+        ])['rows']
+        body = sources[1]['rows']
+        for i, r in enumerate(prior): r['row_index'] = len(body) + i
+        body[-1:-1] = prior
+        for i, r in enumerate(body): r['row_index'] = i
+        # The following page must not attach its continuation to a settlement.
+        sources[2]['rows'] = [r for r in sources[2]['rows'] if not any(c['expected_text'] == '16%' for c in r['cells'])]
+        _, p = self.proposal(sources)
+        retained = [r for r in p['rows'] if r['kind'] == 'prior_period_settlement']
+        self.assertEqual(len(retained), 5)
+        self.assertTrue(all(r['excluded'] and not r['issues'] for r in retained))
+        self.assertEqual(p['prior_period_settlement_pages'], [2])
+        self.assertEqual(sum(not r['excluded'] for r in p['rows']), 2)
+        self.assertEqual(check_statement_rows(p['rows'])['balance_status'], 'matches')
+        self.assertTrue(any('PAGO DE NOMINA' in c['expected_text'] for r in retained for c in r['source_cells']))
 
     def test_missing_fee_is_flagged_by_the_printed_count_and_amount(self):
         sources = statement()
@@ -183,6 +209,19 @@ class BbvaProposalTests(TestCase):
         _, p = self.proposal(sources)
         self.assertTrue(any('identified 1' in issue for r in p['rows'] for issue in r['issues']))
         self.assertEqual(check_statement_rows(p['rows'])['balance_status'], 'difference')
+
+    def test_fiscal_page_without_readable_page_number_does_not_raise_missing_statement_warning(self):
+        from services.financial.statement_import_catalog import statement_catalog
+        certificate = source([[(20000, 550000, value)] for value in (
+            'BBVA MEXICO, S.A.', 'Folio Fiscal:', 'Sello Digital', 'Sello SAT',
+            'Este documento es una representación impresa de un CFDI',
+        )], page=8)
+        result = statement_catalog(statement() + [certificate])
+        self.assertTrue(result['complete_coverage'])
+        self.assertEqual(result['information_sources'], [dict(page_number=8, table_index=0, kind='tax_certificate')])
+        mixed = deepcopy(certificate)
+        mixed['rows'] += source([[(9000, 500000, '31/ENE TRANSFERENCIA 100.00')]], page=8)['rows']
+        self.assertFalse(statement_catalog(statement() + [mixed])['complete_coverage'])
 
     def test_damaged_amount_stays_a_transaction_to_correct(self):
         sources = statement()

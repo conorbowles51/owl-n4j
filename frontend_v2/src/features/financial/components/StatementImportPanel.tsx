@@ -136,6 +136,10 @@ const proposalSchema = z.object({
   record_count: z.number().optional(),
   incomplete_count: z.number().optional(),
   can_import_balances: z.boolean().default(false),
+  balance_basis: z.enum(["operation", "liquidation"]).nullish(),
+  prior_period_settlement_pages: z
+    .array(z.number().int().positive())
+    .default([]),
   can_record_account_closure: z.boolean().default(false),
   assignment_only: z.boolean().default(false),
   printed_main_account: z.string().default(""),
@@ -599,7 +603,11 @@ function StatementReview({
               : query.data.current_import &&
                   !query.data.current_import.incomplete_count
                 ? "This period’s account and balances are saved. It has no imported payments."
-                : "This period has no usable imported payments yet. Review its readings below, then save the payments to Transactions."}
+                : query.data.can_import_balances &&
+                    query.data.transaction_count === 0 &&
+                    query.data.needs_attention === 0
+                  ? "This statement records balances and no transactions. Save its account and balances below; no payments need to be added."
+                  : "This period has no usable imported payments yet. Review its readings below, then save the payments to Transactions."}
         </p>
         {query.data.current_import &&
           query.data.current_import.transaction_count > 0 &&
@@ -691,7 +699,11 @@ function StatementReview({
               {query.data.current_import.transaction_count
                 ? `${query.data.current_import.transaction_count} payments saved to Transactions`
                 : query.data.current_import.incomplete_count
-                  ? "These payments have not reached Transactions"
+                  ? query.data.can_import_balances &&
+                    query.data.transaction_count === 0 &&
+                    query.data.needs_attention === 0
+                    ? "The earlier import mistook statement information for payments"
+                    : "These payments have not reached Transactions"
                   : "Statement balances saved"}
             </h3>
             <p>
@@ -2422,6 +2434,11 @@ function EditableStatement({
                 " Select Edit this row to correct a value beside its original."}
             </p>
             <PrintedStatementTable
+              balanceOnly={
+                data.can_import_balances &&
+                data.transaction_count === 0 &&
+                data.needs_attention === 0
+              }
               selectedRowId={focus?.rowId}
               rows={data.rows.filter((row) => row.page_number === currentPage)}
               onCell={(rowId, locator) =>
@@ -3188,6 +3205,34 @@ function EditableStatement({
             Totals are incomplete. Check the flagged rows and enter each amount
             under Credit or Debit before importing.
           </p>
+        )}
+        {data.balance_basis && (
+          <div
+            className="rounded border bg-muted/20 p-3 text-sm space-y-1"
+            role="note"
+            aria-label="Balance basis"
+          >
+            <p className="font-medium">
+              Balance check:{" "}
+              {data.balance_basis === "operation"
+                ? "operation balances"
+                : "liquidation balances"}
+            </p>
+            <p>
+              {data.balance_basis === "operation"
+                ? "The opening and closing values below use Saldo de Operación Inicial and Saldo de Operación Final, matching the Operación balance column. The separately printed liquidation balances are retained in the PDF and are not mixed into this check."
+                : "The opening and closing values below use Saldo de Liquidación Inicial and Saldo Final (+), matching the Liquidación balance column. Operation and liquidation dates remain separate on each payment."}
+            </p>
+            {data.prior_period_settlement_pages.length > 0 && (
+              <p>
+                The statement also lists transactions from earlier periods that
+                settled in this period (PDF pages{" "}
+                {data.prior_period_settlement_pages.join(", ")}). These are
+                retained with the original statement and are excluded from this
+                period’s imported payments and totals.
+              </p>
+            )}
+          </div>
         )}
         <div
           ref={balanceControls}

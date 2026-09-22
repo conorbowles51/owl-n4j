@@ -12,12 +12,14 @@ export function PrintedStatementTable({
   onReviewRow,
   selectedRowId,
   rowTools,
+  balanceOnly = false,
 }: {
   rows: PrintedRow[]
   selectedRowId?: string
   onCell: (rowId: string, locator: unknown) => void
   onReviewRow?: (rowId: string) => void
   rowTools?: (rowId: string) => ReactNode
+  balanceOnly?: boolean
 }) {
   const positioned = rows.filter(
     (row) => row.fields?.statement_layout === "andrews-share-statement"
@@ -182,8 +184,9 @@ export function PrintedStatementTable({
       )}
       {!sections.length && !positioned.length && !readable.length && (
         <p className="text-sm">
-          A transaction table could not be reconstructed for this page. Check
-          the original and the extracted text below.
+          {balanceOnly
+            ? "This statement records balances and no transactions. Its original readings remain available below."
+            : "A transaction table could not be reconstructed for this page. Check the original and the extracted text below."}
         </p>
       )}
       {additional.length > 0 && (

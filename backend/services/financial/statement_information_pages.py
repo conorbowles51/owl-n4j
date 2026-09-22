@@ -2,6 +2,23 @@
 import re
 
 
+def bbva_information_kind(rows):
+    """A fiscal certificate may lack a readable page number after OCR."""
+    from services.financial.statement_import_bbva import norm, text
+    content = '\n'.join(norm(text(row)) for row in rows)
+    if not all(marker in content for marker in (
+        'BBVA MEXICO, S.A.', 'FOLIO FISCAL', 'SELLO DIGITAL', 'SELLO SAT',
+        'ESTE DOCUMENTO ES UNA REPRESENTACION IMPRESA DE UN CFDI',
+    )):
+        return None
+    # A certificate attached to a page of movements does not exclude them.
+    if any(marker in content for marker in ('DETALLE DE MOVIMIENTOS', 'SALDO DE OPERACION', 'CARGOS ABONOS')):
+        return None
+    if re.search(r'(?m)^\s*\d{1,2}/[A-Z]{3}\b', content):
+        return None
+    return 'tax_certificate'
+
+
 def andrews_information_kind(rows):
     texts = [cell['expected_text'].strip() for row in rows for cell in row['cells']]
     content = ' '.join(texts).lower()

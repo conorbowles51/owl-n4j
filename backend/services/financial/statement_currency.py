@@ -37,7 +37,7 @@ def detect_statement_currency(sources, *, layout_id=None, header_text=''):
     rows = [[c['expected_text'].strip() for c in row['cells']]
             for source in sources for row in source['rows']]
     rows.extend([[line.strip()] for line in header_text.splitlines()])
-    mexican_issuer = layout_id == 'bbva-mexico-cash-management' or any(
+    mexican_issuer = layout_id in ('bbva-mexico-cash-management', 'scotiabank-mexico-zero-activity') or any(
         re.search(r'BBVA (?:MEXICO|BANCOMER),? S\.?A\.?', ' '.join(cells), re.I) for cells in rows)
     labelled = set()
     for cells in rows:

@@ -161,6 +161,8 @@ def short_date(value, choice):
 def propose_bbva_statement(sources, currency, choice):
     result = []
     last_payment = None
+    prior_period = False
+    prior_period_pages = set()
     printed_labels = {norm(c['expected_text']) for s in sources for r in s['rows'] for c in r['cells']}
     operational = bool({'SALDO DE OPERACION INICIAL', 'SALDO DE OPERACION FINAL'} & printed_labels)
     balance_labels = (('SALDO DE OPERACION INICIAL', 'Opening Balance'), ('SALDO DE OPERACION FINAL', 'Closing Balance')) if operational else (
@@ -176,6 +178,21 @@ def propose_bbva_statement(sources, currency, choice):
                         source_cells=cells, fields={}, issues=[], excluded=True, kind='header')
             result.append(item)
             labels = {norm(c['expected_text']): c for c in cells}
+            row_text = norm(text(raw))
+            if row_text.startswith('MOVIMIENTOS DE PERIODOS ANTERIORES') and 'LIQUIDACION' in row_text:
+                # These are operations already booked in a previous period.
+                # BBVA repeats them to explain the settlement balance, outside
+                # this period's printed payment counts and totals.
+                prior_period = True
+                columns = None
+                last_payment = None
+            if row_text.startswith('TOTAL DE MOVIMIENTOS'):
+                prior_period = False
+                columns = None
+            if prior_period:
+                prior_period_pages.add(source['page_number'])
+                item.update(kind='prior_period_settlement')
+                continue
             # Never mix operational and liquidation balances. Prefer the
             # operational pair, matching the operation-date transaction list.
             role = next((role for label, role in balance_labels
@@ -293,4 +310,5 @@ def propose_bbva_statement(sources, currency, choice):
             found = sum(not r['excluded'] and r['fields'].get('direction') == direction for r in result)
             if found != int(count):
                 row['issues'].append(f'The statement lists {count} {"charges" if direction == "debit" else "credits"}; Loupe identified {found}. Check for missing transactions.')
-    return dict(rows=result, issues=[])
+    return dict(rows=result, issues=[], balance_basis='operation' if operational else 'liquidation',
+                prior_period_settlement_pages=sorted(prior_period_pages))

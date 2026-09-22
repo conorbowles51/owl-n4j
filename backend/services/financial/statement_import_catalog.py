@@ -7,7 +7,7 @@ complete statement.
 """
 from services.financial.pdf_candidates import _digest
 from services.financial.statement_layout_context import _cycle, CAPITAL_ONE_CARD_HEADING
-from services.financial.statement_information_pages import capital_information_kind, andrews_information_kind, merrick_information_kind
+from services.financial.statement_information_pages import capital_information_kind, andrews_information_kind, merrick_information_kind, bbva_information_kind
 
 
 def _capital_page_contexts(sources):
@@ -23,7 +23,7 @@ def _capital_page_contexts(sources):
     candidates, established, information = {}, set(), {}
     for page, rows in pages.items():
         cells = [c for row in rows for c in row['cells']]
-        kind = capital_information_kind(rows) or andrews_information_kind(rows) or merrick_information_kind(rows)
+        kind = capital_information_kind(rows) or andrews_information_kind(rows) or merrick_information_kind(rows) or bbva_information_kind(rows)
         if kind:
             information[page] = kind
         cycles = set()
@@ -54,6 +54,9 @@ def statement_catalog(sources):
     from services.financial.statement_import_bbva import bbva_catalog
     bbva, bbva_handled = bbva_catalog(sources)
     groups.update({statement['id']: statement for statement in bbva})
+    from services.financial.statement_import_scotiabank import scotiabank_catalog
+    scotiabank, scotiabank_handled = scotiabank_catalog(sources)
+    groups.update({statement['id']: statement for statement in scotiabank})
     groups.update({statement['id']: statement for statement in unassigned_andrews_groups(sources, handled)})
     unclassified = []
     information = []
@@ -61,7 +64,7 @@ def statement_catalog(sources):
     capital_pages, information_pages = _capital_page_contexts(sources)
     for source in sources:
         address = (source['page_number'], source['table_index'])
-        if address in bbva_handled:
+        if address in bbva_handled or address in scotiabank_handled:
             continue
         if address in handled:
             if address in incomplete:

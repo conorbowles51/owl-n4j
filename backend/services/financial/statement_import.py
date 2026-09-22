@@ -265,7 +265,7 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
                         period=(selected['period_start'] + ' - ' + selected['period_end']) if selected['period_start'] else selected.get('printed_statement_date') or selected.get('printed_closing_date', ''))
         if selected.get('layout_id') in ('capital-one-card', 'merrick-card'):
             metadata['balance_convention'] = 'liability_owed'
-        if selected.get('layout_id') == 'bbva-mexico-cash-management':
+        if selected.get('layout_id') in ('bbva-mexico-cash-management', 'scotiabank-mexico-zero-activity'):
             metadata['balance_convention'] = 'asset_balance'
         # A selected account must not inherit a name from a different section
         # elsewhere in the same PDF.
@@ -331,15 +331,24 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
         rows.extend(proposal['rows'])
         issues.extend(proposal.get('issues', []))
         _check_review_size(rows)
+    balance_basis = None
+    prior_period_settlement_pages = []
     if selected and selected.get('layout_id') == 'bbva-mexico-cash-management':
         from services.financial.statement_import_bbva import propose_bbva_statement
         proposal = propose_bbva_statement(sources, chosen_currency, selected)
+        balance_basis = proposal['balance_basis']
+        prior_period_settlement_pages = proposal['prior_period_settlement_pages']
         rows.extend(proposal['rows'])
         issues.extend(proposal.get('issues', []))
         _check_review_size(rows)
     from services.financial.statement_import_proposal import has_transaction_header
+    if selected and selected.get('layout_id') == 'scotiabank-mexico-zero-activity':
+        from services.financial.statement_import_scotiabank import propose_scotiabank_statement
+        proposal = propose_scotiabank_statement(sources, chosen_currency, selected)
+        rows.extend(proposal['rows'])
+        _check_review_size(rows)
     transaction_header_pages = {s['page_number'] for s in sources if has_transaction_header(s)} if not selected else set()
-    for source in ([] if selected and selected.get('layout_id') in ('andrews-share-statement', 'bbva-mexico-cash-management') else sources):
+    for source in ([] if selected and selected.get('layout_id') in ('andrews-share-statement', 'bbva-mexico-cash-management', 'scotiabank-mexico-zero-activity') else sources):
         try:
             if selected and selected.get('layout_id') == 'merrick-card':
                 from services.financial.statement_import_merrick import propose_merrick_table
@@ -424,6 +433,8 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
                     metadata=metadata, currency=chosen_currency, statement_id=statement_id)
     if selected and selected.get('layout_id') == 'bbva-mexico-cash-management':
         snapshot['bbva_statement_v1'] = rows
+    if selected and selected.get('layout_id') == 'scotiabank-mexico-zero-activity':
+        snapshot['scotiabank_zero_activity_v1'] = rows
     undated_charges = [row['id'] for row in rows if row['fields'].get('date_basis') == 'statement_end_ordering_only']
     if undated_charges:
         snapshot['undated_statement_charges_v1'] = undated_charges
@@ -457,6 +468,8 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
                 printed_main_account=selected.get('main_account_reference', '') if selected else '',
                 can_record_account_closure=closure_only,
                 can_import_balances=balance_only and not closure_only,
+                balance_basis=balance_basis,
+                prior_period_settlement_pages=prior_period_settlement_pages,
                 page_numbers=all_page_numbers,
                 unassigned_page_numbers=unassigned_pages if selected else [],
                 information_pages=[dict(page_number=number, kind=kind) for number, kind in sorted(
