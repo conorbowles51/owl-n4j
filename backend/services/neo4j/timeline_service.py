@@ -153,6 +153,7 @@ class TimelineService:
         }
         record_keys = record.keys() if hasattr(record, "keys") else record
         for field in (
+            "ledger_transaction_id",
             "location",
             "location_raw",
             "location_formatted",
@@ -272,6 +273,7 @@ class TimelineService:
                 n.amount AS amount,
                 n.summary AS summary,
                 n.notes AS notes,
+                n.ledger_transaction_id AS ledger_transaction_id,
                 connections
             ORDER BY sort_date ASC, coalesce(sort_time, '99:99') ASC, n.key ASC
             LIMIT $limit
@@ -375,6 +377,7 @@ class TimelineService:
                 n.amount AS amount,
                 n.summary AS summary,
                 n.notes AS notes,
+                n.ledger_transaction_id AS ledger_transaction_id,
                 connections,
                 {export_returns}
                 n.key AS key_echo

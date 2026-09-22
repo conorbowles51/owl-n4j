@@ -136,3 +136,6 @@ __all__ += ["FinancialPdfNomination"]
 
 from postgres.models.financial_import_batches import FinancialImportBatch, FinancialImportBatchItem
 __all__ += ['FinancialImportBatch', 'FinancialImportBatchItem']
+
+from postgres.models.timeline_entry import TimelineEntry
+__all__ += ["TimelineEntry"]

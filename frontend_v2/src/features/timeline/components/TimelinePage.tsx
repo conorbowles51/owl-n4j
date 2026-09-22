@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useCallback, useRef, useState } from "react"
-import { useParams } from "react-router-dom"
+import { useParams, useLocation, useNavigate } from "react-router-dom"
+import { Button } from "@/components/ui/button"
+import { FinancialAccessProvider } from "@/features/financial/components/FinancialAccessProvider"
+import { LedgerSourceDialog } from "@/features/financial/components/LedgerSourceDialog"
+import { CaseworkDetailSheet } from "@/features/workspace/components/CaseworkDetailSheet"
+import { useFinancialAccess } from "@/features/financial/hooks/use-financial-access"
 import { Clock } from "lucide-react"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { EmptyState } from "@/components/ui/empty-state"
@@ -25,13 +30,27 @@ import { SignificantEmptyState } from "@/features/significant/components/Signifi
 
 export function TimelinePage() {
   const { id: caseId } = useParams()
+  const location = useLocation()
+  const navigate = useNavigate()
+  const [source, setSource] = useState<{
+    kind: "transaction" | "workspace_entry"
+    id: string
+  } | null>(null)
+  const requestedKey = new URLSearchParams(location.search).get("event")
+  const returnTo =
+    typeof location.state?.financialReturnTo === "string" &&
+    location.state.financialReturnTo.startsWith(`/cases/${caseId}/financial`)
+      ? location.state.financialReturnTo
+      : `/cases/${caseId}/financial?view=transactions`
   const caseLayer = useCaseLayer(caseId)
-  const { events, eventTypes, entities, isLoading, dataKey } =
+  const { events, eventTypes, entities, isLoading, dataKey, error, retry } =
     useTimelineData({ caseId })
 
   const searchInputRef = useRef<HTMLInputElement>(null)
   const [exportOpen, setExportOpen] = useState(false)
-  const [exportSource, setExportSource] = useState<TimelineExportSource | null>(null)
+  const [exportSource, setExportSource] = useState<TimelineExportSource | null>(
+    null
+  )
 
   // Graph store — selecting an event opens the shared entity detail panel
   const selectNodes = useGraphStore((s) => s.selectNodes)
@@ -72,19 +91,25 @@ export function TimelinePage() {
   const handleSelectEvent = useCallback(
     (key: string) => {
       timelineSelectEvent(key)
+      const financial = events.find((event) => event.key === key)?.source
+      if (financial) {
+        setSource(financial)
+        return
+      }
       selectNodes([key])
       expandGraphPanelTo("detail")
     },
-    [timelineSelectEvent, selectNodes, expandGraphPanelTo]
+    [timelineSelectEvent, selectNodes, expandGraphPanelTo, events]
   )
 
   const handleMultiSelectEvent = useCallback(
     (key: string) => {
       multiSelectEvent(key)
+      if (events.find((event) => event.key === key)?.source) return
       selectNodes([key])
       expandGraphPanelTo("detail")
     },
-    [multiSelectEvent, selectNodes, expandGraphPanelTo]
+    [multiSelectEvent, selectNodes, expandGraphPanelTo, events]
   )
 
   const handleClearSelection = useCallback(() => {
@@ -112,6 +137,36 @@ export function TimelinePage() {
     setClusters,
   ])
 
+  const handoffRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (
+      !requestedKey ||
+      !dataKey ||
+      isLoading ||
+      handoffRef.current === location.key
+    )
+      return
+    if (!events.some((event) => event.key === requestedKey)) return
+    clearAllFilters(eventTypes)
+    selectAllTypes(eventTypes)
+    clearSelection()
+    timelineSelectEvent(requestedKey)
+    scrollToEvent(requestedKey)
+    handoffRef.current = location.key
+  }, [
+    requestedKey,
+    dataKey,
+    isLoading,
+    location.key,
+    events,
+    eventTypes,
+    clearAllFilters,
+    selectAllTypes,
+    clearSelection,
+    timelineSelectEvent,
+    scrollToEvent,
+  ])
+
   // Update clusters when events change
   useEffect(() => {
     if (!dataKey || initializedDataKeyRef.current !== dataKey) return
@@ -119,21 +174,27 @@ export function TimelinePage() {
   }, [dataKey, events, setClusters])
 
   // Filtering pipeline
-  const { items, filteredEvents, filteredCount, totalCount, entityFilterCounts } =
-    useFilteredEvents({
-      events,
-      selectedTypes,
-      selectedEntityKeys,
-      dateRange,
-      visibleWindow,
-      searchTerm,
-      includedEventKeys: null,
-    })
+  const {
+    items,
+    filteredEvents,
+    filteredCount,
+    totalCount,
+    entityFilterCounts,
+  } = useFilteredEvents({
+    events,
+    selectedTypes,
+    selectedEntityKeys,
+    dateRange,
+    visibleWindow,
+    searchTerm,
+    includedEventKeys: null,
+  })
 
   // Count active filters (type + entity only — search & date are in toolbar)
   const activeFilterCount = useMemo(() => {
     let count = 0
-    if (selectedTypes.size > 0 && selectedTypes.size < eventTypes.length) count++
+    if (selectedTypes.size > 0 && selectedTypes.size < eventTypes.length)
+      count++
     if (selectedEntityKeys.size > 0) count++
     return count
   }, [selectedTypes, selectedEntityKeys, eventTypes.length])
@@ -144,17 +205,17 @@ export function TimelinePage() {
     [selectAllTypes, eventTypes]
   )
 
-  const handleClearAll = useCallback(
-    () => {
-      clearAllFilters(eventTypes)
-    },
-    [clearAllFilters, eventTypes]
-  )
+  const handleClearAll = useCallback(() => {
+    clearAllFilters(eventTypes)
+  }, [clearAllFilters, eventTypes])
 
-  const openExportDialog = useCallback((source: TimelineExportSource | null = null) => {
-    setExportSource(source)
-    setExportOpen(true)
-  }, [])
+  const openExportDialog = useCallback(
+    (source: TimelineExportSource | null = null) => {
+      setExportSource(source)
+      setExportOpen(true)
+    },
+    []
+  )
 
   const handleFocusEntity = useCallback(
     (key: string) => setSelectedEntities(new Set([key])),
@@ -173,6 +234,20 @@ export function TimelinePage() {
     searchInputRef,
     scrollToEvent,
   })
+
+  if (error)
+    return (
+      <div role="alert" className="p-6 space-y-3">
+        <p>
+          Timeline could not be loaded completely. Your saved entries are
+          retained.
+        </p>
+        <Button onClick={retry}>Retry Timeline</Button>
+        <Button variant="outline" onClick={() => navigate(returnTo)}>
+          Back to Financial
+        </Button>
+      </div>
+    )
 
   if (isLoading) {
     return (
@@ -204,6 +279,38 @@ export function TimelinePage() {
 
   return (
     <div className="flex h-full flex-col bg-background">
+      {requestedKey && (
+        <div
+          className="flex flex-wrap items-center gap-3 border-b bg-primary/5 px-4 py-2 text-sm"
+          role="status"
+        >
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => navigate(returnTo)}
+          >
+            Back to Financial
+          </Button>
+          <p>
+            {events.some((event) => event.key === requestedKey)
+              ? "Your added event is selected. Select an event to inspect its original payment, finding or observation."
+              : "The requested event is not visible in this Timeline scope."}
+          </p>
+        </div>
+      )}
+      {caseId && source && (
+        <FinancialAccessProvider caseId={caseId}>
+          <TimelineSource
+            caseId={caseId}
+            source={source}
+            onClose={() => {
+              setSource(null)
+              retry()
+            }}
+            onOpenEntry={(id) => setSource({ kind: "workspace_entry", id })}
+          />
+        </FinancialAccessProvider>
+      )}
       {/* Toolbar: search + date presets + filter toggle */}
       <TimelineToolbar
         ref={searchInputRef}
@@ -269,17 +376,49 @@ export function TimelinePage() {
 
       {caseId && (
         <TimelineExportDialog
-            open={exportOpen}
-            onOpenChange={(open) => {
-              setExportOpen(open)
-              if (!open) setExportSource(null)
-            }}
-            caseId={caseId}
-            filteredEvents={filteredEvents}
-            selectedKeys={multiSelectedKeys}
-            preferredSource={exportSource}
-          />
+          open={exportOpen}
+          onOpenChange={(open) => {
+            setExportOpen(open)
+            if (!open) setExportSource(null)
+          }}
+          caseId={caseId}
+          filteredEvents={filteredEvents}
+          selectedKeys={multiSelectedKeys}
+          preferredSource={exportSource}
+        />
       )}
     </div>
+  )
+}
+
+function TimelineSource({
+  caseId,
+  source,
+  onClose,
+  onOpenEntry,
+}: {
+  caseId: string
+  source: { kind: "transaction" | "workspace_entry"; id: string }
+  onClose: () => void
+  onOpenEntry: (id: string) => void
+}) {
+  const { canEdit } = useFinancialAccess()
+  return source.kind === "transaction" ? (
+    <LedgerSourceDialog
+      caseId={caseId}
+      transactionId={source.id}
+      onClose={onClose}
+    />
+  ) : (
+    <CaseworkDetailSheet
+      caseId={caseId}
+      entryId={source.id}
+      open
+      canEdit={canEdit}
+      onOpenChange={(open) => {
+        if (!open) onClose()
+      }}
+      onOpenEntry={onOpenEntry}
+    />
   )
 }

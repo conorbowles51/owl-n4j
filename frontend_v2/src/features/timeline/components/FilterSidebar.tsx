@@ -1,7 +1,6 @@
 import { useState } from "react"
 import { X, Search } from "lucide-react"
 import { Input } from "@/components/ui/input"
-import { Checkbox } from "@/components/ui/checkbox"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
@@ -43,19 +42,18 @@ export function FilterSidebar({
   const [typeFilter, setTypeFilter] = useState("")
 
   const filteredEventTypes = typeFilter
-    ? eventTypes.filter((t) => t.toLowerCase().includes(typeFilter.toLowerCase()))
+    ? eventTypes.filter((t) =>
+        t.toLowerCase().includes(typeFilter.toLowerCase())
+      )
     : eventTypes
 
   // Group entities by type
-  const entityGroups = entities.reduce(
-    (acc, entity) => {
-      const group = acc.get(entity.type) ?? []
-      group.push(entity)
-      acc.set(entity.type, group)
-      return acc
-    },
-    new Map<string, DerivedEntity[]>()
-  )
+  const entityGroups = entities.reduce((acc, entity) => {
+    const group = acc.get(entity.type) ?? []
+    group.push(entity)
+    acc.set(entity.type, group)
+    return acc
+  }, new Map<string, DerivedEntity[]>())
 
   return (
     <div className="flex h-full flex-col bg-panel">
@@ -95,18 +93,22 @@ export function FilterSidebar({
           )}
           <div className="max-h-[240px] overflow-y-auto space-y-0.5">
             {filteredEventTypes.map((type) => (
-              <button
+              <label
                 key={type}
-                onClick={() => onToggleType(type)}
                 className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-xs hover:bg-muted"
               >
-                <Checkbox checked={selectedTypes.has(type)} />
+                <input
+                  type="checkbox"
+                  checked={selectedTypes.has(type)}
+                  onChange={() => onToggleType(type)}
+                  className="size-3 accent-primary"
+                />
                 <span
                   className="size-2 rounded-full shrink-0"
                   style={{ backgroundColor: getEventTypeColor(type) }}
                 />
                 <span className="flex-1 text-left">{type}</span>
-              </button>
+              </label>
             ))}
           </div>
         </div>
@@ -141,20 +143,23 @@ export function FilterSidebar({
                       key={entity.key}
                       className="flex items-center gap-1.5 rounded-md px-1 py-0.5 hover:bg-muted"
                     >
-                      <button
-                        onClick={() => onToggleEntity(entity.key)}
-                        className="flex items-center gap-1.5 flex-1 min-w-0"
-                      >
-                        <Checkbox
+                      <label className="flex items-center gap-1.5 flex-1 min-w-0">
+                        <input
+                          type="checkbox"
                           checked={selectedEntityKeys.has(entity.key)}
+                          onChange={() => onToggleEntity(entity.key)}
+                          className="size-3 accent-primary"
                         />
-                        <NodeBadge type={entity.type} className="text-[9px] py-0 shrink-0">
+                        <NodeBadge
+                          type={entity.type}
+                          className="text-[9px] py-0 shrink-0"
+                        >
                           {entity.name}
                         </NodeBadge>
                         <span className="text-[10px] text-muted-foreground shrink-0">
                           {count}
                         </span>
-                      </button>
+                      </label>
                       <button
                         onClick={() => onFocusEntity(entity.key)}
                         className="text-[9px] text-muted-foreground hover:text-foreground shrink-0"

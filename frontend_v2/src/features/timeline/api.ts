@@ -18,6 +18,15 @@ export interface TimelineEvent {
   amount: string | null
   summary: string | null
   notes: string | null
+  source?: {
+    kind: "transaction" | "workspace_entry"
+    id: string
+    date_basis: string
+    label: string
+    state: "current" | "snapshot"
+  }
+  source_references?: string[]
+  ledger_transaction_id?: string | null
   connections: TimelineConnection[]
 }
 
@@ -182,10 +191,13 @@ export const timelineAPI = {
     }),
 
   updateView: (viewId: string, input: TimelineViewUpdate) =>
-    fetchAPI<TimelineView>(`/api/timeline/views/${encodeURIComponent(viewId)}`, {
-      method: "PATCH",
-      body: input,
-    }),
+    fetchAPI<TimelineView>(
+      `/api/timeline/views/${encodeURIComponent(viewId)}`,
+      {
+        method: "PATCH",
+        body: input,
+      }
+    ),
 
   deleteView: (caseId: string, viewId: string) =>
     fetchAPI<void>(

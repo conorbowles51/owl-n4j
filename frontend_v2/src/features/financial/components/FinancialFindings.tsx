@@ -1,3 +1,4 @@
+import { AddToTimelineDialog } from "@/features/timeline/components/AddToTimelineDialog"
 import type { CaseworkEntry } from "@/features/workspace/casework-api"
 import { InvestigatorFindingEditor } from "./InvestigatorFindingEditor"
 import {
@@ -53,6 +54,7 @@ export function FinancialFindings({
   const { search, page } = view
   const setPage = (page: number) => setView((current) => ({ ...current, page }))
   const { canEdit } = useFinancialAccess()
+  const [timeline, setTimeline] = useState<CaseworkEntry | null>(null)
   const [editing, setEditing] = useState<CaseworkEntry | "new" | null>(null)
   const [kind, setKind] = useState("financial")
   const [progress, setProgress] = useState("all")
@@ -181,6 +183,15 @@ export function FinancialFindings({
         </section>
       )}
       {error && <p role="alert">{error}</p>}
+      {timeline && (
+        <AddToTimelineDialog
+          caseId={caseId}
+          ids={[timeline.id]}
+          sourceKind="workspace_entry"
+          title={`${findingKindLabel(findingDraft(timeline).kind)}: ${timeline.title || "Untitled"}`}
+          onClose={() => setTimeline(null)}
+        />
+      )}
       {entries.map((entry) => (
         <article
           key={entry.id}
@@ -209,13 +220,22 @@ export function FinancialFindings({
               </h3>
             </div>
             {canEdit && !entry.tags.includes("financial-report") && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setEditing(entry)}
-              >
-                Edit
-              </Button>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setTimeline(entry)}
+                >
+                  Add to Timeline
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setEditing(entry)}
+                >
+                  Edit
+                </Button>
+              </div>
             )}
           </div>
           {canEdit && !entry.tags.includes("financial-report") && (

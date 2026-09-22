@@ -320,3 +320,34 @@ flowchart TD
 The recorded diagram explains that arrows show independent directions, not receipt-to-withdrawal causation; totals include unnamed counterparties. FIFO/LIFO exploration explicitly assumes zero opening funds and source-document/row order for same-day entries, and requires acknowledgment. It excludes undated, card, noncurrent and unusable rows. It identifies withdrawals not covered by preceding imported receipts. Full opening-fund and attributed-claim analysis remains available in the existing tracing workbench. Split-payment results are timing candidates, never claimed as confirmed funding. Cross-currency investigation uses two explicitly chosen legs; the ratio is derived from their recorded amounts and may include fees, not a market FX quote or automatically verified link. Onward allocations remain in the received currency. Saved observations retain the full applied calculation input order and supporting citations. No automatic multi-hop FX matching or evidence of legal applicability is claimed.
 
 Local checks cover real database removal preview/conflict/confirmation with original PDFs retained, atomic edit rollback/source history, holder/account intersections and new ingestions, Boolean query and export ordering, plus Chromium account selection/return/reset, edit review/recovery, Finding/Observation save labels, cross-currency onward flow and one/eight-file removal dialogs at small viewport. Deployment/live evidence is recorded separately below; a synthetic browser check is not full live-corpus acceptance.
+
+## Add financial evidence to Loupe Timeline — 22 September 2026
+
+Investigator objective: place a selected payment, Finding or Observation alongside the other dated events in this case, with an inspectable source and a way back to the investigation.
+
+```mermaid
+flowchart TD
+  T[Transactions: select one or multiple rows] --> ADD[Add to Timeline]
+  N[Findings & Observations: Add to Timeline on the entry] --> DATE[Choose the event date]
+  DATE --> REVIEW[Review dated entries and source references]
+  ADD --> REVIEW
+  REVIEW -->|No usable payment date| SKIP[Leave payment in Transactions; correct its date when known]
+  REVIEW -->|Already added| EXISTING[Open existing Timeline event; no duplicate]
+  REVIEW -->|Cancel| RETURN[Same financial filters and selection]
+  REVIEW --> SAVE[Add ready entries → saved count]
+  SAVE -->|Source changed or request failed| RETRY[Readable error → refresh preview → retry]
+  RETRY --> REVIEW
+  SAVE --> OPEN[Open case Timeline → new event selected and visible]
+  EXISTING --> OPEN
+  OPEN --> SOURCE[Select event → original payment or casework entry]
+  SOURCE --> OPEN
+  OPEN --> RETURN
+```
+
+- The Timeline receives one event per selected dated transaction; maximum 5,000 per addition. Original currencies and exact amounts remain separate. No synthetic payment time or statement-end placeholder is used. The preview states whether it used the transaction, posted, value or effective date.
+- Findings and Observations keep their classification and linked evidence. Their event date is explicitly chosen by the investigator, independently of the note's creation date. Re-adding an existing entry preserves its already chosen date.
+- Explicit additions are case-scoped, permission checked and idempotent. Correcting a payment updates the same Timeline event through its correction chain. Its as-added snapshot remains stored. A removed/excluded source leaves a labelled saved copy in Timeline; it does not restore the financial import or change its totals.
+- Opening Timeline clears stale Timeline filters to reveal the new event. Source inspection and Back to Financial preserve the originating financial filters and selection. Regular Timeline filters, saved views and CSV/PDF export include the added entries. Account connections remain account references; counterparty strings are not promoted into verified identities.
+- Source removal is distinct from removing an event from a chronology. This change does not add a separate Timeline deletion/editor workflow.
+
+Implementation evidence: isolated SQL-backed tests cover preview/confirm/reopen, duplicate additions, corrections, undated rows, removed sources, chosen dates, Finding/Observation classification, case isolation, permissions and saved-view/CSV resolution. Chromium fixtures cover Transactions → Timeline → original payment → return, both casework types → Timeline → source-entry handoff → return, and small-screen stale-preview recovery. The browser check opens the actual Workspace detail sheet and verifies the saved explanation, then returns to Findings & Observations. Validation: 19 backend tests, 26 component/hook tests and five Chromium workflow tests pass; the production build passes with existing chunk-size warnings. Production deployment and live acceptance remain pending; no live case records were changed.

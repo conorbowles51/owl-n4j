@@ -1,3 +1,4 @@
+import { AddToTimelineDialog } from "@/features/timeline/components/AddToTimelineDialog"
 import { matchesAccountSelection } from "../lib/account-selection"
 import { compareDisplayedAmounts } from "../lib/transaction-search"
 import { transactionSearch } from "../lib/transaction-search"
@@ -77,6 +78,7 @@ export function LedgerRowBrowser({
   const findings = useFinancialFindingIndex(
     investigation ? exportContext?.caseId : undefined
   )
+  const [timeline, setTimeline] = useState(false)
   const [compare, setCompare] = useState(false)
   const [finding, setFinding] = useState<"question" | "observation" | null>(
     null
@@ -622,6 +624,12 @@ export function LedgerRowBrowser({
                       >
                         Categorize selected
                       </Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => setTimeline(true)}
+                      >
+                        Add to Timeline
+                      </Button>
                       <Button onClick={() => setFinding("observation")}>
                         Create finding
                       </Button>
@@ -640,6 +648,13 @@ export function LedgerRowBrowser({
                     ids={selection}
                   />
                 </div>
+                {timeline && (
+                  <AddToTimelineDialog
+                    caseId={exportContext.caseId}
+                    ids={selection}
+                    onClose={() => setTimeline(false)}
+                  />
+                )}
                 {compare && (
                   <PaymentComparison
                     caseId={exportContext.caseId}

@@ -1,6 +1,6 @@
 {
   "scope": "Financial TSX controls, including conditional and legacy controls. Templates describe actions; they are not proof that every runtime branch works. Shared PDF, table and dialog controls are covered in the workflow reference.",
-  "count": 1429,
+  "count": 1431,
   "actions": [
     {
       "component": "AccountFlowPerspective",
@@ -4030,7 +4030,7 @@
     {
       "component": "FinancialFindings",
       "file": "frontend_v2/src/features/financial/components/FinancialFindings.tsx",
-      "line": 93,
+      "line": 95,
       "control": "Button",
       "label": "Create finding",
       "disabled": null,
@@ -4042,7 +4042,7 @@
     {
       "component": "FinancialFindings",
       "file": "frontend_v2/src/features/financial/components/FinancialFindings.tsx",
-      "line": 99,
+      "line": 101,
       "control": "select",
       "label": "\"Finding type\"",
       "disabled": null,
@@ -4054,7 +4054,7 @@
     {
       "component": "FinancialFindings",
       "file": "frontend_v2/src/features/financial/components/FinancialFindings.tsx",
-      "line": 117,
+      "line": 119,
       "control": "select",
       "label": "\"Progress\"",
       "disabled": "{kind === \"financial-report\"}",
@@ -4066,7 +4066,7 @@
     {
       "component": "FinancialFindings",
       "file": "frontend_v2/src/features/financial/components/FinancialFindings.tsx",
-      "line": 141,
+      "line": 143,
       "control": "input",
       "label": "(label supplied by parent)",
       "disabled": null,
@@ -4078,7 +4078,7 @@
     {
       "component": "FinancialFindings",
       "file": "frontend_v2/src/features/financial/components/FinancialFindings.tsx",
-      "line": 153,
+      "line": 155,
       "control": "Button",
       "label": "{query.isFetching ? \"Retrying…\" : \"Try loading saved work again\"}",
       "disabled": "{query.isFetching}",
@@ -4090,7 +4090,7 @@
     {
       "component": "FinancialFindings",
       "file": "frontend_v2/src/features/financial/components/FinancialFindings.tsx",
-      "line": 173,
+      "line": 175,
       "control": "Button",
       "label": "Choose payments to investigate",
       "disabled": null,
@@ -4102,7 +4102,19 @@
     {
       "component": "FinancialFindings",
       "file": "frontend_v2/src/features/financial/components/FinancialFindings.tsx",
-      "line": 212,
+      "line": 224,
+      "control": "Button",
+      "label": "Add to Timeline",
+      "disabled": null,
+      "destination": null,
+      "events": {
+        "onClick": "{() => setTimeline(entry)}"
+      }
+    },
+    {
+      "component": "FinancialFindings",
+      "file": "frontend_v2/src/features/financial/components/FinancialFindings.tsx",
+      "line": 231,
       "control": "Button",
       "label": "Edit",
       "disabled": null,
@@ -4114,7 +4126,7 @@
     {
       "component": "FinancialFindings",
       "file": "frontend_v2/src/features/financial/components/FinancialFindings.tsx",
-      "line": 223,
+      "line": 243,
       "control": "input",
       "label": "{`Include ${entry.title || \"Untitled note\"} in report`}",
       "disabled": "{query.isPlaceholderData}",
@@ -4126,7 +4138,7 @@
     {
       "component": "FinancialFindings",
       "file": "frontend_v2/src/features/financial/components/FinancialFindings.tsx",
-      "line": 269,
+      "line": 289,
       "control": "summary",
       "label": "Written explanation and recorded amounts",
       "disabled": null,
@@ -4136,7 +4148,7 @@
     {
       "component": "FinancialFindings",
       "file": "frontend_v2/src/features/financial/components/FinancialFindings.tsx",
-      "line": 337,
+      "line": 357,
       "control": "Button",
       "label": "Open case event",
       "disabled": null,
@@ -4148,7 +4160,7 @@
     {
       "component": "FinancialFindings",
       "file": "frontend_v2/src/features/financial/components/FinancialFindings.tsx",
-      "line": 357,
+      "line": 377,
       "control": "a",
       "label": "Open linked note",
       "disabled": null,
@@ -4158,7 +4170,7 @@
     {
       "component": "FinancialFindings",
       "file": "frontend_v2/src/features/financial/components/FinancialFindings.tsx",
-      "line": 386,
+      "line": 406,
       "control": "SavedPaymentLinks",
       "label": "(label supplied by parent)",
       "disabled": null,
@@ -4170,7 +4182,7 @@
     {
       "component": "FinancialFindings",
       "file": "frontend_v2/src/features/financial/components/FinancialFindings.tsx",
-      "line": 399,
+      "line": 419,
       "control": "summary",
       "label": "Create a report from this note",
       "disabled": null,
@@ -4180,7 +4192,7 @@
     {
       "component": "FinancialFindings",
       "file": "frontend_v2/src/features/financial/components/FinancialFindings.tsx",
-      "line": 407,
+      "line": 427,
       "control": "Button",
       "label": "Download this note and its payments",
       "disabled": null,
@@ -4192,7 +4204,7 @@
     {
       "component": "FinancialFindings",
       "file": "frontend_v2/src/features/financial/components/FinancialFindings.tsx",
-      "line": 440,
+      "line": 460,
       "control": "a",
       "label": "{entry.tags.includes(\"financial-report\") ? \"Open report record in Workspace\" : \"Edit or review in Workspace\"}",
       "disabled": null,
@@ -4202,7 +4214,7 @@
     {
       "component": "FinancialFindings",
       "file": "frontend_v2/src/features/financial/components/FinancialFindings.tsx",
-      "line": 452,
+      "line": 472,
       "control": "Button",
       "label": "Previous notes",
       "disabled": "{page === 0 || query.isPlaceholderData || query.isFetching}",
@@ -4214,7 +4226,7 @@
     {
       "component": "FinancialFindings",
       "file": "frontend_v2/src/features/financial/components/FinancialFindings.tsx",
-      "line": 458,
+      "line": 478,
       "control": "Button",
       "label": "Next notes",
       "disabled": "{ query.isPlaceholderData || query.isFetching || (page + 1) * 25 >= (query.data?.total ?? 0) }",
@@ -4226,7 +4238,7 @@
     {
       "component": "SavedPaymentLinks",
       "file": "frontend_v2/src/features/financial/components/FinancialFindings.tsx",
-      "line": 509,
+      "line": 529,
       "control": "summary",
       "label": "{ids.length} linked payments",
       "disabled": null,
@@ -4236,7 +4248,7 @@
     {
       "component": "SavedPaymentLinks",
       "file": "frontend_v2/src/features/financial/components/FinancialFindings.tsx",
-      "line": 517,
+      "line": 537,
       "control": "Button",
       "label": "{row ? `${row.ordering_date} · ${row.description || \"Payment\"} · ${formatLedgerAmount(row.amount_minor, row.currency).text} ${row.currency}` : `Open transaction ${Array.isArray(refs) ? refs[index] || index + 1 : index + 1}`}",
       "disabled": null,
@@ -4248,7 +4260,7 @@
     {
       "component": "SavedPaymentLinks",
       "file": "frontend_v2/src/features/financial/components/FinancialFindings.tsx",
-      "line": 532,
+      "line": 552,
       "control": "Button",
       "label": "Previous saved payments",
       "disabled": "{!page}",
@@ -4260,7 +4272,7 @@
     {
       "component": "SavedPaymentLinks",
       "file": "frontend_v2/src/features/financial/components/FinancialFindings.tsx",
-      "line": 541,
+      "line": 561,
       "control": "select",
       "label": "\"Saved payment page\"",
       "disabled": null,
@@ -4272,7 +4284,7 @@
     {
       "component": "SavedPaymentLinks",
       "file": "frontend_v2/src/features/financial/components/FinancialFindings.tsx",
-      "line": 561,
+      "line": 581,
       "control": "Button",
       "label": "Next saved payments",
       "disabled": "{(page + 1) * 50 >= ids.length}",
@@ -7739,7 +7751,7 @@
     {
       "component": "transactionToolbar",
       "file": "frontend_v2/src/features/financial/components/LedgerRowBrowser.tsx",
-      "line": 177,
+      "line": 179,
       "control": "Button",
       "label": "Manage categories",
       "disabled": null,
@@ -7751,7 +7763,7 @@
     {
       "component": "transactionToolbar",
       "file": "frontend_v2/src/features/financial/components/LedgerRowBrowser.tsx",
-      "line": 183,
+      "line": 185,
       "control": "input",
       "label": "\"Search payments\"",
       "disabled": null,
@@ -7763,7 +7775,7 @@
     {
       "component": "transactionToolbar",
       "file": "frontend_v2/src/features/financial/components/LedgerRowBrowser.tsx",
-      "line": 201,
+      "line": 203,
       "control": "select",
       "label": "\"Transaction search mode\"",
       "disabled": null,
@@ -7775,7 +7787,7 @@
     {
       "component": "transactionToolbar",
       "file": "frontend_v2/src/features/financial/components/LedgerRowBrowser.tsx",
-      "line": 212,
+      "line": 214,
       "control": "Button",
       "label": "Clear search",
       "disabled": null,
@@ -7787,7 +7799,7 @@
     {
       "component": "transactionToolbar",
       "file": "frontend_v2/src/features/financial/components/LedgerRowBrowser.tsx",
-      "line": 225,
+      "line": 227,
       "control": "Button",
       "label": "Download CSV ( {rows.length.toLocaleString()} )",
       "disabled": "{!rows.length}",
@@ -7799,7 +7811,7 @@
     {
       "component": "transactionToolbar",
       "file": "frontend_v2/src/features/financial/components/LedgerRowBrowser.tsx",
-      "line": 239,
+      "line": 241,
       "control": "Button",
       "label": "Notes CSV",
       "disabled": null,
@@ -7811,7 +7823,7 @@
     {
       "component": "transactionToolbar",
       "file": "frontend_v2/src/features/financial/components/LedgerRowBrowser.tsx",
-      "line": 250,
+      "line": 252,
       "control": "summary",
       "label": "Filters {[currency, category, minimum, maximum, direction, proof].filter( Boolean ).length > 0 && ` (${[currency, category, minimum, maximum, direction, proof].filter(Boolean).length})`}",
       "disabled": null,
@@ -7821,7 +7833,7 @@
     {
       "component": "transactionToolbar",
       "file": "frontend_v2/src/features/financial/components/LedgerRowBrowser.tsx",
-      "line": 260,
+      "line": 262,
       "control": "select",
       "label": "\"Currency\"",
       "disabled": null,
@@ -7833,7 +7845,7 @@
     {
       "component": "transactionToolbar",
       "file": "frontend_v2/src/features/financial/components/LedgerRowBrowser.tsx",
-      "line": 282,
+      "line": 284,
       "control": "select",
       "label": "\"Sort payments\"",
       "disabled": null,
@@ -7845,7 +7857,7 @@
     {
       "component": "transactionToolbar",
       "file": "frontend_v2/src/features/financial/components/LedgerRowBrowser.tsx",
-      "line": 305,
+      "line": 307,
       "control": "Button",
       "label": "Clear payment filters",
       "disabled": null,
@@ -7857,7 +7869,7 @@
     {
       "component": "transactionToolbar",
       "file": "frontend_v2/src/features/financial/components/LedgerRowBrowser.tsx",
-      "line": 316,
+      "line": 318,
       "control": "input",
       "label": "\"Table minimum amount\"",
       "disabled": "{!currency}",
@@ -7869,7 +7881,7 @@
     {
       "component": "transactionToolbar",
       "file": "frontend_v2/src/features/financial/components/LedgerRowBrowser.tsx",
-      "line": 330,
+      "line": 332,
       "control": "input",
       "label": "\"Table maximum amount\"",
       "disabled": "{!currency}",
@@ -7881,7 +7893,7 @@
     {
       "component": "transactionToolbar",
       "file": "frontend_v2/src/features/financial/components/LedgerRowBrowser.tsx",
-      "line": 344,
+      "line": 346,
       "control": "select",
       "label": "\"Money in or out\"",
       "disabled": null,
@@ -7893,7 +7905,7 @@
     {
       "component": "transactionToolbar",
       "file": "frontend_v2/src/features/financial/components/LedgerRowBrowser.tsx",
-      "line": 358,
+      "line": 360,
       "control": "summary",
       "label": "Technical filter",
       "disabled": null,
@@ -7903,7 +7915,7 @@
     {
       "component": "transactionToolbar",
       "file": "frontend_v2/src/features/financial/components/LedgerRowBrowser.tsx",
-      "line": 363,
+      "line": 365,
       "control": "select",
       "label": "\"Table proof class\"",
       "disabled": null,
@@ -7915,7 +7927,7 @@
     {
       "component": "transactionToolbar",
       "file": "frontend_v2/src/features/financial/components/LedgerRowBrowser.tsx",
-      "line": 399,
+      "line": 401,
       "control": "TransactionAnalysisControls",
       "label": "(label supplied by parent)",
       "disabled": null,
@@ -7927,7 +7939,7 @@
     {
       "component": "LedgerRowBrowser",
       "file": "frontend_v2/src/features/financial/components/LedgerRowBrowser.tsx",
-      "line": 410,
+      "line": 412,
       "control": "TransactionAccountFilters",
       "label": "(label supplied by parent)",
       "disabled": null,
@@ -7939,7 +7951,7 @@
     {
       "component": "LedgerRowBrowser",
       "file": "frontend_v2/src/features/financial/components/LedgerRowBrowser.tsx",
-      "line": 433,
+      "line": 435,
       "control": "a",
       "label": "Open import batch",
       "disabled": null,
@@ -7949,7 +7961,7 @@
     {
       "component": "LedgerRowBrowser",
       "file": "frontend_v2/src/features/financial/components/LedgerRowBrowser.tsx",
-      "line": 440,
+      "line": 442,
       "control": "Button",
       "label": "Clear batch filter",
       "disabled": null,
@@ -7961,7 +7973,7 @@
     {
       "component": "LedgerRowBrowser",
       "file": "frontend_v2/src/features/financial/components/LedgerRowBrowser.tsx",
-      "line": 465,
+      "line": 467,
       "control": "Button",
       "label": "Clear statement filter",
       "disabled": null,
@@ -7973,7 +7985,7 @@
     {
       "component": "LedgerRowBrowser",
       "file": "frontend_v2/src/features/financial/components/LedgerRowBrowser.tsx",
-      "line": 488,
+      "line": 490,
       "control": "Button",
       "label": "{currency} ×",
       "disabled": null,
@@ -7985,7 +7997,7 @@
     {
       "component": "LedgerRowBrowser",
       "file": "frontend_v2/src/features/financial/components/LedgerRowBrowser.tsx",
-      "line": 499,
+      "line": 501,
       "control": "Button",
       "label": "{category} ×",
       "disabled": null,
@@ -7997,7 +8009,7 @@
     {
       "component": "LedgerRowBrowser",
       "file": "frontend_v2/src/features/financial/components/LedgerRowBrowser.tsx",
-      "line": 504,
+      "line": 506,
       "control": "Button",
       "label": "{direction === \"credit\" ? \"Incoming\" : \"Outgoing\"} ×",
       "disabled": null,
@@ -8009,7 +8021,7 @@
     {
       "component": "LedgerRowBrowser",
       "file": "frontend_v2/src/features/financial/components/LedgerRowBrowser.tsx",
-      "line": 513,
+      "line": 515,
       "control": "Button",
       "label": "Amount: {minimum || \"any\"} – {maximum || \"any\"} {currency} ×",
       "disabled": null,
@@ -8021,7 +8033,7 @@
     {
       "component": "LedgerRowBrowser",
       "file": "frontend_v2/src/features/financial/components/LedgerRowBrowser.tsx",
-      "line": 522,
+      "line": 524,
       "control": "Button",
       "label": "Classification: {proof} ×",
       "disabled": null,
@@ -8033,7 +8045,7 @@
     {
       "component": "LedgerRowBrowser",
       "file": "frontend_v2/src/features/financial/components/LedgerRowBrowser.tsx",
-      "line": 554,
+      "line": 556,
       "control": "AnalysisFilterChips",
       "label": "(label supplied by parent)",
       "disabled": null,
@@ -8045,7 +8057,7 @@
     {
       "component": "LedgerRowBrowser",
       "file": "frontend_v2/src/features/financial/components/LedgerRowBrowser.tsx",
-      "line": 563,
+      "line": 565,
       "control": "TransactionAnalysisPanels",
       "label": "(label supplied by parent)",
       "disabled": null,
@@ -8057,7 +8069,7 @@
     {
       "component": "LedgerRowBrowser",
       "file": "frontend_v2/src/features/financial/components/LedgerRowBrowser.tsx",
-      "line": 577,
+      "line": 579,
       "control": "Button",
       "label": "Select all {rows.length} matching payments",
       "disabled": "{ !rows.length || rows.every((row) => selectedIds.has(row.key)) }",
@@ -8069,7 +8081,7 @@
     {
       "component": "LedgerRowBrowser",
       "file": "frontend_v2/src/features/financial/components/LedgerRowBrowser.tsx",
-      "line": 591,
+      "line": 593,
       "control": "Button",
       "label": "Clear selection",
       "disabled": "{!selection.length}",
@@ -8081,7 +8093,7 @@
     {
       "component": "LedgerRowBrowser",
       "file": "frontend_v2/src/features/financial/components/LedgerRowBrowser.tsx",
-      "line": 603,
+      "line": 605,
       "control": "Button",
       "label": "Compare payments",
       "disabled": null,
@@ -8093,7 +8105,7 @@
     {
       "component": "LedgerRowBrowser",
       "file": "frontend_v2/src/features/financial/components/LedgerRowBrowser.tsx",
-      "line": 608,
+      "line": 610,
       "control": "Button",
       "label": "Edit selected transactions",
       "disabled": null,
@@ -8105,7 +8117,7 @@
     {
       "component": "LedgerRowBrowser",
       "file": "frontend_v2/src/features/financial/components/LedgerRowBrowser.tsx",
-      "line": 616,
+      "line": 618,
       "control": "Button",
       "label": "Categorize selected",
       "disabled": null,
@@ -8117,7 +8129,19 @@
     {
       "component": "LedgerRowBrowser",
       "file": "frontend_v2/src/features/financial/components/LedgerRowBrowser.tsx",
-      "line": 625,
+      "line": 627,
+      "control": "Button",
+      "label": "Add to Timeline",
+      "disabled": null,
+      "destination": null,
+      "events": {
+        "onClick": "{() => setTimeline(true)}"
+      }
+    },
+    {
+      "component": "LedgerRowBrowser",
+      "file": "frontend_v2/src/features/financial/components/LedgerRowBrowser.tsx",
+      "line": 633,
       "control": "Button",
       "label": "Create finding",
       "disabled": null,
@@ -8129,7 +8153,7 @@
     {
       "component": "LedgerRowBrowser",
       "file": "frontend_v2/src/features/financial/components/LedgerRowBrowser.tsx",
-      "line": 631,
+      "line": 639,
       "control": "Button",
       "label": "Create observation",
       "disabled": null,
@@ -8141,7 +8165,7 @@
     {
       "component": "LedgerRowBrowser",
       "file": "frontend_v2/src/features/financial/components/LedgerRowBrowser.tsx",
-      "line": 659,
+      "line": 674,
       "control": "summary",
       "label": "Selected amounts and saved selections",
       "disabled": null,
@@ -8151,7 +8175,7 @@
     {
       "component": "LedgerRowBrowser",
       "file": "frontend_v2/src/features/financial/components/LedgerRowBrowser.tsx",
-      "line": 691,
+      "line": 706,
       "control": "Button",
       "label": "Review selected payments",
       "disabled": null,
@@ -8163,7 +8187,7 @@
     {
       "component": "LedgerRowBrowser",
       "file": "frontend_v2/src/features/financial/components/LedgerRowBrowser.tsx",
-      "line": 742,
+      "line": 757,
       "control": "button",
       "label": "Reload finding links",
       "disabled": null,
@@ -8175,7 +8199,7 @@
     {
       "component": "LedgerRowBrowser",
       "file": "frontend_v2/src/features/financial/components/LedgerRowBrowser.tsx",
-      "line": 753,
+      "line": 768,
       "control": "TransactionExplorerTable",
       "label": "(label supplied by parent)",
       "disabled": null,
@@ -8187,7 +8211,7 @@
     {
       "component": "LedgerRowBrowser",
       "file": "frontend_v2/src/features/financial/components/LedgerRowBrowser.tsx",
-      "line": 799,
+      "line": 814,
       "control": "summary",
       "label": "Download these transactions",
       "disabled": null,
@@ -8197,7 +8221,7 @@
     {
       "component": "LedgerRowBrowser",
       "file": "frontend_v2/src/features/financial/components/LedgerRowBrowser.tsx",
-      "line": 838,
+      "line": 853,
       "control": "select",
       "label": "\"Rows per page\"",
       "disabled": null,
@@ -8209,7 +8233,7 @@
     {
       "component": "LedgerRowBrowser",
       "file": "frontend_v2/src/features/financial/components/LedgerRowBrowser.tsx",
-      "line": 853,
+      "line": 868,
       "control": "Button",
       "label": "Previous ledger rows",
       "disabled": "{!index}",
@@ -8221,7 +8245,7 @@
     {
       "component": "LedgerRowBrowser",
       "file": "frontend_v2/src/features/financial/components/LedgerRowBrowser.tsx",
-      "line": 865,
+      "line": 880,
       "control": "Button",
       "label": "Next ledger rows",
       "disabled": "{(index + 1) * pageSize >= rows.length}",
