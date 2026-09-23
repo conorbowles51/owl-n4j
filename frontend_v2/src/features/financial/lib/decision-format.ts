@@ -155,6 +155,11 @@ export function readDecisionSubject(
  * proved.
  */
 const DECISION_COPY: Record<AdjudicationDecision, TermCopy> = {
+  set_account_identity: {
+    label: "Account identifiers and case connections reviewed",
+    description:
+      "An investigator saved account identifiers or connected a reviewed person or business to an existing case entity. The supporting source or knowledge and prior values remain in the history. This does not merge accounts or create transactions.",
+  },
   supersede_duplicate: {
     label: "Hidden as a duplicate",
     description:
@@ -240,6 +245,7 @@ const DECISION_VARIANT: Record<AdjudicationDecision, BadgeVariant> = {
   correct_transaction: "info",
   set_account_party: "info",
   set_counterparty_party: "info",
+  set_account_identity: "info",
   admit_financial_document: "danger",
 }
 
@@ -273,6 +279,7 @@ const CHANGED_STORED_STATE: Record<AdjudicationDecision, boolean> = {
   correct_transaction: true,
   set_account_party: true,
   set_counterparty_party: true,
+  set_account_identity: true,
   admit_financial_document: false,
 }
 

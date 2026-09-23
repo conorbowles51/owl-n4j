@@ -374,6 +374,7 @@ describe("FinancialPage", () => {
     expect(screen.queryByText("Account checks")).not.toBeInTheDocument()
   })
 
+  // This journey renders every retained tab repeatedly and checks the original file input.
   it("retains the selected PDF when switching financial tabs and transaction modes", () => {
     graphWithRows()
     renderPage()
@@ -432,7 +433,7 @@ describe("FinancialPage", () => {
     )
     expect(screen.getByLabelText("PDF document")).toBe(input)
     expect(input.files?.[0]).toBe(file)
-  })
+  }, 20_000)
 
   it("mounts the ledger panel in the ledger tab", () => {
     graphWithRows()

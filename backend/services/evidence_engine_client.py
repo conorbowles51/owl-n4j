@@ -157,6 +157,7 @@ async def create_cellebrite_job(
     owner: str | None = None,
     force: bool = False,
     requested_by_user_id: str | None = None,
+    request_id: str | None = None,
 ) -> Dict[str, Any]:
     """
     Create a real evidence-engine job for a staged Cellebrite report folder.
@@ -175,6 +176,7 @@ async def create_cellebrite_job(
             "owner": owner,
             "force": force,
             "requested_by_user_id": requested_by_user_id,
+            "request_id": request_id,
         },
     )
     response.raise_for_status()

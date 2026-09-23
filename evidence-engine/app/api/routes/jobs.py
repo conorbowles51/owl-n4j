@@ -19,7 +19,7 @@ async def control_job(job_id: uuid.UUID, action: str, request: Request,
     job = await db.get(Job, job_id)
     if job is None or job.case_id != case_id:
         raise HTTPException(404, "Job not found in this case")
-    if job.job_type not in {"ingestion", "pdf_review"}:
+    if job.job_type not in {"ingestion", "pdf_review", "cellebrite_ingestion"}:
         raise HTTPException(409, "This processing type does not yet support checkpoint recovery")
     predicate = Job.batch_id == job.batch_id if job.batch_id else Job.id == job.id
     result = await db.execute(select(Job).where(predicate, Job.case_id == case_id)
@@ -57,7 +57,8 @@ async def control_job(job_id: uuid.UUID, action: str, request: Request,
     state = transition_batch_dispatch(state, dispatch_state="ready",
         batch_id=str(owner.batch_id or owner.id), case_id=case_id)
     state["batch_dispatch"]["queue_job_id"] = f"evidence-resume:{owner.batch_id or owner.id}:{generation}"
-    state["batch_dispatch"]["function"] = "process_batch" if owner.batch_id else "process_file"
+    state["batch_dispatch"]["function"] = ("process_cellebrite" if owner.job_type == "cellebrite_ingestion"
+        else "process_batch" if owner.batch_id else "process_file")
     owner.pipeline_state = state
     await db.commit()
     from app.services.batch_dispatch import dispatch_ingestion_batch

@@ -56,13 +56,8 @@ certify every bank layout or the entire client corpus.
 
 - Monex verification covers the supplied no-activity layout. Other Monex movement
   products need representative evidence; they remain source-reviewable.
-- A historical combined import is never silently split, rewritten or stripped of
-  investigator corrections. Wrong labels in a known scope can be corrected in
-  place. Ambiguous scope changes require source comparison/reprocessing; original
-  readings and existing findings/Timeline citations remain retained.
-- Resumable byte transfer covers ordinary evidence files, including PDFs. Existing
-  folder/archive and dedicated Cellebrite import routes retain their own workflows.
-  This release does not claim checkpoint recovery for those separate ingestion types.
+- Historical combined imports have an explicit separation/recovery workflow. It preserves current investigator corrections, assigns every current record exactly once, previews scope changes and retains source/citation history. Existing case recovery remains a reviewed live action.
+- Resumable byte transfer now includes ordinary files, multi-file Financial uploads, folders and archives. Dedicated phone-report dispatch and ingestion checkpointing are included. Atomic registration itself finishes rather than pausing halfway through its commit; leaving retains its receipt.
 - The long-PDF test establishes page extraction/recovery on a generated native PDF.
   Alex's large chat still requires a complete run through the actual providers and
   live host. The observed Neo4j timeout and historical import attempt cannot be
@@ -76,3 +71,33 @@ certify every bank layout or the entire client corpus.
   source/history, saved statement, shared owner/trail and processing-status journeys
   when server access is restored. Client-case cleanup/import/reprocessing is not a
   demonstration action; retain the existing no-live-client-mutations boundary.
+
+
+## Completion pass after the partial release
+
+The [completion register](completion-register.md) and [connected flow reference](recovery-and-identity-workflows.md) supersede the implementation gaps recorded in the original release subset. Added code covers:
+
+- Saved combined imports: reviewed account/currency separation, exact values, current edits, stale source checks, atomic retry receipts and original citation history.
+- Retained folder/archive/file-group manifests, chunk verification, safe archive paths, complete registration receipts, and multi-PDF Financial uploads through the same recovery path.
+- Phone ingestion dispatch/model/graph/media checkpoints, idempotent writes, safe pause acknowledgement and retained manual graph properties.
+- Financial batch pausing at statement boundaries, retained pending imports and clear separately controlled PDF reading groups on the batch screen.
+- Split/partial transfer principal, embedded/separate fees, remaining capacity, explicit FX comparisons, onward allocation, current internal/external totals and Timeline source preservation.
+- Typed account aliases, referenced-only accounts, later-statement match suggestions, audited case-entity connections and retryable projection of reviewed ownership into the main graph.
+
+The production build and the new migrations through `20260923_account_identity` pass locally. The migration check creates a disposable PostgreSQL database, upgrades from the prior baseline and removes only that test database. An isolated Neo4j check confirms idempotent shared identities, preserved manual names/notes, safe retraction and refusal of namespace collisions.
+
+Broad tests found and repaired the new audit-decision vocabulary and route/package export contracts. Older file-list browser fixtures now explicitly include upload-activity responses. Resource-heavy tab-navigation tests use a per-journey time budget; assertions remain unchanged. Final test counts and publication/deployment status are recorded below after verification completes.
+
+Deployment access was checked again during this pass and still returns `invalid_grant`. No live services were restarted and no client records were changed. The required next live steps remain access renewal, safe worker transition, exact deployed revision/health checks and the affected investigator journeys. The actual long chat and historical duplicate/import incident remain external acceptance work, not silently marked done by local tests.
+
+### Verified checks for the completion pass
+
+- Broad backend/Financial run: 5,325 passed and one opt-in graph check skipped. Its two new route/export-contract failures were repaired; the affected router/export/identity/recovery recheck passed all 90 tests. The final pause/identity/shutdown checks passed 78 tests, including the new safe-shutdown check. Existing graph editing checks passed six tests.
+- Evidence-engine suite: 516 passed, 14 environment-gated checks skipped. The shared-identity opt-in check was run separately against isolated local Neo4j and passed, including retained manual edits, retraction and key-conflict refusal. Phone graph recovery had also passed on that isolated graph.
+- Frontend affected suites cover 1,630 unit tests. Final broad run passed 1,629; the new audit vocabulary copy was completed and the 53 decision-contract/format checks passed afterward. Earlier upload-fixture failures and slow multi-tab test timing were repaired and rerun; tab retention passes with its assertions unchanged.
+- Chromium: 70 financial/evidence/Timeline journeys covered. The two old upload-response fixtures were repaired; their six statement journeys plus batch pause and grouped-upload checks all pass (10 checks in the rerun). The other 68 broad-run checks passed, including saved import recovery, split transfer reopening and reviewed identity connections. Mobile screenshots were inspected locally.
+- Final production TypeScript/Vite build passes. Scoped ESLint and diff whitespace checks pass. Migration upgrade to `20260923_account_identity` passes in disposable local PostgreSQL.
+- The release file list was inspected explicitly: source, synthetic tests and workflow documentation only. Generated screenshots, source documents, case files and exports are excluded.
+
+These are local release results, not a claim of live deployment or a completed
+historical client-data audit. No production queue was interrupted by these checks.

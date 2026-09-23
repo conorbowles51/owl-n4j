@@ -149,6 +149,12 @@ async def pause_boundary():
         await store.guard()
 
 
+def current_checkpoint_root():
+    """Synchronous worker adapters inherit this context through to_thread."""
+    store = _current.get()
+    return store.root if store else None
+
+
 def page_checkpoint_root(file_path):
     store = _current.get()
     if not store:

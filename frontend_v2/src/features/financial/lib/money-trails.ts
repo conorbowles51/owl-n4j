@@ -32,6 +32,30 @@ export const trailPreview = z.object({
   receipt_unallocated_minor: z.string().nullable(),
   warnings: z.array(z.string()),
   source_revision: z.string().regex(/^[a-f0-9]{64}$/),
+  transfer_breakdown: z
+    .object({
+      sent_currency: z.string(),
+      sent_minor: z.string(),
+      received_currency: z.string(),
+      received_minor: z.string(),
+      fees: z.array(
+        z.object({ currency: z.string(), amount_minor: z.string() })
+      ),
+      entries: z.array(
+        z.object({
+          transaction_id: id,
+          direction: z.enum(["debit", "credit"]),
+          currency: z.string(),
+          principal_minor: z.string(),
+          fee_minor: z.string(),
+          original_minor: z.string(),
+          unassigned_minor: z.string(),
+          remaining_after_other_links_minor: z.string(),
+        })
+      ),
+    })
+    .nullable()
+    .optional(),
   account_context: z
     .object({
       currency: z.string(),
@@ -67,6 +91,8 @@ export const savedTrail = z.object({
   status: z.enum(["current", "source_changed", "removed"]),
   details: trailPreview,
   history: z.array(z.unknown()),
+  matching_entries: trailPreview.shape.payments.default([]),
+  matching_entries_truncated: z.boolean().default(false),
 })
 export const savedTrails = z.object({
   case_id: id,
@@ -104,6 +130,15 @@ export function trailNarrative(trail: SavedTrail) {
           `Account context: ${d.account_context.payment_count} imported entries in the receipt-to-payment date range. Opening statement balance ${d.account_context.opening_balance_minor === null ? "not recorded" : correctionMoney(d.account_context.opening_balance_minor, d.account_context.currency)}. ${d.account_context.limitation}`,
         ]
       : []),
+    ...(d.transfer_breakdown
+      ? [
+          `Assigned principal: ${correctionMoney(d.transfer_breakdown.sent_minor, d.transfer_breakdown.sent_currency)} sent → ${correctionMoney(d.transfer_breakdown.received_minor, d.transfer_breakdown.received_currency)} received.`,
+          ...d.transfer_breakdown.entries.map(
+            (p) =>
+              `${d.payments.find((row) => row.key === p.transaction_id)?.ref_id}: principal ${correctionMoney(p.principal_minor, p.currency)}; fee ${correctionMoney(p.fee_minor, p.currency)}; unassigned in this link ${correctionMoney(p.unassigned_minor, p.currency)}.`
+          ),
+        ]
+      : []),
     `Basis: ${d.input.reason}`,
     ...d.warnings,
   ]
@@ -111,8 +146,8 @@ export function trailNarrative(trail: SavedTrail) {
     .join("\n\n")
 }
 
-/** A pair is internal only when both current entries belong to the account scope.
- * Apply before category/search filters so those filters cannot change ownership. */
+/** Internal principal is counted once; fees and unassigned portions remain external.
+ * The account scope is evaluated before search/category filters. */
 export function internalActivity(
   rows: { key: string }[],
   trails: SavedTrail[]
@@ -120,36 +155,55 @@ export function internalActivity(
   const population = new Set(rows.map((p) => p.key))
   const ids = new Set<string>()
   const movements = new Map<string, bigint>()
+  const portions = new Map<string, bigint>()
   let pending = 0
   for (const trail of trails) {
     if (!trail.active || trail.kind !== "transfer") continue
     const payments = trail.details.payments
     if (!payments.some((p) => population.has(p.key))) continue
+    const breakdown = trail.details.transfer_breakdown
+    const principal = breakdown
+      ? breakdown.entries
+          .filter((p) => BigInt(p.principal_minor) > 0n)
+          .map((part) => ({
+            ...payments.find((p) => p.key === part.transaction_id)!,
+            principal: BigInt(part.principal_minor),
+          }))
+      : payments.map((p) => ({ ...p, principal: BigInt(p.amount_minor) }))
     if (
       trail.status !== "current" ||
       !trail.details.internal_transfer ||
-      payments.length !== 2 ||
-      !payments.every((p) => population.has(p.key))
+      principal.length < 2 ||
+      !principal.every((p) => population.has(p.key))
     ) {
       pending++
       continue
     }
-    payments.forEach((p) => ids.add(p.key))
-    const debit = payments.find((p) => p.direction === "debit")!
-    const credit = payments.find((p) => p.direction === "credit")!
-    if (debit.currency === credit.currency)
-      movements.set(
-        debit.currency,
-        (movements.get(debit.currency) ?? 0n) + BigInt(debit.amount_minor)
-      )
-    else
-      for (const p of payments)
-        movements.set(
-          `${p.currency} ${p.direction === "debit" ? "sent" : "received"}`,
-          (movements.get(
-            `${p.currency} ${p.direction === "debit" ? "sent" : "received"}`
-          ) ?? 0n) + BigInt(p.amount_minor)
-        )
+    for (const p of principal)
+      portions.set(p.key, (portions.get(p.key) || 0n) + p.principal)
+    const sameCurrency = new Set(principal.map((p) => p.currency)).size === 1
+    for (const p of principal) {
+      if (sameCurrency && p.direction !== "debit") continue
+      const unit = sameCurrency
+        ? p.currency
+        : `${p.currency} ${p.direction === "debit" ? "sent" : "received"}`
+      movements.set(unit, (movements.get(unit) || 0n) + p.principal)
+    }
   }
-  return { ids, movements, pending }
+  for (const [key, amount] of portions) if (amount > 0n) ids.add(key)
+  return { ids, movements, portions, pending }
+}
+
+export function activityAmount(
+  row: { key: string; amount_minor: string | number },
+  activity: string,
+  internal: ReturnType<typeof internalActivity>
+) {
+  const full = BigInt(row.amount_minor),
+    principal = internal.portions.get(row.key) || 0n
+  return activity === "internal"
+    ? principal
+    : activity === "external"
+      ? full - principal
+      : full
 }

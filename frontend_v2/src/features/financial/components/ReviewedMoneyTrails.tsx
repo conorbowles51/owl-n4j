@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button"
 import type { LedgerTransaction } from "../api"
 import { useMoneyTrails } from "../hooks/use-money-trails"
 import { correctionMoney } from "../lib/correction-contract"
-import { MoneyTrailReview } from "./MoneyTrailReview"
+import { MoneyTrailReview, TransferBreakdown } from "./MoneyTrailReview"
 
 export function ReviewedMoneyTrails({
   caseId,
@@ -45,13 +45,22 @@ export function ReviewedMoneyTrails({
       </p>
       {transfers.slice(0, limit).map((trail) => {
         const d = trail.details,
-          debit = d.payments.find((p) => p.direction === "debit"),
-          credit = d.payments.find((p) => p.direction === "credit")
+          principal = d.payments.filter(
+            (p) =>
+              !d.transfer_breakdown ||
+              d.transfer_breakdown.entries.some(
+                (part) =>
+                  part.transaction_id === p.key &&
+                  BigInt(part.principal_minor) > 0n
+              )
+          ),
+          debits = principal.filter((p) => p.direction === "debit"),
+          credits = principal.filter((p) => p.direction === "credit")
         const onward = query.data!.trails.filter(
           (t) =>
             t.active &&
             t.kind === "allocation" &&
-            t.details.input.credit_id === d.input.credit_id
+            credits.some((p) => p.key === t.details.input.credit_id)
         )
         return (
           <article key={trail.id} className="rounded-lg border p-4 space-y-3">
@@ -67,29 +76,29 @@ export function ReviewedMoneyTrails({
                   : "Ownership not established for both accounts"}
               </p>
               <div className="flex flex-wrap items-center gap-3">
-                <div className="min-w-0 flex-1 rounded border bg-background p-3 break-words">
-                  From:{" "}
-                  {debit?.account_label ||
-                    "Referenced account — statement missing"}
-                  {debit && (
-                    <p>
-                      {correctionMoney(debit.amount_minor, debit.currency)} sent
-                      · {debit.ordering_date}
-                    </p>
-                  )}
-                </div>
-                <span aria-label="transferred to">→</span>
-                <div className="min-w-0 flex-1 rounded border bg-background p-3 break-words">
-                  To:{" "}
-                  {credit?.account_label ||
-                    "Referenced account — statement missing"}
-                  {credit && (
-                    <p>
-                      {correctionMoney(credit.amount_minor, credit.currency)}{" "}
-                      received · {credit.ordering_date}
-                    </p>
-                  )}
-                </div>
+                {[debits, credits].map((entries, index) => (
+                  <div
+                    key={index}
+                    className="min-w-0 flex-1 rounded border bg-background p-3 break-words"
+                  >
+                    <p>{index === 0 ? "From" : "To"}:</p>
+                    {!entries.length && (
+                      <p>Referenced account — statement missing</p>
+                    )}
+                    {entries.map((p) => (
+                      <p key={p.key}>
+                        {p.account_label} ·{" "}
+                        {correctionMoney(
+                          d.transfer_breakdown?.entries.find(
+                            (part) => part.transaction_id === p.key
+                          )?.principal_minor || p.amount_minor,
+                          p.currency
+                        )}{" "}
+                        {index === 0 ? "sent" : "received"} · {p.ordering_date}
+                      </p>
+                    ))}
+                  </div>
+                ))}
               </div>
               {d.implied_exchange_rate && (
                 <p>
@@ -98,6 +107,7 @@ export function ReviewedMoneyTrails({
                 </p>
               )}
             </div>
+            <TransferBreakdown details={d} />
             {onward.map((allocation) => (
               <div key={allocation.id} className="rounded border p-3 space-y-2">
                 <p>
@@ -136,7 +146,7 @@ export function ReviewedMoneyTrails({
             <MoneyTrailReview
               caseId={caseId}
               trailId={trail.id}
-              label="Open transfer and both statements"
+              label="Open transfer and statements"
             />
           </article>
         )

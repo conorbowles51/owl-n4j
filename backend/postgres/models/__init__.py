@@ -139,7 +139,7 @@ __all__ += ['FinancialImportBatch', 'FinancialImportBatchItem', 'FinancialImport
 
 from postgres.models.timeline_entry import TimelineEntry
 __all__ += ["TimelineEntry"]
-from postgres.models.evidence_upload import EvidenceUploadSession
+from postgres.models.evidence_upload import EvidenceUploadSession, EvidenceUploadGroup
 __all__ += ["EvidenceUploadSession"]
 from postgres.models.financial_money_trails import FinancialMoneyTrail
 __all__ += ["FinancialMoneyTrail"]

@@ -1,5 +1,6 @@
 import { fetchAPI } from "@/lib/api-client"
 import { uploadOrdinaryFiles } from "./resumable-upload"
+import { uploadFolderOrArchive } from "./resumable-upload-groups"
 import type {
   EvidenceFile,
   EvidenceFileRecord,
@@ -17,13 +18,12 @@ import type {
 
 export interface UploadResponse {
   files?: EvidenceFile[]
+  file_ids?: string[]
   task_id?: string
   task_ids?: string[]
   job_ids?: string[]
   message?: string
 }
-
-const EVIDENCE_UPLOAD_TIMEOUT_MS = 60 * 60 * 1000
 
 export interface EvidenceUploadOptions {
   isFolder?: boolean
@@ -56,9 +56,12 @@ export const evidenceAPI = {
       document_limit: String(documentLimit),
       document_offset: String(documentOffset),
     })
-    return fetchAPI<EvidenceTextSearchResponse>(`/api/evidence/text-search?${qs}`, {
-      signal,
-    })
+    return fetchAPI<EvidenceTextSearchResponse>(
+      `/api/evidence/text-search?${qs}`,
+      {
+        signal,
+      }
+    )
   },
 
   getTextMatches: (
@@ -90,25 +93,9 @@ export const evidenceAPI = {
         ? { isFolder: optionsOrIsFolder, folderId }
         : optionsOrIsFolder
     const isFolderUpload = options.isFolder || options.isArchive
-    if (!isFolderUpload) return uploadOrdinaryFiles(caseId, files, options.folderId)
-    const formData = new FormData()
-    formData.append("case_id", caseId)
-    if (isFolderUpload) formData.append("is_folder", "true")
-    if (options.isArchive) formData.append("is_archive", "true")
-    if (options.replaceExisting) formData.append("replace_existing", "true")
-    if (options.folderId) formData.append("folder_id", options.folderId)
-    files.forEach((file) => {
-      const multipartFilename =
-        isFolderUpload && !options.isArchive
-          ? file.webkitRelativePath || file.name
-          : file.name
-      formData.append("files", file, multipartFilename)
-    })
-    return fetchAPI<UploadResponse>("/api/evidence/upload", {
-      method: "POST",
-      body: formData,
-      timeout: EVIDENCE_UPLOAD_TIMEOUT_MS,
-    })
+    if (!isFolderUpload)
+      return uploadOrdinaryFiles(caseId, files, options.folderId)
+    return uploadFolderOrArchive(caseId, files, options)
   },
 
   process: (caseId: string, fileIds: string[], profile?: string) =>
@@ -136,7 +123,11 @@ export const evidenceAPI = {
   preparePdfReview: (caseId: string, fileId: string) =>
     fetchAPI("/api/evidence/process/background", {
       method: "POST",
-      body: { case_id: caseId, file_ids: [fileId], preparation_mode: "pdf_review" },
+      body: {
+        case_id: caseId,
+        file_ids: [fileId],
+        preparation_mode: "pdf_review",
+      },
       timeout: 120000,
     }),
 
@@ -147,9 +138,11 @@ export const evidenceAPI = {
     maxWorkers = 4,
     imageProvider?: string
   ) =>
-    fetchAPI<{ task_id?: string | null; job_ids?: string[] | null; message?: string }>(
-      "/api/evidence/process/background",
-      {
+    fetchAPI<{
+      task_id?: string | null
+      job_ids?: string[] | null
+      message?: string
+    }>("/api/evidence/process/background", {
       method: "POST",
       body: {
         case_id: caseId,
@@ -214,11 +207,7 @@ export const evidenceAPI = {
     )
   },
 
-  getVideoFrames: (
-    evidenceId: string,
-    interval = 30,
-    maxFrames = 50
-  ) =>
+  getVideoFrames: (evidenceId: string, interval = 30, maxFrames = 50) =>
     fetchAPI<{ frames: VideoFrame[] }>(
       `/api/evidence/${evidenceId}/frames?interval=${interval}&max_frames=${maxFrames}`
     ),
@@ -227,9 +216,12 @@ export const evidenceAPI = {
     `/api/evidence/${evidenceId}/frames/${encodeURIComponent(filename)}`,
 
   syncFilesystem: (caseId: string) =>
-    fetchAPI<{ synced: number }>(`/api/evidence/sync-filesystem?case_id=${caseId}`, {
-      method: "POST",
-    }),
+    fetchAPI<{ synced: number }>(
+      `/api/evidence/sync-filesystem?case_id=${caseId}`,
+      {
+        method: "POST",
+      }
+    ),
 
   setRelevance: (evidenceIds: string[], isRelevant: boolean) =>
     fetchAPI<void>("/api/evidence/relevance", {
@@ -249,7 +241,11 @@ export const evidenceAPI = {
   ) =>
     fetchAPI<{ task_id: string }>("/api/evidence/wiretap/process", {
       method: "POST",
-      body: { case_id: caseId, folder_paths: folderPaths, whisper_model: whisperModel },
+      body: {
+        case_id: caseId,
+        folder_paths: folderPaths,
+        whisper_model: whisperModel,
+      },
     }),
 
   listFolderFiles: (caseId: string, folderPath: string) => {
@@ -285,7 +281,10 @@ export const llmConfigAPI = {
     return fetchAPI<{ models: LLMModel[] }>(`/api/llm-config/models${qs}`)
   },
   getPolicy: () => fetchAPI<AIModelPolicy>("/api/llm-config/policy"),
-  updatePolicy: (revision: number, configuration: AIModelPolicy["configuration"]) =>
+  updatePolicy: (
+    revision: number,
+    configuration: AIModelPolicy["configuration"]
+  ) =>
     fetchAPI<AIModelPolicy>("/api/llm-config/policy", {
       method: "PUT",
       body: { revision, configuration },

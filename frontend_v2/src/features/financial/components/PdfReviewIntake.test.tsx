@@ -13,7 +13,14 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react"
 import { expect, it, vi, afterEach } from "vitest"
 import { fetchAPI } from "@/lib/api-client"
 import { PdfReviewIntake } from "./PdfReviewIntake"
+import { uploadOrdinaryFiles } from "@/features/evidence/resumable-upload"
 vi.mock("@/lib/api-client", () => ({ fetchAPI: vi.fn() }))
+vi.mock("@/features/evidence/resumable-upload", () => ({
+  uploadOrdinaryFiles: vi.fn(),
+}))
+vi.mock("@/features/evidence/components/ResumableUploadsPanel", () => ({
+  ResumableUploadsPanel: () => null,
+}))
 afterEach(() => vi.resetAllMocks())
 function mount() {
   const onReady = vi.fn()
@@ -33,20 +40,23 @@ const uploaded = {
   case_id: "case",
   original_filename: "bank.pdf",
   status: "unprocessed",
+  stored_path: "synthetic/bank.pdf",
+  size: 3,
+  sha256: "synthetic",
+  created_at: "2026-09-23T00:00:00Z",
 }
 it("uploads then explicitly requests local preparation and opens prepared rows", async () => {
+  vi.mocked(uploadOrdinaryFiles).mockResolvedValue({ files: [uploaded] })
   vi.mocked(fetchAPI).mockImplementation(async (url) =>
-    String(url).endsWith("/upload")
-      ? { files: [uploaded] }
-      : String(url).includes("/process/background")
-        ? { job_ids: ["job"] }
-        : {
-            id: "job",
-            case_id: "case",
-            job_type: "pdf_review",
-            status: "completed",
-            quality_report: { preparation_mode: "pdf_review" },
-          }
+    String(url).includes("/process/background")
+      ? { job_ids: ["job"] }
+      : {
+          id: "job",
+          case_id: "case",
+          job_type: "pdf_review",
+          status: "completed",
+          quality_report: { preparation_mode: "pdf_review" },
+        }
   )
   const ready = mount()
   fireEvent.change(screen.getByLabelText("PDF document"), {

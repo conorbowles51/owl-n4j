@@ -16,6 +16,10 @@ import { StatementFilesPanel } from "./StatementFilesPanel"
 import { fetchAPI } from "@/lib/api-client"
 import { evidenceAPI } from "@/features/evidence/api"
 vi.mock("@/lib/api-client", () => ({ fetchAPI: vi.fn() }))
+// Upload interruption is exercised with the real panel in Chromium.
+vi.mock("@/features/evidence/components/ResumableUploadsPanel", () => ({
+  ResumableUploadsPanel: () => null,
+}))
 vi.mock("@/features/evidence/api", () => ({
   evidenceAPI: { preparePdfReview: vi.fn() },
 }))

@@ -165,6 +165,8 @@ class GraphEditService:
             raise LookupError(f"Node not found: {node_key}")
 
         current_props = current["properties"]
+        if current_props.get("financial_identity_managed") and (category or specific_type or properties):
+            raise ValueError("Edit account identity and ownership in Financial. You can add graph notes without changing its saved financial identity.")
         current_category = current["category"]
         updates: dict[str, Any] = {}
         changes: dict[str, dict[str, Any]] = {}

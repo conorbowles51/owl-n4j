@@ -137,6 +137,22 @@ class MoneyTrailTests(DuplicateTestCase):
         self.assertEqual(len(saved['details']['payments']),1)
         self.assertFalse(saved['details']['internal_transfer'])
 
+    def test_missing_statement_match_appears_later_and_updates_same_saved_transfer(self):
+        request = TrailRequest(id=uuid4(), kind='transfer', credit_id=self.credit.id,
+            referenced_account={'institution':'Synthetic bank', 'identifier_kind':'clabe', 'identifier':'012345678901234567'},
+            reason='Account reference printed on the incoming payment')
+        first = self.save(request)
+        self.assertEqual(first['matching_entries'], [])
+        self.account.metadata_ = {'identity_review': {'identifiers': [{'kind':'clabe', 'value':'012345678901234567'}]}}
+        self.db.commit()
+        shown = list_trails(self.db, case_id=self.case.id)['trails'][0]
+        self.assertEqual([p['key'] for p in shown['matching_entries']], [str(self.debit.id)])
+        pair = self.pair().model_copy(update={'id':request.id, 'expected_revision':first['revision']})
+        updated = self.save(pair)
+        self.assertEqual(updated['id'], first['id'])
+        self.assertEqual(len(updated['details']['payments']), 2)
+        self.assertEqual(len(list(self.db.scalars(select(FinancialMoneyTrail)))), 1)
+
     def test_unrelated_case_and_noncurrent_rows_are_refused(self):
         request=self.pair()
         with self.assertRaises(TrailError): preview_trail(self.db,case_id=self.other_case.id,request=request)
@@ -150,3 +166,84 @@ class MoneyTrailTests(DuplicateTestCase):
         self.assertTrue(any('Same-day' in w for w in preview['warnings']))
         self.supplier.ordering_date=date(2026,1,14); self.db.commit()
         with self.assertRaisesRegex(TrailError,'predates'): self.save(request)
+
+    def split_request(self, parts, **changes):
+        return TrailRequest(id=uuid4(), kind='transfer', transfer_parts=parts,
+            reason='Reviewed the principal and fee against each source; unmatched money is left unassigned', **changes)
+
+    def test_split_transfer_with_embedded_and_separate_fees_retains_originals_and_retries(self):
+        self.assign_owner()
+        self.debit.amount_minor = 501000
+        self.credit.amount_minor = 300000
+        other_credit = self.add_row(self.period_b, self.doc_b, account=self.second, amount=200000)
+        fee = self.add_row(self.period_b, self.doc_b, account=self.second, amount=200, direction=TransactionDirection.debit)
+        self.db.commit()
+        request = self.split_request([
+            dict(transaction_id=self.debit.id, principal_minor='500000', fee_minor='1000'),
+            dict(transaction_id=self.credit.id, principal_minor='300000'),
+            dict(transaction_id=other_credit.id, principal_minor='200000'),
+            dict(transaction_id=fee.id, principal_minor='0', fee_minor='200'),
+        ])
+        saved = self.save(request)
+        detail = saved['details']
+        self.assertTrue(detail['internal_transfer'])
+        self.assertEqual(detail['transfer_breakdown']['fees'], [{'currency': 'GBP', 'amount_minor': '1200'}])
+        self.assertEqual(detail['transfer_breakdown']['sent_minor'], '500000')
+        self.assertTrue(all(p['remaining_after_other_links_minor'] == '0' for p in detail['transfer_breakdown']['entries']))
+        self.assertEqual(self.save(request)['revision'], 1)
+        self.db.expire_all()
+        self.assertEqual(list_trails(self.db, case_id=self.case.id)['trails'][0]['status'], 'current')
+        self.assertEqual(self.debit.amount_minor, 501000)
+        self.assertEqual(len(detail['payments']), 4)
+
+    def test_partial_transfer_links_share_capacity_without_reusing_full_postings(self):
+        def request(amount):
+            return self.split_request([
+                dict(transaction_id=self.debit.id, principal_minor=str(amount)),
+                dict(transaction_id=self.credit.id, principal_minor=str(amount)),
+            ])
+        first = self.save(request(300000))
+        self.assertEqual(first['details']['transfer_breakdown']['entries'][0]['unassigned_minor'], '200000')
+        with self.assertRaisesRegex(TrailError, 'combined principal and fees'):
+            self.save(request(300000))
+        second = self.save(request(200000))
+        self.assertEqual(second['details']['transfer_breakdown']['entries'][0]['remaining_after_other_links_minor'], '0')
+        self.assertTrue(all(t['status'] == 'current' for t in list_trails(self.db, case_id=self.case.id)['trails']))
+        with self.assertRaisesRegex(TrailError, 'already linked'):
+            self.save(self.pair())
+
+    def test_split_transfer_requires_balanced_principal_and_explicit_fx(self):
+        parts = [dict(transaction_id=self.debit.id, principal_minor='490000', fee_minor='10000'),
+            dict(transaction_id=self.credit.id, principal_minor='500000')]
+        with self.assertRaisesRegex(TrailError, 'do not balance'):
+            self.save(self.split_request(parts))
+        parts[0]['principal_minor'] = '500000'
+        with self.assertRaisesRegex(TrailError, 'exceeds'):
+            self.save(self.split_request(parts))
+        parts[0]['fee_minor'] = '0'
+        self.credit.currency = 'JPY'; self.credit.amount_minor = 1000000; self.db.commit()
+        parts[1]['principal_minor'] = '1000000'
+        with self.assertRaisesRegex(TrailError, 'Different currencies'):
+            self.save(self.split_request(parts))
+        fx = self.save(self.split_request(parts, allow_fx=True))
+        self.assertEqual(fx['details']['implied_exchange_rate'], '200')
+        self.assertEqual({p['currency'] for p in fx['details']['payments']}, {'GBP', 'JPY'})
+
+    def test_timeline_partial_link_retains_original_posting_events(self):
+        from postgres.models.timeline_entry import TimelineEntry
+        from services.timeline_entries import TimelineAddition, preview_addition, save_addition, list_entries
+        TimelineEntry.__table__.create(self.engine)
+        trail = self.save(self.split_request([
+            dict(transaction_id=self.debit.id, principal_minor='250000'),
+            dict(transaction_id=self.credit.id, principal_minor='250000'),
+        ]))
+        request = TimelineAddition(source_kind='money_trail', source_ids=[UUID(trail['id'])])
+        preview = preview_addition(self.db, case_id=self.case.id, request=request)
+        event = preview['rows'][0]['event']
+        self.assertIn('2,500.00', event['amount'])
+        self.assertEqual(event['transfer_posting_roots'], [])
+        self.assertIn('unassigned in this link', event['summary'])
+        request.expected_revision = preview['revision']
+        save_addition(self.db, case_id=self.case.id, request=request, actor=self.actor.email)
+        transaction = TimelineAddition(source_kind='transaction', source_ids=[self.debit.id])
+        self.assertEqual(preview_addition(self.db, case_id=self.case.id, request=transaction)['ready'], 1)

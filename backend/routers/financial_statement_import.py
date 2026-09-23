@@ -25,6 +25,32 @@ _require_access = case_access_dependency(lambda request, payload: ('case', 'view
 router = APIRouter(prefix='/api/financial/statement-import', tags=['financial'],
                    dependencies=[Depends(get_current_db_user), Depends(_require_access)])
 
+from services.financial.saved_statement_recovery import (
+    StatementRecoveryRequest, read_recovery, preview_recovery, save_recovery,
+)
+
+
+@router.get('/sources/{source_id}/recovery')
+def saved_statement_recovery(source_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    try:
+        return read_recovery(db, case_id=case_id, source_id=source_id)
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+@router.post('/sources/{source_id}/recovery/{action}', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
+def review_saved_statement_recovery(source_id: UUID, action: Literal['preview', 'save'], body: StatementRecoveryRequest,
+        case_id: UUID = Query(...), user=Depends(get_current_db_user), db: Session = Depends(get_db)):
+    try:
+        if action == 'preview':
+            return preview_recovery(db, case_id=case_id, source_id=source_id, request=body)
+        return save_recovery(db, case_id=case_id, source_id=source_id, request=body, actor=actor_from_user(user))
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception:
+        logger.exception('Saved statement recovery failed')
+        raise HTTPException(status_code=500, detail='The sections could not be saved. Previous records are unchanged; your assignments remain available to retry.')
+
 
 @router.get('/files')
 def files(case_id: UUID = Query(...), db: Session = Depends(get_db)):
@@ -468,6 +494,14 @@ def get_financial_batch(batch_id: UUID, case_id: UUID = Query(...), offset: int 
         return import_batches.batch_status(db,case_id=case_id,batch_id=batch_id,offset=offset,limit=limit,only_problems=only_problems)
     except PdfMappingError as exc:
         raise HTTPException(status_code=exc.status_code,detail=str(exc)) from exc
+
+
+@router.post('/batches/{batch_id}/control/{action}', dependencies=[Depends(case_access_dependency(lambda request,payload: ('case','edit')))])
+def control_financial_batch(batch_id: UUID, action: str, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    try:
+        return import_batches.control_batch(db, case_id=case_id, batch_id=batch_id, action=action)
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
 
 @router.post('/batches/{batch_id}/confirm', dependencies=[Depends(case_access_dependency(lambda request,payload: ('case','edit')))])

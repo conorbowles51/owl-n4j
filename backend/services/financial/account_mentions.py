@@ -88,8 +88,8 @@ def account_references(session, *, case_id, offset=0, limit=25, search='', show=
         scanned += 1
         for field, text in (('description', description), ('counterparty', counterparty)):
             for ref in mentions(text):
-                key = (ref['kind'], ref['normalised'])
-                group = groups.setdefault(key, dict(reference=ref['value'], kind=ref['kind'], partial=ref['partial'],
+                key = (ref.get('identifier_kind', ref['kind']), ref['normalised'])
+                group = groups.setdefault(key, dict(reference=ref['value'], kind=key[0], partial=ref['partial'],
                     variants=set(), payment_ids=set(), source_account_ids=set(), examples=[]))
                 group['partial'] |= ref['partial']
                 group['variants'].add(ref['printed'])
@@ -115,7 +115,8 @@ def account_references(session, *, case_id, offset=0, limit=25, search='', show=
                 ending = re.search(r'\d{4,}$', token)
                 possible = bool(ending and comparable.endswith(ending.group()))
             else:
-                possible = token == comparable
+                from services.financial.account_identity import matches_identifier
+                possible = matches_identifier(account, kind, token)
             if possible:
                 matches.append(dict(account_id=str(account.id), reference=printed, holder=account.holder_name,
                     bank=account.institution_name, statement_count=counts.get(account.id, 0)))

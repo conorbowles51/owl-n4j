@@ -329,6 +329,72 @@ class BatchImportTests(TestCase):
             self.assertIsNone(first.review_request)
         self.assertEqual(self.f.preview()['currency'], 'EUR')
 
+    def test_pause_retains_import_receipt_and_resume_runs_it_once(self):
+        batch = self.create(); self.advance(batch)
+        with self.f.SessionLocal() as db:
+            service.queue_import(db, case_id=self.f.case.id, batch_id=batch,
+                expected_revision=self.status(batch)['ready_revision'], actor=self.f.actor)
+            service.control_batch(db, case_id=self.f.case.id, batch_id=batch, action='pause')
+        self.advance(batch)
+        paused = self.status(batch)
+        self.assertEqual(paused['status'], 'paused')
+        self.assertEqual(paused['counts']['pending_import'], 1)
+        self.assertEqual(paused['counts']['imported'], 0)
+        with self.f.SessionLocal() as db:
+            with self.assertRaisesRegex(PdfMappingError, 'paused'):
+                service.refresh_statement_list(db, case_id=self.f.case.id, batch_id=batch)
+            service.control_batch(db, case_id=self.f.case.id, batch_id=batch, action='resume')
+        self.advance(batch); self.advance(batch)
+        self.assertEqual(self.status(batch)['counts']['imported'], 1)
+        self.assertEqual(self.status(batch)['operations'][0]['transaction_count'], 12)
+
+    def test_pause_during_reading_finishes_current_statement_then_stops(self):
+        from unittest.mock import patch
+        batch = self.create()
+        actual = service._review_file
+        calls = []
+        def reviewed(*args):
+            calls.append(args[-1]['file_id'])
+            with self.f.SessionLocal() as db:
+                state = service.control_batch(db, case_id=self.f.case.id, batch_id=batch, action='pause')
+                self.assertEqual(state['status'], 'pausing')
+                with self.assertRaisesRegex(PdfMappingError, 'still finishing'):
+                    service.control_batch(db, case_id=self.f.case.id, batch_id=batch, action='resume')
+            return actual(*args)
+        with patch.object(service, '_review_file', side_effect=reviewed):
+            self.advance(batch)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(self.status(batch)['status'], 'paused')
+        self.assertEqual(self.status(batch)['files'][0]['status'], 'checked')
+        self.assertEqual(len(self.status(batch)['items']), 1)
+
+    def test_expired_pause_after_process_restart_does_not_run_pending_work(self):
+        from datetime import datetime, timedelta, timezone
+        batch = self.create()
+        with self.f.SessionLocal() as db:
+            record = db.get(Batch, batch)
+            record.status = 'pausing'; record.worker_token = str(uuid4())
+            record.lease_until = datetime.now(timezone.utc) - timedelta(seconds=1)
+            db.commit()
+        self.advance(batch)
+        self.assertEqual(self.status(batch)['status'], 'paused')
+        self.assertEqual(self.status(batch)['total'], 0)
+
+    def test_shutdown_waits_for_atomic_statement_thread_before_acknowledgement(self):
+        from threading import Event
+        entered, release, finished = Event(), Event(), Event()
+        def writing():
+            entered.set(); release.wait(5); finished.set()
+        async def scenario():
+            task = asyncio.create_task(service._finish_atomic(writing))
+            while not entered.is_set(): await asyncio.sleep(.001)
+            task.cancel(); await asyncio.sleep(.01)
+            self.assertFalse(task.done())
+            release.set()
+            with self.assertRaises(asyncio.CancelledError): await task
+            self.assertTrue(finished.is_set())
+        asyncio.run(scenario())
+
     def setUp(self):
         self.f = Fixture('test_existing_import_and_same_request_keep_the_saved_account_for_navigation')
         self.f.setUp()

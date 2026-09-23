@@ -1,3 +1,5 @@
+import { apiErrorMessage } from "./api-error-message"
+
 export class ApiError extends Error {
   status: number
   data?: unknown
@@ -46,12 +48,11 @@ export async function fetchAPI<T>(
     const response = await fetch(endpoint, {
       ...init,
       headers,
-      body:
-        rawBody
-          ? (body as BodyInit)
-          : body
-            ? JSON.stringify(body)
-            : undefined,
+      body: rawBody
+        ? (body as BodyInit)
+        : body
+          ? JSON.stringify(body)
+          : undefined,
       signal: controller.signal,
       credentials: "include",
     })
@@ -72,17 +73,7 @@ export async function fetchAPI<T>(
       }
 
       const detail = (errorData as { detail?: unknown })?.detail
-      const message =
-        typeof detail === "string"
-          ? detail
-          : detail &&
-              typeof detail === "object" &&
-              "message" in detail &&
-              typeof detail.message === "string"
-            ? detail.message
-            : detail
-              ? JSON.stringify(detail)
-              : `Request failed: ${response.status}`
+      const message = apiErrorMessage(detail, response.status)
       throw new ApiError(message, response.status, errorData)
     }
 

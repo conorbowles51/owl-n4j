@@ -1378,3 +1378,18 @@ def get_money_trails(case_id: UUID = Query(...), db: Session = Depends(get_db)):
     except AccountPartyError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 from services.financial.money_trails import list_trails
+
+
+@router.get('/account-identities')
+def get_account_identities(case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    from services.financial.account_identity import identity_state
+    try:
+        return identity_state(db, case_id)
+    except AccountPartyError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+@router.get('/account-identities/graph-status')
+def get_account_identity_graph_status(case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    from services.financial.identity_graph import identity_graph_status
+    return identity_graph_status(db, case_id)

@@ -1,3 +1,4 @@
+import { AccountOwnershipReview } from "@/features/financial/components/AccountOwnershipReview"
 import { useMemo, useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
@@ -92,20 +93,30 @@ export function NodeDetailSheet({
   const queryClient = useQueryClient()
   const summaryCitations = useMemo(
     () => collectSummarySources(detail?.summary ?? ""),
-    [detail?.summary],
+    [detail?.summary]
   )
 
   const [factsExpanded, setFactsExpanded] = useState(true)
   const [insightsExpanded, setInsightsExpanded] = useState(true)
   const [showAllFacts, setShowAllFacts] = useState(false)
-  const [viewerDoc, setViewerDoc] = useState<{ evidenceId: string; url: string; name: string; page?: number } | null>(null)
+  const [viewerDoc, setViewerDoc] = useState<{
+    evidenceId: string
+    url: string
+    name: string
+    page?: number
+  } | null>(null)
   const [bulkRemoveOpen, setBulkRemoveOpen] = useState(false)
 
   const nodeQueryKey = ["graph", "node", firstKey, caseId]
 
   const pinFactMutation = useMutation({
-    mutationFn: ({ factIndex, pinned }: { factIndex: number; pinned: boolean }) =>
-      graphAPI.pinFact(detail!.key, factIndex, pinned, caseId),
+    mutationFn: ({
+      factIndex,
+      pinned,
+    }: {
+      factIndex: number
+      pinned: boolean
+    }) => graphAPI.pinFact(detail!.key, factIndex, pinned, caseId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: nodeQueryKey })
     },
@@ -116,7 +127,12 @@ export function NodeDetailSheet({
 
   const verifyInsightMutation = useMutation({
     mutationFn: ({ insightIndex }: { insightIndex: number }) =>
-      graphAPI.verifyInsight(detail!.key, insightIndex, user?.username ?? "user", caseId),
+      graphAPI.verifyInsight(
+        detail!.key,
+        insightIndex,
+        user?.username ?? "user",
+        caseId
+      ),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: nodeQueryKey })
       toast.success("Insight verified")
@@ -146,7 +162,12 @@ export function NodeDetailSheet({
         return
       }
       const url = evidenceAPI.getFileUrl(result.evidence_id)
-      setViewerDoc({ evidenceId: result.evidence_id, url, name: fileName, page })
+      setViewerDoc({
+        evidenceId: result.evidence_id,
+        url,
+        name: fileName,
+        page,
+      })
     } catch {
       toast.error("Failed to load source file")
     }
@@ -195,9 +216,8 @@ export function NodeDetailSheet({
 
   // Multi-select panel
   if (selectedNodeKeys.size > 1) {
-    const selectedNodes = graphData?.nodes.filter((n) =>
-      selectedNodeKeys.has(n.key)
-    ) ?? []
+    const selectedNodes =
+      graphData?.nodes.filter((n) => selectedNodeKeys.has(n.key)) ?? []
 
     return (
       <>
@@ -205,7 +225,9 @@ export function NodeDetailSheet({
           <MultiNodePanel
             nodes={selectedNodes}
             onMerge={selectedNodeKeys.size >= 2 ? onMergeSelected : undefined}
-            onCompare={selectedNodeKeys.size === 2 ? onCompareSelected : undefined}
+            onCompare={
+              selectedNodeKeys.size === 2 ? onCompareSelected : undefined
+            }
             onHideSelected={() => {
               for (const k of selectedNodeKeys) hideNode(k)
               clearSelection()
@@ -230,7 +252,8 @@ export function NodeDetailSheet({
           <DialogContent>
             <DialogHeader>
               <DialogTitle>
-                Remove {selectedKeys.length.toLocaleString()} entities from Significant?
+                Remove {selectedKeys.length.toLocaleString()} entities from
+                Significant?
               </DialogTitle>
             </DialogHeader>
             <p className="text-sm text-muted-foreground">
@@ -273,6 +296,7 @@ export function NodeDetailSheet({
   const insights = detail.ai_insights ?? []
   const connections = detail.connections ?? []
   const properties = detail.properties ?? {}
+  const managedIdentity = properties.financial_identity_managed === true
   const visibleFacts = showAllFacts ? facts : facts.slice(0, 5)
 
   return (
@@ -318,7 +342,8 @@ export function NodeDetailSheet({
           {Array.isArray(detail.properties.aliases) &&
             (detail.properties.aliases as unknown[]).length > 0 && (
               <p className="mt-0.5 truncate text-[11px] italic text-muted-foreground">
-                also known as: {(detail.properties.aliases as string[]).join(", ")}
+                also known as:{" "}
+                {(detail.properties.aliases as string[]).join(", ")}
               </p>
             )}
           {typeof detail.properties.specific_type === "string" &&
@@ -349,10 +374,17 @@ export function NodeDetailSheet({
               disabled={createDossier.isPending}
               onClick={async () => {
                 try {
-                  await createDossier.mutateAsync({ canonical_entity_key: detail.key, display_name: detail.label })
+                  await createDossier.mutateAsync({
+                    canonical_entity_key: detail.key,
+                    display_name: detail.label,
+                  })
                   toast.success("Added to Dossiers")
                 } catch (error) {
-                  toast.error(error instanceof Error ? error.message : "Could not create Dossier")
+                  toast.error(
+                    error instanceof Error
+                      ? error.message
+                      : "Could not create Dossier"
+                  )
                 }
               }}
             >
@@ -362,6 +394,12 @@ export function NodeDetailSheet({
           <Button
             variant="ghost"
             size="icon-sm"
+            disabled={managedIdentity}
+            title={
+              managedIdentity
+                ? "Review account identity in Financial using the control below"
+                : "Edit entity"
+            }
             onClick={() => onEditNode?.(detail.key)}
           >
             <Pencil className="size-3.5" />
@@ -377,6 +415,35 @@ export function NodeDetailSheet({
       </div>
 
       <ScrollArea className="flex-1 min-w-0 overflow-hidden">
+        {managedIdentity && (
+          <section className="m-3 rounded border p-3 text-sm space-y-2">
+            <p>
+              {String(
+                properties.financial_identity_summary ||
+                  "Reviewed financial identity. Its relationships are shared with Financial."
+              )}
+            </p>
+            <p>
+              Holder, control, signatory and analysis links have different
+              meanings. Review their sources and effective dates before
+              interpreting common ownership.
+            </p>
+            <AccountOwnershipReview
+              caseId={caseId}
+              accountIds={
+                typeof properties.ledger_account_id === "string"
+                  ? [properties.ledger_account_id]
+                  : []
+              }
+              partyId={
+                typeof properties.financial_party_id === "string"
+                  ? properties.financial_party_id
+                  : undefined
+              }
+              label="Review saved identity and account relationships"
+            />
+          </section>
+        )}
         {/* Summary */}
         {detail.summary && (
           <>
@@ -389,12 +456,21 @@ export function NodeDetailSheet({
                   variant="ghost"
                   size="icon-sm"
                   className="size-6"
+                  disabled={managedIdentity}
+                  title={
+                    managedIdentity
+                      ? "Review account identity in Financial using the control below"
+                      : "Edit entity"
+                  }
                   onClick={() => onEditNode?.(detail.key)}
                 >
                   <Pencil className="size-3" />
                 </Button>
               </div>
-              <div className="min-w-0 overflow-hidden" style={{ overflowWrap: "anywhere" }}>
+              <div
+                className="min-w-0 overflow-hidden"
+                style={{ overflowWrap: "anywhere" }}
+              >
                 <MarkdownSummary
                   content={summaryCitations.content}
                   sourceNumbers={summaryCitations.numbers}
@@ -466,7 +542,9 @@ export function NodeDetailSheet({
                         {fact.source_doc && (
                           <button
                             className="mt-0.5 text-[10px] text-muted-foreground hover:text-foreground hover:underline transition-colors text-left"
-                            onClick={() => openDocument(fact.source_doc!, fact.page)}
+                            onClick={() =>
+                              openDocument(fact.source_doc!, fact.page)
+                            }
                           >
                             Source: {fact.source_doc}
                             {fact.page != null && ` p.${fact.page}`}
@@ -526,9 +604,14 @@ export function NodeDetailSheet({
                       }`}
                     >
                       <div className="flex items-start justify-between gap-2 min-w-0">
-                        <p className="text-xs flex-1 break-words">{insight.text}</p>
+                        <p className="text-xs flex-1 break-words">
+                          {insight.text}
+                        </p>
                         {insight.confidence != null && (
-                          <Badge variant="slate" className="shrink-0 text-[10px]">
+                          <Badge
+                            variant="slate"
+                            className="shrink-0 text-[10px]"
+                          >
                             {Math.round(insight.confidence * 100)}%
                           </Badge>
                         )}
@@ -608,6 +691,12 @@ export function NodeDetailSheet({
               variant="ghost"
               size="icon-sm"
               className="size-6"
+              disabled={managedIdentity}
+              title={
+                managedIdentity
+                  ? "Review account identity in Financial using the control below"
+                  : "Edit entity"
+              }
               onClick={() => onEditNode?.(detail.key)}
             >
               <Pencil className="size-3" />
@@ -619,7 +708,10 @@ export function NodeDetailSheet({
         {summaryCitations.sources.length > 0 && (
           <>
             <Separator />
-            <SummarySources sources={summaryCitations.sources} onOpenFile={openDocument} />
+            <SummarySources
+              sources={summaryCitations.sources}
+              onOpenFile={openDocument}
+            />
           </>
         )}
       </ScrollArea>
@@ -628,7 +720,9 @@ export function NodeDetailSheet({
         caseId={caseId}
         evidenceId={viewerDoc?.evidenceId}
         open={!!viewerDoc}
-        onOpenChange={(open) => { if (!open) setViewerDoc(null) }}
+        onOpenChange={(open) => {
+          if (!open) setViewerDoc(null)
+        }}
         documentUrl={viewerDoc?.url}
         documentName={viewerDoc?.name}
         initialPage={viewerDoc?.page}

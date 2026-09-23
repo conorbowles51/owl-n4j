@@ -1,3 +1,4 @@
+import { ResumableUploadsPanel } from "@/features/evidence/components/ResumableUploadsPanel"
 import { FinancialRemovalAction } from "./FinancialRemovalAction"
 import { useStatementRegister } from "../hooks/use-statement-register"
 import { FinancialFileAction } from "./FinancialFileAction"
@@ -52,6 +53,11 @@ export function StatementFilesPanel({
   const [preparing, setPreparing] = useState(false)
   const batchRequest = useRef<{ selection: string; id: string } | null>(null)
   const queue = useStatementUploads((state) => state.queues[scope])
+  const queuedReadings = new Set(
+    queue?.items.flatMap((item) =>
+      item.status === "Reading queued" && item.fileId ? [item.fileId] : []
+    ) ?? []
+  )
   const selected = useStatementWorkspace(
     (state) => state.selections[scope]?.fileId
   )
@@ -247,11 +253,13 @@ export function StatementFilesPanel({
       )}
       {canUpload && !removalMode && (
         <p className="text-xs text-muted-foreground">
-          Up to 20 PDFs per selection. Keep the browser tab open while uploads
-          finish. Select files below to prepare their statements together, or
-          open one file for individual review.
+          Up to 20 PDFs per selection. Pause or resume uploads here. If the
+          browser closes, reselect the same files to send only missing parts.
+          Uploaded PDFs remain below; choose Read PDF if reading has not
+          started, then open a ready file to review.
         </p>
       )}
+      {canUpload && <ResumableUploadsPanel caseId={caseId} />}
       {error && <p role="alert">{error}</p>}
       {queue && (
         <div aria-live="polite" className="space-y-2">
@@ -438,7 +446,8 @@ export function StatementFilesPanel({
                 {file.original_filename}
                 {file.readingVersions.length > 1 && (
                   <span className="block text-xs text-muted-foreground">
-                    One PDF · {file.readingVersions.length} retained reading versions
+                    One PDF · {file.readingVersions.length} retained reading
+                    versions
                   </span>
                 )}
               </span>
@@ -468,14 +477,25 @@ export function StatementFilesPanel({
                             ? imports.data && !imports.data.truncated
                               ? "PDF read · payments not yet imported"
                               : "Ready to open"
-                            : file.status}
+                            : file.status === "unprocessed" &&
+                                queuedReadings.has(file.id)
+                              ? "Reading queued — waiting for progress"
+                              : file.status}
               </span>
               {saved?.prepared_periods !== undefined && (
                 <span className="block text-sm">
-                  {saved.periods.length} of {Math.max(saved.prepared_periods, saved.periods.length)} statement periods saved
-                  {saved.available_periods ? ` · ${saved.available_periods} available to import` : ""}
-                  {saved.pending_periods ? ` · ${saved.pending_periods} imports pending` : ""}
-                  {saved.periods_with_checks ? ` · ${saved.periods_with_checks} periods have checks to review` : ""}
+                  {saved.periods.length} of{" "}
+                  {Math.max(saved.prepared_periods, saved.periods.length)}{" "}
+                  statement periods saved
+                  {saved.available_periods
+                    ? ` · ${saved.available_periods} available to import`
+                    : ""}
+                  {saved.pending_periods
+                    ? ` · ${saved.pending_periods} imports pending`
+                    : ""}
+                  {saved.periods_with_checks
+                    ? ` · ${saved.periods_with_checks} periods have checks to review`
+                    : ""}
                 </span>
               )}
               {saved?.periods.slice(0, 2).map((period) => (
@@ -541,7 +561,12 @@ export function StatementFilesPanel({
               ["unprocessed", "failed"].includes(file.status) && (
                 <Button
                   variant="outline"
-                  disabled={reading[file.id] || queue?.running}
+                  disabled={
+                    reading[file.id] ||
+                    queue?.running ||
+                    (file.status === "unprocessed" &&
+                      queuedReadings.has(file.id))
+                  }
                   aria-label={`${file.status === "failed" ? "Retry reading" : "Read statement"}: ${file.original_filename}`}
                   onClick={() => void readStatement(file.id)}
                 >
@@ -552,18 +577,51 @@ export function StatementFilesPanel({
                       : "Read statement"}
                 </Button>
               )}
-            {file.readingVersions.length > 1 && <details className="text-sm">
-              <summary className="cursor-pointer">Reading history ({file.readingVersions.length} versions of this PDF)</summary>
-              <p className="text-xs text-muted-foreground">These are retained readings of one source, not additional uploaded statements. Opening a reading does not import it.</p>
-              <ul className="mt-2 max-h-48 overflow-auto">
-                {file.readingVersions.map((version) => <li key={version.id}>
-                  <Button size="sm" variant="link" disabled={version.status !== "processed" || version.financial_removed}
-                    onClick={() => { useStatementWorkspace.getState().select(scope, version.id); useFinancialStore.getState().setMainView("statements"); onOpen?.() }}>
-                    {version.id === file.id ? "Current reading" : "Earlier reading"} · {version.created_at ? new Date(version.created_at).toLocaleString() : version.id.slice(0, 8)} · {version.financial_removed ? "Removed from Financial" : version.status}
-                  </Button>
-                </li>)}
-              </ul>
-            </details>}
+            {file.readingVersions.length > 1 && (
+              <details className="text-sm">
+                <summary className="cursor-pointer">
+                  Reading history ({file.readingVersions.length} versions of
+                  this PDF)
+                </summary>
+                <p className="text-xs text-muted-foreground">
+                  These are retained readings of one source, not additional
+                  uploaded statements. Opening a reading does not import it.
+                </p>
+                <ul className="mt-2 max-h-48 overflow-auto">
+                  {file.readingVersions.map((version) => (
+                    <li key={version.id}>
+                      <Button
+                        size="sm"
+                        variant="link"
+                        disabled={
+                          version.status !== "processed" ||
+                          version.financial_removed
+                        }
+                        onClick={() => {
+                          useStatementWorkspace
+                            .getState()
+                            .select(scope, version.id)
+                          useFinancialStore.getState().setMainView("statements")
+                          onOpen?.()
+                        }}
+                      >
+                        {version.id === file.id
+                          ? "Current reading"
+                          : "Earlier reading"}{" "}
+                        ·{" "}
+                        {version.created_at
+                          ? new Date(version.created_at).toLocaleString()
+                          : version.id.slice(0, 8)}{" "}
+                        ·{" "}
+                        {version.financial_removed
+                          ? "Removed from Financial"
+                          : version.status}
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            )}
           </div>
         )
       })}

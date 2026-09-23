@@ -65,7 +65,7 @@ async def process_cellebrite(ctx: dict, job_id: str, case_id: str) -> None:
     """Process a staged Cellebrite UFED report folder."""
     logger.info("Processing Cellebrite job %s for case %s", job_id, case_id)
     async with async_session() as db:
-        await run_cellebrite_pipeline(job_id, db)
+        await run_controlled(job_id, case_id, lambda: run_cellebrite_pipeline(job_id, db), batch=False)
     logger.info("Completed Cellebrite job %s", job_id)
 
 

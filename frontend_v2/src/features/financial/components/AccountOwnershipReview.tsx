@@ -1,3 +1,4 @@
+import { AccountIdentityReview } from "./AccountIdentityReview"
 import { useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
@@ -247,6 +248,7 @@ function OwnershipEditor({
     (draft.basis !== "source" || draft.sources.length > 0)
   return (
     <div className="space-y-4 text-sm">
+      <AccountIdentityReview caseId={caseId} />
       {query.isPending && (
         <p role="status">Loading accounts and saved relationships…</p>
       )}

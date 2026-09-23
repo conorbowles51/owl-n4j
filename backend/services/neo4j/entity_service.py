@@ -779,7 +779,8 @@ class EntityService:
                     n.key AS key,
                     n.name AS name,
                     labels(n)[0] AS type,
-                    id(n) AS neo4j_id
+                    id(n) AS neo4j_id,
+                    n.financial_identity_managed AS financial_identity_managed
                 """,
                 key=node_key,
                 case_id=case_id,
@@ -788,6 +789,8 @@ class EntityService:
 
             if not node_record:
                 raise ValueError(f"Node not found: {node_key} in case {case_id}")
+            if node_record.get("financial_identity_managed"):
+                raise ValueError("Review or remove this identity in Financial → Account ownership and relationships. Original accounts and ownership history are retained.")
 
             # Count relationships before deletion
             rel_count_result = session.run(
@@ -1064,6 +1067,8 @@ class EntityService:
                     "reason": reason,
                 }
 
+            if (entity_record["props"] or {}).get("financial_identity_managed"):
+                raise ValueError("Review or remove this identity in Financial → Account ownership and relationships. Original accounts and ownership history are retained.")
             labels = [label for label in list(entity_record["labels"] or []) if label not in self.INTERNAL_LABELS]
             if not labels:
                 raise ValueError(f"Entity {node_key} has no restorable labels")

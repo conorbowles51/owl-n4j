@@ -37,6 +37,11 @@ class StartUpload(BaseModel):
 
 
 def get_session(db, identity, user, *, lock=False):
+    if lock:
+        prior = db.get(EvidenceUploadSession, identity)
+        if prior is not None and prior.group_id:
+            from routers.evidence_upload_groups import get_group
+            get_group(db, prior.group_id, user, lock=True)
     query = select(EvidenceUploadSession).where(EvidenceUploadSession.id == identity)
     if lock:
         query = query.with_for_update().execution_options(populate_existing=True)
@@ -64,7 +69,8 @@ def snapshot(item):
         folder_id=str(item.folder_id) if item.folder_id else None,
         size=item.size, sha256=item.sha256, chunk_size=item.chunk_size,
         received=received, status=item.status,
-        evidence_id=str(item.evidence_id) if item.evidence_id else None)
+        evidence_id=str(item.evidence_id) if item.evidence_id else None,
+        group_id=str(item.group_id) if item.group_id else None)
 
 
 @router.post('')
@@ -88,6 +94,8 @@ def start_upload(body: StartUpload, user: User = Depends(get_current_db_user), d
             db.rollback()
             item = get_session(db, body.id, user)
     item = get_session(db, body.id, user)
+    if item.group_id:
+        raise HTTPException(409, 'This file belongs to a folder or archive upload. Resume that selection.')
     if any(getattr(item, k) != v for k, v in body.model_dump().items()):
         raise HTTPException(409, 'This upload belongs to different file content or a different destination')
     return snapshot(item)
@@ -97,6 +105,7 @@ def start_upload(body: StartUpload, user: User = Depends(get_current_db_user), d
 def list_uploads(case_id: UUID, user: User = Depends(get_current_db_user), db: Session = Depends(get_db)):
     authorize_case(db, case_id, user, ('evidence', 'upload'))
     rows = db.scalars(select(EvidenceUploadSession).where(EvidenceUploadSession.case_id == case_id,
+        EvidenceUploadSession.group_id.is_(None),
         EvidenceUploadSession.user_id == user.id, EvidenceUploadSession.status != 'completed').order_by(EvidenceUploadSession.created_at))
     return [snapshot(row) for row in rows]
 
@@ -175,6 +184,18 @@ async def upload_action(identity: UUID, action: str, user: User = Depends(get_cu
     item = get_session(db, identity, user, lock=True)
     if action not in {'pause', 'resume', 'complete'}: raise HTTPException(404, 'Unknown upload action')
     if item.status == 'completed': return snapshot(item)
+    if item.group_id:
+        from routers.evidence_upload_groups import get_group
+        group = get_group(db, item.group_id, user)
+        if action != 'complete':
+            raise HTTPException(409, 'Pause or resume the whole folder or archive selection')
+        if group.status != 'uploading':
+            raise HTTPException(409, 'Resume this selection before completing its files')
+        if item.status != 'staged':
+            await run_in_threadpool(assemble, item)
+            item.status = 'staged'
+            db.commit()
+        return snapshot(item)
     if action != 'complete':
         item.status = 'paused' if action == 'pause' else 'uploading'
     else:

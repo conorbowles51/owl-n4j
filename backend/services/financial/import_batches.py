@@ -415,7 +415,9 @@ def batch_status(session, *, case_id, batch_id, offset=0, limit=100, only_proble
     items.sort(key=lambda i: (i.summary.get('filename',''),i.summary.get('account',''),i.summary.get('period_start',''),str(i.id)))
     shown=[i for i in items if not only_problems or i.summary.get('problem_count', 0)]
     counts={state:sum(i.status==state for i in items) for state in ('ready','attention','pending_import','imported','skipped','assigned')}
-    return dict(id=str(batch.id),case_id=str(case_id),status=batch.status,files=batch.files,counts=counts,
+    file_ids = {UUID(f['file_id']) for f in batch.files if f.get('file_id')}
+    job_ids = list(session.scalars(select(EvidenceFile.engine_job_id).where(EvidenceFile.case_id == case_id, EvidenceFile.id.in_(file_ids), EvidenceFile.engine_job_id.is_not(None)))) if file_ids else []
+    return dict(id=str(batch.id),case_id=str(case_id),status=batch.status,files=batch.files,counts=counts, reading_job_ids=job_ids,
         operations=operations_for(session, case_id, batch_id),
         statements_with_issues=sum(bool(i.summary.get('problem_count', 0)) for i in items if i.status != 'skipped'),
         available_statements=sum(import_available(i) for i in items),
@@ -474,6 +476,7 @@ def confirm_review(*, session_factory, case_id, batch_id, item_id, request,
             if item.review_request != raw:
                 raise PdfMappingError('This statement is already being imported or was imported with different values. Reopen it to check the result.', 409)
         else:
+            require_running(batch)
             save_review(session, case_id=case_id, batch_id=batch_id, item_id=item_id,
                 request=request, expected_review_revision=(
                     _digest(item.review_request) if item.review_request == raw else expected_review_revision))
@@ -490,6 +493,9 @@ def confirm_review(*, session_factory, case_id, batch_id, item_id, request,
                 item.summary = {**item.summary, 'import_actor':dict(name=actor.name, email=actor.email, user_id=str(actor.user_id))}
                 batch.status = 'preparing'
         session.commit()
+    with session_factory() as session:
+        if session.get(Item, item_id).status != 'imported':
+            require_running(batch_for(session, case_id, batch_id))
     _import_item(session_factory, case_id, batch_id, item_id, resolve_path)
     with session_factory() as session:
         item = session.scalar(select(Item).where(Item.id == item_id, Item.batch_id == batch_id))
@@ -513,6 +519,7 @@ def queue_import(session, *, case_id,batch_id,expected_revision,actor,request_id
         if existing.case_id != case_id or existing.batch_id != batch_id or existing.expected_revision != expected_revision:
             raise PdfMappingError('This import request belongs to a different selection. Refresh the batch.', 409)
         return dict(queued=existing and len(existing.outcomes), operation=operation_view(existing))
+    require_running(batch)
     items=list(session.scalars(select(Item).where(Item.batch_id==batch.id).with_for_update()))
     checked=checked_batch_items(session, case_id, items)
     if ready_revision(checked)!=expected_revision: raise PdfMappingError('The ready statements changed. Refresh the batch before confirming.',409)
@@ -574,6 +581,7 @@ def choose_currency(session, *, case_id,batch_id,source_id,currency):
     from services.financial.money import get_currency
     get_currency(currency)
     batch=batch_for(session,case_id,batch_id,True)
+    require_running(batch)
     if batch.worker_token and batch.lease_until and batch.lease_until.replace(tzinfo=timezone.utc)>datetime.now(timezone.utc):
         raise PdfMappingError('This batch is still checking files. Try choosing the currency when processing finishes.',409)
     files=deepcopy(batch.files)
@@ -588,11 +596,55 @@ def choose_currency(session, *, case_id,batch_id,source_id,currency):
     batch.files=files;batch.status='preparing';session.commit()
 
 
+PAUSED_STATES = {'pausing', 'paused'}
+
+
+def require_running(batch):
+    if batch.status in PAUSED_STATES:
+        raise PdfMappingError('This batch is paused. Resume it before importing or preparing more statements. Saved reviews are retained.', 409)
+
+
+def control_batch(session, *, case_id, batch_id, action):
+    batch = batch_for(session, case_id, batch_id, True)
+    now = datetime.now(timezone.utc)
+    active = bool(batch.worker_token and batch.lease_until and batch.lease_until.replace(tzinfo=timezone.utc) > now)
+    if action == 'pause':
+        if batch.status in ('preparing', 'pausing'):
+            batch.status = 'pausing' if active else 'paused'
+    elif action == 'resume':
+        if batch.status == 'pausing' and active:
+            raise PdfMappingError('The current statement is still finishing. Resume when the batch shows Paused.', 409)
+        if batch.status in PAUSED_STATES:
+            batch.status = 'preparing'
+            batch.worker_token = None
+            batch.lease_until = None
+    else:
+        raise PdfMappingError('Unknown batch action.', 404)
+    session.commit()
+    return dict(case_id=str(case_id), batch_id=str(batch_id), status=batch.status)
+
+
+async def _finish_atomic(function, *args):
+    # Cancellation does not stop a thread. Retain its lease until the atomic
+    # statement operation has returned before acknowledging the interruption.
+    task = asyncio.create_task(asyncio.to_thread(function, *args))
+    try:
+        return await asyncio.shield(task)
+    except asyncio.CancelledError:
+        await task
+        raise
+
+
 async def advance_batch(factory,batch_id,resolve_path,process_files):
     token=str(uuid4());now=datetime.now(timezone.utc)
     with factory() as db:
         batch=db.scalar(select(Batch).where(Batch.id==batch_id).with_for_update(skip_locked=True))
-        if not batch or batch.status!='preparing': return
+        if not batch: return
+        if batch.status == 'pausing':
+            if not batch.lease_until or batch.lease_until.replace(tzinfo=timezone.utc) <= now:
+                batch.status = 'paused'; batch.worker_token = None; batch.lease_until = None; db.commit()
+            return
+        if batch.status != 'preparing': return
         lease=batch.lease_until
         if lease and lease.replace(tzinfo=timezone.utc)>now: return
         batch.worker_token=token;batch.lease_until=now+timedelta(minutes=5);db.commit()
@@ -605,6 +657,10 @@ async def advance_batch(factory,batch_id,resolve_path,process_files):
                 if active.worker_token!=token: return
                 active.lease_until=datetime.now(timezone.utc)+timedelta(minutes=5)
                 db.commit()
+    def should_stop():
+        with factory() as db:
+            current = batch_for(db, case_id, batch_id)
+            return current.worker_token != token or current.status in PAUSED_STATES
     heartbeat=asyncio.create_task(renew_lease())
     interrupted=False
     try:
@@ -615,9 +671,9 @@ async def advance_batch(factory,batch_id,resolve_path,process_files):
             pending=list(db.scalars(select(Item.id).where(Item.batch_id==batch_id,Item.status=='pending_import')
                 .order_by(Item.updated_at, Item.id).limit(IMPORTS_PER_TURN)))
         for item_id in pending:
-            if time.monotonic() - started >= TURN_SECONDS:
+            if should_stop() or time.monotonic() - started >= TURN_SECONDS:
                 break
-            await asyncio.to_thread(_import_item,factory,case_id,batch_id,item_id,resolve_path)
+            await _finish_atomic(_import_item,factory,case_id,batch_id,item_id,resolve_path)
             with factory() as db:
                 batch=batch_for(db,case_id,batch_id,True)
                 if batch.worker_token!=token: return
@@ -628,7 +684,7 @@ async def advance_batch(factory,batch_id,resolve_path,process_files):
         candidates = sorted(((index, file) for index, file in enumerate(files) if file['status'] not in TERMINAL_FILES),
             key=lambda pair: (pair[1].get('last_checked_at', ''), pair[0]))[:FILES_PER_TURN]
         for index,file in candidates:
-            if time.monotonic() - started >= TURN_SECONDS:
+            if should_stop() or time.monotonic() - started >= TURN_SECONDS:
                 break
             previous_status = file['status']
             try:
@@ -645,7 +701,7 @@ async def advance_batch(factory,batch_id,resolve_path,process_files):
                     # Release it before a second session inserts a referencing batch item.
                     db.commit()
                 if processed:
-                    await asyncio.to_thread(_review_file,factory,batch_id,case_id,deepcopy(file))
+                    await _finish_atomic(_review_file,factory,batch_id,case_id,deepcopy(file))
                     file['status']='checked'
             except Exception as error:
                 log.exception('Financial batch file preparation failed')
@@ -668,7 +724,7 @@ async def advance_batch(factory,batch_id,resolve_path,process_files):
             batch=batch_for(db,case_id,batch_id,True)
             if batch.worker_token==token and not interrupted:
                 has_imports=db.scalar(select(Item.id).where(Item.batch_id==batch_id,Item.status=='pending_import').limit(1))
-                batch.status='review' if not has_imports and all(f['status'] in TERMINAL_FILES for f in batch.files) else 'preparing'
+                batch.status = 'paused' if batch.status in PAUSED_STATES else ('review' if not has_imports and all(f['status'] in TERMINAL_FILES for f in batch.files) else 'preparing')
                 batch.worker_token=None;batch.lease_until=None;db.commit()
 
 
@@ -714,7 +770,7 @@ async def run_batches_forever():
         try:
             factory=_get_session_local()
             with factory() as db:
-                ids=list(db.scalars(select(Batch.id).where(Batch.status=='preparing').order_by(Batch.updated_at, Batch.id).limit(100)))
+                ids=list(db.scalars(select(Batch.id).where(Batch.status.in_(('preparing', 'pausing'))).order_by(Batch.updated_at, Batch.id).limit(100)))
             capacity = asyncio.Semaphore(2)
             async def advance(identifier):
                 async with capacity:
@@ -733,6 +789,7 @@ async def run_batches_forever():
 def retry_file(session, *, case_id, batch_id, source_id):
     from services.financial.file_visibility import financial_file_visibility
     batch=batch_for(session,case_id,batch_id,True)
+    require_running(batch)
     files=deepcopy(batch.files)
     target=next((f for f in files if f['source_id']==str(source_id)),None)
     if target is None: raise PdfMappingError('File not found in this batch.',404)
@@ -749,6 +806,7 @@ def retry_file(session, *, case_id, batch_id, source_id):
 def refresh_statement_list(session, *, case_id, batch_id):
     """Discover newly supported periods from saved geometry, keeping reviews."""
     batch = batch_for(session, case_id, batch_id, True)
+    require_running(batch)
     if batch.status == 'preparing':
         return dict(queued=True, already_processing=True)
     files = deepcopy(batch.files)

@@ -98,9 +98,25 @@ def statement_file_status(session, *, case_id):
     truncated = truncated or len(prepared) > 20000
     # A statement imported from an individual review can leave older batch
     # snapshots marked ready. Match saved source scope, not the old UI status.
-    saved_scopes = set(session.execute(select(Source.sha256_at_ingestion,
-        Source.metadata_['statement_import_statement_id'].as_string())
-        .where(Source.case_id == case_id, Source.status == 'admitted', Source.document_type == 'statement_review')).all())
+    saved_sources = list(session.scalars(select(Source).where(Source.case_id == case_id,
+        Source.status == 'admitted', Source.document_type == 'statement_review')))
+    saved_scopes = {(source.sha256_at_ingestion, source.metadata_.get('statement_import_statement_id')) for source in saved_sources}
+    # A saved split replaces its earlier combined scope. An old batch snapshot
+    # must not advertise that same source as a fresh set of available payments.
+    from uuid import UUID
+    ancestors = {source.metadata_.get('statement_recovery_parent_id') for source in saved_sources} - {None}
+    seen_ancestors = set()
+    while ancestors:
+        current = ancestors - seen_ancestors
+        if not current:
+            break
+        seen_ancestors.update(current)
+        ancestors = set()
+        for source in session.scalars(select(Source).where(Source.case_id == case_id, Source.id.in_([UUID(key) for key in current]))):
+            saved_scopes.add((source.sha256_at_ingestion, source.metadata_.get('statement_import_statement_id')))
+            parent = source.metadata_.get('statement_recovery_parent_id')
+            if parent:
+                ancestors.add(parent)
     file_hashes = dict(session.execute(select(EvidenceFile.id, EvidenceFile.sha256)
         .where(EvidenceFile.case_id == case_id, EvidenceFile.id.in_([p.file_id for p in prepared]))).all())
     seen_periods = set()

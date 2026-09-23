@@ -225,6 +225,12 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
         if _apply_assignments:
             from services.financial.statement_row_assignment import assignment_choices
             choices = assignment_choices(session, file, choices, chosen_currency, cache)
+    from services.financial.saved_statement_recovery import recovery_catalog
+    choices, recovered_section, retired_section = recovery_catalog(session, file, choices, statement_id)
+    if recovered_section is not None:
+        return recovered_section
+    if retired_section:
+        statement_id = None
     selected = next((item for item in choices if item['id'] == statement_id), None)
     if statement_id and selected is None:
         raise PdfMappingError('This statement period is no longer available. Reload the document.', 409)
@@ -723,6 +729,8 @@ def confirm_statement_import(*, session_factory, case_id, evidence_file_id, requ
                 session.execute(select(EvidenceTableGeometry).where(EvidenceTableGeometry.evidence_file_id == evidence_file_id).order_by(EvidenceTableGeometry.page_number).with_for_update()).all()
                 proposal = read_statement_import(session, case_id=case_id, evidence_file_id=evidence_file_id,
                                                  currency=request.currency, statement_id=request.statement_id)
+                if proposal.get('recovered_saved_section'):
+                    raise PdfMappingError('This section is already saved after account/currency recovery. Edit its saved details or payments instead of importing its earlier reading again.', 409)
                 if proposal.get('document_review') is not None:
                     raise PdfMappingError('Save this wire report from its document review. It cannot be imported as an account statement.', 422)
                 if (proposal.get('current_import') or {}).get('excluded_as_duplicate'):

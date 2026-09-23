@@ -577,3 +577,27 @@ def confirm_selected_payment_edits(body: PaymentEditRequest, case_id: UUID = Que
     except Exception:
         logger.exception('Transaction edits failed')
         raise HTTPException(status_code=500, detail='The transaction changes could not be saved. Reload the selection before trying again.')
+
+
+from services.financial.account_identity import IdentityRequest, save_identity
+
+
+@router.post('/account-identities')
+def record_account_identity(body: IdentityRequest, case_id: UUID = Query(...),
+        db: Session = Depends(get_db), current_user=Depends(get_current_db_user)):
+    from services.neo4j_service import neo4j_service
+    try:
+        return save_identity(db, case_id=case_id, request=body, actor=actor_from_user(current_user),
+            entity_lookup=lambda key, case: neo4j_service.get_node_details(key, case_id=case))
+    except (AccountPartyError, ActorError) as exc:
+        raise HTTPException(status_code=getattr(exc, 'status_code', 422), detail=str(exc)) from exc
+
+
+@router.post('/account-identities/sync-graph')
+def sync_account_identity_graph(case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    from services.financial.identity_graph import synchronize_case, identity_graph_status
+    try:
+        synchronize_case(case_id)
+        return identity_graph_status(db, case_id)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail='Reviewed identities are saved. The case graph is temporarily unavailable and will retry automatically.') from exc

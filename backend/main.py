@@ -120,13 +120,20 @@ async def lifespan(app: FastAPI):
     from services.financial.import_batches import run_batches_forever
     financial_batches_task = asyncio.create_task(run_batches_forever(), name="financial-folder-batches")
 
+    from services.financial.identity_graph import run_identity_graph_forever
+    identity_graph_task = asyncio.create_task(run_identity_graph_forever(), name="financial-reviewed-identities")
+
     yield
 
+    identity_graph_task.cancel()
     financial_batches_task.cancel()
     cleanup_task.cancel()
     run_reaper_task.cancel()
     if platform_update_task:
         platform_update_task.cancel()
+
+    # Finish atomic statement/graph units before closing their clients.
+    await asyncio.gather(identity_graph_task, financial_batches_task, return_exceptions=True)
 
     # Stop job status subscriber
     try:
@@ -184,6 +191,8 @@ app.include_router(auth_router)
 app.include_router(evidence_router)
 from routers.evidence_uploads import router as evidence_uploads_router
 app.include_router(evidence_uploads_router)
+from routers.evidence_upload_groups import router as evidence_upload_groups_router
+app.include_router(evidence_upload_groups_router)
 app.include_router(background_tasks_router)
 app.include_router(profiles_router)
 app.include_router(filesystem_router)

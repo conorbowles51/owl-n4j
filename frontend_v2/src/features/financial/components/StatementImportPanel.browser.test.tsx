@@ -161,6 +161,7 @@ beforeEach(() => {
   failure = false
   vi.mocked(fetchAPI).mockReset()
   vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
+    if (url.startsWith("/api/evidence-upload-")) return [] as never
     if (String(url).startsWith("/api/evidence?"))
       return {
         files: [
@@ -209,6 +210,7 @@ it("imports from the review summary without opening corrections or resolving eve
     statement_page_numbers: [1],
   }
   vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
+    if (url.startsWith("/api/evidence-upload-")) return [] as never
     if (url.includes("/confirm?")) {
       sent.push(options?.body)
       return {
@@ -269,6 +271,7 @@ it("sends all 588 selected PDFs to one preparation request even when a search hi
     status: "processed",
   }))
   vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
+    if (url.startsWith("/api/evidence-upload-")) return [] as never
     if (options?.method === "POST") {
       sent.push(options.body)
       return { id: "prepared-batch", case_id: "case" } as never
@@ -533,6 +536,7 @@ it("keeps a 51-period PDF manageable from file list through saved-period review 
   }))
   const writes: string[] = []
   vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
+    if (url.startsWith("/api/evidence-upload-")) return [] as never
     if (options?.method === "POST") writes.push(url)
     if (url.startsWith("/api/evidence?"))
       return {

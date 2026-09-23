@@ -122,14 +122,23 @@ def _transfer_event(db, record, key):
     if any(e is None for e in events):
         return None
     debit = next((i for i,p in enumerate(payments) if p.direction == 'debit'), 0)
+    breakdown = record.details.get('transfer_breakdown')
+    if breakdown:
+        explanation = '\n'.join(f"Assigned principal {Money(int(p['principal_minor']),p['currency']).format()}; fee {Money(int(p['fee_minor']),p['currency']).format()}; unassigned in this link {Money(int(p['unassigned_minor']),p['currency']).format()} for {p['transaction_id']}" for p in breakdown['entries'])
+        amount = f"{Money(int(breakdown['sent_minor']),breakdown['sent_currency']).format()} → {Money(int(breakdown['received_minor']),breakdown['received_currency']).format()} principal"
+        whole = {p['transaction_id'] for p in breakdown['entries'] if p['principal_minor'] == p['original_minor'] and p['fee_minor'] == '0'}
+    else:
+        explanation = ''
+        amount = ' → '.join(dict.fromkeys(Money(p.amount_minor,p.currency).format() for p in payments))
+        whole = {str(p.id) for p in payments}
     event = dict(events[debit])
     event.update(type='Transfer', name='Reviewed account transfer',
-        summary='One movement supported by the linked statement entries. '+record.details['input']['reason']+'\n\n'+'\n'.join(e['summary'] for e in events)+'\n'+'\n'.join(record.details['warnings']),
-        amount=' → '.join(dict.fromkeys(Money(p.amount_minor,p.currency).format() for p in payments)),
+        summary='One movement supported by the linked statement entries. '+record.details['input']['reason']+'\n'+explanation+'\n\n'+'\n'.join(e['summary'] for e in events)+'\n'+'\n'.join(record.details['warnings']),
+        amount=amount,
         source_references=list(dict.fromkeys(s for e in events for s in e['source_references'])),
         connections=[c for e in events for c in e['connections']],
         source=dict(kind='money_trail',id=str(record.id),date_basis='Sending entry date; receiving entry retains its own date',label='Reviewed transfer and both statements',state='current'),
-        transfer_posting_roots=[str(_root(db,p)) for p in payments], trail_revision=record.revision)
+        transfer_posting_roots=[str(_root(db,p)) for p in payments if str(p.id) in whole], trail_revision=record.revision)
     return event
 
 

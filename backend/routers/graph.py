@@ -1732,6 +1732,8 @@ async def merge_entities(
                     status_code=404,
                     detail=f"Entity not found: {entity_key}",
                 )
+            if (details.get("properties") or {}).get("financial_identity_managed"):
+                raise HTTPException(status_code=409, detail="Connect reviewed financial identities through Financial → Account identity and case connections. Financial accounts must remain distinct.")
             entity_payloads.append(_entity_merge_payload(details))
 
         # Build evidence engine payload

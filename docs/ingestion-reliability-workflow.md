@@ -116,3 +116,14 @@ and no live jobs have been restarted, retried or moved.
 ## Final local release checks — 23 September
 
 Fresh-session file reselection now passes: a different file is rejected, the original sends only missing chunks, and a lost completion response returns the saved receipt. The isolated real Neo4j interruption/reconnect test passes after a partially committed publication, retaining manual edits and stable entity identities. Both queue orders and failure/timeout isolation pass in spawned workers. The combined scoped ingestion suite passes 62 tests; the Financial/Evidence/Timeline Chromium suite passes 62 tests in 27 files. See [the release record](financial-workflows/release-verification-2026-09-23.md) for supported paths and live acceptance boundaries. Server deployment is authorised but awaits renewed Google Cloud login.
+
+
+## Connected retained uploads and dedicated processing — 23 September completion pass
+
+Folder/archive/file selections now retain the full manifest before bytes are transferred, with per-chunk hashes and a single registration receipt. Financial multi-PDF uploads use this path. Resuming after navigation requires only the missing original files; unrelated Evidence records and originals remain unchanged.
+
+Phone-report ingestion now retains dispatch receipts and checkpoints parsed models, graph chunks and media registration. Cooperative pause waits for the active worker thread to finish its current unit before acknowledging; resume restores counters and stable identifiers. Transaction timeouts are bounded, failed writes fail the unit, and retries preserve manual graph edits.
+
+Financial preparation batches have a saved pausing/paused state. The current statement commit finishes safely; pending imports remain queued without starting until explicit resume. Already-running PDF readings have their own reading-group controls on the same page. They may be shared by another financial batch, and the UI explains that scope. AI jobs stay independent. Cancellation does not release a statement worker's lease while its atomic thread is still writing.
+
+See the [completion register](financial-workflows/completion-register.md) for local and live acceptance. These checks do not substitute for the actual long-file provider run or the historical live failure logs.

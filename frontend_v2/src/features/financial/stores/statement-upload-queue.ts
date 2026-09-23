@@ -1,7 +1,7 @@
 import { create } from "zustand"
 import { z } from "zod"
-import { fetchAPI } from "@/lib/api-client"
 import { evidenceAPI } from "@/features/evidence/api"
+import { uploadFolderOrArchive } from "@/features/evidence/resumable-upload-groups"
 import { useAuthStore } from "@/features/auth/hooks/use-auth"
 
 type UploadItem = {
@@ -57,40 +57,51 @@ export async function uploadStatementFiles(
   }
   publish(true)
   try {
+    for (const item of items)
+      item.status = "Uploading selection — pause or resume below"
+    publish(true)
+    const receipt = await uploadFolderOrArchive(caseId, files, {}, "files")
+    if (!receipt.file_ids || receipt.file_ids.length !== files.length)
+      throw Error(
+        "The selection is retained but its registration receipt is incomplete. Check upload activity before retrying."
+      )
+    const result = answer.parse({
+      files: await Promise.all(
+        receipt.file_ids.map((id) => evidenceAPI.get(id))
+      ),
+    })
+    if (
+      result.files.some((file) => file.case_id !== caseId) ||
+      new Set(result.files.map((file) => file.original_filename)).size !==
+        files.length
+    )
+      throw Error(
+        "The registration receipt does not match this selection. Check the file list before retrying."
+      )
+    for (const item of items) {
+      const saved = result.files.find(
+        (file) => file.original_filename === item.name
+      )
+      if (!saved)
+        throw Error(
+          "The registration receipt contains a different file. Check the file list before retrying."
+        )
+      item.fileId = saved.id
+      item.status = "Uploaded — waiting to read"
+    }
+    changed()
+    publish(true)
     for (let index = 0; index < files.length; index++) {
       const item = items[index]
       if (!sameOwner()) {
         for (const pending of items.slice(index)) {
           pending.status = "Stopped"
           pending.error =
-            "The signed-in user changed. Select these files again after signing in."
+            "The signed-in user changed. Uploaded PDFs are retained. Check the file list after signing in."
         }
         break
       }
       try {
-        item.status = "Uploading"
-        publish(true)
-        const body = new FormData()
-        body.append("case_id", caseId)
-        body.append("files", files[index])
-        const result = answer.parse(
-          await fetchAPI("/api/evidence/upload", {
-            method: "POST",
-            body,
-            timeout: 120000,
-          })
-        )
-        const file = result.files[0]
-        if (
-          result.files.length !== 1 ||
-          file.case_id !== caseId ||
-          file.original_filename !== item.name
-        )
-          throw Error(
-            "The server returned a different file or case. Check the file list before retrying."
-          )
-        item.fileId = file.id
-        changed()
         if (!sameOwner())
           throw Error(
             "The signed-in user changed. The uploaded file is retained; processing was not requested."
@@ -98,7 +109,7 @@ export async function uploadStatementFiles(
         item.status = "Starting reading"
         publish(true)
         const preparation = started.parse(
-          await evidenceAPI.preparePdfReview(caseId, file.id)
+          await evidenceAPI.preparePdfReview(caseId, item.fileId!)
         )
         if (preparation.job_ids?.length !== 1)
           throw Error(
@@ -117,6 +128,12 @@ export async function uploadStatementFiles(
       publish(true)
       changed()
     }
+  } catch (error) {
+    for (const item of items) {
+      item.status = "Upload needs attention"
+      item.error = `${error instanceof Error ? error.message : "Upload interrupted."} Resume the saved selection below; received files do not need to be sent again.`
+    }
+    throw error
   } finally {
     publish(false)
     changed()

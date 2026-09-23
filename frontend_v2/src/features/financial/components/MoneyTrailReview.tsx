@@ -1,3 +1,4 @@
+import { TransferPartsEditor, type TransferParts } from "./TransferPartsEditor"
 import { useState } from "react"
 import { randomRequestId } from "@/lib/browser-crypto"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
@@ -36,10 +37,13 @@ type Draft = {
   credit: string
   payments: Record<string, string>
   fx: boolean
+  split: boolean
+  parts: TransferParts
   reason: string
   reference: boolean
   bank: string
   identifier: string
+  referenceKind: string
   holder: string
 }
 const paymentLabel = (
@@ -139,10 +143,13 @@ function TrailEditor({
       credit: "",
       payments: {},
       fx: false,
+      split: false,
+      parts: {},
       reason: "",
       reference: false,
       bank: "",
       identifier: "",
+      referenceKind: "account_number",
       holder: "",
     }
   )
@@ -185,18 +192,37 @@ function TrailEditor({
     id: draft.id,
     expected_revision: draft.revision,
     kind: draft.kind,
-    debit_id: draft.kind === "transfer" ? draft.debit || null : null,
-    credit_id: draft.credit || null,
+    debit_id:
+      draft.kind === "transfer" && !draft.split ? draft.debit || null : null,
+    credit_id:
+      draft.kind === "transfer" && draft.split ? null : draft.credit || null,
     reason: draft.reason,
     allow_fx: draft.kind === "transfer" && draft.fx,
     referenced_account:
-      draft.kind === "transfer" && draft.reference
+      draft.kind === "transfer" && !draft.split && draft.reference
         ? {
             institution: draft.bank,
             identifier: draft.identifier,
+            identifier_kind: draft.referenceKind || "account_number",
             holder: draft.holder || null,
           }
         : null,
+    transfer_parts:
+      draft.kind === "transfer" && draft.split
+        ? Object.entries(draft.parts || {}).map(([transaction_id, part]) => ({
+            transaction_id,
+            principal_minor:
+              correctionMinor(
+                part.principal,
+                rows.find((p) => p.key === transaction_id)?.currency || ""
+              ) || "invalid",
+            fee_minor:
+              correctionMinor(
+                part.fee,
+                rows.find((p) => p.key === transaction_id)?.currency || ""
+              ) || "invalid",
+          }))
+        : [],
     payments:
       draft.kind === "allocation"
         ? Object.entries(draft.payments).map(([transaction_id, value]) => ({
@@ -327,12 +353,18 @@ function TrailEditor({
     const input = trail.details.input as {
       debit_id?: string
       credit_id?: string
+      transfer_parts?: {
+        transaction_id: string
+        principal_minor: string
+        fee_minor: string
+      }[]
       payments: { transaction_id: string; amount_minor: string }[]
       allow_fx: boolean
       reason: string
       referenced_account?: {
         institution: string
         identifier: string
+        identifier_kind?: string
         holder?: string
       }
     }
@@ -343,6 +375,23 @@ function TrailEditor({
       debit: input.debit_id || "",
       credit: input.credit_id || "",
       fx: input.allow_fx,
+      split: !!input.transfer_parts?.length,
+      parts: Object.fromEntries(
+        (input.transfer_parts || []).map((p) => {
+          const currency = trail.details.payments.find(
+            (r) => r.key === p.transaction_id
+          )!.currency
+          return [
+            p.transaction_id,
+            {
+              principal: correctionMoney(p.principal_minor, currency).split(
+                " "
+              )[0],
+              fee: correctionMoney(p.fee_minor, currency).split(" ")[0],
+            },
+          ]
+        })
+      ),
       reason: input.reason,
       payments: Object.fromEntries(
         (input.payments || []).map((p) => [
@@ -357,6 +406,8 @@ function TrailEditor({
       reference: !!input.referenced_account,
       bank: input.referenced_account?.institution || "",
       identifier: input.referenced_account?.identifier || "",
+      referenceKind:
+        input.referenced_account?.identifier_kind || "account_number",
       holder: input.referenced_account?.holder || "",
     })
     document
@@ -379,6 +430,7 @@ function TrailEditor({
         </p>
       )}
       <p>{String(trail.details.input.reason)}</p>
+      <TransferBreakdown details={trail.details} />
       {trail.details.payments.map((p) => (
         <Button
           key={p.key}
@@ -389,6 +441,45 @@ function TrailEditor({
           {paymentLabel(p)}
         </Button>
       ))}
+      {trail.matching_entries.length > 0 && (
+        <details className="rounded border p-3">
+          <summary>
+            Possible missing-side entries now in this case (
+            {trail.matching_entries_truncated
+              ? "first 50"
+              : trail.matching_entries.length}
+            )
+          </summary>
+          <p>
+            The account identifier matches. Check amount, dates and references
+            before linking; these are suggestions, not confirmed transfers. The
+            full case chooser remains available above.
+          </p>
+          {trail.matching_entries.map((p) => (
+            <Button
+              key={p.key}
+              variant="outline"
+              className="h-auto whitespace-normal text-left my-1"
+              onClick={() => {
+                loadSaved(trail)
+                patch({
+                  debit:
+                    p.direction === "debit"
+                      ? p.key
+                      : String(trail.details.input.debit_id || ""),
+                  credit:
+                    p.direction === "credit"
+                      ? p.key
+                      : String(trail.details.input.credit_id || ""),
+                  reference: false,
+                })
+              }}
+            >
+              Review match: {paymentLabel(p)}
+            </Button>
+          ))}
+        </details>
+      )}
       {trail.details.implied_exchange_rate && (
         <p>
           Implied exchange rate: {trail.details.implied_exchange_rate}. Both
@@ -406,28 +497,48 @@ function TrailEditor({
             <Button variant="outline" onClick={() => loadSaved(trail)}>
               Review or edit link
             </Button>
-            {trail.kind === "transfer" && trail.details.input.credit_id && (
-              <Button
-                onClick={() => {
-                  patch({
-                    id: randomRequestId(),
-                    revision: 0,
-                    kind: "allocation",
-                    credit: String(trail.details.input.credit_id),
-                    debit: "",
-                    payments: {},
-                    reason: "",
-                    fx: false,
-                    reference: false,
-                  })
-                  document
-                    .getElementById(`trail-editor-${id}`)
-                    ?.scrollIntoView({ block: "start", behavior: "smooth" })
-                }}
-              >
-                Follow this receipt
-              </Button>
-            )}
+            {trail.kind === "transfer" &&
+              trail.details.payments
+                .filter(
+                  (p) =>
+                    p.direction === "credit" &&
+                    (!trail.details.transfer_breakdown ||
+                      trail.details.transfer_breakdown.entries.some(
+                        (part) =>
+                          part.transaction_id === p.key &&
+                          BigInt(part.principal_minor) > 0n
+                      ))
+                )
+                .map((receipt) => (
+                  <Button
+                    key={receipt.key}
+                    onClick={() => {
+                      patch({
+                        id: randomRequestId(),
+                        revision: 0,
+                        kind: "allocation",
+                        credit: receipt.key,
+                        split: false,
+                        parts: {},
+                        debit: "",
+                        payments: {},
+                        reason: "",
+                        fx: false,
+                        reference: false,
+                      })
+                      document
+                        .getElementById(`trail-editor-${id}`)
+                        ?.scrollIntoView({ block: "start", behavior: "smooth" })
+                    }}
+                  >
+                    Follow this receipt
+                    {trail.details.payments.filter(
+                      (p) => p.direction === "credit"
+                    ).length > 1
+                      ? ` · ${receipt.ref_id}`
+                      : ""}
+                  </Button>
+                ))}
             <Button onClick={() => setFinding({ trail, kind: "observation" })}>
               Create finding
             </Button>
@@ -531,7 +642,10 @@ function TrailEditor({
               ...new Set(
                 rows
                   .filter(
-                    (p) => p.key === draft.debit || p.key === draft.credit
+                    (p) =>
+                      p.key === draft.debit ||
+                      p.key === draft.credit ||
+                      p.key in (draft.parts || {})
                   )
                   .map((p) => p.account_id)
               ),
@@ -610,58 +724,104 @@ function TrailEditor({
               placeholder="Description, account, date or amount"
             />
           </label>
+          {draft.kind === "transfer" && (
+            <label className="block">
+              <input
+                type="checkbox"
+                checked={!!draft.split}
+                onChange={(e) =>
+                  patch({
+                    split: e.target.checked,
+                    parts: draft.parts || {},
+                    reference: false,
+                  })
+                }
+              />{" "}
+              This transfer has fees, split entries or only uses part of a
+              payment
+            </label>
+          )}
           {draft.kind === "transfer" &&
+            !draft.split &&
             choose("Sending account’s debit", draft.debit, "debit", (debit) =>
               patch({ debit })
             )}
-          {choose(
-            "Receiving account’s receipt",
-            draft.credit,
-            "credit",
-            (credit) => patch({ credit, payments: {} })
-          )}
+          {!(draft.kind === "transfer" && draft.split) &&
+            choose(
+              "Receiving account’s receipt",
+              draft.credit,
+              "credit",
+              (credit) => patch({ credit, payments: {} })
+            )}
           {draft.kind === "transfer" ? (
             <>
-              <label className="block">
-                <input
-                  type="checkbox"
-                  checked={draft.reference}
-                  onChange={(e) => patch({ reference: e.target.checked })}
-                />{" "}
-                The other account’s statement is missing
-              </label>
-              {draft.reference && (
-                <div className="space-y-2">
-                  <p>
-                    Choose only the available entry above. These details
-                    describe a referenced account, without inventing another
-                    transaction.
-                  </p>
+              {draft.split ? (
+                <TransferPartsEditor
+                  rows={rows}
+                  value={draft.parts || {}}
+                  onChange={(parts) => patch({ parts })}
+                  search={search}
+                />
+              ) : (
+                <>
                   <label className="block">
-                    Referenced bank
                     <input
-                      className="block w-full rounded border bg-background p-2"
-                      value={draft.bank}
-                      onChange={(e) => patch({ bank: e.target.value })}
-                    />
+                      type="checkbox"
+                      checked={draft.reference}
+                      onChange={(e) => patch({ reference: e.target.checked })}
+                    />{" "}
+                    The other account’s statement is missing
                   </label>
-                  <label className="block">
-                    Referenced account identifier
-                    <input
-                      className="block w-full rounded border bg-background p-2"
-                      value={draft.identifier}
-                      onChange={(e) => patch({ identifier: e.target.value })}
-                    />
-                  </label>
-                  <label className="block">
-                    Referenced holder (optional)
-                    <input
-                      className="block w-full rounded border bg-background p-2"
-                      value={draft.holder}
-                      onChange={(e) => patch({ holder: e.target.value })}
-                    />
-                  </label>
-                </div>
+                  {draft.reference && (
+                    <div className="space-y-2">
+                      <p>
+                        Choose only the available entry above. These details
+                        describe a referenced account, without inventing another
+                        transaction.
+                      </p>
+                      <label className="block">
+                        Referenced bank
+                        <input
+                          className="block w-full rounded border bg-background p-2"
+                          value={draft.bank}
+                          onChange={(e) => patch({ bank: e.target.value })}
+                        />
+                      </label>
+                      <label className="block">
+                        Referenced identifier type
+                        <select
+                          className="block rounded border bg-background p-2"
+                          value={draft.referenceKind || "account_number"}
+                          onChange={(e) =>
+                            patch({ referenceKind: e.target.value })
+                          }
+                        >
+                          <option value="account_number">Account number</option>
+                          <option value="clabe">CLABE</option>
+                          <option value="iban">IBAN</option>
+                        </select>
+                      </label>
+                      <label className="block">
+                        Referenced account identifier
+                        <input
+                          className="block w-full rounded border bg-background p-2"
+                          value={draft.identifier}
+                          onChange={(e) =>
+                            patch({ identifier: e.target.value })
+                          }
+                        />
+                      </label>
+                      <label className="block">
+                        Referenced holder (optional)
+                        <input
+                          className="block w-full rounded border bg-background p-2"
+                          value={draft.holder}
+                          onChange={(e) => patch({ holder: e.target.value })}
+                        />
+                      </label>
+                    </div>
+                  )}
+                </>
               )}
               <label className="block">
                 <input
@@ -769,6 +929,7 @@ function TrailEditor({
               {preview.payments.map((p) => (
                 <p key={p.key}>{paymentLabel(p)}</p>
               ))}
+              <TransferBreakdown details={preview} />
               {preview.receipt_unallocated_minor !== null && (
                 <p>
                   Receipt remaining after saved allocations:{" "}
@@ -956,6 +1117,47 @@ function TrailEditor({
           onClose={() => setFinding(null)}
         />
       )}
+    </div>
+  )
+}
+
+export function TransferBreakdown({ details }: { details: TrailPreview }) {
+  const breakdown = details.transfer_breakdown
+  if (!breakdown) return null
+  return (
+    <div
+      className="rounded border p-3 space-y-2"
+      aria-label="Transfer amount breakdown"
+    >
+      <p>
+        Principal sent:{" "}
+        {correctionMoney(breakdown.sent_minor, breakdown.sent_currency)} →
+        received:{" "}
+        {correctionMoney(breakdown.received_minor, breakdown.received_currency)}
+        {details.implied_exchange_rate
+          ? ` · Implied rate ${details.implied_exchange_rate}`
+          : ""}
+      </p>
+      <p>
+        Fees:{" "}
+        {breakdown.fees
+          .map((f) => correctionMoney(f.amount_minor, f.currency))
+          .join(" · ") || "None assigned"}
+        . Fees remain external spending.
+      </p>
+      {breakdown.entries.map((part) => (
+        <p key={part.transaction_id}>
+          {details.payments.find((p) => p.key === part.transaction_id)?.ref_id}:
+          principal {correctionMoney(part.principal_minor, part.currency)} · fee{" "}
+          {correctionMoney(part.fee_minor, part.currency)} · unassigned in this
+          link {correctionMoney(part.unassigned_minor, part.currency)} ·
+          available after other saved links{" "}
+          {correctionMoney(
+            part.remaining_after_other_links_minor,
+            part.currency
+          )}
+        </p>
+      ))}
     </div>
   )
 }

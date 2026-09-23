@@ -1,3 +1,4 @@
+import { AccountIdentityReview } from "./AccountIdentityReview"
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { z } from "zod"
@@ -116,6 +117,7 @@ export function ReferencedAccounts({
             <Landmark className="h-4 w-4" />
             Other accounts mentioned in payments
           </h2>
+          <AccountIdentityReview caseId={caseId} />
           <p className="text-sm text-muted-foreground mt-1">
             Follow account, card, share and IBAN references printed in payment
             descriptions. Check the original before requesting more statements.

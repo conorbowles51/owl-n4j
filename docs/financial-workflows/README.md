@@ -2,7 +2,7 @@
 
 Owner: the product workflow, not an individual component. Updated 23 September 2026.
 
-Latest implementation and acceptance: [23 September release verification](release-verification-2026-09-23.md). The connected statement, upload/recovery, Evidence history and account-ownership/money-trail workflows are implemented and locally verified. Deployment/live checks await renewed server authentication. The [ownership design](account-ownership-and-money-trails.md) and [bank-layout record](bank-layout-acceptance.md) retain the intended journeys and source-coverage limits. Earlier “Planned” labels below are historical; the release record is the current status.
+Latest implementation and acceptance: [23 September release verification](release-verification-2026-09-23.md) and the [completion register](completion-register.md). The code now includes the connected recovery, folder/archive upload, phone recovery, split-transfer and shared-identity work omitted from the earlier partial release `a465f6fc`. Local checks and live acceptance remain distinct: deployment and the reported existing-data incidents need renewed server access. The [recovery and identity flows](recovery-and-identity-workflows.md), [ownership design](account-ownership-and-money-trails.md) and [bank-layout record](bank-layout-acceptance.md) retain the intended journeys and source-coverage limits.
 
 This reference records the agreed investigator journey and maps the implemented controls to it. **A diagram is not acceptance evidence.** Use the acceptance register below to distinguish a designed path, an automated check and an observed live result. Earlier checked plans do not override a newly reported usability failure.
 

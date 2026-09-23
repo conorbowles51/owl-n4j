@@ -583,9 +583,22 @@ class EvidenceDBStorage:
         and cellebrite_category. Duplicate detection mirrors add_files(), but
         rows keep the UFED file ID so attachment APIs can resolve them later.
         """
+        EvidenceDBStorage._lock_case(db, case_id)
         created: List[EvidenceFile] = []
         for fd in files_data:
             sha256 = fd["sha256"]
+            if fd.get('cellebrite_report_key') and fd.get('cellebrite_file_id'):
+                saved = db.scalars(select(EvidenceFile).where(
+                    EvidenceFile.case_id == case_id,
+                    EvidenceFile.source_type == 'cellebrite',
+                    EvidenceFile.cellebrite_report_key == fd['cellebrite_report_key'],
+                    EvidenceFile.cellebrite_file_id == fd['cellebrite_file_id'])
+                    .order_by(EvidenceFile.created_at, EvidenceFile.id)).first()
+                if saved:
+                    if saved.sha256 != sha256:
+                        raise ValueError('A phone report file identifier now has different content. Review the changed source before replacing it.')
+                    created.append(saved)
+                    continue
             existing = db.scalars(
                 select(EvidenceFile).where(EvidenceFile.sha256 == sha256).limit(1)
             ).first()

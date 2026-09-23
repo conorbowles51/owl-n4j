@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query"
 import { z } from "zod"
 import { fetchAPI } from "@/lib/api-client"
 import { Button } from "@/components/ui/button"
+import { ResumableUploadsPanel } from "@/features/evidence/components/ResumableUploadsPanel"
 const uploadAnswer = z.object({
   files: z.array(
     z.object({
@@ -111,15 +112,8 @@ function PdfReviewIntakeForm({
     try {
       let id = fileId
       if (!id) {
-        const body = new FormData()
-        body.append("case_id", caseId)
-        body.append("files", file!)
         const result = uploadAnswer.parse(
-          await fetchAPI("/api/evidence/upload", {
-            method: "POST",
-            body,
-            timeout: 120000,
-          })
+          await evidenceAPI.upload(caseId, [file!])
         )
         if (
           result.files.length !== 1 ||
@@ -152,6 +146,7 @@ function PdfReviewIntakeForm({
       aria-label="Prepare PDF for review"
       className="space-y-3 rounded border p-3"
     >
+      <ResumableUploadsPanel caseId={caseId} />
       <h3 className="font-semibold">
         {automaticReview ? "Upload a bank statement" : "Add a PDF for review"}
       </h3>

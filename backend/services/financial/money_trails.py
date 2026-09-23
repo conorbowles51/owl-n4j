@@ -30,8 +30,22 @@ class Allocation(BaseModel):
     amount_minor: str = Field(pattern=r'^[1-9][0-9]{0,24}$')
 
 
+class TransferPart(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    transaction_id: UUID
+    principal_minor: str = Field(pattern=r'^(0|[1-9][0-9]{0,24})$')
+    fee_minor: str = Field(default='0', pattern=r'^(0|[1-9][0-9]{0,24})$')
+
+    @model_validator(mode='after')
+    def nonempty(self):
+        if not int(self.principal_minor) + int(self.fee_minor):
+            raise ValueError('Enter a transfer principal or fee for each selected entry.')
+        return self
+
+
 class ReferencedAccount(BaseModel):
     model_config = ConfigDict(extra='forbid')
+    identifier_kind: Literal['account_number', 'clabe', 'iban'] = 'account_number'
     institution: str = Field(min_length=1, max_length=255)
     identifier: str = Field(min_length=1, max_length=255)
     holder: str | None = Field(default=None, max_length=255)
@@ -46,6 +60,7 @@ class TrailRequest(BaseModel):
     debit_id: UUID | None = None
     credit_id: UUID | None = None
     referenced_account: ReferencedAccount | None = None
+    transfer_parts: list[TransferPart] = Field(default_factory=list, max_length=100)
     payments: list[Allocation] = Field(default_factory=list, max_length=100)
     allow_fx: bool = Field(default=False, strict=True)
     reason: str = Field(min_length=1, max_length=4000)
@@ -53,14 +68,17 @@ class TrailRequest(BaseModel):
     @model_validator(mode='after')
     def valid_shape(self):
         if not self.reason.strip(): raise ValueError('Explain the relationship being recorded.')
-        if self.kind == 'transfer':
+        if self.transfer_parts:
+            if self.kind != 'transfer' or self.payments or self.debit_id or self.credit_id or self.referenced_account:
+                raise ValueError('Use either a simple transfer or explicit split/fee entries, not both.')
+        elif self.kind == 'transfer':
             if self.payments or not (self.debit_id or self.credit_id):
                 raise ValueError('Choose the sending and receiving transfer entries, or one entry and a referenced account.')
             if bool(self.debit_id and self.credit_id) == bool(self.referenced_account):
                 raise ValueError('Use a referenced account only when the other statement entry is missing.')
         elif not self.credit_id or not self.payments or self.debit_id or self.referenced_account or self.allow_fx:
             raise ValueError('Choose a receipt and its onward payment allocations.')
-        ids = [str(i) for i in (self.debit_id, self.credit_id) if i] + [str(p.transaction_id) for p in self.payments]
+        ids = [str(i) for i in (self.debit_id, self.credit_id) if i] + [str(p.transaction_id) for p in [*self.payments, *self.transfer_parts]]
         if len(ids) != len(set(ids)): raise ValueError('Choose each payment once.')
         return self
 
@@ -102,7 +120,7 @@ def _ancestors(session, case_id, ids):
 
 
 def preview_trail(session, *, case_id, request):
-    ids = [str(i) for i in (request.debit_id, request.credit_id) if i] + [str(p.transaction_id) for p in request.payments]
+    ids = [str(i) for i in (request.debit_id, request.credit_id) if i] + [str(p.transaction_id) for p in [*request.payments, *request.transfer_parts]]
     rows = _rows(session, case_id, [UUID(i) for i in ids])
     directory = _account_party_state(session, case_id=case_id)
     accounts = {a['id']: a for a in directory['accounts']}
@@ -111,7 +129,12 @@ def preview_trail(session, *, case_id, request):
     if credit and credit.direction != 'credit' or debit and debit.direction != 'debit':
         raise TrailError('Choose an incoming receipt and an outgoing debit in their correct roles.')
     warnings, common, rate, residual = [], [], None, None
-    if request.kind == 'transfer':
+    parts = None
+    if request.transfer_parts:
+        from services.financial.transfer_parts import assess_transfer_parts
+        parts, common, rate, part_warnings = assess_transfer_parts(request, rows, accounts, _day, TrailError)
+        warnings.extend(part_warnings)
+    elif request.kind == 'transfer':
         if credit and debit:
             if credit.account_id == debit.account_id:
                 raise TrailError('A transfer between accounts requires two different accounts.')
@@ -149,19 +172,32 @@ def preview_trail(session, *, case_id, request):
         if allocated > credit.amount_minor: raise TrailError('The allocations exceed the receipt.')
         residual = str(credit.amount_minor - allocated)
         warnings.append('This is an investigator allocation, not proof of funding. Opening funds, intervening payments and missing statements may change the interpretation.')
-    ancestors = _ancestors(session, case_id, ids)
     consumed = {}
+    transfer_consumed = {}
     for saved in session.scalars(select(FinancialMoneyTrail).where(
             FinancialMoneyTrail.case_id == case_id, FinancialMoneyTrail.active.is_(True), FinancialMoneyTrail.id != request.id)):
         other = saved.details['input']
         if request.kind == 'transfer' and saved.kind == 'transfer':
-            if ancestors.intersection(str(i) for i in (other.get('debit_id'), other.get('credit_id')) if i):
-                raise TrailError('A selected entry is already linked to a saved transfer. Review or remove that link before pairing it again.', 409)
+            if other.get('transfer_parts'):
+                quantities = {p['transaction_id']: int(p['principal_minor']) + int(p.get('fee_minor', '0')) for p in other['transfer_parts']}
+            else:
+                quantities = {p['key']: int(p['amount_minor']) for p in saved.details['payments']}
+            for key, amount in quantities.items():
+                transfer_consumed[key] = transfer_consumed.get(key, 0) + amount
         if request.kind == 'allocation' and saved.kind == 'allocation':
             allocated = sum(int(p['amount_minor']) for p in other['payments'])
             consumed[other['credit_id']] = consumed.get(other['credit_id'], 0) + allocated
             for p in other['payments']:
                 consumed[p['transaction_id']] = consumed.get(p['transaction_id'], 0) + int(p['amount_minor'])
+    if request.kind == 'transfer':
+        quantities = {str(p.transaction_id): int(p.principal_minor) + int(p.fee_minor) for p in request.transfer_parts} if request.transfer_parts else {key: row.amount_minor for key, row in rows.items()}
+        for key, amount in quantities.items():
+            used = sum(transfer_consumed.get(ancestor, 0) for ancestor in _ancestors(session, case_id, [key]))
+            if used + amount > rows[key].amount_minor:
+                raise TrailError('A selected entry is already linked to a saved transfer. The combined principal and fees would exceed its amount. Review its existing links first.', 409)
+            if parts:
+                part = next(p for p in parts['entries'] if p['transaction_id'] == key)
+                part['remaining_after_other_links_minor'] = str(rows[key].amount_minor - used - amount)
     if request.kind == 'allocation':
         requested = {str(request.credit_id): sum(int(p.amount_minor) for p in request.payments),
             **{str(p.transaction_id):int(p.amount_minor) for p in request.payments}}
@@ -194,7 +230,8 @@ def preview_trail(session, *, case_id, request):
     source_revision = digest({'payments': snapshots, 'ownership': ownership, 'account_context':context})
     return dict(case_id=str(case_id), kind=request.kind, input=request.model_dump(mode='json', exclude={'expected_revision', 'expected_source_revision'}),
         payments=snapshots, ownership=ownership, common_holders=common,
-        internal_transfer=bool(common) and bool(credit and debit) and request.kind == 'transfer',
+        internal_transfer=bool(common) and bool(parts or (credit and debit)) and request.kind == 'transfer',
+        transfer_breakdown=parts,
         implied_exchange_rate=rate, receipt_unallocated_minor=residual,
         warnings=list(dict.fromkeys(warnings)), source_revision=source_revision, account_context=context)
 
@@ -209,9 +246,28 @@ def _current_status(session, record):
 
 
 def trail_view(session, record):
+    candidates = []
+    if record.active and record.kind == 'transfer' and record.details['input'].get('referenced_account'):
+        from postgres.models.financial import FinancialAccount
+        from services.financial.account_identity import matches_identifier
+        reference = record.details['input']['referenced_account']
+        available = record.details['payments'][0]
+        matching_accounts = [a.id for a in session.scalars(select(FinancialAccount).where(FinancialAccount.case_id == record.case_id))
+            if str(a.id) != available['account_id'] and not (a.metadata_ or {}).get('referenced_only')
+            and matches_identifier(a, reference.get('identifier_kind', 'account_number'), reference['identifier'])]
+        if matching_accounts:
+            candidates = list(session.scalars(select(FinancialTransaction).join(FinancialSourceDocument,
+                FinancialSourceDocument.id == FinancialTransaction.source_document_id).where(
+                    FinancialTransaction.case_id == record.case_id, FinancialSourceDocument.case_id == record.case_id,
+                    FinancialTransaction.account_id.in_(matching_accounts), FinancialTransaction.ledger_status == 'admitted',
+                    FinancialTransaction.superseded_by_id.is_(None), FinancialSourceDocument.status == 'admitted',
+                    FinancialTransaction.amount_minor > 0,
+                    FinancialTransaction.direction == ('credit' if available['direction'] == 'debit' else 'debit'))
+                .order_by(FinancialTransaction.ordering_date.desc(), FinancialTransaction.id).limit(51)))
+            candidates = [to_view(p, account=p.account).to_json() for p in candidates if p.account.account_type != 'credit_card']
     return dict(id=str(record.id), case_id=str(record.case_id), kind=record.kind, revision=record.revision,
         active=record.active, status=_current_status(session, record) if record.active else 'removed',
-        details=record.details, history=record.history)
+        details=record.details, history=record.history, matching_entries=candidates[:50], matching_entries_truncated=len(candidates) > 50)
 
 
 def list_trails(session, *, case_id):
@@ -227,12 +283,12 @@ def save_trail(session, *, case_id, request, actor):
         record = session.get(FinancialMoneyTrail, request.id)
         if record and record.case_id != case_id: raise TrailError('Trail not found in this case.', 404)
         payload = request.model_dump(mode='json', exclude={'expected_revision', 'expected_source_revision'})
-        if record and record.active and request.expected_revision == record.revision - 1 and record.details['input'] == payload:
+        if record and record.active and request.expected_revision == record.revision - 1 and TrailRequest.model_validate(record.details['input']).model_dump(mode='json', exclude={'expected_revision', 'expected_source_revision'}) == payload:
             # A lost acknowledgement returns the same durable receipt.
             result = trail_view(session, record); session.commit(); return result
         if request.expected_revision != (record.revision if record else 0):
             raise TrailError('The saved trail changed. Reopen it before editing.', 409)
-        ids = [i for i in (request.debit_id, request.credit_id) if i] + [p.transaction_id for p in request.payments]
+        ids = [i for i in (request.debit_id, request.credit_id) if i] + [p.transaction_id for p in [*request.payments, *request.transfer_parts]]
         # Follow the correction writers' document → period → payment lock order.
         # Another investigator cannot alter a selected reading between the
         # preview revision check and the durable saved interpretation.

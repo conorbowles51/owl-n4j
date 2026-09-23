@@ -803,6 +803,7 @@ export const ADJUDICATION_DECISIONS = [
   "correct_transaction",
   "set_account_party",
   "set_counterparty_party",
+  "set_account_identity",
 ] as const
 export type AdjudicationDecision = (typeof ADJUDICATION_DECISIONS)[number]
 
@@ -1447,7 +1448,8 @@ export const financialAPI = {
     endDate?: string
   }) => {
     const qs = new URLSearchParams({ case_id: params.caseId })
-    if (params.sourceDocumentId) qs.set("source_document_id", params.sourceDocumentId)
+    if (params.sourceDocumentId)
+      qs.set("source_document_id", params.sourceDocumentId)
     appendAccountSelection(qs, params)
     if (params.accountId) qs.set("account_id", params.accountId)
     if (params.ledgerStatus) qs.set("ledger_status", params.ledgerStatus)

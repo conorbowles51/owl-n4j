@@ -222,6 +222,7 @@ class AdjudicationDecision(str, Enum):
     correct_transaction = "correct_transaction"
     set_account_party = "set_account_party"
     set_counterparty_party = "set_counterparty_party"
+    set_account_identity = "set_account_identity"
 
 
 class IngestionRunStatus(str, Enum):

@@ -1,3 +1,4 @@
+import { BatchReadingJobs } from "./BatchReadingJobs"
 import { FinancialRemovalAction } from "./FinancialRemovalAction"
 import { BatchStatementImportChoice } from "./BatchStatementImportChoice"
 import { BatchCurrencyEditor } from "./BatchCurrencyEditor"
@@ -19,11 +20,26 @@ import { useInvestigationScopeStore } from "../stores/investigation-scope"
 import { useFinancialStore } from "../stores/financial.store"
 import { useFinancialDraft } from "../stores/financial-drafts"
 const operationSchema = z.object({
-  id: z.string(), status: z.string(), created_at: z.string(), statement_count: z.number(),
-  pending: z.number(), failed: z.number(), imported: z.number(), already_present: z.number(),
-  transaction_count: z.number(), incomplete_count: z.number(),
-  outcomes: z.array(z.object({ item_id: z.string(), filename: z.string(), status: z.string(),
-    period_start: z.string().default(""), period_end: z.string().default(""), message: z.string().optional() })),
+  id: z.string(),
+  status: z.string(),
+  created_at: z.string(),
+  statement_count: z.number(),
+  pending: z.number(),
+  failed: z.number(),
+  imported: z.number(),
+  already_present: z.number(),
+  transaction_count: z.number(),
+  incomplete_count: z.number(),
+  outcomes: z.array(
+    z.object({
+      item_id: z.string(),
+      filename: z.string(),
+      status: z.string(),
+      period_start: z.string().default(""),
+      period_end: z.string().default(""),
+      message: z.string().optional(),
+    })
+  ),
 })
 const itemSchema = z.object({
   id: z.string(),
@@ -66,6 +82,7 @@ const batchSchema = z.object({
   id: z.string(),
   case_id: z.string(),
   status: z.string(),
+  reading_job_ids: z.array(z.string()).default([]),
   files: z.array(
     z.object({
       source_id: z.string(),
@@ -126,8 +143,10 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
   const [error, setError] = useState("")
   const [visibleBatches, setVisibleBatches] = useState(8)
   const [selectedBatches, setSelectedBatches] = useState<string[]>([])
-  const [submission, setSubmission, clearSubmission] = useFinancialDraft<{ request_id: string; expected_ready_revision: string } | null>(
-    caseId, `batch-import:${batchId}`, null)
+  const [submission, setSubmission, clearSubmission] = useFinancialDraft<{
+    request_id: string
+    expected_ready_revision: string
+  } | null>(caseId, `batch-import:${batchId}`, null)
   const prefix = `/api/financial/statement-import/batches`
   const query = useQuery({
     queryKey: ["financial-batch", caseId, batchId, offset, onlyProblems],
@@ -143,7 +162,9 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
       return result
     },
     refetchInterval: (query) =>
-      query.state.data?.status === "preparing" ? 3000 : false,
+      ["preparing", "pausing"].includes(query.state.data?.status ?? "")
+        ? 3000
+        : false,
   })
   const importedCount = query.data?.counts.imported || 0
   const batchState = query.data?.status
@@ -189,19 +210,34 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
       queryKey: ["statement-import-status", caseId],
     })
   }
+  const control = useMutation({
+    mutationFn: (action: "pause" | "resume") =>
+      fetchAPI(`${prefix}/${batchId}/control/${action}?case_id=${caseId}`, {
+        method: "POST",
+      }),
+    onSettled: refresh,
+  })
+  const paused = ["paused", "pausing"].includes(batchState ?? "")
   const confirm = useMutation({
     retry: false,
     mutationFn: () => {
-      const request = submission?.expected_ready_revision === query.data!.ready_revision ? submission : {
-        request_id: crypto.randomUUID(), expected_ready_revision: query.data!.ready_revision,
-      }
+      const request =
+        submission?.expected_ready_revision === query.data!.ready_revision
+          ? submission
+          : {
+              request_id: crypto.randomUUID(),
+              expected_ready_revision: query.data!.ready_revision,
+            }
       setSubmission(request)
       return fetchAPI(`${prefix}/${batchId}/confirm?case_id=${caseId}`, {
         method: "POST",
         body: request,
       })
     },
-    onSuccess: () => { clearSubmission(); refresh() },
+    onSuccess: () => {
+      clearSubmission()
+      refresh()
+    },
     onError: refresh,
   })
   const updateStatements = useMutation({
@@ -328,7 +364,11 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
                   : ""} ·{" "}
                 {batch.status === "preparing"
                   ? "Processing continues"
-                  : "Available for review"}
+                  : batch.status === "paused"
+                    ? "Paused — progress saved"
+                    : batch.status === "pausing"
+                      ? "Pausing after the current statement"
+                      : "Available for review"}
               </p>
               {batch.checked_files !== undefined && (
                 <p className="text-sm">
@@ -408,11 +448,30 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
             Prepare statements for import
           </h2>
           <p className="text-sm text-muted-foreground">
-            Processing continues on the server. You can leave this page and
-            return to the batch.
+            {batch.status === "paused"
+              ? "Batch preparation and imports are paused. Saved progress and pending imports will continue when you resume."
+              : batch.status === "pausing"
+                ? "Pausing after the current statement finishes. No further statements or imports will start."
+                : "Preparation and imports continue on the server. You can leave this page and return to the batch."}
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          {canEdit &&
+            ["preparing", "pausing", "paused"].includes(batch.status) && (
+              <Button
+                variant="outline"
+                disabled={control.isPending || batch.status === "pausing"}
+                onClick={() =>
+                  control.mutate(batch.status === "paused" ? "resume" : "pause")
+                }
+              >
+                {batch.status === "paused"
+                  ? "Resume batch preparation"
+                  : batch.status === "pausing"
+                    ? "Finishing current statement…"
+                    : "Pause batch preparation"}
+              </Button>
+            )}
           <FinancialRemovalAction
             caseId={caseId}
             batchIds={[batchId]}
@@ -433,6 +492,21 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
           </Button>
         </div>
       </div>
+      {control.isError && <p role="alert">{control.error.message}</p>}
+      {paused && (
+        <p role="status" className="rounded border p-3">
+          {batch.status === "pausing"
+            ? "Pause requested. The current statement is finishing safely."
+            : "Paused. No pending imports will start until you resume."}{" "}
+          You can still review statements. PDF readings already running have
+          separate pause controls below.
+        </p>
+      )}
+      <BatchReadingJobs
+        caseId={caseId}
+        jobIds={batch.reading_job_ids}
+        canEdit={canEdit}
+      />
       {openImported.isError && <p role="alert">{openImported.error.message}</p>}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[
@@ -441,7 +515,10 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
             `${batch.files.filter((f) => f.status === "checked").length} of ${batch.files.length}`,
           ],
           ["Statement periods available to import", available],
-          ["Review checks", `${problems}${batch.statements_with_issues !== undefined ? ` across ${batch.statements_with_issues} statements` : ""}`],
+          [
+            "Review checks",
+            `${problems}${batch.statements_with_issues !== undefined ? ` across ${batch.statements_with_issues} statements` : ""}`,
+          ],
           ["Statement periods imported", batch.counts.imported || 0],
         ].map(([title, value]) => (
           <div
@@ -453,7 +530,11 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
           </div>
         ))}
       </div>
-      <p className="text-sm text-muted-foreground">Reading a PDF prepares its statements. Importing saves their payments to Transactions. An imported statement may still have checks to review; these are separate counts.</p>
+      <p className="text-sm text-muted-foreground">
+        Reading a PDF prepares its statements. Importing saves their payments to
+        Transactions. An imported statement may still have checks to review;
+        these are separate counts.
+      </p>
       {!!batch.counts.skipped && (
         <p className="text-sm">
           {batch.counts.skipped} statements left unimported. Their files and
@@ -487,48 +568,108 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
           </p>
         </div>
         <Button
-          disabled={!canEdit || !available || confirm.isPending}
+          disabled={!canEdit || !available || confirm.isPending || paused}
           onClick={() => confirm.mutate()}
         >
           {confirm.isPending
             ? "Submitting import…"
-            : !available ? "No new statements to import"
-            : !availableRecords
-              ? `Save ${available} ${available === 1 ? "statement" : "statements"}`
-              : incompleteRecords
-                ? `Import ${availablePayments} transactions and ${incompleteRecords} incomplete records`
-                : `Import ${availablePayments} transactions`}
+            : !available
+              ? "No new statements to import"
+              : !availableRecords
+                ? `Save ${available} ${available === 1 ? "statement" : "statements"}`
+                : incompleteRecords
+                  ? `Import ${availablePayments} transactions and ${incompleteRecords} incomplete records`
+                  : `Import ${availablePayments} transactions`}
         </Button>
       </div>
       {(confirm.isError || error) && (
-        <div role="alert"><p>{confirm.error?.message || error}</p>
-          {confirm.isError && <><p>Check the import results below before trying again. Your PDFs and saved reviews are retained.</p>
-            <Button variant="outline" onClick={refresh}>Check import result</Button></>}
+        <div role="alert">
+          <p>{confirm.error?.message || error}</p>
+          {confirm.isError && (
+            <>
+              <p>
+                Check the import results below before trying again. Your PDFs
+                and saved reviews are retained.
+              </p>
+              <Button variant="outline" onClick={refresh}>
+                Check import result
+              </Button>
+            </>
+          )}
         </div>
       )}
       {batch.operations.length > 0 && (
-        <section aria-label="Import results" className="rounded border bg-card p-4 space-y-3">
+        <section
+          aria-label="Import results"
+          className="rounded border bg-card p-4 space-y-3"
+        >
           <h3 className="font-semibold">Import results</h3>
-          <p className="text-sm">The latest 20 import receipts are shown here. They are saved with the batch when you leave this page.</p>
+          <p className="text-sm">
+            The latest 20 import receipts are shown here. They are saved with
+            the batch when you leave this page.
+          </p>
           {batch.operations.map((operation, index) => (
-            <details key={operation.id} open={index === 0} className="rounded border p-3">
+            <details
+              key={operation.id}
+              open={index === 0}
+              className="rounded border p-3"
+            >
               <summary className="cursor-pointer font-medium">
-                {operation.status === "in_progress" ? "Import accepted — still running" : operation.status === "needs_review" ? "Import finished with statements to review" : "Import complete"} · {new Date(operation.created_at).toLocaleString()}
+                {operation.status === "in_progress"
+                  ? "Import accepted — still running"
+                  : operation.status === "needs_review"
+                    ? "Import finished with statements to review"
+                    : "Import complete"}{" "}
+                · {new Date(operation.created_at).toLocaleString()}
               </summary>
-              <p role={operation.pending ? "status" : undefined} className="my-2 text-sm">
-                {operation.statement_count} statements submitted · {operation.imported} imported · {operation.already_present} already included · {operation.pending} pending · {operation.failed} need review.
-                {" "}{operation.transaction_count} saved transactions · {operation.incomplete_count} incomplete readings outside totals.
+              <p
+                role={operation.pending ? "status" : undefined}
+                className="my-2 text-sm"
+              >
+                {operation.statement_count} statements submitted ·{" "}
+                {operation.imported} imported · {operation.already_present}{" "}
+                already included · {operation.pending} pending ·{" "}
+                {operation.failed} need review. {operation.transaction_count}{" "}
+                saved transactions · {operation.incomplete_count} incomplete
+                readings outside totals.
               </p>
-              {(operation.imported > 0 || operation.already_present > 0) && <Button variant="outline" disabled={openImported.isPending}
-                onClick={() => openImported.mutate(operation.id)}>View transactions from this import</Button>}
+              {(operation.imported > 0 || operation.already_present > 0) && (
+                <Button
+                  variant="outline"
+                  disabled={openImported.isPending}
+                  onClick={() => openImported.mutate(operation.id)}
+                >
+                  View transactions from this import
+                </Button>
+              )}
               <ul className="mt-2 max-h-64 overflow-auto divide-y">
-                {operation.outcomes.map((outcome) => <li key={outcome.item_id} className="py-2 text-sm">
-                  <span>{outcome.filename} · {outcome.period_start || "Start unknown"} to {outcome.period_end || "End unknown"} · {{
-                    queued: "Accepted — waiting for import", importing: "Importing", imported: "Imported", already_present: "Already included — no duplicate added", failed: "Not imported — review required",
-                  }[outcome.status] || outcome.status}</span>
-                  {outcome.message && <p>{outcome.message}</p>}
-                  <Button size="sm" variant="ghost" onClick={() => change(batchId, outcome.item_id)}>{outcome.status === "failed" ? "Review and retry this statement" : "Open statement"}</Button>
-                </li>)}
+                {operation.outcomes.map((outcome) => (
+                  <li key={outcome.item_id} className="py-2 text-sm">
+                    <span>
+                      {outcome.filename} ·{" "}
+                      {outcome.period_start || "Start unknown"} to{" "}
+                      {outcome.period_end || "End unknown"} ·{" "}
+                      {{
+                        queued: "Accepted — waiting for import",
+                        importing: "Importing",
+                        imported: "Imported",
+                        already_present:
+                          "Already included — no duplicate added",
+                        failed: "Not imported — review required",
+                      }[outcome.status] || outcome.status}
+                    </span>
+                    {outcome.message && <p>{outcome.message}</p>}
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => change(batchId, outcome.item_id)}
+                    >
+                      {outcome.status === "failed"
+                        ? "Review and retry this statement"
+                        : "Open statement"}
+                    </Button>
+                  </li>
+                ))}
               </ul>
             </details>
           ))}
@@ -557,7 +698,15 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
                 checked: "PDF read — see statement import status below",
                 error: "Needs attention",
               }[file.status] ?? file.status}
-              {file.last_progress_at && <p className="text-xs text-muted-foreground">Last stage change: {new Date(file.last_progress_at).toLocaleString()}{file.status === "processing" ? ". Waiting for the PDF reading to finish; this is not import completion." : ""}</p>}
+              {file.last_progress_at && (
+                <p className="text-xs text-muted-foreground">
+                  Last stage change:{" "}
+                  {new Date(file.last_progress_at).toLocaleString()}
+                  {file.status === "processing"
+                    ? ". Waiting for the PDF reading to finish; this is not import completion."
+                    : ""}
+                </p>
+              )}
               {file.error && (
                 <>
                   <p role="alert">{file.error}</p>
@@ -581,7 +730,7 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
                       <Button
                         variant="outline"
                         size="sm"
-                        disabled={batch.status === "preparing"}
+                        disabled={batch.status === "preparing" || paused}
                         onClick={async () => {
                           setError("")
                           try {
@@ -633,7 +782,9 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
             variant="outline"
             size="sm"
             disabled={
-              query.data.status === "preparing" || updateStatements.isPending
+              query.data.status === "preparing" ||
+              paused ||
+              updateStatements.isPending
             }
             onClick={() => updateStatements.mutate()}
           >
@@ -714,7 +865,7 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
                   aria-label={`Currency for ${item.filename}`}
                   className="rounded border bg-background p-2"
                   defaultValue=""
-                  disabled={batch.status === "preparing"}
+                  disabled={batch.status === "preparing" || paused}
                   onChange={async (event) => {
                     if (!event.target.value) return
                     setError("")

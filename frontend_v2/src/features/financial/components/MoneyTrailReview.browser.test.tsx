@@ -268,7 +268,152 @@ it("reviews a transfer, follows the receipt to a supplier, persists both links a
     "4000.00 USD allocated to Water supplier"
   )
   await page
-    .getByRole("button", { name: "Open transfer and both statements" })
+    .getByRole("button", { name: "Open transfer and statements" })
     .click()
   expect(await screen.findByLabelText("Relationship")).toHaveValue("transfer")
+})
+
+it("reviews split principal and fees, reopens the same amounts, and keeps fee/residual spending outside internal totals", async () => {
+  await page.viewport(900, 900)
+  const rows = [
+    { ...payments[0], amount_minor: "501000" },
+    { ...payments[1], amount_minor: "300000" },
+    {
+      ...payments[1],
+      key: uuid(31),
+      ref_id: "TX-RECEIVE-2",
+      amount_minor: "200000",
+    },
+    { ...payments[2] },
+  ]
+  let record: SavedTrail | null = null
+  vi.spyOn(financialAPI, "getLedgerTransactions").mockResolvedValue({
+    case_id: caseId,
+    total: rows.length,
+    transactions: rows,
+  } as never)
+  vi.mocked(fetchAPI).mockImplementation(async (_url, options) => {
+    if (options?.method !== "POST")
+      return { case_id: caseId, trails: record ? [record] : [] }
+    const input = options.body as {
+      id: string
+      kind: string
+      reason: string
+      transfer_parts: {
+        transaction_id: string
+        principal_minor: string
+        fee_minor: string
+      }[]
+    }
+    expect(input.transfer_parts).toEqual([
+      { transaction_id: debit, principal_minor: "500000", fee_minor: "1000" },
+      { transaction_id: credit, principal_minor: "300000", fee_minor: "0" },
+      { transaction_id: uuid(31), principal_minor: "200000", fee_minor: "0" },
+    ])
+    const details = {
+      case_id: caseId,
+      kind: "transfer",
+      input,
+      payments: rows.slice(0, 3),
+      ownership: {},
+      common_holders: [{ id: uuid(20), name: "Example business" }],
+      internal_transfer: true,
+      implied_exchange_rate: null,
+      receipt_unallocated_minor: null,
+      warnings: ["Fees remain external spending."],
+      source_revision: "a".repeat(64),
+      transfer_breakdown: {
+        sent_currency: "USD",
+        sent_minor: "500000",
+        received_currency: "USD",
+        received_minor: "500000",
+        fees: [{ currency: "USD", amount_minor: "1000" }],
+        entries: input.transfer_parts.map((part) => ({
+          ...part,
+          original_minor: rows.find((p) => p.key === part.transaction_id)!
+            .amount_minor,
+          direction: rows.find((p) => p.key === part.transaction_id)!.direction,
+          currency: "USD",
+          unassigned_minor: "0",
+          remaining_after_other_links_minor: "0",
+        })),
+      },
+    }
+    if (_url.includes("preview")) return details
+    record = savedTrail.parse({
+      id: input.id,
+      case_id: caseId,
+      kind: "transfer",
+      active: true,
+      revision: 1,
+      status: "current",
+      details,
+      history: [],
+    })
+    return record
+  })
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
+  const mount = () =>
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter>
+          <MoneyTrailReview caseId={caseId} initialOpen />
+        </MemoryRouter>
+      </QueryClientProvider>
+    )
+  mount()
+  fireEvent.click(
+    await screen.findByLabelText(
+      "This transfer has fees, split entries or only uses part of a payment"
+    )
+  )
+  for (const name of ["TX-SEND", "TX-RECEIVE", "TX-RECEIVE-2"])
+    fireEvent.click(screen.getByLabelText(`Include ${name} in transfer`))
+  fireEvent.change(screen.getByLabelText("Principal for TX-SEND"), {
+    target: { value: "5000" },
+  })
+  fireEvent.change(screen.getByLabelText("Fee for TX-SEND"), {
+    target: { value: "10" },
+  })
+  fireEvent.change(screen.getByLabelText("Reason and supporting evidence"), {
+    target: {
+      value:
+        "One debit sends 5,000 in two receipts. The printed 10 fee is separate from principal.",
+    },
+  })
+  fireEvent.click(screen.getByRole("button", { name: "Preview link" }))
+  const preview = await screen.findByLabelText("Money trail preview")
+  expect(preview).toHaveTextContent("Fees: 10.00 USD")
+  expect(preview).toHaveTextContent("TX-RECEIVE-2")
+  fireEvent.click(
+    within(preview).getByRole("button", { name: "Save reviewed link" })
+  )
+  await waitFor(() => expect(record).not.toBeNull())
+  const internal = internalActivity(rows, [record!])
+  expect([...internal.movements.values()]).toEqual([500000n])
+  expect(internal.portions.get(debit)).toBe(500000n)
+  expect(BigInt(rows[0].amount_minor) - internal.portions.get(debit)!).toBe(
+    1000n
+  )
+  expect(internalActivity(rows.slice(1), [record!]).ids.size).toBe(0)
+  expect(trailNarrative(record!)).toContain("fee 10.00 USD")
+  cleanup()
+  mount()
+  const saved = await screen.findByLabelText("Saved money trails")
+  fireEvent.click(
+    within(saved).getByRole("button", { name: "Review or edit link" })
+  )
+  expect(screen.getByLabelText("Fee for TX-SEND")).toHaveValue("10.00")
+  expect(screen.getByLabelText("Principal for TX-RECEIVE-2")).toHaveValue(
+    "2000.00"
+  )
+  expect(
+    within(saved).getAllByRole("button", { name: /Follow this receipt/ })
+  ).toHaveLength(2)
+  await page.viewport(390, 844)
+  await page.screenshot({ path: "/tmp/loupe-split-transfer-mobile.png" })
+  expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(390)
+  client.clear()
 })

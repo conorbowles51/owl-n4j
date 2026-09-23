@@ -1,6 +1,6 @@
 import { AddToTimelineDialog } from "@/features/timeline/components/AddToTimelineDialog"
 import { useMoneyTrails } from "../hooks/use-money-trails"
-import { internalActivity } from "../lib/money-trails"
+import { internalActivity, activityAmount } from "../lib/money-trails"
 import { correctionMoney } from "../lib/correction-contract"
 import { matchesAccountSelection } from "../lib/account-selection"
 import { compareDisplayedAmounts } from "../lib/transaction-search"
@@ -152,9 +152,7 @@ export function LedgerRowBrowser({
       (view.activity === "all" ||
         (!!trails.data &&
           !trails.error &&
-          (view.activity === "internal"
-            ? internal.ids.has(row.key)
-            : !internal.ids.has(row.key)))) &&
+          activityAmount(row, view.activity, internal) > 0n)) &&
       matchesAccountSelection(row, accountScope) &&
       (!category || categoryName(row) === category) &&
       (!sourceDocumentId || row.source_document_id === sourceDocumentId) &&
@@ -168,6 +166,11 @@ export function LedgerRowBrowser({
       (!proof || row.proof_class === proof) &&
       searchResult.matches(row)
   )
+  const analysisAmounts = (entries: LedgerTransaction[]) =>
+    entries.map((row) => ({
+      ...row,
+      amount_minor: String(activityAmount(row, view.activity, internal)),
+    }))
   const rows = investigation ? filterAnalysis(baseRows, view) : baseRows
   sortAnalysisRows(rows, sort)
   const mixedCurrencies = new Set(rows.map((row) => row.currency)).size > 1
@@ -279,10 +282,11 @@ export function LedgerRowBrowser({
                   . Both statement entries remain available in All activity.
                 </p>
                 <p>
-                  Only current, reviewed common-owner pairs with both accounts
-                  in scope are excluded from external activity. Other payments
-                  remain included; this is not a claim that all internal
-                  transfers have been identified.
+                  Only assigned principal from current, reviewed common-owner
+                  transfers with all principal accounts in scope is excluded
+                  from external activity. Fees and unassigned amounts remain
+                  included. Other payments remain included; this is not a claim
+                  that all internal transfers have been identified.
                   {internal.pending > 0
                     ? ` ${internal.pending} saved links are one-sided in this view, unconfirmed or need review.`
                     : ""}
@@ -626,7 +630,24 @@ export function LedgerRowBrowser({
             </span>
           </div>
           <AnalysisFilterChips filters={view} onChange={changeView} />
-          <PaymentTotals rows={rows} label="Payments matching your filters" />
+          <PaymentTotals
+            rows={analysisAmounts(rows)}
+            label={
+              view.activity === "all"
+                ? "Payments matching your filters"
+                : "Assigned amounts matching your activity filter"
+            }
+          />
+          {view.activity !== "all" && (
+            <p className="text-xs text-muted-foreground">
+              Totals and charts show{" "}
+              {view.activity === "internal"
+                ? "assigned internal principal"
+                : "amounts outside assigned internal principal, including fees and unassigned portions"}
+              . The table and transaction downloads retain each original entry
+              in full; a split entry can appear in both activity views.
+            </p>
+          )}
           {transactionToolbar}
           {sort.startsWith("amount") && mixedCurrencies && (
             <p className="text-xs text-muted-foreground">
@@ -636,7 +657,7 @@ export function LedgerRowBrowser({
           )}
           <TransactionAnalysisPanels
             hideControls
-            rows={baseRows}
+            rows={analysisAmounts(baseRows)}
             filters={view}
             panels={view}
             onChange={changeView}
