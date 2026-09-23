@@ -65,6 +65,7 @@ def list_transactions(
     ledger_status: Optional[LedgerStatus] = None,
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
+    source_document_id: Optional[UUID] = None,
 ) -> list[FinancialTransaction]:
     """Rows for one case, defaulting to the population that counts toward totals.
 
@@ -87,6 +88,8 @@ def list_transactions(
     )
     if account_id is not None:
         stmt = stmt.where(FinancialTransaction.account_id == account_id)
+    if source_document_id is not None:
+        stmt = stmt.where(FinancialTransaction.source_document_id == source_document_id)
     from services.financial.account_selection import apply_account_selection
     stmt = apply_account_selection(stmt, session, case_id, account_ids, account_holders)
     if start_date is not None:
@@ -142,6 +145,10 @@ class TransactionView:
     account_type: Optional[str] = None
     account_label: Optional[str] = None
     account_holder: str = ""
+    account_party_id: Optional[str] = None
+    account_holder_parties: list = field(default_factory=list)
+    account_relationships: list = field(default_factory=list)
+    transfer_details: Optional[dict] = None
     category: str = ""
     from_name: str = ""
     to_name: str = ""
@@ -161,6 +168,10 @@ class TransactionView:
             "case_id": self.case_id,
             "account_id": self.account_id,
             "account_holder": self.account_holder,
+            "account_party_id": self.account_party_id,
+            "account_holder_parties": self.account_holder_parties,
+            "account_relationships": self.account_relationships,
+            "transfer_details": self.transfer_details,
             **({"account_type": self.account_type} if self.account_type else {}),
             **({"account_label": self.account_label} if self.account_label else {}),
             "source_document_id": self.source_document_id,
@@ -196,7 +207,7 @@ def _isoformat(value: Optional[date]) -> Optional[str]:
     return value.isoformat() if value is not None else None
 
 
-def to_view(row: FinancialTransaction, *, account=None) -> TransactionView:
+def to_view(row: FinancialTransaction, *, account=None, account_parties=None) -> TransactionView:
     """Convert one stored row into its read shape.
 
     Reads every closed-vocabulary column as the plain string or int
@@ -206,11 +217,17 @@ def to_view(row: FinancialTransaction, *, account=None) -> TransactionView:
     """
     from services.financial.payment_labels import payment_label_view
     from services.financial.payment_inference import balance_reading_status
+    from services.financial.spei_description import kapital_spei
     account_type = account.account_type if account is not None and account.case_id == row.case_id else None
+    identity = (account_parties or {}).get(str(row.account_id), {})
     return TransactionView(
         **payment_label_view(row, account),
         balance_status=balance_reading_status(row),
         account_type=account_type,
+        account_party_id=(identity.get('party') or {}).get('id') if 'party' in identity else identity.get('id'),
+        account_holder_parties=identity.get('holder_parties', []),
+        account_relationships=identity.get('relationships', []),
+        transfer_details=kapital_spei(row.description),
         account_holder=(account.holder_name or "") if account is not None and account.case_id == row.case_id else "",
         account_label=(" · ".join(v for v in [account.holder_name, account.institution_name, account.identifier_as_printed] if v) if account is not None and account.case_id == row.case_id else None),
         key=str(row.id),

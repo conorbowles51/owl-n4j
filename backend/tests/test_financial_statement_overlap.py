@@ -124,21 +124,31 @@ class StatementOverlapTests(TestCase):
         with self.f.SessionLocal() as db:
             self.assertEqual(len(list(db.scalars(select(FinancialTransaction)))), 24)
 
-    def test_single_import_requires_comparison_and_rejects_stale_decision(self):
+    def test_single_import_retains_coverage_check_and_stale_decision_cannot_clear_it(self):
         self.f.confirm()
         other = self.copy_file()
         self.f.file = other
         raw = self.f.request()
-        with self.assertRaisesRegex(PdfMappingError, 'Another statement covers'):
-            self.f.confirm(raw)
         review = self.review(other, raw)
         self.assertEqual(len(review['candidates']), 1)
         raw.update(coverage_review_revision=review['revision'], coverage_review_reason='Both contain records needed for this synthetic test.')
         edited = {**raw, 'period_end': '2024-01-01', 'details_reason': 'Date was corrected.'}
-        with self.assertRaisesRegex(PdfMappingError, 'Another statement covers'):
-            self.f.confirm(edited)
+        result = self.f.confirm(edited)
+        self.assertTrue(result['created'])
+        self.assertTrue(any(issue['kind'] == 'coverage' for issue in result['issues']))
+        repeated = self.f.confirm(edited)
+        self.assertFalse(repeated['created'])
+        self.assertTrue(any(issue['kind'] == 'coverage' for issue in repeated['issues']))
+
+        # A current comparison records why the separate source is needed. This
+        # is an overlapping, different-byte source, not exact-source replay.
+        self.f.file = self.copy_file()
+        raw = self.f.request()
+        review = self.review(self.f.file, raw)
+        raw.update(coverage_review_revision=review['revision'], coverage_review_reason='Compared each separate source and need these records.')
         result = self.f.confirm(raw)
         self.assertTrue(result['created'])
+        self.assertFalse(any(issue['kind'] == 'coverage' for issue in result['issues']))
         self.assertFalse(self.f.confirm(raw)['created'])
 
     def test_legacy_batch_and_scope_changes_and_duplicate_batch_membership(self):

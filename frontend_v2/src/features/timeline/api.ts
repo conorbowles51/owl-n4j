@@ -19,7 +19,7 @@ export interface TimelineEvent {
   summary: string | null
   notes: string | null
   source?: {
-    kind: "transaction" | "workspace_entry"
+    kind: "transaction" | "workspace_entry" | "money_trail"
     id: string
     date_basis: string
     label: string

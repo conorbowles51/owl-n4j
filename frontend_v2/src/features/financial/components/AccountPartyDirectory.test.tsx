@@ -60,7 +60,7 @@ it("uses saved account IDs and captures the actual decision revision", async () 
       name: "Use Reviewed person in this perspective",
     })
   )
-  expect(choose).toHaveBeenCalledWith([accountId], state)
+  expect(choose).toHaveBeenCalledWith([accountId], expect.objectContaining({case_id:caseId, revision:state.revision}))
   expect(screen.getByText(/Printed name/)).toBeInTheDocument()
 })
 it("requires a reason and sends an explicit stale-review revision", async () => {

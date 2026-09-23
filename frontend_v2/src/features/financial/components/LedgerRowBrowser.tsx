@@ -1,4 +1,7 @@
 import { AddToTimelineDialog } from "@/features/timeline/components/AddToTimelineDialog"
+import { useMoneyTrails } from "../hooks/use-money-trails"
+import { internalActivity } from "../lib/money-trails"
+import { correctionMoney } from "../lib/correction-contract"
 import { matchesAccountSelection } from "../lib/account-selection"
 import { compareDisplayedAmounts } from "../lib/transaction-search"
 import { transactionSearch } from "../lib/transaction-search"
@@ -68,6 +71,9 @@ export function LedgerRowBrowser({
     exportContext?.caseId
   )
   const { canEdit } = useFinancialAccess()
+  const trails = useMoneyTrails(
+    investigation ? exportContext?.caseId : undefined
+  )
   const [category, setCategory] = usePaymentCategory(
     exportContext?.caseId ?? "none"
   )
@@ -136,9 +142,19 @@ export function LedgerRowBrowser({
     maxMinor === null ||
     (!!minMinor && !!maxMinor && BigInt(minMinor) > BigInt(maxMinor))
   const batchSources = new Set(importSourceIds)
+  const internal = internalActivity(
+    transactions.filter((row) => matchesAccountSelection(row, accountScope)),
+    trails.data?.trails ?? []
+  )
   const baseRows = transactions.filter(
     (row) =>
       !invalidRange &&
+      (view.activity === "all" ||
+        (!!trails.data &&
+          !trails.error &&
+          (view.activity === "internal"
+            ? internal.ids.has(row.key)
+            : !internal.ids.has(row.key)))) &&
       matchesAccountSelection(row, accountScope) &&
       (!category || categoryName(row) === category) &&
       (!sourceDocumentId || row.source_document_id === sourceDocumentId) &&
@@ -175,6 +191,22 @@ export function LedgerRowBrowser({
       aria-label="Transaction tools and filters"
     >
       <div className="flex flex-wrap items-end gap-3">
+        {investigation && exportContext && (
+          <label>
+            Activity
+            <select
+              className="block rounded border bg-background p-2"
+              value={view.activity}
+              onChange={(e) => changeView({ activity: e.target.value })}
+            >
+              <option value="all">All activity</option>
+              <option value="external">
+                External activity (exclude reviewed internal pairs)
+              </option>
+              <option value="internal">Reviewed internal transfers</option>
+            </select>
+          </label>
+        )}
         {investigation && exportContext && canEdit && (
           <Button variant="outline" onClick={() => setManageCategories(true)}>
             Manage categories
@@ -218,6 +250,46 @@ export function LedgerRowBrowser({
           >
             Clear search
           </Button>
+        )}
+        {investigation && (
+          <div className="w-full text-xs text-muted-foreground">
+            {trails.error ? (
+              <p role="alert">
+                Transfer review is unavailable.{" "}
+                {view.activity !== "all"
+                  ? "Results are withheld until it can be checked."
+                  : "All activity remains visible."}{" "}
+                <button
+                  className="underline"
+                  onClick={() => void trails.refetch()}
+                >
+                  Retry transfer review
+                </button>
+              </p>
+            ) : (
+              <>
+                <p>
+                  Internal movement across the selected accounts:{" "}
+                  {[...internal.movements]
+                    .map(
+                      ([unit, value]) =>
+                        `${correctionMoney(String(value), unit.split(" ")[0])}${unit.includes(" ") ? ` ${unit.split(" ")[1]}` : ""}`
+                    )
+                    .join(" · ") || "No reviewed pairs"}
+                  . Both statement entries remain available in All activity.
+                </p>
+                <p>
+                  Only current, reviewed common-owner pairs with both accounts
+                  in scope are excluded from external activity. Other payments
+                  remain included; this is not a claim that all internal
+                  transfers have been identified.
+                  {internal.pending > 0
+                    ? ` ${internal.pending} saved links are one-sided in this view, unconfirmed or need review.`
+                    : ""}
+                </p>
+              </>
+            )}
+          </div>
         )}
         {exportContext && (
           <PaymentCategoryFilter caseId={exportContext.caseId} />
@@ -605,6 +677,13 @@ export function LedgerRowBrowser({
                   <Button variant="outline" onClick={() => setCompare(true)}>
                     Compare payments
                   </Button>
+                  {exportContext && (
+                    <MoneyTrailReview
+                      caseId={exportContext.caseId}
+                      transactionIds={selection}
+                      label="Link transfer or money trail"
+                    />
+                  )}
                   {canEdit && (
                     <>
                       <Button
@@ -890,3 +969,4 @@ export function LedgerRowBrowser({
     </section>
   )
 }
+import { MoneyTrailReview } from "./MoneyTrailReview"

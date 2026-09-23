@@ -10,6 +10,7 @@ from app.pipeline import chunk_embed
 from app.pipeline import batch_orchestrator
 from app.pipeline import orchestrator
 from app.pipeline.extract_text import ExtractedDocument
+from app.models.job import JobStatus
 
 
 @pytest.mark.asyncio
@@ -153,6 +154,8 @@ async def test_single_file_pipeline_activates_chunks_only_after_graph_publicatio
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     events: list[str] = []
+    from app.services import graph_identity
+    monkeypatch.setattr(graph_identity, 'ensure_identity_indexes', lambda: _async_value(None))
     chunk_kwargs: dict[str, object] = {}
     job_id = uuid.uuid4()
     job = SimpleNamespace(
@@ -251,9 +254,12 @@ async def test_batch_activates_successful_text_only_documents_with_no_entities(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     job_id = uuid.uuid4()
+    from app.services import graph_identity
+    monkeypatch.setattr(graph_identity, 'ensure_identity_indexes', lambda: _async_value(None))
     job = SimpleNamespace(
         id=job_id,
         created_at=None,
+        status=JobStatus.PENDING,
         file_path="notes.txt",
         file_name="notes.txt",
         llm_profile="",

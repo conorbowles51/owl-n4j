@@ -43,6 +43,7 @@ from services.financial.candidate_reviews import read_candidate_review
 from services.financial.candidate_overlap import check_candidate_source_reuse
 from services.financial.candidate_materialization import preview_candidate_finalization
 from services.financial.candidate_statement_scopes import StatementScopesRequest
+from services.financial.account_parties import _account_party_state
 from routers.evidence import _resolve_stored_path
 from services.financial.ledger_snapshot import capture_ledger_export, ledger_export_archive
 from services.financial.ledger_summary import ledger_summary, LedgerSummaryError
@@ -690,6 +691,7 @@ async def assess_evidence_amount(
 @router.get("/ledger")
 async def get_ledger_transactions(
     case_id: UUID = Query(..., description="REQUIRED: Case ID"),
+    source_document_id: UUID | None = None,
     account_id: Optional[UUID] = Query(
         None, description="Restrict to one account"
     ),
@@ -730,6 +732,7 @@ async def get_ledger_transactions(
         rows = list_transactions(
             db,
             case_id,
+            source_document_id=source_document_id,
             account_id=account_id, account_ids=account_ids, account_holders=account_holders,
             ledger_status=status,
             start_date=start_date,
@@ -743,7 +746,8 @@ async def get_ledger_transactions(
         )
         raise HTTPException(status_code=500, detail=str(e))
 
-    transactions = [to_view(row, account=row.account).to_json() for row in rows]
+    parties = {a['id']: a for a in _account_party_state(db, case_id=case_id)['accounts']}
+    transactions = [to_view(row, account=row.account, account_parties=parties).to_json() for row in rows]
     return {
         "case_id": str(case_id),
         "transactions": transactions,
@@ -1364,3 +1368,13 @@ def get_payment_category_library(case_id: UUID = Query(...), db: Session = Depen
     for name in get_ledger_categories(case_id=case_id, db=db)['categories']:
         categories.setdefault(name.casefold(), dict(name=name, color='#8060a9', scope='case'))
     return dict(case_id=str(case_id), categories=sorted(categories.values(), key=lambda item: item['name'].casefold()))
+
+
+@router.get('/money-trails')
+def get_money_trails(case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    from services.financial.account_parties import AccountPartyError
+    try:
+        return list_trails(db, case_id=case_id)
+    except AccountPartyError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+from services.financial.money_trails import list_trails

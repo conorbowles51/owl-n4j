@@ -46,8 +46,10 @@ class LedgerSummaryTests(fixture.DuplicateTestCase):
             finally:
                 event.remove(self.engine, 'before_cursor_execute', record)
             self.assertEqual(result['currencies'][0]['credits_minor'], '1234')
-            self.assertEqual(len(statements), 1)
-            self.assertNotIn('financial_source_documents.metadata', statements[0])
+            # Captured rows now include reviewed account-party identity. Its
+            # account/event reads are bounded per case, never per payment.
+            self.assertEqual(len(statements), 3 if capture else 1)
+            self.assertTrue(all('financial_source_documents.metadata' not in sql for sql in statements))
             if capture:
                 self.assertEqual(result['readings'][0]['source']['id'], str(doc.id))
                 self.assertEqual(result['readings'][0]['row']['amount_minor'], '1234')
@@ -108,7 +110,7 @@ class LedgerSummaryRouterTests(unittest.IsolatedAsyncioTestCase):
         case,account=uuid4(),uuid4()
         with patch.object(router,'ledger_summary',return_value={}) as call:
             await router.get_ledger_summary(case,account,None,None,'db')
-            call.assert_called_once_with('db',case_id=case,account_id=account,start_date=None,end_date=None)
+            call.assert_called_once_with('db',case_id=case,account_id=account,account_ids=None,account_holders=None,start_date=None,end_date=None)
         for error,status in ((LedgerSummaryError('Invalid range'),422),(RuntimeError('private'),500)):
             with patch.object(router,'ledger_summary',side_effect=error):
                 with self.assertRaises(HTTPException) as caught:
@@ -208,7 +210,7 @@ class LedgerCounterpartyRouterTests(unittest.IsolatedAsyncioTestCase):
         case, account = uuid4(), uuid4()
         with patch('services.financial.ledger_summary.ledger_counterparties', return_value={}) as call:
             await router.get_ledger_counterparties(case, account, None, None, 'db')
-            call.assert_called_once_with('db', case_id=case, account_id=account, start_date=None, end_date=None)
+            call.assert_called_once_with('db', case_id=case, account_id=account, account_ids=None, account_holders=None, start_date=None, end_date=None)
         for error, status in ((LedgerSummaryError('Invalid range'),422), (RuntimeError('private'),500)):
             with patch('services.financial.ledger_summary.ledger_counterparties', side_effect=error):
                 with self.assertRaises(HTTPException) as caught:

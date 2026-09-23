@@ -1,3 +1,4 @@
+from app.services.ingestion_checkpoints import checkpointed
 """Post-extraction entity consolidation step.
 
 Runs between extraction (stage 3) and resolution (stage 4) to merge
@@ -413,6 +414,7 @@ async def _llm_consolidate(
 # Public API
 # ---------------------------------------------------------------------------
 
+@checkpointed("pipeline/consolidate_entities.py:consolidate_entities:v1")
 async def consolidate_entities(
     entities: list[RawEntity],
     relationships: list[RawRelationship],

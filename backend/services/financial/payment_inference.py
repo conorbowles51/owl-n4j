@@ -7,7 +7,7 @@ payment. Explicit investigator labels always take precedence in payment_labels.
 import re
 import unicodedata
 
-VERSION = 'description-labels/3'
+VERSION = 'description-labels/4'
 
 
 def normalized(value):
@@ -208,7 +208,14 @@ def infer_payment_labels(description, *, direction, account_type=None, instituti
     # CIE collection entries name the payee before REF, unlike a SPEI/SPID
     # description where the bank name alone does not identify the beneficiary.
     cie = re.match(r'^P14\s+(.+?)\s+REF\s*:\s*\d+\s+CIE\s*:\s*\d+\b', raw, re.I)
-    if direction == 'debit' and account_type != 'credit_card' and cie and _name(cie[1]):
+    from services.financial.spei_description import kapital_spei
+    spei = kapital_spei(raw) if account_type != 'credit_card' else None
+    if spei and spei['direction'] == direction:
+        endpoint = spei['sender' if direction == 'credit' else 'recipient']
+        suggest('counterparty', endpoint['party']['name'], 'kapital-spei-party',
+            'Sender or recipient printed in the SPEI party field. The bank and account are separate fields. The statement qualifies this name as unverified; review ownership separately.'
+            if endpoint['party']['qualifier'] else 'Sender or recipient printed in the SPEI party field. This is a source-name suggestion, not an ownership decision.')
+    elif direction == 'debit' and account_type != 'credit_card' and cie and _name(cie[1]):
         suggest('counterparty', cie[1].strip(), 'bbva-cie-payee', 'Payee label printed before the REF and CIE references in the payment description. This label does not establish the ultimate beneficiary.')
         if 'category' not in result:
             category('Payments', 'cie-payment', 'the CIE payment reference')

@@ -1,4 +1,5 @@
 import { MoneyFlowExplorer } from "./MoneyFlowExplorer"
+import { ReviewedMoneyTrails } from "./ReviewedMoneyTrails"
 import { useInvestigatorPayments } from "../hooks/use-investigator-payments"
 import { useMemo, useState } from "react"
 import {
@@ -382,7 +383,9 @@ export function InvestigatorFollowMoney({ caseId }: { caseId: string }) {
         description="Compare related movements and record the evidence for any connection you identify."
       />
       <WorkspaceScope caseId={caseId} />
+      <MoneyTrailReview caseId={caseId} />
       <InvestigationReadState data={data}>
+        <ReviewedMoneyTrails caseId={caseId} rows={data.rows} />
         <MoneyFlowExplorer
           caseId={caseId}
           rows={data.rows}
@@ -646,3 +649,4 @@ export function InvestigatorFollowMoney({ caseId }: { caseId: string }) {
     </div>
   )
 }
+import { MoneyTrailReview } from "./MoneyTrailReview"

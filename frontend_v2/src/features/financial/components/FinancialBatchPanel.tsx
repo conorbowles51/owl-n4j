@@ -17,6 +17,14 @@ import { BatchReviewContext } from "../lib/batch-review-context"
 import { resetPaymentTableView } from "../lib/payment-table-draft"
 import { useInvestigationScopeStore } from "../stores/investigation-scope"
 import { useFinancialStore } from "../stores/financial.store"
+import { useFinancialDraft } from "../stores/financial-drafts"
+const operationSchema = z.object({
+  id: z.string(), status: z.string(), created_at: z.string(), statement_count: z.number(),
+  pending: z.number(), failed: z.number(), imported: z.number(), already_present: z.number(),
+  transaction_count: z.number(), incomplete_count: z.number(),
+  outcomes: z.array(z.object({ item_id: z.string(), filename: z.string(), status: z.string(),
+    period_start: z.string().default(""), period_end: z.string().default(""), message: z.string().optional() })),
+})
 const itemSchema = z.object({
   id: z.string(),
   file_id: z.string(),
@@ -65,6 +73,8 @@ const batchSchema = z.object({
       filename: z.string(),
       status: z.string(),
       error: z.string().optional(),
+      last_progress_at: z.string().optional(),
+      last_checked_at: z.string().optional(),
     })
   ),
   counts: z.record(z.string(), z.number()),
@@ -73,6 +83,8 @@ const batchSchema = z.object({
   available_transactions: z.number().optional(),
   available_incomplete: z.number().optional(),
   issues_count: z.number().optional(),
+  statements_with_issues: z.number().optional(),
+  operations: z.array(operationSchema).default([]),
   ready_transactions: z.number(),
   ready_revision: z.string(),
   total: z.number(),
@@ -96,7 +108,7 @@ const listSchema = z.object({
 const labels: Record<string, string> = {
   ready: "Ready to import",
   attention: "Needs attention",
-  pending_import: "Importing",
+  pending_import: "Import accepted · waiting for completion",
   imported: "Imported",
   skipped: "Left unimported",
   assigned: "Payments assigned",
@@ -114,6 +126,8 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
   const [error, setError] = useState("")
   const [visibleBatches, setVisibleBatches] = useState(8)
   const [selectedBatches, setSelectedBatches] = useState<string[]>([])
+  const [submission, setSubmission, clearSubmission] = useFinancialDraft<{ request_id: string; expected_ready_revision: string } | null>(
+    caseId, `batch-import:${batchId}`, null)
   const prefix = `/api/financial/statement-import/batches`
   const query = useQuery({
     queryKey: ["financial-batch", caseId, batchId, offset, onlyProblems],
@@ -177,12 +191,18 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
   }
   const confirm = useMutation({
     retry: false,
-    mutationFn: () =>
-      fetchAPI(`${prefix}/${batchId}/confirm?case_id=${caseId}`, {
+    mutationFn: () => {
+      const request = submission?.expected_ready_revision === query.data!.ready_revision ? submission : {
+        request_id: crypto.randomUUID(), expected_ready_revision: query.data!.ready_revision,
+      }
+      setSubmission(request)
+      return fetchAPI(`${prefix}/${batchId}/confirm?case_id=${caseId}`, {
         method: "POST",
-        body: { expected_ready_revision: query.data!.ready_revision },
-      }),
-    onSuccess: refresh,
+        body: request,
+      })
+    },
+    onSuccess: () => { clearSubmission(); refresh() },
+    onError: refresh,
   })
   const updateStatements = useMutation({
     retry: false,
@@ -193,7 +213,7 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
     onSuccess: refresh,
   })
   const openImported = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (operationId?: string) => {
       const result = z
         .object({
           case_id: z.string(),
@@ -208,7 +228,7 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
         })
         .parse(
           await fetchAPI(
-            `${prefix}/${batchId}/imported-transactions?case_id=${caseId}`
+            `${prefix}/${batchId}/imported-transactions?case_id=${caseId}${operationId ? `&operation_id=${operationId}` : ""}`
           )
         )
       if (result.case_id !== caseId || result.batch_id !== batchId)
@@ -401,7 +421,7 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
           {importedCount > 0 && (
             <Button
               disabled={openImported.isPending}
-              onClick={() => openImported.mutate()}
+              onClick={() => openImported.mutate(undefined)}
             >
               {openImported.isPending
                 ? "Opening imported payments…"
@@ -417,15 +437,15 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[
           [
-            "Files checked",
+            "PDFs read",
             `${batch.files.filter((f) => f.status === "checked").length} of ${batch.files.length}`,
           ],
-          ["Available to import", available],
-          ["Issues to check", problems],
-          ["Imported", batch.counts.imported || 0],
+          ["Statement periods available to import", available],
+          ["Review checks", `${problems}${batch.statements_with_issues !== undefined ? ` across ${batch.statements_with_issues} statements` : ""}`],
+          ["Statement periods imported", batch.counts.imported || 0],
         ].map(([title, value]) => (
           <div
-            className={`rounded border p-3 ${title === "Issues to check" && problems ? "border-amber-400 bg-amber-50/60 dark:bg-amber-950/20" : "bg-card"}`}
+            className={`rounded border p-3 ${title === "Review checks" && problems ? "border-amber-400 bg-amber-50/60 dark:bg-amber-950/20" : "bg-card"}`}
             key={title}
           >
             <p className="text-sm text-muted-foreground">{title}</p>
@@ -433,6 +453,7 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
           </div>
         ))}
       </div>
+      <p className="text-sm text-muted-foreground">Reading a PDF prepares its statements. Importing saves their payments to Transactions. An imported statement may still have checks to review; these are separate counts.</p>
       {!!batch.counts.skipped && (
         <p className="text-sm">
           {batch.counts.skipped} statements left unimported. Their files and
@@ -470,8 +491,9 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
           onClick={() => confirm.mutate()}
         >
           {confirm.isPending
-            ? "Confirming…"
-            : available && !availableRecords
+            ? "Submitting import…"
+            : !available ? "No new statements to import"
+            : !availableRecords
               ? `Save ${available} ${available === 1 ? "statement" : "statements"}`
               : incompleteRecords
                 ? `Import ${availablePayments} transactions and ${incompleteRecords} incomplete records`
@@ -479,7 +501,38 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
         </Button>
       </div>
       {(confirm.isError || error) && (
-        <p role="alert">{confirm.error?.message || error}</p>
+        <div role="alert"><p>{confirm.error?.message || error}</p>
+          {confirm.isError && <><p>Check the import results below before trying again. Your PDFs and saved reviews are retained.</p>
+            <Button variant="outline" onClick={refresh}>Check import result</Button></>}
+        </div>
+      )}
+      {batch.operations.length > 0 && (
+        <section aria-label="Import results" className="rounded border bg-card p-4 space-y-3">
+          <h3 className="font-semibold">Import results</h3>
+          <p className="text-sm">The latest 20 import receipts are shown here. They are saved with the batch when you leave this page.</p>
+          {batch.operations.map((operation, index) => (
+            <details key={operation.id} open={index === 0} className="rounded border p-3">
+              <summary className="cursor-pointer font-medium">
+                {operation.status === "in_progress" ? "Import accepted — still running" : operation.status === "needs_review" ? "Import finished with statements to review" : "Import complete"} · {new Date(operation.created_at).toLocaleString()}
+              </summary>
+              <p role={operation.pending ? "status" : undefined} className="my-2 text-sm">
+                {operation.statement_count} statements submitted · {operation.imported} imported · {operation.already_present} already included · {operation.pending} pending · {operation.failed} need review.
+                {" "}{operation.transaction_count} saved transactions · {operation.incomplete_count} incomplete readings outside totals.
+              </p>
+              {(operation.imported > 0 || operation.already_present > 0) && <Button variant="outline" disabled={openImported.isPending}
+                onClick={() => openImported.mutate(operation.id)}>View transactions from this import</Button>}
+              <ul className="mt-2 max-h-64 overflow-auto divide-y">
+                {operation.outcomes.map((outcome) => <li key={outcome.item_id} className="py-2 text-sm">
+                  <span>{outcome.filename} · {outcome.period_start || "Start unknown"} to {outcome.period_end || "End unknown"} · {{
+                    queued: "Accepted — waiting for import", importing: "Importing", imported: "Imported", already_present: "Already included — no duplicate added", failed: "Not imported — review required",
+                  }[outcome.status] || outcome.status}</span>
+                  {outcome.message && <p>{outcome.message}</p>}
+                  <Button size="sm" variant="ghost" onClick={() => change(batchId, outcome.item_id)}>{outcome.status === "failed" ? "Review and retry this statement" : "Open statement"}</Button>
+                </li>)}
+              </ul>
+            </details>
+          ))}
+        </section>
       )}
       {!!batch.counts.pending_import && (
         <p role="status">
@@ -501,9 +554,10 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
               {{
                 waiting: "Waiting to process",
                 processing: "Reading and checking statements",
-                checked: "Statements checked",
+                checked: "PDF read — see statement import status below",
                 error: "Needs attention",
               }[file.status] ?? file.status}
+              {file.last_progress_at && <p className="text-xs text-muted-foreground">Last stage change: {new Date(file.last_progress_at).toLocaleString()}{file.status === "processing" ? ". Waiting for the PDF reading to finish; this is not import completion." : ""}</p>}
               {file.error && (
                 <>
                   <p role="alert">{file.error}</p>

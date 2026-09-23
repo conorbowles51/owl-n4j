@@ -1,4 +1,5 @@
 import { fetchAPI } from "@/lib/api-client"
+import { uploadOrdinaryFiles } from "./resumable-upload"
 import type {
   EvidenceFile,
   EvidenceFileRecord,
@@ -83,12 +84,13 @@ export const evidenceAPI = {
     files: File[],
     optionsOrIsFolder: EvidenceUploadOptions | boolean = {},
     folderId?: string
-  ) => {
+  ): Promise<UploadResponse> => {
     const options =
       typeof optionsOrIsFolder === "boolean"
         ? { isFolder: optionsOrIsFolder, folderId }
         : optionsOrIsFolder
     const isFolderUpload = options.isFolder || options.isArchive
+    if (!isFolderUpload) return uploadOrdinaryFiles(caseId, files, options.folderId)
     const formData = new FormData()
     formData.append("case_id", caseId)
     if (isFolderUpload) formData.append("is_folder", "true")

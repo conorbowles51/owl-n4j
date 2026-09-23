@@ -328,6 +328,11 @@ TIER_INSTITUTION_ACCOUNT = "institution_account"
 #: full-number match without having said so.
 TIER_INSTITUTION_MASKED = "institution_masked"
 
+# A contract can explicitly contain several separately balanced currency
+# accounts. This tier is opt-in source evidence, never inferred merely because
+# two readings disagree on currency. The printed contract remains unchanged.
+TIER_CONTRACT_CURRENCY = "institution_contract_currency"
+
 #: Nothing on the document identified the account.  The key is built from a
 #: caller-supplied distinguisher, so each such document gets its own account
 #: rather than all of them sharing one.  Merging them is an adjudication.
@@ -337,6 +342,7 @@ TIER_UNIDENTIFIED = "unidentified"
 IDENTITY_TIERS: tuple[str, ...] = (
     TIER_IBAN,
     TIER_ROUTING_ACCOUNT,
+    TIER_CONTRACT_CURRENCY,
     TIER_INSTITUTION_ACCOUNT,
     TIER_INSTITUTION_MASKED,
     TIER_UNIDENTIFIED,
@@ -544,6 +550,10 @@ class AccountDraft:
             )
 
         if institution and digits and not masked:
+            if self.metadata.get('account_reference_kind') == 'multi_currency_contract' and self.currency:
+                return AccountIdentity(
+                    key=_build_key(TIER_CONTRACT_CURRENCY, institution, digits, self.currency),
+                    tier=TIER_CONTRACT_CURRENCY, verdicts=verdicts)
             return AccountIdentity(
                 key=_build_key(TIER_INSTITUTION_ACCOUNT, institution, digits),
                 tier=TIER_INSTITUTION_ACCOUNT,

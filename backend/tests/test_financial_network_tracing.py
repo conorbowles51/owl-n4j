@@ -16,7 +16,7 @@ class NetworkTracingTests(LedgerSummaryTests):
             result=self.add_row(period,doc,account=account,amount=amount,direction=direction);result.proof_class='p3';self.db.commit();return result
         root=row(self.account,10000);clean=row(self.account,10000);send=row(self.account,10000,TransactionDirection.debit);receive=row(b,10000);send2=row(b,6000,TransactionDirection.debit);receive2=row(c,6000);exit=row(c,2000,TransactionDirection.debit)
         ordered=[root,clean,send,receive,send2,receive2,exit]
-        snapshot=capture_ledger_snapshot(self.db,case_id=self.case.id,start_date=date(2026,1,1),end_date=date(2026,1,31));document=_capture_history(self.db,json.loads(snapshot.content),case_id=self.case.id);content=json.dumps(document,sort_keys=True,separators=(',',':'));export=LedgerExport(LedgerSnapshot(content,hashlib.sha256(content.encode()).hexdigest(),len(content.encode())),'{}')
+        snapshot=capture_ledger_snapshot(self.db,case_id=self.case.id,start_date=date(2026,1,1),end_date=date(2026,1,31));document=_capture_history(self.db,json.loads(snapshot.content),case_id=self.case.id);content=json.dumps(document,sort_keys=True,separators=(',',':'),ensure_ascii=False);export=LedgerExport(LedgerSnapshot(content,hashlib.sha256(content.encode()).hexdigest(),len(content.encode())),'{}')
         request=dict(expected_snapshot_sha256=export.snapshot.sha256,population='working',tolerance_days=3,start_date='2026-01-01',end_date='2026-01-31',currency='GBP',
             pairs=[dict(debit_id=str(send.id),credit_id=str(receive.id)),dict(debit_id=str(send2.id),credit_id=str(receive2.id))],basis='Explicit synthetic transfers',
             openings=[dict(account_id=str(a.id),amount_minor='0',basis='Synthetic zero opening') for a in [self.account,b,c]],
@@ -69,7 +69,7 @@ class NetworkTracingTests(LedgerSummaryTests):
     def recapture(self):
         snapshot=capture_ledger_snapshot(self.db,case_id=self.case.id,start_date=date(2026,1,1),end_date=date(2026,1,31))
         document=_capture_history(self.db,json.loads(snapshot.content),case_id=self.case.id)
-        content=json.dumps(document,sort_keys=True,separators=(',',':'))
+        content=json.dumps(document,sort_keys=True,separators=(',',':'),ensure_ascii=False)
         return LedgerExport(LedgerSnapshot(content,hashlib.sha256(content.encode()).hexdigest(),len(content.encode())),'{}')
 
     def test_explicit_backward_timing_conserves_each_method_without_redating_rows(self):

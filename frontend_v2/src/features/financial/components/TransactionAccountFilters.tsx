@@ -11,6 +11,7 @@ import {
   assertCandidateScope,
 } from "../lib/candidate-contract"
 import { AccountMultiSelect } from "./AccountMultiSelect"
+import { AccountOwnershipReview } from "./AccountOwnershipReview"
 
 export function TransactionAccountFilters({
   caseId,
@@ -46,6 +47,8 @@ export function TransactionAccountFilters({
   for (const account of query.data ?? []) {
     const holder = holderKey(account.holder ?? undefined)
     if (holder) holders.set(holder, account.holder!.trim().replace(/\s+/g, " "))
+    if (account.party) holders.set(`party:${account.party.id}`, `${account.party.name} · linked accounts`)
+    for (const party of account.holder_parties) holders.set(`party:${party.id}`, `${party.name} · reviewed holder`)
     accounts.set(
       account.id,
       [
@@ -86,6 +89,8 @@ export function TransactionAccountFilters({
           }
         />
       </div>
+      <AccountOwnershipReview caseId={caseId} accountIds={selectedAccountIds(selection)} onChoose={partyId =>
+        onChange({...selection, accountId:undefined, accountIds:[], accountHolders:[`party:${partyId}`]})} />
       {selection.accountHolders?.length ||
       selectedAccountIds(selection).length ? (
         <p className="text-xs text-muted-foreground">

@@ -145,6 +145,19 @@ export function AccountPartyDirectory({
       {query.error && <p role="alert">{query.error.message}</p>}
       {state && !query.isError && (
         <>
+          {(state.ownership_review?.suggestions.length ?? 0) > 0 && <section aria-label="Suggested common ownership" className="space-y-3 rounded border p-3">
+            <h4 className="font-semibold">Accounts that may have the same owner</h4>
+            <p>Suggestions from statement headers. Review the evidence, then save the account links to use them throughout Financial.</p>
+            {state.ownership_review?.suggestions.map((suggestion) => <div key={suggestion.id} className="rounded border p-3 space-y-2">
+              <p className="font-medium">{suggestion.suggested_name} · {suggestion.account_ids.length} accounts</p>
+              <p>{suggestion.reason}</p>
+              {suggestion.has_conflicting_links && <p role="alert">These accounts have different saved links. Check those decisions before changing them.</p>}
+              <ul>{suggestion.account_ids.map((id) => { const account = state.accounts.find((a) => a.id === id); return <li key={id}>{account?.institution} · {account?.identifier_as_printed} · {account?.currency}</li> })}</ul>
+              <details><summary>Supporting statement headers</summary>{suggestion.evidence.map((entry, index) => <p key={index}>{entry.holder_as_recorded} · {entry.printed_label} {entry.printed_value} · page {entry.page_number}{entry.evidence_file_id && <> · <a className="underline" href={`/api/evidence/${entry.evidence_file_id}/file`} target="_blank" rel="noreferrer">Open original statement</a></>}</p>)}</details>
+              <Button disabled={!canEdit || save.isPending} onClick={() => updateReview({selected:suggestion.account_ids, party:suggestion.existing_party_id || "new", name:suggestion.suggested_name, reason:suggestion.reason + "\n" + suggestion.evidence.map((entry) => `Source ${entry.source_document_id}, page ${entry.page_number}: ${entry.printed_label} ${entry.printed_value}`).join("\n")})}>Review these account links</Button>
+            </div>)}
+          </section>}
+          {state.ownership_review?.conflicts.map((conflict) => <p key={conflict.account_id} role="alert">{state.accounts.find((a) => a.id === conflict.account_id)?.identifier_as_printed}: {conflict.reason}</p>)}
           <p className="text-sm text-muted-foreground">
             Unfinished account selections, the name and your explanation are
             kept in this browser tab after navigation or refresh. Save the links

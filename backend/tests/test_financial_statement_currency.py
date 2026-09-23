@@ -11,6 +11,14 @@ from tests.test_financial_statement_import_proposal import source
 
 
 class CurrencyDetectionTests(TestCase):
+    def test_national_currency_requires_account_label_and_mexican_issuer_context(self):
+        for label in ('MN', 'M.N.', 'M. N.', 'MONEDA NACIONAL'):
+            rows = [['SERVICIO EMPRESARIAL FX KAPITAL 194-992-001-6'], ['Moneda', label],
+                    ['TOTAL DOLARES'], ['USD 5000.01']]
+            self.assertEqual(detect_statement_currency([source(rows)]), 'MXN')
+        self.assertEqual(detect_statement_currency([source([['Moneda MN'], ['$5000.01']])]), '')
+        self.assertEqual(detect_statement_currency([source([['BANCO KAPITAL'], ['Moneda MN'], ['Moneda USD']])]), '')
+
     def test_printed_currency_codes_and_unambiguous_symbols(self):
         for cells, expected in [(['Currency:', 'CAD'], 'CAD'), (['Account currency: GBP'], 'GBP'),
                                 (['USD 21.19'], 'USD'), (['21.19 EUR'], 'EUR'),

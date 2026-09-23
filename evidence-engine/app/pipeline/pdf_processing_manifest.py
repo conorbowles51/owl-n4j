@@ -15,7 +15,7 @@ def capture_pdf_processing_manifest(*, settings, ocr_used, reading_mode='automat
         except PackageNotFoundError: packages[name] = None
     sources = {}
     for name in ('pdf_extraction.py', 'ocr_geometry.py', 'financial_date_ocr.py',
-                 'financial_transaction_date_ocr.py', 'financial_amount_ocr.py', 'pdf_processing_manifest.py'):
+                 'financial_transaction_date_ocr.py', 'financial_amount_ocr.py', 'financial_bbva_ocr.py', 'pdf_processing_manifest.py'):
         try: sources[name] = hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest()
         except OSError: sources[name] = None
     tesseract = dict(status='not_used', version=None)

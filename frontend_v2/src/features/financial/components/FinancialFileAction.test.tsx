@@ -12,7 +12,7 @@ import { StatementFilesPanel } from "./StatementFilesPanel"
 import { fetchAPI } from "@/lib/api-client"
 import { useStatementWorkspace } from "../stores/statement-workspace"
 import { useAuthStore } from "@/features/auth/hooks/use-auth"
-vi.mock("@/lib/api-client", () => ({ fetchAPI: vi.fn() }))
+vi.mock("@/lib/api-client", async original => ({ ...await original<typeof import("@/lib/api-client")>(),fetchAPI: vi.fn() }))
 const access = vi.hoisted(() => ({
   canEdit: true,
   canUpload: true,

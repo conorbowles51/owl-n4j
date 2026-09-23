@@ -237,3 +237,41 @@ def test_reconcile_old_job_detail_uses_latest_case_attempt(monkeypatch) -> None:
     assert record.last_error is None
     assert record.summary == "new success"
     assert db.commit_count == 1
+
+
+def test_starting_another_ingestion_cannot_restore_previous_failure_during_upload():
+    """A case refresh runs while the new request is still uploading to the engine."""
+    evidence_id, current_request, old_job = uuid4(), str(uuid4()), uuid4()
+    record = _evidence_record(evidence_id)
+    record.status, record.last_error = "processing", None
+    record.last_processed_profile_snapshot = {"ingestion_request_id": current_request}
+    db = FakeDb([record])
+    historical = dict(id=str(old_job), source_evidence_file_id=str(evidence_id),
+                      status="failed", error_message="Previous attempt timed out",
+                      pipeline_state={"ingestion_request_id": str(uuid4())})
+
+    assert reconcile_jobs_payload(db, [historical]) == 0
+    assert (record.status, record.engine_job_id, record.last_error) == ("processing", None, None)
+
+    accepted = dict(id=str(uuid4()), source_evidence_file_id=str(evidence_id),
+                    status="extracting_entities", pipeline_state={"ingestion_request_id": current_request})
+    assert reconcile_jobs_payload(db, [historical, accepted]) == 1
+    assert record.status == "processing"
+    assert record.engine_job_id == accepted["id"]
+    # A delayed/stale response must not roll back the newly linked attempt.
+    assert reconcile_jobs_payload(db, [historical]) == 0
+    assert record.engine_job_id == accepted["id"]
+
+
+def test_pdf_preparation_updates_only_its_file_while_ai_keeps_running():
+    ai_file, pdf_file = uuid4(), uuid4()
+    ai_job, pdf_job = str(uuid4()), str(uuid4())
+    ai_record, pdf_record = _evidence_record(ai_file, ai_job), _evidence_record(pdf_file, pdf_job)
+    ai_record.status, ai_record.last_error = "processing", None
+    db = FakeDb([ai_record, pdf_record])
+    reconcile_jobs_payload(db, [
+        dict(id=pdf_job, source_evidence_file_id=str(pdf_file), job_type="pdf_review", status="completed"),
+        dict(id=ai_job, source_evidence_file_id=str(ai_file), job_type="ingestion", status="extracting_entities"),
+    ])
+    assert (ai_record.status, ai_record.engine_job_id, ai_record.last_error) == ("processing", ai_job, None)
+    assert (pdf_record.status, pdf_record.engine_job_id) == ("processed", pdf_job)

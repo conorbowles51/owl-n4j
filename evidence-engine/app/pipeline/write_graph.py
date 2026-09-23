@@ -2,6 +2,7 @@ import asyncio
 import json
 from typing import Any
 
+from app.services.ingestion_checkpoints import checkpointed
 from app.ontology import load_ontology
 from app.pipeline.resolve_entities import (
     ResolvedEntity,
@@ -13,6 +14,7 @@ from app.pipeline.property_canonicalization import (
     is_neo4j_primitive_list,
 )
 from app.services import chroma_client, neo4j_client
+from app.services.graph_identity import ENTITY_LABEL_EXPRESSION, ensure_identity_indexes
 from app.services.geocoding import build_geocode_request, geocoding_service
 from app.services.openai_client import embed_texts
 from app.utils.text_sanitize import sanitize_json
@@ -23,6 +25,7 @@ GEOCODABLE_CATEGORIES = set(_ontology.geocodable_categories)
 
 
 async def _ensure_indexes() -> None:
+    await ensure_identity_indexes()
     # Per-category case_id and key indexes
     for label in ENTITY_CATEGORIES:
         await neo4j_client.execute_write(
@@ -169,24 +172,24 @@ async def _write_entities(
             "ai_insights": json.dumps(e.ai_insights),
         }
         for k, v in e.properties.items():
-            if k.startswith("_") or k in ("description", "aliases"):
+            if k.startswith("_") or k in ("description", "aliases", "id", "key", "case_id", "job_id"):
                 continue
             if isinstance(v, (str, int, float, bool)) or is_neo4j_primitive_list(v):
                 props[k] = v
         by_cat.setdefault(e.category, []).append(props)
 
-    batch_size = 500
+    batch_size = 100
     for category, nodes in by_cat.items():
         for i in range(0, len(nodes), batch_size):
             batch = sanitize_json(nodes[i : i + batch_size])
             query = (
                 f"UNWIND $nodes AS node "
-                f"OPTIONAL MATCH (existing {{id: node.id, case_id: node.case_id}}) "
+                f"OPTIONAL MATCH (existing:{ENTITY_LABEL_EXPRESSION} {{id: node.id, case_id: node.case_id}}) "
                 f"WITH node, existing "
                 f"FOREACH (_ IN CASE WHEN existing IS NULL THEN [1] ELSE [] END | "
                 f"CREATE (created:{category} {{id: node.id, case_id: node.case_id}})) "
                 f"WITH node "
-                f"MATCH (n {{id: node.id, case_id: node.case_id}}) "
+                f"MATCH (n:{ENTITY_LABEL_EXPRESSION} {{id: node.id, case_id: node.case_id}}) "
                 f"WITH n, node, coalesce(n.manual_fields, []) AS manual_fields, "
                 f"n.aliases AS prev_aliases, "
                 f"n.source_files AS prev_sf, n.source_quotes AS prev_sq, "
@@ -209,9 +212,9 @@ async def _write_entities(
                 f"| CASE WHEN x IN acc THEN acc ELSE acc + x END), "
                 # description: prefer longer non-empty value
                 f"n.description = CASE "
+                f"WHEN 'description' IN manual_fields THEN prev_desc "
                 f"WHEN prev_desc IS NULL OR prev_desc = '' THEN node.description "
                 f"WHEN node.description IS NULL OR node.description = '' THEN prev_desc "
-                f"WHEN 'description' IN manual_fields THEN prev_desc "
                 f"WHEN size(node.description) > size(prev_desc) THEN node.description "
                 f"ELSE prev_desc END, "
                 # summary: always use new (merge prompt ensures it incorporates old)
@@ -246,7 +249,7 @@ async def _write_entities(
                 f"WHEN node.ai_insights IS NULL OR node.ai_insights = '' THEN prev_ai "
                 f"ELSE node.ai_insights END"
             )
-            await neo4j_client.execute_write(query, {"nodes": batch})
+            await _checkpointed_graph_write(query, {"nodes": batch, "case_id": case_id})
 
 
 # ---------------------------------------------------------------------------
@@ -272,7 +275,7 @@ async def _write_relationships(
             "source_claim_ids": rel.source_claim_ids,
         }
         for k, v in rel.properties.items():
-            if isinstance(v, (str, int, float, bool)):
+            if k not in ('source_id', 'target_id', 'case_id') and isinstance(v, (str, int, float, bool)):
                 props[k] = v
 
         safe_type = "".join(
@@ -280,14 +283,14 @@ async def _write_relationships(
         )
         by_type.setdefault(safe_type, []).append(props)
 
-    batch_size = 500
+    batch_size = 100
     for rel_type, rels in by_type.items():
         for i in range(0, len(rels), batch_size):
             batch = sanitize_json(rels[i : i + batch_size])
             query = (
                 f"UNWIND $rels AS rel "
-                f"MATCH (a {{id: rel.source_id}}) "
-                f"MATCH (b {{id: rel.target_id}}) "
+                f"MATCH (a:{ENTITY_LABEL_EXPRESSION} {{id: rel.source_id, case_id: $case_id}}) "
+                f"MATCH (b:{ENTITY_LABEL_EXPRESSION} {{id: rel.target_id, case_id: $case_id}}) "
                 f"MERGE (a)-[r:{rel_type} {{source_id: rel.source_id, target_id: rel.target_id}}]->(b) "
                 f"WITH r, rel, r.source_files AS prev_sf, r.source_quotes AS prev_sq, "
                 f"r.source_claim_ids AS prev_claim_ids "
@@ -299,7 +302,7 @@ async def _write_relationships(
                 f"r.source_claim_ids = reduce(acc = [], x IN (coalesce(prev_claim_ids, []) + coalesce(rel.source_claim_ids, [])) "
                 f"| CASE WHEN x IN acc THEN acc ELSE acc + x END)"
             )
-            await neo4j_client.execute_write(query, {"rels": batch})
+            await _checkpointed_graph_write(query, {"rels": batch, "case_id": case_id})
 
 
 # ---------------------------------------------------------------------------
@@ -370,3 +373,13 @@ async def write_graph(
     await _write_entities(entities, case_id, job_id)
     await _write_relationships(relationships, case_id)
     await _embed_entities(entities, case_id)
+
+
+@checkpointed("graph-write-v2")
+async def _checkpointed_graph_write(query, parameters):
+    # Acquire a case-scoped graph lock in the same transaction as the bounded
+    # write. Two ingestion runs must not both observe a missing entity and CREATE
+    # it. This survives separate worker processes and releases on rollback/crash.
+    guarded = ('MERGE (writeLock:IngestionCaseWriteLock {case_id: $case_id}) '
+        'SET writeLock.sequence = coalesce(writeLock.sequence, 0) + 1 WITH writeLock ' + query)
+    await neo4j_client.execute_write(guarded, parameters)

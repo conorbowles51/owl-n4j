@@ -5,7 +5,7 @@ from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 from postgres.base import Base
-from postgres.models.financial import FinancialAccount, FinancialIngestionRun
+from postgres.models.financial import FinancialAccount, FinancialIngestionRun, AdjudicationEvent
 from services.financial.candidate_accounts import CandidateAccountRequest, create_candidate_account
 from services.financial.candidate_reviews import read_candidate_review
 from services.financial.candidate_store import CandidateStoreError, list_candidate_accounts
@@ -16,7 +16,7 @@ class CandidateAccountTests(unittest.TestCase):
     def setUp(self):
         self.f = fixture.CandidateStoreTests()
         self.f.setUp()
-        Base.metadata.create_all(self.f.engine, tables=[FinancialAccount.__table__, FinancialIngestionRun.__table__])
+        Base.metadata.create_all(self.f.engine, tables=[FinancialAccount.__table__, FinancialIngestionRun.__table__, AdjudicationEvent.__table__])
         self.saved = self.f.save()
         self.candidate = UUID(self.saved['candidates'][0]['id'])
         self.request = dict(expected_revision=self.saved['candidates'][0]['review_revision'],

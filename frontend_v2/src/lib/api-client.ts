@@ -30,7 +30,8 @@ export async function fetchAPI<T>(
     headers["Authorization"] = `Bearer ${token}`
   }
 
-  if (body && !(body instanceof FormData)) {
+  const rawBody = body instanceof FormData || body instanceof Blob
+  if (body && !rawBody) {
     headers["Content-Type"] = "application/json"
   }
 
@@ -46,7 +47,7 @@ export async function fetchAPI<T>(
       ...init,
       headers,
       body:
-        body instanceof FormData
+        rawBody
           ? (body as BodyInit)
           : body
             ? JSON.stringify(body)

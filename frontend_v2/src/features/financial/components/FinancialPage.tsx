@@ -785,6 +785,7 @@ function FinancialPageContent() {
               )}
             </div>
             <div hidden={!reviewingAccounts}>
+              {reviewingAccounts && caseId && <AccountOwnershipReview caseId={caseId} label="Review account ownership" />}
               {importReceipt &&
                 importReceipt.case_id === caseId &&
                 (importReceipt.record_count ??
@@ -1445,3 +1446,4 @@ function FinancialPageContent() {
     </div>
   )
 }
+import { AccountOwnershipReview } from "./AccountOwnershipReview"

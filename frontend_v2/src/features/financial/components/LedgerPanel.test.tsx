@@ -11,7 +11,9 @@
  * transactions" would assert something the request never checked.
  */
 
-import { render, screen } from "@testing-library/react"
+import { render as originalRender, screen } from "@testing-library/react"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import type { ReactNode } from "react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import type { LedgerResponse, LedgerTransaction } from "../api"
@@ -19,11 +21,44 @@ import { LedgerPanel } from "./LedgerPanel"
 
 const useLedgerTransactions = vi.hoisted(() => vi.fn())
 
+function render(children: ReactNode) {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
+  return originalRender(children, {
+    wrapper: ({ children }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    ),
+  })
+}
+vi.mock("@/lib/api-client", async (original) => ({
+  ...(await original<typeof import("@/lib/api-client")>()),
+  fetchAPI: vi.fn(async (url: string) => ({
+    case_id: new URL(url, "http://test").searchParams.get("case_id"),
+    items: [],
+    has_more: false,
+    total: 0,
+    categories: [],
+    entries: [],
+  })),
+}))
+
 vi.mock("../hooks/use-ledger-transactions", () => ({
   useLedgerTransactions,
 }))
+vi.mock("../hooks/use-money-trails", () => ({
+  useMoneyTrails: () => ({
+    data: { trails: [] },
+    error: null,
+    isPending: false,
+  }),
+}))
 vi.mock("../hooks/use-financial-finding-index", () => ({
-  useFinancialFindingIndex: () => ({ data: [], isPending: false, isError: false }),
+  useFinancialFindingIndex: () => ({
+    data: [],
+    isPending: false,
+    isError: false,
+  }),
 }))
 
 function makeRow(
@@ -290,6 +325,6 @@ it("keeps an empty investigation scope understandable without inventing account 
     "acct-2"
   )
   expect(
-    screen.getByText("No payments match these filters")
+    screen.getByText("No payments match these filters. Change the filters below to see other payments.")
   ).toBeInTheDocument()
 })

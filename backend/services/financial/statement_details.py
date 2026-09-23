@@ -1,6 +1,6 @@
 """Edit imported statement details without rereading or replacing its payments."""
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from types import SimpleNamespace
 from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
@@ -26,6 +26,8 @@ class StatementDetailsRequest(BaseModel):
     account_number: str = Field(max_length=128)
     institution: str = Field(max_length=128)
     currency: CurrencyCode | None = None
+    period_start: str | None = Field(default=None, pattern=r'^(\d{4}-\d{2}-\d{2})?$')
+    period_end: str | None = Field(default=None, pattern=r'^(\d{4}-\d{2}-\d{2})?$')
     opening: BalanceEdit | None = None
     closing: BalanceEdit | None = None
 
@@ -85,6 +87,10 @@ def _view(document, period, account):
         period_id=str(period.id) if period else None,
         details=saved_details(document), currency=period.currency if period else saved_currency(document),
         balance_convention=convention, pages=pages, balances={})
+    if period:
+        for key in ('period_start', 'period_end'):
+            value = getattr(period, key)
+            result['details'][key] = value.isoformat() if value else ''
     for role in ('opening', 'closing'):
         value = getattr(period, role + '_balance_minor') if period else None
         result['balances'][role] = dict(amount_minor=str(value * sign) if value is not None else None,
@@ -112,6 +118,19 @@ def update_statement_details(session, *, case_id, source_id, request, actor):
         details = {key: getattr(request, key).strip() for key in DETAIL_KEYS}
         if any(any(ord(c) < 32 for c in value) for value in details.values()):
             raise PdfMappingError('Account details must be on a single line.', 422)
+        # Omitted fields preserve legacy clients' dates; an explicit blank means
+        # unknown. Statement coverage never substitutes dates on payments.
+        dates = {}
+        for key in ('period_start', 'period_end'):
+            value = getattr(request, key)
+            value = before['details'].get(key, '') if value is None else value
+            try:
+                dates[key] = date.fromisoformat(value) if value else None
+            except ValueError as exc:
+                raise PdfMappingError('Enter a real statement date, or leave it blank if unknown.', 422) from exc
+            details[key] = value
+        if dates['period_start'] and dates['period_end'] and dates['period_start'] > dates['period_end']:
+            raise PdfMappingError('Statement start must be on or before statement end.', 422)
         balances = deepcopy((document.metadata_ or {}).get('statement_details_review', {}).get('balances', {}))
         if request.currency and before['currency'] and request.currency != before['currency']:
             for role, balance in balances.items():
@@ -129,12 +148,15 @@ def update_statement_details(session, *, case_id, source_id, request, actor):
             balances[role] = edit.model_dump()
         metadata = deepcopy(document.metadata_ or {})
         old_account_id = account.id
-        if any(details[key] != before['details'][key] for key in DETAIL_KEYS):
+        reference_kind = (account.metadata_ or {}).get('account_reference_kind')
+        compartment_currency_changed = reference_kind == 'multi_currency_contract' and request.currency and request.currency != before['currency']
+        if any(details[key] != before['details'][key] for key in DETAIL_KEYS) or compartment_currency_changed:
             from services.financial.accounts import AccountDraft, AccountIdentityError, record_account
             fields = dict(holder_name=details['holder'] or None, identifier_as_printed=details['account_number'] or None,
-                institution_name=details['institution'] or None, currency=account.currency,
+                institution_name=details['institution'] or None, currency=(request.currency or before['currency']) if reference_kind == 'multi_currency_contract' else account.currency,
                 account_type=account.account_type, metadata=dict(display_label=' · '.join(filter(None,
-                    [details['holder'], details['account_number']])) or 'Account details not recorded'))
+                    [details['holder'], details['account_number']])) or 'Account details not recorded',
+                    account_reference_kind=reference_kind))
             try:
                 draft = AccountDraft.observed(**fields)
             except AccountIdentityError:
@@ -182,6 +204,11 @@ def update_statement_details(session, *, case_id, source_id, request, actor):
                         if original.get('page_number') in before['pages']:
                             balances[role] = dict(amount_minor=rescale_minor(row['balance_minor'],
                                 metadata['statement_import_request']['currency'], request.currency) if metadata['statement_import_request']['currency'] else row['balance_minor'], page=original['page_number'])
+        if period:
+            for key in ('period_start', 'period_end'):
+                if getattr(request, key) is not None:
+                    setattr(period, key, dates[key])
+                    setattr(period, key + '_source', 'printed' if dates[key] else 'absent')
         for role in ('opening', 'closing'):
             edit = getattr(request, role)
             if edit is None and before['period_id'] is None and role in balances:

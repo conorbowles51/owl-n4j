@@ -2071,8 +2071,42 @@ from services.financial.statement_information_pages import (
 from services.financial.statement_progress import review_progress, save_progress
 from services.financial.statement_review_checks import check_statement_rows
 from services.financial.statement_row_assignment import RowAssignmentRequest, reassign_rows
+from services.financial.account_ownership import ownership_suggestions
+from services.financial.account_relationships import AccountRelationshipInput
+from services.financial.money_trails import TrailRequest, preview_trail, save_trail, list_trails
+from services.financial.import_operations import operation_view
+from services.financial.source_lineage import lineage_groups
+from services.financial.spei_description import kapital_spei
+from services.financial.statement_import_kapital import kapital_catalog
+from services.financial.statement_import_monex import monex_catalog
+from services.financial.account_selection import apply_account_selection
+from services.financial.batch_import_history import current_imports
+from services.financial.category_library import category_library
+from services.financial.currency_correction import rescale_minor
+from services.financial.import_issues import retained_issues
+from services.financial.import_removal import preview_removal, remove_imports
+from services.financial.imported_records import complete_record
+from services.financial.legacy_statement_refresh import refresh_legacy_import
+from services.financial.manual_balances import manual_balance
+from services.financial.payment_edits import preview_payment_edits, save_payment_edits
+from services.financial.payment_inference import infer_payment_labels
+from services.financial.payment_labels import update_payment_labels
+from services.financial.review_upgrade import upgrade_request
+from services.financial.statement_currency import detect_statement_currency
+from services.financial.statement_currency_edit import change_currency
+from services.financial.statement_details import update_statement_details
+from services.financial.statement_import_bbva import bbva_catalog
+from services.financial.statement_import_scotiabank import scotiabank_catalog
+from services.financial.transaction_search import transaction_search
 
 __all__ += [
+    "apply_account_selection", "current_imports", "category_library", "rescale_minor", "retained_issues",
+    "preview_removal", "remove_imports", "complete_record", "refresh_legacy_import", "manual_balance",
+    "preview_payment_edits", "save_payment_edits", "infer_payment_labels", "update_payment_labels",
+    "upgrade_request", "detect_statement_currency", "change_currency", "update_statement_details",
+    "bbva_catalog", "scotiabank_catalog", "transaction_search",
+    "ownership_suggestions", "AccountRelationshipInput", "TrailRequest", "preview_trail", "save_trail", "list_trails",
+    "operation_view", "lineage_groups", "kapital_spei", "kapital_catalog", "monex_catalog",
     "imported_batch_scope", "card_row_columns", "resolve_financial_selection",
     "financial_file_visibility", "set_financial_file_visibility", "create_batch",
     "batch_status", "check_proposed_rows", "saved_ancestor_reviews", "acknowledge_recovery",

@@ -8,11 +8,12 @@ from pydantic import BaseModel, ConfigDict, Field
 Text = Annotated[str, Field(strict=True,min_length=1,max_length=2048)]
 Digest = Annotated[str, Field(strict=True,pattern=r'^[a-f0-9]{64}$')]
 SourceName = Literal['pdf_extraction.py', 'ocr_geometry.py', 'pdf_processing_manifest.py',
-    'financial_date_ocr.py', 'financial_transaction_date_ocr.py', 'financial_amount_ocr.py']
+    'financial_date_ocr.py', 'financial_transaction_date_ocr.py', 'financial_amount_ocr.py', 'financial_bbva_ocr.py']
 _BASE_SOURCES = {'pdf_extraction.py', 'ocr_geometry.py', 'pdf_processing_manifest.py'}
 _SOURCE_INVENTORIES = tuple(_BASE_SOURCES | set(additions) for additions in (
     (), ('financial_date_ocr.py',), ('financial_date_ocr.py', 'financial_amount_ocr.py'),
-    ('financial_date_ocr.py', 'financial_transaction_date_ocr.py', 'financial_amount_ocr.py')))
+    ('financial_date_ocr.py', 'financial_transaction_date_ocr.py', 'financial_amount_ocr.py'),
+    ('financial_date_ocr.py', 'financial_transaction_date_ocr.py', 'financial_amount_ocr.py', 'financial_bbva_ocr.py')))
 
 class _Settings(BaseModel):
     model_config=ConfigDict(extra='forbid',strict=True)

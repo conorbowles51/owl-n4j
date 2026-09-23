@@ -183,6 +183,48 @@ export function LedgerSourceDialog({
                 {data.transaction.account_label && (
                   <p className="text-sm">{data.transaction.account_label}</p>
                 )}
+                <AccountOwnershipReview
+                  caseId={caseId}
+                  accountIds={[data.transaction.account_id]}
+                  label="Review this account’s ownership"
+                />
+                <MoneyTrailReview
+                  caseId={caseId}
+                  transactionIds={[transactionId]}
+                  label="Link transfer or follow this payment"
+                />
+                {data.transaction.transfer_details && (
+                  <details className="rounded border p-3">
+                    <summary className="font-medium">
+                      Sender, recipient and account details printed in this
+                      transfer
+                    </summary>
+                    {(["sender", "recipient"] as const).map((role) => {
+                      const item = data.transaction!.transfer_details![role]
+                      return (
+                        <div key={role} className="my-2">
+                          <p>
+                            {role === "sender" ? "Sender" : "Recipient"}:{" "}
+                            {item.party.name}
+                          </p>
+                          <p>
+                            Bank: {item.bank.text} · CLABE: {item.account.text}
+                          </p>
+                          {item.party.qualifier && (
+                            <p className="text-muted-foreground">
+                              The statement says this party name was not
+                              verified by the institution.
+                            </p>
+                          )}
+                        </div>
+                      )
+                    })}
+                    <p>
+                      These are printed transfer fields. Review the ownership
+                      links separately.
+                    </p>
+                  </details>
+                )}
                 <h3 className="font-semibold">
                   {data.transaction.description || "No description recorded"}
                 </h3>
@@ -522,3 +564,5 @@ function SourceFrame({
     </Dialog>
   )
 }
+import { AccountOwnershipReview } from "./AccountOwnershipReview"
+import { MoneyTrailReview } from "./MoneyTrailReview"

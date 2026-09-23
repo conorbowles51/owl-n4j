@@ -1,7 +1,31 @@
 import { z } from "zod"
 
 const minor = z.union([z.string().regex(/^-?\d+$/), z.number().int().safe()])
+const printedField = z.object({
+  text: z.string(),
+  start: z.number().int().nonnegative(),
+  end: z.number().int().nonnegative(),
+})
+const endpoint = z.object({
+  party: printedField.extend({
+    name: z.string(),
+    qualifier: z.string().nullable(),
+  }),
+  bank: printedField,
+  account: printedField.extend({ kind: z.literal("clabe") }),
+})
+const transferDetails = z.object({
+  method: z.literal("SPEI"),
+  layout: z.literal("kapital-delimited-spei"),
+  direction: z.enum(["credit", "debit"]),
+  sender: endpoint,
+  recipient: endpoint,
+  payment_references: z.array(printedField),
+  ownership_established: z.literal(false),
+})
+export type TransferDetails = z.infer<typeof transferDetails>
 export const transactionDetail = z.object({
+  transfer_details: transferDetails.nullable().optional(),
   category: z.string().optional(),
   from_name: z.string().optional(),
   to_name: z.string().optional(),

@@ -1,3 +1,4 @@
+from app.services.ingestion_checkpoints import checkpointed, IngestionPaused
 import asyncio
 import json
 import logging
@@ -645,6 +646,7 @@ def _build_financial_provenance(
     }
 
 
+@checkpointed("pipeline/extract_entities.py:_extract_entities_from_chunk:v1")
 async def _extract_entities_from_chunk(
     chunk_text: str,
     chunk_index: int,
@@ -820,6 +822,7 @@ async def _extract_entities_from_chunk(
     return entities
 
 
+@checkpointed("pipeline/extract_entities.py:_extract_relationships_from_chunk:v1")
 async def _extract_relationships_from_chunk(
     chunk_text: str,
     chunk_index: int,
@@ -1315,6 +1318,11 @@ async def _bounded_map(items: list[Any], operation, limit: int) -> list[Any]:
     ]
     try:
         await asyncio.gather(*tasks)
+    except IngestionPaused:
+        # Let already-running requests finish and save their results. No next
+        # chunk starts because every extraction unit checks the pause flag.
+        await asyncio.gather(*tasks, return_exceptions=True)
+        raise
     except BaseException:
         for task in tasks:
             task.cancel()

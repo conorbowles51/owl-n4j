@@ -12,6 +12,60 @@ from app.pipeline import pdf_extraction
 from app.pipeline.pdf_extraction import PdfExtractionProgress, PdfOcrError
 
 
+def test_native_page_checkpoint_resume_retains_exact_text_tables_and_rectangles(tmp_path,monkeypatch):
+    path=tmp_path/'synthetic.pdf'; _statement(path,'checkpoint')
+    root=tmp_path/'checkpoints'
+    original=pdf_extraction._extract_native_tables
+    read=[]
+    def counted(page,number):
+        read.append(number)
+        return original(page,number)
+    monkeypatch.setattr(pdf_extraction,'_extract_native_tables',counted)
+    def interrupt(update):
+        if update.pdf_page==1:raise RuntimeError('Synthetic interrupted connection')
+    with pytest.raises(RuntimeError,match='interrupted connection'):
+        pdf_extraction._extract_pdf_sync(str(path),interrupt,checkpoint_directory=str(root))
+    assert read==[1]
+    resumed=pdf_extraction._extract_pdf_sync(str(path),checkpoint_directory=str(root))
+    assert read==[1,2]
+    baseline=pdf_extraction._extract_pdf_sync(str(path))
+    assert resumed.text==baseline.text and resumed.tables==baseline.tables
+    assert resumed.metadata['table_geometry']==baseline.metadata['table_geometry']
+
+
+def test_1928_page_native_document_resumes_without_dropping_or_rereading_pages(tmp_path,monkeypatch):
+    path=tmp_path/'large-synthetic-chat.pdf';root=tmp_path/'pages'
+    with fitz.open() as document:
+        for number in range(1,1929):
+            page=document.new_page()
+            page.insert_textbox(fitz.Rect(25,25,560,400),
+                f'Synthetic evidence page {number:04d}\n' +
+                ('This is synthetic conversation text for the interruption test. '
+                 'Every page must retain its original position and complete source text.\n')*5,
+                fontsize=10)
+        document.save(path)
+    read=[];original=pdf_extraction._extract_native_tables
+    def counted(page,number):
+        read.append(number)
+        return original(page,number)
+    monkeypatch.setattr(pdf_extraction,'_extract_native_tables',counted)
+    monkeypatch.setattr(pdf_extraction.settings,'max_pdf_pages',2000)
+    def interrupted(update):
+        if update.pdf_page==777:raise RuntimeError('Synthetic host interruption')
+    with pytest.raises(RuntimeError,match='Synthetic host interruption'):
+        pdf_extraction._extract_pdf_sync(str(path),interrupted,checkpoint_directory=str(root))
+    assert read==list(range(1,778))
+    result=pdf_extraction._extract_pdf_sync(str(path),checkpoint_directory=str(root))
+    assert read==list(range(1,1929))
+    assert result.metadata['page_count']==result.metadata['native_page_count']==1928
+    assert result.metadata['ocr_page_count']==0
+    spans=result.metadata['page_spans']
+    assert len(spans)==1928
+    for number,span in enumerate(spans,1):
+        assert span['page']==number
+        assert f'Synthetic evidence page {number:04d}' in result.text[span['start_char']:span['end_char']]
+
+
 def _statement(path, code):
     with fitz.open() as document:
         for number in range(2):
@@ -93,6 +147,38 @@ async def test_worker_crash_is_reported_instead_of_waiting_forever(monkeypatch):
     monkeypatch.setattr(pdf_extraction, '_pdf_worker', _crashed_worker)
     with pytest.raises(PdfOcrError, match='before completing'):
         await asyncio.wait_for(pdf_extraction.extract_pdf('unused.pdf'), 10)
+
+
+@pytest.mark.parametrize('interrupted', ['ai', 'financial'])
+async def test_interrupting_one_pdf_never_kills_the_other_reader(monkeypatch, interrupted):
+    """The second ingestion starts after the first child is already reading."""
+    original_children = {p.pid for p in multiprocessing.active_children()}
+    monkeypatch.setattr(pdf_extraction, '_pdf_worker', _slow_worker)
+    entered = {kind: asyncio.Event() for kind in ('ai', 'financial')}
+
+    async def progress(kind, _value):
+        entered[kind].set()
+        await asyncio.Event().wait()
+
+    tasks = {}
+    try:
+        for kind in ('ai', 'financial'):
+            tasks[kind] = asyncio.create_task(pdf_extraction.extract_pdf(
+                'unused.pdf', lambda value, kind=kind: progress(kind, value)))
+            await asyncio.wait_for(entered[kind].wait(), 10)
+        assert len({p.pid for p in multiprocessing.active_children()} - original_children) == 2
+        tasks[interrupted].cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await tasks[interrupted]
+        remaining = 'financial' if interrupted == 'ai' else 'ai'
+        assert not tasks[remaining].done()
+        children = [p for p in multiprocessing.active_children() if p.pid not in original_children]
+        assert len(children) == 1 and children[0].is_alive()
+    finally:
+        for task in tasks.values():
+            if not task.done(): task.cancel()
+        await asyncio.gather(*tasks.values(), return_exceptions=True)
+    assert {p.pid for p in multiprocessing.active_children()} == original_children
 
 
 async def test_child_applies_the_configured_page_limit(tmp_path, monkeypatch):

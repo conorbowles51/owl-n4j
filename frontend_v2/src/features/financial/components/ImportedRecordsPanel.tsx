@@ -60,6 +60,7 @@ export function ImportedRecordsPanel({
         limit: "50",
       })
       appendAccountSelection(search, params)
+      if (params.sourceDocumentId) search.set("source_document_id", params.sourceDocumentId)
       if (params.accountId) search.set("account_id", params.accountId)
       if (params.startDate) search.set("start_date", params.startDate)
       if (params.endDate) search.set("end_date", params.endDate)

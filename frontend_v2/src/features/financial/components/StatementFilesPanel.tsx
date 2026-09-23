@@ -436,6 +436,11 @@ export function StatementFilesPanel({
             >
               <span className="block break-words font-medium">
                 {file.original_filename}
+                {file.readingVersions.length > 1 && (
+                  <span className="block text-xs text-muted-foreground">
+                    One PDF · {file.readingVersions.length} retained reading versions
+                  </span>
+                )}
               </span>
               <span
                 className="finance-badge"
@@ -461,10 +466,18 @@ export function StatementFilesPanel({
                           ? `${saved.current_transactions} imported payments · ${saved.periods.length} recorded ${saved.periods.length === 1 ? "period" : "periods"}`
                           : file.status === "processed"
                             ? imports.data && !imports.data.truncated
-                              ? "Ready to review"
+                              ? "PDF read · payments not yet imported"
                               : "Ready to open"
                             : file.status}
               </span>
+              {saved?.prepared_periods !== undefined && (
+                <span className="block text-sm">
+                  {saved.periods.length} of {Math.max(saved.prepared_periods, saved.periods.length)} statement periods saved
+                  {saved.available_periods ? ` · ${saved.available_periods} available to import` : ""}
+                  {saved.pending_periods ? ` · ${saved.pending_periods} imports pending` : ""}
+                  {saved.periods_with_checks ? ` · ${saved.periods_with_checks} periods have checks to review` : ""}
+                </span>
+              )}
               {saved?.periods.slice(0, 2).map((period) => (
                 <span key={period.id} className="block text-xs mt-1">
                   {period.account_label} ·{" "}
@@ -539,6 +552,18 @@ export function StatementFilesPanel({
                       : "Read statement"}
                 </Button>
               )}
+            {file.readingVersions.length > 1 && <details className="text-sm">
+              <summary className="cursor-pointer">Reading history ({file.readingVersions.length} versions of this PDF)</summary>
+              <p className="text-xs text-muted-foreground">These are retained readings of one source, not additional uploaded statements. Opening a reading does not import it.</p>
+              <ul className="mt-2 max-h-48 overflow-auto">
+                {file.readingVersions.map((version) => <li key={version.id}>
+                  <Button size="sm" variant="link" disabled={version.status !== "processed" || version.financial_removed}
+                    onClick={() => { useStatementWorkspace.getState().select(scope, version.id); useFinancialStore.getState().setMainView("statements"); onOpen?.() }}>
+                    {version.id === file.id ? "Current reading" : "Earlier reading"} · {version.created_at ? new Date(version.created_at).toLocaleString() : version.id.slice(0, 8)} · {version.financial_removed ? "Removed from Financial" : version.status}
+                  </Button>
+                </li>)}
+              </ul>
+            </details>}
           </div>
         )
       })}

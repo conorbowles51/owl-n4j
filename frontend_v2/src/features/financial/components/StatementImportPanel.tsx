@@ -1,6 +1,7 @@
 import { CurrencyOptions } from "./CurrencyOptions"
 import { currencyMinorUnits } from "../lib/ledger-format"
 import { ImportedStatementDetails } from "./ImportedStatementDetails"
+import { SavedStatementPayments } from "./SavedStatementPayments"
 import { useStatementCoverageReview } from "../hooks/use-statement-coverage-review"
 import { StatementCoverageReview } from "./StatementCoverageReview"
 import { useBatchReview } from "../lib/batch-review-context"
@@ -158,6 +159,7 @@ const proposalSchema = z.object({
         layout_id: z.string().optional(),
         account_reference: z.string(),
         account_label: z.string().optional(),
+        currency: z.string().optional(),
         assignment_only: z.boolean().optional(),
         document_kind: z.literal("deposit_receipt").optional(),
         statement_date: z.string().optional(),
@@ -571,7 +573,7 @@ function StatementReview({
       >
         <p className="text-sm font-medium">
           {query.data.statement_choices.length > 1
-            ? `This PDF contains ${query.data.statement_choices.length} statement periods. You are viewing one period below.`
+            ? `This PDF contains ${query.data.statement_choices.length} account statements. You are viewing one account, currency and period below.`
             : "You are viewing one statement."}
         </p>
         <h3 className="text-lg font-semibold">
@@ -630,14 +632,19 @@ function StatementReview({
             </Button>
           )}
       </section>
-      <StatementCurrencyControl
+      {query.data.current_import && !query.data.current_import.excluded_as_duplicate && canEdit && !batchReview?.readOnly ? (
+        <div id="saved-statement-details" tabIndex={-1}>
+          <ImportedStatementDetails key={query.data.current_import.source_document_id}
+            caseId={caseId} sourceId={query.data.current_import.source_document_id} initiallyOpen focusField={batchReview?.field} />
+        </div>
+      ) : <StatementCurrencyControl
         currency={query.data.current_import?.currency || query.data.currency}
         detectedCurrency={query.data.detected_currency}
         disabled={
           !canEdit || !!batchReview?.readOnly || !!query.data.current_import
         }
         onChange={setCurrency}
-      />
+      />}
       {!batchReview && query.data.statement_choices.length > 1 && (
         <StatementPeriodSelect
           choices={query.data.statement_choices}
@@ -689,7 +696,7 @@ function StatementReview({
           />
         )
       )}
-      {query.data.current_import?.evidence_file_id === fileId &&
+      {query.data.current_import &&
         !query.data.current_import.excluded_as_duplicate && (
           <section
             className="rounded border p-4 space-y-3"
@@ -707,15 +714,19 @@ function StatementReview({
                   : "Statement balances saved"}
             </h3>
             <p>
-              {query.data.current_import.transaction_count} usable payments
-              {query.data.current_import.incomplete_count
-                ? ` were saved. The earlier import also retained ${query.data.current_import.incomplete_count} readings with missing values.`
-                : " were saved."}
-              {query.data.current_import.transaction_count === 0 &&
+              {query.data.current_import.transaction_count || query.data.current_import.incomplete_count
+                ? `${query.data.current_import.transaction_count} usable payments were saved.`
+                : "The account, statement dates and printed balances are saved. No payments were added to Transactions."}
+              {!!query.data.current_import.incomplete_count &&
+                ` The earlier import also retained ${query.data.current_import.incomplete_count} readings with missing values.`}
+            {query.data.current_import.transaction_count === 0 &&
                 !!query.data.current_import.incomplete_count &&
                 " The PDF is retained, but those readings are not payments in Transactions."}
             </p>
-            {canEdit &&
+            {!!(query.data.current_import.transaction_count || query.data.current_import.incomplete_count) &&
+              <SavedStatementPayments caseId={caseId} sourceId={query.data.current_import.source_document_id}
+                hasIncomplete={!!query.data.current_import.incomplete_count} />}
+            {canEdit && query.data.current_import.evidence_file_id === fileId &&
               (query.data.current_import.refresh_available ||
                 query.data.current_import.refresh_review_required) && (
                 <RefreshStoredReading
@@ -723,11 +734,8 @@ function StatementReview({
                   onImported={onImported}
                 />
               )}
-            {canEdit && (
-              <ImportedStatementDetails
-                caseId={caseId}
-                sourceId={query.data.current_import.source_document_id}
-              />
+            {query.data.transaction_count !== query.data.current_import.transaction_count && (
+              <p role="status">The current PDF reading found {query.data.transaction_count} payment readings; the saved import contains {query.data.current_import.transaction_count} payments. The new reading has not replaced those saved payments. Check the source before choosing to replace an import.</p>
             )}
             {query.data.current_import.details_reason && (
               <p>
@@ -1429,6 +1437,14 @@ function EditableStatement({
       field: "Statement balances",
     })
   const focusDetail = (field: string) => {
+    if (importedHere) {
+      const panel = document.getElementById("saved-statement-details")
+      const label = `Saved ${field.toLowerCase()}`
+      const input = panel?.querySelector<HTMLElement>(`[aria-label="${label}"]`)
+      ;(input || panel)?.focus({ preventScroll: true })
+      ;(input || panel)?.scrollIntoView({ block: "center", behavior: "smooth" })
+      return
+    }
     if (field === "Statement balances") {
       const control =
         balanceControls.current?.querySelector<HTMLElement>("input,button")
@@ -1872,6 +1888,118 @@ function EditableStatement({
     <div ref={statementControls} className="space-y-4 pt-4">
       <header>
         <h3 className="text-lg font-semibold">Review {data.filename}</h3>
+        <section aria-label="Statement details" className="space-y-3 my-4">
+        <div
+          hidden={data.assignment_only || (!!data.current_import && !canEdit)}
+          className={
+            data.assignment_only ? "hidden" : "grid sm:grid-cols-3 gap-3"
+          }
+        >
+          <label>
+            Account holder
+            <input
+              aria-label="Account holder"
+              readOnly={!canEdit}
+              className="block border rounded p-2 w-full bg-background"
+              value={holder}
+              onChange={(e) => setHolder(e.target.value)}
+            />
+          </label>
+          <label>
+            Account number
+            <input
+              aria-label="Account number"
+              readOnly={!canEdit}
+              className="block border rounded p-2 w-full bg-background"
+              value={account}
+              onChange={(e) => setAccount(e.target.value)}
+            />
+          </label>
+          <div>
+            <p>Statement currency</p>
+            <strong>{data.current_import?.currency || data.currency}</strong>
+            <p className="text-sm">{data.metadata.period}</p>
+          </div>
+        </div>
+        <div
+          className={data.assignment_only || (!!data.current_import && !canEdit) ? "hidden" : "flex flex-wrap gap-3"}
+        >
+          <label>
+            Bank
+            <input
+              aria-label="Bank"
+              readOnly={!canEdit}
+              className="block border rounded p-2 bg-background"
+              value={institution}
+              onChange={(e) => setInstitution(e.target.value)}
+            />
+          </label>
+          <label>
+            Period start
+            <input
+              type="date"
+              aria-label="Period start"
+              readOnly={!canEdit}
+              className="block border rounded p-2 bg-background"
+              value={periodStart}
+              onChange={(e) => setPeriodStart(e.target.value)}
+            />
+          </label>
+          <label>
+            Period end
+            <input
+              type="date"
+              aria-label="Period end"
+              readOnly={!canEdit}
+              className="block border rounded p-2 bg-background"
+              value={periodEnd}
+              onChange={(e) => setPeriodEnd(e.target.value)}
+            />
+          </label>
+          {!excludedCopy && (detailsChanged || data.current_import) && (
+            <label>
+              {replacePrevious
+                ? "Reason for replacing the previous import"
+                : "Note about detail changes (optional)"}
+              <input
+                aria-label="Reason for detail corrections"
+                readOnly={!canEdit}
+                className="block border rounded p-2 bg-background"
+                value={detailsReason}
+                onChange={(e) => setDetailsReason(e.target.value)}
+              />
+            </label>
+          )}
+        </div>
+        {!data.assignment_only &&
+          canEdit &&
+          (!data.current_import || replacePrevious) && (
+            <div className="flex flex-wrap items-center gap-2 text-sm">
+              <Button
+                variant="outline"
+                disabled={
+                  assignmentSaving ||
+                  saveBatchReview.isPending ||
+                  confirm.isPending ||
+                  (savedReadingChanged && !previousReviewChecked)
+                }
+                onClick={() => saveBatchReview.mutate("progress")}
+              >
+                {saveBatchReview.isPending
+                  ? "Saving details…"
+                  : "Save account details"}
+              </Button>
+              <span className="text-muted-foreground">
+                Saves these details and your current corrections to the case.
+                Import also saves them.
+              </span>
+              {saveBatchReview.isSuccess &&
+                savedServerSnapshot === currentRequestSnapshot.current && (
+                  <p role="status">Account details saved to the case.</p>
+                )}
+            </div>
+          )}
+        </section>
         {draftSaved && canEdit && !saveBatchReview.isSuccess && (
           <p className="text-xs text-muted-foreground" role="status">
             Recent edits are saved in this browser tab. Use Save progress to
@@ -3024,116 +3152,6 @@ function EditableStatement({
             )}
           </div>
         )}
-        <div
-          hidden={data.assignment_only}
-          className={
-            data.assignment_only ? "hidden" : "grid sm:grid-cols-3 gap-3"
-          }
-        >
-          <label>
-            Account holder
-            <input
-              aria-label="Account holder"
-              readOnly={!canEdit}
-              className="block border rounded p-2 w-full bg-background"
-              value={holder}
-              onChange={(e) => setHolder(e.target.value)}
-            />
-          </label>
-          <label>
-            Account number
-            <input
-              aria-label="Account number"
-              readOnly={!canEdit}
-              className="block border rounded p-2 w-full bg-background"
-              value={account}
-              onChange={(e) => setAccount(e.target.value)}
-            />
-          </label>
-          <div>
-            <p>Statement currency</p>
-            <strong>{data.current_import?.currency || data.currency}</strong>
-            <p className="text-sm">{data.metadata.period}</p>
-          </div>
-        </div>
-        <div
-          className={data.assignment_only ? "hidden" : "flex flex-wrap gap-3"}
-        >
-          <label>
-            Bank
-            <input
-              aria-label="Bank"
-              readOnly={!canEdit}
-              className="block border rounded p-2 bg-background"
-              value={institution}
-              onChange={(e) => setInstitution(e.target.value)}
-            />
-          </label>
-          <label>
-            Period start
-            <input
-              type="date"
-              aria-label="Period start"
-              readOnly={!canEdit}
-              className="block border rounded p-2 bg-background"
-              value={periodStart}
-              onChange={(e) => setPeriodStart(e.target.value)}
-            />
-          </label>
-          <label>
-            Period end
-            <input
-              type="date"
-              aria-label="Period end"
-              readOnly={!canEdit}
-              className="block border rounded p-2 bg-background"
-              value={periodEnd}
-              onChange={(e) => setPeriodEnd(e.target.value)}
-            />
-          </label>
-          {!excludedCopy && (detailsChanged || data.current_import) && (
-            <label>
-              {replacePrevious
-                ? "Reason for replacing the previous import"
-                : "Note about detail changes (optional)"}
-              <input
-                aria-label="Reason for detail corrections"
-                readOnly={!canEdit}
-                className="block border rounded p-2 bg-background"
-                value={detailsReason}
-                onChange={(e) => setDetailsReason(e.target.value)}
-              />
-            </label>
-          )}
-        </div>
-        {!data.assignment_only &&
-          canEdit &&
-          (!data.current_import || replacePrevious) && (
-            <div className="flex flex-wrap items-center gap-2 text-sm">
-              <Button
-                variant="outline"
-                disabled={
-                  assignmentSaving ||
-                  saveBatchReview.isPending ||
-                  confirm.isPending ||
-                  (savedReadingChanged && !previousReviewChecked)
-                }
-                onClick={() => saveBatchReview.mutate("progress")}
-              >
-                {saveBatchReview.isPending
-                  ? "Saving details…"
-                  : "Save account details"}
-              </Button>
-              <span className="text-muted-foreground">
-                Saves these details and your current corrections to the case.
-                Import also saves them.
-              </span>
-              {saveBatchReview.isSuccess &&
-                savedServerSnapshot === currentRequestSnapshot.current && (
-                  <p role="status">Account details saved to the case.</p>
-                )}
-            </div>
-          )}
         {!data.assignment_only && warnings.length > 0 && (
           <div className="rounded border border-amber-500 p-3">
             <h4 className="font-semibold">Check statement details</h4>

@@ -16,6 +16,72 @@ from tests.test_financial_statement_import import StatementImportTests as Fixtur
 
 
 class BatchImportTests(TestCase):
+    def test_accepted_import_runs_before_unfinished_pdf_preparation_and_turn_is_bounded(self):
+        from unittest.mock import patch
+        batch = self.create(); self.advance(batch)
+        with self.f.SessionLocal() as db:
+            service.queue_import(db, case_id=self.f.case.id, batch_id=batch,
+                expected_revision=self.status(batch)['ready_revision'], actor=self.f.actor)
+            record = db.get(Batch, batch)
+            record.files = [{**{k: v for k, v in record.files[0].items() if not k.startswith('last_')}, 'status': 'waiting', 'source_id': str(uuid4())} for _ in range(7)]
+            db.commit()
+        events = []
+        actual_import = service._import_item
+        def importing(*args):
+            events.append('import')
+            return actual_import(*args)
+        async def preparing(*args, **kwargs):
+            events.append('prepare')
+            return dict(outcome='processing', evidence_file_id=str(self.f.file.id))
+        with patch.object(service, '_import_item', side_effect=importing), patch.object(service, 'prepare_existing_financial_file', side_effect=preparing):
+            self.advance(batch)
+        self.assertEqual(events[0], 'import')
+        self.assertLessEqual(events.count('prepare'), service.FILES_PER_TURN)
+        shown = self.status(batch)
+        self.assertEqual(shown['operations'][0]['status'], 'complete')
+        self.assertEqual(shown['status'], 'preparing')
+        self.assertEqual(sum('last_checked_at' in f for f in shown['files']), service.FILES_PER_TURN)
+
+    def test_import_receipt_survives_response_loss_and_reopening_without_duplicates(self):
+        from services.financial.batch_transaction_scope import imported_batch_scope
+        from postgres.models.financial_import_batches import FinancialImportOperation
+        batch = self.create(); self.advance(batch)
+        revision = self.status(batch)['ready_revision']
+        request_id = uuid4()
+        def submit(case_id=None):
+            with self.f.SessionLocal() as db:
+                return service.queue_import(db, case_id=case_id or self.f.case.id, batch_id=batch,
+                    expected_revision=revision, actor=self.f.actor, request_id=request_id)
+        first = submit()
+        self.assertEqual(submit()['operation']['id'], first['operation']['id'])
+        self.advance(batch)
+        complete = submit()['operation']
+        self.assertEqual(complete['status'], 'complete')
+        self.assertEqual(complete['transaction_count'], 12)
+        self.assertEqual(self.status(batch)['operations'][0], complete)
+        with self.f.SessionLocal() as db:
+            self.assertEqual(len(list(db.scalars(select(FinancialImportOperation)))), 1)
+            result = imported_batch_scope(db, case_id=self.f.case.id, batch_id=batch, operation_id=request_id)
+            self.assertEqual(result['transaction_count'], 12)
+            with self.assertRaisesRegex(PdfMappingError, 'not found'):
+                imported_batch_scope(db, case_id=self.f.case.id, batch_id=batch, operation_id=uuid4())
+        with self.assertRaisesRegex(PdfMappingError, 'not found'):
+            submit(uuid4())
+
+    def test_failed_import_has_a_durable_actionable_receipt_and_is_not_reoffered(self):
+        from unittest.mock import patch
+        batch = self.create(); self.advance(batch)
+        with self.f.SessionLocal() as db:
+            service.queue_import(db, case_id=self.f.case.id, batch_id=batch,
+                expected_revision=self.status(batch)['ready_revision'], actor=self.f.actor)
+        with patch.object(service, 'confirm_statement_import', side_effect=PdfMappingError('Check the statement currency.', 409)):
+            self.advance(batch)
+        shown = self.status(batch)
+        self.assertEqual(shown['operations'][0]['status'], 'needs_review')
+        self.assertEqual(shown['operations'][0]['outcomes'][0]['message'], 'Check the statement currency.')
+        self.assertEqual(shown['available_statements'], 0)
+        self.assertEqual(shown['counts']['imported'], 0)
+
     def test_one_review_saves_payments_and_returns_exact_batch_result_idempotently(self):
         from services.financial.batch_transaction_scope import imported_batch_scope
         from services.financial.transaction_query import list_transactions
@@ -398,8 +464,10 @@ class BatchImportTests(TestCase):
             service.queue_import(db,case_id=f.case.id,batch_id=batch,expected_revision=before['ready_revision'],actor=f.actor)
             self.assertEqual(flagged.status,'attention')
         with f.SessionLocal() as db:
+            receipt = service.queue_import(db,case_id=f.case.id,batch_id=batch,expected_revision=before['ready_revision'],actor=f.actor)
+            self.assertEqual(receipt['operation']['pending'], 1)
             with self.assertRaisesRegex(PdfMappingError,'ready statements changed'):
-                service.queue_import(db,case_id=f.case.id,batch_id=batch,expected_revision=before['ready_revision'],actor=f.actor)
+                service.queue_import(db,case_id=f.case.id,batch_id=batch,expected_revision=before['ready_revision'],actor=f.actor,request_id=uuid4())
             with self.assertRaisesRegex(PdfMappingError,'not found'):
                 service.batch_status(db,case_id=uuid4(),batch_id=batch)
         self.advance(batch)

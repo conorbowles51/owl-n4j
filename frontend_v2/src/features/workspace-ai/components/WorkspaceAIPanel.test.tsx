@@ -24,6 +24,10 @@ vi.mock("@/lib/protected-file", () => ({
   useProtectedObjectUrl: () => ({ objectUrl: "/mock-source.pdf", loading: false, error: null }),
   openProtectedFile: vi.fn(),
 }))
+vi.mock("@/components/ui/evidence-pdf-page", () => ({
+  EvidencePdfPage: ({ evidenceId, page }: { evidenceId: string; page: number }) =>
+    <div data-testid="citation-pdf-page">{evidenceId}:page={page}</div>,
+}))
 
 function Location() {
   return <div data-testid="location">{useLocation().pathname}</div>
@@ -112,7 +116,7 @@ describe("Workspace AI review panel", () => {
     expect(screen.queryByText("S1")).not.toBeInTheDocument()
     await user.click(screen.getByRole("button", { name: "gate-log.pdf, p.4" }))
     expect(screen.getByRole("dialog", { name: "gate-log.pdf" })).toBeVisible()
-    expect(document.querySelector("iframe")?.getAttribute("src")).toContain("#page=4")
+    expect(screen.getByTestId("citation-pdf-page")).toHaveTextContent("evidence-1:page=4")
     expect(screen.getByTestId("location")).toHaveTextContent("/cases/case-1/workspace")
     await user.keyboard("{Escape}")
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument()

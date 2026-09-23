@@ -25,7 +25,7 @@ class StatementDetailsTests(TestCase):
 
     def request(self, **changes):
         view = self.read()
-        return dict(expected_revision=view['revision'], **{key: view['details'][key] for key in ('holder', 'account_number', 'institution')}, **changes)
+        return dict(expected_revision=view['revision'], **{**{key: view['details'][key] for key in ('holder', 'account_number', 'institution')}, **changes})
 
     def save(self, request, case_id=None):
         with self.f.SessionLocal() as db:
@@ -71,6 +71,46 @@ class StatementDetailsTests(TestCase):
         self.assertIsNone(removed['balances']['opening']['amount_minor'])
         with self.f.SessionLocal() as db:
             self.assertEqual(db.get(FinancialStatementPeriod, UUID(removed['period_id'])).opening_balance_source, 'absent')
+
+    def test_statement_dates_persist_without_rewriting_payment_dates_or_original(self):
+        with self.f.SessionLocal() as db:
+            original = deepcopy(db.get(FinancialSourceDocument, self.source_id).metadata_['statement_import_request'])
+            dates = {r.id: (r.transaction_date, r.ordering_date) for r in db.scalars(select(FinancialTransaction))}
+        saved = self.save(self.request(period_start='2023-01-02', period_end='2023-12-30'))
+        self.assertEqual(self.read()['details']['period_start'], '2023-01-02')
+        self.assertEqual(self.f.preview()['current_import']['details']['period_end'], '2023-12-30')
+        with self.f.SessionLocal() as db:
+            period = db.get(FinancialStatementPeriod, UUID(saved['period_id']))
+            self.assertEqual(period.period_start.isoformat(), '2023-01-02')
+            self.assertEqual({r.id: (r.transaction_date, r.ordering_date) for r in db.scalars(select(FinancialTransaction))}, dates)
+            self.assertEqual(db.get(FinancialSourceDocument, self.source_id).metadata_['statement_import_request'], original)
+        # An older client omitting dates preserves corrections; blank clears.
+        self.save(self.request(holder='Reviewed holder'))
+        self.assertEqual(self.read()['details']['period_start'], '2023-01-02')
+        self.save(self.request(period_start='', period_end=''))
+        self.assertEqual(self.read()['details']['period_start'], '')
+
+    def test_invalid_statement_dates_do_not_save_other_edits(self):
+        before = self.read()
+        for start, end in [('2024-02-30', '2024-03-01'), ('2024-04-01', '2024-03-01')]:
+            with self.assertRaises(PdfMappingError):
+                self.save(self.request(period_start=start, period_end=end, holder='Must not save'))
+            self.assertEqual(self.read(), before)
+
+    def test_uncertain_new_currency_reading_does_not_hide_saved_correction_controls(self):
+        with patch('services.financial.statement_currency.detect_statement_currency', return_value=''):
+            preview = self.f.preview()
+        self.assertEqual(preview['current_import']['source_document_id'], str(self.source_id))
+        self.assertEqual(preview['currency'], self.read()['currency'])
+
+    def test_saved_payment_review_is_scoped_to_exact_statement_and_case(self):
+        from services.financial.transaction_query import list_transactions
+        with self.f.SessionLocal() as db:
+            rows = list_transactions(db, self.f.case.id, source_document_id=self.source_id)
+            self.assertEqual(len(rows), 12)
+            self.assertTrue(all(row.source_document_id == self.source_id for row in rows))
+            self.assertEqual(list_transactions(db, uuid4(), source_document_id=self.source_id), [])
+            self.assertEqual(list_transactions(db, self.f.case.id, source_document_id=uuid4()), [])
 
     def test_stale_and_cross_case_edits_fail(self):
         first = self.request()

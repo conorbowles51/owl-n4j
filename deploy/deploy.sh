@@ -154,6 +154,9 @@ if [ -z "${ROLLBACK_TARGET}" ]; then
 fi
 success "Rollback target: $(git rev-parse --short "${ROLLBACK_TARGET}") (last known-good) on branch ${CURRENT_BRANCH}"
 
+step "Checking active ingestion before changing the checkout or dependencies"
+$RUN_AS "${VENV_DIR}/bin/python" "${PROJECT_DIR}/deploy/check_ingestion_idle.py"
+
 step "Checking for local changes"
 
 if ! $RUN_AS git diff --quiet 2>/dev/null || ! $RUN_AS git diff --cached --quiet 2>/dev/null; then
@@ -182,6 +185,9 @@ fi
 step "Installing backend dependencies"
 $RUN_AS "${VENV_DIR}/bin/pip" install -r "${BACKEND_DIR}/requirements.txt" --quiet
 success "Backend dependencies installed"
+
+step "Checking active ingestion before service changes"
+$RUN_AS "${VENV_DIR}/bin/python" "${PROJECT_DIR}/deploy/check_ingestion_idle.py"
 
 step "Stopping frontend for dependency installation"
 $SYSTEMCTL stop owl-frontend-v2
@@ -213,15 +219,19 @@ else
 fi
 success "Frontend service configured to serve the compiled bundle"
 
-step "Refreshing Docker stack"
-docker compose up -d --build --remove-orphans
-success "Docker stack refreshed"
+step "Checking ingestion before migrations and service replacement"
+$RUN_AS "${VENV_DIR}/bin/python" "${PROJECT_DIR}/deploy/check_ingestion_idle.py"
 
 step "Running database migrations"
 cd "${BACKEND_DIR}"
 $RUN_AS "${VENV_DIR}/bin/alembic" upgrade head
 success "Database migrations complete"
 cd "${PROJECT_DIR}"
+
+step "Refreshing Docker stack"
+$RUN_AS "${VENV_DIR}/bin/python" "${PROJECT_DIR}/deploy/check_ingestion_idle.py"
+docker compose up -d --build --remove-orphans
+success "Docker stack refreshed"
 
 step "Restarting services"
 $SYSTEMCTL restart owl-backend-v2
@@ -276,6 +286,7 @@ else
 fi
 
 cd "${PROJECT_DIR}"
+$RUN_AS "${VENV_DIR}/bin/python" "${PROJECT_DIR}/deploy/check_ingestion_idle.py"
 $RUN_AS git reset --hard "${ROLLBACK_TARGET}"
 
 step "Rollback: reinstalling dependencies"

@@ -1,3 +1,4 @@
+from app.services.ingestion_checkpoints import checkpointed
 import base64
 import asyncio
 import csv
@@ -1102,6 +1103,7 @@ def get_transcription_segments(doc: ExtractedDocument) -> list[dict[str, Any]]:
     return sanitized if isinstance(sanitized, list) else []
 
 
+@checkpointed("pipeline/extract_text.py:extract_text:v2")
 async def extract_text(
     file_path: str,
     file_name: str,

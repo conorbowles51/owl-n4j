@@ -29,9 +29,8 @@ export function StatementCurrencyControl({
           className="rounded border border-amber-500/40 bg-amber-500/5 p-3 space-y-2"
         >
           <p>
-            This statement uses {detectedCurrency}, but the review was set to{" "}
-            {currency}. This can leave amounts blank and flag otherwise readable
-            transactions.
+            The automatic reading suggests {detectedCurrency}; this review uses{" "}
+            {currency}. Check the currency printed in this account's section before changing it.
           </p>
           <Button
             variant="outline"
@@ -42,7 +41,7 @@ export function StatementCurrencyControl({
           </Button>
         </div>
       )}
-      <details>
+      {!disabled && <details>
         <summary className="cursor-pointer">Change currency</summary>
         <label className="block mt-2">
           Currency for this statement
@@ -61,7 +60,7 @@ export function StatementCurrencyControl({
             <CurrencyOptions />
           </select>
         </label>
-      </details>
+      </details>}
     </section>
   )
 }

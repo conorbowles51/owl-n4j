@@ -7,7 +7,26 @@ class StatementFileStatusTests(DuplicateTestCase):
         super().setUp()
         from postgres.base import Base
         from postgres.models.workspace_entry import WorkspaceEntry, WorkspaceEntryLink
-        Base.metadata.create_all(self.db.connection(), tables=[WorkspaceEntry.__table__, WorkspaceEntryLink.__table__])
+        from postgres.models.financial_import_batches import FinancialImportBatch, FinancialImportBatchItem
+        Base.metadata.create_all(self.db.connection(), tables=[WorkspaceEntry.__table__, WorkspaceEntryLink.__table__, FinancialImportBatch.__table__, FinancialImportBatchItem.__table__])
+
+    def test_individual_import_cannot_still_be_offered_as_ready_by_old_batch_snapshot(self):
+        from uuid import uuid4
+        from postgres.models.financial_import_batches import FinancialImportBatch as Batch, FinancialImportBatchItem as Item
+        document = self.make_document()
+        document.document_type = 'statement_review'
+        document.metadata_ = {'statement_import_statement_id': 'saved-period'}
+        self.make_period(document)
+        batch = Batch(id=uuid4(), case_id=self.case.id, created_by=self.user.id, actor={}, files=[], status='review')
+        self.db.add(batch); self.db.flush()
+        for key in ('saved-period', 'new-period'):
+            self.db.add(Item(id=uuid4(), batch_id=batch.id, file_id=document.evidence_file_id,
+                statement_key=key, status='ready', summary={'can_import': True}))
+        self.db.commit()
+        file = statement_file_status(self.db, case_id=self.case.id)['files'][0]
+        self.assertEqual(file['prepared_periods'], 2)
+        self.assertEqual(file['available_periods'], 1)
+        self.assertEqual(len(file['periods']), 1)
 
     def test_saved_file_status_counts_current_payments_and_preserves_periods(self):
         document = self.make_document()

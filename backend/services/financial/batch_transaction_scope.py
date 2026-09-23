@@ -6,7 +6,7 @@ from postgres.models.financial_import_batches import FinancialImportBatch, Finan
 from services.financial.pdf_candidates import PdfMappingError, _digest
 
 
-def imported_batch_scope(session, *, case_id, batch_id):
+def imported_batch_scope(session, *, case_id, batch_id, operation_id=None):
     batch = session.scalar(select(FinancialImportBatch).where(
         FinancialImportBatch.id == batch_id, FinancialImportBatch.case_id == case_id))
     if batch is None:
@@ -15,6 +15,14 @@ def imported_batch_scope(session, *, case_id, batch_id):
     items = [item for item in checked_batch_items(session, case_id, list(session.scalars(
         select(FinancialImportBatchItem).where(FinancialImportBatchItem.batch_id == batch_id))))
         if item.status == 'imported']
+    if operation_id:
+        from postgres.models.financial_import_batches import FinancialImportOperation
+        operation = session.scalar(select(FinancialImportOperation).where(FinancialImportOperation.id == operation_id,
+            FinancialImportOperation.case_id == case_id, FinancialImportOperation.batch_id == batch_id))
+        if operation is None:
+            raise PdfMappingError('Import receipt not found in this case and batch.', 404)
+        submitted = {row['item_id'] for row in operation.outcomes if row['status'] in ('imported', 'already_present')}
+        items = [item for item in items if str(item.id) in submitted]
     file_ids = {i.file_id for i in items}
     try:
         receipt_ids = {UUID(i.summary['source_document_id']) for i in items if i.summary.get('source_document_id')}

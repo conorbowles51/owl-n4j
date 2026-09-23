@@ -38,9 +38,20 @@ def detect_statement_currency(sources, *, layout_id=None, header_text=''):
             for source in sources for row in source['rows']]
     rows.extend([[line.strip()] for line in header_text.splitlines()])
     mexican_issuer = layout_id in ('bbva-mexico-cash-management', 'scotiabank-mexico-zero-activity') or any(
-        re.search(r'BBVA (?:MEXICO|BANCOMER),? S\.?A\.?', ' '.join(cells), re.I) for cells in rows)
+        re.search(r'BBVA (?:MEXICO|BANCOMER),? S\.?A\.?|\b(?:BANCO KAPITAL|SERVICIO EMPRESARIAL FX KAPITAL)\b', ' '.join(cells), re.I) for cells in rows)
+    labelled_rows = rows
+    if layout_id == 'bbva-mexico-cash-management' or (mexican_issuer and any(
+            any(c.startswith('CASH MANAGEMENT ') for c in cells) for cells in rows)):
+        # BBVA prints the account currency beside Información Financiera.
+        # Its glossary also defines "Moneda nacional": that definition is
+        # not a second account currency and must not suppress a USD reading.
+        def normal(value):
+            return ''.join(c for c in unicodedata.normalize('NFKD', value.upper()) if not unicodedata.combining(c))
+        financial_rows = [cells for cells in rows if any(normal(c) == 'INFORMACION FINANCIERA' for c in cells)]
+        if financial_rows:
+            labelled_rows = financial_rows
     labelled = set()
-    for cells in rows:
+    for cells in labelled_rows:
         joined = ' '.join(cells)
         for candidate in [joined, *cells]:
             match = _LABEL.fullmatch(candidate)
@@ -49,7 +60,7 @@ def detect_statement_currency(sources, *, layout_id=None, header_text=''):
             value = ' '.join(value.split())
             if mexican_issuer:
                 value = {'PESOS': 'MXN', 'MONEDA NACIONAL': 'MXN', 'NACIONAL': 'MXN',
-                    'M.N.': 'MXN', 'DOLAR': 'USD', 'DOLARES': 'USD'}.get(value, value)
+                    'M.N.': 'MXN', 'MN': 'MXN', 'M. N.': 'MXN', 'DOLAR': 'USD', 'DOLARES': 'USD'}.get(value, value)
             if match and (code := _code(_CURRENCY_NAMES.get(value, value))):
                 labelled.add(code)
     if len(labelled) == 1:
@@ -78,7 +89,9 @@ def detect_statement_currency(sources, *, layout_id=None, header_text=''):
 
 def currencies_by_statement(choices, sources):
     by_address = {(s['page_number'], s['table_index']): s for s in sources}
-    return [{**choice, 'currency': detect_statement_currency(
+    return [{**choice, 'currency': choice['currency'] if choice.get('currency_source') == 'printed_account_section'
+        and choice.get('layout_id') in ('monex-mexico-currency-summary', 'kapital-mexico-product-statement')
+        else detect_statement_currency(
         [by_address[(s['page_number'], s['table_index'])] for s in choice['sources']],
         layout_id=choice.get('layout_id'))} if not choice.get('document_kind') else choice
         for choice in choices]

@@ -134,8 +134,12 @@ __all__ = [
 from postgres.models.financial_pdf_nominations import FinancialPdfNomination
 __all__ += ["FinancialPdfNomination"]
 
-from postgres.models.financial_import_batches import FinancialImportBatch, FinancialImportBatchItem
-__all__ += ['FinancialImportBatch', 'FinancialImportBatchItem']
+from postgres.models.financial_import_batches import FinancialImportBatch, FinancialImportBatchItem, FinancialImportOperation
+__all__ += ['FinancialImportBatch', 'FinancialImportBatchItem', 'FinancialImportOperation']
 
 from postgres.models.timeline_entry import TimelineEntry
 __all__ += ["TimelineEntry"]
+from postgres.models.evidence_upload import EvidenceUploadSession
+__all__ += ["EvidenceUploadSession"]
+from postgres.models.financial_money_trails import FinancialMoneyTrail
+__all__ += ["FinancialMoneyTrail"]

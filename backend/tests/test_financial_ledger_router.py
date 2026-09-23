@@ -35,6 +35,11 @@ from services.financial.transaction_query import LedgerQueryError
 
 
 class GetLedgerTransactionsTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        directory = patch.object(financial_ledger, '_account_party_state', return_value={'accounts': []})
+        directory.start()
+        self.addCleanup(directory.stop)
+
     async def test_uses_the_query_service_and_shapes_the_response(self):
         case_id = uuid.uuid4()
         fake_row = SimpleNamespace(account=object())
@@ -70,12 +75,12 @@ class GetLedgerTransactionsTests(unittest.IsolatedAsyncioTestCase):
             "fake-session",
             case_id,
             account_id=None,
-            account_ids=None, account_holders=None,
+            source_document_id=None, account_ids=None, account_holders=None,
             ledger_status=None,
             start_date=None,
             end_date=None,
         )
-        to_view_call.assert_called_once_with(fake_row, account=fake_row.account)
+        to_view_call.assert_called_once_with(fake_row, account=fake_row.account, account_parties={})
 
     async def test_an_explicit_ledger_status_is_parsed_and_passed_through(self):
         case_id = uuid.uuid4()
@@ -96,7 +101,7 @@ class GetLedgerTransactionsTests(unittest.IsolatedAsyncioTestCase):
             "fake-session",
             case_id,
             account_id=None,
-            account_ids=None, account_holders=None,
+            source_document_id=None, account_ids=None, account_holders=None,
             ledger_status=LedgerStatus.quarantined,
             start_date=None,
             end_date=None,

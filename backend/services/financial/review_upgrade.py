@@ -37,7 +37,7 @@ def attach_upgrade(proposal, snapshot):
     saved = proposal.get('saved_review')
     if saved and saved['request'].get('expected_revision') != proposal['revision']:
         upgraded = upgrade_request(saved['request'], proposal)
-        if not upgraded:
+        if not upgraded and proposal.get('rows') and proposal.get('metadata'):
             # A metadata/parser improvement can change the revision even when
             # every saved row equals the new extraction. There are no row edits
             # to discard or remap in that case. Keep saved account details as-is.

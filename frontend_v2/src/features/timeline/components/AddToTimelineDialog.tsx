@@ -46,7 +46,7 @@ export function AddToTimelineDialog({
 }: {
   caseId: string
   ids: string[]
-  sourceKind?: "transaction" | "workspace_entry"
+  sourceKind?: "transaction" | "workspace_entry" | "money_trail"
   title?: string
   onClose: () => void
 }) {
@@ -144,7 +144,15 @@ export function AddToTimelineDialog({
             </div>
           ) : (
             <>
-              {sourceKind === "workspace_entry" ? (
+              {sourceKind === "money_trail" ? (
+                <p>
+                  One transfer event retains both statement entries as
+                  supporting evidence. Existing individual entries are combined
+                  in the main Timeline; their saved copies remain available in
+                  earlier views. The subsequent supplier payment is a separate
+                  event.
+                </p>
+              ) : sourceKind === "workspace_entry" ? (
                 <label className="grid gap-1 text-sm">
                   Event date
                   <input

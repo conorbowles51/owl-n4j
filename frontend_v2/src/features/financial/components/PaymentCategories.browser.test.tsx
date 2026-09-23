@@ -62,7 +62,7 @@ it("creates reusable categories, changes an automatic category, and recategorize
   ]
   const writes: {
     transactions: { id: string; version: number }[]
-    category: string
+    changes: { category: string }
   }[] = []
   vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
     if (url === "/test-payments") return [...payments]
@@ -75,21 +75,52 @@ it("creates reusable categories, changes an automatic category, and recategorize
       }
       return { case_id: caseId, categories: [...catalog] }
     }
-    if (url.includes("payment-labels") && options?.method === "PUT") {
+    if (url.includes("payment-edits") && options?.method === "POST") {
       const body = options.body as (typeof writes)[number]
+      if (url.includes("preview"))
+        return {
+          case_id: "category-case",
+          revision: "a".repeat(64),
+          count: body.transactions.length,
+          fields: ["category"],
+          examples: body.transactions
+            .slice(0, 3)
+            .map((t) => ({
+              id: t.id,
+              description: t.id,
+              currency: "EUR",
+              before: {
+                category: payments.find((p) => p.key === t.id)!.category,
+              },
+              after: body.changes,
+            })),
+        }
       writes.push(body)
       payments = payments.map((row) =>
         body.transactions.some((t) => t.id === row.key)
           ? {
               ...row,
-              category: body.category,
+              category: body.changes.category,
               label_version: (row.label_version ?? 0) + 1,
               label_sources: { category: { source: "investigator" } },
             }
           : row
       )
-      return { case_id: "category-case", updated: body.transactions.length }
+      return {
+        case_id: "category-case",
+        updated: body.transactions.length,
+        replacements: body.transactions.map((t) => ({
+          previous_id: t.id,
+          id: t.id,
+        })),
+      }
     }
+    const caseId = new URL(url, "http://test").searchParams.get("case_id")
+    if (url.includes("money-trails")) return { case_id: caseId, trails: [] }
+    if (url.includes("ledger-accounts"))
+      return { case_id: caseId, items: [], has_more: false, total: 0 }
+    if (url.includes("ledger-categories"))
+      return { case_id: caseId, categories: catalog.map((c) => c.name) }
     throw Error(`Unexpected request: ${url}`)
   })
   vi.mocked(readSelectedPayments).mockImplementation(
@@ -164,18 +195,22 @@ it("creates reusable categories, changes an automatic category, and recategorize
       })
       .click()
   })
-  await screen.findByLabelText("Choose category")
-  expect(
-    screen.getByRole("dialog", { name: "Change transaction category" })
-  ).toBeVisible()
+  await screen.findByLabelText("Edit Category")
+  expect(screen.getByRole("dialog", { name: "Edit transaction" })).toBeVisible()
   await act(async () => {
     await page
-      .getByRole("combobox", { name: "Choose category", exact: true })
-      .selectOptions("Due diligence")
+      .getByRole("combobox", { name: "Edit Category", exact: true })
+      .fill("Due diligence")
   })
   await act(async () => {
     await page
-      .getByRole("button", { name: "Save changes", exact: true })
+      .getByRole("button", { name: "Review changes", exact: true })
+      .click()
+  })
+  await screen.findByText(/Review changes to/)
+  await act(async () => {
+    await page
+      .getByRole("button", { name: /Save changes to \d+ transaction/ })
       .click()
   })
   await waitFor(() =>
@@ -183,7 +218,7 @@ it("creates reusable categories, changes an automatic category, and recategorize
   )
   expect(writes[0]).toMatchObject({
     transactions: [{ id: "p0", version: 0 }],
-    category: "Due diligence",
+    changes: { category: "Due diligence" },
   })
   expect(
     screen.getByRole("button", {
@@ -204,18 +239,22 @@ it("creates reusable categories, changes an automatic category, and recategorize
       .getByRole("button", { name: "Categorize selected", exact: true })
       .click()
   })
-  await screen.findByLabelText("Choose category")
-  expect(
-    screen.getByText(/Applies to 30 selected transactions, across all pages/)
-  ).toBeVisible()
+  await screen.findByLabelText("Edit Category")
+  expect(screen.getByText(/30 selected · EUR/)).toBeVisible()
   await act(async () => {
     await page
-      .getByRole("combobox", { name: "Choose category", exact: true })
-      .selectOptions("Due diligence")
+      .getByRole("combobox", { name: "Edit Category", exact: true })
+      .fill("Due diligence")
   })
   await act(async () => {
     await page
-      .getByRole("button", { name: "Save changes", exact: true })
+      .getByRole("button", { name: "Review changes", exact: true })
+      .click()
+  })
+  await screen.findByText(/Review changes to/)
+  await act(async () => {
+    await page
+      .getByRole("button", { name: /Save changes to \d+ transaction/ })
       .click()
   })
   await waitFor(() =>

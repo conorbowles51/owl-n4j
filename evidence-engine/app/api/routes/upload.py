@@ -181,12 +181,14 @@ async def upload_files(
             )
             db.add(job)
             jobs.append(job)
+        from app.services.processing_queues import batch_queue
         jobs[0].pipeline_state = transition_batch_dispatch(
             jobs[0].pipeline_state,
             dispatch_state="ready",
             batch_id=str(batch_id),
             case_id=case_id,
         )
+        jobs[0].pipeline_state = {**jobs[0].pipeline_state, 'processing_queue': batch_queue(jobs)}
         await db.commit()
     except Exception:
         await db.rollback()

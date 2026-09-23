@@ -43,6 +43,8 @@ export function matchesAccountSelection(
   return (
     (!ids.length || ids.includes(row.account_id)) &&
     (!scope.accountHolders?.length ||
-      scope.accountHolders.includes(holderKey(row.account_holder)))
+      scope.accountHolders.includes(holderKey(row.account_holder)) ||
+      (!!row.account_party_id && scope.accountHolders.includes(`party:${row.account_party_id}`)) ||
+      (row.account_holder_parties ?? []).some(p => scope.accountHolders!.includes(`party:${p.id}`)))
   )
 }

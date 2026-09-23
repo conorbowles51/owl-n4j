@@ -1,13 +1,14 @@
 """Case-scoped folder batches. Preparation and imports survive browser navigation."""
 import asyncio
 import logging
+import time
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4, uuid5
 from types import SimpleNamespace
 from sqlalchemy import select
 from pydantic import ValidationError
-from postgres.models.financial_import_batches import FinancialImportBatch as Batch, FinancialImportBatchItem as Item
+from postgres.models.financial_import_batches import FinancialImportBatch as Batch, FinancialImportBatchItem as Item, FinancialImportOperation as Operation
 from postgres.models.evidence import EvidenceFile
 from services.financial.pdf_candidates import PdfMappingError, _digest
 from services.financial.decisions import Actor
@@ -18,6 +19,9 @@ from services.financial.review_arithmetic import check_proposed_rows, arithmetic
 log = logging.getLogger(__name__)
 TERMINAL_FILES = {'checked', 'error'}
 REVIEW_MODEL = 'recognised-payments-saved-reviews-v2'
+IMPORTS_PER_TURN = 4
+FILES_PER_TURN = 4
+TURN_SECONDS = 30
 
 
 def batch_for(session, case_id, batch_id, lock=False):
@@ -38,7 +42,10 @@ def create_batch(session, *, case_id, request_id, file_ids, folder_ids, actor):
             raise PdfMappingError('This batch was removed. Start a new preparation run.', 409)
         if existing.case_id != case_id or existing.created_by != actor.user_id:
             raise PdfMappingError('This request belongs to another batch.', 409)
-        if {f['source_id'] for f in existing.files} != {f['id'] for f in selection['files']}:
+        from services.financial.source_lineage import lineage_id
+        existing_files = session.scalars(select(EvidenceFile).where(EvidenceFile.case_id == case_id,
+            EvidenceFile.id.in_([UUID(f['source_id']) for f in existing.files])))
+        if {lineage_id(f) for f in existing_files} != {f['root_file_id'] for f in selection['files']}:
             raise PdfMappingError('The selection changed. Start a new batch for these files.', 409)
         return existing.id
     if not selection['files']:
@@ -401,6 +408,7 @@ def next_problem(session, *, case_id, batch_id, item_id, direction="next"):
 
 
 def batch_status(session, *, case_id, batch_id, offset=0, limit=100, only_problems=False):
+    from services.financial.import_operations import operations_for
     batch = batch_for(session,case_id,batch_id)
     items=list(session.scalars(select(Item).where(Item.batch_id==batch.id).order_by(Item.file_id,Item.statement_key)))
     items=checked_batch_items(session, case_id, items)
@@ -408,6 +416,8 @@ def batch_status(session, *, case_id, batch_id, offset=0, limit=100, only_proble
     shown=[i for i in items if not only_problems or i.summary.get('problem_count', 0)]
     counts={state:sum(i.status==state for i in items) for state in ('ready','attention','pending_import','imported','skipped','assigned')}
     return dict(id=str(batch.id),case_id=str(case_id),status=batch.status,files=batch.files,counts=counts,
+        operations=operations_for(session, case_id, batch_id),
+        statements_with_issues=sum(bool(i.summary.get('problem_count', 0)) for i in items if i.status != 'skipped'),
         available_statements=sum(import_available(i) for i in items),
         available_records=sum(i.summary.get('record_count', i.summary.get('transaction_count', 0)) for i in items if import_available(i)),
         available_transactions=sum(i.summary.get('transaction_count', 0) for i in items if import_available(i)),
@@ -494,14 +504,27 @@ def confirm_review(*, session_factory, case_id, batch_id, item_id, request,
             record_count=current['transaction_count'] + unresolved, applied=True)
 
 
-def queue_import(session, *, case_id,batch_id,expected_revision,actor):
+def queue_import(session, *, case_id,batch_id,expected_revision,actor,request_id=None):
+    from services.financial.import_operations import operation_view
     batch=batch_for(session,case_id,batch_id,True)
+    operation_id = request_id or uuid5(batch_id, 'import:' + expected_revision)
+    existing = session.get(Operation, operation_id)
+    if existing:
+        if existing.case_id != case_id or existing.batch_id != batch_id or existing.expected_revision != expected_revision:
+            raise PdfMappingError('This import request belongs to a different selection. Refresh the batch.', 409)
+        return dict(queued=existing and len(existing.outcomes), operation=operation_view(existing))
     items=list(session.scalars(select(Item).where(Item.batch_id==batch.id).with_for_update()))
     checked=checked_batch_items(session, case_id, items)
     if ready_revision(checked)!=expected_revision: raise PdfMappingError('The ready statements changed. Refresh the batch before confirming.',409)
     ready_ids={i.id for i in checked if import_available(i)}
     ready=[i for i in items if i.id in ready_ids]
     if not ready: raise PdfMappingError('There are no new statement records available to import.',422)
+    operation = Operation(id=operation_id, case_id=case_id, batch_id=batch_id, expected_revision=expected_revision,
+        actor=dict(name=actor.name, user_id=str(actor.user_id)),
+        outcomes=[dict(item_id=str(i.id), file_id=str(i.file_id), filename=i.summary.get('filename', ''),
+            period_start=i.summary.get('period_start', ''), period_end=i.summary.get('period_end', ''),
+            status='queued') for i in ready])
+    session.add(operation)
     for item in ready:
         item.status='pending_import'
         projection = next(i for i in checked if i.id == item.id)
@@ -512,10 +535,10 @@ def queue_import(session, *, case_id,batch_id,expected_revision,actor):
             item.summary = metadata
             item.review_request = projection.review_request
         checked_summary = {**item.summary, **projection.summary}
-        item.summary={**checked_summary,'import_actor':dict(name=actor.name,email=actor.email,user_id=str(actor.user_id))}
+        item.summary={**checked_summary,'import_operation_id':str(operation_id), 'import_actor':dict(name=actor.name,email=actor.email,user_id=str(actor.user_id))}
     batch.status='preparing'
     session.commit()
-    return dict(queued=len(ready))
+    return dict(queued=len(ready), operation=operation_view(operation))
 
 
 def leave_unimported(session, *, case_id, batch_id, item_id, action, reason, expected_revision, actor):
@@ -585,11 +608,29 @@ async def advance_batch(factory,batch_id,resolve_path,process_files):
     heartbeat=asyncio.create_task(renew_lease())
     interrupted=False
     try:
+        started = time.monotonic()
+        # An investigator's accepted imports do not wait for every PDF in the
+        # batch. Bounded turns also allow other cases to make progress.
+        with factory() as db:
+            pending=list(db.scalars(select(Item.id).where(Item.batch_id==batch_id,Item.status=='pending_import')
+                .order_by(Item.updated_at, Item.id).limit(IMPORTS_PER_TURN)))
+        for item_id in pending:
+            if time.monotonic() - started >= TURN_SECONDS:
+                break
+            await asyncio.to_thread(_import_item,factory,case_id,batch_id,item_id,resolve_path)
+            with factory() as db:
+                batch=batch_for(db,case_id,batch_id,True)
+                if batch.worker_token!=token: return
+                batch.lease_until=datetime.now(timezone.utc)+timedelta(minutes=5);db.commit()
         with factory() as db:
             batch=batch_for(db,case_id,batch_id)
             files=deepcopy(batch.files)
-        for index,file in enumerate(files):
-            if file['status'] in TERMINAL_FILES: continue
+        candidates = sorted(((index, file) for index, file in enumerate(files) if file['status'] not in TERMINAL_FILES),
+            key=lambda pair: (pair[1].get('last_checked_at', ''), pair[0]))[:FILES_PER_TURN]
+        for index,file in candidates:
+            if time.monotonic() - started >= TURN_SECONDS:
+                break
+            previous_status = file['status']
             try:
                 with factory() as db:
                     batch=batch_for(db,case_id,batch_id)
@@ -609,18 +650,13 @@ async def advance_batch(factory,batch_id,resolve_path,process_files):
             except Exception as error:
                 log.exception('Financial batch file preparation failed')
                 file['status']='error';file['error']=str(error) if isinstance(error,PdfMappingError) else 'This file could not be prepared. Open it to review the processing error.'
+            file['last_checked_at'] = datetime.now(timezone.utc).isoformat()
+            if file['status'] != previous_status:
+                file['last_progress_at'] = file['last_checked_at']
             with factory() as db:
                 batch=batch_for(db,case_id,batch_id,True)
                 if batch.worker_token!=token: return
                 fresh=deepcopy(batch.files);fresh[index]=file;batch.files=fresh
-                batch.lease_until=datetime.now(timezone.utc)+timedelta(minutes=5);db.commit()
-        with factory() as db:
-            pending=list(db.scalars(select(Item.id).where(Item.batch_id==batch_id,Item.status=='pending_import')))
-        for item_id in pending:
-            await asyncio.to_thread(_import_item,factory,case_id,batch_id,item_id,resolve_path)
-            with factory() as db:
-                batch=batch_for(db,case_id,batch_id,True)
-                if batch.worker_token!=token: return
                 batch.lease_until=datetime.now(timezone.utc)+timedelta(minutes=5);db.commit()
     except asyncio.CancelledError:
         interrupted=True
@@ -642,8 +678,10 @@ def _review_file(factory,batch_id,case_id,file):
 
 
 def _import_item(factory,case_id,batch_id,item_id,resolve_path):
+    from services.financial.import_operations import record_outcome
     with factory() as db:
-        item=db.scalar(select(Item).where(Item.id==item_id,Item.batch_id==batch_id))
+        item=db.scalar(select(Item).join(Batch, Item.batch_id == Batch.id).where(Item.id==item_id,Item.batch_id==batch_id,
+            Batch.case_id == case_id).with_for_update(of=Item))
         if not item or item.status!='pending_import': return
         try:
             proposal=read_statement_import(db,case_id=case_id,evidence_file_id=item.file_id,currency=item.summary.get('currency'),statement_id=item.statement_key or None)
@@ -658,9 +696,13 @@ def _import_item(factory,case_id,batch_id,item_id,resolve_path):
                 'record_count':receipt.get('record_count', receipt['transaction_count']),
                 'incomplete_count':receipt.get('incomplete_count', 0), 'problems':retained[:50], 'problem_count':len(retained), 'can_import':False,
                 'source_document_id':receipt['source_document_id'],'account_id':receipt['account_id']}
+            record_outcome(db, case_id, item, 'imported' if receipt.get('created', True) else 'already_present',
+                source_document_id=receipt['source_document_id'], transaction_count=receipt['transaction_count'],
+                incomplete_count=receipt.get('incomplete_count', 0))
         except Exception as error:
             log.exception('Financial batch import failed')
-            item.status='attention';item.summary={**item.summary,'problem_count':1, 'problems':[dict(message=str(error) if isinstance(error,PdfMappingError) else 'Import could not be confirmed. Open this statement to check its current import before retrying.',row_id=None)]}
+            item.status='attention';item.summary={**item.summary,'can_import':False, 'import_failed':True, 'problem_count':1, 'problems':[dict(message=str(error) if isinstance(error,PdfMappingError) else 'Import could not be confirmed. Open this statement to check its current import before retrying.',row_id=None)]}
+            record_outcome(db, case_id, item, 'failed', message=item.summary['problems'][0]['message'])
         db.commit()
 
 
@@ -672,9 +714,15 @@ async def run_batches_forever():
         try:
             factory=_get_session_local()
             with factory() as db:
-                ids=list(db.scalars(select(Batch.id).where(Batch.status=='preparing').order_by(Batch.created_at).limit(100)))
-            for batch_id in ids:
-                await advance_batch(factory,batch_id,_resolve_stored_path,process_db_files)
+                ids=list(db.scalars(select(Batch.id).where(Batch.status=='preparing').order_by(Batch.updated_at, Batch.id).limit(100)))
+            capacity = asyncio.Semaphore(2)
+            async def advance(identifier):
+                async with capacity:
+                    try:
+                        await advance_batch(factory,identifier,_resolve_stored_path,process_db_files)
+                    except Exception:
+                        log.exception('A financial batch turn failed; other batches continue')
+            await asyncio.gather(*(advance(identifier) for identifier in ids))
         except asyncio.CancelledError:
             raise
         except Exception:

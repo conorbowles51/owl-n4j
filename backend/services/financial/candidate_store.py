@@ -45,9 +45,12 @@ def list_candidate_accounts(session, *, case_id, search="", limit=100, offset=0)
             FinancialAccount.identifier_as_printed, FinancialAccount.holder_name, FinancialAccount.institution_name,
             FinancialAccount.metadata_["display_label"].as_string()))))
     rows = list(session.scalars(query.order_by(FinancialAccount.id).offset(offset).limit(limit+1)))
+    from services.financial.account_parties import _account_party_state
+    parties = {a['id']: a for a in _account_party_state(session, case_id=case_id)['accounts']}
     return dict(case_id=str(case_id), has_more=len(rows)>limit,
         items=[dict(id=str(row.id), identifier=row.identifier_as_printed, holder=row.holder_name,
-                    institution=row.institution_name, currency=row.currency,
+                    institution=row.institution_name, currency=row.currency, party=parties.get(str(row.id), {}).get('party'),
+                    holder_parties=parties.get(str(row.id), {}).get('holder_parties', []),
                     display_label=(row.metadata_ or {}).get("display_label"),
                     source_file_id=(row.metadata_ or {}).get("candidate_account_source_file_id"),
                     provisional=bool((row.metadata_ or {}).get("identity_provisional"))) for row in rows[:limit]])

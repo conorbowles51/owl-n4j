@@ -15,6 +15,7 @@ import { useQuery } from "@tanstack/react-query"
 import { financialAPI, type LedgerStatus } from "../api"
 
 export interface LedgerQueryParams {
+  sourceDocumentId?: string
   accountId?: string
   accountIds?: string[]
   accountHolders?: string[]
@@ -39,6 +40,7 @@ export function useLedgerTransactions(
     queryFn: () =>
       financialAPI.getLedgerTransactions({
         caseId: caseId!,
+        sourceDocumentId: params?.sourceDocumentId,
         accountId: params?.accountId,
         accountIds: params?.accountIds,
         accountHolders: params?.accountHolders,

@@ -11,7 +11,7 @@ const dirname = typeof __dirname !== 'undefined' ? __dirname : path.dirname(file
 export default defineConfig({
   cacheDir: process.env.VITE_CACHE_DIR || undefined,
   plugins: [react(), tailwindcss()],
-  optimizeDeps: { include: ["fflate", "@tanstack/react-virtual"] },
+  optimizeDeps: { include: ["fflate", "@tanstack/react-virtual", "react-dom/client", "react-map-gl/maplibre", "maplibre-gl"] },
   test: {
     globals: true,
     environment: "jsdom",

@@ -43,6 +43,7 @@ async def reap_stale_jobs(ctx: dict) -> int:
         result = await db.execute(
             select(Job).where(
                 Job.status.in_(_NON_TERMINAL_NON_PENDING),
+                Job.paused.is_(False),
                 Job.updated_at < cutoff,
             )
         )

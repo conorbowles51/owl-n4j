@@ -45,6 +45,14 @@ async def close():
         _client = None
 
 
+async def control_job(job_id: str, case_id: str, action: str):
+    if action not in {"pause", "resume"}:
+        raise ValueError("Invalid ingestion action")
+    response = await _get_client().post(f"/jobs/{job_id}/{action}", params={"case_id": case_id})
+    response.raise_for_status()
+    return response.json()
+
+
 async def is_available() -> bool:
     """Check if the evidence engine is reachable."""
     try:

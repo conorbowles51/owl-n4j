@@ -33,7 +33,7 @@ export function TimelinePage() {
   const location = useLocation()
   const navigate = useNavigate()
   const [source, setSource] = useState<{
-    kind: "transaction" | "workspace_entry"
+    kind: "transaction" | "workspace_entry" | "money_trail"
     id: string
   } | null>(null)
   const requestedKey = new URLSearchParams(location.search).get("event")
@@ -398,12 +398,17 @@ function TimelineSource({
   onOpenEntry,
 }: {
   caseId: string
-  source: { kind: "transaction" | "workspace_entry"; id: string }
+  source: {
+    kind: "transaction" | "workspace_entry" | "money_trail"
+    id: string
+  }
   onClose: () => void
   onOpenEntry: (id: string) => void
 }) {
   const { canEdit } = useFinancialAccess()
-  return source.kind === "transaction" ? (
+  return source.kind === "money_trail" ? (
+    <MoneyTrailReview caseId={caseId} trailId={source.id} initialOpen onClose={onClose} />
+  ) : source.kind === "transaction" ? (
     <LedgerSourceDialog
       caseId={caseId}
       transactionId={source.id}
@@ -422,3 +427,4 @@ function TimelineSource({
     />
   )
 }
+import { MoneyTrailReview } from "@/features/financial/components/MoneyTrailReview"

@@ -72,5 +72,6 @@ async def test_upload_persists_ingestion_request_id_for_response_recovery(
     assert jobs[0].pipeline_state["ingestion_request_id"] == "request-123"
 
     assert jobs[0].job_type == expected_type
+    assert jobs[0].pipeline_state['processing_queue'] == ('arq:pdf-review' if mode == 'pdf_review' else 'arq:queue')
     if mode == 'pdf_review':
         assert jobs[0].pipeline_state['pdf_reading_mode'] == reading_mode

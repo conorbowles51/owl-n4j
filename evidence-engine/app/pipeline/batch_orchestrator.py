@@ -51,6 +51,7 @@ from app.services.claim_ledger import (
     persist_grounded_claims,
 )
 from app.pipeline.verify_claims import verify_grounded_claims
+from app.services.ingestion_checkpoints import checkpointed, pause_boundary, IngestionPaused
 
 logger = logging.getLogger(__name__)
 
@@ -134,6 +135,7 @@ async def _update_job_status(
     )
 
 
+@checkpointed("file-extraction-v2")
 async def _extract_file(
     job_id: uuid.UUID,
     file_path: str,
@@ -166,6 +168,7 @@ async def _extract_file(
         await _update_job_status(job_id, JobStatus.EXTRACTING_TEXT, 0.0, "Extracting text...")
 
         async def report_pdf_progress(update: PdfExtractionProgress) -> None:
+            await pause_boundary()
             if update.total > 0:
                 fraction = min(1.0, max(0.0, update.completed / update.total))
                 progress = 0.02 + (0.12 * fraction)
@@ -411,7 +414,7 @@ async def run_batch_pipeline(
     db: AsyncSession,
 ) -> None:
     result = await db.execute(select(Job).where(Job.batch_id == batch_id).order_by(Job.created_at))
-    jobs = list(result.scalars().all())
+    jobs = [job for job in result.scalars().all() if job.status != JobStatus.COMPLETED]
 
     if not jobs:
         logger.warning("No jobs found for batch %s", batch_id)
@@ -466,6 +469,8 @@ async def run_batch_pipeline(
     logger.info("Starting batch pipeline for %d files in case %s", len(jobs), case_id)
 
     try:
+        from app.services.graph_identity import ensure_identity_indexes
+        await ensure_identity_indexes()
         file_semaphore = asyncio.Semaphore(max(1, settings.batch_file_max_concurrency))
 
         async def bounded_extract(ji: dict) -> tuple[
@@ -495,6 +500,8 @@ async def run_batch_pipeline(
             *(bounded_extract(ji) for ji in job_info),
             return_exceptions=True,
         )
+        if any(isinstance(result, IngestionPaused) for result in results):
+            raise IngestionPaused()
 
         all_raw_entities: list[RawEntity] = []
         all_raw_rels: list[RawRelationship] = []

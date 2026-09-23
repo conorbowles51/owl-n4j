@@ -182,6 +182,8 @@ app.include_router(case_members_router)
 app.include_router(dossiers_router)
 app.include_router(auth_router)
 app.include_router(evidence_router)
+from routers.evidence_uploads import router as evidence_uploads_router
+app.include_router(evidence_uploads_router)
 app.include_router(background_tasks_router)
 app.include_router(profiles_router)
 app.include_router(filesystem_router)

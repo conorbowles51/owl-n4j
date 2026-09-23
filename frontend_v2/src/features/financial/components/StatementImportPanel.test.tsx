@@ -264,7 +264,7 @@ it("uses automatic currency and replaces an old EUR choice with the detected USD
   await open()
   expect(screen.getByLabelText("Credit 1:0:1")).toHaveValue("")
   expect(
-    screen.getByText(/This statement uses USD, but the review was set to EUR/)
+    screen.getByText(/The automatic reading suggests USD; this review uses EUR/)
   ).toBeVisible()
   fireEvent.click(
     screen.getByRole("button", { name: "Use USD from statement" })

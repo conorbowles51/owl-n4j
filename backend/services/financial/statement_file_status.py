@@ -88,4 +88,35 @@ def statement_file_status(session, *, case_id):
         item = files.setdefault(link.target_id, dict(evidence_file_id=link.target_id, current_transactions=0, periods=[]))
         count_key = 'receipt_review_count' if original.get('kind') == 'deposit_receipt' else 'wire_review_count'
         item[count_key] = item.get(count_key, 0) + 1
+    # Preparation and admission are separate facts. A PDF with 50 saved periods
+    # and one prepared period must not be labelled simply "Imported".
+    from postgres.models.financial_import_batches import FinancialImportBatch as Batch, FinancialImportBatchItem as Item
+    prepared = session.scalars(select(Item).join(Batch, Item.batch_id == Batch.id)
+        .join(EvidenceFile, Item.file_id == EvidenceFile.id).where(Batch.case_id == case_id,
+            EvidenceFile.case_id == case_id, Batch.status != 'removed', Item.status.notin_(('removed', 'assigned')))
+        .order_by(Item.updated_at.desc(), Item.id).limit(20001)).all()
+    truncated = truncated or len(prepared) > 20000
+    # A statement imported from an individual review can leave older batch
+    # snapshots marked ready. Match saved source scope, not the old UI status.
+    saved_scopes = set(session.execute(select(Source.sha256_at_ingestion,
+        Source.metadata_['statement_import_statement_id'].as_string())
+        .where(Source.case_id == case_id, Source.status == 'admitted', Source.document_type == 'statement_review')).all())
+    file_hashes = dict(session.execute(select(EvidenceFile.id, EvidenceFile.sha256)
+        .where(EvidenceFile.case_id == case_id, EvidenceFile.id.in_([p.file_id for p in prepared]))).all())
+    seen_periods = set()
+    for prepared_item in prepared[:20000]:
+        key = str(prepared_item.file_id)
+        identity = (key, prepared_item.statement_key)
+        if identity in seen_periods:
+            continue
+        seen_periods.add(identity)
+        item = files.setdefault(key, dict(evidence_file_id=key, current_transactions=0, periods=[]))
+        item['prepared_periods'] = item.get('prepared_periods', 0) + 1
+        already_saved = (file_hashes.get(prepared_item.file_id), prepared_item.statement_key or None) in saved_scopes
+        for field, matched in (
+            ('available_periods', not already_saved and prepared_item.status in ('ready', 'attention') and prepared_item.summary.get('can_import', False)),
+            ('pending_periods', prepared_item.status == 'pending_import'),
+            ('periods_with_checks', bool(prepared_item.summary.get('problem_count', 0)) and prepared_item.status != 'skipped'),
+        ):
+            item[field] = item.get(field, 0) + int(matched)
     return dict(case_id=str(case_id), files=list(files.values()), truncated=truncated)

@@ -235,6 +235,10 @@ export interface LedgerTransaction {
   account_type?: string
   account_label?: string
   account_holder?: string
+  account_party_id?: string | null
+  account_holder_parties?: { id: string; name: string }[]
+  account_relationships?: import("./lib/account-parties").AccountParties["accounts"][number]["relationships"]
+  transfer_details?: import("./lib/transaction-detail").TransferDetails | null
   key: string
   case_id: string
   account_id: string
@@ -306,6 +310,10 @@ export const LEDGER_TRANSACTION_FIELDS: readonly (keyof LedgerTransaction)[] = [
   "case_id",
   "account_id",
   "account_holder",
+  "account_party_id",
+  "account_holder_parties",
+  "account_relationships",
+  "transfer_details",
   "source_document_id",
   "ingestion_run_id",
   "statement_period_id",
@@ -1430,6 +1438,7 @@ export const financialAPI = {
    */
   getLedgerTransactions: (params: {
     caseId: string
+    sourceDocumentId?: string
     accountIds?: string[]
     accountHolders?: string[]
     accountId?: string
@@ -1438,6 +1447,7 @@ export const financialAPI = {
     endDate?: string
   }) => {
     const qs = new URLSearchParams({ case_id: params.caseId })
+    if (params.sourceDocumentId) qs.set("source_document_id", params.sourceDocumentId)
     appendAccountSelection(qs, params)
     if (params.accountId) qs.set("account_id", params.accountId)
     if (params.ledgerStatus) qs.set("ledger_status", params.ledgerStatus)

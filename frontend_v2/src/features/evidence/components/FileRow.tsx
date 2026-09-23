@@ -171,6 +171,8 @@ export function FileRow({
           </TooltipTrigger>
           <TooltipContent>{file.original_filename}</TooltipContent>
         </Tooltip>
+        {!!file.reading_versions?.length && <button className="block mt-1 text-xs text-muted-foreground underline"
+          onClick={() => openDetail(file.id)}>One PDF · {file.reading_versions.length} additional reading {file.reading_versions.length === 1 ? "version" : "versions"}</button>}
         {file.folder_path && (
           <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
             <span

@@ -10,6 +10,7 @@ import { afterEach, expect, it, vi } from "vitest"
 import { ImportedStatementDetails } from "./ImportedStatementDetails"
 import { fetchAPI } from "@/lib/api-client"
 import { useInvestigationScopeStore } from "../stores/investigation-scope"
+import { useFinancialDraftStore } from "../stores/financial-drafts"
 vi.mock("@/lib/api-client", () => ({ fetchAPI: vi.fn() }))
 vi.mock("./TransactionSourceHighlight", () => ({
   TransactionSourceHighlight: () => (
@@ -20,6 +21,7 @@ afterEach(() => {
   cleanup()
   vi.resetAllMocks()
   useInvestigationScopeStore.getState().reset()
+  useFinancialDraftStore.setState({ drafts: {} })
 })
 const initial = () => ({
   case_id: "case",
@@ -73,7 +75,7 @@ it("edits account and balances beside the PDF, saves and reopens without losing 
   })
   mount()
   fireEvent.click(
-    screen.getByRole("button", { name: "Edit account and balances" })
+    screen.getByRole("button", { name: "Edit account, dates, currency and balances" })
   )
   await screen.findByLabelText("Saved account number")
   expect(
@@ -105,7 +107,7 @@ it("edits account and balances beside the PDF, saves and reopens without losing 
   cleanup()
   mount()
   fireEvent.click(
-    screen.getByRole("button", { name: "Edit account and balances" })
+    screen.getByRole("button", { name: "Edit account, dates, currency and balances" })
   )
   expect(await screen.findByLabelText("Saved account number")).toHaveValue(
     "00123448932"
@@ -121,7 +123,7 @@ it("retains edits after a failed save and requires a page only for changed balan
   })
   mount()
   fireEvent.click(
-    screen.getByRole("button", { name: "Edit account and balances" })
+    screen.getByRole("button", { name: "Edit account, dates, currency and balances" })
   )
   await screen.findByLabelText("Saved account number")
   fireEvent.change(screen.getByLabelText("Saved account number"), {
@@ -166,7 +168,7 @@ it.each(["GBP", "JPY", "KWD", "CLF"])("corrects saved currency to %s without cha
   })
   mount()
   fireEvent.click(
-    screen.getByRole("button", { name: "Edit account and balances" })
+    screen.getByRole("button", { name: "Edit account, dates, currency and balances" })
   )
   fireEvent.change(await screen.findByLabelText("Saved statement currency"), {
     target: { value: currency },

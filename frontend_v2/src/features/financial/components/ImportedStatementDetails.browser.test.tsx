@@ -1,7 +1,7 @@
 import "@/styles/globals.css"
 import { page } from "vitest/browser"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { fireEvent, render, screen } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { expect, it, vi } from "vitest"
 import { fetchAPI } from "@/lib/api-client"
 import { ImportedStatementDetails } from "./ImportedStatementDetails"
@@ -45,14 +45,15 @@ it("keeps the statement and correction fields together, then reopens saved value
     if (options?.method === "PUT") {
       const body = options.body as Record<string, unknown>
       expect(body).toMatchObject({
-        account_number: "00123456789",
+        account_number: "00123456789", currency: "MXN", period_start: "2024-09-01", period_end: "2024-09-30",
         opening: { amount_minor: "6000", page: 1 },
         closing: { amount_minor: "2520", page: 1 },
       })
       stored = {
         ...initial,
         revision: "b".repeat(64),
-        details: { ...initial.details, account_number: body.account_number },
+        currency: body.currency,
+        details: { ...initial.details, account_number: body.account_number, period_start: body.period_start, period_end: body.period_end },
         balances: { opening: body.opening, closing: body.closing },
       }
     }
@@ -60,7 +61,7 @@ it("keeps the statement and correction fields together, then reopens saved value
   })
   await page.viewport(1200, 820)
   document.documentElement.classList.remove("dark")
-  render(
+  const mount = () => render(
     <QueryClientProvider
       client={
         new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -72,8 +73,9 @@ it("keeps the statement and correction fields together, then reopens saved value
       </main>
     </QueryClientProvider>
   )
+  mount()
   fireEvent.click(
-    screen.getByRole("button", { name: "Edit account and balances" })
+    screen.getByRole("button", { name: "Edit account, dates, currency and balances" })
   )
   await screen.findByLabelText("Saved account number")
   const originalUrl = window.location.href
@@ -91,17 +93,29 @@ it("keeps the statement and correction fields together, then reopens saved value
       target: { value: "1" },
     })
   }
+  fireEvent.change(screen.getByLabelText("Saved statement currency"), { target: { value: "MXN" } })
+  fireEvent.change(screen.getByLabelText("Saved period start"), { target: { value: "2024-09-01" } })
+  fireEvent.change(screen.getByLabelText("Saved period end"), { target: { value: "2024-09-30" } })
+  // Leave the view with unfinished changes, then return to the same statement.
+  cleanup()
+  mount()
+  fireEvent.click(screen.getByRole("button", { name: "Edit account, dates, currency and balances" }))
+  await screen.findByLabelText("Saved period start")
+  expect(screen.getByLabelText("Saved period start")).toHaveValue("2024-09-01")
+  expect(screen.getByLabelText("Saved statement currency")).toHaveValue("MXN")
   expect(screen.getByText("Example statement")).toBeVisible()
   await page.screenshot({ path: "/tmp/imported-statement-edit-light.png" })
   fireEvent.click(screen.getByRole("button", { name: "Save changes" }))
   await screen.findByText(/Changes saved/)
   fireEvent.click(
-    screen.getByRole("button", { name: "Edit account and balances" })
+    screen.getByRole("button", { name: "Edit account, dates, currency and balances" })
   )
   expect(await screen.findByLabelText("Saved account number")).toHaveValue(
     "00123456789"
   )
   expect(screen.getByLabelText("Saved opening balance")).toHaveValue("60.00")
   expect(screen.getByLabelText("Saved closing balance")).toHaveValue("25.20")
+  expect(screen.getByLabelText("Saved period end")).toHaveValue("2024-09-30")
+  expect(screen.getByLabelText("Saved statement currency")).toHaveValue("MXN")
   expect(window.location.href).toBe(originalUrl)
 })

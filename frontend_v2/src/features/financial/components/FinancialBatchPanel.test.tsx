@@ -179,7 +179,7 @@ it("confirms the displayed ready list and filters problems across the batch", as
   await waitFor(() =>
     expect(fetchAPI).toHaveBeenCalledWith(
       "/api/financial/statement-import/batches/batch/confirm?case_id=case",
-      { method: "POST", body: { expected_ready_revision: "a".repeat(64) } }
+      { method: "POST", body: expect.objectContaining({ expected_ready_revision: "a".repeat(64), request_id: expect.any(String) }) }
     )
   )
   fireEvent.click(
@@ -229,7 +229,7 @@ it("offers saving a balance-only batch without asking to import zero records", a
   await waitFor(() =>
     expect(fetchAPI).toHaveBeenCalledWith(
       "/api/financial/statement-import/batches/batch/confirm?case_id=case",
-      { method: "POST", body: { expected_ready_revision: "a".repeat(64) } }
+      { method: "POST", body: expect.objectContaining({ expected_ready_revision: "a".repeat(64), request_id: expect.any(String) }) }
     )
   )
 })
@@ -422,7 +422,7 @@ it("keeps completed assignments separate from ready imports and removes the skip
   ).toBeVisible()
   expect(screen.getByText(/unassigned page review is complete/)).toBeVisible()
   expect(
-    screen.getByRole("button", { name: "Import 0 transactions" })
+    screen.getByRole("button", { name: "No new statements to import" })
   ).toBeDisabled()
   expect(screen.queryByRole("button", { name: /Leave unimported/ })).toBeNull()
 })

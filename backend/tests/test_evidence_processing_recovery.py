@@ -49,6 +49,7 @@ async def test_process_files_recovers_jobs_when_upload_response_fails_after_acce
     )
     subscriber = FakeSubscriber()
     captured_metadata: list[dict] = []
+    saved_snapshots: list[dict] = []
     marked_failed: list[object] = []
 
     async def no_initial_reconciliation(db, requested_case_id: str) -> int:
@@ -56,6 +57,8 @@ async def test_process_files_recovers_jobs_when_upload_response_fails_after_acce
 
     async def accepted_but_response_failed(*, processing_metadata, **kwargs):
         captured_metadata.extend(processing_metadata)
+        assert saved_snapshots[0]["ingestion_request_id"] == processing_metadata[0]["ingestion_request_id"]
+        assert saved_snapshots[0]["preparation_mode"] == preparation_mode
         raise RuntimeError("500 after accepted upload")
 
     async def list_accepted_jobs(requested_case_id: str):
@@ -87,7 +90,7 @@ async def test_process_files_recovers_jobs_when_upload_response_fails_after_acce
     monkeypatch.setattr(
         processing.EvidenceDBStorage,
         "set_processing_snapshot",
-        lambda *args, **kwargs: None,
+        lambda *args, **kwargs: saved_snapshots.append(kwargs["profile_snapshot"]),
     )
     monkeypatch.setattr(
         processing,

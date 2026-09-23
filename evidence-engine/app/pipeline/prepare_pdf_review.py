@@ -5,6 +5,7 @@ from app.models.job import JobStatus
 from app.pipeline.extract_text import extract_text
 from app.services.evidence_document_text import upsert_evidence_document_text
 from app.services.evidence_table_geometry import replace_evidence_table_geometry
+from app.services.ingestion_checkpoints import pause_boundary
 
 async def prepare_pdf_review(job, update_status):
     if not job.source_evidence_file_id or Path(job.file_name or '').suffix.lower() != '.pdf':
@@ -14,6 +15,7 @@ async def prepare_pdf_review(job, update_status):
         raise ValueError('Unknown PDF reading method')
     await update_status(job.id, JobStatus.EXTRACTING_TEXT, 0.0, 'Preparing PDF source for review')
     async def progress(update):
+        await pause_boundary()
         fraction = min(0.9, 0.9 * update.completed / update.total) if update.total else 0.0
         await update_status(job.id, JobStatus.EXTRACTING_TEXT, fraction, update.message)
     # extract_text's PDF branch uses the native text layer and local Tesseract.

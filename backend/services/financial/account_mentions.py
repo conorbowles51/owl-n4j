@@ -28,6 +28,15 @@ def normalise(value):
 
 def mentions(text):
     result = []
+    from services.financial.spei_description import kapital_spei
+    spei = kapital_spei(text)
+    if spei:
+        for role in ('sender', 'recipient'):
+            account = spei[role]['account']
+            result.append(dict(kind='account', value=account['text'], printed=account['text'],
+                normalised=account['text'], partial=False, start=account['start'], end=account['end'],
+                identifier_kind='clabe', direction_role=role, bank=spei[role]['bank']['text'],
+                holder=spei[role]['party']['name'], holder_qualifier=spei[role]['party']['qualifier']))
     for match in REFERENCE.finditer(text or ''):
         label, value = match['label'].lower(), match['value'].strip()
         end = match.end()

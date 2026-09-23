@@ -43,6 +43,10 @@ def _stored_path(stored_path: str | None) -> Path | None:
 
 def _serialize_profile_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
     return {
+        # Persist before uploading to the engine. Case refreshes may arrive
+        # before the new engine job exists and must not resurrect an old run.
+        "ingestion_request_id": snapshot.get("ingestion_request_id"),
+        "preparation_mode": snapshot.get("preparation_mode", "full"),
         "source_folder_id": snapshot.get("source_folder_id"),
         "effective_context": snapshot.get("effective_context"),
         "effective_mandatory_instructions": snapshot.get("effective_mandatory_instructions") or [],

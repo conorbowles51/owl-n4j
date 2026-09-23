@@ -23,6 +23,8 @@ import { useJobProgress } from "../hooks/use-job-progress"
 import { useGuardedProcess } from "../hooks/use-guarded-process"
 import { useEvidenceStore, type UploadActivity } from "../evidence.store"
 import { JobCard } from "./JobCard"
+import { ResumableUploadsPanel } from "./ResumableUploadsPanel"
+import { useResumableUploads } from "../use-resumable-uploads"
 import { ProcessHoldDialog } from "./ProcessHoldDialog"
 import type { BackgroundTask, EvidenceJob, PipelineStage } from "@/types/evidence.types"
 
@@ -247,6 +249,15 @@ export function JobsPanel({ caseId }: JobsPanelProps) {
   const gate = useGuardedProcess(caseId)
   const { start: startProcess } = gate
   const [retryingFileId, setRetryingFileId] = useState<string | null>(null)
+  const controlMutation = useMutation({
+    mutationFn: ({ job, action }: { job: EvidenceJob; action: "pause" | "resume" }) =>
+      fetchAPI<{ state: string; affected_jobs: number }>(`/api/evidence/engine/jobs/${job.id}/${action}?case_id=${caseId}`, { method: "POST" }),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ["evidence-jobs", caseId] })
+      toast.success(`${result.affected_jobs} file(s): ${result.state}`)
+    },
+    onError: (error) => toast.error(error.message),
+  })
 
   const retryFile = async (fileId: string) => {
     setRetryingFileId(fileId)
@@ -336,7 +347,7 @@ export function JobsPanel({ caseId }: JobsPanelProps) {
 
   const activeCount = useMemo(
     () =>
-      (jobs?.filter((j) => ACTIVE_STATUSES.has(j.status)).length ?? 0) +
+      (jobs?.filter((j) => ACTIVE_STATUSES.has(j.status) && !j.paused).length ?? 0) +
       (backgroundTasks?.filter((task) => ACTIVE_TASK_STATUSES.has(task.status)).length ?? 0) +
       visibleUploadActivities.filter((activity) => activity.status === "running").length,
     [backgroundTasks, jobs, visibleUploadActivities]
@@ -383,8 +394,10 @@ export function JobsPanel({ caseId }: JobsPanelProps) {
     })
   }, [backgroundTasks])
 
+  const { data: resumableUploads = [] } = useResumableUploads(caseId)
   const isLoading = jobsLoading || tasksLoading
   const hasActivity =
+    resumableUploads.length > 0 ||
     visibleUploadActivities.length > 0 ||
     sortedBackgroundTasks.length > 0 ||
     sortedJobs.length > 0
@@ -423,6 +436,7 @@ export function JobsPanel({ caseId }: JobsPanelProps) {
 
       {/* Content */}
       <ScrollArea className="flex-1">
+        <div className="space-y-2 p-2"><ResumableUploadsPanel caseId={caseId} /></div>
         {isLoading ? (
           <div className="flex justify-center py-8">
             <LoadingSpinner size="sm" />
@@ -459,6 +473,9 @@ export function JobsPanel({ caseId }: JobsPanelProps) {
               <JobCard
                 key={job.id}
                 job={job}
+                onPause={(selectedJob) => controlMutation.mutate({ job: selectedJob, action: "pause" })}
+                onResume={(selectedJob) => controlMutation.mutate({ job: selectedJob, action: "resume" })}
+                controlling={controlMutation.isPending}
                 onRetry={(selectedJob: EvidenceJob) => {
                   if (!selectedJob.evidence_file_id) {
                     toast.error("This failed job is not linked to a retryable evidence file")

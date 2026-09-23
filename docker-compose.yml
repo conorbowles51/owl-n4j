@@ -150,12 +150,13 @@ services:
       retries: 20
       start_period: 30s
 
-  evidence-engine-worker:
+  evidence-engine-worker: &evidence-worker
     build:
       context: .
       dockerfile: evidence-engine/Dockerfile
     container_name: owl-v2-evidence-worker
     restart: unless-stopped
+    stop_grace_period: 14500s
     command: arq app.worker.WorkerSettings
     environment:
       DATABASE_URL: postgresql+asyncpg://owl_us:owl_pw@postgres:5432/owl_db
@@ -220,6 +221,11 @@ services:
         condition: service_completed_successfully
       evidence-engine-api:
         condition: service_healthy
+
+  evidence-pdf-worker:
+    <<: *evidence-worker
+    container_name: owl-v2-evidence-pdf-worker
+    command: arq app.worker.PdfReviewWorkerSettings
 
 volumes:
   evidence-files:

@@ -6,7 +6,7 @@ from pydantic import ValidationError
 from sqlalchemy import event, select, update
 
 from postgres.base import Base
-from postgres.models.financial import FinancialAccount
+from postgres.models.financial import FinancialAccount, FinancialIngestionRun, AdjudicationEvent
 from postgres.models.financial_candidates import FinancialCandidateReview
 from services.financial.candidate_assessment import assess_candidate_amounts
 from services.financial.candidate_store import CandidateStoreError
@@ -20,7 +20,7 @@ class CandidateReviewTests(unittest.TestCase):
         self.fixture = store_fixture.CandidateStoreTests()
         self.fixture.setUp()
         f = self.fixture
-        Base.metadata.create_all(f.engine, tables=[FinancialAccount.__table__])
+        Base.metadata.create_all(f.engine, tables=[FinancialAccount.__table__, FinancialIngestionRun.__table__, AdjudicationEvent.__table__])
         self.account = FinancialAccount(case_id=f.case, identity_key="synthetic-review-account", currency="GBP")
         f.db.add(self.account)
         f.db.commit()

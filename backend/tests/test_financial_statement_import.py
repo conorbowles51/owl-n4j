@@ -7,7 +7,7 @@ from sqlalchemy import select
 from postgres.base import Base
 from postgres.models.evidence import EvidenceDocumentText, EvidenceTableGeometry
 from postgres.models.financial import FinancialTransaction, FinancialSourceDocument
-from postgres.models.financial_import_batches import FinancialImportBatch, FinancialImportBatchItem
+from postgres.models.financial_import_batches import FinancialImportBatch, FinancialImportBatchItem, FinancialImportOperation
 from services.financial.statement_import import read_statement_import, confirm_statement_import
 from services.financial.pdf_candidates import PdfMappingError
 from tests.test_financial_transactions_writer import TransactionPersistenceTestCase
@@ -20,7 +20,7 @@ class StatementImportTests(TransactionPersistenceTestCase):
         super().setUp()
         self.actor=Actor(self.user.name,self.user.email,self.user.id)
         Base.metadata.create_all(self.db.connection(), tables=[EvidenceDocumentText.__table__, EvidenceTableGeometry.__table__,
-            FinancialImportBatch.__table__, FinancialImportBatchItem.__table__])
+            FinancialImportBatch.__table__, FinancialImportBatchItem.__table__, FinancialImportOperation.__table__])
         self.path=Path(self._directory)/'statement.pdf'; self.path.write_bytes(b'%PDF-1.4\nStatement test only')
         self.file=self.evidence(hashlib.sha256(self.path.read_bytes()).hexdigest())
         self.file.stored_path=str(self.path)

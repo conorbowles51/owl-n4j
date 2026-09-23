@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 import logging
 import math
 import multiprocessing
@@ -29,6 +31,7 @@ LOW_CONFIDENCE_THRESHOLD = 60.0
 MIN_OCR_DPI = 150
 MIN_RELIABLE_OSD_CONFIDENCE = 15.0
 MAX_OSD_TIMEOUT_SECONDS = 30.0
+PDF_READING_REVISION = 'bbva-scanned-headings-v2'
 OSD_INSUFFICIENT_TEXT_MARKERS = ("too few characters", "skipping this page")
 
 
@@ -594,13 +597,25 @@ def _ocr_page(page: fitz.Page) -> tuple[str, float | None, int, list | None, lis
         image.close()
     refinements = []
     try:
+        from app.pipeline.financial_bbva_ocr import reread_bbva_fields
+        refined_data, comparisons = reread_bbva_fields(page, best_data,
+            rotation=best_rotation, image_width=pixmap.width, image_height=pixmap.height,
+            reader=_load_table_reader(), deadline=deadline, language=settings.tesseract_lang)
+        if comparisons:
+            text, confidence = _text_and_confidence_from_tesseract(refined_data)
+            best_data = refined_data
+            refinements.extend(comparisons)
+    except Exception:
+        logger.warning('Optional BBVA field OCR unavailable; retaining the page reading', exc_info=True)
+    try:
         from app.pipeline.financial_date_ocr import reread_financial_dates
         refined_data, comparisons = reread_financial_dates(page, best_data,
             rotation=best_rotation, image_width=pixmap.width, image_height=pixmap.height,
             reader=_load_table_reader(), deadline=deadline, language=settings.tesseract_lang)
         if comparisons:
             new_text, new_confidence = _text_and_confidence_from_tesseract(refined_data)
-            best_data, refinements = refined_data, comparisons
+            best_data = refined_data
+            refinements.extend(comparisons)
             text, confidence = new_text, new_confidence
     except Exception:
         logger.warning('Optional date-region OCR unavailable; retaining the page reading', exc_info=True)
@@ -665,11 +680,36 @@ def _page_span(page_result: _PageResult, start_char: int) -> dict:
     return span
 
 
+def _restore_page_tables(values):
+    """Rebuild only the known table/locator types from a native-page checkpoint."""
+    if not values:
+        return []
+    reader = _load_table_reader()
+    if reader is None:
+        raise PdfOcrError('The table reader is unavailable while resuming saved PDF pages')
+    from services.financial.locators import Locator
+    from services.financial.table_geometry import LocatedCell, LocatedTable
+    result = []
+    for entry in values:
+        value = entry['metadata']
+        geometry = value.get('table')
+        located = None
+        if geometry is not None:
+            located = LocatedTable(page_number=geometry['page'], locator=Locator.from_json(geometry['table']),
+                cells=tuple(LocatedCell(row=c['row'],column=c['column'],text=c['text'],locator=Locator.from_json(c['locator']))
+                            for c in geometry['values']), unlocated_values=geometry['unlocated_values'])
+        result.append(reader.ExtractedTable(chunk=entry['chunk'],table_source=reader.TableSource(value['table_source']),
+            geometry=located,geometry_source=reader.GeometrySource(value['geometry_source']),
+            degraded_reason=value.get('degraded_reason')))
+    return result
+
+
 def _extract_pdf_sync(
     file_path: str,
     report_progress: Callable[[PdfExtractionProgress], None] | None = None,
     *,
     reading_mode: str = "automatic",
+    checkpoint_directory: str | None = None,
 ) -> PdfExtractionResult:
     if reading_mode not in ("automatic", "page_images"):
         raise ValueError("Unknown PDF reading method")
@@ -679,6 +719,12 @@ def _extract_pdf_sync(
     # pass precisely so that alignment is a property of the data rather than
     # something these two lists have to be trusted to maintain.
     extracted_tables: list[Any] = []
+    page_cache = None
+    if checkpoint_directory:
+        configuration = {name: getattr(settings, name) for name in _PDF_WORKER_SETTINGS}
+        configuration.update(reading_mode=reading_mode, reading_revision=PDF_READING_REVISION)
+        stamp = hashlib.sha256(json.dumps(configuration, sort_keys=True).encode()).hexdigest()
+        page_cache = Path(checkpoint_directory) / stamp
 
     try:
         document = fitz.open(file_path)
@@ -698,6 +744,18 @@ def _extract_pdf_sync(
         ocr_indexes: list[int] = []
         for page_index, page in enumerate(document):
             page_number = page_index + 1
+            checkpoint = page_cache / f'native-{page_index}.json' if page_cache else None
+            if checkpoint and checkpoint.exists():
+                cached = json.loads(checkpoint.read_text())
+                page_result = _PageResult(page_number=page_number, text=cached['text'],
+                    text_origin=cached['text_origin'])
+                pages.append(page_result)
+                table_chunks.extend(cached['chunks'])
+                extracted_tables.extend(_restore_page_tables(cached['tables']))
+                if report_progress:
+                    report_progress(PdfExtractionProgress(f'Resumed PDF page {page_number} of {document.page_count}',
+                        page_number, document.page_count, page_number))
+                continue
             native_text = page.get_text()
             detection_reason = ("requested_page_images" if reading_mode == "page_images"
                 else _ocr_detection_reason(page, native_text))
@@ -709,6 +767,10 @@ def _extract_pdf_sync(
                 page_chunks, page_tables = _extract_native_tables(page, page_number)
                 table_chunks.extend(page_chunks)
                 extracted_tables.extend(page_tables)
+                if checkpoint:
+                    from app.services.ingestion_checkpoints import atomic_json
+                    atomic_json(checkpoint, dict(text=native_text, text_origin=page_result.text_origin,
+                        chunks=page_chunks, tables=[dict(chunk=t.chunk, metadata=t.to_json()) for t in page_tables]))
             else:
                 page_result = _PageResult(
                     page_number=page_number,
@@ -718,6 +780,9 @@ def _extract_pdf_sync(
                 )
                 ocr_indexes.append(page_index)
             pages.append(page_result)
+            if report_progress:
+                report_progress(PdfExtractionProgress(f"Read PDF page {page_number} of {document.page_count}",
+                    page_number, document.page_count, page_number))
 
         ocr_count = len(ocr_indexes)
         if report_progress:
@@ -733,7 +798,14 @@ def _extract_pdf_sync(
         for completed, page_index in enumerate(ocr_indexes, start=1):
             page_result = pages[page_index]
             try:
-                text, confidence, dpi, words, refinements = _ocr_page(document[page_index])
+                checkpoint = page_cache / f'ocr-{page_index}.json' if page_cache else None
+                if checkpoint and checkpoint.exists():
+                    text, confidence, dpi, words, refinements = json.loads(checkpoint.read_text())
+                else:
+                    text, confidence, dpi, words, refinements = _ocr_page(document[page_index])
+                    if checkpoint:
+                        from app.services.ingestion_checkpoints import atomic_json
+                        atomic_json(checkpoint, [text, confidence, dpi, words, refinements])
                 page_result.ocr_refinements = refinements
             except PdfOcrError as exc:
                 logger.error(
@@ -784,7 +856,7 @@ def _extract_pdf_sync(
                 except Exception:
                     logger.warning("OCR source geometry unavailable on page %s", page_result.page_number, exc_info=True)
 
-            if report_progress and completed in progress_checkpoints:
+            if report_progress:
                 report_progress(
                     PdfExtractionProgress(
                         message=(
@@ -865,7 +937,7 @@ _PDF_WORKER_SETTINGS = (
 )
 
 
-def _pdf_worker(connection, file_path, reading_mode, configuration):
+def _pdf_worker(connection, file_path, reading_mode, configuration, checkpoint_directory=None):
     """Own every MuPDF object in a fresh process, including table-reader state."""
     try:
         if os.name == 'posix':
@@ -875,7 +947,8 @@ def _pdf_worker(connection, file_path, reading_mode, configuration):
         for name in _PDF_WORKER_SETTINGS:
             setattr(settings, name, configuration[name])
         result = _extract_pdf_sync(file_path,
-            lambda progress: connection.send(('progress', progress)), reading_mode=reading_mode)
+            lambda progress: connection.send(('progress', progress)), reading_mode=reading_mode,
+            **({'checkpoint_directory': checkpoint_directory} if checkpoint_directory else {}))
         connection.send(('result', result))
     except Exception as exc:
         connection.send(('error', str(exc)))
@@ -919,9 +992,11 @@ async def _extract_pdf_in_process(file_path, progress_callback=None, *, reading_
     # thread opens a separate file. Spawn avoids inheriting its global state.
     # https://pymupdf.readthedocs.io/en/latest/recipes-multiprocessing.html
     context = multiprocessing.get_context('spawn')
+    from app.services.ingestion_checkpoints import page_checkpoint_root
+    checkpoint_directory = await asyncio.to_thread(page_checkpoint_root, file_path)
     incoming, outgoing = context.Pipe(duplex=False)
     worker = context.Process(target=_pdf_worker, args=(outgoing, file_path, reading_mode,
-        {name: getattr(settings, name) for name in _PDF_WORKER_SETTINGS}), daemon=True)
+        {name: getattr(settings, name) for name in _PDF_WORKER_SETTINGS}, checkpoint_directory), daemon=True)
     reader = None
     completed = False
     try:

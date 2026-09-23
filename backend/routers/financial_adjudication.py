@@ -406,6 +406,37 @@ async def save_statement_review_draft(evidence_file_id: UUID, body: StatementDra
 
 
 from services.financial.account_parties import AccountPartyError, AccountPartyRequest, set_account_party
+from services.financial.money_trails import TrailRequest, TrailError, preview_trail, save_trail, remove_trail
+
+
+@router.post('/money-trails/preview')
+def preview_money_trail(body: TrailRequest, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    try:
+        return preview_trail(db, case_id=case_id, request=body)
+    except AccountPartyError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+@router.post('/money-trails')
+def save_money_trail(body: TrailRequest, case_id: UUID = Query(...), db: Session = Depends(get_db), current_user=Depends(get_current_db_user)):
+    try:
+        return save_trail(db, case_id=case_id, request=body, actor=actor_from_user(current_user))
+    except (AccountPartyError, ActorError) as exc:
+        raise HTTPException(status_code=getattr(exc, 'status_code', 422), detail=str(exc)) from exc
+
+
+class RemoveMoneyTrail(BaseModel):
+    expected_revision: int = Field(ge=1, strict=True)
+    reason: str = Field(min_length=1, max_length=4000)
+
+
+@router.post('/money-trails/{trail_id}/remove')
+def remove_money_trail(trail_id: UUID, body: RemoveMoneyTrail, case_id: UUID = Query(...), db: Session = Depends(get_db), current_user=Depends(get_current_db_user)):
+    try:
+        return remove_trail(db, case_id=case_id, id=trail_id, expected_revision=body.expected_revision,
+            reason=body.reason, actor=actor_from_user(current_user))
+    except (AccountPartyError, ActorError) as exc:
+        raise HTTPException(status_code=getattr(exc, 'status_code', 422), detail=str(exc)) from exc
 
 @router.post("/account-parties")
 def record_account_party(body: AccountPartyRequest, case_id: UUID = Query(...),

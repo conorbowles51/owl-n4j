@@ -70,6 +70,10 @@ def ledger_summary(session, *, case_id, account_id=None, start_date=None, end_da
     exclusions.update(source_not_admitted=0, proof_class_not_included=0)
     groups = {}
     points = {}
+    parties = {}
+    if capture_readings:
+        from services.financial.account_parties import _account_party_state
+        parties = {a['id']: a for a in _account_party_state(session, case_id=case_id)['accounts']}
     for row, document, account in pairs:
         if document is None or account is None or document.case_id != case_id or account.case_id != case_id:
             raise LedgerSummaryError("Ledger source or account ownership is inconsistent; summary unavailable.")
@@ -85,7 +89,7 @@ def ledger_summary(session, *, case_id, account_id=None, start_date=None, end_da
             reason = (status.value if status.value != 'admitted' else
                 'source_not_admitted' if source_status.value != 'admitted' else
                 'proof_class_not_included' if not counts_toward_totals(row_class) or not counts_toward_totals(source_class) else None)
-            result['readings'].append(dict(row=to_view(row, account=row.account).to_json(), included=reason is None,
+            result['readings'].append(dict(row=to_view(row, account=row.account, account_parties=parties).to_json(), included=reason is None,
                 exclusion_reason=reason, provenance=deepcopy(row.provenance),
                 investigation_label_history=deepcopy((row.metadata_ or {}).get("investigation_label_history", [])),
                 account=dict(id=str(account.id), account_type=account.account_type, label=(account.metadata_ or {}).get('display_label') or account.identifier_as_printed or account.holder_name),

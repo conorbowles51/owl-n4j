@@ -612,7 +612,7 @@ it("keeps a 51-period PDF manageable from file list through saved-period review 
   const context = await screen.findByRole("region", {
     name: "Current statement context",
   })
-  expect(context).toHaveTextContent("This PDF contains 51 statement periods")
+  expect(context).toHaveTextContent("This PDF contains 51 account statements")
   expect(context).toHaveTextContent(
     "Already imported: 6 payments from this period"
   )

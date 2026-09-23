@@ -57,6 +57,12 @@ def statement_catalog(sources):
     from services.financial.statement_import_scotiabank import scotiabank_catalog
     scotiabank, scotiabank_handled = scotiabank_catalog(sources)
     groups.update({statement['id']: statement for statement in scotiabank})
+    from services.financial.statement_import_monex import monex_catalog
+    monex, monex_handled = monex_catalog(sources)
+    groups.update({statement['id']: statement for statement in monex})
+    from services.financial.statement_import_kapital import kapital_catalog, kapital_information_kind
+    kapital, kapital_handled = kapital_catalog(sources)
+    groups.update({statement['id']: statement for statement in kapital})
     groups.update({statement['id']: statement for statement in unassigned_andrews_groups(sources, handled)})
     unclassified = []
     information = []
@@ -64,11 +70,14 @@ def statement_catalog(sources):
     capital_pages, information_pages = _capital_page_contexts(sources)
     for source in sources:
         address = (source['page_number'], source['table_index'])
-        if address in bbva_handled or address in scotiabank_handled:
+        if address in bbva_handled or address in scotiabank_handled or address in monex_handled or address in kapital_handled:
             continue
         if address in handled:
             if address in incomplete:
                 unclassified.append(dict(page_number=address[0], table_index=address[1]))
+            continue
+        if kind := kapital_information_kind(source):
+            information.append(dict(page_number=address[0], table_index=address[1], kind=kind))
             continue
         if is_andrews_fee_summary(source):
             information.append(dict(page_number=address[0], table_index=address[1], kind='fee_summary'))

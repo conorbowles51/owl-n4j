@@ -160,6 +160,14 @@ def reconcile_jobs_payload(db: Session, jobs: list[dict[str, Any]]) -> int:
         if not db_rec:
             continue
 
+        request_id = (getattr(db_rec, "last_processed_profile_snapshot", None) or {}).get("ingestion_request_id")
+        if request_id and (job.get("pipeline_state") or {}).get("ingestion_request_id") != request_id:
+            # The current upload may not yet have an engine job, or this may
+            # be a delayed response from before that upload. Only its accepted
+            # request can control this file's status; historical runs remain
+            # visible in the jobs list without replacing the current attempt.
+            continue
+
         created_at = _created_at_timestamp(job)
         # Missing/unparseable timestamps retain the documented payload order,
         # where the first item is the newest.

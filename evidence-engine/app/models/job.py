@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, Enum, Float, ForeignKey, String, Text, Uuid, func
+from sqlalchemy import BigInteger, Boolean, Integer, DateTime, Enum, Float, ForeignKey, String, Text, Uuid, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -67,6 +67,10 @@ class Job(Base):
         String(64), default="evidence-v2", server_default="evidence-v2", nullable=False
     )
     pipeline_state: Mapped[dict] = mapped_column(JSONB, server_default="{}", nullable=False)
+    pause_requested: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    paused: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    resumable: Mapped[bool] = mapped_column(Boolean, default=True, server_default="false")
+    resume_generation: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     quality_report: Mapped[dict] = mapped_column(JSONB, server_default="{}", nullable=False)
 
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())

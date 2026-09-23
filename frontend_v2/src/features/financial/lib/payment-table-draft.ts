@@ -17,6 +17,7 @@ export const emptyPaymentTableView = {
   accountHolder: "",
   search: "",
   searchMode: "text",
+  activity: "all",
   currency: "",
   minimum: "",
   maximum: "",

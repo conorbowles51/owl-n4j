@@ -147,7 +147,7 @@ it("reads the existing failed file without uploading another copy", async () => 
   )
   expect(
     await screen.findByRole("button", {
-      name: /statement.pdf.*Ready to review/,
+      name: /statement.pdf.*PDF read.*payments not yet imported/,
     })
   ).toBeEnabled()
   expect(
@@ -155,7 +155,7 @@ it("reads the existing failed file without uploading another copy", async () => 
       .mocked(fetchAPI)
       .mock.calls.every(([url]) =>
         [
-          "/api/evidence?case_id=case",
+          "/api/evidence?case_id=case&include_reading_versions=true",
           "/api/financial/statement-import/files?case_id=case",
         ].includes(url)
       )

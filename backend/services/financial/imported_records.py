@@ -19,7 +19,7 @@ class CompleteImportedRecord(BaseModel):
     currency: str = Field(pattern=r'^[A-Z]{3}$')
 
 
-def imported_records(session, *, case_id, account_id=None, start_date=None, end_date=None, offset=0, limit=50, account_ids=None, account_holders=None):
+def imported_records(session, *, case_id, account_id=None, start_date=None, end_date=None, offset=0, limit=50, account_ids=None, account_holders=None, source_document_id=None):
     # Select only the small retained-record arrays, never each full PDF proposal.
     query = select(FinancialSourceDocument.id, FinancialSourceDocument.evidence_file_id,
         FinancialSourceDocument.metadata_['statement_account_id'].as_string(),
@@ -29,14 +29,15 @@ def imported_records(session, *, case_id, account_id=None, start_date=None, end_
         EvidenceFile.original_filename).join(EvidenceFile, EvidenceFile.id == FinancialSourceDocument.evidence_file_id).where(
             FinancialSourceDocument.case_id == case_id, EvidenceFile.case_id == case_id,
             FinancialSourceDocument.status == 'admitted').order_by(FinancialSourceDocument.id)
+    if source_document_id:
+        query = query.where(FinancialSourceDocument.id == source_document_id)
     if account_id:
         query = query.where(FinancialSourceDocument.metadata_['statement_account_id'].as_string() == str(account_id))
     if account_ids:
         query = query.where(FinancialSourceDocument.metadata_['statement_account_id'].as_string().in_([str(id) for id in account_ids]))
     if account_holders:
-        from postgres.models.financial import FinancialAccount
-        names = {' '.join(name.split()).lower() for name in account_holders}
-        ids = [str(id) for id, name in session.execute(select(FinancialAccount.id, FinancialAccount.holder_name).where(FinancialAccount.case_id == case_id)) if ' '.join((name or '').split()).lower() in names]
+        from services.financial.account_selection import holder_account_ids
+        ids = [str(id) for id in holder_account_ids(session, case_id, account_holders)]
         query = query.where(FinancialSourceDocument.metadata_['statement_account_id'].as_string().in_(ids))
     records = []
     for source_id, file_id, account, items, currency, filename in session.execute(query):
@@ -130,7 +131,8 @@ def complete_record(*, session_factory, case_id, source_id, request, actor):
                 raise PdfMappingError('Only separately identified source dates can be corrected.', 422)
             if request.row.manual_page != record['fields'].get('manual_page'):
                 raise PdfMappingError('The source page cannot be reassigned.', 422)
-            raw = metadata['statement_import_request']
+            from services.financial.statement_details import saved_details
+            raw = {**metadata['statement_import_request'], **saved_details(document)}
             checked_request = StatementImportRequest.model_validate({**raw, 'currency': currency})
             if incomplete_fields(request.row, checked_request):
                 raise PdfMappingError('The record still has incomplete values.', 422)

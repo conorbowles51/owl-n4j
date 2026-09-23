@@ -28,7 +28,7 @@ class ProcessingManifestTests(unittest.TestCase):
         spec.loader.exec_module(producer)
         current = producer.capture_pdf_processing_manifest(
             settings=SimpleNamespace(**manifest()['content']['settings']), ocr_used=False)
-        self.assertEqual(len(current['content']['source_files_sha256']), 6)
+        self.assertEqual(len(current['content']['source_files_sha256']), 7)
         self.assertEqual(validate_pdf_processing_manifest(current), current)
         f = grids.GridBindingTests(); f.setUp()
         try:

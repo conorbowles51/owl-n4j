@@ -34,3 +34,13 @@ class FinancialImportBatchItem(Base, TimestampMixin):
     status: Mapped[str] = mapped_column(String(24), nullable=False)
     summary: Mapped[dict] = mapped_column(json_type(), nullable=False)
     review_request: Mapped[dict | None] = mapped_column(json_type(), nullable=True)
+
+
+class FinancialImportOperation(Base, TimestampMixin):
+    __tablename__ = 'financial_import_operations'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    case_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey('cases.id', ondelete='CASCADE'), index=True)
+    batch_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey('financial_import_batches.id', ondelete='CASCADE'), index=True)
+    expected_revision: Mapped[str] = mapped_column(String(64), nullable=False)
+    actor: Mapped[dict] = mapped_column(json_type(), nullable=False)
+    outcomes: Mapped[list] = mapped_column(json_type(), nullable=False)

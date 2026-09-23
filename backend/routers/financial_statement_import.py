@@ -56,13 +56,14 @@ def save_statement_details(source_id: UUID, body: StatementDetailsRequest, case_
 
 @router.get('/incomplete-records')
 def incomplete_records(account_ids: Annotated[list[UUID] | None, Query()] = None, account_holders: Annotated[list[str] | None, Query()] = None, case_id: UUID = Query(...), account_id: UUID | None = Query(None),
+        source_document_id: UUID | None = None,
         start_date: date | None = Query(None), end_date: date | None = Query(None),
         offset: int = Query(0, ge=0), limit: int = Query(50, ge=1, le=100), db: Session = Depends(get_db)):
     from services.financial.imported_records import imported_records
     if start_date and end_date and start_date > end_date:
         raise HTTPException(status_code=422, detail='The end date must be on or after the start date.')
     return imported_records(db, case_id=case_id, account_id=account_id, account_ids=account_ids, account_holders=account_holders,
-        start_date=start_date, end_date=end_date, offset=offset, limit=limit)
+        start_date=start_date, end_date=end_date, offset=offset, limit=limit, source_document_id=source_document_id)
 
 
 @router.get('/{evidence_file_id}')
@@ -381,6 +382,7 @@ class CreateFinancialBatch(EvidenceSelectionRequest):
 class ConfirmFinancialBatch(BaseModel):
     model_config = ConfigDict(extra='forbid')
     expected_ready_revision: str = Field(pattern=r'^[a-f0-9]{64}$')
+    request_id: UUID | None = None
 
 
 class FinancialBatchCurrency(BaseModel):
@@ -471,16 +473,16 @@ def get_financial_batch(batch_id: UUID, case_id: UUID = Query(...), offset: int 
 @router.post('/batches/{batch_id}/confirm', dependencies=[Depends(case_access_dependency(lambda request,payload: ('case','edit')))])
 def confirm_financial_batch(batch_id: UUID,body: ConfirmFinancialBatch,case_id: UUID = Query(...),user=Depends(get_current_db_user),db: Session = Depends(get_db)):
     try:
-        return import_batches.queue_import(db,case_id=case_id,batch_id=batch_id,expected_revision=body.expected_ready_revision,actor=actor_from_user(user))
+        return import_batches.queue_import(db,case_id=case_id,batch_id=batch_id,expected_revision=body.expected_ready_revision,actor=actor_from_user(user),request_id=body.request_id)
     except PdfMappingError as exc:
         db.rollback();raise HTTPException(status_code=exc.status_code,detail=str(exc)) from exc
 
 
 @router.get('/batches/{batch_id}/imported-transactions')
-def imported_financial_batch_scope(batch_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+def imported_financial_batch_scope(batch_id: UUID, case_id: UUID = Query(...), operation_id: UUID | None = Query(None), db: Session = Depends(get_db)):
     from services.financial.batch_transaction_scope import imported_batch_scope
     try:
-        return imported_batch_scope(db, case_id=case_id, batch_id=batch_id)
+        return imported_batch_scope(db, case_id=case_id, batch_id=batch_id, operation_id=operation_id)
     except PdfMappingError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 

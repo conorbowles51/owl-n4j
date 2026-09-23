@@ -1,3 +1,4 @@
+from app.services.ingestion_checkpoints import checkpointed
 """Relationship deduplication — merges duplicate and near-duplicate relationships."""
 
 import asyncio
@@ -242,6 +243,7 @@ async def _normalize_near_duplicate_types(
 # Public API
 # ---------------------------------------------------------------------------
 
+@checkpointed("pipeline/resolve_relationships.py:resolve_relationships:v1")
 async def resolve_relationships(
     relationships: list[ResolvedRelationship],
     entities: list[ResolvedEntity] | None = None,

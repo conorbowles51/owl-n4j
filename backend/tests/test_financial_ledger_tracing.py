@@ -16,7 +16,7 @@ class LedgerTracingTests(LedgerSummaryTests):
         snap=capture_ledger_snapshot(self.db, case_id=self.case.id, account_id=self.account.id,
                                     start_date=date(2026,1,1), end_date=date(2026,1,31))
         document=_capture_history(self.db,json.loads(snap.content),case_id=self.case.id)
-        content=json.dumps(document,sort_keys=True,separators=(',',':'))
+        content=json.dumps(document,sort_keys=True,separators=(',',':'),ensure_ascii=False)
         return LedgerExport(LedgerSnapshot(content,hashlib.sha256(content.encode()).hexdigest(),len(content.encode())), '{}')
 
     def scenario(self):

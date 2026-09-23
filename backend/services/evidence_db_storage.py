@@ -317,8 +317,12 @@ class EvidenceDBStorage:
         folder_id: Optional[uuid.UUID] = None,
         status: Optional[str] = None,
         owner: Optional[str] = None,
+        include_reading_versions: bool = True,
     ) -> List[EvidenceFile]:
         conditions = [EvidenceFile.case_id == case_id]
+        if not include_reading_versions:
+            from services.financial.source_lineage import visible_evidence_condition
+            conditions.append(visible_evidence_condition())
         if folder_id is not None:
             conditions.append(EvidenceFile.folder_id == folder_id)
         if status:
@@ -359,6 +363,8 @@ class EvidenceDBStorage:
             EvidenceFile.case_id == case_id,
             file_cond,
         ]
+        from services.financial.source_lineage import visible_evidence_condition, reading_history
+        file_conditions.append(visible_evidence_condition())
 
         if search:
             folder_conditions.append(func.lower(EvidenceFolder.name).contains(search.lower(), autoescape=True))
@@ -386,7 +392,7 @@ class EvidenceDBStorage:
         folder_dicts = []
         for f in folders:
             file_count = db.scalar(
-                select(func.count()).select_from(EvidenceFile).where(EvidenceFile.folder_id == f.id)
+                select(func.count()).select_from(EvidenceFile).where(EvidenceFile.folder_id == f.id, visible_evidence_condition())
             ) or 0
             subfolder_count = db.scalar(
                 select(func.count()).select_from(EvidenceFolder).where(EvidenceFolder.parent_id == f.id)
@@ -404,7 +410,8 @@ class EvidenceDBStorage:
                 "has_profile": bool(f.context_instructions or f.mandatory_instructions or f.profile_overrides),
             })
 
-        file_dicts = [EvidenceDBStorage._file_to_dict(ef) for ef in files]
+        history = reading_history(db, files)
+        file_dicts = [{**EvidenceDBStorage._file_to_dict(ef), 'reading_versions': history.get(str(ef.id), [])} for ef in files]
 
         return {
             "folders": folder_dicts,
@@ -426,18 +433,25 @@ class EvidenceDBStorage:
         ).first()
         if file is None:
             return None
+        from services.financial.source_lineage import lineage_id, visible_evidence_condition
+        requested = db.get(EvidenceFile, file_id)
+        original = db.get(EvidenceFile, uuid.UUID(lineage_id(requested)))
+        anchor_id = file_id
+        if original and original.case_id == case_id and original.sha256 == requested.sha256:
+            anchor_id = original.id
+            file = original
         ranked = select(
             EvidenceFile.id,
             (func.row_number().over(order_by=evidence_ordering(EvidenceFile, sort_by, sort_direction)) - 1).label("position"),
-        ).where(EvidenceFile.case_id == case_id, EvidenceFile.folder_id == file.folder_id).subquery()
-        preceding = db.scalar(select(ranked.c.position).where(ranked.c.id == file_id)) or 0
+        ).where(EvidenceFile.case_id == case_id, EvidenceFile.folder_id == file.folder_id, visible_evidence_condition()).subquery()
+        preceding = db.scalar(select(ranked.c.position).where(ranked.c.id == anchor_id)) or 0
         safe_limit = max(1, min(int(limit), 1000))
         ancestors = (
             EvidenceDBStorage.get_folder_breadcrumbs(db, file.folder_id)
             if file.folder_id else []
         )
         return {
-            "file_id": str(file.id),
+            "file_id": str(file_id),
             "folder_id": str(file.folder_id) if file.folder_id else None,
             "ancestor_ids": [str(folder.id) for folder in ancestors],
             "file_offset": (preceding // safe_limit) * safe_limit,
@@ -454,7 +468,8 @@ class EvidenceDBStorage:
         by_id = {folder.id: folder for folder in folders}
         if scope == "subtree" and folder_id is not None and folder_id not in by_id:
             raise EvidenceMoveError("Folder not found in this case", 404)
-        conditions = [EvidenceFile.case_id == case_id, *_file_filters(query, status, type_category)]
+        from services.financial.source_lineage import visible_evidence_condition, reading_history
+        conditions = [EvidenceFile.case_id == case_id, visible_evidence_condition(), *_file_filters(query, status, type_category)]
         if scope == "subtree" and folder_id is not None:
             children = {}
             for folder in folders:
@@ -482,7 +497,8 @@ class EvidenceDBStorage:
                     current = folder.parent_id
                 paths[folder_id] = list(reversed(trail))
             return paths[folder_id]
-        return {"files": [{**EvidenceDBStorage._file_to_dict(file), "folder_path": path(file.folder_id)} for file in files],
+        history = reading_history(db, files)
+        return {"files": [{**EvidenceDBStorage._file_to_dict(file), 'reading_versions': history.get(str(file.id), []), "folder_path": path(file.folder_id)} for file in files],
                 "file_total": total, "file_limit": limit, "file_offset": offset}
 
     @staticmethod
@@ -937,10 +953,11 @@ class EvidenceDBStorage:
 
         # Batch-count files per folder
         file_counts: Dict[uuid.UUID, int] = {}
+        from services.financial.source_lineage import visible_evidence_condition
         if folder_ids:
             rows = db.execute(
                 select(EvidenceFile.folder_id, func.count())
-                .where(EvidenceFile.folder_id.in_(folder_ids))
+                .where(EvidenceFile.folder_id.in_(folder_ids), visible_evidence_condition())
                 .group_by(EvidenceFile.folder_id)
             ).all()
             file_counts = {row[0]: row[1] for row in rows}

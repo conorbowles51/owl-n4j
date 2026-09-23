@@ -265,11 +265,15 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
                         period=(selected['period_start'] + ' - ' + selected['period_end']) if selected['period_start'] else selected.get('printed_statement_date') or selected.get('printed_closing_date', ''))
         if selected.get('layout_id') in ('capital-one-card', 'merrick-card'):
             metadata['balance_convention'] = 'liability_owed'
-        if selected.get('layout_id') in ('bbva-mexico-cash-management', 'scotiabank-mexico-zero-activity'):
+        if selected.get('layout_id') in ('bbva-mexico-cash-management', 'scotiabank-mexico-zero-activity', 'monex-mexico-currency-summary', 'kapital-mexico-product-statement'):
             metadata['balance_convention'] = 'asset_balance'
         # A selected account must not inherit a name from a different section
         # elsewhere in the same PDF.
         metadata['holder'] = selected.get('holder', '')
+        if selected.get('account_reference_kind'):
+            metadata['account_reference_kind'] = selected['account_reference_kind']
+        if selected.get('statement_reference'):
+            metadata['statement_reference'] = selected['statement_reference']
         holders = set()
         for source in sources:
             if selected.get('layout_id') == 'capital-one-card' and source.get('layout_context'):
@@ -311,6 +315,64 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
         raise PdfMappingError('This PDF exceeds the 500-page review limit.', 422)
     recognised_pages = {s['page_number'] for s in all_sources}
     unassigned_pages = sorted({s['page_number'] for s in catalog['unclassified_sources']} | (set(all_page_numbers) - recognised_pages))
+    from postgres.models.financial import FinancialSourceDocument, FinancialTransaction
+    from services.financial.duplicate_decisions import duplicate_revision
+    from sqlalchemy import func
+    row_addresses = ([[s['page_number'], s['table_index'], index]
+                      for s in selected['sources'] for index in s['row_indices']]
+                     if selected and selected.get('layout_id') == 'andrews-share-statement' else None)
+    source_regions = None
+    if row_addresses is not None:
+        from services.financial.statement_import_andrews import andrews_source_regions
+        source_regions = andrews_source_regions(sources, selected)
+    if selected and selected.get('section_sources'):
+        # Several currency accounts can share the cover and reference pages.
+        # Only the actual account section defines the overlap/retry boundary.
+        from services.financial.statement_import_andrews import andrews_source_regions
+        row_addresses = [[s['page_number'], s['table_index'], index]
+            for s in selected['section_sources'] for index in s['row_indices']]
+        source_regions = andrews_source_regions(sources, dict(sources=selected['section_sources']))
+    current = _existing_statement(session, case_id, file, statement_id,
+        ((source['page_number'], source['table_index']) for source in sources), row_addresses, source_regions)
+    excluded_copy = _existing_statement(session, case_id, file, statement_id,
+        ((source['page_number'], source['table_index']) for source in sources), row_addresses, source_regions,
+        excluded_duplicates=True)
+    if excluded_copy is not None:
+        current = excluded_copy
+    current_import = None
+    if current is not None:
+        current_file = session.get(EvidenceFile, current.evidence_file_id)
+        current_import = dict(source_document_id=str(current.id), evidence_file_id=str(current.evidence_file_id),
+            account_id=_imported_account_id(session, current.id),
+            filename=current_file.original_filename if current_file else None,
+            revision=duplicate_revision(session, current), transaction_count=session.scalar(select(func.count()).select_from(FinancialTransaction).where(FinancialTransaction.source_document_id == current.id, FinancialTransaction.ledger_status == 'admitted')))
+        recorded_review = (current.metadata_ or {}).get('statement_import_request', {})
+        from services.financial.statement_details import saved_details, saved_currency
+        current_import['details'] = saved_details(current)
+        current_import['currency'] = saved_currency(current)
+        current_import['review_decisions'] = [
+            dict(description=row.get('description', ''), date=row.get('date', ''),
+                 excluded=bool(row.get('excluded')), reason=row['reason'])
+            for row in recorded_review.get('rows', []) if row.get('reason')]
+        current_import['details_reason'] = recorded_review.get('details_reason', '')
+        current_import['issues'] = (current.metadata_ or {}).get('statement_import_issues', [])
+        current_import['issues'] = [issue for issue in current_import['issues'] if not (
+            issue.get('kind') == 'statement_detail' and current_import['details'].get(issue.get('field')))]
+        current_import['incomplete_count'] = sum(not r.get('resolved_transaction_id') for r in (current.metadata_ or {}).get('statement_incomplete_records', []))
+        current_import['record_count'] = current_import['transaction_count'] + current_import['incomplete_count']
+        current_import['excluded_as_duplicate'] = excluded_copy is not None
+        if excluded_copy is not None:
+            retained = session.scalar(select(FinancialSourceDocument).where(
+                FinancialSourceDocument.id == excluded_copy.superseded_by_id,
+                FinancialSourceDocument.case_id == case_id))
+            retained_file = session.get(EvidenceFile, retained.evidence_file_id) if retained else None
+            current_import['retained_filename'] = retained_file.original_filename if retained_file else None
+            current_import['transaction_count'] = 0
+    # Opening an already saved statement must reach its correction controls even
+    # when a newer currency detector is deliberately uncertain. Reuse only this
+    # exact saved statement's denomination, never another account in the PDF.
+    if not chosen_currency and current_import:
+        chosen_currency = current_import['currency']
     rows = []
     if not chosen_currency:
         recovery, _ = recovery_state(session, file, sources=all_sources, choices=choices,
@@ -348,7 +410,15 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
         rows.extend(proposal['rows'])
         _check_review_size(rows)
     transaction_header_pages = {s['page_number'] for s in sources if has_transaction_header(s)} if not selected else set()
-    for source in ([] if selected and selected.get('layout_id') in ('andrews-share-statement', 'bbva-mexico-cash-management', 'scotiabank-mexico-zero-activity') else sources):
+    if selected and selected.get('layout_id') == 'monex-mexico-currency-summary':
+        from services.financial.statement_import_monex import propose_monex_statement
+        rows.extend(propose_monex_statement(sources, chosen_currency, selected)['rows'])
+        _check_review_size(rows)
+    if selected and selected.get('layout_id') == 'kapital-mexico-product-statement':
+        from services.financial.statement_import_kapital import propose_kapital_statement
+        rows.extend(propose_kapital_statement(sources, chosen_currency, selected)['rows'])
+        _check_review_size(rows)
+    for source in ([] if selected and selected.get('layout_id') in ('andrews-share-statement', 'bbva-mexico-cash-management', 'scotiabank-mexico-zero-activity', 'monex-mexico-currency-summary', 'kapital-mexico-product-statement') else sources):
         try:
             if selected and selected.get('layout_id') == 'merrick-card':
                 from services.financial.statement_import_merrick import propose_merrick_table
@@ -383,58 +453,16 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
                 'as separate reviews. Summary and information pages should not be corrected as payments. '
                 'The original file, saved reviews and existing imports are kept.'
             )
-    from postgres.models.financial import FinancialSourceDocument, FinancialTransaction
-    from services.financial.duplicate_decisions import duplicate_revision
-    from sqlalchemy import func
-    row_addresses = ([[s['page_number'], s['table_index'], index]
-                      for s in selected['sources'] for index in s['row_indices']]
-                     if selected and selected.get('layout_id') == 'andrews-share-statement' else None)
-    source_regions = None
-    if row_addresses is not None:
-        from services.financial.statement_import_andrews import andrews_source_regions
-        source_regions = andrews_source_regions(sources, selected)
-    current = _existing_statement(session, case_id, file, statement_id,
-        ((source['page_number'], source['table_index']) for source in sources), row_addresses, source_regions)
-    excluded_copy = _existing_statement(session, case_id, file, statement_id,
-        ((source['page_number'], source['table_index']) for source in sources), row_addresses, source_regions,
-        excluded_duplicates=True)
-    if excluded_copy is not None:
-        current = excluded_copy
-    current_import = None
-    if current is not None:
-        current_file = session.get(EvidenceFile, current.evidence_file_id)
-        current_import = dict(source_document_id=str(current.id), evidence_file_id=str(current.evidence_file_id),
-            account_id=_imported_account_id(session, current.id),
-            filename=current_file.original_filename if current_file else None,
-            revision=duplicate_revision(session, current), transaction_count=session.scalar(select(func.count()).select_from(FinancialTransaction).where(FinancialTransaction.source_document_id == current.id, FinancialTransaction.ledger_status == 'admitted')))
-        recorded_review = (current.metadata_ or {}).get('statement_import_request', {})
-        from services.financial.statement_details import saved_details, saved_currency
-        current_import['details'] = saved_details(current)
-        current_import['currency'] = saved_currency(current)
-        current_import['review_decisions'] = [
-            dict(description=row.get('description', ''), date=row.get('date', ''),
-                 excluded=bool(row.get('excluded')), reason=row['reason'])
-            for row in recorded_review.get('rows', []) if row.get('reason')]
-        current_import['details_reason'] = recorded_review.get('details_reason', '')
-        current_import['issues'] = (current.metadata_ or {}).get('statement_import_issues', [])
-        current_import['issues'] = [issue for issue in current_import['issues'] if not (
-            issue.get('kind') == 'statement_detail' and current_import['details'].get(issue.get('field')))]
-        current_import['incomplete_count'] = sum(not r.get('resolved_transaction_id') for r in (current.metadata_ or {}).get('statement_incomplete_records', []))
-        current_import['record_count'] = current_import['transaction_count'] + current_import['incomplete_count']
-        current_import['excluded_as_duplicate'] = excluded_copy is not None
-        if excluded_copy is not None:
-            retained = session.scalar(select(FinancialSourceDocument).where(
-                FinancialSourceDocument.id == excluded_copy.superseded_by_id,
-                FinancialSourceDocument.case_id == case_id))
-            retained_file = session.get(EvidenceFile, retained.evidence_file_id) if retained else None
-            current_import['retained_filename'] = retained_file.original_filename if retained_file else None
-            current_import['transaction_count'] = 0
     snapshot = dict(version=VERSION, source_sha256=file.sha256, sources=sources,
                     metadata=metadata, currency=chosen_currency, statement_id=statement_id)
     if selected and selected.get('layout_id') == 'bbva-mexico-cash-management':
         snapshot['bbva_statement_v1'] = rows
     if selected and selected.get('layout_id') == 'scotiabank-mexico-zero-activity':
         snapshot['scotiabank_zero_activity_v1'] = rows
+    if selected and selected.get('layout_id') == 'monex-mexico-currency-summary':
+        snapshot['monex_currency_summary_v1'] = rows
+    if selected and selected.get('layout_id') == 'kapital-mexico-product-statement':
+        snapshot['kapital_product_statement_v1'] = rows
     undated_charges = [row['id'] for row in rows if row['fields'].get('date_basis') == 'statement_end_ordering_only']
     if undated_charges:
         snapshot['undated_statement_charges_v1'] = undated_charges
@@ -768,7 +796,8 @@ def confirm_statement_import(*, session_factory, case_id, evidence_file_id, requ
                     identifier_as_printed=request.account_number, holder_name=request.holder,
                     account_type=proposal['metadata'].get('account_type'),
                     currency=request.currency or None, metadata=dict(display_label=' · '.join(filter(None, [request.holder, request.account_number])) or file.original_filename,
-                        statement_source_file_id=str(evidence_file_id)))
+                        statement_source_file_id=str(evidence_file_id),
+                        account_reference_kind=proposal['metadata'].get('account_reference_kind')))
                 try:
                     account_draft = AccountDraft.observed(**account_fields)
                 except AccountIdentityError:

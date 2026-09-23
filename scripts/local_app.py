@@ -11,7 +11,7 @@ RUNTIME = ROOT / "data" / "local-runtime"
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("service", choices=("migrate", "backend", "engine", "worker", "frontend", "setup", "check"))
+    parser.add_argument("service", choices=("migrate", "backend", "engine", "worker", "pdf-worker", "frontend", "setup", "check"))
     parser.add_argument("--case-id", help="Case UUID for read-only check mode")
     args = parser.parse_args()
     if args.case_id and args.service != "check":parser.error("--case-id is only supported with check")
@@ -59,13 +59,14 @@ def main():
         command = [python, "-m", "alembic", "upgrade", "head"]
     elif args.service == "backend":
         command = [python, "-m", "uvicorn", "main:app", "--host", "127.0.0.1", "--port", "58002"]
-    elif args.service in ("engine", "worker"):
+    elif args.service in ("engine", "worker", "pdf-worker"):
         python = str(RUNTIME / "engine-venv" / "bin" / "python")
         env["DATABASE_URL"] = env["DATABASE_URL"].replace("+psycopg", "+asyncpg")
         # A neutral cwd also prevents pydantic-settings loading an engine .env.
         cwd = RUNTIME
         command = ([python, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "58003"]
-                   if args.service == "engine" else [python, "-m", "arq", "app.worker.WorkerSettings"])
+                   if args.service == "engine" else [python, "-m", "arq",
+                       "app.worker.PdfReviewWorkerSettings" if args.service == "pdf-worker" else "app.worker.WorkerSettings"])
     else:
         cwd = ROOT / "frontend_v2"
         command = [str(cwd / "node_modules" / ".bin" / "vite"), "--host", "127.0.0.1", "--strictPort"]

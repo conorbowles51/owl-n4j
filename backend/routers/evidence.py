@@ -7,6 +7,7 @@ File storage and AI processing are delegated to the evidence engine when enabled
 
 import asyncio
 import hashlib
+import httpx
 import os
 import logging
 import mimetypes
@@ -163,8 +164,11 @@ def _resolve_stored_path(stored_path: str | None) -> Optional[Path]:
 
 def _evidence_record_from_db(record) -> dict:
     from services.financial.file_visibility import financial_file_visibility
+    from services.financial.source_lineage import lineage_id
     return {
         **financial_file_visibility(record),
+        "statement_root_evidence_id": lineage_id(record),
+        "statement_parent_evidence_id": (record.metadata_ or {}).get('statement_parent_evidence_id'),
         "id": str(record.id),
         "case_id": str(record.case_id),
         "original_filename": record.original_filename,
@@ -651,6 +655,9 @@ class EvidenceRecord(BaseModel):
     sha256: str
     status: str
     financial_removed: bool = False
+    statement_root_evidence_id: Optional[str] = None
+    statement_parent_evidence_id: Optional[str] = None
+    reading_versions: list[dict] = Field(default_factory=list)
     financial_visibility_revision: str = "initial"
     financial_imports_removed: bool = False
     processing_stale: bool = False
@@ -801,6 +808,7 @@ async def list_evidence(
     case_id: str = Query(..., description="Case ID"),
     status_filter: Optional[str] = Query(None, alias="status"),
     include_cellebrite_artifacts: bool = False,
+    include_reading_versions: bool = False,
     user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -813,10 +821,16 @@ async def list_evidence(
             ('unprocessed', 'processing', 'processed', 'duplicate', 'failed').
     """
     try:
-        db_files = EvidenceDBStorage.list_files(db, case_id=UUID(case_id), status=status_filter)
+        db_files = EvidenceDBStorage.list_files(db, case_id=UUID(case_id), status=status_filter, include_reading_versions=include_reading_versions)
         if not include_cellebrite_artifacts:
             db_files = [row for row in db_files if row.source_type != "cellebrite"]
-        return {"files": [_evidence_record_from_db(f) for f in db_files]}
+        from services.financial.source_lineage import reading_history, case_lineage
+        history = reading_history(db, db_files)
+        # Financial's full version list may group only validated source families.
+        roots = {str(file.id): root for root, versions in case_lineage(db, UUID(case_id)).items() for file in versions} if include_reading_versions else {}
+        return {"files": [{**_evidence_record_from_db(f),
+            'statement_root_evidence_id': roots.get(str(f.id), str(f.id)),
+            'reading_versions': history.get(str(f.id), [])} for f in db_files]}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -852,7 +866,8 @@ async def get_evidence_record(
     record = _evidence_record_for_id(db, evidence_id)
     if record is None:
         raise HTTPException(status_code=404, detail="Evidence not found")
-    return _evidence_record_from_db(record)
+    from services.financial.source_lineage import reading_history
+    return {**_evidence_record_from_db(record), 'reading_versions': reading_history(db, [record]).get(str(record.id), [])}
 
 
 @router.get("/{evidence_id}/text-matches", response_model=DocumentTextMatchesResponse)
@@ -1673,6 +1688,22 @@ async def delete_engine_job(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/engine/jobs/{job_id}/{action}")
+async def control_engine_job(job_id: str, action: str,
+    current_user: User = Depends(get_current_db_user), db: Session = Depends(get_db)):
+    if action not in {"pause", "resume"}:
+        raise HTTPException(status_code=404, detail="Unknown job action")
+    record = EvidenceDBStorage.find_by_engine_job_id(db, job_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Evidence job not found")
+    authorize_case(db, record.case_id, current_user, ("evidence", "upload"))
+    try:
+        return await evidence_engine_client.control_job(job_id, str(record.case_id), action)
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(status_code=exc.response.status_code,
+            detail=exc.response.json().get("detail", "Could not change processing state")) from exc
 
 
 @router.delete("/engine/jobs")

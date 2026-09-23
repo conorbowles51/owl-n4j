@@ -107,6 +107,9 @@ class PermissionResolverTests(unittest.TestCase):
         self.assertEqual(
             routes,
             {
+                "/api/financial/money-trails/preview": ["POST"],
+                "/api/financial/money-trails": ["POST"],
+                "/api/financial/money-trails/{trail_id}/remove": ["POST"],
                 "/api/financial/candidates/{candidate_id}/review": ["POST"],
                 "/api/financial/ledger/payment-labels": ["PUT"],
                 "/api/financial/ledger/payment-edits/preview": ["POST"],

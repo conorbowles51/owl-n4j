@@ -7,6 +7,7 @@ from sqlalchemy import select, func
 from postgres.base import Base
 from postgres.models.evidence import EvidenceDocumentText, EvidenceTableGeometry
 from postgres.models.financial import FinancialTransaction
+from postgres.models.financial_import_batches import FinancialImportBatch, FinancialImportBatchItem
 from postgres.models.workspace_entry import WorkspaceEntry, WorkspaceEntryLink, WorkspaceEntryRevision, WorkspaceEntryEvent
 from services.financial.pdf_candidates import PdfMappingError
 from services.financial.payment_document_review import read_payment_document, save_payment_document, matching_payments
@@ -22,7 +23,7 @@ class PaymentDocumentReviewTests(TransactionPersistenceTestCase):
     def setUp(self):
         super().setUp()
         Base.metadata.create_all(self.db.connection(), tables=[EvidenceDocumentText.__table__, EvidenceTableGeometry.__table__,
-            WorkspaceEntry.__table__, WorkspaceEntryLink.__table__, WorkspaceEntryRevision.__table__, WorkspaceEntryEvent.__table__])
+            WorkspaceEntry.__table__, WorkspaceEntryLink.__table__, WorkspaceEntryRevision.__table__, WorkspaceEntryEvent.__table__, FinancialImportBatch.__table__, FinancialImportBatchItem.__table__])
         self.path=Path(self._directory)/'wire.pdf';self.path.write_bytes(b'%PDF-1.4\nSYNTHETIC WIRE TEST')
         self.wire=self.evidence(hashlib.sha256(self.path.read_bytes()).hexdigest());self.wire.stored_path=str(self.path)
         content='Synthetic wire report';job=uuid4();grid=wire_source()

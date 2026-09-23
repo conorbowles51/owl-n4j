@@ -102,6 +102,8 @@ export const candidateAccounts = z.object({
       id,
       identifier: z.string().nullable(),
       holder: z.string().nullable(),
+      party: z.object({ id: z.string().uuid(), name: z.string() }).nullable().optional(),
+      holder_parties: z.array(z.object({ id: z.string().uuid(), name: z.string() })).default([]),
       institution: z.string().nullable(),
       currency: z.string().nullable(),
       display_label: z.string().nullable().optional(),

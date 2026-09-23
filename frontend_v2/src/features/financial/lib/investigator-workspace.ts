@@ -27,7 +27,7 @@ export function paymentGroup(row: LedgerTransaction) {
 export interface PaymentProfile {
   id: string
   name: string
-  kind: "account" | "name"
+  kind: "account" | "name" | "owner"
   unidentified: boolean
   rows: LedgerTransaction[]
   accounts: string[]
@@ -39,7 +39,7 @@ export interface PaymentProfile {
 export function paymentProfiles(rows: LedgerTransaction[]): PaymentProfile[] {
   const groups = new Map<
     string,
-    { name: string; kind: "account" | "name"; rows: LedgerTransaction[] }
+    { name: string; kind: "account" | "name" | "owner"; rows: LedgerTransaction[] }
   >()
   for (const row of rows) {
     const counterparty =
@@ -60,6 +60,11 @@ export function paymentProfiles(rows: LedgerTransaction[]): PaymentProfile[] {
       const group = groups.get(id) ?? { name, kind, rows: [] }
       group.rows.push(row)
       groups.set(id, group)
+    }
+    for (const party of row.account_holder_parties ?? []) {
+      const id = `owner:${party.id}`
+      const group = groups.get(id) ?? {name:party.name, kind:"owner" as const, rows:[]}
+      group.rows.push(row); groups.set(id, group)
     }
   }
   return [...groups].map(([id, group]) => {

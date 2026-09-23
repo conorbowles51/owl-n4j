@@ -28,6 +28,10 @@ class JobResponse(BaseModel):
     document_summary: str | None = None
     pipeline_version: str = "evidence-v2"
     pipeline_state: dict = Field(default_factory=dict)
+    pause_requested: bool = False
+    paused: bool = False
+    resumable: bool = False
+    resume_generation: int = 0
     quality_report: dict = Field(default_factory=dict)
     created_at: datetime
     updated_at: datetime

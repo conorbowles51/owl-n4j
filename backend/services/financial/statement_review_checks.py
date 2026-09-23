@@ -63,6 +63,12 @@ def add_period_checks(choices, sources, currency):
             elif layout == 'bbva-mexico-cash-management':
                 from services.financial.statement_import_bbva import propose_bbva_statement
                 rows = propose_bbva_statement(selected, chosen_currency, choice)['rows']
+            elif layout == 'monex-mexico-currency-summary':
+                from services.financial.statement_import_monex import propose_monex_statement
+                rows = propose_monex_statement(selected, chosen_currency, choice)['rows']
+            elif layout == 'kapital-mexico-product-statement':
+                from services.financial.statement_import_kapital import propose_kapital_statement
+                rows = propose_kapital_statement(selected, chosen_currency, choice)['rows']
             elif layout in ('capital-one-card', 'merrick-card'):
                 from services.financial.statement_import_card import propose_card_table
                 from services.financial.statement_import_merrick import propose_merrick_table

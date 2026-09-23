@@ -11,7 +11,15 @@ export interface TranscriptSpeakerSettings {
   merges: Record<string, string>
 }
 
+export interface EvidenceReadingVersion {
+  id: string
+  status: string
+  created_at: string | null
+  reading_mode: string
+}
+
 export interface EvidenceFile {
+  reading_versions?: EvidenceReadingVersion[]
   id: string
   original_filename: string
   stored_path: string
@@ -274,6 +282,7 @@ export interface FolderContentsResponse {
 }
 
 export interface EvidenceFileRecord {
+  reading_versions?: EvidenceReadingVersion[]
   folder_path?: { id: string; name: string }[]
   id: string
   case_id: string
@@ -355,6 +364,10 @@ export type PipelineStage =
   | "failed"
 
 export interface EvidenceJob {
+  pause_requested?: boolean
+  paused?: boolean
+  resumable?: boolean
+  resume_generation?: number
   id: string
   case_id: string
   batch_id: string | null

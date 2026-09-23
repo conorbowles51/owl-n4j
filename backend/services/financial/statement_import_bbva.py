@@ -20,6 +20,16 @@ def norm(text):
                            if not unicodedata.combining(c)).split())
 
 
+def control_norm(value):
+    # These are label readings, never edits to a printed date or amount.
+    # Tesseract's English model can read the accented ó as é or d.
+    return {'SALDO DE OPERACIEN INICIAL': 'SALDO DE OPERACION INICIAL',
+            'SALDO DE OPERACIEN FINAL': 'SALDO DE OPERACION FINAL',
+            'SALDO DE LIQUIDACIEN INICIAL': 'SALDO DE LIQUIDACION INICIAL',
+            'DEPDSITOS / ABONOS (+)': 'DEPOSITOS / ABONOS (+)',
+            'DEPESITOS / ABONOS (+)': 'DEPOSITOS / ABONOS (+)'}.get(norm(value), norm(value))
+
+
 def text(row):
     return ' '.join(c['expected_text'].strip() for c in row['cells']).strip()
 
@@ -50,6 +60,13 @@ def labelled_values(sources):
                         values.setdefault(norm(label), set()).add(value)
             elif len(cells) == 2:
                 values.setdefault(norm(cells[0]['expected_text']), set()).add(cells[1]['expected_text'].strip())
+            # OCR can place the address block and account/period block on one
+            # row. Read the explicit label and its neighbour, not the first
+            # two cells of that combined row.
+            for index, cell in enumerate(cells[:-1]):
+                label = norm(cell['expected_text'])
+                if label in ('PERIODO', 'NO. DE CUENTA', 'NO. CUENTA'):
+                    values.setdefault(label, set()).add(cells[index + 1]['expected_text'].strip())
             match = re.fullmatch(r'NO\.? (?:DE )?CUENTA\s*:?\s+(\d{8,20})', norm(text(row)))
             if match:
                 values.setdefault('NO. CUENTA', set()).add(match[1])
@@ -68,7 +85,7 @@ def bbva_catalog(sources):
             continue
         products = {t for t in texts if t.startswith('CASH MANAGEMENT ')}
         numbered = {tuple(map(int, m.groups())) for t in texts
-                    if (m := re.fullmatch(r'PAGINA (\d+) / (\d+)', t))}
+                    if (m := re.fullmatch(r'PAGINA\s+(\d+)\s*/\s*(\d+)', t))}
         values = labelled_values(items)
         accounts = {value for label, entries in values.items()
                     if label in ('NO. DE CUENTA', 'NO. CUENTA') for value in entries
@@ -163,7 +180,7 @@ def propose_bbva_statement(sources, currency, choice):
     last_payment = None
     prior_period = False
     prior_period_pages = set()
-    printed_labels = {norm(c['expected_text']) for s in sources for r in s['rows'] for c in r['cells']}
+    printed_labels = {control_norm(c['expected_text']) for s in sources for r in s['rows'] for c in r['cells']}
     operational = bool({'SALDO DE OPERACION INICIAL', 'SALDO DE OPERACION FINAL'} & printed_labels)
     balance_labels = (('SALDO DE OPERACION INICIAL', 'Opening Balance'), ('SALDO DE OPERACION FINAL', 'Closing Balance')) if operational else (
         ('SALDO DE LIQUIDACION INICIAL', 'Opening Balance'), ('SALDO FINAL (+)', 'Closing Balance'))
@@ -177,7 +194,7 @@ def propose_bbva_statement(sources, currency, choice):
                         row_index=raw['row_index'], source_revision=source['source_revision'],
                         source_cells=cells, fields={}, issues=[], excluded=True, kind='header')
             result.append(item)
-            labels = {norm(c['expected_text']): c for c in cells}
+            labels = {control_norm(c['expected_text']): c for c in cells}
             row_text = norm(text(raw))
             if row_text.startswith('MOVIMIENTOS DE PERIODOS ANTERIORES') and 'LIQUIDACION' in row_text:
                 # These are operations already booked in a previous period.
@@ -199,22 +216,27 @@ def propose_bbva_statement(sources, currency, choice):
                 if label in labels), None)
             total = next((direction for label, direction in (
                 ('DEPOSITOS / ABONOS (+)', 'credit'), ('RETIROS / CARGOS (-)', 'debit')) if label in labels), None)
-            if (role and len(cells) == 2) or (total and len(cells) == 3 and cells[1]['expected_text'].strip().isdigit()):
-                amount = cells[-1]
+            control_label = next((label for label, _ in balance_labels if label in labels), None) if role else next(
+                (label for label in ('DEPOSITOS / ABONOS (+)', 'RETIROS / CARGOS (-)') if label in labels), None)
+            control_cells = cells[cells.index(labels[control_label]):] if control_label else []
+            if (role and len(control_cells) == 2) or (total and len(control_cells) == 3 and control_cells[1]['expected_text'].strip().isdigit()):
+                amount = control_cells[-1]
                 item.update(kind='balance' if role else 'statement_total')
                 item['fields'].update(description=role or ('Total ' + total), balance_column=str(amount['column_index']))
                 if total:
                     item['fields']['total_direction'] = total
-                    if len(cells) == 3 and cells[1]['expected_text'].strip().isdigit():
-                        item['fields']['printed_transaction_count'] = cells[1]['expected_text'].strip()
+                    if len(control_cells) == 3 and control_cells[1]['expected_text'].strip().isdigit():
+                        item['fields']['printed_transaction_count'] = control_cells[1]['expected_text'].strip()
                 try:
                     item['fields']['balance'] = exact_amount(amount['expected_text'], currency)
                 except ValueError as exc:
                     item['issues'].append(str(exc))
                 continue
             names = ('OPER', 'LIQ', 'COD. DESCRIPCION', 'REFERENCIA', 'CARGOS', 'ABONOS', 'OPERACION', 'LIQUIDACION')
-            if all(name in labels and box(labels[name]) for name in names):
-                columns = {name: labels[name] for name in names}
+            date_headings = all(name in labels and box(labels[name]) for name in names[:2]) or (
+                'OPER LIQ' in labels and box(labels['OPER LIQ']))
+            if date_headings and all(name in labels and box(labels[name]) for name in names[2:]):
+                columns = {name: labels[name] for name in names[2:]}
                 continue
             if columns is None:
                 continue
@@ -230,13 +252,11 @@ def propose_bbva_statement(sources, currency, choice):
                 if rect is None:
                     malformed = True
                     continue
-                if rect[0] < box(columns['LIQ'])[0] - 3000:
+                if rect[0] < box(columns['COD. DESCRIPCION'])[0] - 3000:
                     buckets['OPER'].append(cell)
-                elif rect[0] < box(columns['COD. DESCRIPCION'])[0] - 3000:
-                    buckets['LIQ'].append(cell)
                 elif (re.fullmatch(r'(?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)\.[0-9]{2}', cell['expected_text'].strip())
                         and len(aligned := [name for name in names[4:]
-                            if abs(rect[2]-box(columns[name])[2]) <= 6000]) == 1):
+                            if abs(rect[2]-box(columns[name])[2]) <= 8000]) == 1):
                     # Large right-aligned amounts extend left of their shorter
                     # column heading. Their right edge, not text width, places
                     # them in Cargos/Abonos rather than the description.
@@ -245,18 +265,22 @@ def propose_bbva_statement(sources, currency, choice):
                     buckets['COD. DESCRIPCION'].append(cell)
                 else:
                     matches = [name for name in names[4:]
-                               if abs(rect[2]-box(columns[name])[2]) <= 6000]
+                               if abs(rect[2]-box(columns[name])[2]) <= 8000]
                     if len(matches) == 1:
                         buckets[matches[0]].append(cell)
                     else:
                         malformed = True
             joined = lambda name: ' '.join(c['expected_text'].strip() for c in buckets[name])
-            date_text, value_text = joined('OPER'), joined('LIQ')
+            # Preserve the two printed dates even when OCR merges their
+            # headings or puts the description in the liquidation-date cell.
+            date_parts = joined('OPER').split(maxsplit=2)
+            date_text = date_parts[0] if date_parts else ''
+            value_text = date_parts[1] if len(date_parts) > 1 else ''
             description = joined('COD. DESCRIPCION')
-            merged = re.fullmatch(r'(\S+)\s+(.+)', value_text)
-            if merged:
-                value_text = merged[1]
-                description = ' '.join(filter(None, (merged[2], description)))
+            if len(date_parts) > 2:
+                description = ' '.join(filter(None, (date_parts[2], description)))
+            if len(buckets['OPER']) > 1:
+                buckets['LIQ'] = buckets['OPER'][1:]
             if not date_text and not value_text and not any(buckets[name] for name in names[4:]) and not malformed:
                 if description and last_payment:
                     last_payment['fields']['description'] += ' ' + description

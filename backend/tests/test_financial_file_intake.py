@@ -121,11 +121,127 @@ class FinancialFileIntakeTests(DuplicateTestCase):
         self.assertEqual(self.file.metadata_, {'unrelated': {'keep': True}})
         self.assertEqual(len(list(self.db.scalars(select(EvidenceFile)))), 2)
 
+    def test_evidence_upload_then_send_to_financial_keeps_one_search_result_on_repeat(self):
+        from uuid import UUID
+        from services.evidence_db_storage import EvidenceDBStorage
+        # One existing Evidence upload, already processed for the investigation.
+        parent = EvidenceFolder(id=uuid4(), case_id=self.case.id, name='Statements')
+        self.db.add(parent); self.db.flush()
+        self.file.folder_id = parent.id; self.db.commit()
+        processed = []
+        async def prepare_reading(db, **kwargs):
+            target = db.get(EvidenceFile, kwargs['file_ids'][0])
+            processed.append(target.id)
+            target.status = 'processed'
+            db.add(EvidenceDocumentText(evidence_file_id=target.id, content='synthetic statement',
+                content_sha256='a'*64, character_count=19, engine_job_id=uuid4()))
+            db.add(EvidenceTableGeometry(evidence_file_id=target.id, page_number=1,
+                payload=[], engine_job_id=uuid4()))
+            db.commit()
+            return {'job_ids': ['financial-reading']}
+        self.prepare(process=prepare_reading)
+        for _ in range(3):
+            selection = resolve_financial_selection(self.db, case_id=self.case.id,
+                file_ids=[self.file.id], folder_ids=[parent.id])
+            self.assertEqual(len(selection['files']), 1)
+            selected = self.db.get(EvidenceFile, UUID(selection['files'][0]['id']))
+            self.assertEqual(self.prepare(file=selected, process=prepare_reading)['outcome'], 'ready')
+            results = EvidenceDBStorage.search_files(self.db, self.case.id, 'letter')
+            self.assertEqual(results['file_total'], 1)
+            self.assertEqual(results['files'][0]['id'], str(self.file.id))
+            self.assertEqual(len(results['files'][0]['reading_versions']), 1)
+        self.assertEqual(len(processed), 1)
+        self.assertEqual(self.file.summary, 'Retain completed general processing')
+
     def test_active_processing_is_not_started_twice(self):
         self.file.status = 'processing'; self.db.commit()
         process = AsyncMock()
         self.assertEqual(self.prepare(process=process)['outcome'], 'processing')
         process.assert_not_awaited()
+
+    def test_retry_of_an_empty_internal_reading_reuses_its_id(self):
+        from uuid import UUID
+        first = self.prepare()
+        version = self.db.get(EvidenceFile, UUID(first['evidence_file_id']))
+        version.status = 'processed'
+        self.db.commit()
+        process = AsyncMock(return_value={'job_ids': ['retry-job']})
+        retried = self.prepare(file=version, process=process)
+        self.assertEqual(retried['evidence_file_id'], str(version.id))
+        self.assertEqual(len(list(self.db.scalars(select(EvidenceFile)))), 2)
+        self.assertTrue(process.call_args.kwargs['force_reprocess'])
+        self.assertEqual(self.file.summary, 'Retain completed general processing')
+
+    def test_generated_readings_collapse_but_independent_disclosures_do_not(self):
+        from uuid import UUID
+        from services.financial.source_lineage import lineage_groups
+        prepared = self.prepare()
+        version = self.db.get(EvidenceFile, UUID(prepared['evidence_file_id']))
+        independent = self.new_file(self.file.original_filename)
+        foreign = self.new_file(self.file.original_filename, case=self.other_case)
+        # Corrupt/cross-case lineage must not absorb a separate disclosure.
+        foreign.metadata_ = {'statement_root_evidence_id': str(self.file.id)}
+        self.db.commit()
+        chosen = resolve_financial_selection(self.db, case_id=self.case.id,
+            file_ids=[self.file.id, version.id, independent.id], folder_ids=[])
+        self.assertEqual({f['id'] for f in chosen['files']}, {str(version.id), str(independent.id)})
+        self.assertEqual(chosen['grouped_readings'], 1)
+        self.assertEqual(len(lineage_groups([self.file, version, foreign, independent])), 3)
+        original_only = resolve_financial_selection(self.db, case_id=self.case.id, file_ids=[self.file.id], folder_ids=[])
+        self.assertEqual(original_only['files'][0]['id'], str(version.id))
+
+    def test_evidence_name_search_and_folder_counts_show_original_once_with_history(self):
+        from services.evidence_db_storage import EvidenceDBStorage
+        parent = EvidenceFolder(id=uuid4(), case_id=self.case.id, name='Statements')
+        self.db.add(parent); self.db.flush()
+        self.file.folder_id = parent.id; self.db.commit()
+        self.prepare()
+        # Same filename/bytes independently disclosed must remain separate.
+        independent = self.new_file(self.file.original_filename, folder=parent.id)
+        self.db.commit()
+        found = EvidenceDBStorage.search_files(self.db, self.case.id, 'letter')
+        self.assertEqual(found['file_total'], 2)
+        self.assertEqual({f['id'] for f in found['files']}, {str(self.file.id), str(independent.id)})
+        original = next(f for f in found['files'] if f['id'] == str(self.file.id))
+        self.assertEqual(len(original['reading_versions']), 1)
+        contents = EvidenceDBStorage.list_contents(self.db, self.case.id, parent.id, limit=1)
+        self.assertEqual(contents['file_total'], 2)
+        self.assertEqual(len(contents['files']), 1)
+        self.assertEqual(EvidenceDBStorage.get_folder_tree(self.db, self.case.id)[0]['file_count'], 2)
+        self.assertEqual(len(EvidenceDBStorage.list_files(self.db, self.case.id, include_reading_versions=False)), 2)
+        version_id = original['reading_versions'][0]['id']
+        from uuid import UUID
+        location = EvidenceDBStorage.get_file_location(self.db, self.case.id, UUID(version_id))
+        self.assertEqual(location['folder_id'], str(parent.id))
+        self.assertEqual(location['file_id'], version_id)
+        self.assertEqual(EvidenceDBStorage.search_files(self.db, self.other_case.id, 'letter')['file_total'], 0)
+
+    def test_already_existing_copy_chain_is_grouped_without_deleting_or_reprocessing(self):
+        from services.evidence_db_storage import EvidenceDBStorage
+        # Reproduce the old stored state: one uploaded PDF plus two internal
+        # readings, all displayed previously as ordinary same-name files.
+        first = self.new_file(self.file.original_filename)
+        second = self.new_file(self.file.original_filename)
+        first.metadata_ = {'statement_root_evidence_id': str(self.file.id),
+            'statement_parent_evidence_id': str(self.file.id)}
+        second.metadata_ = {'statement_root_evidence_id': str(self.file.id),
+            'statement_parent_evidence_id': str(first.id)}
+        self.db.commit()
+        original_state = {f.id: (f.status, f.stored_path, f.sha256, dict(f.metadata_))
+            for f in (self.file, first, second)}
+        result = EvidenceDBStorage.search_files(self.db, self.case.id, 'letter')
+        self.assertEqual(result['file_total'], 1)
+        self.assertEqual(result['files'][0]['id'], str(self.file.id))
+        self.assertEqual({r['id'] for r in result['files'][0]['reading_versions']}, {str(first.id), str(second.id)})
+        self.assertEqual({f.id: (f.status, f.stored_path, f.sha256, dict(f.metadata_))
+            for f in self.db.scalars(select(EvidenceFile))}, original_state)
+        self.assertTrue(all(Path(path).exists() for _, path, _, _ in original_state.values()))
+        # Corrupt lineage cannot hide genuinely different contents.
+        different = self.new_file(self.file.original_filename)
+        different.sha256 = 'f' * 64
+        different.metadata_ = {'statement_root_evidence_id': str(self.file.id)}
+        self.db.commit()
+        self.assertEqual(EvidenceDBStorage.search_files(self.db, self.case.id, 'letter')['file_total'], 2)
 
     def test_removed_financial_version_is_not_reported_as_ready(self):
         result = self.prepare()

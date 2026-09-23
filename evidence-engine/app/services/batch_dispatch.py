@@ -8,6 +8,8 @@ from sqlalchemy import select
 from app.dependencies import async_session
 from app.models.job import Job
 from app.services.pipeline_run_state import transition_batch_dispatch
+from app.services.processing_queues import PDF_REVIEW_QUEUE
+from arq.constants import default_queue_name
 
 logger = logging.getLogger(__name__)
 
@@ -34,11 +36,13 @@ async def dispatch_ingestion_batch(job: Job | Any, db: Any, pool: Any) -> bool:
     await db.commit()
 
     try:
+        function = dispatch.get("function", "process_batch")
+        args = [str(job.id)] if function == "process_file" else [dispatch["batch_id"], dispatch["case_id"]]
         await pool.enqueue_job(
-            "process_batch",
-            dispatch["batch_id"],
-            dispatch["case_id"],
+            function, *args,
             _job_id=dispatch["queue_job_id"],
+            _queue_name=(job.pipeline_state or {}).get('processing_queue') or (
+                PDF_REVIEW_QUEUE if getattr(job, 'job_type', None) == 'pdf_review' else default_queue_name),
         )
     except Exception as exc:
         job.pipeline_state = transition_batch_dispatch(

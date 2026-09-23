@@ -97,6 +97,54 @@ class BbvaProposalTests(TestCase):
         self.assertEqual(len(rows), sum(len(s['rows']) for s in sources))
         self.assertEqual(sources, before)
 
+    def test_scanned_rows_keep_adjacent_address_summary_and_merged_date_columns(self):
+        sources = statement()
+        # A scan has no ruled-cell structure. Both sides of the page can be
+        # one OCR row, and the two date headings can be one OCR cell.
+        sources[0] = source([
+            [(20000,150000,'EXAMPLE ADDRESS'), (306000,127000,'Periodo'),
+             (433000,166000,'DEL 01/09/2024 AL 30/09/2024')],
+            [(306000,127000,'No. de Cuenta'), (433000,166000,'0000012345')]])
+        for s in sources:
+            for row in s['rows']:
+                cells = row['cells']
+                for cell in cells:
+                    cell['expected_text'] = cell['expected_text'].replace(' / 7', '/7')
+                    cell['expected_text'] = cell['expected_text'].replace('Operación', 'Operacién').replace('Depósitos', 'Depdsitos')
+                if cells[0]['expected_text'].startswith(('Saldo ', 'Depósitos /', 'Retiros /')):
+                    left = source([[(18000,180000,'Unrelated summary'), (240000,40000,'999.00')]])['rows'][0]['cells']
+                    for cell in cells: cell['column_index'] += len(left)
+                    row['cells'] = left + cells
+                elif cells[0]['expected_text'] == 'OPER':
+                    cells[0]['expected_text'] = 'OPER LIQ'
+                    cells[0]['locator']['rect'][2] = cells[1]['locator']['rect'][2]
+                    del cells[1]
+                if any('C49' in cell['expected_text'] for cell in cells):
+                    # Scanned heading ends slightly to the right of its
+                    # right-aligned amount; neighbouring columns stay distinct.
+                    cells[-1]['locator']['rect'][2] -= 6240
+        before = deepcopy(sources)
+        choice, proposal = self.proposal(sources)
+        self.assertEqual(choice['period_start'], '2024-09-01')
+        payments = [r for r in proposal['rows'] if not r['excluded']]
+        self.assertEqual(len(payments), 2)
+        self.assertEqual([r['fields']['amount_minor'] for r in payments], ['3000','480'])
+        self.assertTrue(all(r['fields']['date']=='2024-09-02' and r['fields']['value_date']=='2024-09-01' for r in payments))
+        self.assertEqual(check_statement_rows(proposal['rows'])['balance_status'], 'matches')
+        self.assertFalse(any(r['issues'] for r in proposal['rows']))
+        self.assertEqual(sources, before)
+
+    def test_glossary_definition_is_not_a_conflicting_account_currency(self):
+        sources = statement()
+        for s in sources:
+            for row in s['rows']:
+                for cell in row['cells']:
+                    cell['expected_text'] = cell['expected_text'].replace('MONEDA EUROS', 'MONEDA DOLARES')
+        sources += [source([[(20000,150000,'MONEDA NACIONAL')],
+                            [(20000,250000,'Glossary definition only')]],page=8)]
+        self.assertEqual(detect_statement_currency(sources,layout_id='bbva-mexico-cash-management'), 'USD')
+        self.assertEqual(detect_statement_currency(sources), 'USD')
+
     def test_wide_right_aligned_amounts_are_not_absorbed_into_the_description(self):
         sources = statement()
         for table in sources:

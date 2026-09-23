@@ -173,9 +173,11 @@ export function InvestigatorPeople({ caseId }: { caseId: string }) {
                   <p className="finance-badge">
                     {selected.kind === "account"
                       ? "Account in these records"
-                      : selected.unidentified
-                        ? "Payments to investigate"
-                        : "Name as recorded in payments"}
+                      : selected.kind === "owner"
+                        ? "Reviewed account holder"
+                        : selected.unidentified
+                          ? "Payments to investigate"
+                          : "Name as recorded in payments"}
                   </p>
                   <h3 className="mt-1 text-xl font-semibold">
                     {selected.unidentified
@@ -198,9 +200,11 @@ export function InvestigatorPeople({ caseId }: { caseId: string }) {
                 label={
                   selected.kind === "account"
                     ? "Activity on this account"
-                    : selected.unidentified
-                      ? "Payments with missing counterparty names"
-                      : "Payments involving this recorded name"
+                    : selected.kind === "owner"
+                      ? "Activity on linked accounts"
+                      : selected.unidentified
+                        ? "Payments with missing counterparty names"
+                        : "Payments involving this recorded name"
                 }
               />
               <dl className="grid gap-4 text-sm sm:grid-cols-4">
@@ -221,6 +225,27 @@ export function InvestigatorPeople({ caseId }: { caseId: string }) {
                   <dd>{selected.sources.length}</dd>
                 </div>
               </dl>
+              <AccountOwnershipReview
+                caseId={caseId}
+                accountIds={
+                  selected.kind === "account" || selected.kind === "owner"
+                    ? selected.accounts
+                    : []
+                }
+                partyId={
+                  selected.kind === "owner" ? selected.id.slice(6) : undefined
+                }
+                label="Review linked accounts"
+              />
+              {selected.kind === "owner" && (
+                <p className="rounded border p-3 text-sm">
+                  This profile includes activity on accounts linked to this
+                  holder. Review each relationship’s dates and basis before
+                  attributing a payment to ownership at that time. Jointly held
+                  accounts can also appear on another holder’s profile; profiles
+                  are not additive.
+                </p>
+              )}
               {selected.unidentified && (
                 <UnidentifiedBreakdown rows={selected.rows} detail />
               )}
@@ -250,10 +275,12 @@ export function InvestigatorPeople({ caseId }: { caseId: string }) {
                     </li>
                   ))}
                 </ul>
-                <p className="mt-2">
-                  Recipient ownership and address: not established by this
-                  grouping.
-                </p>
+                {selected.kind !== "owner" && (
+                  <p className="mt-2">
+                    Recipient ownership and address: not established by this
+                    grouping.
+                  </p>
+                )}
               </details>
               {recentFindings.isError && (
                 <p role="alert" className="text-sm">
@@ -337,6 +364,7 @@ export function InvestigatorPeople({ caseId }: { caseId: string }) {
                   <option value="all">Names and accounts</option>
                   <option value="name">Payment names</option>
                   <option value="account">Accounts</option>
+                  <option value="owner">Reviewed account holders</option>
                 </select>
               </label>
               <label className="text-sm">
@@ -412,9 +440,11 @@ export function InvestigatorPeople({ caseId }: { caseId: string }) {
                   <p className="finance-badge">
                     {profile.kind === "account"
                       ? "Account"
-                      : profile.unidentified
-                        ? "Payments to investigate"
-                        : "Recorded payment name"}
+                      : profile.kind === "owner"
+                        ? "Reviewed account holder"
+                        : profile.unidentified
+                          ? "Payments to investigate"
+                          : "Recorded payment name"}
                   </p>
                   <h3 className="text-base font-semibold break-words">
                     {profile.unidentified
@@ -481,3 +511,4 @@ export function InvestigatorPeople({ caseId }: { caseId: string }) {
     </div>
   )
 }
+import { AccountOwnershipReview } from "./AccountOwnershipReview"

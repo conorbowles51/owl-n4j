@@ -25,9 +25,12 @@ def resolve_financial_selection(session, *, case_id, file_ids, folder_ids):
     if len(files) > 10000:
         raise PdfMappingError('This selection contains more than 10,000 files. Select fewer folders and send them in separate groups. Nothing has been sent.', 422)
     pdfs = [file for file in files if file.original_filename.lower().endswith('.pdf')]
+    from services.financial.source_lineage import select_current_files, lineage_id
+    current = select_current_files(session, case_id, pdfs)
     return dict(case_id=str(case_id), skipped_non_pdf=len(files)-len(pdfs), files=[dict(
         id=str(file.id), original_filename=file.original_filename, status=file.status,
-        **financial_file_visibility(file)) for file in pdfs])
+        root_file_id=lineage_id(file),
+        **financial_file_visibility(file)) for file in current], grouped_readings=len(pdfs)-len(current))
 
 
 def has_financial_reading(session, file):
@@ -58,9 +61,18 @@ async def prepare_existing_financial_file(session, *, case_id, evidence_file_id,
         if file.status == 'processed' and has_financial_reading(session, file):
             return dict(case_id=str(case_id), source_file_id=str(file.id), evidence_file_id=str(file.id), outcome='ready')
         if file.status == 'processed':
-            target = create_statement_version(session, case_id=case_id, evidence_file_id=file.id,
-                request_id=uuid5(NAMESPACE_URL, f'loupe-financial-intake:{case_id}:{file.id}'),
-                actor=actor, resolve_path=resolve_path)
+            if (file.metadata_ or {}).get('statement_version_request'):
+                from postgres.models.financial import FinancialSourceDocument
+                if session.scalar(select(FinancialSourceDocument.id).where(FinancialSourceDocument.case_id == case_id,
+                        FinancialSourceDocument.evidence_file_id == file.id).limit(1)):
+                    raise PdfMappingError('This saved reading has no usable PDF geometry. Open its statement history and choose Read the statement again; its saved payments are retained.', 409)
+                # A prior preparation without usable geometry resumes the same
+                # internal reading; it must not manufacture another PDF copy.
+                target = file
+            else:
+                target = create_statement_version(session, case_id=case_id, evidence_file_id=file.id,
+                    request_id=uuid5(NAMESPACE_URL, f'loupe-financial-intake:{case_id}:{file.id}'),
+                    actor=actor, resolve_path=resolve_path)
     require_financial_file(target)
     if target.status == 'processed' and has_financial_reading(session, target):
         return dict(case_id=str(case_id), source_file_id=str(file.id), evidence_file_id=str(target.id), outcome='ready')

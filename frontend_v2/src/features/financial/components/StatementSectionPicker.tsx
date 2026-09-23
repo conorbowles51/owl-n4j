@@ -7,6 +7,7 @@ export type StatementSection = {
   institution: string
   account_reference: string
   account_label?: string
+  currency?: string
   assignment_only?: boolean
   document_kind?: "deposit_receipt"
   statement_date?: string
@@ -28,6 +29,7 @@ function sectionLabel(item: StatementSection) {
       ? "Unassigned payments"
       : item.account_reference || "Account needs review",
     item.account_label,
+    item.currency,
     item.period_start
       ? `${item.period_start} to ${item.period_end}`
       : item.statement_date ||
@@ -77,6 +79,7 @@ export function StatementPeriodSelect({
       item.institution,
       item.account_reference,
       item.account_label,
+      item.currency,
       item.document_kind,
     ])
   const selected = choices.find((item) => item.id === value)
@@ -124,6 +127,7 @@ export function StatementPeriodSelect({
                     ? "Unassigned payments"
                     : item.account_reference || "Account needs review",
                   item.account_label,
+                  item.currency,
                   item.document_kind ? "Deposit receipts" : "",
                 ]
                   .filter(Boolean)
@@ -145,7 +149,7 @@ export function StatementPeriodSelect({
             </option>
             {shown.map((item) => (
               <option key={item.id} value={item.id}>
-                {!account ? `${item.account_reference} · ` : ""}
+                {!account ? `${item.account_reference}${item.currency ? ` · ${item.currency}` : ""} · ` : ""}
                 {item.period_start
                   ? `${item.period_start} to ${item.period_end}`
                   : item.statement_date || "Check printed date"}
@@ -235,8 +239,8 @@ export function StatementSectionPicker({
           : `This PDF contains ${choices.length} statements`}
       </h3>
       <p>
-        Choose an account and statement period to review. Savings and checking
-        sections are separate choices.{" "}
+        Choose an account, currency and statement period to review. Each printed
+        account or currency section is a separate choice.{" "}
         {hasReceipts &&
           "Deposit receipts are reviewed separately and do not add transactions."}{" "}
         Page numbers refer to the original PDF.

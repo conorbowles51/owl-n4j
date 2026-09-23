@@ -90,6 +90,8 @@ async def run_pipeline(job_id: str, db: AsyncSession) -> None:
     await db.commit()
 
     try:
+        from app.services.graph_identity import ensure_identity_indexes
+        await ensure_identity_indexes()
         # Pre-stage: is this a bank file the ledger reads directly?  Before the
         # cost context opens, so a job about to be turned away does not leave an
         # ingestion cost record behind for work nobody did, and before any text
