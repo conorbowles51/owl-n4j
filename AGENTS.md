@@ -2,6 +2,8 @@
 
 ## Current release authorisation
 
+- **Push triggers the user's automatic deployment.** Confirmed explicitly on 23 September 2026. When asked to release completed work, finish verification and push the authorized code; do not request Google Cloud login or start a separate manual deployment. The user confirmed the previous release was deployed. An inability to inspect the server is not evidence that deployment is pending.
+
 - On 22 September 2026 the user explicitly instructed: **“Finish the work”** and **“Give me an eta then commit and push all”**, following their instruction to push and deploy. This lifts the earlier hold for all agreed, completed and verified code changes in this task, including financial implementation. Complete the connected workflows before publication; do not silently reduce the release to a subset.
 - Keep client/financial data, source PDFs, screenshots, exports and credentials out of Git. “All” refers to relevant implementation, synthetic tests and operational documentation, not unrelated workspace files or evidence.
 - Deployment must account for active ingestions. Do not cancel the team's jobs as a side effect of releasing a fix; establish a safe worker transition and verify the deployed revision and workflows.

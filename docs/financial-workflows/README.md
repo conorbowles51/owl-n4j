@@ -2,7 +2,7 @@
 
 Owner: the product workflow, not an individual component. Updated 23 September 2026.
 
-Latest implementation and acceptance: [23 September release verification](release-verification-2026-09-23.md) and the [completion register](completion-register.md). The code now includes the connected recovery, folder/archive upload, phone recovery, split-transfer and shared-identity work omitted from the earlier partial release `a465f6fc`. Local checks and live acceptance remain distinct: deployment and the reported existing-data incidents need renewed server access. The [recovery and identity flows](recovery-and-identity-workflows.md), [ownership design](account-ownership-and-money-trails.md) and [bank-layout record](bank-layout-acceptance.md) retain the intended journeys and source-coverage limits.
+Latest implementation and acceptance: [23 September release verification](release-verification-2026-09-23.md) and the [completion register](completion-register.md). The user confirmed that release was deployed; pushes trigger automatic deployment. The reported existing-data incidents and independent live acceptance remain distinct. The [recovery and identity flows](recovery-and-identity-workflows.md), [ownership design](account-ownership-and-money-trails.md) and [bank-layout record](bank-layout-acceptance.md) retain the intended journeys and source-coverage limits.
 
 This reference records the agreed investigator journey and maps the implemented controls to it. **A diagram is not acceptance evidence.** Use the acceptance register below to distinguish a designed path, an automated check and an observed live result. Earlier checked plans do not override a newly reported usability failure.
 
@@ -91,6 +91,35 @@ Actions and state:
 - **Wire/deposit documents:** their document review and saved finding are separate from a bank-statement import. Back returns to the same PDF's choices.
 
 ## 2. Check completeness, then inspect the right original
+
+### Bulk account details — added after Alex's 23 September feedback
+
+Investigator journey: **Statement files → select PDFs → Edit account details →
+select statement periods → tick fields → review each change → Save**. The same
+editor is directly available in **Processing batches**. It includes imported and
+unimported statements and retains search-hidden selections across its pages.
+
+The fields are holder, account number, bank, currency and statement dates.
+**Fill missing details only** is the default; replacing populated values is an
+explicit choice. Unticked fields, transaction dates and printed amounts are
+preserved. Currency correction is relabelling with exact decimal rescaling, not
+FX conversion. The preview identifies every affected PDF/period and shows before
+and after values. Save reports imported statements updated, drafts saved for later
+import and unchanged statements. Closing retains the draft; reopening or retrying
+does not repeat a completed save. Active batch work and stale edits are refused
+without partial writes. Unread or conflicting statements explain the individual
+review needed; they are not silently included. Original evidence and corrections
+remain in history.
+
+This is distinct from selecting accounts as filters or bulk editing transaction
+rows. Alex identified this missing journey after the earlier release; that release
+had only individual account correction and bulk currency selection.
+
+Local verification covers mixed imported/draft selections, preserving payments
+and row edits, all-or-nothing rollback, lost-response retry, stale/cross-case edits,
+batch/individual draft consistency, currency decimal changes and both browser
+entry points including narrow-screen controls. Publication status is recorded in
+the completion register.
 
 Investigator's question: **Do I have the statement dates I need, and do the imported payments reconcile?**
 

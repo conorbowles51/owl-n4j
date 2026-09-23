@@ -104,7 +104,7 @@ def read_statement_details(session, *, case_id, source_id):
     return _view(*_load(session, case_id, source_id))
 
 
-def update_statement_details(session, *, case_id, source_id, request, actor):
+def update_statement_details(session, *, case_id, source_id, request, actor, commit=True):
     try:
         document, period, account = _load(session, case_id, source_id, lock=True)
         before = _view(document, period, account)
@@ -232,7 +232,8 @@ def update_statement_details(session, *, case_id, source_id, request, actor):
             from services.financial.reconcile import reconcile_period
             reconcile_period(session, period)
         result = _view(document, period, account)
-        session.commit()
+        if commit:
+            session.commit()
         return result
     except Exception:
         session.rollback()

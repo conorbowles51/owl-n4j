@@ -25,6 +25,30 @@ _require_access = case_access_dependency(lambda request, payload: ('case', 'view
 router = APIRouter(prefix='/api/financial/statement-import', tags=['financial'],
                    dependencies=[Depends(get_current_db_user), Depends(_require_access)])
 
+from services.financial import bulk_statement_details
+
+
+@router.post('/account-details/statements')
+def account_detail_selection(body: bulk_statement_details.Selection, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    try:
+        return bulk_statement_details.list_statements(db, case_id=case_id, selection=body)
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+@router.post('/account-details/{action}', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
+def bulk_account_details(action: Literal['preview', 'save'], body: bulk_statement_details.BulkEdit,
+        case_id: UUID = Query(...), user=Depends(get_current_db_user), db: Session = Depends(get_db)):
+    try:
+        if action == 'preview':
+            return bulk_statement_details.preview(db, case_id=case_id, request=body)
+        return bulk_statement_details.save(db, case_id=case_id, request=body, actor=actor_from_user(user))
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception:
+        logger.exception('Bulk statement account correction failed')
+        raise HTTPException(status_code=500, detail='The account details could not be saved. Retry with the same selection to check the result; completed saves will not be repeated.')
+
 from services.financial.saved_statement_recovery import (
     StatementRecoveryRequest, read_recovery, preview_recovery, save_recovery,
 )

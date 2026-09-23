@@ -296,9 +296,47 @@ def currency_revision(item, summary=None):
     return _digest(dict(status=item.status, revision=(summary if summary is not None else item.summary).get('revision'), request=item.review_request))
 
 
+def rebase_review_currency(old, new, raw, currency):
+    """Keep row corrections and printed values when a draft currency changes."""
+    from services.financial.currency_correction import rescale_minor
+    baseline = initial_request(old)
+    merged = initial_request(new)
+    old_rows = {r['id']: r for r in baseline['rows']}
+    new_rows = {r['id']: r for r in merged['rows']}
+    for row in raw['rows']:
+        changes = {key: value for key, value in row.items() if value != old_rows.get(row['id'], {}).get(key)}
+        if row['id'] not in new_rows:
+            if row.get('manual_page'):
+                manual = deepcopy(row)
+                if old['currency']:
+                    for key in ('amount_minor', 'balance_minor'):
+                        if manual.get(key) is not None:
+                            manual[key] = rescale_minor(manual[key], old['currency'], currency)
+                merged['rows'].append(manual)
+            elif changes:
+                raise PdfMappingError('The new currency changes a corrected row. Open that statement to compare it; no selected currencies were changed.', 409)
+        else:
+            new_rows[row['id']].update(changes)
+            if old['currency']:
+                # Preserve readable and manually corrected amounts even
+                # when the selected label differs from printed symbols.
+                for key in ('amount_minor', 'balance_minor'):
+                    value = row.get(key)
+                    if isinstance(value, str) and value.lstrip('-').isdigit():
+                        new_rows[row['id']][key] = rescale_minor(value, old['currency'], currency)
+                if row.get('direction'):
+                    new_rows[row['id']]['direction'] = row['direction']
+    for key, value in raw.items():
+        if key not in ('rows', 'currency', 'expected_revision', 'statement_id', 'balance_exception_revision', 'coverage_review_revision') and value != baseline.get(key):
+            merged[key] = deepcopy(value)
+    merged.update(currency=currency, expected_revision=new['revision'], statement_id=new.get('statement_id'))
+    check_proposed_rows(new, merged['rows'])
+    return merged
+
+
 def set_selected_currency(session, *, case_id, batch_id, selections, currency, actor):
     """Change unimported statements atomically; preserve all saved corrections."""
-    from services.financial.currency_correction import currency_code, rescale_minor
+    from services.financial.currency_correction import currency_code
     try:
         currency = currency_code(currency)
     except ValueError as exc:
@@ -334,38 +372,7 @@ def set_selected_currency(session, *, case_id, batch_id, selections, currency, a
                 raise PdfMappingError('A selected statement has corrections from an earlier reading. Open its saved review first.', 409)
             new = read_statement_import(session, case_id=case_id, evidence_file_id=item.file_id,
                 currency=currency, statement_id=item.statement_key or None, _cache=cache)
-            baseline = initial_request(old)
-            merged = initial_request(new)
-            old_rows = {r['id']: r for r in baseline['rows']}
-            new_rows = {r['id']: r for r in merged['rows']}
-            for row in raw['rows']:
-                changes = {key: value for key, value in row.items() if value != old_rows.get(row['id'], {}).get(key)}
-                if row['id'] not in new_rows:
-                    if row.get('manual_page'):
-                        manual = deepcopy(row)
-                        if old['currency']:
-                            for key in ('amount_minor', 'balance_minor'):
-                                if manual.get(key) is not None:
-                                    manual[key] = rescale_minor(manual[key], old['currency'], currency)
-                        merged['rows'].append(manual)
-                    elif changes:
-                        raise PdfMappingError('The new currency changes a corrected row. Open that statement to compare it; no selected currencies were changed.', 409)
-                else:
-                    new_rows[row['id']].update(changes)
-                    if old['currency']:
-                        # Preserve readable and manually corrected amounts even
-                        # when the selected label differs from printed symbols.
-                        for key in ('amount_minor', 'balance_minor'):
-                            value = row.get(key)
-                            if isinstance(value, str) and value.lstrip('-').isdigit():
-                                new_rows[row['id']][key] = rescale_minor(value, old['currency'], currency)
-                        if row.get('direction'):
-                            new_rows[row['id']]['direction'] = row['direction']
-            for key, value in raw.items():
-                if key not in ('rows', 'currency', 'expected_revision', 'statement_id', 'balance_exception_revision', 'coverage_review_revision') and value != baseline.get(key):
-                    merged[key] = deepcopy(value)
-            merged.update(currency=currency, expected_revision=new['revision'], statement_id=new.get('statement_id'))
-            check_proposed_rows(new, merged['rows'])
+            merged = rebase_review_currency(old, new, raw, currency)
             # A currency decision also saves the current draft for individual
             # review, so leaving the batch cannot restore the old currency.
             record = dict(request=merged, review_revision=_digest(merged), saved_at=datetime.now(timezone.utc).isoformat(),

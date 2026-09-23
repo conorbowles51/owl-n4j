@@ -1,4 +1,5 @@
 import { ResumableUploadsPanel } from "@/features/evidence/components/ResumableUploadsPanel"
+import { BulkStatementDetails } from "./BulkStatementDetails"
 import { FinancialRemovalAction } from "./FinancialRemovalAction"
 import { useStatementRegister } from "../hooks/use-statement-register"
 import { FinancialFileAction } from "./FinancialFileAction"
@@ -369,6 +370,7 @@ export function StatementFilesPanel({
                   : `Prepare statements from ${selectedIds.length} ${selectedIds.length === 1 ? "file" : "files"}`}
               </Button>
             )}
+            {!removalMode && <BulkStatementDetails caseId={caseId} fileIds={selectedIds} onSaved={refresh} />}
             <FinancialRemovalAction
               caseId={caseId}
               fileIds={selectedIds}
@@ -388,7 +390,7 @@ export function StatementFilesPanel({
           <p className="text-sm text-muted-foreground">
             {removalMode
               ? "Tick individual files below or select all shown files, then review the removal. Nothing is removed until you confirm."
-              : "Select files to prepare their statements together or remove their imports. One PDF can contain many statement periods; you can import them together in a batch."}
+              : "Select files to edit account details across their statements, prepare them together or remove their imports. Edit account details lets you choose the individual periods before saving."}
           </p>
         </section>
       )}

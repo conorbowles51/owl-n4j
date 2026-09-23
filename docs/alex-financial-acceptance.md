@@ -133,3 +133,27 @@ Additional duplicate-creation report: statement preparation/reprocessing can cre
 ## Current implementation status — 23 September 2026
 
 The [release verification record](financial-workflows/release-verification-2026-09-23.md) supersedes the historical Planned/open implementation labels above. It records the connected outcomes for every reported ingestion/correction/status/duplicate and ownership/trail journey, completed local checks, supported-source limits and outstanding live verification. The user's subsequent instructions authorise commit, push and deployment of verified code. Deployment currently requires renewal of the saved Google Cloud login; no live jobs or client records have been changed in this release pass.
+## 23 September: bulk account details
+
+Alex reported that she could not find a way to bulk set or edit account details.
+The earlier request explicitly covered bulk transaction edits and multiple account
+filters; the earlier implementation exposed individual account edits and bulk
+currency edits, but not this complete workflow. The user explicitly requested
+building it now and pushing; the platform deploys automatically on push.
+
+Added a visible **Edit account details** action beside the file-selection actions
+in **Statement files**, and the same action in **Processing batches**. Select
+individual statement periods or all matches across pages, tick holder/account
+number/bank/currency/dates, fill missing values or explicitly replace populated
+values, preview each change, save and reopen. Imported statements and saved drafts
+are both included. Unread/conflicting statements explain the review required.
+Unticked fields, row corrections and original evidence are retained. Saved results
+distinguish updated imports from drafts awaiting import. Retry receipts, case
+permissions, stale-preview checks and atomic rollback protect the complete set.
+
+Verification: 136 existing statement/batch backend checks; 31 new bulk and route
+checks; 27 frontend checks; two Chromium journeys through the actual file/batch
+entry points, including saved reopening and a narrow viewport. Synthetic screenshots
+were inspected locally. Production build and scoped lint passed. These tests did
+not change client records. Independent live acceptance remains separate from the
+automatic deployment triggered by publication.

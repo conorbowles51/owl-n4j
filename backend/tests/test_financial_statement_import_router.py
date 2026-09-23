@@ -11,6 +11,24 @@ from tests.test_route_authorization import _CaseAccessDb
 
 
 class StatementImportAuthorizationTests(unittest.TestCase):
+    def test_bulk_account_details_require_case_edit_and_preview_selection(self):
+        body = dict(targets=[dict(file_id=str(uuid4()), revision='a'*64)],
+            changes=dict(holder='Synthetic holder'), request_id=str(uuid4()), preview_revision='b'*64)
+        for action in ('preview', 'save'):
+            self.app.dependency_overrides.pop(get_current_db_user, None)
+            url = f'/api/financial/statement-import/account-details/{action}?case_id={self.db.case.id}'
+            with patch.object(module.bulk_statement_details, action, return_value={'case_id': str(self.db.case.id)}) as handler, patch.object(module, 'actor_from_user'):
+                self.assertEqual(self.client.post(url, json=body).status_code, 401)
+                self.user(None)
+                self.assertEqual(self.client.post(url, json=body).status_code, 403)
+                self.user({'case': {'view': True, 'edit': False}})
+                self.assertEqual(self.client.post(url, json=body).status_code, 403)
+                handler.assert_not_called()
+                self.user({'case': {'view': True, 'edit': True}})
+                self.assertEqual(self.client.post(url, json=body).status_code, 200)
+                self.assertEqual(handler.call_args.kwargs['case_id'], self.db.case.id)
+                self.assertEqual(self.client.post(url, json={**body, 'changes': {}}).status_code, 422)
+
     def setUp(self):
         self.app=FastAPI()
         self.app.include_router(module.router)

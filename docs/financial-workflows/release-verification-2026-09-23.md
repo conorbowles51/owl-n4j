@@ -5,6 +5,11 @@ labels in the September 22 plan. It distinguishes completed local journeys from
 live acceptance. The user has authorised committing and pushing the completed
 code, and previously authorised deployment. Client evidence is excluded from Git.
 
+Current deployment status: the user confirmed on 23 September that deployment
+has happened. Deployment is complete; do not continue reporting it as pending.
+The local test results below and outstanding independent live acceptance are
+separate from that confirmation.
+
 ## Connected outcomes
 
 | Investigator journey | Implemented and locally verified |
@@ -62,11 +67,10 @@ certify every bank layout or the entire client corpus.
   Alex's large chat still requires a complete run through the actual providers and
   live host. The observed Neo4j timeout and historical import attempt cannot be
   attributed conclusively without their live logs.
-- Deployment and live read-only verification are pending renewed Google Cloud
-  authentication (`invalid_grant` at the release check). The user has been asked to
-  renew the login; no new deployment permission is required. Before the first
-  transition from old workers, inspect active work and drain safely. Do not bypass
-  the release gate or treat an unknown queue state as idle.
+- Deployment has happened, as confirmed by the user on 23 September. Earlier
+  Google Cloud authentication failures describe this agent's access at the time,
+  not the current deployment state. Independent live read-only verification is
+  still outstanding in this record.
 - A code push is not a deployment claim. Record the deployed revision and repeat
   source/history, saved statement, shared owner/trail and processing-status journeys
   when server access is restored. Client-case cleanup/import/reprocessing is not a
@@ -88,7 +92,7 @@ The production build and the new migrations through `20260923_account_identity` 
 
 Broad tests found and repaired the new audit-decision vocabulary and route/package export contracts. Older file-list browser fixtures now explicitly include upload-activity responses. Resource-heavy tab-navigation tests use a per-journey time budget; assertions remain unchanged. Final test counts and publication/deployment status are recorded below after verification completes.
 
-Deployment access was checked again during this pass and still returns `invalid_grant`. No live services were restarted and no client records were changed. The required next live steps remain access renewal, safe worker transition, exact deployed revision/health checks and the affected investigator journeys. The actual long chat and historical duplicate/import incident remain external acceptance work, not silently marked done by local tests.
+Deployment access returned `invalid_grant` during the local completion pass; this agent did not restart live services or change client records in that pass. The user subsequently confirmed deployment has happened. Remaining independent checks cover the running revision/health and the affected investigator journeys. The actual long chat and historical duplicate/import incident remain external acceptance work, not silently marked done by local tests.
 
 ### Verified checks for the completion pass
 

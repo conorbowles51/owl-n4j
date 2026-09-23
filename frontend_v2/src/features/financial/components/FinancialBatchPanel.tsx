@@ -2,6 +2,7 @@ import { BatchReadingJobs } from "./BatchReadingJobs"
 import { FinancialRemovalAction } from "./FinancialRemovalAction"
 import { BatchStatementImportChoice } from "./BatchStatementImportChoice"
 import { BatchCurrencyEditor } from "./BatchCurrencyEditor"
+import { BulkStatementDetails } from "./BulkStatementDetails"
 import { coverageReview } from "../hooks/use-statement-coverage-review"
 import { useEffect, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
@@ -798,6 +799,10 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
         )}
       </div>
       <div className="space-y-2">
+        {canEdit && <div className="rounded border p-3 space-y-2">
+          <BulkStatementDetails caseId={caseId} batchId={batchId} onSaved={refresh} />
+          <p className="text-sm text-muted-foreground">Set account holder, account number, bank, currency or dates for several statements together, including statements already imported.</p>
+        </div>}
         {canEdit && (
           <BatchCurrencyEditor
             key={batchId}
