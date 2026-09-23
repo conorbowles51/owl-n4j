@@ -38,7 +38,7 @@ def ledger_transfer_candidates(export, *, population='working', tolerance_days=3
     unavailable = []
     for row in rows:
         dates = {name: date.fromisoformat(row[name]) if row[name] else None for name in ('transaction_date', 'posted_date', 'value_date', 'effective_date')}
-        observation = LinkObservation(transaction_id=UUID(row['key']), account_id=UUID(row['account_id']),
+        observation = LinkObservation(transaction_id=UUID(row['key']), account_id=UUID(row.get('canonical_account_id') or row['account_id']),
             source_document_id=UUID(row['source_document_id']), amount=Money(int(row['amount_minor']), row['currency']),
             direction=TransactionDirection(row['direction']), ordering_date=date.fromisoformat(row['ordering_date']),
             ordering_date_source=DateSource(row['ordering_date_source']), **dates)

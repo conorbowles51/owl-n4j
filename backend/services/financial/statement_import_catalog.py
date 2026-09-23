@@ -60,9 +60,14 @@ def statement_catalog(sources):
     from services.financial.statement_import_monex import monex_catalog
     monex, monex_handled = monex_catalog(sources)
     groups.update({statement['id']: statement for statement in monex})
-    from services.financial.statement_import_kapital import kapital_catalog, kapital_information_kind
+    from services.financial.statement_import_kapital import kapital_catalog, kapital_information_kind, INTERCAM_PRODUCT
     kapital, kapital_handled = kapital_catalog(sources)
     groups.update({statement['id']: statement for statement in kapital})
+    intercam, intercam_handled = kapital_catalog(sources, institution='Intercam', product=INTERCAM_PRODUCT, layout='intercam-mexico-product-statement')
+    groups.update({statement['id']: statement for statement in intercam})
+    from services.financial.statement_import_santander import santander_catalog
+    santander, santander_handled = santander_catalog(sources)
+    groups.update({statement['id']: statement for statement in santander})
     groups.update({statement['id']: statement for statement in unassigned_andrews_groups(sources, handled)})
     unclassified = []
     information = []
@@ -70,7 +75,7 @@ def statement_catalog(sources):
     capital_pages, information_pages = _capital_page_contexts(sources)
     for source in sources:
         address = (source['page_number'], source['table_index'])
-        if address in bbva_handled or address in scotiabank_handled or address in monex_handled or address in kapital_handled:
+        if address in bbva_handled or address in scotiabank_handled or address in monex_handled or address in kapital_handled or address in intercam_handled or address in santander_handled:
             continue
         if address in handled:
             if address in incomplete:

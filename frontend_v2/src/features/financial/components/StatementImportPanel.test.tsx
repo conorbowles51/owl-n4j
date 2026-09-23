@@ -35,6 +35,7 @@ vi.mock("../hooks/use-statement-checks", async (original) => ({
 }))
 import { useStatementWorkspace } from "../stores/statement-workspace"
 import { useAuthStore } from "@/features/auth/hooks/use-auth"
+import { useFinancialDraftStore } from "../stores/financial-drafts"
 vi.mock("@/lib/api-client", () => ({ fetchAPI: vi.fn() }))
 vi.mock("./TransactionSourceHighlight", () => ({
   TransactionSourceHighlight: vi.fn(() => (
@@ -128,6 +129,7 @@ async function open(corrections = true) {
     )
 }
 beforeEach(() => {
+  useFinancialDraftStore.setState({ drafts: {} })
   vi.mocked(useStatementCoverageReview).mockReturnValue({
     data: { available: true, candidates: [], revision: "d".repeat(64) },
     pending: false,
@@ -176,6 +178,45 @@ beforeEach(() => {
     }
     return data as never
   })
+})
+it("keeps manual rows while completing amounts and preserves review filters across adding and reopening", async () => {
+  const implementation = vi.mocked(fetchAPI).getMockImplementation()!
+  vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
+    const result = await implementation(url, options)
+    return result === data ? ({ ...data, page_numbers: [1] } as never) : result
+  })
+  mount()
+  await open()
+  fireEvent.click(screen.getByLabelText("Show problems and edits only"))
+  expect(screen.getByLabelText("Show excluded rows")).not.toBeChecked()
+  fireEvent.click(
+    screen.getByRole("button", { name: "Add a missed transaction" })
+  )
+  const debit = screen.getByLabelText(/^Debit manual:/)
+  fireEvent.change(debit, { target: { value: "123.45" } })
+  fireEvent.change(screen.getByLabelText(/^Date manual:/), {
+    target: { value: "2023-01-03" },
+  })
+  fireEvent.change(screen.getByLabelText(/^Description manual:/), {
+    target: { value: "Manually read payment" },
+  })
+  expect(debit).toBeVisible()
+  expect(screen.getByLabelText("Show excluded rows")).not.toBeChecked()
+  expect(screen.getByLabelText("Show problems and edits only")).toBeChecked()
+  fireEvent.click(screen.getByRole("button", { name: "Done editing this row" }))
+  fireEvent.click(
+    screen.getByRole("button", { name: "Add a missed transaction" })
+  )
+  expect(screen.getAllByLabelText(/^Debit manual:/)).toHaveLength(2)
+  expect(screen.getByDisplayValue("Manually read payment")).toBeVisible()
+  cleanup()
+  mount()
+  await screen.findByText("Review statement.pdf")
+  fireEvent.click(
+    screen.getByRole("button", { name: "Show corrections and import choices" })
+  )
+  expect(screen.getByLabelText("Show excluded rows")).not.toBeChecked()
+  expect(screen.getByLabelText("Show problems and edits only")).toBeChecked()
 })
 it("imports directly from a batch review, carrying account edits into the visible receipt", async () => {
   const { BatchReviewContext } = await import("../lib/batch-review-context")
@@ -682,7 +723,9 @@ it("opens an excluded duplicate as a source without offering another import", as
     })
   ).not.toBeInTheDocument()
   expect(screen.queryByText(/transactions to import/)).not.toBeInTheDocument()
-  expect(screen.getByLabelText("Account holder")).toHaveAttribute("readonly")
+  expect(
+    screen.queryByRole("textbox", { name: "Account holder" })
+  ).not.toBeInTheDocument()
   expect(sent).toEqual([])
   expect(done).not.toHaveBeenCalled()
 })
@@ -1387,25 +1430,71 @@ it("updates an eligible empty legacy import and opens its usable results", async
 it("lets an empty legacy import compare an older draft and save its current payments", async () => {
   const base = vi.mocked(fetchAPI).getMockImplementation()!
   vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
-    if (String(url).includes("/refresh-reading") && options?.method === "POST") {
-      expect(options.body).toMatchObject({compared_review_revision:"c".repeat(64)})
-      return {case_id:"case",evidence_file_id:"file",source_document_id:"updated",transaction_count:1,incomplete_count:0,applied:true} as never
+    if (
+      String(url).includes("/refresh-reading") &&
+      options?.method === "POST"
+    ) {
+      expect(options.body).toMatchObject({
+        compared_review_revision: "c".repeat(64),
+      })
+      return {
+        case_id: "case",
+        evidence_file_id: "file",
+        source_document_id: "updated",
+        transaction_count: 1,
+        incomplete_count: 0,
+        applied: true,
+      } as never
     }
     if (String(url).includes("/statement-import/") && !options?.method)
-      return {...data, saved_review: {review_revision:"c".repeat(64),saved_at:"2026-09-20T12:00:00Z",saved_by:{name:"Reviewer"},
-        request:{expected_revision:"older",holder:"Saved holder",account_number:"00123",institution:"Bank",period_start:"",period_end:"",rows:[]}},
-        current_import:{source_document_id:"previous",evidence_file_id:"file",revision:"b".repeat(64),transaction_count:0,incomplete_count:250,refresh_available:false,refresh_review_required:true,refresh_transaction_count:1}} as never
-    return base(url,options)
+      return {
+        ...data,
+        saved_review: {
+          review_revision: "c".repeat(64),
+          saved_at: "2026-09-20T12:00:00Z",
+          saved_by: { name: "Reviewer" },
+          request: {
+            expected_revision: "older",
+            holder: "Saved holder",
+            account_number: "00123",
+            institution: "Bank",
+            period_start: "",
+            period_end: "",
+            rows: [],
+          },
+        },
+        current_import: {
+          source_document_id: "previous",
+          evidence_file_id: "file",
+          revision: "b".repeat(64),
+          transaction_count: 0,
+          incomplete_count: 250,
+          refresh_available: false,
+          refresh_review_required: true,
+          refresh_transaction_count: 1,
+        },
+      } as never
+    return base(url, options)
   })
   const done = mount()
   await open(false)
-  const save = screen.getByRole("button",{name:"Save 1 payments to Transactions"})
+  const save = screen.getByRole("button", {
+    name: "Save 1 payments to Transactions",
+  })
   expect(save).toBeDisabled()
-  expect(screen.getAllByRole("region",{name:"Previous saved review"})).toHaveLength(1)
-  fireEvent.click(screen.getByLabelText("I have compared the previous saved review"))
+  expect(
+    screen.getAllByRole("region", { name: "Previous saved review" })
+  ).toHaveLength(1)
+  fireEvent.click(
+    screen.getByLabelText("I have compared the previous saved review")
+  )
   expect(save).toBeEnabled()
   fireEvent.click(save)
-  await waitFor(()=>expect(done).toHaveBeenCalledWith(expect.objectContaining({transaction_count:1})))
+  await waitFor(() =>
+    expect(done).toHaveBeenCalledWith(
+      expect.objectContaining({ transaction_count: 1 })
+    )
+  )
 })
 
 it("does not offer to import the same active reading twice", async () => {
@@ -1453,8 +1542,9 @@ it("does not offer to import the same active reading twice", async () => {
       filename: "original-statement.pdf",
     })
   )
-  expect(screen.getByLabelText("Account number")).toHaveValue("00123456789")
-  expect(screen.getByLabelText("Account number")).toHaveAttribute("readOnly")
+  expect(
+    screen.queryByRole("textbox", { name: "Account number" })
+  ).not.toBeInTheDocument()
   expect(sent).toHaveLength(0)
 })
 

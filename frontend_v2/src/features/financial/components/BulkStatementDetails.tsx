@@ -89,7 +89,11 @@ export function BulkStatementDetails(props: Props) {
   )
   const key = props.batchId || [...(props.fileIds || [])].sort().join(",")
   return (
-    <Editor key={`${owner}:${props.caseId}:${key}`} {...props} scopeKey={`${owner}:${key}`} />
+    <Editor
+      key={`${owner}:${props.caseId}:${key}`}
+      {...props}
+      scopeKey={`${owner}:${key}`}
+    />
   )
 }
 
@@ -121,6 +125,7 @@ function Editor({
   const [receipt, setReceipt] = useState<z.infer<typeof receiptSchema> | null>(
     null
   )
+  const [refreshNotice, setRefreshNotice] = useState("")
   const endpoint = `/api/financial/statement-import/account-details`
   const query = useQuery({
     queryKey: ["bulk-statement-details", caseId, scopeKey],
@@ -210,6 +215,23 @@ function Editor({
     setPreview(null)
     review.reset()
     save.reset()
+  }
+  const refreshSelection = async () => {
+    const result = await query.refetch()
+    if (!result.data || result.isError) return
+    const latest = new Map(result.data.items.map((item) => [item.key, item]))
+    const retained = Object.keys(draft.selected).filter((key) =>
+      latest.has(key)
+    )
+    const unavailable = selected.length - retained.length
+    changeDraft({
+      selected: Object.fromEntries(
+        retained.map((key) => [key, latest.get(key)!])
+      ),
+    })
+    setRefreshNotice(
+      `Loaded the latest saved details for ${retained.length} selected statements. Your proposed values are kept; review the new before-and-after preview.${unavailable ? ` ${unavailable} statements are no longer editable here and were removed from this selection.` : ""}`
+    )
   }
   const matching = (query.data?.items || []).filter((item) =>
     [item.filename, item.status, ...Object.values(item.values)]
@@ -301,6 +323,25 @@ function Editor({
                   correction history are retained. Saving does not import
                   additional transactions.
                 </p>
+                {draft.mode === "fill_missing" && !preview.updated && (
+                  <div
+                    className="rounded border p-3 space-y-2 text-sm"
+                    role="status"
+                  >
+                    <p>
+                      These fields already contain values. Fill missing details
+                      only keeps them. To correct previously entered
+                      information, choose Replace selected fields and review the
+                      changes.
+                    </p>
+                    <Button
+                      variant="outline"
+                      onClick={() => changeDraft({ mode: "replace" })}
+                    >
+                      Correct existing details instead
+                    </Button>
+                  </div>
+                )}
                 {preview.items.map((item) => (
                   <article
                     key={item.key}
@@ -474,7 +515,8 @@ function Editor({
                   </label>
                   <p className="text-sm">
                     Tick each field you want to change. Unticked fields keep
-                    their existing values.
+                    their existing values. To fix an earlier entry, choose
+                    Replace selected fields above.
                   </p>
                   <div className="grid gap-3 sm:grid-cols-2">
                     {fields.map(([field, label]) => (
@@ -557,9 +599,23 @@ function Editor({
               </>
             )}
             {(review.error || save.error) && (
-              <p role="alert">
-                {(review.error || save.error)?.message} Your selection and edits
-                are kept.
+              <div className="space-y-2">
+                <p role="alert">
+                  {(review.error || save.error)?.message} Your selection and
+                  edits are kept.
+                </p>
+                <Button
+                  variant="outline"
+                  disabled={busy || query.isFetching}
+                  onClick={() => void refreshSelection()}
+                >
+                  Load latest details and keep my changes
+                </Button>
+              </div>
+            )}
+            {refreshNotice && (
+              <p role="status" className="text-sm">
+                {refreshNotice}
               </p>
             )}
           </div>
@@ -599,9 +655,8 @@ function Editor({
                   variant="outline"
                   disabled={busy}
                   onClick={() => {
-                    changeDraft({ selected: {} })
                     setPage(0)
-                    void query.refetch()
+                    void refreshSelection()
                   }}
                 >
                   Refresh statements

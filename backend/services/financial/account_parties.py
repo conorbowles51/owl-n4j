@@ -113,7 +113,7 @@ def _account_party_state(session, *, case_id):
             sequence=event.subject_sequence, before=event.before, after=event.after,
             reason=event.reason, actor=event.actor_email,
             recorded_at=event.created_at.isoformat()))
-    result = dict(case_id=str(case_id), accounts=[dict(id=str(a.id),
+    result = dict(case_id=str(case_id), accounts=[dict(id=str(a.id), canonical_id=(a.metadata_ or {}).get('canonical_account_id') or str(a.id),
         holder_as_recorded=a.holder_name, identifier_as_printed=a.identifier_as_printed,
         institution=a.institution_name, currency=a.currency,
         party=assignments.get(str(a.id)), relationships=relationships.get(str(a.id), []),
@@ -122,6 +122,16 @@ def _account_party_state(session, *, case_id):
         parties=sorted(parties.values(), key=lambda p: (p['name'].casefold(), p['id'])),
         history=history, applied=False,
         limitation='Reviewed holder, control, signatory and analysis relationships are separate. Only holder relationships support common ownership, within their recorded dates. Legacy party links are analysis groups. Original source accounts and proof classes remain unchanged.')
+    grouped = {}
+    for item in result['accounts']:
+        grouped.setdefault(item['canonical_id'], []).append(item['id'])
+    indexed = {item['id']: item for item in result['accounts']}
+    for item in result['accounts']:
+        item['alias_ids'] = grouped[item['canonical_id']]
+        item['effective_relationships'] = list({link['id']: link
+            for member in item['alias_ids'] for link in indexed[member]['relationships']}.values())
+        item['effective_holder_parties'] = list({link['party']['id']: link['party']
+            for link in item['effective_relationships'] if link['role'] == 'holder'}.values())
     result['revision'] = hashlib.sha256(json.dumps(result, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
     return result
 

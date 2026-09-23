@@ -4,6 +4,8 @@ Updated 23 September 2026. This register supersedes the earlier partial-release
 claim for `a465f6fc`. Implementation, local checks and live acceptance are separate.
 Client evidence, screenshots, case exports and credentials are excluded from Git.
 
+**Latest feedback implementation:** All F01–F28 items, including retained review filters/active rows and typed Paid by/to identity links, are implemented and locally verified. The [current acceptance record](implementation-progress-2026-09-23.md) maps every report to its connected journey and evidence, including a real-service browser test that uncovered and verified the repeated bulk-correction repair. Publication of this pass and independent live acceptance remain distinct from the previous release below.
+
 Deployment status: the user confirmed on 23 September 2026 that deployment has
 happened. Do not list deployment as pending or infer otherwise from this agent's
 earlier access failure. Independent live acceptance below remains separate.

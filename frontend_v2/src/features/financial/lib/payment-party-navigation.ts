@@ -32,7 +32,11 @@ export function openPaymentParty(
     page: 0,
     ...previous,
     currencyGroup: "",
-    selected: ownAccount ? `account:${row.account_id}` : `name:${name}`,
+    selected: ownAccount
+      ? `account:${row.canonical_account_id || row.account_id}`
+      : row.counterparty_link
+        ? `${row.counterparty_link.kind === "party" ? "owner" : "account"}:${row.counterparty_link.id}`
+        : `name:${name}`,
   })
   useFinancialStore.getState().setMainView("counterparties")
 }

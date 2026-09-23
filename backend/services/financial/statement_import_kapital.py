@@ -11,11 +11,12 @@ from services.financial.statement_import_proposal import exact_amount
 
 LAYOUT = 'kapital-mexico-product-statement'
 PRODUCT = re.compile(r'SERVICIO EMPRESARIAL FX(?: USD)? KAPITAL\b')
+INTERCAM_PRODUCT = re.compile(r'SERVICIO EMPRESARIAL FX(?: USD)?\s+\d{3}-\d+-\d{3}-\d\b')
 
 
-def kapital_information_kind(source):
+def kapital_information_kind(source, *, institution='Kapital', product=PRODUCT):
     joined='\n'.join(norm(text(r)) for r in source['rows'])
-    if 'KAPITAL' not in joined or PRODUCT.search(joined):return None
+    if institution.upper() not in joined or product.search(joined):return None
     if all(label in joined for label in ('CONCEPTO','DEPOSITOS','RETIROS','SALDO')):return None
     if 'ABREVIATURAS CHEQUES' in joined and 'INSTRUMENTOS MONETARIOS' in joined:return 'glossary'
     if 'FOLIO DEL CFDI:' in joined and 'CADENA ORIGINAL DEL COMPLEMENTO DE CERTIFICACION DIGITAL' in joined:return 'tax_certificate'
@@ -23,10 +24,10 @@ def kapital_information_kind(source):
     return None
 
 
-def _context(items):
+def _context(items, *, institution='Kapital'):
     rows = [r for s in items for r in s['rows']]
     joined = '\n'.join(norm(text(r)) for r in rows)
-    if 'KAPITAL' not in joined:
+    if institution == 'Kapital' and 'KAPITAL' not in joined:
         return None
     cycles = set(re.findall(r'PERIODO DEL (\d{4}-\d{2}-\d{2}) AL (\d{4}-\d{2}-\d{2})', joined))
     numbers, clients, rfcs = set(), set(), set()
@@ -46,10 +47,17 @@ def _context(items):
     return (next(iter(numbers)),next(iter(clients)),next(iter(rfcs)),start,end)
 
 
-def kapital_catalog(sources):
+def kapital_catalog(sources, *, institution='Kapital', product=PRODUCT, layout=LAYOUT):
     pages={}
     for s in sources: pages.setdefault(s['page_number'],[]).append(s)
-    contexts={p:_context(items) for p,items in pages.items()}
+    contexts={p:_context(items, institution=institution) for p,items in pages.items()}
+    if institution == 'Intercam':
+        # Only a printed Intercam product/CLABE establishes issuer identity.
+        # Counterparty mentions of a bank cannot identify the statement bank.
+        established={contexts[p] for p,items in pages.items() if contexts[p] and any(
+            product.search(norm(text(r))) and re.search(r'\bCLABE\s*136\d{15}\b', norm(text(r)))
+            for s in items for r in s['rows'])}
+        contexts={p:c if c in established else None for p,c in contexts.items()}
     holders={}
     for p,items in pages.items():
         context=contexts[p]
@@ -61,7 +69,7 @@ def kapital_catalog(sources):
             and (size:=(c.get('locator') or {}).get('page_size'))
             and box(c)[0]<size[0]*.2 and size[1]*.12<=box(c)[1]<size[1]*.25
             and re.fullmatch(r'[A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ &.,]{2,180}',c['expected_text'].strip())
-            and not PRODUCT.match(norm(c['expected_text']))]
+            and not product.match(norm(c['expected_text']))]
         if names: holders.setdefault(context,set()).add(min(names,key=lambda c:box(c)[1])['expected_text'].strip())
     groups,handled=[],set()
     previous=None
@@ -71,7 +79,7 @@ def kapital_catalog(sources):
         located=[(s,r) for s in items for r in s['rows'] if any(box(c) for c in r['cells'])]
         headings=[]
         for s,r in located:
-            if PRODUCT.search(norm(text(r))) and (m:=re.search(r'\bCLABE\s*(\d{18})\b',norm(text(r)))):
+            if product.search(norm(text(r))) and (m:=re.search(r'\bCLABE\s*(\d{18})\b',norm(text(r)))):
                 headings.append((min(box(c)[1] for c in r['cells'] if box(c)),m[1],s,r))
         headings.sort(key=lambda v:v[0])
         # A continued payment table can precede the next product on a page.
@@ -85,6 +93,7 @@ def kapital_catalog(sources):
                     if indices: target['section_sources'].append(dict(page_number=page,table_index=s['table_index'],row_indices=indices))
                 target['sources'].extend(dict(page_number=page,table_index=s['table_index'],source_revision=s['source_revision']) for s in items)
                 target['page_numbers'].append(page)
+                previous=(context,page,target)
                 handled.update((page,s['table_index']) for s in items)
         recognised = 0
         for index,(top,clabe,_,_) in enumerate(headings):
@@ -99,7 +108,7 @@ def kapital_catalog(sources):
             if len(currencies)!=1: continue
             recognised += 1
             currency=next(iter(currencies))
-            identity=dict(layout_id=LAYOUT,institution='Kapital',account_reference=clabe,currency=currency,
+            identity=dict(layout_id=layout,institution=institution,account_reference=clabe,currency=currency,
                 period_start=context[3],period_end=context[4])
             group=dict(id=_digest(identity),**identity,account_type='checking',
                 holder=next(iter(holders[context])) if len(holders.get(context,set()))==1 else '',
@@ -157,89 +166,94 @@ def _day(value,choice):
 
 
 def propose_kapital_statement(sources,currency,choice):
+    product = INTERCAM_PRODUCT if choice.get('layout_id') == 'intercam-mexico-product-statement' else PRODUCT
     scopes={(s['page_number'],s['table_index']):set(s['row_indices']) for s in choice['section_sources']}
     result=[];columns=None;last=None;active_page=None
-    for s in sorted(sources,key=lambda v:(v['page_number'],v['table_index'])):
+    # Drawn tables and outside text have separate indexes. Read their rows in
+    # visual order so a table is not followed by the header above it.
+    from services.financial.statement_import_santander import located_rows
+    ordered=[(s,raw) for page in sorted({s['page_number'] for s in sources})
+             for s,raw in located_rows([s for s in sources if s['page_number']==page])]
+    for s,raw in ordered:
         if s['page_number']!=active_page: columns=None;last=None;active_page=s['page_number']
-        for raw in s['rows']:
-            cells=raw['cells'];item=dict(id=f"{s['page_number']}:{s['table_index']}:{raw['row_index']}",
-                page_number=s['page_number'],table_index=s['table_index'],row_index=raw['row_index'],
-                source_revision=s['source_revision'],source_cells=cells,fields={},issues=[],excluded=True,kind='header')
-            result.append(item)
-            if raw['row_index'] not in scopes.get((s['page_number'],s['table_index']),set()):continue
-            labels={norm(c['expected_text']):c for c in cells}
-            joined=norm(text(raw))
-            if PRODUCT.search(joined):columns=None;last=None
-            names=('CONCEPTO','DEPOSITOS','RETIROS','SALDO')
-            if all(n in labels and box(labels[n]) for n in names):
-                columns={n:labels[n] for n in names};last=None;continue
-            if columns is None:
-                role=next((role for label,role in [('SALDO INICIAL','opening'),('SALDO FINAL','closing'),('+ DEPOSITOS','credit'),('- RETIROS','debit')] if label in labels),None)
-                if role:
-                    label=next(c for c in cells if norm(c['expected_text']) in ('SALDO INICIAL','SALDO FINAL','+ DEPOSITOS','- RETIROS'))
-                    i=cells.index(label);following=cells[i+1:i+2]
-                    if not following or not box(label) or box(label)[0]>(label['locator']['page_size'][0]*.4):continue
-                    amount=following[0]
-                    item['kind']='balance' if role in ('opening','closing') else 'statement_total'
-                    item['fields']=dict(description=role.title()+' Balance' if item['kind']=='balance' else 'Total '+role,balance_column=str(amount['column_index']))
-                    if item['kind']=='statement_total':item['fields']['total_direction']=role
-                    try:item['fields']['balance']=_amount(amount['expected_text'],currency)
-                    except ValueError as exc:item['issues'].append(str(exc))
-                elif (len(cells)>=3 and re.fullmatch(r'\d{1,2}',cells[0]['expected_text'].strip())
-                    and re.fullmatch(r'\d{4,}',cells[1]['expected_text'].strip())
-                    and any(re.fullmatch(r'[\d,]+\.\d{2}-?',c['expected_text'].strip()) for c in cells[2:])):
-                    # A missed header must not hide an otherwise visible
-                    # payment or turn it into a balances-only statement.
-                    item.update(kind='unresolved',excluded=False)
-                    item['fields'].update(description=' '.join(c['expected_text'].strip() for c in cells[2:]),
-                        bank_reference=cells[1]['expected_text'].strip())
-                    parsed=_day(cells[0]['expected_text'].strip(),choice)
-                    if parsed:item['fields']['date']=parsed
-                    item['issues'].append('This looks like a payment, but its deposit and withdrawal headings were not read. Compare the row with the PDF and choose the amount and direction.')
-                continue
-            if joined.startswith(('TOTAL','HOJA ','ESTE DOCUMENTO')):
-                columns=None;last=None;continue
-            # Located right-aligned amounts are assigned to the nearest money
-            # column. The day and folio are never interpreted as amounts.
-            money={n:[] for n in names[1:]};other=[]
-            for cell in cells:
-                rect=box(cell)
-                if rect and (rect[0]>=box(columns['DEPOSITOS'])[0]-20000 or
-                    (rect[2]>=box(columns['DEPOSITOS'])[0] and re.fullmatch(r'[\d,]+\.\d{2}-?',cell['expected_text'].strip()))):
-                    near=min(names[1:],key=lambda n:abs(rect[2]-box(columns[n])[2]))
-                    money[near].append(cell)
-                else:other.append(cell)
-            day=other[0]['expected_text'].strip() if other else ''
-            dated=bool(re.fullmatch(r'\d{1,2}',day))
-            if not dated and not any(money.values()):
-                if last and other:
-                    last['fields']['description']+=' '+text(raw)
-                    last.setdefault('continuation_sources',[]).append(dict(page_number=s['page_number'],table_index=s['table_index'],row_index=raw['row_index'],source_cells=cells))
-                    item['fields']['parent_transaction_id']=last['id']
-                continue
-            item.update(kind='transaction',excluded=False);fields=item['fields'];last=item
-            fields['description']=' '.join(c['expected_text'].strip() for c in other[2:])
-            if other:fields['date_column']=str(other[0]['column_index'])
-            if len(other)>1:fields['bank_reference']=other[1]['expected_text'].strip()
-            if len(other)>2:fields['description_column']=str(other[2]['column_index'])
-            parsed=_day(day,choice)
-            if parsed:fields['date']=parsed
-            else:item['issues'].append('Check the printed day against this statement period.')
-            directions=[(n,d) for n,d in [('DEPOSITOS','credit'),('RETIROS','debit')] if money[n]]
-            if len(directions)!=1:item['issues'].append('Check which deposit or withdrawal column contains this payment.')
-            else:
-                n,direction=directions[0];fields['direction']=direction
-                if len(money[n])!=1:item['issues'].append('Check the payment amount in the PDF.')
-                else:
-                    amount=money[n][0];fields[direction+'_column']=str(amount['column_index'])
-                    try:
-                        value=_amount(amount['expected_text'],currency)
-                        if int(value)<=0:raise ValueError('A payment amount must be positive; its column supplies the direction.')
-                        fields['amount_minor']=value
-                    except ValueError as exc:item['issues'].append(str(exc))
-            if len(money['SALDO'])==1:
-                balance=money['SALDO'][0];fields['balance_column']=str(balance['column_index'])
-                try:fields['balance']=_amount(balance['expected_text'],currency)
+        cells=raw['cells'];item=dict(id=f"{s['page_number']}:{s['table_index']}:{raw['row_index']}",
+            page_number=s['page_number'],table_index=s['table_index'],row_index=raw['row_index'],
+            source_revision=s['source_revision'],source_cells=cells,fields={},issues=[],excluded=True,kind='header')
+        result.append(item)
+        if raw['row_index'] not in scopes.get((s['page_number'],s['table_index']),set()):continue
+        labels={norm(c['expected_text']):c for c in cells}
+        joined=norm(text(raw))
+        if product.search(joined):columns=None;last=None
+        names=('CONCEPTO','DEPOSITOS','RETIROS','SALDO')
+        if all(n in labels and box(labels[n]) for n in names):
+            columns={n:labels[n] for n in names};last=None;continue
+        if columns is None:
+            role=next((role for label,role in [('SALDO INICIAL','opening'),('SALDO FINAL','closing'),('+ DEPOSITOS','credit'),('- RETIROS','debit')] if label in labels),None)
+            if role:
+                label=next(c for c in cells if norm(c['expected_text']) in ('SALDO INICIAL','SALDO FINAL','+ DEPOSITOS','- RETIROS'))
+                i=cells.index(label);following=cells[i+1:i+2]
+                if not following or not box(label) or box(label)[0]>(label['locator']['page_size'][0]*.4):continue
+                amount=following[0]
+                item['kind']='balance' if role in ('opening','closing') else 'statement_total'
+                item['fields']=dict(description=role.title()+' Balance' if item['kind']=='balance' else 'Total '+role,balance_column=str(amount['column_index']))
+                if item['kind']=='statement_total':item['fields']['total_direction']=role
+                try:item['fields']['balance']=_amount(amount['expected_text'],currency)
                 except ValueError as exc:item['issues'].append(str(exc))
-            if not fields['description']:item['issues'].append('Check the payment description.')
+            elif (len(cells)>=3 and re.fullmatch(r'\d{1,2}',cells[0]['expected_text'].strip())
+                and re.fullmatch(r'\d{4,}',cells[1]['expected_text'].strip())
+                and any(re.fullmatch(r'[\d,]+\.\d{2}-?',c['expected_text'].strip()) for c in cells[2:])):
+                # A missed header must not hide an otherwise visible
+                # payment or turn it into a balances-only statement.
+                item.update(kind='unresolved',excluded=False)
+                item['fields'].update(description=' '.join(c['expected_text'].strip() for c in cells[2:]),
+                    bank_reference=cells[1]['expected_text'].strip())
+                parsed=_day(cells[0]['expected_text'].strip(),choice)
+                if parsed:item['fields']['date']=parsed
+                item['issues'].append('This looks like a payment, but its deposit and withdrawal headings were not read. Compare the row with the PDF and choose the amount and direction.')
+            continue
+        if joined.startswith(('TOTAL','HOJA ','ESTE DOCUMENTO')):
+            columns=None;last=None;continue
+        # Located right-aligned amounts are assigned to the nearest money
+        # column. The day and folio are never interpreted as amounts.
+        money={n:[] for n in names[1:]};other=[]
+        for cell in cells:
+            rect=box(cell)
+            if rect and (rect[0]>=box(columns['DEPOSITOS'])[0]-20000 or
+                (rect[2]>=box(columns['DEPOSITOS'])[0] and re.fullmatch(r'[\d,]+\.\d{2}-?',cell['expected_text'].strip()))):
+                near=min(names[1:],key=lambda n:abs(rect[2]-box(columns[n])[2]))
+                money[near].append(cell)
+            else:other.append(cell)
+        day=other[0]['expected_text'].strip() if other else ''
+        dated=bool(re.fullmatch(r'\d{1,2}',day))
+        if not dated and not any(money.values()):
+            if last and other:
+                last['fields']['description']+=' '+text(raw)
+                last.setdefault('continuation_sources',[]).append(dict(page_number=s['page_number'],table_index=s['table_index'],row_index=raw['row_index'],source_cells=cells))
+                item['fields']['parent_transaction_id']=last['id']
+            continue
+        item.update(kind='transaction',excluded=False);fields=item['fields'];last=item
+        fields['description']=' '.join(c['expected_text'].strip() for c in other[2:])
+        if other:fields['date_column']=str(other[0]['column_index'])
+        if len(other)>1:fields['bank_reference']=other[1]['expected_text'].strip()
+        if len(other)>2:fields['description_column']=str(other[2]['column_index'])
+        parsed=_day(day,choice)
+        if parsed:fields['date']=parsed
+        else:item['issues'].append('Check the printed day against this statement period.')
+        directions=[(n,d) for n,d in [('DEPOSITOS','credit'),('RETIROS','debit')] if money[n]]
+        if len(directions)!=1:item['issues'].append('Check which deposit or withdrawal column contains this payment.')
+        else:
+            n,direction=directions[0];fields['direction']=direction
+            if len(money[n])!=1:item['issues'].append('Check the payment amount in the PDF.')
+            else:
+                amount=money[n][0];fields[direction+'_column']=str(amount['column_index'])
+                try:
+                    value=_amount(amount['expected_text'],currency)
+                    if int(value)<=0:raise ValueError('A payment amount must be positive; its column supplies the direction.')
+                    fields['amount_minor']=value
+                except ValueError as exc:item['issues'].append(str(exc))
+        if len(money['SALDO'])==1:
+            balance=money['SALDO'][0];fields['balance_column']=str(balance['column_index'])
+            try:fields['balance']=_amount(balance['expected_text'],currency)
+            except ValueError as exc:item['issues'].append(str(exc))
+        if not fields['description']:item['issues'].append('Check the payment description.')
     return dict(rows=result,issues=[])

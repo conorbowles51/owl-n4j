@@ -144,12 +144,16 @@ it("starts with all imported payments and filters across banks without a load st
     screen.getByLabelText("Bank account filter").querySelector("summary")!
   )
   fireEvent.click(
-    screen.getByRole("checkbox", { name: "Example Company · Bank B · USD" })
+    screen.getByRole("checkbox", {
+      name: "Bank B · account-b · Example Company · USD",
+    })
   )
   expect(screen.getByText("1–50 of 60 matching rows")).toBeVisible()
   fireEvent.click(screen.getByRole("checkbox", { name: "Other Company" }))
   fireEvent.click(
-    screen.getByRole("checkbox", { name: "Other Company · Bank C · USD" })
+    screen.getByRole("checkbox", {
+      name: "Bank C · account-c · Other Company · USD",
+    })
   )
   expect(screen.getByText("1–50 of 63 matching rows")).toBeVisible()
   fireEvent.change(screen.getByLabelText("Search payments"), {

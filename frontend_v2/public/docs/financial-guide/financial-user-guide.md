@@ -319,9 +319,35 @@ If an older batch missed periods that the current reader recognises, select **Ch
 
 If an import contains incomplete records, the file list counts them separately from usable transactions. **Open imported records** takes you to those records in Transactions. A saved record with no usable amount is not a payment in the totals. If every record is incomplete, the review explicitly says that no usable transactions were created.
 
+### Work through statements that still need attention
+
+In **Statement files**, use **Show files** to find statements available to import or with checks to review. A reading is not an import: payments enter Transactions only after import. A statement can be imported and still have a check to review. Companies whose statements are not imported yet are identified separately in the account filters.
+
+Open a statement from a batch and use **Previous statement** or **Next statement** to review the sequence. Unfinished corrections are saved before moving; a failed save keeps you on the current statement. Fully completed batches move out of the active list. Turn on **Show completed batches (history)** to return to them.
+
+If import loses its response, select **Check import result**. The result tells you whether that particular request was accepted, is still running, completed or failed. Use its saved result before submitting again. **Retry this file** queues another reading of the retained PDF and shows whether the request was queued; it does not require another upload.
+
+### Correct an earlier bulk account edit
+
+Select the same PDFs in **Statement files**, or open their batch, then choose **Edit account details**. Select the statement periods and choose **Replace selected fields, including existing values**. Tick only the fields to change, enter the correct values, review the before-and-after list and save. Filling missing details intentionally leaves populated fields alone. **Refresh statements** keeps your proposed values and selection while loading the latest saved details for another preview.
+
+### Add payments without losing your place
+
+**Show excluded rows** starts off and keeps your choice. **Show problems and edits only** also keeps its setting when you add or edit a payment. A new manual payment remains available as an edit, and an active row stays visible while you complete its fields. Use **Done** when you finish editing that row.
+
+Use **Add a missed transaction** beside the original statement. For an already imported statement, this saves an additional payment directly to Transactions, including when the statement previously contained only balances. Enter its printed date, description, amount, direction, currency and PDF page, then select **Save and open transaction**. Repeating the same save after a lost response does not create a second payment.
+
+For a bank account, a **Credit / money in** is paid by the counterparty to this account. A **Debit / money out** is paid by this account to the counterparty. The editor labels the counterparty **Paid by** or **Paid to** accordingly. Select **Link existing person or account**, search the case directory and choose the exact person, business or bank account. A typed name can remain unlinked. Choosing an identity preserves the wording on the source. If you entered the amount on the wrong side, use **Move amount to Credit / money in** or **Move amount to Debit / money out** before saving.
+
+### Find the bank or account, and review duplicate accounts
+
+The **Bank** filter selects accounts at that bank across companies. **Bank account** selects particular accounts, labelled with the bank and account number. **Person or company** narrows the owners. Each selector supports multiple choices and **Clear selection**; **Clear account filters** clears these choices without resetting your other work. Unidentified statement accounts are grouped separately for review.
+
+In **People & businesses**, choose **Merge duplicate accounts** only for two representations of the same real account. Select the records, compare their identifiers, currencies, periods, ownership and original statements, choose the identity to retain, enter the basis and confirm. Original payments and source links remain; merging accounts does not remove duplicate payments. **Merge history and undo** lets you reverse the account grouping. Different real accounts owned by one company should instead be linked to their common person or business.
+
 ### Set the currency for several statements
 
-In the batch, select **Set currency for selected statements**. Search by filename, account or dates, then select individual statements or **Select all [number] matching statements**. This selection covers every page of matching results. Choose the statement currency from the full supported list and select **Apply [currency] to [number] statements**. Hidden selections remain selected and are counted explicitly. Saved account and row corrections are kept. This changes the currency label without converting amounts. This batch action applies to unimported statements. For an imported statement, use **Edit account and balances** as described below.
+In the batch, select **Set currency for selected statements**. Search by filename, account or dates, then select individual statements or **Select all [number] matching statements**. This selection covers every page of matching results. Choose the statement currency from the full supported list and select **Apply [currency] to [number] statements**. Hidden selections remain selected and are counted explicitly. Saved account and row corrections are kept. This changes the currency label without converting amounts. This batch action applies to unimported statements. For an imported statement, use **Edit account, dates, currency and balances** as described below.
 
 ### Enter missing balances before import
 
@@ -333,7 +359,7 @@ Text that has not been identified as a payment stays under **Other extracted pag
 
 ### Correct account details, currency and balances after import
 
-1. From a statement's balance check, select **Open statement and balances**, then **Edit account and balances**. The original PDF stays beside the fields. You can also select **Edit account and balances** in an already imported statement's review.
+1. From a statement's balance check, select **Open statement and balances**, then **Edit account, dates, currency and balances**. The original PDF stays beside the fields. You can also select **Edit account, dates, currency and balances** in an already imported statement's review.
 2. Enter the account holder, account number or bank. Account numbers keep leading zeros.
 3. If needed, choose its currency from the full supported list under **Statement currency**. This corrects the denomination without exchanging the numeric amounts. Currencies with zero, three or four decimal places are supported. If a saved amount cannot be represented exactly in the chosen currency, Loupe keeps the original values and asks you to check it; it never rounds a payment. Existing payment categories and exclusions are kept. A currency choice also makes an incomplete record usable when currency was its only missing field.
 4. Enter the printed opening or closing balance, then choose its PDF page. Leave a balance blank when it is unknown; enter **0.00** only when the statement prints zero. For credit cards, enter the printed amount owed.

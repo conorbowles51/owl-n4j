@@ -16,6 +16,92 @@ from tests.test_financial_statement_import import StatementImportTests as Fixtur
 
 
 class BatchImportTests(TestCase):
+    def test_pending_holder_directory_is_case_scoped_and_explains_unimported_statements(self):
+        from services.financial.candidate_store import list_candidate_accounts
+        batch = self.create(); self.advance(batch)
+        with self.f.SessionLocal() as db:
+            item = db.scalar(select(Item).where(Item.batch_id == batch))
+            item.review_request = {**(item.review_request or {}), 'holder': 'Second synthetic company'}
+            db.commit()
+            state = list_candidate_accounts(db, case_id=self.f.case.id, include_pending=True)
+            self.assertIn({'name':'Second synthetic company', 'count':1}, state['pending_holders'])
+            self.assertFalse(list_candidate_accounts(db, case_id=uuid4(), include_pending=True)['pending_holders'])
+            item.status = 'imported'; db.commit()
+            self.assertFalse(list_candidate_accounts(db, case_id=self.f.case.id, include_pending=True)['pending_holders'])
+
+    def test_next_statement_includes_imported_and_skipped_without_wrapping(self):
+        batch = self.create(); self.advance(batch)
+        with self.f.SessionLocal() as db:
+            first = db.scalar(select(Item).where(Item.batch_id == batch))
+            first.summary = {**first.summary, 'filename': 'A.pdf'}
+            first_id = first.id
+            second_id = uuid4()
+            db.add(Item(id=second_id, batch_id=batch, file_id=first.file_id, statement_key='synthetic-second',
+                status='imported', summary={**first.summary, 'filename': 'B.pdf'}))
+            db.commit()
+            result = service.next_statement(db, case_id=self.f.case.id, batch_id=batch, item_id=first_id)
+            self.assertEqual(result['item_id'], str(second_id))
+            self.assertEqual(result['position'], 2)
+            self.assertIsNone(service.next_statement(db, case_id=self.f.case.id, batch_id=batch, item_id=second_id)['item_id'])
+            self.assertEqual(service.next_statement(db, case_id=self.f.case.id, batch_id=batch, item_id=second_id, direction='previous')['item_id'], str(first_id))
+
+    def test_missing_prepared_reference_recovers_only_from_case_original(self):
+        batch = self.create(); self.advance(batch)
+        with self.f.SessionLocal() as db:
+            record = db.get(Batch, batch)
+            original = record.files[0]['source_id']
+            files = deepcopy(record.files)
+            files[0].update(file_id=str(uuid4()), status='error', error='Statement not found in this case.')
+            record.files = files; db.commit()
+            status = service.batch_status(db, case_id=self.f.case.id, batch_id=batch)
+            self.assertEqual(status['files'][0]['review_file_id'], original)
+            self.assertIn('original PDF is retained', status['files'][0]['error'])
+            service.retry_file(db, case_id=self.f.case.id, batch_id=batch, source_id=UUID(original))
+            db.refresh(record)
+            self.assertEqual(record.files[0]['file_id'], original)
+        self.advance(batch)
+        self.assertEqual(self.status(batch)['files'][0]['status'], 'checked')
+
+    def test_retry_failed_file_during_another_worker_turn_preserves_lease(self):
+        from datetime import datetime, timedelta, timezone
+        batch = self.create(); self.advance(batch)
+        token = str(uuid4())
+        with self.f.SessionLocal() as db:
+            record = db.get(Batch, batch)
+            files = deepcopy(record.files)
+            files[0].update(status='error', error='A transient reading failure')
+            record.files = files
+            record.status = 'preparing'
+            record.worker_token = token
+            record.lease_until = datetime.now(timezone.utc) + timedelta(minutes=5)
+            db.commit()
+            result = service.retry_file(db, case_id=self.f.case.id, batch_id=batch, source_id=UUID(files[0]['source_id']))
+            self.assertTrue(result['queued'])
+            db.refresh(record)
+            self.assertEqual(record.worker_token, token)
+            self.assertEqual(record.files[0]['status'], 'waiting')
+            again = service.retry_file(db, case_id=self.f.case.id, batch_id=batch, source_id=UUID(files[0]['source_id']))
+            self.assertFalse(again['queued'])
+
+    def test_check_specific_import_request_before_during_and_after_execution(self):
+        from services.financial.import_operations import check_operation
+        batch = self.create(); self.advance(batch)
+        request_id = uuid4()
+        def check(case_id=None):
+            with self.f.SessionLocal() as db:
+                return check_operation(db, case_id=case_id or self.f.case.id,
+                    batch_id=batch, request_id=request_id)
+        self.assertIsNone(check()['operation'])
+        with self.f.SessionLocal() as db:
+            service.queue_import(db, case_id=self.f.case.id, batch_id=batch,
+                expected_revision=self.status(batch)['ready_revision'], actor=self.f.actor, request_id=request_id)
+        self.assertEqual(check()['operation']['status'], 'in_progress')
+        self.advance(batch)
+        self.assertEqual(check()['operation']['transaction_count'], 12)
+        self.assertEqual(check()['operation']['status'], 'complete')
+        with self.assertRaises(PdfMappingError):
+            check(uuid4())
+
     def test_accepted_import_runs_before_unfinished_pdf_preparation_and_turn_is_bounded(self):
         from unittest.mock import patch
         batch = self.create(); self.advance(batch)

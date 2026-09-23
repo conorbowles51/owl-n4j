@@ -101,6 +101,10 @@ def correct_transaction(session, *, case_id, transaction_id, amount_minor, direc
                               "native_control_comparison": preview.get("native_controls")})
         session.add(replacement)
         session.flush()
+        from services.financial.payment_counterparty_link import effective_link, record_link
+        link = effective_link(original)
+        if link and (original.account_id, original.currency, original.counterparty_raw) != (replacement.account_id, replacement.currency, replacement.counterparty_raw):
+            record_link(session, row=replacement, link=link, actor=actor, reason='Identity retained while correcting this payment: ' + reason)
         original.ledger_status = "superseded"
         original.quarantine_reason = None
         original.superseded_by_id = replacement_id

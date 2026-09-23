@@ -136,7 +136,7 @@ def preview_trail(session, *, case_id, request):
         warnings.extend(part_warnings)
     elif request.kind == 'transfer':
         if credit and debit:
-            if credit.account_id == debit.account_id:
+            if accounts[str(credit.account_id)].get('canonical_id', str(credit.account_id)) == accounts[str(debit.account_id)].get('canonical_id', str(debit.account_id)):
                 raise TrailError('A transfer between accounts requires two different accounts.')
             if credit.currency == debit.currency:
                 if credit.amount_minor != debit.amount_minor:
@@ -162,7 +162,7 @@ def preview_trail(session, *, case_id, request):
         for item in request.payments:
             payment = rows[str(item.transaction_id)]
             amount = int(item.amount_minor)
-            if payment.direction != 'debit' or payment.account_id != credit.account_id or payment.currency != credit.currency:
+            if payment.direction != 'debit' or accounts[str(payment.account_id)].get('canonical_id', str(payment.account_id)) != accounts[str(credit.account_id)].get('canonical_id', str(credit.account_id)) or payment.currency != credit.currency:
                 raise TrailError('Onward allocations must use outgoing payments from the receiving account and currency. Link an exchange or account transfer separately.')
             if amount > payment.amount_minor: raise TrailError('An allocation exceeds its outgoing payment.')
             if _day(credit) and _day(payment) and _day(payment) < _day(credit):
@@ -213,9 +213,10 @@ def preview_trail(session, *, case_id, request):
     if request.kind == 'allocation':
         period = session.get(FinancialStatementPeriod,credit.statement_period_id) if credit.statement_period_id else None
         upper = max(rows[str(p.transaction_id)].ordering_date for p in request.payments)
+        from services.financial.account_consolidation import expand_account_ids
         sequence = list(session.scalars(select(FinancialTransaction).join(FinancialSourceDocument,
             FinancialTransaction.source_document_id == FinancialSourceDocument.id).where(
-                FinancialTransaction.case_id == case_id, FinancialTransaction.account_id == credit.account_id,
+                FinancialTransaction.case_id == case_id, FinancialTransaction.account_id.in_(expand_account_ids(session, case_id, [credit.account_id])),
                 FinancialTransaction.currency == credit.currency, FinancialTransaction.ledger_status == 'admitted',
                 FinancialTransaction.superseded_by_id.is_(None), FinancialSourceDocument.status == 'admitted',
                 FinancialTransaction.ordering_date >= credit.ordering_date, FinancialTransaction.ordering_date <= upper)

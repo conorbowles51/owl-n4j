@@ -48,7 +48,9 @@ it("selects multiple people and accounts, retains selection during search and ap
   fireEvent.click(
     screen.getByLabelText("Bank account filter").querySelector("summary")!
   )
-  const savings = await screen.findByRole("checkbox", { name: "savings · USD" })
+  const savings = await screen.findByRole("checkbox", {
+    name: "Example Bank · savings · Example Company · USD",
+  })
   fireEvent.click(savings)
   fireEvent.change(screen.getByLabelText("Search bank account"), {
     target: { value: "savings" },
@@ -56,7 +58,7 @@ it("selects multiple people and accounts, retains selection during search and ap
   expect(savings).toBeChecked()
   expect(
     screen.getByRole("button", {
-      name: "Remove checking · USD from bank account filter",
+      name: "Remove Example Bank · checking · Example Company · USD from bank account filter",
     })
   ).toBeInTheDocument()
   fireEvent.click(
@@ -83,7 +85,9 @@ it("keeps restored selections and dates during failure, then reloads the directo
     screen.getByLabelText("Bank account filter").querySelector("summary")!
   )
   expect(
-    await screen.findByRole("checkbox", { name: "checking · USD" })
+    await screen.findByRole("checkbox", {
+      name: "Example Bank · checking · Example Company · USD",
+    })
   ).toBeChecked()
   fireEvent.click(screen.getByRole("button", { name: "Apply" }))
   expect(apply).toHaveBeenLastCalledWith(

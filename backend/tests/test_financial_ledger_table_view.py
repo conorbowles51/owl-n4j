@@ -142,3 +142,20 @@ class LedgerTableViewTests(TestCase):
         self.assertEqual(capture_table_view(ledger, {'analysis_categories': ['Rent', 'Fees'], 'analysis_period': '2026-01', 'sort': 'to-asc'})['row_ids'], ['b', 'a'])
         self.assertEqual(capture_table_view(ledger, {'analysis_period': 'undated', 'to_names': ['unknown:to']})['row_ids'], ['c'])
         self.assertEqual(capture_table_view(ledger, {'analysis_period': '2026-02'})['row_ids'], [])
+
+    def test_typed_identity_and_merged_account_filters_match_profile_and_export(self):
+        from urllib.parse import quote
+        root = '00000000-0000-4000-8000-000000000001'
+        alias = '00000000-0000-4000-8000-000000000002'
+        linked = self.row('linked', account_id=alias, canonical_account_id=root, account_alias_ids=[alias, root],
+            from_name='Supplier & Sons', to_name='Owner', counterparty_link={'kind':'party','id':'party-1'},
+            account_holder_parties=[{'id':'owner-1','name':'Owner'}])
+        other = self.row('other', account_id='other', from_name='Supplier & Sons', to_name='Owner')
+        ledger = {'readings':[linked, other]}
+        key = 'identity:party:party-1:' + quote('Supplier & Sons', safe="~()*!.'-")
+        for filters in ({'from_names':[key]}, {'profile_id':'owner:party-1'}, {'profile_id':'owner:owner-1'},
+                        {'profile_id':'account:'+root}, {'account_id':root}):
+            with self.subTest(filters=filters):
+                self.assertEqual(capture_table_view(ledger, filters)['row_ids'], ['linked'])
+        self.assertEqual(capture_table_view(ledger, {'profile_id':'name:Supplier & Sons'})['row_ids'], ['other'])
+        self.assertEqual(capture_table_view(ledger, {'sort':'from-asc'})['row_ids'], ['linked','other'])

@@ -7,6 +7,7 @@ from services.financial.money import get_currency
 def assess_transfer_parts(request, rows, accounts, day, error):
     entries, principal, fees = [], {'debit': {}, 'credit': {}}, {}
     account_sides = {'debit': set(), 'credit': set()}
+    canonical = lambda row: accounts[str(row.account_id)].get("canonical_id", str(row.account_id))
     holders = None
     principal_rows = []
     for part in request.transfer_parts:
@@ -18,7 +19,7 @@ def assess_transfer_parts(request, rows, accounts, day, error):
             raise error('Assign fees to an outgoing debit. A receiving credit is the net amount received; explain any deduction in the sending debit or use a separate fee entry.')
         if amount:
             principal[row.direction][row.currency] = principal[row.direction].get(row.currency, 0) + amount
-            account_sides[row.direction].add(row.account_id)
+            account_sides[row.direction].add(canonical(row))
             principal_rows.append(row)
             current = {p['id']: p for p in owners_on(accounts[str(row.account_id)], day(row))}
             holders = current if holders is None else {key: holders[key] for key in holders.keys() & current.keys()}
@@ -31,7 +32,7 @@ def assess_transfer_parts(request, rows, accounts, day, error):
         raise error('Choose sending and receiving principal in one currency on each side. Record successive transfers or exchanges as separate links.')
     if account_sides['debit'] & account_sides['credit']:
         raise error('Sending and receiving principal must belong to different accounts. Record an onward payment separately.')
-    if any(not int(p.principal_minor) and rows[str(p.transaction_id)].account_id not in account_sides['debit'] | account_sides['credit'] for p in request.transfer_parts):
+    if any(not int(p.principal_minor) and canonical(rows[str(p.transaction_id)]) not in account_sides['debit'] | account_sides['credit'] for p in request.transfer_parts):
         raise error('A separate fee must belong to a sending or receiving account in this transfer.')
     sent_currency, sent = next(iter(principal['debit'].items()))
     received_currency, received = next(iter(principal['credit'].items()))

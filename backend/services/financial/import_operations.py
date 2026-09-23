@@ -27,6 +27,18 @@ def operations_for(session, case_id, batch_id):
         .order_by(Operation.created_at.desc(), Operation.id).limit(20))]
 
 
+def check_operation(session, *, case_id, batch_id, request_id):
+    # Validate the batch even when no receipt exists. A request lookup must not
+    # expose another case's receipts, nor report an inaccessible batch as empty.
+    from services.financial.import_batches import batch_for
+    batch_for(session, case_id, batch_id)
+    operation = session.scalar(select(Operation).where(
+        Operation.id == request_id, Operation.case_id == case_id,
+        Operation.batch_id == batch_id))
+    return dict(case_id=str(case_id), batch_id=str(batch_id), request_id=str(request_id),
+                operation=operation_view(operation) if operation else None)
+
+
 def record_outcome(session, case_id, item, status, **result):
     identifier = item.summary.get('import_operation_id')
     if not identifier:

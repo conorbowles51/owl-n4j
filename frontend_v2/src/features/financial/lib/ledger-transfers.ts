@@ -20,6 +20,8 @@ const row = z.object({
   key: z.string(),
   case_id: z.string(),
   account_id: z.string(),
+  canonical_account_id: z.string().nullable().optional(),
+  canonical_account_label: z.string().nullable().optional(),
   account_label: z.string().optional(),
   counterparty_raw: z.string().nullable().optional(),
   source_document_id: z.string(),

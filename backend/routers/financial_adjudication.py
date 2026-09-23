@@ -541,7 +541,7 @@ def put_payment_labels(body: PaymentLabelsRequest, case_id: UUID = Query(...),
                        db: Session = Depends(get_db), current_user=Depends(get_current_db_user)):
     try:
         return update_payment_labels(db, case_id=case_id, request=body, actor=actor_from_user(current_user))
-    except (PaymentLabelsError, ActorError) as exc:
+    except (PaymentLabelsError, ActorError, AccountPartyError) as exc:
         raise HTTPException(status_code=getattr(exc, 'status_code', 422), detail=str(exc)) from exc
     except Exception:
         logger.exception("Payment labels could not be saved for case %s", case_id)
@@ -601,3 +601,27 @@ def sync_account_identity_graph(case_id: UUID = Query(...), db: Session = Depend
         return identity_graph_status(db, case_id)
     except Exception as exc:
         raise HTTPException(status_code=503, detail='Reviewed identities are saved. The case graph is temporarily unavailable and will retry automatically.') from exc
+
+
+from services.financial.account_consolidation import ConsolidationRequest, UndoConsolidationRequest, preview_consolidation, save_consolidation, undo_consolidation
+
+@router.post('/account-consolidations/preview')
+def preview_account_consolidation(body: ConsolidationRequest, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    try:
+        return preview_consolidation(db, case_id=case_id, request=body)
+    except AccountPartyError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+@router.post('/account-consolidations')
+def save_account_consolidation(body: ConsolidationRequest, case_id: UUID = Query(...), db: Session = Depends(get_db), current_user=Depends(get_current_db_user)):
+    try:
+        return save_consolidation(db, case_id=case_id, request=body, actor=actor_from_user(current_user))
+    except (AccountPartyError, ActorError) as exc:
+        raise HTTPException(status_code=getattr(exc, 'status_code', 422), detail=str(exc)) from exc
+
+@router.post('/account-consolidations/undo')
+def undo_account_consolidation(body: UndoConsolidationRequest, case_id: UUID = Query(...), db: Session = Depends(get_db), current_user=Depends(get_current_db_user)):
+    try:
+        return undo_consolidation(db, case_id=case_id, request=body, actor=actor_from_user(current_user))
+    except (AccountPartyError, ActorError) as exc:
+        raise HTTPException(status_code=getattr(exc, 'status_code', 422), detail=str(exc)) from exc

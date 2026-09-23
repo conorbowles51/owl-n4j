@@ -172,8 +172,8 @@ it("requires opt-in to replace existing values and refreshes stale selection wit
   fireEvent.click(screen.getByRole("button", { name: "Refresh statements" }))
   await waitFor(() =>
     expect(
-      screen.getByRole("button", { name: "Review changes for 0 statements" })
-    ).toBeDisabled()
+      screen.getByRole("button", { name: "Review changes for 52 statements" })
+    ).toBeEnabled()
   )
   expect(screen.getByLabelText("New account number")).toHaveValue("0012345")
   expect(screen.getByLabelText("New account holder")).toHaveValue(

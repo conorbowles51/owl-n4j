@@ -1,3 +1,4 @@
+import { PaymentCounterpartyPicker } from "./PaymentCounterpartyPicker"
 import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
@@ -16,6 +17,7 @@ import { correctionMoney } from "../lib/correction-contract"
 import type { LedgerTransaction } from "../api"
 
 const fields = [
+  ["counterparty_link", "Linked person or account", "link"],
   ["from_name", "From", "text"],
   ["to_name", "To", "text"],
   ["category", "Category", "text"],
@@ -50,6 +52,13 @@ const display = (row: LedgerTransaction, key: string) => {
       ? ""
       : correctionMoney(String(value), row.currency).split(" ")[0]
   }
+  if (key === "counterparty_link")
+    return row.counterparty_link
+      ? JSON.stringify({
+          kind: row.counterparty_link.kind,
+          id: row.counterparty_link.id,
+        })
+      : ""
   return String(row[key as keyof LedgerTransaction] ?? "")
 }
 type Preview = {
@@ -248,7 +257,19 @@ export function PaymentEditsEditor({
                       />
                       {label}
                     </label>
-                    {type === "direction" ? (
+                    {type === "link" ? (
+                      <PaymentCounterpartyPicker
+                        caseId={caseId}
+                        value={value(key) ? JSON.parse(value(key)) : null}
+                        disabled={!enabled.includes(key)}
+                        onChange={(link) =>
+                          setChanges({
+                            ...changes,
+                            [key]: link ? JSON.stringify(link) : "",
+                          })
+                        }
+                      />
+                    ) : type === "direction" ? (
                       <select
                         aria-label={`Edit ${label}`}
                         disabled={!enabled.includes(key)}

@@ -71,14 +71,15 @@ export function rangeError(earlier: DateRange, later: DateRange) {
 }
 export function coverageFor(
   range: DateRange,
-  accounts: { id: string; label: string }[],
+  accounts: { id: string; label: string; aliasIds?: string[] }[],
   input: CoverageInput
 ) {
   const details = accounts.map((account) => {
     const spans = input.periods
       .filter(
         (p) =>
-          p.account_id === account.id &&
+          (p.account_id === account.id ||
+            account.aliasIds?.includes(p.account_id)) &&
           p.source_status === "admitted" &&
           p.start &&
           p.end &&
@@ -231,7 +232,7 @@ function appendPayment(
 }
 const referenceKey = (row: LedgerTransaction) =>
   JSON.stringify([
-    row.account_id,
+    row.canonical_account_id || row.account_id,
     paymentGroup(row),
     trendAmount(row)?.toString(),
     ref(row),
@@ -283,7 +284,7 @@ export function trendObservations(
     const p = party(row, row.direction === "credit" ? "from" : "to")
     if (p.key.startsWith("unknown:")) continue
     const key = JSON.stringify([
-      row.account_id,
+      row.canonical_account_id || row.account_id,
       paymentGroup(row),
       row.direction,
       p.key,
@@ -325,7 +326,7 @@ export function trendObservations(
       id: `recurring:${key}`,
       kind: "recurring",
       title: `${cadence} payments · ${p.name}`,
-      explanation: `${payments.length} payments of the same amount in ${payments[0].account_label || "one account"}, ${paymentDay(payments[0])} to ${paymentDay(payments.at(-1)!)}. Gaps are ${Math.min(...gaps)}–${Math.max(...gaps)} days. This is an observed schedule, not proof of a contract or purpose.`,
+      explanation: `${payments.length} payments of the same amount in ${payments[0].canonical_account_label || payments[0].account_label || "one account"}, ${paymentDay(payments[0])} to ${paymentDay(payments.at(-1)!)}. Gaps are ${Math.min(...gaps)}–${Math.max(...gaps)} days. This is an observed schedule, not proof of a contract or purpose.`,
       amount: trendAmount(payments[0])!,
       rows: payments,
       earlierRows: [],
@@ -337,7 +338,7 @@ export function trendObservations(
   }
   const baselines = new Map<string, LedgerTransaction[]>()
   for (const row of previous) {
-    const key = `${row.account_id}:${row.direction}`
+    const key = `${row.canonical_account_id || row.account_id}:${row.direction}`
     appendPayment(baselines, key, row)
   }
   for (const [key, baseline] of baselines) {
@@ -350,7 +351,7 @@ export function trendObservations(
         : sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]
     if (!medianTwice) continue
     for (const row of current.filter(
-      (r) => `${r.account_id}:${r.direction}` === key
+      (r) => `${r.canonical_account_id || r.account_id}:${r.direction}` === key
     )) {
       const value = trendAmount(row)!
       if (
@@ -443,10 +444,15 @@ export function investigateTrends(
   const accounts = [
     ...new Map(
       rows.map((r) => [
-        r.account_id,
+        r.canonical_account_id || r.account_id,
         {
-          id: r.account_id,
-          label: r.account_label || r.account_holder || r.account_id,
+          id: r.canonical_account_id || r.account_id,
+          aliasIds: r.account_alias_ids,
+          label:
+            r.canonical_account_label ||
+            r.account_label ||
+            r.account_holder ||
+            r.account_id,
         },
       ])
     ).values(),

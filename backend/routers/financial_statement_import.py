@@ -13,6 +13,7 @@ from services.financial.pdf_candidates import PdfMappingError
 from services.financial.statement_import import read_statement_import
 from services.financial.currency_correction import CurrencyCode
 from services.financial.imported_records import CompleteImportedRecord
+from services.financial.manual_statement_payment import ManualStatementPayment
 from services.financial.statement_check_request import StatementCheckRequest, check_statement_request
 from services.financial.statement_file_status import statement_file_status
 from services.financial.payment_document_review import (
@@ -236,6 +237,17 @@ def confirm(evidence_file_id: UUID, body: StatementImportRequest, case_id: UUID 
     except Exception:
         logger.exception('Statement import could not be confirmed')
         raise HTTPException(status_code=500, detail='Import could not be confirmed. Retry the same review to check its outcome without adding duplicates.')
+
+
+@router.post('/sources/{source_id}/manual-payment', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
+def add_manual_statement_payment(source_id: UUID, body: ManualStatementPayment, case_id: UUID = Query(...),
+        user=Depends(get_current_db_user), db: Session = Depends(get_db)):
+    from services.financial.manual_statement_payment import append_payment
+    try:
+        return append_payment(session_factory=sessionmaker(bind=db.get_bind()), case_id=case_id,
+            source_id=source_id, request=body, actor=actor_from_user(user))
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
 
 @router.post('/sources/{source_id}/complete-record', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
@@ -504,9 +516,19 @@ def confirm_financial_removal(body: ConfirmFinancialRemoval, case_id: UUID = Que
 @router.get('/batches/list')
 def list_financial_batches(case_id: UUID = Query(...), db: Session = Depends(get_db)):
     from sqlalchemy import select
-    from postgres.models.financial_import_batches import FinancialImportBatch
-    batches=db.scalars(select(FinancialImportBatch).where(FinancialImportBatch.case_id==case_id, FinancialImportBatch.status != 'removed').order_by(FinancialImportBatch.created_at.desc()).limit(100))
-    return dict(case_id=str(case_id),batches=[dict(id=str(b.id),status=b.status,created_at=b.created_at.isoformat(),file_count=len(b.files),
+    from postgres.models.financial_import_batches import FinancialImportBatch, FinancialImportBatchItem
+    batches=list(db.scalars(select(FinancialImportBatch).where(FinancialImportBatch.case_id==case_id, FinancialImportBatch.status != 'removed').order_by(FinancialImportBatch.created_at.desc()).limit(100)))
+    by_batch = {b.id: [] for b in batches}
+    if by_batch:
+        for item in db.scalars(select(FinancialImportBatchItem).where(FinancialImportBatchItem.batch_id.in_(by_batch), FinancialImportBatchItem.status != 'removed')):
+            by_batch[item.batch_id].append(item)
+    def counts(batch):
+        items = by_batch[batch.id]
+        checks = sum(bool(i.summary.get('problem_count', 0)) for i in items if i.status != 'skipped')
+        ready = sum(import_batches.import_available(i) for i in items)
+        complete = bool(items) and all(f['status'] == 'checked' for f in batch.files) and not checks and all(i.status in ('imported', 'skipped', 'assigned') for i in items)
+        return dict(completed=complete, available_statements=ready, statements_with_checks=checks)
+    return dict(case_id=str(case_id),batches=[dict(id=str(b.id),status=b.status,created_at=b.created_at.isoformat(),file_count=len(b.files), **counts(b),
         created_by=(b.actor or {}).get('name', ''), filenames=[f['filename'] for f in b.files[:3]],
         checked_files=sum(f['status'] == 'checked' for f in b.files),
         failed_files=sum(f['status'] == 'error' for f in b.files)) for b in batches])
@@ -534,6 +556,16 @@ def confirm_financial_batch(batch_id: UUID,body: ConfirmFinancialBatch,case_id: 
         return import_batches.queue_import(db,case_id=case_id,batch_id=batch_id,expected_revision=body.expected_ready_revision,actor=actor_from_user(user),request_id=body.request_id)
     except PdfMappingError as exc:
         db.rollback();raise HTTPException(status_code=exc.status_code,detail=str(exc)) from exc
+
+
+@router.get('/batches/{batch_id}/operations/{request_id}')
+def check_financial_import_operation(batch_id: UUID, request_id: UUID,
+        case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    from services.financial.import_operations import check_operation
+    try:
+        return check_operation(db, case_id=case_id, batch_id=batch_id, request_id=request_id)
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
 
 @router.get('/batches/{batch_id}/imported-transactions')
@@ -628,10 +660,18 @@ def next_financial_problem(batch_id: UUID, item_id: UUID, case_id: UUID=Query(..
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
 
+@router.get('/batches/{batch_id}/items/{item_id}/next-statement')
+def next_financial_statement(batch_id: UUID, item_id: UUID, case_id: UUID = Query(...),
+        direction: Literal['next', 'previous'] = Query('next'), db: Session = Depends(get_db)):
+    try:
+        return import_batches.next_statement(db, case_id=case_id, batch_id=batch_id, item_id=item_id, direction=direction)
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
 @router.post('/batches/{batch_id}/files/{source_id}/retry', dependencies=[Depends(case_access_dependency(lambda request,payload: ('case','edit'))),Depends(case_access_dependency(lambda request,payload: ('evidence','upload')))])
 def retry_financial_batch_file(batch_id: UUID,source_id: UUID,case_id: UUID=Query(...),db: Session=Depends(get_db)):
     try:
-        import_batches.retry_file(db,case_id=case_id,batch_id=batch_id,source_id=source_id)
-        return dict(queued=True)
+        return import_batches.retry_file(db,case_id=case_id,batch_id=batch_id,source_id=source_id)
     except PdfMappingError as exc:
         db.rollback();raise HTTPException(status_code=exc.status_code,detail=str(exc)) from exc

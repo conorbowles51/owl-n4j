@@ -1,5 +1,7 @@
 # Alex's financial workflow acceptance
 
+**23 September feedback update:** The [complete implementation plan](financial-workflows/feedback-implementation-plan-2026-09-23.md) is now the active scope for the user's feedback collection and follow-ups. Its F01–F28 register covers all reports and its J01–J12 journeys define acceptance. Extraction, statement saves, repeat bulk correction, manual payment entry, review-filter persistence, retry/import outcomes, account filtering, duplicate-account consolidation and existing-counterparty/account selection remain open for this pass. The earlier results below are historical; they do not establish that these newly reported failures are fixed. This update records planning only, with no application change or push.
+
 20 September 2026. Earlier component tests and public deployment checks did not establish that Alex's 588-file workflow worked. This pass covers the reported failures together, including existing saved work.
 
 | Concern | Implemented outcome | Evidence and remaining acceptance |
@@ -132,7 +134,7 @@ Additional duplicate-creation report: statement preparation/reprocessing can cre
 
 ## Current implementation status — 23 September 2026
 
-The [release verification record](financial-workflows/release-verification-2026-09-23.md) supersedes the historical Planned/open implementation labels above. It records the connected outcomes for every reported ingestion/correction/status/duplicate and ownership/trail journey, completed local checks, supported-source limits and outstanding live verification. The user's subsequent instructions authorise commit, push and deployment of verified code. Deployment currently requires renewal of the saved Google Cloud login; no live jobs or client records have been changed in this release pass.
+The [release verification record](financial-workflows/release-verification-2026-09-23.md) supersedes the historical Planned/open implementation labels above. It records the connected outcomes for every reported ingestion/correction/status/duplicate and ownership/trail journey, completed local checks, supported-source limits and outstanding live verification. The user's subsequent instructions authorise commit, push and deployment of verified code. The user subsequently confirmed deployment of that release. Push triggers automatic deployment; no separate Google Cloud login is required to publish code.
 ## 23 September: bulk account details
 
 Alex reported that she could not find a way to bulk set or edit account details.
@@ -157,3 +159,8 @@ entry points, including saved reopening and a narrow viewport. Synthetic screens
 were inspected locally. Production build and scoped lint passed. These tests did
 not change client records. Independent live acceptance remains separate from the
 automatic deployment triggered by publication.
+
+
+## Complete 23 September follow-up feedback
+
+All F01–F28 reports are mapped to implemented workflows and local evidence in the [current acceptance record](financial-workflows/implementation-progress-2026-09-23.md). This includes both late additions: retained review filters/active manual rows and direction-aware existing counterparty/account links. Real-service Chromium checks save/import/reopen through production FastAPI routes and independently read back a second bulk correction. The source PDF, account/period/currency, payment identity, history and next action remain part of each journey. Live incident verification is separately blocked by the origin-authorization review described in that record; no live client records were changed.

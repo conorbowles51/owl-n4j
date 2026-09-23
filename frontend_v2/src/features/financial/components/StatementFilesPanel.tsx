@@ -110,6 +110,12 @@ export function StatementFilesPanel({
           removalMode ||
           removed ||
           status === "all" ||
+          (status === "ready" && !!saved?.available_periods) ||
+          (status === "checks" &&
+            (!!saved?.periods_with_checks || !!saved?.incomplete_count)) ||
+          (status === "pending" &&
+            (!!saved?.pending_periods ||
+              ["processing", "queued"].includes(file.status))) ||
           (status === "imported" &&
             (!!saved?.current_transactions || !!saved?.periods.length)) ||
           (status === "review" &&
@@ -302,6 +308,9 @@ export function StatementFilesPanel({
               onChange={(e) => setStatus(e.target.value)}
             >
               <option value="all">All files</option>
+              <option value="ready">Ready to import</option>
+              <option value="checks">Checks to review</option>
+              <option value="pending">Reading or importing</option>
               <option value="imported">With imported statements</option>
               <option value="review">Without imported statements</option>
               <option value="attention">Reading failed or not started</option>
@@ -321,6 +330,52 @@ export function StatementFilesPanel({
         </div>
       )}
       {files.isPending && <p role="status">Loading statement files…</p>}
+      {register && !removed && !removalMode && imports.data && (
+        <section
+          aria-label="Statement work remaining"
+          className="rounded border p-3 space-y-2"
+        >
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={() => setStatus("ready")}>
+              {imports.data.files.reduce(
+                (n, f) => n + (f.available_periods || 0),
+                0
+              )}{" "}
+              statement periods ready to import
+            </Button>
+            <Button variant="outline" onClick={() => setStatus("checks")}>
+              {
+                imports.data.files.filter(
+                  (f) => f.periods_with_checks || f.incomplete_count
+                ).length
+              }{" "}
+              files with checks to review
+            </Button>
+            <Button variant="outline" onClick={() => setStatus("pending")}>
+              {imports.data.files.reduce(
+                (n, f) => n + (f.pending_periods || 0),
+                0
+              )}{" "}
+              statement imports pending
+            </Button>
+            <Button variant="ghost" onClick={() => setStatus("all")}>
+              Show all files
+            </Button>
+          </div>
+          <p className="text-sm">
+            Open a matching file below to review its statements or import ready
+            payments. A saved statement can still have checks; reading and
+            importing are separate steps.
+          </p>
+          {imports.data.truncated && (
+            <p role="status">
+              This case has more records than the current summary can display.
+              Counts are partial; use the file search to review the remaining
+              files.
+            </p>
+          )}
+        </section>
+      )}
       {files.isError && <p role="alert">{files.error.message}</p>}
       {register && (!removed || removalMode) && canEdit && (
         <section
@@ -370,7 +425,13 @@ export function StatementFilesPanel({
                   : `Prepare statements from ${selectedIds.length} ${selectedIds.length === 1 ? "file" : "files"}`}
               </Button>
             )}
-            {!removalMode && <BulkStatementDetails caseId={caseId} fileIds={selectedIds} onSaved={refresh} />}
+            {!removalMode && (
+              <BulkStatementDetails
+                caseId={caseId}
+                fileIds={selectedIds}
+                onSaved={refresh}
+              />
+            )}
             <FinancialRemovalAction
               caseId={caseId}
               fileIds={selectedIds}

@@ -7,6 +7,7 @@ import { CorrectionForm } from "./CorrectionForm"
 import { ImportedRecordsPanel } from "./ImportedRecordsPanel"
 import { LedgerSourceDialog } from "./LedgerSourceDialog"
 import { SavedStatementRecovery } from "./SavedStatementRecovery"
+import { AddSavedStatementPayment } from "./AddSavedStatementPayment"
 
 /** The saved-record recovery path lives inside the statement's review. */
 export function SavedStatementPayments({
@@ -44,6 +45,16 @@ export function SavedStatementPayments({
           ? "Close saved payment review"
           : "Review or correct saved payments"}
       </Button>
+      {canEdit && (
+        <AddSavedStatementPayment
+          caseId={caseId}
+          sourceId={sourceId}
+          onSaved={(id) => {
+            setOpen(true)
+            setSource(id)
+          }}
+        />
+      )}
       {canEdit && (
         <SavedStatementRecovery caseId={caseId} sourceId={sourceId} />
       )}

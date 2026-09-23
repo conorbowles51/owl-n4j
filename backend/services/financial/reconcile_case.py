@@ -43,6 +43,7 @@ case the refusal branch would clear the result columns and set
 """
 
 from __future__ import annotations
+from services.financial.account_consolidation import expand_account_ids
 
 import logging
 import uuid
@@ -243,7 +244,7 @@ def reconcile_case(
         FinancialStatementPeriod.case_id == case_id
     )
     if account_id is not None:
-        query = query.where(FinancialStatementPeriod.account_id == account_id)
+        query = query.where(FinancialStatementPeriod.account_id.in_(expand_account_ids(session, case_id, [account_id])))
     query = query.order_by(
         FinancialStatementPeriod.period_start.asc().nullslast(),
         FinancialStatementPeriod.id.asc(),
@@ -447,7 +448,7 @@ def list_period_reconciliations(
         FinancialStatementPeriod.case_id == case_id
     )
     if account_id is not None:
-        query = query.where(FinancialStatementPeriod.account_id == account_id)
+        query = query.where(FinancialStatementPeriod.account_id.in_(expand_account_ids(session, case_id, [account_id])))
     if reconciliation_status is not None:
         query = query.where(
             FinancialStatementPeriod.reconciliation_status

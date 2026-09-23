@@ -1,3 +1,4 @@
+from services.financial.account_consolidation import expand_account_ids
 """Incomplete imported statement records and their later, atomic completion."""
 from copy import deepcopy
 from datetime import date, datetime, timezone
@@ -32,8 +33,9 @@ def imported_records(session, *, case_id, account_id=None, start_date=None, end_
     if source_document_id:
         query = query.where(FinancialSourceDocument.id == source_document_id)
     if account_id:
-        query = query.where(FinancialSourceDocument.metadata_['statement_account_id'].as_string() == str(account_id))
+        query = query.where(FinancialSourceDocument.metadata_['statement_account_id'].as_string().in_([str(id) for id in expand_account_ids(session, case_id, [account_id])]))
     if account_ids:
+        account_ids = expand_account_ids(session, case_id, account_ids)
         query = query.where(FinancialSourceDocument.metadata_['statement_account_id'].as_string().in_([str(id) for id in account_ids]))
     if account_holders:
         from services.financial.account_selection import holder_account_ids
@@ -65,7 +67,7 @@ def imported_records(session, *, case_id, account_id=None, start_date=None, end_
         statements=sorted(statements.values(), key=lambda item: (item['filename'], item['evidence_file_id'])))
 
 
-def transaction_draft(row, original, *, account_id, period_id, currency, position, actor, balance_sign=1, period_end=''):
+def transaction_draft(row, original, *, account_id, period_id, currency, position, actor, balance_sign=1, period_end='', session=None, case_id=None):
     from services.financial.transactions import TransactionDraft
     from services.financial.references import RowReading
     from services.financial.locators import Locator, SourceRectangle
@@ -81,13 +83,19 @@ def transaction_draft(row, original, *, account_id, period_id, currency, positio
             page_width=first.page_width, page_height=first.page_height,
             x0=min(r.x0 for r in rectangles), y0=min(r.y0 for r in rectangles),
             x1=max(r.x1 for r in rectangles), y1=max(r.y1 for r in rectangles)))
+    from services.financial.payment_counterparty_link import resolve_link
+    from services.financial.account_parties import AccountPartyError
+    try:
+        link = resolve_link(session, case_id=case_id, link=row.counterparty_link) if row.counterparty_link else None
+    except AccountPartyError as exc:
+        raise PdfMappingError(str(exc), exc.status_code) from exc
     return TransactionDraft(row_index=position, account_id=account_id, locator=locator, statement_period_id=period_id,
         reading=RowReading(currency=currency, amount_minor=int(row.amount_minor), direction=TransactionDirection(row.direction),
             **({'effective_date': date.fromisoformat(period_end)} if row.date_unprinted else _reading_dates(original.get('fields', {}), row.date, row.date_values)),
             description=row.description, counterparty_raw=row.counterparty or None,
             bank_reference=original.get('fields', {}).get('bank_reference'),
             running_balance_minor=balance_sign * int(row.balance_minor) if row.balance_minor is not None else None),
-        provenance=dict(statement_import_original=original, statement_import_review=row.model_dump(mode='json'),
+        provenance=dict(**(dict(reviewed_counterparty=link) if link else {}), statement_import_original=original, statement_import_review=row.model_dump(mode='json'),
             **(dict(date_basis='statement_end_ordering_only', statement_end_date=period_end) if row.date_unprinted else {}),
             confirmed_by=dict(user_id=str(actor.user_id), name=actor.name, email=actor.email)))
 
@@ -143,7 +151,7 @@ def complete_record(*, session_factory, case_id, source_id, request, actor):
                 raise PdfMappingError('Use the currency recorded for this statement.', 422)
             position = next(i for i, r in enumerate(r for r in raw['rows'] if not r['excluded']) if r['id'] == request.row.id)
             sign = -1 if metadata['statement_import_original']['metadata'].get('balance_convention') == 'liability_owed' else 1
-            draft = transaction_draft(request.row, original, account_id=account_id, period_id=period.id if period else None,
+            draft = transaction_draft(request.row, original, session=session, case_id=case_id, account_id=account_id, period_id=period.id if period else None,
                 currency=currency, position=position, actor=actor, balance_sign=sign, period_end=raw.get('period_end', ''))
             transaction = record_transactions(session, run, document, [draft], retain_prior_versions=True)[0]
             record.update(resolved_transaction_id=str(transaction.id), correction=request.row.model_dump(mode='json'),

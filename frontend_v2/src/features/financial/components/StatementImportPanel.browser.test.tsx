@@ -21,6 +21,7 @@ vi.mock("../hooks/use-financial-access", async (importOriginal) => ({
   }),
 }))
 import {
+  cleanup,
   fireEvent,
   render,
   screen,
@@ -647,4 +648,54 @@ it("keeps a 51-period PDF manageable from file list through saved-period review 
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
   expect(writes).toHaveLength(1)
   expect(writes[0]).toContain("/removals/preview")
+})
+
+it("keeps manual rows while completing amounts and preserves review filters across adding and reopening", async () => {
+  const implementation = vi.mocked(fetchAPI).getMockImplementation()!
+  vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
+    const result = await implementation(url, options)
+    return result === data ? ({ ...data, page_numbers: [1] } as never) : result
+  })
+  await page.viewport(1440, 1000)
+  mount()
+  await open()
+  fireEvent.click(screen.getByLabelText("Show problems and edits only"))
+  expect(screen.getByLabelText("Show excluded rows")).not.toBeChecked()
+  fireEvent.click(
+    screen.getByRole("button", { name: "Add a missed transaction" })
+  )
+  const editor = within(
+    await screen.findByRole("region", { name: "Edit selected statement row" })
+  )
+  const debit = editor.getByLabelText("Corrected debit")
+  fireEvent.change(debit, { target: { value: "123.45" } })
+  fireEvent.change(editor.getByLabelText("Corrected transaction date"), {
+    target: { value: "2023-01-03" },
+  })
+  fireEvent.change(editor.getByLabelText("Corrected description"), {
+    target: { value: "Manually read payment" },
+  })
+  expect(debit).toBeVisible()
+  expect(editor.getByLabelText("Corrected credit")).toBeDisabled()
+  fireEvent.click(
+    editor.getByRole("button", { name: "Move amount to Credit / money in" })
+  )
+  expect(editor.getByLabelText("Corrected credit")).toHaveValue("123.45")
+  expect(editor.getByLabelText("Corrected debit")).toBeDisabled()
+  expect(screen.getByLabelText("Show excluded rows")).not.toBeChecked()
+  expect(screen.getByLabelText("Show problems and edits only")).toBeChecked()
+  fireEvent.click(editor.getByRole("button", { name: "Done editing this row" }))
+  fireEvent.click(
+    screen.getByRole("button", { name: "Add a missed transaction" })
+  )
+  expect(screen.getAllByLabelText(/^Debit manual:/)).toHaveLength(2)
+  expect(screen.getByDisplayValue("Manually read payment")).toBeVisible()
+  cleanup()
+  mount()
+  await screen.findByText("Review statement.pdf")
+  fireEvent.click(
+    screen.getByRole("button", { name: "Show corrections and import choices" })
+  )
+  expect(screen.getByLabelText("Show excluded rows")).not.toBeChecked()
+  expect(screen.getByLabelText("Show problems and edits only")).toBeChecked()
 })

@@ -1,9 +1,11 @@
+import { PaymentCounterpartyPicker } from "./PaymentCounterpartyPicker"
 import { Button } from "@/components/ui/button"
 import type { StatementDraft } from "../lib/statement-review-draft"
 
 type Edit = StatementDraft["rows"][number]
 export function StatementRowEditor({
   row,
+  caseId,
   kind,
   statementEnd,
   additionalPrintedDate,
@@ -15,6 +17,7 @@ export function StatementRowEditor({
   close,
 }: {
   row: Edit
+  caseId: string
   kind: string
   statementEnd?: string
   additionalPrintedDate?: string
@@ -123,9 +126,32 @@ export function StatementRowEditor({
                 className={fieldClass}
                 inputMode="decimal"
                 value={text(direction)}
-                disabled={row.excluded}
+                disabled={
+                  row.excluded ||
+                  (!!row.amount_minor &&
+                    row.amount_minor !== "0" &&
+                    !!row.direction &&
+                    row.direction !== direction)
+                }
                 onChange={(event) => amount(direction, event.target.value)}
               />
+              {!row.excluded &&
+                row.direction &&
+                row.direction !== direction &&
+                row.amount_minor &&
+                row.amount_minor !== "0" && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => update({ direction })}
+                  >
+                    Move amount to{" "}
+                    {direction === "credit"
+                      ? "Credit / money in"
+                      : "Debit / money out"}
+                  </Button>
+                )}
             </label>
           ))}
           <label className="sm:col-span-2">
@@ -138,6 +164,13 @@ export function StatementRowEditor({
               onChange={(event) => update({ counterparty: event.target.value })}
             />
           </label>
+          <PaymentCounterpartyPicker
+            caseId={caseId}
+            value={row.counterparty_link}
+            direction={row.direction}
+            disabled={row.excluded}
+            onChange={(link) => update({ counterparty_link: link })}
+          />
         </div>
       )}
       <label className="block">

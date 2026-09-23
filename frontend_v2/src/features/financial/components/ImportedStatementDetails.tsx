@@ -52,7 +52,7 @@ export function ImportedStatementDetails({
   const [saved, setSaved] = useState(false)
   const query = useQuery({
     queryKey: ["imported-statement-details", caseId, sourceId],
-    enabled: open,
+    enabled: true,
     retry: false,
     refetchOnWindowFocus: false,
     queryFn: async () => {
@@ -73,6 +73,40 @@ export function ImportedStatementDetails({
     >
       {!open ? (
         <>
+          {query.data && (
+            <div
+              className="space-y-1 text-sm"
+              aria-label="Current saved statement details"
+            >
+              <p>
+                <strong>{query.data.details.holder || "Holder missing"}</strong>{" "}
+                · {query.data.details.institution || "Bank missing"} ·{" "}
+                {query.data.details.account_number || "Account number missing"}{" "}
+                · {query.data.currency}
+              </p>
+              <p>
+                {query.data.details.period_start || "Start date missing"} to{" "}
+                {query.data.details.period_end || "End date missing"}
+              </p>
+              <p>
+                Saved opening balance:{" "}
+                {query.data.balances.opening.amount_minor === null
+                  ? "Not recorded"
+                  : correctionMoney(
+                      query.data.balances.opening.amount_minor,
+                      query.data.currency || ""
+                    )}
+                . Saved closing balance:{" "}
+                {query.data.balances.closing.amount_minor === null
+                  ? "Not recorded"
+                  : correctionMoney(
+                      query.data.balances.closing.amount_minor,
+                      query.data.currency || ""
+                    )}
+                .
+              </p>
+            </div>
+          )}
           <Button
             variant="outline"
             onClick={() => {
@@ -130,9 +164,18 @@ function DetailsForm({
 }) {
   const form = useRef<HTMLFormElement>(null)
   useEffect(() => {
-    const name = ({ holder: "Saved account holder", account_number: "Saved account number", period: "Saved period start", currency: "Saved statement currency" } as Record<string, string>)[focusField || ""]
+    const name = (
+      {
+        holder: "Saved account holder",
+        account_number: "Saved account number",
+        period: "Saved period start",
+        currency: "Saved statement currency",
+      } as Record<string, string>
+    )[focusField || ""]
     if (!name) return
-    const control = form.current?.querySelector<HTMLElement>(`[aria-label="${name}"]`)
+    const control = form.current?.querySelector<HTMLElement>(
+      `[aria-label="${name}"]`
+    )
     control?.focus({ preventScroll: true })
     control?.scrollIntoView({ block: "center" })
   }, [focusField])
@@ -141,20 +184,33 @@ function DetailsForm({
   const initialAmount = (role: (typeof roles)[number]) =>
     data.balances[role].amount_minor === null
       ? ""
-      : correctionMoney(data.balances[role].amount_minor!, data.currency || "").replace(
-          ` ${data.currency}`,
-          ""
-        )
-  const [draft, setDraft, clearDraft] = useFinancialDraft(data.case_id,
-    `statement-details:${data.source_document_id}`, {
-      revision: data.revision, details: data.details, currency: data.currency || "",
-      amounts: { opening: initialAmount("opening"), closing: initialAmount("closing") },
-      pages: { opening: data.balances.opening.page || 0, closing: data.balances.closing.page || 0 },
-    })
+      : correctionMoney(
+          data.balances[role].amount_minor!,
+          data.currency || ""
+        ).replace(` ${data.currency}`, "")
+  const [draft, setDraft, clearDraft] = useFinancialDraft(
+    data.case_id,
+    `statement-details:${data.source_document_id}`,
+    {
+      revision: data.revision,
+      details: data.details,
+      currency: data.currency || "",
+      amounts: {
+        opening: initialAmount("opening"),
+        closing: initialAmount("closing"),
+      },
+      pages: {
+        opening: data.balances.opening.page || 0,
+        closing: data.balances.closing.page || 0,
+      },
+    }
+  )
   const { details, currency, amounts, pages } = draft
-  const setDetails = (details: Details["details"]) => setDraft({ ...draft, details })
+  const setDetails = (details: Details["details"]) =>
+    setDraft({ ...draft, details })
   const setCurrency = (currency: string) => setDraft({ ...draft, currency })
-  const setAmounts = (amounts: typeof draft.amounts) => setDraft({ ...draft, amounts })
+  const setAmounts = (amounts: typeof draft.amounts) =>
+    setDraft({ ...draft, amounts })
   const setPages = (pages: typeof draft.pages) => setDraft({ ...draft, pages })
   const [page, setPage] = useState(data.pages[0] || 1)
   const [error, setError] = useState("")
@@ -210,11 +266,20 @@ function DetailsForm({
     },
     onSuccess: (result) => {
       clearDraft()
-      if (result.account_id !== data.account_id &&
-          (scope.accountId === data.account_id || scope.accountIds?.includes(data.account_id)))
-        applyScope({ ...scope,
-          accountId: scope.accountId === data.account_id ? result.account_id : scope.accountId,
-          accountIds: scope.accountIds?.map((id) => id === data.account_id ? result.account_id : id),
+      if (
+        result.account_id !== data.account_id &&
+        (scope.accountId === data.account_id ||
+          scope.accountIds?.includes(data.account_id))
+      )
+        applyScope({
+          ...scope,
+          accountId:
+            scope.accountId === data.account_id
+              ? result.account_id
+              : scope.accountId,
+          accountIds: scope.accountIds?.map((id) =>
+            id === data.account_id ? result.account_id : id
+          ),
         })
       client.setQueryData(
         ["imported-statement-details", data.case_id, data.source_document_id],
@@ -228,7 +293,7 @@ function DetailsForm({
   return (
     <div className={withSource ? "grid gap-4 lg:grid-cols-2" : "space-y-3"}>
       {withSource && (
-        <div>
+        <div className="lg:sticky lg:top-3 lg:self-start">
           <label className="text-sm">
             PDF page{" "}
             <select
@@ -263,9 +328,21 @@ function DetailsForm({
         <h3 className="font-semibold">
           Edit this statement's account, dates, currency and balances
         </h3>
-        <p className="text-sm">Changes apply only to this statement period. Save changes to update the imported records; there is no need to import again.</p>
-        {draft.revision !== data.revision && <p role="alert">This statement changed while you were editing. Your draft is retained. Cancel to load the saved details before making a new correction.</p>}
-        <fieldset disabled={save.isPending} className="grid gap-3 sm:grid-cols-2">
+        <p className="text-sm">
+          Changes apply only to this statement period. Save changes to update
+          the imported records; there is no need to import again.
+        </p>
+        {draft.revision !== data.revision && (
+          <p role="alert">
+            This statement changed while you were editing. Your draft is
+            retained. Cancel to load the saved details before making a new
+            correction.
+          </p>
+        )}
+        <fieldset
+          disabled={save.isPending}
+          className="grid gap-3 sm:grid-cols-2"
+        >
           {(
             [
               ["holder", "Account holder"],
@@ -286,15 +363,30 @@ function DetailsForm({
             </label>
           ))}
           <div className="grid grid-cols-2 gap-2 sm:col-span-2">
-            {([['period_start', 'Period start'], ['period_end', 'Period end']] as const).map(([field, label]) => (
-              <label key={field} className="block text-sm">{label}
-                <input type="date" aria-label={`Saved ${label.toLowerCase()}`} value={details[field]}
-                  onChange={(event) => setDetails({ ...details, [field]: event.target.value })}
-                  className="block w-full rounded border bg-background p-2" />
+            {(
+              [
+                ["period_start", "Period start"],
+                ["period_end", "Period end"],
+              ] as const
+            ).map(([field, label]) => (
+              <label key={field} className="block text-sm">
+                {label}
+                <input
+                  type="date"
+                  aria-label={`Saved ${label.toLowerCase()}`}
+                  value={details[field]}
+                  onChange={(event) =>
+                    setDetails({ ...details, [field]: event.target.value })
+                  }
+                  className="block w-full rounded border bg-background p-2"
+                />
               </label>
             ))}
           </div>
-          <p className="text-xs text-muted-foreground sm:col-span-2">Leave unknown dates blank. These dates describe statement coverage; they do not change transaction dates.</p>
+          <p className="text-xs text-muted-foreground sm:col-span-2">
+            Leave unknown dates blank. These dates describe statement coverage;
+            they do not change transaction dates.
+          </p>
           <label className="block text-sm">
             Statement currency
             <select
@@ -368,7 +460,14 @@ function DetailsForm({
             <Button type="submit">
               {save.isPending ? "Saving…" : "Save changes"}
             </Button>
-            <Button type="button" variant="outline" onClick={() => { clearDraft(); onCancel() }}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                clearDraft()
+                onCancel()
+              }}
+            >
               Cancel
             </Button>
           </div>

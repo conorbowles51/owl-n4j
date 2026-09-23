@@ -68,6 +68,37 @@ beforeEach(() => {
   vi.mocked(fetchAPI).mockReset()
 })
 afterEach(cleanup)
+it("completes a payment with an unreadable untouched balance without resending invalid money", async () => {
+  vi.mocked(fetchAPI).mockImplementation(async (_url, options) =>
+    options?.method === "POST"
+      ? ({ transaction_id: "completed" } as never)
+      : ({
+          records: [
+            {
+              ...record,
+              fields: { ...record.fields, balance_minor: "invalid" },
+            },
+          ],
+          total: 1,
+        } as never)
+  )
+  const open = vi.fn()
+  mount(open)
+  fireEvent.click(await screen.findByText(/1 imported record has/))
+  fireEvent.click(screen.getByRole("button", { name: "Open record" }))
+  fireEvent.change(screen.getByLabelText("Amount"), {
+    target: { value: "123.45" },
+  })
+  fireEvent.click(
+    screen.getByRole("button", { name: "Save correction and open transaction" })
+  )
+  await waitFor(() => expect(open).toHaveBeenCalledWith("completed"))
+  expect(
+    vi
+      .mocked(fetchAPI)
+      .mock.calls.find(([, options]) => options?.method === "POST")?.[1]?.body
+  ).toMatchObject({ row: { amount_minor: "12345", balance_minor: null } })
+})
 it("offers every affected statement, not just the first page of incomplete records", async () => {
   vi.mocked(fetchAPI).mockResolvedValue({
     records: [record],

@@ -23,11 +23,12 @@ def norm(text):
 def control_norm(value):
     # These are label readings, never edits to a printed date or amount.
     # Tesseract's English model can read the accented ó as é or d.
+    value = norm(value).strip(" '_~|\"")
     return {'SALDO DE OPERACIEN INICIAL': 'SALDO DE OPERACION INICIAL',
             'SALDO DE OPERACIEN FINAL': 'SALDO DE OPERACION FINAL',
             'SALDO DE LIQUIDACIEN INICIAL': 'SALDO DE LIQUIDACION INICIAL',
             'DEPDSITOS / ABONOS (+)': 'DEPOSITOS / ABONOS (+)',
-            'DEPESITOS / ABONOS (+)': 'DEPOSITOS / ABONOS (+)'}.get(norm(value), norm(value))
+            'DEPESITOS / ABONOS (+)': 'DEPOSITOS / ABONOS (+)'}.get(value, value)
 
 
 def text(row):
@@ -83,7 +84,7 @@ def bbva_catalog(sources):
         if ('ESTADO DE CUENTA' not in texts
                 or not any(re.search(r'BBVA (?:MEXICO|BANCOMER),? S\.?A\.?', t) for t in texts)):
             continue
-        products = {t for t in texts if t.startswith('CASH MANAGEMENT ')}
+        products = {t for t in texts if t.startswith('CASH MANAGEMENT ') or re.fullmatch(r'MAESTRA (?:DOLARES )?PYME(?: BBVA)?', t)}
         numbered = {tuple(map(int, m.groups())) for t in texts
                     if (m := re.fullmatch(r'PAGINA\s+(\d+)\s*/\s*(\d+)', t))}
         values = labelled_values(items)

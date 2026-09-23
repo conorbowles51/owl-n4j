@@ -39,32 +39,54 @@ export interface PaymentProfile {
 export function paymentProfiles(rows: LedgerTransaction[]): PaymentProfile[] {
   const groups = new Map<
     string,
-    { name: string; kind: "account" | "name" | "owner"; rows: LedgerTransaction[] }
+    {
+      name: string
+      kind: "account" | "name" | "owner"
+      rows: LedgerTransaction[]
+    }
   >()
   for (const row of rows) {
+    const seen = new Set<string>()
     const counterparty =
       (row.direction === "credit" ? row.from_name : row.to_name) ??
       row.counterparty_raw
     for (const [id, name, kind] of [
       [
-        `account:${row.account_id}`,
-        row.account_label || "Account name not recorded",
+        `account:${row.canonical_account_id || row.account_id}`,
+        row.canonical_account_label ||
+          row.account_label ||
+          "Account name not recorded",
         "account",
       ],
       [
-        `name:${counterparty ?? ""}`,
+        row.counterparty_link
+          ? `${row.counterparty_link.kind === "party" ? "owner" : "account"}:${row.counterparty_link.id}`
+          : `name:${counterparty ?? ""}`,
         counterparty?.trim() ? counterparty : "Name not recorded",
-        "name",
+        row.counterparty_link?.kind === "party"
+          ? "owner"
+          : row.counterparty_link?.kind === "account"
+            ? "account"
+            : "name",
       ],
     ] as const) {
+      if (seen.has(id)) continue
+      seen.add(id)
       const group = groups.get(id) ?? { name, kind, rows: [] }
       group.rows.push(row)
       groups.set(id, group)
     }
     for (const party of row.account_holder_parties ?? []) {
       const id = `owner:${party.id}`
-      const group = groups.get(id) ?? {name:party.name, kind:"owner" as const, rows:[]}
-      group.rows.push(row); groups.set(id, group)
+      if (seen.has(id)) continue
+      seen.add(id)
+      const group = groups.get(id) ?? {
+        name: party.name,
+        kind: "owner" as const,
+        rows: [],
+      }
+      group.rows.push(row)
+      groups.set(id, group)
     }
   }
   return [...groups].map(([id, group]) => {
@@ -75,7 +97,11 @@ export function paymentProfiles(rows: LedgerTransaction[]): PaymentProfile[] {
       id,
       ...group,
       unidentified: group.kind === "name" && !id.slice(5).trim(),
-      accounts: [...new Set(group.rows.map((row) => row.account_id))],
+      accounts: [
+        ...new Set(
+          group.rows.map((row) => row.canonical_account_id || row.account_id)
+        ),
+      ],
       sources: [...new Set(group.rows.map((row) => row.source_document_id))],
       first: dates[0] ?? null,
       last: dates.at(-1) ?? null,
@@ -98,7 +124,7 @@ export function nearbyPayments(
   const accounts = new Map<string, LedgerTransaction[]>()
   for (const row of rows) {
     if (row.account_type === "credit_card" || !paymentDay(row)) continue
-    const key = `${row.account_id}:${row.currency}`
+    const key = `${row.canonical_account_id || row.account_id}:${row.currency}`
     const group = accounts.get(key) ?? []
     group.push(row)
     accounts.set(key, group)

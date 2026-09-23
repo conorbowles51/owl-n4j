@@ -100,7 +100,7 @@ export function CounterpartyPartyDirectory({ caseId }: { caseId: string }) {
           return (
             !row ||
             (party === "clear"
-              ? row.party !== null
+              ? row.party !== null || !!row.account
               : party === "new"
                 ? row.party?.name !== name.trim()
                 : row.party?.id !== party)
@@ -136,7 +136,7 @@ export function CounterpartyPartyDirectory({ caseId }: { caseId: string }) {
         r.ref_id,
         r.counterparty_raw ?? "",
         r.description ?? "",
-        r.party?.name ?? "",
+        r.party?.name ?? r.account?.label ?? "",
       ].some((s) => s.toLocaleLowerCase().includes(needle))
     )
   const currentIds = new Set(
@@ -328,7 +328,8 @@ export function CounterpartyPartyDirectory({ caseId }: { caseId: string }) {
                       </label>
                       <p className="break-words">{r.description}</p>
                       <p>
-                        Linked person or business: {r.party?.name ?? "Unlinked"}
+                        Linked counterparty:{" "}
+                        {r.party?.name ?? r.account?.label ?? "Unlinked"}
                         {r.decision_transaction_id &&
                         r.decision_transaction_id !== r.transaction_id
                           ? " · retained from the original reading before correction"
@@ -505,8 +506,12 @@ export function CounterpartyPartyDirectory({ caseId }: { caseId: string }) {
                         </p>
                         <p>
                           Direct link:{" "}
-                          {h.before.party?.name ?? "No direct link"} →{" "}
+                          {h.before.party?.name ??
+                            h.before.account?.label ??
+                            "No direct link"}{" "}
+                          →{" "}
                           {h.after.party?.name ??
+                            h.after.account?.label ??
                             "Unlinked (overrides inheritance)"}
                         </p>
                         <p>{h.reason}</p>

@@ -235,6 +235,7 @@ export interface LedgerTransaction {
   account_type?: string
   account_label?: string
   account_holder?: string
+  account_institution?: string
   account_party_id?: string | null
   account_holder_parties?: { id: string; name: string }[]
   account_relationships?: import("./lib/account-parties").AccountParties["accounts"][number]["relationships"]
@@ -269,6 +270,14 @@ export interface LedgerTransaction {
   ordering_date_source: string
   ordering_date_context?: "statement_end_ordering_only"
   description: string | null
+  account_alias_ids?: string[]
+  canonical_account_id?: string | null
+  canonical_account_label?: string | null
+  counterparty_link?: {
+    kind: "party" | "account"
+    id: string
+    label: string
+  } | null
   counterparty_raw: string | null
   transaction_type: string | null
   bank_reference: string | null
@@ -305,11 +314,16 @@ export const LEDGER_TRANSACTION_FIELDS: readonly (keyof LedgerTransaction)[] = [
   "to_name",
   "label_version",
   "label_sources",
+  "counterparty_link",
+  "canonical_account_id",
+  "canonical_account_label",
+  "account_alias_ids",
   "balance_status",
   "key",
   "case_id",
   "account_id",
   "account_holder",
+  "account_institution",
   "account_party_id",
   "account_holder_parties",
   "account_relationships",

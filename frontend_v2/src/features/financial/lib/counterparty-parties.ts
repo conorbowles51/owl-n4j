@@ -1,4 +1,8 @@
 import { z } from "zod"
+const account = z
+  .object({ id: z.string().uuid(), label: z.string() })
+  .nullable()
+  .optional()
 const party = z.object({ id: z.string().uuid(), name: z.string().min(1) })
 export const counterpartyParties = z
   .object({
@@ -20,6 +24,7 @@ export const counterpartyParties = z
           amount_minor: z.string().regex(/^(0|[1-9][0-9]*)$/),
           direction: z.enum(["credit", "debit"]),
           party: party.nullable(),
+          account,
           decision_transaction_id: z.string().uuid().nullable(),
         })
       )
@@ -30,9 +35,14 @@ export const counterpartyParties = z
           id: z.string().uuid(),
           transaction_id: z.string().uuid(),
           sequence: z.number().int().positive(),
-          before: z.object({ party: party.nullable(), override: z.boolean() }),
+          before: z.object({
+            party: party.nullable(),
+            account,
+            override: z.boolean(),
+          }),
           after: z.object({
             party: party.nullable(),
+            account,
             override: z.literal(true),
           }),
           reason: z.string(),

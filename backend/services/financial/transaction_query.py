@@ -38,6 +38,7 @@ actor behind them.
 """
 
 from __future__ import annotations
+from services.financial.account_consolidation import expand_account_ids
 
 from dataclasses import dataclass, field
 from datetime import date
@@ -87,7 +88,7 @@ def list_transactions(
         FinancialTransaction.ledger_status == status.value,
     )
     if account_id is not None:
-        stmt = stmt.where(FinancialTransaction.account_id == account_id)
+        stmt = stmt.where(FinancialTransaction.account_id.in_(expand_account_ids(session, case_id, [account_id])))
     if source_document_id is not None:
         stmt = stmt.where(FinancialTransaction.source_document_id == source_document_id)
     from services.financial.account_selection import apply_account_selection
@@ -145,6 +146,7 @@ class TransactionView:
     account_type: Optional[str] = None
     account_label: Optional[str] = None
     account_holder: str = ""
+    account_institution: str = ""
     account_party_id: Optional[str] = None
     account_holder_parties: list = field(default_factory=list)
     account_relationships: list = field(default_factory=list)
@@ -153,6 +155,10 @@ class TransactionView:
     from_name: str = ""
     to_name: str = ""
     label_version: int = 0
+    account_alias_ids: list = field(default_factory=list)
+    canonical_account_id: str | None = None
+    canonical_account_label: str | None = None
+    counterparty_link: dict | None = None
     label_sources: dict = field(default_factory=dict)
     balance_status: str = 'unavailable'
 
@@ -163,11 +169,16 @@ class TransactionView:
             "to_name": self.to_name,
             "label_version": self.label_version,
             "label_sources": self.label_sources,
+            "counterparty_link": self.counterparty_link,
+            "canonical_account_id": self.canonical_account_id,
+            "account_alias_ids": self.account_alias_ids,
+            "canonical_account_label": self.canonical_account_label,
             "balance_status": self.balance_status,
             "key": self.key,
             "case_id": self.case_id,
             "account_id": self.account_id,
             "account_holder": self.account_holder,
+            "account_institution": self.account_institution,
             "account_party_id": self.account_party_id,
             "account_holder_parties": self.account_holder_parties,
             "account_relationships": self.account_relationships,
@@ -220,15 +231,26 @@ def to_view(row: FinancialTransaction, *, account=None, account_parties=None) ->
     from services.financial.spei_description import kapital_spei
     account_type = account.account_type if account is not None and account.case_id == row.case_id else None
     identity = (account_parties or {}).get(str(row.account_id), {})
+    canonical_id = (account.metadata_ or {}).get('canonical_account_id') if account is not None else None
+    canonical_label = None
+    if canonical_id:
+        from sqlalchemy.orm import object_session
+        from postgres.models.financial import FinancialAccount
+        db = object_session(account)
+        canonical = db.get(FinancialAccount, UUID(canonical_id)) if db else None
+        if canonical is not None and canonical.case_id == row.case_id:
+            canonical_label = ' · '.join(v for v in (canonical.holder_name, canonical.institution_name, canonical.identifier_as_printed) if v)
     return TransactionView(
+        canonical_account_id=canonical_id, canonical_account_label=canonical_label, account_alias_ids=identity.get("alias_ids", []),
         **payment_label_view(row, account),
         balance_status=balance_reading_status(row),
         account_type=account_type,
         account_party_id=(identity.get('party') or {}).get('id') if 'party' in identity else identity.get('id'),
-        account_holder_parties=identity.get('holder_parties', []),
-        account_relationships=identity.get('relationships', []),
+        account_holder_parties=identity.get('effective_holder_parties', identity.get('holder_parties', [])),
+        account_relationships=identity.get('effective_relationships', identity.get('relationships', [])),
         transfer_details=kapital_spei(row.description),
         account_holder=(account.holder_name or "") if account is not None and account.case_id == row.case_id else "",
+        account_institution=(account.institution_name or "") if account is not None and account.case_id == row.case_id else "",
         account_label=(" · ".join(v for v in [account.holder_name, account.institution_name, account.identifier_as_printed] if v) if account is not None and account.case_id == row.case_id else None),
         key=str(row.id),
         case_id=str(row.case_id),

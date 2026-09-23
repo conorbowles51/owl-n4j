@@ -11,6 +11,10 @@ const draftRow = z.object({
     .optional(),
   description: z.string(),
   counterparty: z.string(),
+  counterparty_link: z
+    .object({ kind: z.enum(["party", "account"]), id: z.string().uuid() })
+    .nullable()
+    .optional(),
   amount_minor: z.string(),
   direction: z.enum(["credit", "debit", ""]),
   balance_minor: z.string().nullable(),
@@ -42,13 +46,22 @@ export function serverStatementDraft(raw: Record<string, unknown> | undefined) {
   const parsed = statementDraft.safeParse({
     revision: raw.expected_revision,
     rows: Array.isArray(raw.rows)
-      ? raw.rows.map((row) => ({ ...row, direction: row.direction || "" }))
+      ? raw.rows.map((row) => ({
+          ...row,
+          direction: row.direction || "",
+          date: row.date ?? "",
+          counterparty: row.counterparty ?? "",
+          description: row.description ?? "",
+          amount_minor: row.amount_minor ?? "",
+          balance_minor: row.balance_minor ?? null,
+          reason: row.reason ?? "",
+        }))
       : [],
-    holder: raw.holder,
-    account: raw.account_number,
-    institution: raw.institution,
-    periodStart: raw.period_start,
-    periodEnd: raw.period_end,
+    holder: raw.holder ?? "",
+    account: raw.account_number ?? "",
+    institution: raw.institution ?? "",
+    periodStart: raw.period_start ?? "",
+    periodEnd: raw.period_end ?? "",
     detailsReason: raw.details_reason || "",
     balanceException: {
       revision: raw.balance_exception_revision || "",

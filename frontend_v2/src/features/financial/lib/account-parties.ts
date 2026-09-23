@@ -20,6 +20,7 @@ export const accountParties = z.object({
   accounts: z.array(
     z.object({
       id: z.string().uuid(),
+      canonical_id: z.string().uuid().optional(),
       holder_as_recorded: z.string().nullable(),
       identifier_as_printed: z.string().nullable(),
       institution: z.string().nullable(),

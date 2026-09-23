@@ -54,6 +54,21 @@ class StatementDetailsTests(TestCase):
             self.assertEqual(db.get(FinancialAccount, UUID(saved['account_id'])).identifier_as_printed, '000123456789')
             self.assertEqual(db.get(FinancialAccount, UUID(before['account_id'])).identifier_as_printed, 'TEST123')
 
+    def test_repeated_holder_corrections_update_transaction_identity_not_just_saved_summary(self):
+        for bank in ('', 'Synthetic Bank'):
+            for holder in ('Wrong synthetic holder', 'Corrected synthetic holder', 'Final synthetic holder'):
+                before = self.read()
+                saved = self.save(self.request(holder=holder, institution=bank))
+                with self.f.SessionLocal() as db:
+                    rows = list(db.scalars(select(FinancialTransaction).where(FinancialTransaction.source_document_id == self.source_id)))
+                    self.assertEqual(len(rows), 12)
+                    self.assertTrue(all(row.account.holder_name == holder for row in rows))
+                    self.assertTrue(all(row.account.institution_name == (bank or None) for row in rows))
+                    self.assertEqual(str(rows[0].account_id), saved['account_id'])
+                    if before['account_id'] != saved['account_id']:
+                        self.assertEqual(db.get(FinancialAccount, UUID(before['account_id'])).holder_name, before['details']['holder'])
+                self.assertEqual(self.read()['details']['holder'], holder)
+
     def test_add_missing_balances_reconciles_with_page_citations(self):
         saved = self.save(self.request(opening=dict(amount_minor='1245000', page=1), closing=dict(amount_minor='4745000', page=1)))
         with self.f.SessionLocal() as db:

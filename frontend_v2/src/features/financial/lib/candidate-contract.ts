@@ -97,13 +97,23 @@ export const candidateList = z.object({
 export const candidateAccounts = z.object({
   case_id: id,
   has_more: z.boolean(),
+  pending_holders: z
+    .array(z.object({ name: z.string(), count: z.number() }))
+    .default([]),
+  pending_directory_truncated: z.boolean().default(false),
   items: z.array(
     z.object({
       id,
+      canonical_id: z.string().optional(),
       identifier: z.string().nullable(),
       holder: z.string().nullable(),
-      party: z.object({ id: z.string().uuid(), name: z.string() }).nullable().optional(),
-      holder_parties: z.array(z.object({ id: z.string().uuid(), name: z.string() })).default([]),
+      party: z
+        .object({ id: z.string().uuid(), name: z.string() })
+        .nullable()
+        .optional(),
+      holder_parties: z
+        .array(z.object({ id: z.string().uuid(), name: z.string() }))
+        .default([]),
       institution: z.string().nullable(),
       currency: z.string().nullable(),
       display_label: z.string().nullable().optional(),

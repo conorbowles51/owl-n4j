@@ -160,7 +160,15 @@ def update_statement_details(session, *, case_id, source_id, request, actor, com
             try:
                 draft = AccountDraft.observed(**fields)
             except AccountIdentityError:
-                draft = AccountDraft.unidentified(distinguisher='statement-details:' + str(document.id), **fields)
+                draft = AccountDraft.unidentified(distinguisher='statement-details:' + str(document.id) + ':' + _digest(fields), **fields)
+            existing = session.scalar(select(FinancialAccount).where(
+                FinancialAccount.case_id == case_id, FinancialAccount.identity_key == draft.identity().key))
+            if existing is not None and any(getattr(existing, key) != getattr(draft, key)
+                    for key in ('holder_name', 'identifier_as_printed', 'institution_name', 'currency', 'account_type')):
+                # The ingestion writer deliberately retains conflicting values.
+                # A reviewed correction must instead resolve to its exact saved
+                # details without overwriting other statements sharing an account.
+                draft = AccountDraft.unidentified(distinguisher='statement-details:' + str(document.id) + ':' + _digest(fields), **fields)
             target = record_account(session, SimpleNamespace(case_id=case_id, run_id=document.ingestion_run_id), draft)
             # Keep other statements' identities untouched. Corrections belong
             # to this source; a matching identified account can be reused.

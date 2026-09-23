@@ -48,7 +48,7 @@ def candidates(tables, words, width, height):
     def box(c):
         return c.get('locator', {}).get('rect', [])
     cells = [c for c in cells if len(box(c)) == 4]
-    products = [c for c in cells if norm(c['text']).startswith('CASH MANAGEMENT ')
+    products = [c for c in cells if (norm(c['text']).startswith('CASH MANAGEMENT ') or re.fullmatch(r'MAESTRA (?:DOLARES )?PYME(?: BBVA)?', norm(c['text'])))
                 and box(c)[0] > width * 500 and box(c)[3] < height * 100]
     if len(products) != 1 or not any(re.search(r'BBVA (?:MEXICO|BANCOMER),? S\.?A\.?', norm(c['text'])) for c in cells):
         return []
@@ -86,7 +86,7 @@ def candidates(tables, words, width, height):
 
 def reread_bbva_fields(page, data, *, rotation, image_width, image_height, reader, deadline, language):
     content = norm(' '.join(t for t in data['text'] if t.strip()))
-    if (reader is None or 'CASH MANAGEMENT ' not in content or 'BBVA' not in content
+    if (reader is None or not any(p in content for p in ('CASH MANAGEMENT ', 'MAESTRA PYME', 'MAESTRA DOLARES PYME')) or 'BBVA' not in content
             or deadline - time.monotonic() < 2):
         return data, []
     words = project_ocr_words(data, rotation=rotation, image_width=image_width, image_height=image_height,
@@ -126,8 +126,39 @@ def reread_bbva_fields(page, data, *, rotation, image_width, image_height, reade
         validate = {'page_number': valid_page, 'transaction_date': valid_date,
                     'control_label': lambda v: norm(v) in CONTROLS}[item['kind']]
         readings = [norm(o['text']) for o in observations if validate(o['text'])]
-        if len(observations) != 4 or len(readings) < 2 or len(set(readings)) != 1:
+        if len(set(readings)) > 1:
             continue
+        if len(observations) != 4 or len(readings) < 2 or len(set(readings)) != 1:
+            # A printed zero can remain an O under the language model. Read
+            # the numeric day from the same pixels with a digit-only alphabet;
+            # retain only an already valid printed month, never infer a date
+            # from adjacent transactions or a desired reconciliation result.
+            suffix = re.fullmatch(r'[^\s/]{1,4}/('+'|'.join(MONTHS)+')', norm(item['text']))
+            if item['kind'] != 'transaction_date' or not suffix:
+                continue
+            numeric = []
+            try:
+                for dpi in (300, 450):
+                    if deadline-time.monotonic() < 2:break
+                    pix=page.get_pixmap(matrix=fitz.Matrix(dpi/72,dpi/72),clip=clip,colorspace=fitz.csRGB,alpha=False,annots=True)
+                    with Image.frombytes('RGB',(pix.width,pix.height),pix.samples) as raw:
+                        with ImageOps.expand(raw,border=10,fill='white') as padded:
+                            oriented=padded.rotate(-rotation,expand=True,fillcolor='white') if rotation else padded
+                            try:
+                                value=pytesseract.image_to_string(oriented,lang=language,
+                                    config=f'--oem 1 --psm 7 --dpi {dpi} -c tessedit_char_whitelist=0123456789/',
+                                    timeout=min(5,deadline-time.monotonic())).strip()
+                            finally:
+                                if oriented is not padded:oriented.close()
+                    numeric.append(value)
+                    observations.append(dict(dpi=dpi,segmentation_mode=7,alphabet='printed_numeric_day',text=value))
+            except Exception:
+                continue
+            if len(numeric)!=2 or not all(re.fullmatch(r'\d{1,2}/',v) for v in numeric):continue
+            if len({int(v[:-1]) for v in numeric})!=1:continue
+            reconstructed=f'{int(numeric[0][:-1]):02d}/'+suffix[1]
+            if not valid_date(reconstructed) or any(value != reconstructed for value in readings):continue
+            readings=[reconstructed]
         if result is data:
             result = deepcopy(data)
         indices = [raw_indices[i] for i in item['indices']]

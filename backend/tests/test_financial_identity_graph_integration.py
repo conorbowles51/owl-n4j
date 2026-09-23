@@ -46,3 +46,32 @@ class IdentityGraphTests(DuplicateTestCase):
             with driver.session() as graph:
                 graph.run('MATCH (n {case_id:$case}) DETACH DELETE n', case=case).consume()
             driver.close()
+
+    def test_counterparty_projection_waits_for_payment_and_retracts_only_its_own_link(self):
+        from services.financial.payment_labels import PaymentLabelsRequest, update_payment_labels
+        uri = os.environ['NEO4J_URI']
+        assert uri == 'bolt://127.0.0.1:57687'
+        driver = GraphDatabase.driver(uri, auth=(os.environ['NEO4J_USER'], os.environ['NEO4J_PASSWORD']))
+        case = str(self.case.id)
+        document = self.make_document(); period = self.make_period(document)
+        row = self.add_row(period, document, amount=12345)
+        update_payment_labels(self.db, case_id=self.case.id, actor=self.actor, request=PaymentLabelsRequest(
+            transactions=[{'id':row.id,'version':0}], counterparty_link={'kind':'account','id':self.account.id}))
+        plan = identity_graph_plan(self.db, self.case.id)
+        try:
+            with driver.session() as graph:
+                self.assertTrue(apply_identity_graph(graph, plan))
+                self.assertEqual(graph.run('MATCH (n:FinancialIdentitySync {case_id:$case}) RETURN count(n) AS n', case=case).single()['n'], 0)
+                graph.run('CREATE (:FinancialTransaction {case_id:$case,key:$key,notes:"Retained investigator note"})', case=case,key=row.ref_id).consume()
+                self.assertTrue(apply_identity_graph(graph, plan))
+                self.assertFalse(apply_identity_graph(graph, plan))
+                self.assertEqual(graph.run('MATCH ({case_id:$case})-[r:REVIEWED_PAID_BY]->(:FinancialAccount {case_id:$case}) RETURN count(r) AS n',case=case).single()['n'],1)
+                update_payment_labels(self.db, case_id=self.case.id, actor=self.actor, request=PaymentLabelsRequest(
+                    transactions=[{'id':row.id,'version':1}], counterparty_link=None))
+                self.assertTrue(apply_identity_graph(graph, identity_graph_plan(self.db,self.case.id)))
+                self.assertEqual(graph.run('MATCH ({case_id:$case})-[r:REVIEWED_PAID_BY]->() RETURN count(r) AS n',case=case).single()['n'],0)
+                self.assertEqual(graph.run('MATCH (n:FinancialTransaction {case_id:$case,key:$key}) RETURN n.notes AS notes',case=case,key=row.ref_id).single()['notes'],'Retained investigator note')
+        finally:
+            with driver.session() as graph:
+                graph.run('MATCH (n {case_id:$case}) DETACH DELETE n',case=case).consume()
+            driver.close()

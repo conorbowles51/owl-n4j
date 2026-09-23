@@ -1,6 +1,7 @@
 """Reproducible display filters and row order inside a full ledger capture."""
 from typing import Annotated, Literal
 from datetime import date
+from urllib.parse import quote, unquote
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 from services.financial.ledger_summary import LedgerSummaryError
 
@@ -8,7 +9,7 @@ class LedgerTableView(BaseModel):
     model_config = ConfigDict(extra='forbid', strict=True)
     search_mode: Literal['text', 'boolean'] = 'text'
     search: Annotated[str, Field(max_length=256)] = ''
-    profile_id: Annotated[str, Field(max_length=1024, pattern=r'^$|^(account|name):')] = ''
+    profile_id: Annotated[str, Field(max_length=1024, pattern=r'^$|^(account|name|owner):')] = ''
     profile_group: Annotated[str, Field(pattern=r'^$|^[A-Z]{3}:(card|bank)$')] = ''
     category: Annotated[str, Field(max_length=120)] = ''
     account_id: Annotated[str, Field(pattern=r'^$|^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')] = ''
@@ -57,6 +58,10 @@ def _party(row, side):
     if value is None:
         value = (row.get('account_holder') or row.get('account_label') or row.get('account_id')) if own else row.get('counterparty_raw')
     name = ' '.join((value or '').split())
+    link = row.get('counterparty_link') if not own else None
+    if link:
+        encoded = quote(name, safe="~()*!.'-")
+        return f"identity:{link['kind']}:{link['id']}:{encoded}"
     return f'name:{name}' if name else f'unknown:{side}'
 
 
@@ -79,7 +84,16 @@ def _analysis_match(row, view, selections):
         name = row.get('from_name' if row['direction'] == 'credit' else 'to_name')
         if name is None:
             name = row.get('counterparty_raw')
-        if view.profile_id not in (f"account:{row['account_id']}", f"name:{name or ''}"):
+        profiles = {f"account:{id}" for id in [row.get('account_id'), row.get('canonical_account_id'), *(row.get('account_alias_ids') or [])] if id}
+        profiles.update(f"owner:{party['id']}" for party in row.get('account_holder_parties') or [])
+        link = row.get('counterparty_link')
+        if link:
+            profiles.add(f"{'owner' if link['kind'] == 'party' else 'account'}:{link['id']}")
+            if link.get('recorded_id'):
+                profiles.add(f"{'owner' if link['kind'] == 'party' else 'account'}:{link['recorded_id']}")
+        else:
+            profiles.add(f"name:{name or ''}")
+        if view.profile_id not in profiles:
             return False
     if view.analysis_group and group != view.analysis_group:
         return False
@@ -122,7 +136,7 @@ def capture_table_view(ledger, request, *, batch_scope=None):
         # distinction from eligibility of the parent source for totals.
         if row['ledger_status'] != 'admitted':
             continue
-        if view.account_id and row.get('account_id') != view.account_id:
+        if view.account_id and view.account_id not in (row.get('account_id'), row.get('canonical_account_id'), *(row.get('account_alias_ids') or [])):
             continue
         if view.account_holder and ' '.join((row.get('account_holder') or '').split()).lower() != ' '.join(view.account_holder.split()).lower():
             continue
@@ -153,7 +167,7 @@ def capture_table_view(ledger, request, *, batch_scope=None):
         def label(row):
             if field in ('from', 'to'):
                 key = _party(row, field)
-                return (key[5:] if key.startswith('name:') else 'Not identified').lower()
+                return (unquote(key.split(':', 3)[3]) if key.startswith('identity:') else key[5:] if key.startswith('name:') else 'Not identified').lower()
             return (row.get(field) or ('Uncategorized' if field == 'category' else '')).lower()
         rows.sort(key=lambda row: label(row).encode('utf-16-be', errors='surrogatepass'), reverse=direction == 'desc')
     result = dict(schema='loupe.financial.ledger_table_view/1',filters=view.model_dump(exclude={key for key in ('profile_id', 'profile_group', 'category', 'account_id', 'account_holder', 'source_document_id', 'import_batch_id', 'import_batch_revision', 'from_names', 'to_names', 'perspective_names', 'analysis_group', 'analysis_period', 'analysis_direction', 'analysis_categories', 'flow_party', 'flow_kind') if not getattr(view, key)}),

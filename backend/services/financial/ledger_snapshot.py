@@ -54,6 +54,9 @@ def _capture_history(session, document, *, case_id):
         row, source = reading['row'], reading['source']
         scopes['transaction'].add(UUID(row['key']))
         scopes['account'].add(UUID(row['account_id']))
+        if row.get('canonical_account_id'):
+            scopes['account'].add(UUID(row['canonical_account_id']))
+        scopes['account'].update(UUID(id) for id in row.get('account_alias_ids', []))
         scopes['source_document'].add(UUID(source['id']))
         if row['statement_period_id']:scopes['statement_period'].add(UUID(row['statement_period_id']))
         if source['evidence_file_id']:scopes['evidence_file'].add(UUID(source['evidence_file_id']))

@@ -1,3 +1,4 @@
+import { AccountConsolidation } from "./AccountConsolidation"
 import { useInvestigatorPayments } from "../hooks/use-investigator-payments"
 import { useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
@@ -95,7 +96,20 @@ export function InvestigatorPeople({ caseId }: { caseId: string }) {
   const profiles = useMemo(() => paymentProfiles(scopedRows), [scopedRows])
   const total = (rows: typeof data.rows) =>
     rows.reduce((sum, row) => sum + (minorAmount(row.amount_minor) ?? 0n), 0n)
-  const selected = profiles.find((profile) => profile.id === view.selected)
+  const selectedAccount = view.selected.startsWith("account:")
+    ? scopedRows.find((row) =>
+        [row.account_id, ...(row.account_alias_ids ?? [])].includes(
+          view.selected.slice(8)
+        )
+      )
+    : undefined
+  const selected = profiles.find(
+    (profile) =>
+      profile.id ===
+      (selectedAccount?.canonical_account_id
+        ? `account:${selectedAccount.canonical_account_id}`
+        : view.selected)
+  )
   const recentFindings = useFinancialFindingIndex(caseId)
   const selectedIds = new Set(selected?.rows.map((row) => row.key))
   const linked =
@@ -132,6 +146,7 @@ export function InvestigatorPeople({ caseId }: { caseId: string }) {
         description="Follow a recorded name from its payments to the accounts, statements and findings behind it."
       />
       <WorkspaceScope caseId={caseId} />
+      <AccountConsolidation caseId={caseId} />
       <InvestigationReadState data={data}>
         {selected ? (
           <>
@@ -270,8 +285,10 @@ export function InvestigatorPeople({ caseId }: { caseId: string }) {
                 <ul className="space-y-2 pt-2">
                   {selected.accounts.map((id) => (
                     <li key={id}>
-                      {selected.rows.find((row) => row.account_id === id)
-                        ?.account_label || "Account name not recorded"}
+                      {selected.rows.find(
+                        (row) =>
+                          (row.canonical_account_id || row.account_id) === id
+                      )?.account_label || "Account name not recorded"}
                     </li>
                   ))}
                 </ul>

@@ -17,15 +17,20 @@ def ledger_posting_graph(export, *, population='working'):
     readings = [r for r in ledger['readings'] if (r['exclusion_reason'] in (None, 'proof_class_not_included') if population == 'working' else r['included'])]
     nodes, edges = {}, []
     for reading in readings:
-        row = reading['row']; account = row['account_id']; label = row.get('from_name' if row['direction'] == 'credit' else 'to_name', row['counterparty_raw'])
+        row = reading['row']; account = row.get('canonical_account_id') or row['account_id']; label = row.get('from_name' if row['direction'] == 'credit' else 'to_name', row['counterparty_raw'])
         if label is not None and not isinstance(label, str): raise LedgerSummaryError('A source counterparty label is invalid.')
         account_key = 'account:' + account
         account_details = reading.get('account', {})
         nodes.setdefault(account_key, dict(id=account_key, kind='account', account_id=account,
-            label=account_details.get('label') or ('Account ' + account[:8])))
+            label=row.get('canonical_account_label') or account_details.get('label') or ('Account ' + account[:8])))
         group_key = 'source-label:' + hashlib.sha256(json.dumps([account, row['currency'], label], ensure_ascii=False).encode()).hexdigest()
-        nodes.setdefault(group_key, dict(id=group_key, kind='source_label', account_id=account,
-            label=label or 'Name not identified'))
+        if not row.get('counterparty_link'):
+            nodes.setdefault(group_key, dict(id=group_key, kind='source_label', account_id=account,
+                label=label or 'Name not identified'))
+        identity = row.get('counterparty_link')
+        if identity:
+            group_key = identity['kind'] + ':' + identity['id']
+            nodes.setdefault(group_key, dict(id=group_key, kind='account' if identity['kind'] == 'account' else 'source_label', account_id=identity['id'] if identity['kind'] == 'account' else account, label=identity['label']))
         source, target = (account_key, group_key) if row['direction']=='debit' else (group_key, account_key)
         edges.append(dict(id=row['key'], source=source, target=target, transaction_id=row['key'],
             source_document_id=row['source_document_id'], currency=row['currency'], amount_minor=row['amount_minor'],

@@ -15,7 +15,8 @@ export function conditionalTransferGraph(
       !credit ||
       debit.direction !== "debit" ||
       credit.direction !== "credit" ||
-      debit.account_id === credit.account_id ||
+      (debit.canonical_account_id || debit.account_id) ===
+        (credit.canonical_account_id || credit.account_id) ||
       debit.currency !== credit.currency ||
       debit.amount_minor !== credit.amount_minor ||
       used.has(debit.key) ||
@@ -25,17 +26,20 @@ export function conditionalTransferGraph(
     used.add(debit.key)
     used.add(credit.key)
     for (const row of [debit, credit])
-      nodes.set(row.account_id, {
-        id: row.account_id,
-        account_id: row.account_id,
+      nodes.set(row.canonical_account_id || row.account_id, {
+        id: row.canonical_account_id || row.account_id,
+        account_id: row.canonical_account_id || row.account_id,
         kind: "account",
-        label: row.account_label ?? `Account ${row.account_id.slice(0, 8)}`,
+        label:
+          row.canonical_account_label ||
+          row.account_label ||
+          `Account ${row.account_id.slice(0, 8)}`,
       })
     return {
       id: debit.key,
       transaction_id: debit.key,
-      source: debit.account_id,
-      target: credit.account_id,
+      source: debit.canonical_account_id || debit.account_id,
+      target: credit.canonical_account_id || credit.account_id,
       source_document_id: debit.source_document_id,
       currency: debit.currency,
       amount_minor: debit.amount_minor,

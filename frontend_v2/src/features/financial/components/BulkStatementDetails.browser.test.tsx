@@ -223,3 +223,37 @@ it("offers the same bulk account action in the processing batch and keeps contro
     "Example Holdings"
   )
 })
+
+it("finds ready statements and outstanding checks from the file list without opening a batch", async () => {
+  const original = vi.mocked(fetchAPI).getMockImplementation()!
+  vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
+    if (url.startsWith("/api/financial/statement-import/files?"))
+      return {
+        case_id: "case",
+        truncated: false,
+        files: files.map((file, i) => ({
+          evidence_file_id: file.id,
+          current_transactions: 0,
+          periods: [],
+          prepared_periods: 1,
+          available_periods: i === 0 ? 1 : 0,
+          periods_with_checks: i === 1 ? 1 : 0,
+        })),
+      } as never
+    return original(url, options)
+  })
+  await page.viewport(1280, 850)
+  mount()
+  await screen.findByText(/1 available to import/)
+  fireEvent.change(screen.getByLabelText("Show files"), {
+    target: { value: "ready" },
+  })
+  expect(screen.getByText("Example 0.pdf")).toBeVisible()
+  expect(screen.queryByText("Example 1.pdf")).toBeNull()
+  fireEvent.change(screen.getByLabelText("Show files"), {
+    target: { value: "checks" },
+  })
+  expect(screen.getByText("Example 1.pdf")).toBeVisible()
+  expect(screen.queryByText("Example 0.pdf")).toBeNull()
+  expect(screen.getByText(/1 periods have checks to review/)).toBeVisible()
+})

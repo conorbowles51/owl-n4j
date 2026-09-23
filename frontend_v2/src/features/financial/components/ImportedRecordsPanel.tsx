@@ -1,3 +1,4 @@
+import { PaymentCounterpartyPicker } from "./PaymentCounterpartyPicker"
 import { appendAccountSelection } from "../lib/account-selection"
 import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
@@ -30,6 +31,10 @@ const recordSchema = z.object({
     date_values: z.record(z.string(), z.string()).optional(),
     description: z.string(),
     counterparty: z.string(),
+    counterparty_link: z
+      .object({ kind: z.enum(["party", "account"]), id: z.string().uuid() })
+      .nullable()
+      .optional(),
     amount_minor: z.string(),
     direction: z.string().nullable(),
     balance_minor: z.string().nullable(),
@@ -60,7 +65,8 @@ export function ImportedRecordsPanel({
         limit: "50",
       })
       appendAccountSelection(search, params)
-      if (params.sourceDocumentId) search.set("source_document_id", params.sourceDocumentId)
+      if (params.sourceDocumentId)
+        search.set("source_document_id", params.sourceDocumentId)
       if (params.accountId) search.set("account_id", params.accountId)
       if (params.startDate) search.set("start_date", params.startDate)
       if (params.endDate) search.set("end_date", params.endDate)
@@ -253,6 +259,11 @@ function ImportedRecordEditor({
     }
   )
   const { fields, currency, amount, balance, changeBalance } = draft
+  const validStoredBalance =
+    !!fields.balance_minor &&
+    /^-?(0|[1-9][0-9]{0,18})$/.test(fields.balance_minor) &&
+    BigInt(fields.balance_minor) >= -9223372036854775808n &&
+    BigInt(fields.balance_minor) <= 9223372036854775807n
   const setFields = (update: (previous: typeof fields) => typeof fields) =>
     setDraft((previous) => ({ ...previous, fields: update(previous.fields) }))
   const setCurrency = (currency: string) =>
@@ -282,7 +293,9 @@ function ImportedRecordEditor({
               ? `-${magnitude}`
               : magnitude
           : null
-        : fields.balance_minor
+        : validStoredBalance
+          ? fields.balance_minor
+          : null
       if (minor === null || !minor || correctedBalance === undefined)
         throw Error("Enter the amount shown on the original.")
       if (changeBalance && balance.trim() && correctedBalance === null)
@@ -397,6 +410,13 @@ function ImportedRecordEditor({
               onChange={(e) => change({ counterparty: e.target.value })}
             />
           </label>
+          <PaymentCounterpartyPicker
+            caseId={caseId}
+            value={fields.counterparty_link}
+            direction={fields.direction || undefined}
+            disabled={!canEdit}
+            onChange={(link) => change({ counterparty_link: link })}
+          />
           <div className="grid grid-cols-2 gap-3">
             <label className="block text-sm">
               Currency
@@ -448,6 +468,13 @@ function ImportedRecordEditor({
             />
             Correct or clear the printed balance
           </label>
+          {fields.balance_minor && !validStoredBalance && !changeBalance && (
+            <p className="text-sm">
+              The original balance was unreadable. It remains with the source;
+              saving this payment will leave its balance unknown unless you
+              correct it here.
+            </p>
+          )}
           {changeBalance && (
             <label className="block text-sm">
               Printed balance (leave blank if absent)

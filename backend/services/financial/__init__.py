@@ -2122,3 +2122,11 @@ from services.financial.saved_statement_recovery import StatementRecoveryRequest
 from services.financial.transfer_parts import assess_transfer_parts
 __all__ += ["IdentityRequest", "identity_state", "save_identity", "identity_graph_plan", "apply_identity_graph",
     "StatementRecoveryRequest", "preview_recovery", "save_recovery", "assess_transfer_parts"]
+
+from services.financial.account_consolidation import ConsolidationRequest, preview_consolidation, save_consolidation, undo_consolidation
+from services.financial.bulk_statement_details import BulkEdit
+from services.financial.manual_statement_payment import ManualStatementPayment
+from services.financial.payment_counterparty_link import PaymentCounterpartyLink
+from services.financial.statement_import_santander import santander_catalog
+__all__ += ["ConsolidationRequest", "preview_consolidation", "save_consolidation", "undo_consolidation",
+    "BulkEdit", "ManualStatementPayment", "PaymentCounterpartyLink", "santander_catalog"]

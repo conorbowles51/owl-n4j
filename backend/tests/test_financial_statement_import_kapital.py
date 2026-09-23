@@ -147,3 +147,20 @@ class KapitalImportTests(TestCase):
             self.assertEqual(receipt['incomplete_count'],0)
             self.assertFalse(self.f.confirm(request)['created'])
         self.assertNotEqual(receipts[0]['account_id'],receipts[1]['account_id'])
+
+
+class IntercamProposalTests(TestCase):
+    def test_shared_product_reader_keeps_bank_and_currency_scopes(self):
+        from services.financial.statement_import_kapital import INTERCAM_PRODUCT
+        sources=statement()
+        for s in sources:
+            for r in s['rows']:
+                for c in r['cells']:
+                    c['expected_text']=c['expected_text'].replace('kapital','Intercam').replace('KAPITAL ','').replace('128000000000000','136000000000000')
+        choices=kapital_catalog(sources,institution='Intercam',product=INTERCAM_PRODUCT,layout='intercam-mexico-product-statement')[0]
+        self.assertEqual(len(choices),2)
+        self.assertTrue(all(c['institution']=='Intercam' for c in choices))
+        self.assertEqual([c['currency'] for c in choices],['MXN','USD'])
+        self.assertEqual(check_statement_rows(propose_kapital_statement(sources,'MXN',choices[0])['rows'])['transaction_count'],2)
+        # Counterparty wording cannot make a Kapital product an Intercam account.
+        self.assertEqual(kapital_catalog(statement(),institution='Intercam',product=INTERCAM_PRODUCT,layout='intercam-mexico-product-statement')[0],[])

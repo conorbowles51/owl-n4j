@@ -397,6 +397,45 @@ def _outside_drawn_tables(page, tables, *, page_number, rotation, page_width, pa
     return [recovered] if recovered is not None else []
 
 
+def _split_merged_payment_tables(page, tables, *, page_number, rotation, page_width, page_height):
+    """Read words inside a ruled payment table whose body is one tall cell.
+
+    Splitting a multiline amount string by order loses empty debit/credit cells.
+    Instead use the printed word coordinates, replacing that table once. Other
+    ruled tables keep their geometry. A failed recovery retains the original.
+    """
+    import re
+    from types import SimpleNamespace
+    from services.financial.locators import capture
+    result = []
+    for table in tables:
+        geometry = table.geometry
+        cells = geometry.cells if geometry else ()
+        labels = {' '.join(c.text.upper().split()) for c in cells}
+        monetary = any('RETIRO' in t or 'DEBIT' in t for t in labels) and any('DEPOSITO' in t or 'DEPÓSITO' in t or 'CREDIT' in t for t in labels)
+        repeated_dates = any(len(parts := c.text.strip().splitlines()) >= 2 and all(
+            re.fullmatch(r'\d{1,2}|\d{1,2}[/-][A-Z0-9]{2,3}(?:[/-]\d{2,4})?', p.strip().upper()) for p in parts) for c in cells)
+        if not monetary or not repeated_dates or geometry.locator.rectangle is None:
+            result.append(table)
+            continue
+        try:
+            target = geometry.locator.rectangle
+            words = []
+            for word in page.get_text('words'):
+                rect = capture(page_number=page_number, rect=tuple(word[:4]), space=TEXT_COORDINATE_SPACE,
+                    rotation=rotation, page_width=page_width, page_height=page_height)
+                if target.x0 <= (rect.x0+rect.x1)/2 <= target.x1 and target.y0 <= (rect.y0+rect.y1)/2 <= target.y1:
+                    words.append(word)
+            recovered = read_text_rows(SimpleNamespace(get_text=lambda kind: words), minimum_rows=1)
+            built = _build([recovered] if recovered else [], table_source=TableSource.text_alignment,
+                space=TEXT_COORDINATE_SPACE, page_number=page_number, extent_failure=None,
+                rotation=rotation, page_width=page_width, page_height=page_height)
+            result.extend(built if _resolved_cells(built) else [table])
+        except Exception:
+            result.append(table)
+    return result
+
+
 def read_tables(page: Any, page_number: int) -> tuple[ExtractedTable, ...]:
     """Every table on a page, each with its text and as much geometry as holds.
 
@@ -488,12 +527,32 @@ def read_tables(page: Any, page_number: int) -> tuple[ExtractedTable, ...]:
         if _resolved_cells(recovered) or not tables:
             tables = recovered or tables
     elif extent_failure is None:
-        tables.extend(_build(
+        # These ruled product statements draw large merged cells which can
+        # omit even the date/folio and product headings. Use the whole page's
+        # positioned words once when its explicit payment headings establish
+        # that layout. Do not combine two readings of the same amounts.
+        try:
+            import unicodedata
+            tokens = {' '.join(''.join(c for c in unicodedata.normalize('NFKD', str(w[4]).upper())
+                if not unicodedata.combining(c)).split()) for w in page.get_text('words')}
+            product_grid = {'DIA','FOLIO','CONCEPTO','DEPOSITOS','RETIROS','SALDO'} <= tokens
+            product_summary = {'SERVICIO','EMPRESARIAL','FX','CLABE','MONEDA'} <= tokens
+        except Exception:
+            product_grid = product_summary = False
+        if product_grid or product_summary:
+            aligned = _build(_recover(page), table_source=TableSource.text_alignment,
+                space=TEXT_COORDINATE_SPACE, page_number=page_number, extent_failure=None,
+                rotation=rotation, page_width=page_width, page_height=page_height)
+            if _resolved_cells(aligned):
+                return tuple(aligned)
+        outside = _build(
             _outside_drawn_tables(page, tables, page_number=page_number, rotation=rotation,
                 page_width=page_width, page_height=page_height),
             table_source=TableSource.text_alignment, space=TEXT_COORDINATE_SPACE,
             page_number=page_number, extent_failure=None, rotation=rotation,
-            page_width=page_width, page_height=page_height))
+            page_width=page_width, page_height=page_height)
+        tables = _split_merged_payment_tables(page, tables, page_number=page_number,
+            rotation=rotation, page_width=page_width, page_height=page_height) + outside
 
     if not tables and drawn_failure is not None:
         raise drawn_failure

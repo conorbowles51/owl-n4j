@@ -25,6 +25,18 @@ const transferDetails = z.object({
 })
 export type TransferDetails = z.infer<typeof transferDetails>
 export const transactionDetail = z.object({
+  counterparty_link: z
+    .object({
+      kind: z.enum(["party", "account"]),
+      id: z.string().uuid(),
+      label: z.string(),
+      recorded_id: z.string().uuid().optional(),
+    })
+    .nullable()
+    .optional(),
+  canonical_account_id: z.string().nullable().optional(),
+  canonical_account_label: z.string().nullable().optional(),
+  account_alias_ids: z.array(z.string()).optional(),
   transfer_details: transferDetails.nullable().optional(),
   category: z.string().optional(),
   from_name: z.string().optional(),

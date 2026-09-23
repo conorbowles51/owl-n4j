@@ -11,5 +11,6 @@ export const BatchReviewContext = createContext<{
   saved: () => void
   nextProblem?: () => Promise<void>
   previousProblem?: () => Promise<void>
+  beforeNavigate?: { current: (() => Promise<unknown>) | null }
 } | null>(null)
 export const useBatchReview = () => useContext(BatchReviewContext)

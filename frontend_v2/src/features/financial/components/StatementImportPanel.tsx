@@ -1,3 +1,7 @@
+import {
+  PaymentCounterpartyPicker,
+  type PaymentCounterpartyLink,
+} from "./PaymentCounterpartyPicker"
 import { CurrencyOptions } from "./CurrencyOptions"
 import { currencyMinorUnits } from "../lib/ledger-format"
 import { ImportedStatementDetails } from "./ImportedStatementDetails"
@@ -47,6 +51,7 @@ import {
   type DateRole,
 } from "../lib/statement-date-fields"
 import { useStatementWorkspace } from "../stores/statement-workspace"
+import { useFinancialDraft } from "../stores/financial-drafts"
 
 const cell = z.object({
   column_index: z.number(),
@@ -239,6 +244,7 @@ type Edit = {
   date_unprinted?: boolean
   date_values?: Partial<Record<DateRole, string>>
   description: string
+  counterparty_link?: PaymentCounterpartyLink | null
   counterparty: string
   amount_minor: string
   direction: "credit" | "debit" | ""
@@ -642,6 +648,7 @@ function StatementReview({
             key={query.data.current_import.source_document_id}
             caseId={caseId}
             sourceId={query.data.current_import.source_document_id}
+            withSource
             initiallyOpen
             focusField={batchReview?.field}
           />
@@ -1058,6 +1065,16 @@ function EditableStatement({
     !importedHere &&
     !batchReview?.readOnly &&
     !(batchReview && data.current_import)
+  useEffect(() => {
+    const navigation = batchReview?.beforeNavigate
+    if (!navigation) return
+    navigation.current = canEdit
+      ? () => saveBatchReview.mutateAsync("progress")
+      : null
+    return () => {
+      navigation.current = null
+    }
+  })
   const owner = useAuthStore((state) => state.user?.id || state.user?.username)
   const draftKey = owner
     ? `loupe-statement-review:${owner}:${caseId}:${fileId}:${data.revision}${batchReview ? `:batch:${batchReview.draftRevision || "initial"}` : progressRevision !== "initial" ? `:saved:${progressRevision}` : ""}`
@@ -1146,22 +1163,32 @@ function EditableStatement({
         data.metadata.account_number
     )
   const [focus, setFocus] = useState<{
-      rowId: string
-      locator: unknown
-    } | null>({
-      rowId:
-        data.rows.find(
-          (row) => !row.excluded && row.page_number === initialPage
-        )?.id ?? "",
-      locator: statementRowLocator(
-        data.rows.find(
-          (row) => !row.excluded && row.page_number === initialPage
-        ),
-        initialPage
-      ),
-    }),
-    [showExcluded, setShowExcluded] = useState(false),
-    [onlyIssues, setOnlyIssues] = useState(false)
+    rowId: string
+    locator: unknown
+  } | null>({
+    rowId:
+      data.rows.find((row) => !row.excluded && row.page_number === initialPage)
+        ?.id ?? "",
+    locator: statementRowLocator(
+      data.rows.find((row) => !row.excluded && row.page_number === initialPage),
+      initialPage
+    ),
+  })
+  const [reviewFilters, setReviewFilters] = useFinancialDraft(
+    caseId,
+    `review-filters:${fileId}:${data.statement_id || "default"}`,
+    { showExcluded: false, onlyIssues: false }
+  )
+  const { showExcluded, onlyIssues } = reviewFilters
+  const setShowExcluded = (value: boolean) =>
+    setReviewFilters((previous) => ({ ...previous, showExcluded: value }))
+  const setOnlyIssues = (value: boolean) =>
+    setReviewFilters((previous) => ({ ...previous, onlyIssues: value }))
+  const [activeRows, setActiveRows] = useState<Set<string>>(() => new Set())
+  const keepRowVisible = (id: string) =>
+    setActiveRows((previous) =>
+      previous.has(id) ? previous : new Set([...previous, id])
+    )
   const [amountText, setAmountText] = useState<Record<string, string>>(
     saved?.amountText ?? {}
   )
@@ -1287,6 +1314,7 @@ function EditableStatement({
           "date",
           "description",
           "counterparty",
+          "counterparty_link",
           "amount_minor",
           "direction",
           "balance_minor",
@@ -1717,6 +1745,7 @@ function EditableStatement({
         !r.excluded ||
         originals.get(r.id)?.kind === "balance") &&
       (!onlyIssues ||
+        changed(r) ||
         rowProblems(r).length > 0 ||
         (!!originals.get(r.id)?.issues.length && !r.reason && !changed(r)))
   )
@@ -1724,10 +1753,18 @@ function EditableStatement({
     correctionPage,
     Math.max(0, Math.ceil(visible.length / 50) - 1)
   )
-  const correctionRows = visible.slice(
+  const pageRows = visible.slice(
     currentCorrectionPage * 50,
     (currentCorrectionPage + 1) * 50
   )
+  // Active inputs are not derived from a changing filter or page projection.
+  // Keep them mounted until the investigator explicitly finishes that row.
+  const correctionRows = [
+    ...pageRows,
+    ...rows.filter(
+      (r) => activeRows.has(r.id) && !pageRows.some((p) => p.id === r.id)
+    ),
+  ]
   const focusedPage = z.object({ page: z.number() }).safeParse(focus?.locator)
   const currentPage = focusedPage.success ? focusedPage.data.page : sourcePage
   useEffect(() => {
@@ -1755,7 +1792,7 @@ function EditableStatement({
   const editBalance = (id: string) => {
     const original = originals.get(id)
     if (!original) return
-    setOnlyIssues(false)
+    keepRowVisible(id)
     const balanceRows = rows.filter(
       (row) =>
         showExcluded ||
@@ -1778,8 +1815,7 @@ function EditableStatement({
   const reviewRow = (id: string) => {
     const original = originals.get(id)
     if (!original) return
-    setOnlyIssues(false)
-    setShowExcluded(true)
+    keepRowVisible(id)
     setCorrectionPage(Math.floor(rows.findIndex((row) => row.id === id) / 50))
     setFocus({
       rowId: id,
@@ -1805,7 +1841,7 @@ function EditableStatement({
   const openInlineRow = (id: string) => {
     const original = originals.get(id)
     if (!original) return
-    if (!original.source_cells.length) {
+    if (!original.source_cells.length && !original.id.startsWith("manual:")) {
       reviewRow(id)
       return
     }
@@ -1846,9 +1882,13 @@ function EditableStatement({
     if (
       !edit ||
       !original ||
-      !["transaction", "unresolved", "balance", "statement_total"].includes(
-        original.kind
-      )
+      ![
+        "transaction",
+        "unresolved",
+        "balance",
+        "statement_total",
+        "manual_entry",
+      ].includes(original.kind)
     )
       return null
     if (focus?.rowId !== id)
@@ -1870,13 +1910,21 @@ function EditableStatement({
       )
     return (
       <StatementRowEditor
+        caseId={caseId}
         row={edit}
         statementEnd={periodEnd}
         additionalPrintedDate={original.fields.additional_printed_date}
         kind={original.kind}
         problems={rowProblems(edit)}
         update={(patch) => update(id, patch)}
-        close={() => setInlineRowId(null)}
+        close={() => {
+          setInlineRowId(null)
+          setActiveRows((current) => {
+            const next = new Set(current)
+            next.delete(id)
+            return next
+          })
+        }}
         text={(field) =>
           field === "balance"
             ? (amountText[`balance:${id}`] ??
@@ -1929,126 +1977,129 @@ function EditableStatement({
     // Apply the requested problem once, without reopening it after each edit.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+  const statementDetails = (
+    <section aria-label="Statement details" className="space-y-3 my-4">
+      <div
+        hidden={data.assignment_only || (!!data.current_import && !canEdit)}
+        className={
+          data.assignment_only ? "hidden" : "grid sm:grid-cols-3 gap-3"
+        }
+      >
+        <label>
+          Account holder
+          <input
+            aria-label="Account holder"
+            readOnly={!canEdit}
+            className="block border rounded p-2 w-full bg-background"
+            value={holder}
+            onChange={(e) => setHolder(e.target.value)}
+          />
+        </label>
+        <label>
+          Account number
+          <input
+            aria-label="Account number"
+            readOnly={!canEdit}
+            className="block border rounded p-2 w-full bg-background"
+            value={account}
+            onChange={(e) => setAccount(e.target.value)}
+          />
+        </label>
+        <div>
+          <p>Statement currency</p>
+          <strong>{data.current_import?.currency || data.currency}</strong>
+          <p className="text-sm">{data.metadata.period}</p>
+        </div>
+      </div>
+      <div
+        className={
+          data.assignment_only || (!!data.current_import && !canEdit)
+            ? "hidden"
+            : "flex flex-wrap gap-3"
+        }
+      >
+        <label>
+          Bank
+          <input
+            aria-label="Bank"
+            readOnly={!canEdit}
+            className="block border rounded p-2 bg-background"
+            value={institution}
+            onChange={(e) => setInstitution(e.target.value)}
+          />
+        </label>
+        <label>
+          Period start
+          <input
+            type="date"
+            aria-label="Period start"
+            readOnly={!canEdit}
+            className="block border rounded p-2 bg-background"
+            value={periodStart}
+            onChange={(e) => setPeriodStart(e.target.value)}
+          />
+        </label>
+        <label>
+          Period end
+          <input
+            type="date"
+            aria-label="Period end"
+            readOnly={!canEdit}
+            className="block border rounded p-2 bg-background"
+            value={periodEnd}
+            onChange={(e) => setPeriodEnd(e.target.value)}
+          />
+        </label>
+        {!excludedCopy && (detailsChanged || data.current_import) && (
+          <label>
+            {replacePrevious
+              ? "Reason for replacing the previous import"
+              : "Note about detail changes (optional)"}
+            <input
+              aria-label="Reason for detail corrections"
+              readOnly={!canEdit}
+              className="block border rounded p-2 bg-background"
+              value={detailsReason}
+              onChange={(e) => setDetailsReason(e.target.value)}
+            />
+          </label>
+        )}
+      </div>
+      {!data.assignment_only &&
+        canEdit &&
+        (!data.current_import || replacePrevious) && (
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <Button
+              variant="outline"
+              disabled={
+                assignmentSaving ||
+                saveBatchReview.isPending ||
+                confirm.isPending ||
+                (savedReadingChanged && !previousReviewChecked)
+              }
+              onClick={() => saveBatchReview.mutate("progress")}
+            >
+              {saveBatchReview.isPending
+                ? "Saving details…"
+                : "Save account details"}
+            </Button>
+            <span className="text-muted-foreground">
+              Saves these details and your current corrections to the case.
+              Import also saves them.
+            </span>
+            {saveBatchReview.isSuccess &&
+              savedServerSnapshot === currentRequestSnapshot.current && (
+                <p role="status">Account details saved to the case.</p>
+              )}
+          </div>
+        )}
+    </section>
+  )
   return (
     <div ref={statementControls} className="space-y-4 pt-4">
       <header>
         <h3 className="text-lg font-semibold">Review {data.filename}</h3>
-        <section aria-label="Statement details" className="space-y-3 my-4">
-          <div
-            hidden={data.assignment_only || (!!data.current_import && !canEdit)}
-            className={
-              data.assignment_only ? "hidden" : "grid sm:grid-cols-3 gap-3"
-            }
-          >
-            <label>
-              Account holder
-              <input
-                aria-label="Account holder"
-                readOnly={!canEdit}
-                className="block border rounded p-2 w-full bg-background"
-                value={holder}
-                onChange={(e) => setHolder(e.target.value)}
-              />
-            </label>
-            <label>
-              Account number
-              <input
-                aria-label="Account number"
-                readOnly={!canEdit}
-                className="block border rounded p-2 w-full bg-background"
-                value={account}
-                onChange={(e) => setAccount(e.target.value)}
-              />
-            </label>
-            <div>
-              <p>Statement currency</p>
-              <strong>{data.current_import?.currency || data.currency}</strong>
-              <p className="text-sm">{data.metadata.period}</p>
-            </div>
-          </div>
-          <div
-            className={
-              data.assignment_only || (!!data.current_import && !canEdit)
-                ? "hidden"
-                : "flex flex-wrap gap-3"
-            }
-          >
-            <label>
-              Bank
-              <input
-                aria-label="Bank"
-                readOnly={!canEdit}
-                className="block border rounded p-2 bg-background"
-                value={institution}
-                onChange={(e) => setInstitution(e.target.value)}
-              />
-            </label>
-            <label>
-              Period start
-              <input
-                type="date"
-                aria-label="Period start"
-                readOnly={!canEdit}
-                className="block border rounded p-2 bg-background"
-                value={periodStart}
-                onChange={(e) => setPeriodStart(e.target.value)}
-              />
-            </label>
-            <label>
-              Period end
-              <input
-                type="date"
-                aria-label="Period end"
-                readOnly={!canEdit}
-                className="block border rounded p-2 bg-background"
-                value={periodEnd}
-                onChange={(e) => setPeriodEnd(e.target.value)}
-              />
-            </label>
-            {!excludedCopy && (detailsChanged || data.current_import) && (
-              <label>
-                {replacePrevious
-                  ? "Reason for replacing the previous import"
-                  : "Note about detail changes (optional)"}
-                <input
-                  aria-label="Reason for detail corrections"
-                  readOnly={!canEdit}
-                  className="block border rounded p-2 bg-background"
-                  value={detailsReason}
-                  onChange={(e) => setDetailsReason(e.target.value)}
-                />
-              </label>
-            )}
-          </div>
-          {!data.assignment_only &&
-            canEdit &&
-            (!data.current_import || replacePrevious) && (
-              <div className="flex flex-wrap items-center gap-2 text-sm">
-                <Button
-                  variant="outline"
-                  disabled={
-                    assignmentSaving ||
-                    saveBatchReview.isPending ||
-                    confirm.isPending ||
-                    (savedReadingChanged && !previousReviewChecked)
-                  }
-                  onClick={() => saveBatchReview.mutate("progress")}
-                >
-                  {saveBatchReview.isPending
-                    ? "Saving details…"
-                    : "Save account details"}
-                </Button>
-                <span className="text-muted-foreground">
-                  Saves these details and your current corrections to the case.
-                  Import also saves them.
-                </span>
-                {saveBatchReview.isSuccess &&
-                  savedServerSnapshot === currentRequestSnapshot.current && (
-                    <p role="status">Account details saved to the case.</p>
-                  )}
-              </div>
-            )}
-        </section>
+
         {draftSaved && canEdit && !saveBatchReview.isSuccess && (
           <p className="text-xs text-muted-foreground" role="status">
             Recent edits are saved in this browser tab. Use Save progress to
@@ -2582,10 +2633,10 @@ function EditableStatement({
         className="space-y-4"
       >
         <div
-          className={`grid gap-4 ${focus ? "xl:grid-cols-[minmax(300px,0.8fr)_minmax(0,1.2fr)]" : ""}`}
+          className={`grid gap-4 ${focus ? "lg:grid-cols-[minmax(300px,0.8fr)_minmax(0,1.2fr)]" : ""}`}
         >
           {focus && (
-            <aside className="min-w-0 xl:sticky xl:top-0 self-start rounded border p-3">
+            <aside className="min-w-0 lg:sticky lg:top-0 self-start rounded border p-3">
               <div className="flex justify-between items-center mb-2">
                 <h4 className="font-semibold">Original statement</h4>
                 <Button variant="ghost" onClick={() => setFocus(null)}>
@@ -2603,6 +2654,86 @@ function EditableStatement({
             ref={printedControls}
             className="min-w-0 overflow-y-auto overflow-x-hidden max-h-[65vh]"
           >
+            {!importedHere && statementDetails}
+            {!excludedCopy && !importedHere && !data.assignment_only && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  const page =
+                    (focus
+                      ? originals.get(focus.rowId)?.page_number
+                      : undefined) ?? sourcePage
+                  if (!page) return
+                  const id = `manual:${newReviewId()}`
+                  setInlineRowId(id)
+                  setCorrectionsOpen(true)
+                  keepRowVisible(id)
+                  setCorrectionPage(Math.floor(visible.length / 50))
+                  setRows((current) => [
+                    ...current,
+                    {
+                      id,
+                      excluded: false,
+                      manual_page: page,
+                      date: "",
+                      description: "",
+                      amount_minor: "0",
+                      direction: "",
+                      counterparty: "",
+                      balance_minor: null,
+                      reason: "",
+                    },
+                  ])
+                  setFocus({ rowId: id, locator: { kind: "page_only", page } })
+                  requestAnimationFrame(() => {
+                    printedControls.current?.scrollIntoView({
+                      block: "nearest",
+                      behavior: "smooth",
+                    })
+                    printedControls.current
+                      ?.querySelector<HTMLInputElement>(
+                        '[aria-label="Corrected transaction date"]'
+                      )
+                      ?.focus({ preventScroll: true })
+                  })
+                }}
+                disabled={!canEdit || !data.page_numbers.length}
+              >
+                Add a missed transaction
+              </Button>
+            )}
+            {inlineRowId?.startsWith("manual:") && (
+              <div className="mt-3">
+                <p className="text-sm">
+                  Adding a payment for {holder || "this holder"} ·{" "}
+                  {account || "this account"} · {data.currency}. It stays in
+                  your draft until you save or import.
+                </p>
+                <label className="text-sm">
+                  Payment source page{" "}
+                  <select
+                    aria-label="Manual payment source page"
+                    value={
+                      editsById.get(inlineRowId)?.manual_page || currentPage
+                    }
+                    onChange={(event) => {
+                      const page = Number(event.target.value)
+                      update(inlineRowId, { manual_page: page })
+                      setFocus({
+                        rowId: inlineRowId,
+                        locator: { kind: "page_only", page },
+                      })
+                    }}
+                  >
+                    {data.page_numbers.map((page) => (
+                      <option key={page}>{page}</option>
+                    ))}
+                  </select>
+                </label>
+                {rowTools(inlineRowId)}
+              </div>
+            )}
             <h4 className="font-semibold">Extracted statement</h4>
             <p className="text-sm text-muted-foreground mb-3">
               Select a printed value to locate it in the PDF, or use Previous
@@ -2797,6 +2928,7 @@ function EditableStatement({
                       return (
                         <tr
                           key={r.id}
+                          onFocusCapture={() => keepRowVisible(r.id)}
                           className={r.excluded ? "opacity-70" : ""}
                         >
                           <td className="p-2 border-b align-top">
@@ -2812,6 +2944,22 @@ function EditableStatement({
                                 update(r.id, { excluded: !e.target.checked })
                               }
                             />
+                            {activeRows.has(r.id) && (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() =>
+                                  setActiveRows((previous) => {
+                                    const next = new Set(previous)
+                                    next.delete(r.id)
+                                    return next
+                                  })
+                                }
+                              >
+                                Done editing row
+                              </Button>
+                            )}
                           </td>
                           <td className="p-2 border-b align-top">
                             <label
@@ -2917,6 +3065,15 @@ function EditableStatement({
                                 }
                               />
                             </label>
+                            <PaymentCounterpartyPicker
+                              caseId={caseId}
+                              value={r.counterparty_link}
+                              direction={r.direction}
+                              disabled={r.excluded}
+                              onChange={(link) =>
+                                update(r.id, { counterparty_link: link })
+                              }
+                            />
                             {(!r.reason && !changed(r)
                               ? original.issues
                               : []
@@ -3024,7 +3181,13 @@ function EditableStatement({
                               <input
                                 id={`review-${direction}-${r.id}`}
                                 aria-label={`${direction === "credit" ? "Credit" : "Debit"} ${r.id}`}
-                                disabled={r.excluded}
+                                disabled={
+                                  r.excluded ||
+                                  (!!r.amount_minor &&
+                                    r.amount_minor !== "0" &&
+                                    !!r.direction &&
+                                    r.direction !== direction)
+                                }
                                 inputMode="decimal"
                                 className="border rounded p-1 bg-background w-28"
                                 value={
@@ -3047,6 +3210,24 @@ function EditableStatement({
                                   })
                                 }}
                               />
+                              {!r.excluded &&
+                                r.direction &&
+                                r.direction !== direction &&
+                                r.amount_minor &&
+                                r.amount_minor !== "0" && (
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    className="block mt-2 whitespace-normal"
+                                    onClick={() => update(r.id, { direction })}
+                                  >
+                                    Move amount to{" "}
+                                    {direction === "credit"
+                                      ? "Credit / money in"
+                                      : "Debit / money out"}
+                                  </Button>
+                                )}
                             </td>
                           ))}
                           <td className="p-2 border-b align-top whitespace-nowrap">
@@ -3301,6 +3482,12 @@ function EditableStatement({
             )}
           </div>
         )}
+        {importedHere && (
+          <p className="text-sm font-medium">
+            Original extracted balances for comparison. The current saved
+            balances and their correction controls are above.
+          </p>
+        )}
         <div
           ref={balanceControls}
           role="group"
@@ -3461,42 +3648,7 @@ function EditableStatement({
             ? "Enter balances here, then save the review or import. Leave an unknown balance blank; a printed zero is 0.00."
             : "Select an opening or closing amount to check its source."}
         </p>
-        {!excludedCopy && !data.assignment_only && (
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => {
-              const page =
-                (focus ? originals.get(focus.rowId)?.page_number : undefined) ??
-                sourcePage
-              if (!page) return
-              const id = `manual:${newReviewId()}`
-              setCorrectionsOpen(true)
-              setOnlyIssues(false)
-              setShowExcluded(true)
-              setCorrectionPage(Math.floor(rows.length / 50))
-              setRows((current) => [
-                ...current,
-                {
-                  id,
-                  excluded: false,
-                  manual_page: page,
-                  date: "",
-                  description: "",
-                  amount_minor: "0",
-                  direction: "",
-                  counterparty: "",
-                  balance_minor: null,
-                  reason: "",
-                },
-              ])
-              setFocus({ rowId: id, locator: { kind: "page_only", page } })
-            }}
-            disabled={!canEdit || !data.page_numbers.length}
-          >
-            Add a missed transaction
-          </Button>
-        )}
+
         <details className="border rounded p-3 text-sm">
           <summary className="cursor-pointer">
             Inspect another page of the original PDF

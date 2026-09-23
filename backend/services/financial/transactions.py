@@ -740,4 +740,12 @@ def record_transactions(
     # Flushed so that a constraint violation is raised here, where the drafts
     # that caused it are still in hand, rather than at some later commit.
     session.flush()
+    from services.financial.payment_counterparty_link import record_link
+    from services.financial.decisions import Actor
+    for row in rows:
+        link = (row.provenance or {}).get('reviewed_counterparty')
+        if link:
+            confirmed = row.provenance['confirmed_by']
+            actor = Actor(name=confirmed['name'], email=confirmed['email'], user_id=uuid.UUID(confirmed['user_id']) if confirmed.get('user_id') not in (None, 'None') else None)
+            record_link(session, row=row, link=link, actor=actor, reason='Counterparty selected while reviewing the source payment.')
     return rows

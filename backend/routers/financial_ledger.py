@@ -572,7 +572,7 @@ async def get_statement_coverage(case_id: UUID = Query(...), offset: int = Query
 async def get_candidate_accounts(case_id: UUID = Query(...), search: str = Query("", max_length=128), offset: int = 0,
                                   db: Session = Depends(get_db)):
     try:
-        return list_candidate_accounts(db, case_id=case_id, search=search, offset=offset)
+        return list_candidate_accounts(db, case_id=case_id, search=search, offset=offset, include_pending=True)
     except CandidateStoreError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
     except Exception:
@@ -1393,3 +1393,12 @@ def get_account_identities(case_id: UUID = Query(...), db: Session = Depends(get
 def get_account_identity_graph_status(case_id: UUID = Query(...), db: Session = Depends(get_db)):
     from services.financial.identity_graph import identity_graph_status
     return identity_graph_status(db, case_id)
+
+
+@router.get('/account-consolidations')
+def get_account_consolidations(case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    from services.financial.account_consolidation import consolidation_state
+    try:
+        return consolidation_state(db, case_id)
+    except AccountPartyError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc

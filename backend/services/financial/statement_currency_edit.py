@@ -126,7 +126,7 @@ def complete_currency_records(session, *, document, period, metadata, currency, 
         item['missing_fields'] = incomplete_fields(row, request)
         if item['missing_fields'] or row.excluded:
             continue
-        drafts.append(transaction_draft(row, item['original'], account_id=period.account_id, period_id=period.id,
+        drafts.append(transaction_draft(row, item['original'], session=session, case_id=period.case_id, account_id=period.account_id, period_id=period.id,
             currency=currency, position=positions[row.id], actor=actor, balance_sign=sign, period_end=request.period_end))
         pending.append((item, row))
     transactions = record_transactions(session, review_run(document), document, drafts, retain_prior_versions=True) if drafts else []

@@ -36,7 +36,7 @@ def list_candidate_mappings(session, *, case_id, limit=25, offset=0):
             candidate_count=row.candidate_count, created_at=row.created_at.isoformat()) for row, filename in rows[:limit]])
 
 
-def list_candidate_accounts(session, *, case_id, search="", limit=100, offset=0):
+def list_candidate_accounts(session, *, case_id, search="", limit=100, offset=0, include_pending=False):
     if not isinstance(search, str) or len(search)>128 or type(limit) is not int or not 1 <= limit <= 100 or type(offset) is not int or offset < 0:
         raise CandidateStoreError("Invalid account search.", 422)
     query = select(FinancialAccount).where(FinancialAccount.case_id == case_id)
@@ -47,8 +47,23 @@ def list_candidate_accounts(session, *, case_id, search="", limit=100, offset=0)
     rows = list(session.scalars(query.order_by(FinancialAccount.id).offset(offset).limit(limit+1)))
     from services.financial.account_parties import _account_party_state
     parties = {a['id']: a for a in _account_party_state(session, case_id=case_id)['accounts']}
-    return dict(case_id=str(case_id), has_more=len(rows)>limit,
-        items=[dict(id=str(row.id), identifier=row.identifier_as_printed, holder=row.holder_name,
+    from postgres.models.financial_import_batches import FinancialImportBatch, FinancialImportBatchItem
+    pending = list(session.scalars(select(FinancialImportBatchItem).join(FinancialImportBatch, FinancialImportBatchItem.batch_id == FinancialImportBatch.id).where(
+        FinancialImportBatch.case_id == case_id, FinancialImportBatch.status != 'removed',
+        FinancialImportBatchItem.status.in_(['ready', 'attention', 'pending_import', 'skipped'])
+    ).order_by(FinancialImportBatchItem.updated_at.desc()).limit(20001))) if offset == 0 and include_pending else []
+    pending_holders, seen = {}, set()
+    for item in pending[:20000]:
+        key = (item.file_id, item.statement_key)
+        if key in seen: continue
+        seen.add(key)
+        holder = (item.review_request or {}).get('holder') or item.summary.get('holder')
+        if holder and holder.strip():
+            name = ' '.join(holder.split())
+            record = pending_holders.setdefault(name.casefold(), dict(name=name, count=0))
+            record['count'] += 1
+    return dict(case_id=str(case_id), has_more=len(rows)>limit, pending_holders=list(pending_holders.values()), pending_directory_truncated=len(pending)>20000,
+        items=[dict(id=str(row.id), canonical_id=(row.metadata_ or {}).get('canonical_account_id') or str(row.id), identifier=row.identifier_as_printed, holder=row.holder_name,
                     institution=row.institution_name, currency=row.currency, party=parties.get(str(row.id), {}).get('party'),
                     holder_parties=parties.get(str(row.id), {}).get('holder_parties', []),
                     display_label=(row.metadata_ or {}).get("display_label"),

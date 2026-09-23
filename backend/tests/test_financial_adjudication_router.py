@@ -107,6 +107,9 @@ class PermissionResolverTests(unittest.TestCase):
         self.assertEqual(
             routes,
             {
+                "/api/financial/account-consolidations": ["POST"],
+                "/api/financial/account-consolidations/preview": ["POST"],
+                "/api/financial/account-consolidations/undo": ["POST"],
                 "/api/financial/account-identities": ["POST"],
                 "/api/financial/account-identities/sync-graph": ["POST"],
                 "/api/financial/money-trails/preview": ["POST"],

@@ -1,5 +1,6 @@
 import { beforeEach, expect, it } from "vitest"
 import {
+  serverStatementDraft,
   readStatementDraft,
   saveStatementDraft,
   type StatementDraft,
@@ -87,4 +88,32 @@ it("ignores malformed saved data without losing the current review", () => {
   sessionStorage.setItem("draft", '{"rows":"broken"}')
   expect(readStatementDraft("draft", "first")).toBeNull()
   expect(readStatementDraft(null, "first")).toBeNull()
+})
+
+it("restores older server drafts with unknown dates and optional raw fields", () => {
+  const restored = serverStatementDraft({
+    expected_revision: "a",
+    holder: "Saved company",
+    period_start: null,
+    period_end: null,
+    rows: [
+      {
+        id: "manual:one",
+        excluded: false,
+        date: null,
+        direction: null,
+        amount_minor: null,
+        description: "Still editing",
+      },
+    ],
+  })
+  expect(restored?.holder).toBe("Saved company")
+  expect(restored?.periodStart).toBe("")
+  expect(restored?.rows[0]).toMatchObject({
+    description: "Still editing",
+    date: "",
+    direction: "",
+    amount_minor: "",
+    balance_minor: null,
+  })
 })

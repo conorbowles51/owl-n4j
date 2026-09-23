@@ -34,8 +34,13 @@ export function party(row: LedgerTransaction, side: PartySide) {
       ? row.account_holder || row.account_label || row.account_id
       : row.counterparty_raw)
   const name = (value || "").trim().replace(/\s+/g, " ")
+  const linked = !own ? row.counterparty_link : null
   return {
-    key: name ? `name:${name}` : `unknown:${side}`,
+    key: linked
+      ? `identity:${linked.kind}:${linked.id}:${encodeURIComponent(name)}`
+      : name
+        ? `name:${name}`
+        : `unknown:${side}`,
     name: name || "Not identified",
     suggested:
       row.label_sources?.[side === "from" ? "from_name" : "to_name"]?.source ===
@@ -43,6 +48,16 @@ export function party(row: LedgerTransaction, side: PartySide) {
   }
 }
 export function partyName(key: string) {
+  if (key.startsWith("identity:")) {
+    try {
+      return (
+        decodeURIComponent(key.split(":").slice(3).join(":")) ||
+        "Not identified"
+      )
+    } catch {
+      return "Not identified"
+    }
+  }
   return key.startsWith("name:") ? key.slice(5) : "Not identified"
 }
 export function amountGroupName(group: string) {

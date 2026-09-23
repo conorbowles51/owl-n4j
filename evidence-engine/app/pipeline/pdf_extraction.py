@@ -31,7 +31,7 @@ LOW_CONFIDENCE_THRESHOLD = 60.0
 MIN_OCR_DPI = 150
 MIN_RELIABLE_OSD_CONFIDENCE = 15.0
 MAX_OSD_TIMEOUT_SECONDS = 30.0
-PDF_READING_REVISION = 'bbva-scanned-headings-v2'
+PDF_READING_REVISION = 'bank-payment-rows-v5'
 OSD_INSUFFICIENT_TEXT_MARKERS = ("too few characters", "skipping this page")
 
 

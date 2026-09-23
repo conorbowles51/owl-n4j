@@ -519,6 +519,15 @@ class AccountDraft:
         contains, so it is recorded as a verdict and the next tier is tried.
         """
         verdicts: dict[str, str] = {}
+        # Explicit source-specific identity must not be replaced by an inferred
+        # bank/number match. The printed fields remain evidence, including when
+        # a reviewed statement correction intentionally keeps an account apart.
+        if self.distinguisher:
+            return AccountIdentity(
+                key=_build_key(TIER_UNIDENTIFIED, self.distinguisher),
+                tier=TIER_UNIDENTIFIED,
+                verdicts=verdicts,
+            )
 
         iban = self._verified(IdentifierKind.iban, self.iban, "iban", verdicts)
         if iban is not None:
@@ -564,13 +573,6 @@ class AccountDraft:
             return AccountIdentity(
                 key=_build_key(TIER_INSTITUTION_MASKED, institution, digits),
                 tier=TIER_INSTITUTION_MASKED,
-                verdicts=verdicts,
-            )
-
-        if self.distinguisher:
-            return AccountIdentity(
-                key=_build_key(TIER_UNIDENTIFIED, self.distinguisher),
-                tier=TIER_UNIDENTIFIED,
                 verdicts=verdicts,
             )
 

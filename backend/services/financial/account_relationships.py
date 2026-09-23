@@ -55,7 +55,7 @@ def validate_relationship_sources(session, case_id, relationship):
 def owners_on(account, on_date=None):
     """Unknown dates do not establish a dated ownership assertion."""
     result = {}
-    for link in account.get('relationships', []):
+    for link in account.get('effective_relationships', account.get('relationships', [])):
         if link['role'] != 'holder':
             continue
         start, end = link.get('effective_from'), link.get('effective_to')

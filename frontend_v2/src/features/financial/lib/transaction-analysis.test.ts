@@ -6,6 +6,7 @@ import {
   emptyAnalysisFilters,
   filterAnalysis,
   party,
+  partyName,
   partySummaries,
   perspectiveSummary,
   sortAnalysisRows,
@@ -188,4 +189,24 @@ describe("connected transaction analysis", () => {
     sortAnalysisRows(ordered, "to-asc")
     expect(ordered.map((r) => r.key)).toEqual(["a", "b", "z"])
   })
+})
+
+it("keeps a linked counterparty distinct from an identical printed name and exports the selected identity", () => {
+  const linked = row("linked", {
+    to_name: "Supplier & Sons",
+    counterparty_link: {
+      kind: "party",
+      id: "party-1",
+      label: "Supplier & Sons",
+    },
+  })
+  const unlinked = row("unlinked", { to_name: "Supplier & Sons" })
+  const key = party(linked, "to").key
+  expect(key).toBe("identity:party:party-1:Supplier%20%26%20Sons")
+  expect(partyName(key)).toBe("Supplier & Sons")
+  const filters = { ...emptyAnalysisFilters, toNames: [key] }
+  expect(
+    filterAnalysis([linked, unlinked], filters).map((row) => row.key)
+  ).toEqual(["linked"])
+  expect(analysisTableView(filters).to_names).toEqual([key])
 })

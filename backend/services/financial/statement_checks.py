@@ -1,3 +1,4 @@
+from services.financial.account_consolidation import expand_account_ids
 """Current statement balance checks, without changing stored findings or admission."""
 from datetime import datetime, timezone
 
@@ -29,7 +30,7 @@ def list_statement_checks(session, *, case_id, offset=0, limit=25, include_nativ
         account = session.get(FinancialAccount, account_id)
         if account is None or account.case_id != case_id:
             raise StatementCheckError('Account not found in this case.')
-        period_query = period_query.where(FinancialStatementPeriod.account_id == account_id)
+        period_query = period_query.where(FinancialStatementPeriod.account_id.in_(expand_account_ids(session, case_id, [account_id])))
     periods = list(session.scalars(period_query
         .order_by(FinancialStatementPeriod.period_start.asc().nullslast(), FinancialStatementPeriod.id)
         .offset(offset).limit(limit + 1)))

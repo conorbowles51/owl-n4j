@@ -100,6 +100,7 @@ function mount(entry = "/cases/case/financial?view=statements&batch=batch") {
   )
 }
 beforeEach(() => {
+  useFinancialDraftStore.setState({ drafts: {} })
   vi.resetAllMocks()
   vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
     if (options?.method)
@@ -125,6 +126,99 @@ beforeEach(() => {
       } as never
     return batch as never
   })
+})
+it("submits without randomUUID and checks the retained request after a lost response", async () => {
+  const random = Object.getOwnPropertyDescriptor(
+    globalThis.crypto,
+    "randomUUID"
+  )
+  Object.defineProperty(globalThis.crypto, "randomUUID", {
+    configurable: true,
+    value: undefined,
+  })
+  let requestId = ""
+  vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
+    if (url.includes("/confirm?")) {
+      requestId = (options?.body as { request_id: string }).request_id
+      throw Error("Connection interrupted")
+    }
+    if (url.includes("/operations/"))
+      return {
+        case_id: "case",
+        batch_id: "batch",
+        request_id: requestId,
+        operation: {
+          id: requestId,
+          status: "complete",
+          created_at: "2026-01-01T00:00:00Z",
+          statement_count: 2,
+          pending: 0,
+          failed: 0,
+          imported: 2,
+          already_present: 0,
+          transaction_count: 14,
+          incomplete_count: 0,
+          outcomes: [],
+        },
+      } as never
+    return batch as never
+  })
+  try {
+    const view = mount()
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Import 14 transactions" })
+    )
+    await screen.findByText("Connection interrupted")
+    expect(requestId).toMatch(/^[0-9a-f-]{36}$/)
+    view.unmount()
+    mount()
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Check import result" })
+    )
+    expect(
+      await screen.findByText(
+        /Import complete: 2 imported.*14 transactions saved/
+      )
+    ).toBeVisible()
+    expect(
+      vi
+        .mocked(fetchAPI)
+        .mock.calls.filter(([url]) => url.includes("/confirm?")).length
+    ).toBe(1)
+  } finally {
+    if (random) Object.defineProperty(globalThis.crypto, "randomUUID", random)
+    else Reflect.deleteProperty(globalThis.crypto, "randomUUID")
+  }
+})
+
+it("reports an absent receipt and retries the same submission rather than guessing success", async () => {
+  const requests: string[] = []
+  vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
+    if (url.includes("/confirm?")) {
+      requests.push((options?.body as { request_id: string }).request_id)
+      throw Error("Network unavailable")
+    }
+    if (url.includes("/operations/"))
+      return {
+        case_id: "case",
+        batch_id: "batch",
+        request_id: requests[0],
+        operation: null,
+      } as never
+    return batch as never
+  })
+  mount()
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Import 14 transactions" })
+  )
+  await screen.findByText("Network unavailable")
+  fireEvent.click(screen.getByRole("button", { name: "Check import result" }))
+  await screen.findByText(/No accepted import was found/)
+  fireEvent.click(
+    screen.getByRole("button", { name: "Import 14 transactions" })
+  )
+  await waitFor(() => expect(requests).toHaveLength(2))
+  expect(requests[1]).toBe(requests[0])
 })
 it("distinguishes repeated file runs and opens the selected saved batch", async () => {
   vi.mocked(fetchAPI).mockImplementation(async (url) => {
@@ -179,7 +273,13 @@ it("confirms the displayed ready list and filters problems across the batch", as
   await waitFor(() =>
     expect(fetchAPI).toHaveBeenCalledWith(
       "/api/financial/statement-import/batches/batch/confirm?case_id=case",
-      { method: "POST", body: expect.objectContaining({ expected_ready_revision: "a".repeat(64), request_id: expect.any(String) }) }
+      {
+        method: "POST",
+        body: expect.objectContaining({
+          expected_ready_revision: "a".repeat(64),
+          request_id: expect.any(String),
+        }),
+      }
     )
   )
   fireEvent.click(
@@ -229,7 +329,13 @@ it("offers saving a balance-only batch without asking to import zero records", a
   await waitFor(() =>
     expect(fetchAPI).toHaveBeenCalledWith(
       "/api/financial/statement-import/batches/batch/confirm?case_id=case",
-      { method: "POST", body: expect.objectContaining({ expected_ready_revision: "a".repeat(64), request_id: expect.any(String) }) }
+      {
+        method: "POST",
+        body: expect.objectContaining({
+          expected_ready_revision: "a".repeat(64),
+          request_id: expect.any(String),
+        }),
+      }
     )
   )
 })

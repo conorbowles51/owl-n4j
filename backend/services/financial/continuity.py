@@ -538,13 +538,14 @@ def read_account_continuity(
     depends on that is one schema change away from being a cross-case leak.
     """
     from sqlalchemy import select
+    from services.financial.account_consolidation import expand_account_ids
 
     rows = (
         db.execute(
             select(FinancialStatementPeriod)
             .where(
                 FinancialStatementPeriod.case_id == case_id,
-                FinancialStatementPeriod.account_id == account_id,
+                FinancialStatementPeriod.account_id.in_(expand_account_ids(db, case_id, [account_id])),
             )
             .order_by(
                 FinancialStatementPeriod.period_start,
@@ -570,4 +571,8 @@ def read_account_continuity(
             )
         ).all()
     )
-    return build_run(rows, document_status=statuses)
+    # Compare periods under the reviewed identity without modifying their
+    # source-bound account IDs in storage.
+    from types import SimpleNamespace
+    projected = [SimpleNamespace(**{prop.key: getattr(row, prop.key) for prop in FinancialStatementPeriod.__mapper__.column_attrs if prop.key != 'account_id'}, account_id=account_id) for row in rows]
+    return build_run(projected, document_status=statuses)

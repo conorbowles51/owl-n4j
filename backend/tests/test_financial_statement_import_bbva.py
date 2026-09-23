@@ -513,3 +513,20 @@ class BbvaImportTests(TestCase):
             self.assertEqual(len(payments), count)
             if count:
                 self.assertTrue(all(str(p.transaction_date) == '2024-09-02' and str(p.value_date) == '2024-09-01' for p in payments))
+
+
+class MaestraProposalTests(TestCase):
+    def test_maestra_products_share_source_bound_columns_and_zero_activity_checks(self):
+        for product,empty in [('MAESTRA PYME BBVA',False),('MAESTRA DOLARES PYME',True)]:
+            sources=statement(empty)
+            for s in sources:
+                for r in s['rows']:
+                    for c in r['cells']:
+                        c['expected_text']=c['expected_text'].replace('CASH MANAGEMENT EUROS C INTS.',product)
+                        c['expected_text']=c['expected_text'].replace('ABONOS',"ABONOS'~") if c['expected_text']=='ABONOS' else c['expected_text']
+            choices=bbva_catalog(sources)[0];self.assertEqual(len(choices),1)
+            proposal=propose_bbva_statement(sources,'EUR',choices[0])
+            checks=check_statement_rows(proposal['rows'])
+            self.assertEqual(checks['transaction_count'],0 if empty else 2)
+            self.assertEqual(checks['balance_status'],'matches')
+            self.assertEqual(checks['flagged_rows'],0)

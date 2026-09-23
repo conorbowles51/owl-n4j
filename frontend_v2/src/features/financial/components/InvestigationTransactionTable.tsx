@@ -44,8 +44,9 @@ export function PaymentTotals({
     }
     total[row.direction as "credit" | "debit"] += amount
     total.count++
-    total.accounts.add(row.account_id)
-    if (row.account_label) total.labels.add(row.account_label)
+    total.accounts.add(row.canonical_account_id || row.account_id)
+    if (row.canonical_account_label || row.account_label)
+      total.labels.add(row.canonical_account_label || row.account_label!)
     totals.set(group, total)
   }
   return (

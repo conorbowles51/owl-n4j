@@ -5,13 +5,14 @@ one short Neo4j transaction replaces only relationships owned by this projector.
 Original graph entities, investigator notes and unrelated relationships survive.
 """
 import asyncio
+import hashlib
 import json
 import logging
 from threading import Event
 from uuid import UUID
 from sqlalchemy import select
 from postgres.models.case import Case
-from postgres.models.financial import FinancialAccount, AdjudicationEvent
+from postgres.models.financial import FinancialAccount, FinancialTransaction, AdjudicationEvent
 from services.financial.account_identity import identity_state
 from services.financial.projection import account_key
 
@@ -22,17 +23,23 @@ RELATIONSHIPS = {'holder': 'HOLDS_ACCOUNT', 'controller': 'CONTROLS_ACCOUNT',
 
 def identity_graph_plan(db, case_id):
     state = identity_state(db, case_id)
+    from services.financial.counterparty_parties import payment_party_choices
+    state['parties'] = sorted(payment_party_choices(db, case_id=case_id, known_parties=state['parties']).values(), key=lambda p: p['id'])
     indexed = {str(a.id): a for a in db.scalars(select(FinancialAccount).where(FinancialAccount.case_id == case_id))}
-    accounts, parties, links, entity_links = [], [], [], []
+    accounts, parties, links, entity_links, account_links, payment_links = [], [], [], [], [], []
     for account in state['accounts']:
         row = indexed[account['id']]
         key = account_key(row.identity_key)
         label = ' · '.join(str(v) for v in (account['holder_as_recorded'], account['institution'], account['identifier_as_printed'], account['currency']) if v) or 'Account reference'
         accounts.append(dict(key=key, name=label, ledger_account_id=account['id'], institution_name=account['institution'],
+            canonical_account_id=account['canonical_id'],
             identifier_as_printed=account['identifier_as_printed'], currency=account['currency'],
             financial_identifiers=json.dumps(account['identity_review'].get('identifiers', []), ensure_ascii=False),
             financial_referenced_only=account['referenced_only'], financial_identity_url=f'/cases/{case_id}/financial?view=statements',
             summary='Referenced account — no statement imported.' if account['referenced_only'] else 'Account recorded in Financial. Review ownership and identifiers in Statements & accounts.'))
+        if account['canonical_id'] != account['id']:
+            account_links.append(dict(key='same-account:' + account['id'], source=key,
+                target=account_key(indexed[account['canonical_id']].identity_key)))
         for link in account['relationships']:
             links.append(dict(key=link['id'], source='financial-party:' + link['party']['id'], target=key, type=RELATIONSHIPS[link['role']],
                 role=link['role'], basis=link['basis'], source_references=json.dumps(link['sources']),
@@ -47,7 +54,19 @@ def identity_graph_plan(db, case_id):
         parties.append(dict(key='financial-party:' + party['id'], name=party['name'], financial_party_id=party['id'],
             financial_identity_url=f'/cases/{case_id}/financial?view=counterparties',
             summary='Reviewed financial identity. Account-holder, control, signatory and grouping relationships are distinct; inspect dates and evidence on each relationship.'))
-    return dict(case_id=str(case_id), revision=state['revision'], accounts=accounts, parties=parties, links=links, entity_links=entity_links)
+    from services.financial.payment_counterparty_link import display_link
+    for row in db.scalars(select(FinancialTransaction).where(FinancialTransaction.case_id == case_id,
+            FinancialTransaction.superseded_by_id.is_(None), FinancialTransaction.ledger_status == 'admitted')
+            .order_by(FinancialTransaction.id)):
+        identity = display_link(row)
+        if not identity:
+            continue
+        target = ('financial-party:' + identity['id']) if identity['kind'] == 'party' else account_key(indexed[identity['id']].identity_key)
+        payment_links.append(dict(key='payment-identity:' + str(row.id), source=row.ref_id, target=target,
+            direction=row.direction, recorded_identity=json.dumps(identity, sort_keys=True)))
+    revision = hashlib.sha256(json.dumps([state['revision'], payment_links], sort_keys=True).encode()).hexdigest()
+    return dict(case_id=str(case_id), revision=revision, accounts=accounts, parties=parties, links=links,
+        entity_links=entity_links, account_links=account_links, payment_links=payment_links)
 
 
 def validate_graph_targets(tx, plan):
@@ -80,6 +99,7 @@ def apply_identity_graph(graph_session, plan):
                     n.id=coalesce(n.id, row.ledger_account_id, row.financial_party_id),
                     n.financial_identity_label=row.name,
                     n.ledger_account_id=row.ledger_account_id,
+                    n.canonical_account_id=row.canonical_account_id,
                     n.financial_party_id=row.financial_party_id,
                     n.institution_name=row.institution_name, n.identifier_as_printed=row.identifier_as_printed,
                     n.currency=row.currency, n.financial_identifiers=row.financial_identifiers,
@@ -101,6 +121,28 @@ def apply_identity_graph(graph_session, plan):
         tx.run('''UNWIND $rows AS row MATCH (a:FinancialParty {case_id:$case,key:row.source}), (b {case_id:$case,key:row.target})
             MERGE (a)-[r:REVIEWED_SAME_IDENTITY {financial_identity_key:row.key}]->(b)
             SET r.financial_identity_managed=true, r.case_id=$case, r.basis=row.basis, r.reviewed=true''', rows=plan['entity_links'], case=case_id).consume()
+        tx.run('''MATCH ({case_id:$case})-[r:REVIEWED_SAME_ACCOUNT]->({case_id:$case})
+            WHERE r.financial_identity_managed=true DELETE r''', case=case_id).consume()
+        tx.run('''UNWIND $rows AS row
+            MATCH (a:FinancialAccount {case_id:$case,key:row.source}), (b:FinancialAccount {case_id:$case,key:row.target})
+            MERGE (a)-[r:REVIEWED_SAME_ACCOUNT {financial_identity_key:row.key}]->(b)
+            SET r.financial_identity_managed=true,r.case_id=$case,r.reviewed=true''', rows=plan.get('account_links', []), case=case_id).consume()
+        for kind, direction in [('REVIEWED_PAID_BY', 'credit'), ('REVIEWED_PAID_TO', 'debit')]:
+            tx.run(f'''MATCH (a {{case_id:$case}})-[r:{kind}]->(b {{case_id:$case}})
+                WHERE r.financial_identity_managed=true DELETE r''', case=case_id).consume()
+            tx.run(f'''UNWIND $rows AS row
+                MATCH (a:FinancialTransaction {{case_id:$case,key:row.source}}), (b {{case_id:$case,key:row.target}})
+                MERGE (a)-[r:{kind} {{financial_identity_key:row.key}}]->(b)
+                SET r.financial_identity_managed=true,r.case_id=$case,r.reviewed=true,r.recorded_identity=row.recorded_identity''',
+                rows=[r for r in plan.get('payment_links', []) if r['direction'] == direction], case=case_id).consume()
+        # A source projection may still be catching up. Leave this identity
+        # revision pending until its payment nodes exist, so the next sweep retries.
+        missing = tx.run('''UNWIND $keys AS key OPTIONAL MATCH (n:FinancialTransaction {case_id:$case,key:key})
+            WITH key, count(n) AS matches WHERE matches=0 RETURN key''',
+            keys=[r['source'] for r in plan.get('payment_links', [])], case=case_id).data()
+        if missing:
+            tx.commit()
+            return True
         # The marker is hidden from ordinary entity lists by the standard system flag.
         tx.run('''MERGE (m:FinancialIdentitySync {case_id:$case})
             SET m.system_node=true, m.revision=$revision, m.completed_at=datetime()''', case=case_id, revision=revision).consume()
@@ -135,7 +177,7 @@ def identity_graph_status(db, case_id):
 def sync_saved_identities(stop=None):
     from postgres.session import get_background_session
     with get_background_session() as db:
-        cases = list(db.scalars(select(AdjudicationEvent.case_id).where(AdjudicationEvent.decision.in_(['set_account_party', 'set_account_identity'])).distinct()))
+        cases = list(db.scalars(select(AdjudicationEvent.case_id).where(AdjudicationEvent.decision.in_(['set_account_party', 'set_account_identity', 'set_counterparty_party'])).distinct()))
     for case_id in cases:
         if stop is not None and stop.is_set():
             break

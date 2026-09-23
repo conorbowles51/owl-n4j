@@ -7,6 +7,25 @@ from services.financial.candidate_store import list_candidate_accounts
 from tests.test_financial_ledger_summary import LedgerSummaryTests
 
 class AccountSelectionTests(unittest.TestCase):
+    def test_bank_scope_crosses_owners_and_intersects_people_with_future_accounts(self):
+        f = self.f
+        a, _ = f.add(100); b, _ = f.add(200)
+        f.account.institution_name = 'Example Bank'
+        f.account.holder_name = 'First Company'
+        b.account_id = self.second.id
+        self.second.institution_name = 'Example Bank'
+        self.second.holder_name = 'Second Company'
+        f.db.commit()
+        selection = dict(account_holders=['bank:example bank'])
+        self.assertEqual({r.id for r in list_transactions(f.db, f.case.id, **selection)}, {a.id, b.id})
+        self.assertEqual(working_ledger_summary(f.db, case_id=f.case.id, **selection)['included_rows'], 2)
+        both = dict(account_holders=['bank:example bank', 'second company'])
+        self.assertEqual({r.id for r in list_transactions(f.db, f.case.id, **both)}, {b.id})
+        self.assertEqual(list_transactions(f.db, f.case.id, account_holders=['bank:other bank']), [])
+        c, _ = f.add(300)
+        self.assertEqual({r.id for r in list_transactions(f.db, f.case.id, **selection)}, {a.id, b.id, c.id})
+        self.assertEqual(list_transactions(f.db, f.other_case.id, **selection), [])
+
     def setUp(self):
         self.f=LedgerSummaryTests(); self.f.setUp()
         self.second=self.f._account(self.f.case.id)

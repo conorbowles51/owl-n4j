@@ -28,7 +28,12 @@ export function AccountMultiSelect({
       >
         <summary className="cursor-pointer p-2">
           {selected.length
-            ? `${selected.length} selected · ${selected.map((value) => labels.get(value) || value).join(", ")}`
+            ? `${selected.length} selected · ${selected
+                .slice(0, 2)
+                .map((value) => labels.get(value) || value)
+                .join(
+                  ", "
+                )}${selected.length > 2 ? ` and ${selected.length - 2} more` : ""}`
             : allLabel}
         </summary>
         <div className="space-y-2 border-t p-2">
@@ -46,7 +51,7 @@ export function AccountMultiSelect({
               variant="outline"
               onClick={() => onChange([])}
             >
-              {allLabel}
+              Clear selection
             </Button>
             <Button
               type="button"
@@ -97,21 +102,26 @@ export function AccountMultiSelect({
         </div>
       </details>
       {!!selected.length && (
-        <div className="mt-1 flex flex-wrap gap-1">
-          {selected.map((value) => (
-            <button
-              type="button"
-              key={value}
-              className="rounded border bg-muted px-2 py-1 text-xs"
-              aria-label={`Remove ${labels.get(value) || value} from ${label.toLowerCase()} filter`}
-              onClick={() =>
-                onChange(selected.filter((item) => item !== value))
-              }
-            >
-              {labels.get(value) || value} ×
-            </button>
-          ))}
-        </div>
+        <details className="mt-1">
+          <summary className="cursor-pointer text-xs">
+            Review or remove {selected.length} selections
+          </summary>
+          <div className="mt-1 flex flex-wrap gap-1 max-h-40 overflow-auto">
+            {selected.map((value) => (
+              <button
+                type="button"
+                key={value}
+                className="rounded border bg-muted px-2 py-1 text-xs"
+                aria-label={`Remove ${labels.get(value) || value} from ${label.toLowerCase()} filter`}
+                onClick={() =>
+                  onChange(selected.filter((item) => item !== value))
+                }
+              >
+                {labels.get(value) || value} ×
+              </button>
+            ))}
+          </div>
+        </details>
       )}
     </div>
   )

@@ -13,7 +13,7 @@ from services.financial.duplicate_decisions import duplicate_revision
 from services.financial.transaction_query import to_view
 from services.financial.money import get_currency
 
-LABELS = {'from_name', 'to_name', 'category'}
+LABELS = {'from_name', 'to_name', 'category', 'counterparty_link'}
 FIELDS = LABELS | DATE_FIELDS | TEXT_FIELDS | {'amount', 'direction', 'running_balance'}
 
 class PaymentEditRequest(BaseModel):
@@ -67,10 +67,25 @@ def _prepare(session, case_id, request):
         raise PaymentLabelsError('Select transactions in one currency before applying the same amount or balance.', 422)
     labels = {key: value for key, value in changes.items() if key in LABELS}
     if labels:
+        if 'counterparty_link' in labels:
+            raw = labels['counterparty_link']
+            try:
+                labels['counterparty_link'] = json.loads(raw) if raw else None
+            except (ValueError, TypeError) as exc:
+                raise PaymentLabelsError('Choose a person, business or bank account from this case.', 422) from exc
         validated = PaymentLabelsRequest(transactions=request.transactions, **labels)
         labels = validated.model_dump(include=LABELS, exclude_unset=True)
-        if any(value is None for value in labels.values()):
+        if any(value is None for key, value in labels.items() if key != 'counterparty_link'):
             raise PaymentLabelsError('Use an empty name to clear it.', 422)
+        if validated.counterparty_link:
+            from services.financial.payment_counterparty_link import resolve_link
+            from services.financial.account_parties import AccountPartyError
+            try:
+                resolved_link = resolve_link(session, case_id=case_id, link=validated.counterparty_link)
+            except AccountPartyError as exc:
+                raise PaymentLabelsError(str(exc), exc.status_code) from exc
+        else:
+            resolved_link = None
     fields = {key: (value or None) for key, value in changes.items() if key in DATE_FIELDS | TEXT_FIELDS}
     correction_fields(fields)
     plans, examples = [], []
@@ -94,10 +109,17 @@ def _prepare(session, case_id, request):
             after = {**{key: effective.get(key) for key in changes}, **labels, **json_fields(parsed)}
             if 'amount' in changes: after['amount_minor'] = str(amount)
             if 'direction' in changes: after['direction'] = direction
+            if 'counterparty_link' in changes:
+                after['counterparty_link'] = resolved_link['label'] if resolved_link else None
+                effective['counterparty_link'] = (effective.get('counterparty_link') or {}).get('label')
+                side = 'from_name' if direction == 'credit' else 'to_name'
+                after[side] = resolved_link['label'] if resolved_link else row.counterparty_raw
             keys = (set(changes) - {'amount', 'running_balance'}) | ({'amount_minor'} if 'amount' in changes else set()) | ({'running_balance_minor'} if 'running_balance' in changes else set())
+            if 'counterparty_link' in changes:
+                keys.add(side)
             examples.append(dict(id=str(row.id), description=row.description, currency=row.currency,
                 before={key: effective.get(key) for key in keys}, after={key: after[key] for key in keys}))
-    state = dict(case_id=str(case_id), request=request.model_dump(mode='json', exclude={'expected_revision'}),
+    state = dict(reviewed_identity=resolved_link if 'counterparty_link' in labels else None, case_id=str(case_id), request=request.model_dump(mode='json', exclude={'expected_revision'}),
         documents={str(doc.id): duplicate_revision(session, doc) for doc in documents})
     revision = hashlib.sha256(json.dumps(state, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
     return dict(case_id=str(case_id), revision=revision, count=len(rows), fields=sorted(changes), examples=examples), plans, labels

@@ -35,11 +35,19 @@ class CounterpartyPartyRequest(BaseModel):
 def _identity_state(rows, events, known_parties=()):
     indexed={str(r.id):r for r in rows}
     parties={p["id"]:p for p in known_parties}
-    assignments={};history=[]
+    assignments={};accounts={};history=[]
     for event in events:
         key=str(event.subject_id)
-        if key not in indexed or not isinstance(event.before,dict) or not isinstance(event.after,dict) or set(event.before)!={'party','override'} or set(event.after)!={'party','override'}:raise AccountPartyError('Counterparty history is malformed.',409)
+        if key not in indexed or not isinstance(event.before,dict) or not isinstance(event.after,dict) or set(event.before) not in ({'party','override'}, {'party','account','override'}) or set(event.after)!=set(event.before):raise AccountPartyError('Counterparty history is malformed.',409)
         if event.before['party']!=assignments.get(key) or event.before['override'] is not (key in assignments) or event.after['override'] is not True:raise AccountPartyError('Counterparty history cannot be replayed.',409)
+        account=event.after.get('account')
+        if event.before.get('account') != accounts.get(key):raise AccountPartyError('Counterparty account history cannot be replayed.',409)
+        if account is not None:
+            if not isinstance(account,dict) or set(account)!={'id','label'} or not isinstance(account['label'],str) or not account['label'].strip():raise AccountPartyError('Counterparty account identity is malformed.',409)
+            try:UUID(account['id'])
+            except (ValueError,TypeError,AttributeError) as exc:raise AccountPartyError('Counterparty account identity is malformed.',409) from exc
+            if event.after['party'] is not None:raise AccountPartyError('Choose one counterparty identity.',409)
+        accounts[key]=account
         party=event.after['party']
         if party is not None:
             if not isinstance(party,dict) or set(party)!={'id','name'} or not isinstance(party['name'],str) or not party['name'].strip():raise AccountPartyError('Counterparty party identity is malformed.',409)
@@ -68,7 +76,7 @@ def _identity_state(rows, events, known_parties=()):
     for row in rows:
         if row.superseded_by_id is not None:continue
         party,origin=inherited(str(row.id))
-        readings.append(dict(transaction_id=str(row.id),ref_id=row.ref_id,account_id=str(row.account_id),currency=row.currency,counterparty_raw=row.counterparty_raw,description=row.description,amount_minor=str(row.amount_minor),direction=row.direction.value if hasattr(row.direction,'value') else row.direction,party=party,decision_transaction_id=origin))
+        readings.append(dict(transaction_id=str(row.id),ref_id=row.ref_id,account_id=str(row.account_id),currency=row.currency,counterparty_raw=row.counterparty_raw,description=row.description,amount_minor=str(row.amount_minor),direction=row.direction.value if hasattr(row.direction,'value') else row.direction,party=party,account=accounts.get(origin),decision_transaction_id=origin))
     return readings, parties, history
 
 
@@ -129,12 +137,18 @@ def set_counterparty_party(session, *, case_id, request:CounterpartyPartyRequest
         latest_direct={event['transaction_id']:event for event in state['history']}
         for id in ordered_ids:
             selected=readings[str(id)]
-            if selected['party']==party:continue
+            if selected['party']==party and not selected.get('account'):continue
             row=locked[str(id)]
             if row is None or row.superseded_by_id is not None:raise AccountPartyError('Reading changed during identity review.',409)
             direct=latest_direct.get(str(id))
             before=direct['after']['party'] if direct else None
-            event=record(session,case_id=case_id,subject=row,subject_type=AdjudicationSubject.transaction,decision=AdjudicationDecision.set_counterparty_party,actor=actor,reason=request.reason.strip(),before={'party':before,'override':bool(direct)},after={'party':party,'override':True})
+            account_fields = dict(account=direct['after'].get('account')) if direct and 'account' in direct['after'] else {}
+            event=record(session,case_id=case_id,subject=row,subject_type=AdjudicationSubject.transaction,decision=AdjudicationDecision.set_counterparty_party,actor=actor,reason=request.reason.strip(),before={'party':before,'override':bool(direct), **account_fields},after={'party':party,'override':True, **({'account':None} if account_fields else {})})
+            metadata = dict(row.metadata_ or {})
+            labels = dict(metadata.get('investigation_labels', {}))
+            labels.update(counterparty_link=dict(kind='party', id=party['id'], label=party['name']) if party else None, version=labels.get('version', 0) + 1)
+            metadata['investigation_labels'] = labels
+            row.metadata_ = metadata
             event_ids.append(str(event.id))
         if not event_ids:raise AccountPartyError('Selected links are unchanged.')
         session.flush();result=counterparty_parties(session,case_id=case_id);result.update(applied=True,event_ids=event_ids);session.commit();return result
@@ -159,10 +173,12 @@ def counterparty_party_analysis(export, *, population='working'):
     groups={}
     for reading in ledger['readings']:
         if not (reading['exclusion_reason'] in (None,'proof_class_not_included') if population=='working' else reading['included']):continue
-        row=reading['row'];party=identities[row['key']]['party'];raw=row['counterparty_raw']
-        identity=['party',party['id']] if party else ['raw',raw]
+        row=reading['row'];party=identities[row['key']]['party'];account=identities[row['key']].get('account');raw=row['counterparty_raw']
+        if account and (row.get('counterparty_link') or {}).get('kind') == 'account':
+            account = dict(id=row['counterparty_link']['id'], label=row['counterparty_link']['label'])
+        identity=['account',account['id']] if account else ['party',party['id']] if party else ['raw',raw]
         key=json.dumps([identity,row['currency']],ensure_ascii=False,separators=(',',':'))
-        group=groups.setdefault(key,dict(group_id=key,label='Reviewed party: '+party['name'] if party else raw,currency=row['currency'],rows=0,credits_minor=0,debits_minor=0,transaction_ids=[],source_document_ids=set(),raw_labels=set(),party=party))
+        group=groups.setdefault(key,dict(group_id=key,label='Reviewed account: '+account['label'] if account else 'Reviewed party: '+party['name'] if party else raw,currency=row['currency'],rows=0,credits_minor=0,debits_minor=0,transaction_ids=[],source_document_ids=set(),raw_labels=set(),party=party))
         group['rows']+=1;group[row['direction']+'s_minor']+=int(row['amount_minor']);group['transaction_ids'].append(row['key']);group['source_document_ids'].add(reading['source']['id']);group['raw_labels'].add(raw)
     for group in groups.values():
         group['net_minor']=str(group['credits_minor']-group['debits_minor'])

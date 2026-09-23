@@ -87,3 +87,26 @@ def test_invalid_page_sequences_are_never_substituted(monkeypatch,text):
     data = fixture('page_number')
     result, records, _ = run(data,monkeypatch,iter([text]*4))
     assert result is data and not records
+
+
+@pytest.mark.parametrize('numeric', [('6/', '06/'), ('06/', '06/')])
+def test_numeric_day_consensus_retains_printed_month_and_audits_pixels(monkeypatch, numeric):
+    data = fixture(); original = deepcopy(data)
+    result, records, calls = run(data, monkeypatch, iter(['O6/AGO'] * 4 + list(numeric)))
+    assert data == original and result['text'][5] == '06/AGO'
+    assert len(calls) == 6 and len(records[0]['observations']) == 6
+    assert all('tessedit_char_whitelist=0123456789/' in call['config'] for call in calls[-2:])
+    assert records[0]['original_text'] == 'O6/AGO'
+
+
+@pytest.mark.parametrize('replies', [
+    ['O6/AGO']*4 + ['06/', '07/'],
+    ['O6/AGO']*4 + ['32/', '32/'],
+    ['O6/AGO']*4 + ['06/', RuntimeError('interrupted')],
+    ['06/AGO', '', '', ''] + ['07/', '07/'],
+    ['06/AGO', '07/AGO', '', ''] + ['06/', '06/'],
+])
+def test_numeric_fallback_never_overrides_a_conflict_or_invalid_day(monkeypatch, replies):
+    data = fixture()
+    result, records, _ = run(data, monkeypatch, iter(replies))
+    assert result is data and not records

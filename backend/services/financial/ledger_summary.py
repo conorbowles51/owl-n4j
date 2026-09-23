@@ -1,3 +1,4 @@
+from services.financial.account_consolidation import expand_account_ids
 """Exact, bounded summaries of the relational ledger, with explicit exclusions.
 
 The bound is checked before reporting any count or money. One SELECT observes
@@ -42,7 +43,7 @@ def ledger_summary(session, *, case_id, account_id=None, start_date=None, end_da
     ).outerjoin(FinancialAccount, FinancialAccount.id == FinancialTransaction.account_id).where(
         FinancialTransaction.case_id == case_id)
     if account_id is not None:
-        query = query.where(FinancialTransaction.account_id == account_id)
+        query = query.where(FinancialTransaction.account_id.in_(expand_account_ids(session, case_id, [account_id])))
     from services.financial.account_selection import apply_account_selection
     query = apply_account_selection(query, session, case_id, account_ids, account_holders)
     if start_date is not None:

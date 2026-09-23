@@ -271,7 +271,7 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
                         period=(selected['period_start'] + ' - ' + selected['period_end']) if selected['period_start'] else selected.get('printed_statement_date') or selected.get('printed_closing_date', ''))
         if selected.get('layout_id') in ('capital-one-card', 'merrick-card'):
             metadata['balance_convention'] = 'liability_owed'
-        if selected.get('layout_id') in ('bbva-mexico-cash-management', 'scotiabank-mexico-zero-activity', 'monex-mexico-currency-summary', 'kapital-mexico-product-statement'):
+        if selected.get('layout_id') in ('bbva-mexico-cash-management', 'scotiabank-mexico-zero-activity', 'monex-mexico-currency-summary', 'kapital-mexico-product-statement', 'intercam-mexico-product-statement', 'santander-mexico-movements'):
             metadata['balance_convention'] = 'asset_balance'
         # A selected account must not inherit a name from a different section
         # elsewhere in the same PDF.
@@ -420,11 +420,15 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
         from services.financial.statement_import_monex import propose_monex_statement
         rows.extend(propose_monex_statement(sources, chosen_currency, selected)['rows'])
         _check_review_size(rows)
-    if selected and selected.get('layout_id') == 'kapital-mexico-product-statement':
+    if selected and selected.get('layout_id') in ('kapital-mexico-product-statement', 'intercam-mexico-product-statement'):
         from services.financial.statement_import_kapital import propose_kapital_statement
         rows.extend(propose_kapital_statement(sources, chosen_currency, selected)['rows'])
         _check_review_size(rows)
-    for source in ([] if selected and selected.get('layout_id') in ('andrews-share-statement', 'bbva-mexico-cash-management', 'scotiabank-mexico-zero-activity', 'monex-mexico-currency-summary', 'kapital-mexico-product-statement') else sources):
+    if selected and selected.get('layout_id') == 'santander-mexico-movements':
+        from services.financial.statement_import_santander import propose_santander_statement
+        rows.extend(propose_santander_statement(sources, chosen_currency, selected)['rows'])
+        _check_review_size(rows)
+    for source in ([] if selected and selected.get('layout_id') in ('andrews-share-statement', 'bbva-mexico-cash-management', 'scotiabank-mexico-zero-activity', 'monex-mexico-currency-summary', 'kapital-mexico-product-statement', 'intercam-mexico-product-statement', 'santander-mexico-movements') else sources):
         try:
             if selected and selected.get('layout_id') == 'merrick-card':
                 from services.financial.statement_import_merrick import propose_merrick_table
@@ -467,8 +471,10 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
         snapshot['scotiabank_zero_activity_v1'] = rows
     if selected and selected.get('layout_id') == 'monex-mexico-currency-summary':
         snapshot['monex_currency_summary_v1'] = rows
-    if selected and selected.get('layout_id') == 'kapital-mexico-product-statement':
+    if selected and selected.get('layout_id') in ('kapital-mexico-product-statement', 'intercam-mexico-product-statement'):
         snapshot['kapital_product_statement_v1'] = rows
+    if selected and selected.get('layout_id') == 'santander-mexico-movements':
+        snapshot['santander_movements_v1'] = rows
     undated_charges = [row['id'] for row in rows if row['fields'].get('date_basis') == 'statement_end_ordering_only']
     if undated_charges:
         snapshot['undated_statement_charges_v1'] = undated_charges
@@ -538,7 +544,8 @@ from datetime import date
 from typing import Annotated, Literal
 from types import SimpleNamespace
 from uuid import UUID
-from pydantic import Field, model_validator
+from pydantic import Field, model_validator, model_serializer
+from services.financial.payment_counterparty_link import PaymentCounterpartyLink
 from services.financial.pdf_candidates import _Contract, _Digest
 
 
@@ -551,6 +558,15 @@ class DraftImportRow(_Contract):
     date_values: dict[Literal['date', 'booking_date', 'value_date'], Annotated[str, Field(max_length=32)]] = Field(default_factory=dict)
     description: Annotated[str, Field(max_length=4096)] = ''
     counterparty: Annotated[str, Field(max_length=4096)] = ''
+    counterparty_link: PaymentCounterpartyLink | None = None
+
+    @model_serializer(mode='wrap')
+    def serialize_compatible_row(self, handler):
+        value = handler(self)
+        if self.counterparty_link is None:
+            value.pop('counterparty_link', None)
+        return value
+
     amount_minor: Annotated[str, Field(max_length=32)] = '0'
     direction: Literal['credit', 'debit'] | None = None
     balance_minor: Annotated[str | None, Field(max_length=32)] = None
@@ -853,7 +869,7 @@ def confirm_statement_import(*, session_factory, case_id, evidence_file_id, requ
                         continue
                     original = originals[row.id]
                     from services.financial.imported_records import transaction_draft
-                    drafts.append(transaction_draft(row, original, account_id=account.id,
+                    drafts.append(transaction_draft(row, original, session=session, case_id=case_id, account_id=account.id,
                         period_id=period.id if period else None, currency=request.currency, position=position,
                         actor=actor, balance_sign=balance_sign, period_end=request.period_end))
                 transactions = record_transactions(session, run, document, drafts, retain_prior_versions=shares_source_references)

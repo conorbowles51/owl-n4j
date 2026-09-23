@@ -414,6 +414,20 @@ def next_problem(session, *, case_id, batch_id, item_id, direction="next"):
         row_id=next((p.get('row_id') for p in following.summary.get('problems', []) if p.get('row_id')), None) if following else None)
 
 
+def next_statement(session, *, case_id, batch_id, item_id, direction="next"):
+    batch_for(session, case_id, batch_id)
+    items = list(session.scalars(select(Item).where(Item.batch_id == batch_id, Item.status != 'removed')))
+    items.sort(key=lambda i: (i.summary.get('filename', ''), i.summary.get('account', ''),
+                             i.summary.get('period_start', ''), str(i.id)))
+    index = next((n for n, item in enumerate(items) if item.id == item_id), None)
+    if index is None:
+        raise PdfMappingError('Statement not found in this batch.', 404)
+    target = index + (-1 if direction == 'previous' else 1)
+    following = items[target] if 0 <= target < len(items) else None
+    return dict(case_id=str(case_id), batch_id=str(batch_id), item_id=str(following.id) if following else None,
+                row_id=None, position=(target if following else index) + 1, total=len(items))
+
+
 def batch_status(session, *, case_id, batch_id, offset=0, limit=100, only_problems=False):
     from services.financial.import_operations import operations_for
     batch = batch_for(session,case_id,batch_id)
@@ -424,7 +438,14 @@ def batch_status(session, *, case_id, batch_id, offset=0, limit=100, only_proble
     counts={state:sum(i.status==state for i in items) for state in ('ready','attention','pending_import','imported','skipped','assigned')}
     file_ids = {UUID(f['file_id']) for f in batch.files if f.get('file_id')}
     job_ids = list(session.scalars(select(EvidenceFile.engine_job_id).where(EvidenceFile.case_id == case_id, EvidenceFile.id.in_(file_ids), EvidenceFile.engine_job_id.is_not(None)))) if file_ids else []
-    return dict(id=str(batch.id),case_id=str(case_id),status=batch.status,files=batch.files,counts=counts, reading_job_ids=job_ids,
+    files = deepcopy(batch.files)
+    referenced = {UUID(f[key]) for f in files for key in ('source_id', 'file_id') if f.get(key)}
+    available = {str(id) for id in session.scalars(select(EvidenceFile.id).where(EvidenceFile.case_id == case_id, EvidenceFile.id.in_(referenced)))}
+    for file in files:
+        file['review_file_id'] = file.get('file_id') if file.get('file_id') in available else file.get('source_id') if file.get('source_id') in available else None
+        if file.get('file_id') not in available:
+            file['error'] = ('The prepared reading is unavailable. The original PDF is retained; Retry this file prepares a new reading without removing saved payments.' if file.get('source_id') in available else 'The original PDF is not available in this case. Restore the original evidence before retrying; existing payment history is retained.')
+    return dict(id=str(batch.id),case_id=str(case_id),status=batch.status,files=files,counts=counts, reading_job_ids=job_ids,
         operations=operations_for(session, case_id, batch_id),
         statements_with_issues=sum(bool(i.summary.get('problem_count', 0)) for i in items if i.status != 'skipped'),
         available_statements=sum(import_available(i) for i in items),
@@ -702,6 +723,8 @@ async def advance_batch(factory,batch_id,resolve_path,process_files):
                         result=await prepare_existing_financial_file(db,case_id=case_id,evidence_file_id=UUID(file['source_id']),expected_revision=file['expected_revision'],actor=actor,resolve_path=resolve_path,process_files=process_files)
                         file['file_id']=result['evidence_file_id'];file['status']='processing'
                     target=db.get(EvidenceFile,UUID(file['file_id']))
+                    if target is not None and target.case_id != case_id:
+                        raise PdfMappingError('The prepared reading is not available in this case. Retry from the original PDF.', 409)
                     if not target or target.status=='failed': raise PdfMappingError('The PDF could not be processed. Open the file to inspect or retry its reading.',422)
                     processed = target.status=='processed'
                     # The no-op visibility check still locks the evidence row.
@@ -800,14 +823,17 @@ def retry_file(session, *, case_id, batch_id, source_id):
     files=deepcopy(batch.files)
     target=next((f for f in files if f['source_id']==str(source_id)),None)
     if target is None: raise PdfMappingError('File not found in this batch.',404)
-    if target['status']!='error': return
-    if batch.worker_token and batch.lease_until and batch.lease_until.replace(tzinfo=timezone.utc)>datetime.now(timezone.utc):
-        raise PdfMappingError('This batch is still checking files. Retry when its current check finishes.',409)
+    if target['status'] != 'error':
+        return dict(queued=False, status=target['status'])
+    # Error files are terminal and cannot belong to the worker's active turn.
+    # Its per-file merge preserves this newly queued entry; don't block recovery
+    # merely because a different file is being read in the same batch.
     source=session.scalar(select(EvidenceFile).where(EvidenceFile.id==source_id,EvidenceFile.case_id==case_id))
     if source is None: raise PdfMappingError('The original PDF is no longer available in this case.',404)
-    target.update(status='waiting',expected_revision=financial_file_visibility(source)['financial_visibility_revision'])
+    target.update(status='waiting',file_id=str(source.id),expected_revision=financial_file_visibility(source)['financial_visibility_revision'])
     target.pop('error',None)
     batch.files=files;batch.status='preparing';session.commit()
+    return dict(queued=True, status='waiting')
 
 
 def refresh_statement_list(session, *, case_id, batch_id):
