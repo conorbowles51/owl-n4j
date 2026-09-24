@@ -46,7 +46,7 @@ def imported_records(session, *, case_id, account_id=None, start_date=None, end_
         for item in items or []:
             if item.get('resolved_transaction_id'):
                 continue
-            fields = item['fields']
+            fields = item.get('correction') or item['fields']
             from services.financial.import_issues import calendar_date
             day = calendar_date(fields.get('date'))
             # Keep undated records visible and identify them, even with a range.
@@ -54,7 +54,7 @@ def imported_records(session, *, case_id, account_id=None, start_date=None, end_
                 continue
             original = item.get('original', {})
             records.append(dict(id=item['id'], source_document_id=str(source_id), evidence_file_id=str(file_id),
-                account_id=account, filename=filename, currency=currency or '', fields=fields,
+                account_id=account, filename=filename, currency=item.get('correction_currency') or currency or '', fields=fields,
                 page_number=original.get('page_number'), locator=(original.get('source_cells') or [{}])[0].get('locator'),
                 original_text=' '.join(c.get('expected_text', '') for c in original.get('source_cells', [])),
                 missing_fields=item['missing_fields'], version=item.get('version', 0)))
@@ -102,7 +102,6 @@ def transaction_draft(row, original, *, account_id, period_id, currency, positio
 
 def complete_record(*, session_factory, case_id, source_id, request, actor):
     from services.financial.runs import ingestion_run
-    from services.financial.transactions import record_transactions
     from services.financial.reconcile import reconcile_period
     currency = usable_currency(request.currency)
     if not currency or request.row.excluded:
@@ -144,39 +143,29 @@ def complete_record(*, session_factory, case_id, source_id, request, actor):
             checked_request = StatementImportRequest.model_validate({**raw, 'currency': currency})
             if incomplete_fields(request.row, checked_request):
                 raise PdfMappingError('The record still has incomplete values.', 422)
-            account_id = UUID(metadata['statement_account_id'])
             period = session.scalar(select(FinancialStatementPeriod).where(FinancialStatementPeriod.source_document_id == source_id,
                 FinancialStatementPeriod.case_id == case_id))
             if period and period.currency != currency:
                 raise PdfMappingError('Use the currency recorded for this statement.', 422)
-            position = next(i for i, r in enumerate(r for r in raw['rows'] if not r['excluded']) if r['id'] == request.row.id)
-            sign = -1 if metadata['statement_import_original']['metadata'].get('balance_convention') == 'liability_owed' else 1
-            draft = transaction_draft(request.row, original, session=session, case_id=case_id, account_id=account_id, period_id=period.id if period else None,
-                currency=currency, position=position, actor=actor, balance_sign=sign, period_end=raw.get('period_end', ''))
-            transaction = record_transactions(session, run, document, [draft], retain_prior_versions=True)[0]
-            record.update(resolved_transaction_id=str(transaction.id), correction=request.row.model_dump(mode='json'),
-                correction_currency=currency, version=request.version + 1, corrected_by=str(actor.user_id),
-                corrected_at=datetime.now(timezone.utc).isoformat())
-            corrected_rows = {r['id']: r['correction'] for r in metadata['statement_incomplete_records'] if r.get('correction')}
-            from services.financial.statement_details import saved_details, saved_currency
-            reviewed = {**raw, **saved_details(document), 'currency': saved_currency(document) or raw.get('currency', ''),
-                'rows':[corrected_rows.get(r['id'], r) for r in raw['rows']]}
-            from services.financial.review_arithmetic import check_proposed_rows
-            from services.financial.import_issues import retained_issues
-            checks = check_proposed_rows(metadata['statement_import_original'], reviewed['rows'])
-            metadata['statement_import_checks'] = checks
-            coverage_issues = [i for i in metadata.get('statement_import_issues', []) if i.get('kind') == 'coverage']
-            metadata['statement_import_issues'] = retained_issues(metadata['statement_import_original'],
-                StatementImportRequest.model_validate(reviewed), arithmetic=checks) + coverage_issues
-            # A corrected currency belongs to this record, not automatically to
-            # every other record from an unidentified-currency statement.
-            if not usable_currency(raw.get('currency')):
-                resolved = {r['id'] for r in metadata['statement_incomplete_records'] if r.get('resolved_transaction_id')}
-                metadata['statement_import_issues'] = [i for i in metadata['statement_import_issues']
-                    if not (i.get('field') == 'currency' and i.get('row_id') in resolved)]
+            record.update(correction=request.row.model_dump(mode='json'), correction_currency=currency,
+                version=request.version + 1, corrected_by=str(actor.user_id),
+                corrected_at=datetime.now(timezone.utc).isoformat(), missing_fields=[])
+            from services.financial.statement_currency_edit import complete_currency_records
+            # All corrected readings stay saved. They enter Transactions together
+            # only after the complete current statement reconciles.
+            pending_before = sum(not item.get('resolved_transaction_id') for item in metadata.get('statement_incomplete_records', []))
+            admission = complete_currency_records(session, document=document, period=period,
+                metadata=metadata, currency=currency, actor=actor) if period else None
             document.metadata_ = metadata
             if period:
                 reconcile_period(session, period)
+                if admission and admission['can_import']:
+                    from services.financial.account_history import record_admission_snapshot
+                    record_admission_snapshot(session, document, period)
             session.commit()
-            run.transaction_admitted(1)
-            return dict(transaction_id=str(transaction.id), created=True)
+            promoted = record.get('resolved_transaction_id')
+            admitted = pending_before - sum(not item.get('resolved_transaction_id') for item in metadata.get('statement_incomplete_records', []))
+            if admitted: run.transaction_admitted(admitted)
+            return dict(transaction_id=promoted, created=bool(promoted), pending_reconciliation=not bool(promoted),
+                version=record['version'], message=('Correction saved. This statement still needs reconciliation before its repaired payments enter Transactions.' if not promoted else ''),
+                blockers=(admission or {}).get('blockers', []))

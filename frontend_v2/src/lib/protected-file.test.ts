@@ -1,7 +1,11 @@
 import { act, renderHook, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
-import { fetchProtectedBlob, useProtectedObjectUrl } from "./protected-file"
+import {
+  fetchProtectedBlob,
+  useProtectedObjectUrl,
+  openProtectedFile,
+} from "./protected-file"
 
 describe("fetchProtectedBlob", () => {
   const originalFetch = globalThis.fetch
@@ -51,6 +55,23 @@ describe("fetchProtectedBlob", () => {
     await expect(
       fetchProtectedBlob("/api/evidence/missing/file")
     ).rejects.toThrow("File request failed: 404")
+  })
+  it("reports a blocked new tab without downloading and opens the selected page securely", async () => {
+    const open = vi.spyOn(window, "open").mockReturnValue(null)
+    await expect(
+      openProtectedFile("/api/evidence/123/file", 3)
+    ).rejects.toThrow("blocked")
+    expect(fetch).not.toHaveBeenCalled()
+    const target = { opener: window, location: { href: "" }, close: vi.fn() }
+    open.mockReturnValue(target as unknown as Window)
+    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:synthetic-source")
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {})
+    vi.mocked(fetch).mockResolvedValue(new Response("synthetic PDF"))
+    await openProtectedFile("/api/evidence/123/file", 3)
+    expect(target.opener).toBeNull()
+    expect(target.location.href).toBe("blob:synthetic-source#page=3")
+    open.mockRestore()
+    vi.restoreAllMocks()
   })
 })
 

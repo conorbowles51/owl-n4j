@@ -15,6 +15,7 @@ import { useFinancialDraft } from "../stores/financial-drafts"
 import { useInvestigationScope } from "../stores/investigation-scope"
 import { newReviewId } from "../lib/statement-review-id"
 import { useAuthStore } from "@/features/auth/hooks/use-auth"
+import { statementMonth } from "../lib/statement-month"
 
 const fields = [
   ["holder", "Account holder"],
@@ -81,13 +82,19 @@ type Props = {
   fileIds?: string[]
   batchId?: string
   onSaved: () => void
+  datesOnly?: boolean
+  statementId?: string | null
 }
 
 export function BulkStatementDetails(props: Props) {
   const owner = useAuthStore(
     (state) => state.user?.id || state.user?.username || "anonymous"
   )
-  const key = props.batchId || [...(props.fileIds || [])].sort().join(",")
+  const key = [
+    props.batchId || [...(props.fileIds || [])].sort().join(","),
+    props.datesOnly ? "dates" : "details",
+    props.statementId === undefined ? "all" : props.statementId || "single",
+  ].join(":")
   return (
     <Editor
       key={`${owner}:${props.caseId}:${key}`}
@@ -103,6 +110,8 @@ function Editor({
   batchId,
   onSaved,
   scopeKey,
+  datesOnly = false,
+  statementId,
 }: Props & { scopeKey: string }) {
   const client = useQueryClient()
   const [scope, applyScope] = useInvestigationScope(caseId)
@@ -111,7 +120,7 @@ function Editor({
     `bulk-account-details:${scopeKey}`,
     {
       selected: {},
-      values: {},
+      values: datesOnly ? { period_start: "", period_end: "" } : {},
       mode: "fill_missing",
       requestId: "",
       open: false,
@@ -141,7 +150,14 @@ function Editor({
       )
       if (result.case_id !== caseId)
         throw Error("These statements belong to another case.")
-      return result
+      return statementId === undefined
+        ? result
+        : {
+            ...result,
+            items: result.items.filter(
+              (item) => (item.statement_id || null) === statementId
+            ),
+          }
     },
   })
   const body = () => ({
@@ -271,7 +287,11 @@ function Editor({
           })
         }}
       >
-        Edit account details
+        {datesOnly
+          ? statementId === undefined
+            ? "Set dates for selected statements"
+            : "Set statement dates"
+          : "Edit account details"}
       </Button>
       {receipt && (
         <p role="status" className="text-sm w-full">
@@ -304,7 +324,11 @@ function Editor({
           showCloseButton={!busy}
         >
           <DialogHeader>
-            <DialogTitle>Edit account details for statements</DialogTitle>
+            <DialogTitle>
+              {datesOnly
+                ? "Set statement dates"
+                : "Edit account details for statements"}
+            </DialogTitle>
             <DialogDescription>
               Select one or several statement periods, choose the fields to
               change, then review before saving. Imported statements update
@@ -494,6 +518,24 @@ function Editor({
                 <h3 className="font-semibold">2. Choose fields to change</h3>
                 <fieldset disabled={busy} className="space-y-3">
                   <label className="block text-sm">
+                    Whole-month shortcut (optional)
+                    <input
+                      type="month"
+                      aria-label="Statement month and year"
+                      className="block border rounded bg-background p-2"
+                      onChange={(event) => {
+                        const dates = statementMonth(event.target.value)
+                        if (dates)
+                          changeDraft({ values: { ...draft.values, ...dates } })
+                      }}
+                    />
+                    <span className="block text-muted-foreground mt-1">
+                      Sets the first and last calendar day for the selected
+                      statements. Check the preview; use custom dates below for
+                      other periods. Transaction dates stay unchanged.
+                    </span>
+                  </label>
+                  <label className="block text-sm">
                     How to apply changes
                     <select
                       aria-label="How to apply account details"
@@ -519,61 +561,65 @@ function Editor({
                     Replace selected fields above.
                   </p>
                   <div className="grid gap-3 sm:grid-cols-2">
-                    {fields.map(([field, label]) => (
-                      <div key={field} className="space-y-1">
-                        <label className="flex items-center gap-2 text-sm">
-                          <input
-                            type="checkbox"
-                            aria-label={`Change ${label.toLowerCase()}`}
-                            checked={draft.values[field] !== undefined}
-                            onChange={(event) => {
-                              const values = { ...draft.values }
-                              if (event.target.checked) values[field] = ""
-                              else delete values[field]
-                              changeDraft({ values })
-                            }}
-                          />
-                          {label}
-                        </label>
-                        {draft.values[field] !== undefined &&
-                          (field === "currency" ? (
-                            <select
-                              aria-label="New currency"
-                              className="border rounded bg-background p-2 w-full"
-                              value={draft.values[field]}
-                              onChange={(event) =>
-                                changeDraft({
-                                  values: {
-                                    ...draft.values,
-                                    [field]: event.target.value,
-                                  },
-                                })
-                              }
-                            >
-                              <option value="">Choose currency</option>
-                              <CurrencyOptions />
-                            </select>
-                          ) : (
+                    {fields
+                      .filter(
+                        ([field]) => !datesOnly || field.startsWith("period_")
+                      )
+                      .map(([field, label]) => (
+                        <div key={field} className="space-y-1">
+                          <label className="flex items-center gap-2 text-sm">
                             <input
-                              type={
-                                field.startsWith("period_") ? "date" : "text"
-                              }
-                              maxLength={128}
-                              aria-label={`New ${label.toLowerCase()}`}
-                              className="border rounded bg-background p-2 w-full"
-                              value={draft.values[field]}
-                              onChange={(event) =>
-                                changeDraft({
-                                  values: {
-                                    ...draft.values,
-                                    [field]: event.target.value,
-                                  },
-                                })
-                              }
+                              type="checkbox"
+                              aria-label={`Change ${label.toLowerCase()}`}
+                              checked={draft.values[field] !== undefined}
+                              onChange={(event) => {
+                                const values = { ...draft.values }
+                                if (event.target.checked) values[field] = ""
+                                else delete values[field]
+                                changeDraft({ values })
+                              }}
                             />
-                          ))}
-                      </div>
-                    ))}
+                            {label}
+                          </label>
+                          {draft.values[field] !== undefined &&
+                            (field === "currency" ? (
+                              <select
+                                aria-label="New currency"
+                                className="border rounded bg-background p-2 w-full"
+                                value={draft.values[field]}
+                                onChange={(event) =>
+                                  changeDraft({
+                                    values: {
+                                      ...draft.values,
+                                      [field]: event.target.value,
+                                    },
+                                  })
+                                }
+                              >
+                                <option value="">Choose currency</option>
+                                <CurrencyOptions />
+                              </select>
+                            ) : (
+                              <input
+                                type={
+                                  field.startsWith("period_") ? "date" : "text"
+                                }
+                                maxLength={128}
+                                aria-label={`New ${label.toLowerCase()}`}
+                                className="border rounded bg-background p-2 w-full"
+                                value={draft.values[field]}
+                                onChange={(event) =>
+                                  changeDraft({
+                                    values: {
+                                      ...draft.values,
+                                      [field]: event.target.value,
+                                    },
+                                  })
+                                }
+                              />
+                            ))}
+                        </div>
+                      ))}
                   </div>
                   {draft.mode === "replace" && (
                     <p className="text-sm">

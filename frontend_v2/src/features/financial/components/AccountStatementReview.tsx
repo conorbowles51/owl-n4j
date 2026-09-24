@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button"
 import { StatementChecksPanel } from "./StatementChecksPanel"
 import { StatementCoveragePanel } from "./StatementCoveragePanel"
 import { RequestedCoveragePanel } from "./RequestedCoveragePanel"
+import { AccountHistory } from "./AccountHistory"
 
 export type AccountReviewDates = { startDate?: string; endDate?: string }
 
@@ -81,6 +82,7 @@ export function AccountStatementReview({
           needed.
         </p>
       </header>
+      <AccountHistory caseId={caseId} accountId={account.id} />
       {!datesFirst && balanceChecks}
       <StatementCoveragePanel
         caseId={caseId}

@@ -31,6 +31,7 @@ export const statementDraft = z.object({
   periodStart: z.string(),
   periodEnd: z.string(),
   detailsReason: z.string(),
+  noActivityRevision: z.string().optional(),
   balanceException: z
     .object({ revision: z.string(), reason: z.string() })
     .optional(),
@@ -63,6 +64,9 @@ export function serverStatementDraft(raw: Record<string, unknown> | undefined) {
     periodStart: raw.period_start ?? "",
     periodEnd: raw.period_end ?? "",
     detailsReason: raw.details_reason || "",
+    noActivityRevision: raw.no_activity_confirmed
+      ? raw.no_activity_revision || ""
+      : "",
     balanceException: {
       revision: raw.balance_exception_revision || "",
       reason: raw.balance_exception_reason || "",

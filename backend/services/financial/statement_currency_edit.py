@@ -109,7 +109,8 @@ def complete_currency_records(session, *, document, period, metadata, currency, 
     from services.financial.statement_import import DraftImportRow, StatementImportRequest
     from services.financial.transactions import record_transactions
     raw = metadata['statement_import_request']
-    request = StatementImportRequest.model_validate({**raw, 'currency': currency})
+    from services.financial.statement_details import saved_details
+    request = StatementImportRequest.model_validate({**raw, **saved_details(document), 'currency': currency})
     positions = {row['id']: index for index, row in enumerate(row for row in raw['rows'] if not row['excluded'])}
     sign = -1 if metadata['statement_import_original']['metadata'].get('balance_convention') == 'liability_owed' else 1
     pending, drafts = [], []
@@ -127,8 +128,14 @@ def complete_currency_records(session, *, document, period, metadata, currency, 
         if item['missing_fields'] or row.excluded:
             continue
         drafts.append(transaction_draft(row, item['original'], session=session, case_id=period.case_id, account_id=period.account_id, period_id=period.id,
-            currency=currency, position=positions[row.id], actor=actor, balance_sign=sign, period_end=request.period_end))
+            currency=currency, position=positions.get(row.id, len(raw['rows']) + len(drafts)), actor=actor, balance_sign=sign, period_end=request.period_end))
         pending.append((item, row))
+    from services.financial.saved_statement_admission import assess_saved_additions
+    admission = assess_saved_additions(session, document, period, metadata, currency) if drafts else None
+    if admission and not admission['can_import']:
+        metadata['statement_import_issues'] = admission['blockers']
+        metadata['statement_admission'] = admission
+        return admission
     transactions = record_transactions(session, review_run(document), document, drafts, retain_prior_versions=True) if drafts else []
     for (item, row), transaction in zip(pending, transactions, strict=True):
         item.update(resolved_transaction_id=str(transaction.id), correction=row.model_dump(mode='json'),
@@ -137,3 +144,5 @@ def complete_currency_records(session, *, document, period, metadata, currency, 
     resolved = {item['id'] for item, _ in pending}
     metadata['statement_import_issues'] = [issue for issue in metadata.get('statement_import_issues', [])
         if not (issue.get('kind') == 'missing_field' and issue.get('row_id') in resolved)]
+    if admission: metadata['statement_admission'] = admission
+    return admission

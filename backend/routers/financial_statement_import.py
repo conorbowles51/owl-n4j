@@ -520,6 +520,7 @@ class SelectedStatementCurrency(BaseModel):
     model_config = ConfigDict(extra='forbid')
     currency: CurrencyCode
     statements: list[SelectedCurrencyStatement] = Field(min_length=1, max_length=10000)
+    request_id: UUID | None = None
 
 
 @router.post('/batches/{batch_id}/currency', dependencies=[Depends(case_access_dependency(lambda request,payload: ('case','edit')))])
@@ -527,7 +528,7 @@ def set_batch_statement_currency(batch_id: UUID, body: SelectedStatementCurrency
         user=Depends(get_current_db_user), db: Session = Depends(get_db)):
     try:
         return import_batches.set_selected_currency(db, case_id=case_id, batch_id=batch_id,
-            selections=body.statements, currency=body.currency, actor=actor_from_user(user))
+            selections=body.statements, currency=body.currency, actor=actor_from_user(user), request_id=body.request_id)
     except PdfMappingError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 

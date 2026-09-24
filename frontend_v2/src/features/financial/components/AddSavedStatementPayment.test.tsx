@@ -74,15 +74,11 @@ it("keeps unfinished input, saves to an imported statement and retries a lost re
   fireEvent.change(screen.getByLabelText("Description"), {
     target: { value: "Water payment" },
   })
-  fireEvent.click(
-    screen.getByRole("button", { name: "Save and open transaction" })
-  )
+  fireEvent.click(screen.getByRole("button", { name: "Save payment" }))
   await screen.findByRole("alert")
   expect(screen.getByLabelText("Paid to")).toHaveValue("Example supplier")
   fail = false
-  fireEvent.click(
-    screen.getByRole("button", { name: "Save and open transaction" })
-  )
+  fireEvent.click(screen.getByRole("button", { name: "Save payment" }))
   await waitFor(() => expect(done).toHaveBeenCalledWith("saved-payment"))
   expect(requests[1]).toEqual(requests[0])
   expect(requests[0]).toMatchObject({

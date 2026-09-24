@@ -14,6 +14,7 @@ import {
 } from "../stores/financial-drafts"
 import { Button } from "@/components/ui/button"
 import { paymentTableDraftName } from "../lib/payment-table-draft"
+import { AccountHistory } from "./AccountHistory"
 
 export function InvestigatorTrends({ caseId }: { caseId: string }) {
   const data = useInvestigatorPayments(caseId)
@@ -59,6 +60,7 @@ export function InvestigatorTrends({ caseId }: { caseId: string }) {
         }
       />
       <WorkspaceScope caseId={caseId} />
+      <AccountHistory caseId={caseId} />
       <InvestigationReadState data={data}>
         <TrendComparisonWorkspace
           caseId={caseId}

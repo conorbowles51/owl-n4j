@@ -24,7 +24,7 @@ class StatementImportTests(TransactionPersistenceTestCase):
         self.path=Path(self._directory)/'statement.pdf'; self.path.write_bytes(b'%PDF-1.4\nStatement test only')
         self.file=self.evidence(hashlib.sha256(self.path.read_bytes()).hexdigest())
         self.file.stored_path=str(self.path)
-        content='Account Name: Test Company\nAccount Number: TEST123\nCurrency: EUR\n'
+        content='Account Name: Test Company\nAccount Number: TEST123\nCurrency: EUR\nBank: Synthetic Bank\nStatement Period: January 1, 2023 - December 31, 2023\n'
         job=uuid4()
         self.db.add(EvidenceDocumentText(evidence_file_id=self.file.id, content=content,
             content_sha256=hashlib.sha256(content.encode()).hexdigest(), character_count=len(content),
@@ -35,6 +35,17 @@ class StatementImportTests(TransactionPersistenceTestCase):
                     values=[dict(row=row['row_index'],column=c['column_index'],text=c['expected_text'],
                         locator=rectangle(20+row['row_index']*20,x=20+c['column_index']*100,width=90,height=15))
                         for row in statement()['rows'] for c in row['cells']]))]))
+        # The default admission fixture is fully reconciled. Tests exercising
+        # missing controls explicitly remove or replace the relevant source row.
+        self.db.flush()
+        geometry=self.db.get(EvidenceTableGeometry,(self.file.id,1))
+        from copy import deepcopy
+        payload=deepcopy(geometry.payload)
+        values=payload[0]['table']['values']
+        index=max(c['row'] for c in values)+1
+        for column,value in ((0,'2023-12-31'),(1,'Closing Balance'),(4,'€47,450')):
+            values.append(dict(row=index,column=column,text=value,locator=rectangle(400,x=20+column*100,width=90,height=15)))
+        geometry.payload=payload
         self.db.commit()
 
     def preview(self):
@@ -51,6 +62,16 @@ class StatementImportTests(TransactionPersistenceTestCase):
     def confirm(self,request=None):
         return confirm_statement_import(session_factory=self.SessionLocal,case_id=self.case.id,
             evidence_file_id=self.file.id,request=request or self.request(),actor=self.actor,resolve_path=Path)
+
+    def confirm_legacy(self, request=None):
+        """Seed historical pre-reconciliation data for provenance/recovery tests.
+
+        Never use for current admission acceptance. The original writer is still
+        exercised; only the later policy is bypassed while constructing old data.
+        """
+        from services.financial.statement_admission import assess_admission
+        with patch('services.financial.statement_admission.require_admission', side_effect=assess_admission):
+            return self.confirm(request)
 
     def test_existing_import_and_same_request_keep_the_saved_account_for_navigation(self):
         request = self.request()
@@ -196,7 +217,7 @@ class StatementImportTests(TransactionPersistenceTestCase):
         request = StatementImportRequest.model_validate(self.request())
         check_import_request(preview, request)
         self.assertEqual(len(request.rows), 6200)
-        result = self.confirm(request.model_dump(mode='json'))
+        result = self.confirm_legacy(request.model_dump(mode='json'))
         self.assertEqual(result['transaction_count'], 5000)
         with self.SessionLocal() as db:
             payments = list(db.scalars(select(FinancialTransaction).where(
@@ -359,6 +380,7 @@ class StatementImportTests(TransactionPersistenceTestCase):
                                   amount_minor=r['fields'].get('amount_minor', '0'),
                                   direction=r['fields'].get('direction', 'credit'),
                                   balance_minor=r['fields'].get('balance'), reason='') for r in p['rows']])
+        request.update(period_start='2021-03-26', period_end='2021-04-25')
         result = self.confirm(request)
         self.assertEqual(result['transaction_count'], 2)
         self.assertFalse(self.confirm(request)['created'])
@@ -411,7 +433,7 @@ class StatementImportTests(TransactionPersistenceTestCase):
                                   amount_minor=r['fields'].get('amount_minor','0'),direction=r['fields'].get('direction'),reason='') for r in proposal['rows']])
         fee=request['rows'][7]
         fee.update(date_values={'booking_date':'2022-03-10'},reason='Corrected the posting date after checking the source.')
-        result=self.confirm(request)
+        result=self.confirm_legacy(request)
         self.assertEqual(result['transaction_count'],1)
         self.db.expire_all()
         payment=self.db.scalar(select(FinancialTransaction).where(FinancialTransaction.source_document_id==UUID(result['source_document_id'])))
@@ -440,7 +462,7 @@ class StatementImportTests(TransactionPersistenceTestCase):
             rows=[dict(id=r['id'], excluded=r['excluded'], date=r['fields'].get('date', ''),
                 description=r['fields'].get('description', ''), amount_minor=r['fields'].get('amount_minor', '0'),
                 direction=r['fields'].get('direction'), reason='') for r in proposal['rows']])
-        result = self.confirm(request)
+        result = self.confirm_legacy(request)
         self.assertEqual(result['transaction_count'], 2)
         self.db.expire_all()
         payment = self.db.scalar(select(FinancialTransaction).where(
@@ -450,25 +472,25 @@ class StatementImportTests(TransactionPersistenceTestCase):
         original = payment.provenance['statement_import_original']
         self.assertEqual(original['layout_context']['amount_source']['column_index'], 4)
         self.assertEqual(original['source_cells'], data['rows'][8]['cells'])
-        self.assertFalse(self.confirm(request)['created'])
+        self.assertFalse(self.confirm_legacy(request)['created'])
 
     def test_correcting_posting_and_value_dates_keeps_transaction_date_and_originals(self):
         from datetime import date
         request = self.multi_date_request()
         request['rows'][1]['date_values'] = dict(booking_date='2023-01-05', value_date='2023-01-06')
-        result = self.confirm(request)
+        result = self.confirm_legacy(request)
         self.db.expire_all()
         payment = self.db.scalar(select(FinancialTransaction).where(FinancialTransaction.source_document_id == UUID(result['source_document_id'])))
         self.assertEqual((payment.transaction_date,payment.posted_date,payment.value_date), (date(2023,1,2),date(2023,1,5),date(2023,1,6)))
         original = payment.provenance['statement_import_original']['fields']
         self.assertEqual((original['booking_date'],original['value_date']), ('2023-01-03','2023-01-04'))
         self.assertEqual(payment.provenance['statement_import_review']['date_values'], request['rows'][1]['date_values'])
-        self.assertFalse(self.confirm(request)['created'])
+        self.assertFalse(self.confirm_legacy(request)['created'])
 
     def test_clearing_an_unreadable_secondary_date_records_the_decision_without_losing_other_dates(self):
         request = self.multi_date_request()
         request['rows'][1].update(date_values={'booking_date':''}, reason='Posting date cannot be confirmed from the source.')
-        result = self.confirm(request)
+        result = self.confirm_legacy(request)
         self.db.expire_all()
         payment = self.db.scalar(select(FinancialTransaction).where(FinancialTransaction.source_document_id == UUID(result['source_document_id'])))
         self.assertIsNone(payment.posted_date)
@@ -508,7 +530,7 @@ class StatementImportTests(TransactionPersistenceTestCase):
         pending = StatementImportRequest.model_validate(request)
         self.assertIn('date', incomplete_fields(pending.rows[6], pending))
         request['rows'][6].update(date='2021-04-22', reason='Read the first date against the original PDF.')
-        result = self.confirm(request)
+        result = self.confirm_legacy(request)
         self.assertEqual(result['transaction_count'], 2)
         self.db.expire_all()
         payment = self.db.scalar(select(FinancialTransaction).where(
@@ -530,7 +552,7 @@ class StatementImportTests(TransactionPersistenceTestCase):
         p, request = self.card_balance_request()
         closing = next(r for r in request['rows'] if r['description'] == 'Closing Balance')
         closing.update(balance_minor='93878', reason='Synthetic correction checked against the original.')
-        result = self.confirm(request)
+        result = self.confirm_legacy(request)
         self.assertTrue(any(issue['kind'] == 'arithmetic' for issue in result['issues']))
         period = self.db.scalar(select(FinancialStatementPeriod).where(FinancialStatementPeriod.source_document_id == UUID(result['source_document_id'])))
         self.assertEqual(read_closing(period).amount.minor_units, -93878)
@@ -595,15 +617,6 @@ class StatementImportTests(TransactionPersistenceTestCase):
         from copy import deepcopy
         from postgres.models.financial import FinancialStatementPeriod
         from services.financial.periods import read_closing
-        geometry = self.db.get(EvidenceTableGeometry, (self.file.id, 1))
-        payload = deepcopy(geometry.payload)
-        values = payload[0]['table']['values']
-        index = max(item['row'] for item in values) + 1
-        for column, value in ((0, '2023-12-31'), (1, 'Closing Balance'), (4, '€47,450')):
-            values.append(dict(row=index, column=column, text=value,
-                locator=rectangle(400, x=20+column*100, width=90, height=15)))
-        geometry.payload = payload
-        self.db.commit()
         request = self.request()
         self.assertTrue(request['rows'][-1]['excluded'])
         result = self.confirm(request)
@@ -621,13 +634,13 @@ class StatementImportTests(TransactionPersistenceTestCase):
         self.assertEqual(list(self.db.scalars(select(FinancialSourceDocument).where(
             FinancialSourceDocument.evidence_file_id == self.file.id))), [])
         request = self.request()
-        request['rows'][2]['amount_minor'] = '1'
+        request['rows'][2]['description'] = 'Corrected description'
         receipt = self.confirm(request)
         with self.SessionLocal() as db:
             document = db.get(FinancialSourceDocument, UUID(receipt['source_document_id']))
-            self.assertEqual(document.metadata_['statement_import_request']['rows'][2]['amount_minor'], '1')
+            self.assertEqual(document.metadata_['statement_import_request']['rows'][2]['description'], 'Corrected description')
             self.assertEqual(document.metadata_['statement_import_request']['rows'][2]['reason'], '')
-            self.assertNotEqual(document.metadata_['statement_import_original']['rows'][2]['fields']['amount_minor'], '1')
+            self.assertNotEqual(document.metadata_['statement_import_original']['rows'][2]['fields']['description'], 'Corrected description')
 
     def test_changed_bytes_are_not_imported(self):
         request=self.request();self.path.write_bytes(b'changed')
@@ -643,9 +656,9 @@ class StatementImportTests(TransactionPersistenceTestCase):
         request=self.request()
         request['rows'].append(dict(id='manual:missed',manual_page=2,date='2023-12-29',description='Missed payment',
             amount_minor='500',direction='debit',reason='Read from original page'))
-        with self.assertRaises(PdfMappingError):self.confirm(request)
+        with self.assertRaises(PdfMappingError):self.confirm_legacy(request)
         request['rows'][-1]['manual_page']=1
-        result=self.confirm(request)
+        result=self.confirm_legacy(request)
         self.assertEqual(result['transaction_count'],13)
 
     def test_reprocessed_version_preserves_old_source_and_replaces_totals_once(self):
@@ -761,9 +774,9 @@ class StatementImportTests(TransactionPersistenceTestCase):
                     date_unprinted=fields.get('date_basis') == 'statement_end_ordering_only',
                     description=fields.get('description',''),amount_minor=fields.get('amount_minor','0'),direction=fields.get('direction','credit'),
                     reason='Local test: flagged fields checked against the PDF.' if row['issues'] else ''))
-            receipt=self.confirm(request)
+            receipt=self.confirm_legacy(request)
             self.assertEqual(receipt['transaction_count'],3)
-            self.assertFalse(self.confirm(request)['created'])
+            self.assertFalse(self.confirm_legacy(request)['created'])
             receipts.append(UUID(receipt['source_document_id']))
         self.db.expire_all()
         self.assertEqual(len(list(self.db.scalars(select(FinancialStatementPeriod).where(FinancialStatementPeriod.source_document_id.in_(receipts))))),2)
@@ -940,7 +953,7 @@ class StatementImportTests(TransactionPersistenceTestCase):
         for r in request['rows']:
             r['excluded'] = True
         state, summary = assess(p, request)
-        self.assertTrue(summary['can_import'])
+        self.assertFalse(summary['can_import'])
         self.assertEqual(state, 'attention')
         result = self.confirm(request)
         self.assertEqual(result['transaction_count'], 0)
@@ -975,7 +988,7 @@ class StatementImportTests(TransactionPersistenceTestCase):
         # Routine account/detail corrections do not require a typed reason.
         request.update(institution='BBVA', holder='Corrected holder',
                        period_start='2021-01-01', period_end='2021-01-31')
-        self.assertTrue(assess(proposal, request)[1]['can_import'])
+        self.assertFalse(assess(proposal, request)[1]['can_import'])
         result = self.confirm(request)
         self.assertEqual(result['transaction_count'], 0)
         self.assertEqual(result.get('incomplete_count', 0), 0)

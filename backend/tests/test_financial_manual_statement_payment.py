@@ -41,12 +41,13 @@ class ManualPaymentTests(TestCase):
         self.assertFalse(again['created'])
         with self.f.SessionLocal() as db:
             after = {r.id: r.ref_id for r in db.scalars(select(FinancialTransaction))}
-            self.assertEqual(len(after), len(before) + 1)
+            self.assertEqual(after, before)
+            self.assertTrue(first['pending_reconciliation'])
             self.assertEqual({k: after[k] for k in before}, before)
             self.assertEqual(db.get(FinancialSourceDocument, self.source).metadata_['statement_import_request'], original)
-            row = db.get(FinancialTransaction, UUID(first['transaction_id']))
-            self.assertEqual(row.amount_minor, 12345)
-            self.assertEqual(row.direction, 'debit')
+            retained = db.get(FinancialSourceDocument, self.source).metadata_['statement_incomplete_records'][0]
+            self.assertEqual(retained['fields']['amount_minor'], '12345')
+            self.assertEqual(retained['fields']['direction'], 'debit')
         request['row']['amount_minor'] = '999'
         with self.assertRaisesRegex(PdfMappingError, 'already saved'):
             self.save(request)
@@ -71,11 +72,12 @@ class BalanceOnlyManualPaymentTests(ManualPaymentTests):
             row['excluded'] = True
         self.source = UUID(self.f.confirm(request)['source_document_id'])
 
-    def test_first_manual_payment_opens_a_balance_only_statement_without_reimport(self):
+    def test_first_manual_payment_is_retained_until_balance_only_statement_reconciles(self):
         with self.f.SessionLocal() as db:
             self.assertEqual(list(db.scalars(select(FinancialTransaction).where(FinancialTransaction.source_document_id == self.source))), [])
         result = self.save(self.request())
         with self.f.SessionLocal() as db:
             rows = list(db.scalars(select(FinancialTransaction).where(FinancialTransaction.source_document_id == self.source)))
-            self.assertEqual(len(rows), 1)
-            self.assertEqual(str(rows[0].id), result['transaction_id'])
+            self.assertEqual(len(rows), 0)
+            self.assertTrue(result['pending_reconciliation'])
+            self.assertIsNone(result['transaction_id'])

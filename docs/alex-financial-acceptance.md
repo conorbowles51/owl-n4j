@@ -1,3 +1,5 @@
+**24 September reconciliation and account history follow-up:** R01–R06 are implemented and locally verified in the [connected acceptance record](financial-workflows/reconciliation-and-account-history-plan-2026-09-24.md#implementation-and-local-acceptance--24-september-2026). Reconciliation now gates new statement payments, including batch/recovery and saved-record/manual additions. Balance-only observations remain saveable; confirmed quiet periods are distinct. Bulk dates, currency retry feedback, copyable source access and account history are connected to existing screens. This supersedes historical statements below that unresolved payments may be imported immediately. Live verification and the prior production cleanup audit are not claimed complete.
+
 # Alex's financial workflow acceptance
 
 **24 September card-layout follow-up:** [Findings and Observations card workflow](financial-workflows/finding-cards-2026-09-24.md) covers the request for smaller square cards, nearby Edit/Timeline actions and formatted expanded text. It supersedes the earlier full-width compact-row design; existing saved text with trimmed empty follow-up fields is included.
@@ -172,6 +174,14 @@ automatic deployment triggered by publication.
 All F01–F28 reports are mapped to implemented workflows and local evidence in the [current acceptance record](financial-workflows/implementation-progress-2026-09-23.md). This includes both late additions: retained review filters/active manual rows and direction-aware existing counterparty/account links. Real-service Chromium checks save/import/reopen through production FastAPI routes and independently read back a second bulk correction. The source PDF, account/period/currency, payment identity, history and next action remain part of each journey. Live incident verification is separately blocked by the origin-authorization review described in that record; no live client records were changed.
 
 ## 24 September: future bank and card collections
+
+The subsequent collected R01–R06 feedback reopens preparation, source-copying and
+reconciliation and adds account balance/activity history including inactive
+periods. The [connected plan and acceptance checklist](financial-workflows/reconciliation-and-account-history-plan-2026-09-24.md)
+is the current reference. A statement must now reconcile before new payments can
+enter Transactions; earlier acceptance of import-with-unresolved-checks is
+superseded. Confirmed inactive statements belong in Financial as period/balance
+evidence. No new implementation acceptance is claimed by this planning update.
 
 The later repeated-review report is addressed by the [duplicate statement workflow](financial-workflows/duplicate-statement-review-2026-09-24.md): unchanged selections reuse their preparation, old internal readings do not become competing pending work, strong account/holder/period matches are held before import, and a recorded leave-unimported choice survives reopening. This is prevention and local workflow acceptance; the reported live statement's provenance and any already duplicated payments remain unaudited. No evidence or investigator corrections are deleted.
 

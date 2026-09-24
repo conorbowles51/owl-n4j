@@ -156,16 +156,12 @@ it("keeps an amount-first draft beside the PDF, links an existing account and re
     target: { value: "credit" },
   })
   expect(screen.getByLabelText("Paid by")).toBeVisible()
-  fireEvent.click(
-    screen.getByRole("button", { name: "Save and open transaction" })
-  )
+  fireEvent.click(screen.getByRole("button", { name: "Save payment" }))
   expect(await screen.findByRole("alert")).toHaveTextContent(
     "draft is retained"
   )
   fail = false
-  fireEvent.click(
-    screen.getByRole("button", { name: "Save and open transaction" })
-  )
+  fireEvent.click(screen.getByRole("button", { name: "Save payment" }))
   await waitFor(() => expect(done).toHaveBeenCalledWith("saved"))
   expect(requests[0]).toEqual(requests[1])
   expect(requests[0]).toMatchObject({

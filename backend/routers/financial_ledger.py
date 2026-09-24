@@ -568,6 +568,19 @@ async def get_statement_coverage(case_id: UUID = Query(...), offset: int = Query
         raise HTTPException(status_code=500, detail="Statement coverage could not be calculated.")
 
 
+@router.get('/account-history')
+async def get_account_history(case_id: UUID = Query(...), account_id: UUID | None = Query(None),
+        account_ids: Annotated[list[UUID] | None, Query()] = None, account_holders: Annotated[list[str] | None, Query()] = None,
+        start_date: date | None = Query(None), end_date: date | None = Query(None), db: Session = Depends(get_db)):
+    from services.financial.account_history import account_history
+    from services.financial.pdf_candidates import PdfMappingError
+    try:
+        return account_history(db, case_id=case_id, account_id=account_id, account_ids=account_ids,
+            account_holders=account_holders, start_date=start_date, end_date=end_date)
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
 @router.get("/ledger-accounts")
 async def get_candidate_accounts(case_id: UUID = Query(...), search: str = Query("", max_length=128), offset: int = 0,
                                   db: Session = Depends(get_db)):

@@ -89,9 +89,7 @@ it("completes a payment with an unreadable untouched balance without resending i
   fireEvent.change(screen.getByLabelText("Amount"), {
     target: { value: "123.45" },
   })
-  fireEvent.click(
-    screen.getByRole("button", { name: "Save correction and open transaction" })
-  )
+  fireEvent.click(screen.getByRole("button", { name: "Save correction" }))
   await waitFor(() => expect(open).toHaveBeenCalledWith("completed"))
   expect(
     vi
@@ -167,9 +165,7 @@ it("retains missing values and an unfinished correction, then opens the saved tr
   fireEvent.click(screen.getByText(/1 imported record has/))
   fireEvent.click(screen.getByRole("button", { name: "Open record" }))
   expect(screen.getByLabelText("Amount")).toHaveValue("125000.00")
-  fireEvent.click(
-    screen.getByRole("button", { name: "Save correction and open transaction" })
-  )
+  fireEvent.click(screen.getByRole("button", { name: "Save correction" }))
   await waitFor(() => expect(open).toHaveBeenCalledWith("completed"))
   const call = vi
     .mocked(fetchAPI)

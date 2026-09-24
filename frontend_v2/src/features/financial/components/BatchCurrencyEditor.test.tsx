@@ -66,18 +66,70 @@ it("selects matching statements across all pages, retains hidden selections and 
     target: { value: "USD" },
   })
   expect(screen.getByText("350 selected · 350 hidden by search")).toBeVisible()
-  fireEvent.change(screen.getByLabelText("Currency for selected statements"), { target: { value: "MXN" } })
+  fireEvent.change(screen.getByLabelText("Currency for selected statements"), {
+    target: { value: "MXN" },
+  })
   fireEvent.click(
     screen.getByRole("button", { name: "Apply MXN to 350 statements" })
   )
   await screen.findByText(/MXN saved for 350/)
   expect(sent).toEqual({
     currency: "MXN",
+    request_id: expect.any(String),
     statements: items
       .slice(0, 350)
-      .map((item) => ({ id: item.id, revision: item.currency_revision })),
+      .map((item) => ({ id: item.id, revision: item.currency_revision }))
+      .sort((a, b) => a.id.localeCompare(b.id)),
   })
   expect(saved).toHaveBeenCalledTimes(1)
+})
+
+it("retries an uncertain save with the same request and retains selection when refreshing", async () => {
+  const requests: unknown[] = []
+  vi.mocked(fetchAPI).mockImplementation(async (_url, options) => {
+    if (options?.method) {
+      requests.push(options.body)
+      if (requests.length === 1) throw Error("Response interrupted")
+      return {
+        case_id: "case",
+        batch_id: "batch",
+        updated: 1,
+        currency: "USD",
+        already_applied: true,
+      } as never
+    }
+    return {
+      case_id: "case",
+      id: "batch",
+      total: 1,
+      items: [items[0]],
+    } as never
+  })
+  mount()
+  fireEvent.click(
+    screen.getByRole("button", { name: "Set currency for selected statements" })
+  )
+  fireEvent.click(
+    await screen.findByRole("button", {
+      name: "Select all 1 matching statements",
+    })
+  )
+  fireEvent.click(screen.getByRole("button", { name: "Refresh currency list" }))
+  await screen.findByText(/Selection refreshed/)
+  expect(screen.getByRole("checkbox")).toBeChecked()
+  fireEvent.change(screen.getByLabelText("Currency for selected statements"), {
+    target: { value: "USD" },
+  })
+  fireEvent.click(
+    screen.getByRole("button", { name: "Apply USD to 1 statements" })
+  )
+  await screen.findByRole("alert")
+  fireEvent.click(
+    screen.getByRole("button", { name: "Apply USD to 1 statements" })
+  )
+  await screen.findByText(/Earlier save confirmed/)
+  expect(requests).toHaveLength(2)
+  expect(requests[0]).toEqual(requests[1])
 })
 it("retains selection on failure and rejects another case's list", async () => {
   vi.mocked(fetchAPI).mockImplementation(async (_url, options) => {
@@ -98,7 +150,9 @@ it("retains selection on failure and rejects another case's list", async () => {
       name: "Select all 1 matching statements",
     })
   )
-  fireEvent.change(screen.getByLabelText("Currency for selected statements"), { target: { value: "MXN" } })
+  fireEvent.change(screen.getByLabelText("Currency for selected statements"), {
+    target: { value: "MXN" },
+  })
   fireEvent.click(
     screen.getByRole("button", { name: "Apply MXN to 1 statements" })
   )
@@ -123,14 +177,23 @@ it("retains selection on failure and rejects another case's list", async () => {
 })
 
 it("offers the full supported list without assuming this case's currency", async () => {
-  vi.mocked(fetchAPI).mockResolvedValue({case_id:"case",id:"batch",total:1,items:[items[0]]} as never)
+  vi.mocked(fetchAPI).mockResolvedValue({
+    case_id: "case",
+    id: "batch",
+    total: 1,
+    items: [items[0]],
+  } as never)
   mount()
-  fireEvent.click(screen.getByRole("button", {name:"Set currency for selected statements"}))
-  const selector = await screen.findByLabelText("Currency for selected statements")
+  fireEvent.click(
+    screen.getByRole("button", { name: "Set currency for selected statements" })
+  )
+  const selector = await screen.findByLabelText(
+    "Currency for selected statements"
+  )
   expect(selector).toHaveValue("")
-  for (const currency of ["GBP","CHF","JPY","KWD","CLF","DEM"]) {
-    fireEvent.change(selector, {target:{value:currency}})
+  for (const currency of ["GBP", "CHF", "JPY", "KWD", "CLF", "DEM"]) {
+    fireEvent.change(selector, { target: { value: currency } })
     expect(selector).toHaveValue(currency)
   }
-  expect(screen.queryByRole("option", {name:/ZZZ/})).not.toBeInTheDocument()
+  expect(screen.queryByRole("option", { name: /ZZZ/ })).not.toBeInTheDocument()
 })

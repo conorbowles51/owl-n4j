@@ -30,6 +30,7 @@ class StatementDetailsRequest(BaseModel):
     period_end: str | None = Field(default=None, pattern=r'^(\d{4}-\d{2}-\d{2})?$')
     opening: BalanceEdit | None = None
     closing: BalanceEdit | None = None
+    no_activity_confirmed: bool = False
 
 
 def saved_details(document):
@@ -86,7 +87,9 @@ def _view(document, period, account):
         evidence_file_id=str(document.evidence_file_id), account_id=str(account.id),
         period_id=str(period.id) if period else None,
         details=saved_details(document), currency=period.currency if period else saved_currency(document),
-        balance_convention=convention, pages=pages, balances={})
+        balance_convention=convention, pages=pages, balances={},
+        has_payment_readings=bool(any(not row['excluded'] for row in metadata['statement_import_request']['rows'])
+            or metadata.get('statement_incomplete_records') or metadata.get('statement_manual_additions')))
     if period:
         for key in ('period_start', 'period_end'):
             value = getattr(period, key)
@@ -197,8 +200,6 @@ def update_statement_details(session, *, case_id, source_id, request, actor, com
                     record['missing_fields'] = [field for field in record['missing_fields'] if field != 'currency']
             metadata['statement_import_issues'] = [issue for issue in metadata.get('statement_import_issues', [])
                 if issue.get('field') != 'currency']
-            complete_currency_records(session, document=document, period=period, metadata=metadata,
-                currency=request.currency, actor=actor)
             if before['period_id'] is None:
                 from services.financial.import_issues import usable_balance
                 originals = {row['id']: row for row in metadata['statement_import_original']['rows']}
@@ -237,8 +238,22 @@ def update_statement_details(session, *, case_id, source_id, request, actor, com
         document.metadata_ = metadata
         session.flush()
         if period:
+            metadata = deepcopy(document.metadata_)
+            from services.financial.statement_currency_edit import complete_currency_records
+            admission = complete_currency_records(session, document=document, period=period, metadata=metadata,
+                currency=period.currency, actor=actor)
+            if admission is None:
+                from services.financial.saved_statement_admission import assess_saved_additions
+                admission = assess_saved_additions(session, document, period, metadata, period.currency,
+                    no_activity_confirmed=request.no_activity_confirmed)
+                metadata['statement_admission'] = admission
+            document.metadata_ = deepcopy(metadata)
+            session.flush()
             from services.financial.reconcile import reconcile_period
             reconcile_period(session, period)
+            if admission and admission['can_import']:
+                from services.financial.account_history import record_admission_snapshot
+                record_admission_snapshot(session, document, period)
         result = _view(document, period, account)
         if commit:
             session.commit()

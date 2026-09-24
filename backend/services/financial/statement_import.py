@@ -617,6 +617,8 @@ class StatementReviewDraft(_Contract):
     details_reason: Annotated[str, Field(max_length=4096)] = ''
     balance_exception_reason: Annotated[str, Field(max_length=4096)] = ''
     balance_exception_revision: _Digest | None = None
+    no_activity_confirmed: bool = False
+    no_activity_revision: _Digest | None = None
     coverage_review_reason: Annotated[str, Field(max_length=4096)] = ''
     coverage_review_revision: _Digest | None = None
     rows: Annotated[list[DraftImportRow], Field(min_length=1, max_length=MAX_STATEMENT_REVIEW_ROWS)]
@@ -806,6 +808,12 @@ def confirm_statement_import(*, session_factory, case_id, evidence_file_id, requ
                 coverage['requires_review'] = requires_decision(coverage, request.model_dump(mode='json'))
                 from services.financial.review_arithmetic import check_proposed_rows
                 arithmetic = check_proposed_rows(proposal, [r.model_dump() for r in request.rows])
+                from services.financial.statement_admission import require_admission, assess_admission
+                # Saving source balance observations does not admit a payment
+                # or assert no activity. Those periods stay unverified until
+                # the full reconciliation and no-activity review succeed.
+                admission = (require_admission(proposal, request, arithmetic) if any(not r.excluded for r in request.rows)
+                    else assess_admission(proposal, request, arithmetic))
                 from services.financial.import_issues import incomplete_records, retained_issues, calendar_date, usable_currency
                 incomplete = incomplete_records(proposal, request)
                 issues = retained_issues(proposal, request, arithmetic=arithmetic, coverage=coverage)
@@ -846,7 +854,7 @@ def confirm_statement_import(*, session_factory, case_id, evidence_file_id, requ
                         statement_import_request_sha256=request_hash, statement_import_request=request.model_dump(mode='json'),
                         statement_import_original=proposal, statement_import_original_sha256=_digest(proposal), coverage='all_prepared_rows_imported',
                         statement_account_id=str(account.id), statement_import_issues=issues,
-                        statement_incomplete_records=incomplete, statement_import_checks=arithmetic,
+                        statement_incomplete_records=incomplete, statement_import_checks=arithmetic, statement_admission=admission,
                         whole_document_extraction_verified=False)))
                 from services.financial.periods import StatementPeriodDraft, PeriodBounds, BalanceObservation, record_statement_period
                 from services.financial.money import Money
@@ -883,6 +891,8 @@ def confirm_statement_import(*, session_factory, case_id, evidence_file_id, requ
                 from services.financial.reconcile import reconcile_period
                 if period:
                     reconcile_period(session, period)
+                    from services.financial.account_history import record_admission_snapshot
+                    record_admission_snapshot(session, document, period)
                 if replacing is not None:
                     from services.financial.duplicates import _supersede, store_fingerprint
                     from postgres.models.enums import DuplicateMatchRung

@@ -31,6 +31,7 @@ const response = z.object({
   }),
   pages: z.array(z.number()),
   balances: z.object({ opening: balance, closing: balance }),
+  has_payment_readings: z.boolean().optional(),
 })
 type Details = z.infer<typeof response>
 const roles = ["opening", "closing"] as const
@@ -195,6 +196,7 @@ function DetailsForm({
       revision: data.revision,
       details: data.details,
       currency: data.currency || "",
+      noActivityConfirmed: false,
       amounts: {
         opening: initialAmount("opening"),
         closing: initialAmount("closing"),
@@ -252,6 +254,9 @@ function DetailsForm({
               expected_revision: draft.revision,
               ...details,
               ...changes,
+              ...(draft.noActivityConfirmed
+                ? { no_activity_confirmed: true }
+                : {}),
               ...(currency !== data.currency && currency ? { currency } : {}),
             },
           }
@@ -383,6 +388,19 @@ function DetailsForm({
               </label>
             ))}
           </div>
+          {data.has_payment_readings === false && (
+            <label className="sm:col-span-2 flex items-start gap-2">
+              <input
+                type="checkbox"
+                checked={draft.noActivityConfirmed || false}
+                onChange={(e) =>
+                  setDraft({ ...draft, noActivityConfirmed: e.target.checked })
+                }
+              />
+              I checked every page of this period: there are no transactions.
+              Confirm no activity if the saved balances reconcile.
+            </label>
+          )}
           <p className="text-xs text-muted-foreground sm:col-span-2">
             Leave unknown dates blank. These dates describe statement coverage;
             they do not change transaction dates.

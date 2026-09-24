@@ -47,7 +47,7 @@ def create_app():
         yield
         fixture.tearDown()
     app = FastAPI(lifespan=lifespan)
-    app.add_middleware(CORSMiddleware, allow_origin_regex=r'http://(localhost|127\.0\.0\.1)(:[0-9]+)?', allow_methods=['*'], allow_headers=['*'])
+    app.add_middleware(CORSMiddleware, allow_origin_regex=r'http://(localhost|127\.0\.0\.1)(:[0-9]+)?', allow_methods=['*'], allow_headers=['*'], allow_credentials=True)
     def db_session():
         with fixture.SessionLocal() as db: yield db
     def user(db=Depends(get_db)): return db.get(User, fixture.user.id)
@@ -64,6 +64,78 @@ def create_app():
     @app.get('/__fixture')
     def identity():
         return {'synthetic':True,'case_id':str(fixture.case.id),'file_id':str(fixture.file.id)}
+    @app.post('/__fixture/reconciled')
+    def reconciled(quiet: bool = False):
+        from tests.financial_reconciled_fixture import install_reconciled_source
+        install_reconciled_source(fixture, quiet=quiet)
+        # A real selectable PDF supports source-view browser acceptance. All
+        # contents are synthetic and the artifact stays in the temporary fixture.
+        import fitz
+        import hashlib
+        pdf=fitz.open(); page=pdf.new_page()
+        page.insert_text((60,60), 'Synthetic Company - TEST123\nSynthetic statement source text\nOpening balance EUR 12,450\nClosing balance EUR ' + ('12,450' if quiet else '47,450'))
+        pdf.save(str(fixture.path));pdf.close()
+        fixture.file.sha256=hashlib.sha256(fixture.path.read_bytes()).hexdigest()
+        fixture.db.commit()
+        return {'synthetic': True}
+    @app.post('/__fixture/currency-batch')
+    async def currency_batch():
+        import json
+        from pathlib import Path
+        from uuid import uuid4
+        from unittest.mock import AsyncMock
+        from services.financial import import_batches
+        from postgres.models.evidence import EvidenceTableGeometry, EvidenceDocumentText
+        with fixture.SessionLocal() as db:
+            geometry=db.get(EvidenceTableGeometry,(fixture.file.id,1))
+            geometry.payload=json.loads(json.dumps(geometry.payload,ensure_ascii=False).replace('€',''))
+            text=db.get(EvidenceDocumentText,fixture.file.id)
+            text.content=text.content.replace('Currency: EUR','Currency: USD')
+            from hashlib import sha256
+            text.content_sha256=sha256(text.content.encode()).hexdigest();text.character_count=len(text.content)
+            db.commit()
+            identifier=import_batches.create_batch(db,case_id=fixture.case.id,request_id=uuid4(),file_ids=[fixture.file.id],folder_ids=[],actor=fixture.actor)
+        await import_batches.advance_batch(fixture.SessionLocal,identifier,Path,AsyncMock(side_effect=AssertionError('Retained reading expected')))
+        return {'batch_id':str(identifier)}
+    @app.post('/__fixture/account-history')
+    def history_fixture():
+        from copy import deepcopy
+        from hashlib import sha256
+        from uuid import UUID, uuid4
+        from datetime import date
+        from postgres.models.financial import FinancialSourceDocument, FinancialStatementPeriod, FinancialAccount
+        from services.financial.account_history import record_admission_snapshot
+        from tests.financial_reconciled_fixture import install_reconciled_source
+        from services.financial.import_batches import initial_request
+        from services.financial.statement_import import StatementImportRequest
+        from services.financial.statement_admission import assess_admission
+        install_reconciled_source(fixture,quiet=True)
+        raw=initial_request(fixture.preview());assessment=assess_admission(fixture.preview(),StatementImportRequest.model_validate(raw))
+        raw.update(no_activity_confirmed=True,no_activity_revision=assessment['revision'])
+        receipt=fixture.confirm(raw)
+        with fixture.SessionLocal() as db:
+            source=db.get(FinancialSourceDocument,UUID(receipt['source_document_id']))
+            period=db.get(FinancialStatementPeriod,UUID(receipt['period_id'])) if receipt.get('period_id') else db.scalar(select(FinancialStatementPeriod).where(FinancialStatementPeriod.source_document_id==source.id))
+            period.period_start=date(2023,1,1);period.period_end=date(2023,1,31)
+            record_admission_snapshot(db,source,period)
+            account=db.get(FinancialAccount,period.account_id)
+            def copy_row(row):return {c.key:deepcopy(getattr(row,c.key)) for c in row.__mapper__.column_attrs if c.key not in ('id','created_at','updated_at')}
+            ids=[str(account.id)]
+            for label,currency,liability in [('Second synthetic account','EUR',False),('Synthetic dollars','USD',False),('Synthetic card','USD',True)]:
+                values=copy_row(account);values.update(identity_key='synthetic-history-'+str(uuid4()),holder_name=label,identifier_as_printed='HIST'+str(len(ids)),currency=currency,account_type='credit_card' if liability else account.account_type)
+                other=FinancialAccount(id=uuid4(),**values);db.add(other);db.flush();ids.append(str(other.id))
+                from postgres.models.evidence import EvidenceFile
+                file_values=copy_row(fixture.file);file_values['original_filename']=label+'.pdf'
+                other_file=EvidenceFile(id=uuid4(),**file_values);db.add(other_file);db.flush()
+                values=copy_row(source);values['metadata_']=deepcopy(source.metadata_);values['evidence_file_id']=other_file.id
+                if liability:values['metadata_']['statement_import_original']['metadata']['balance_convention']='liability_owed'
+                other_source=FinancialSourceDocument(id=uuid4(),**values);db.add(other_source);db.flush()
+                values=copy_row(period);values.update(account_id=other.id,source_document_id=other_source.id,currency=currency,
+                    opening_balance_minor=-1245000 if liability else 1245000,closing_balance_minor=-1245000 if liability else 1245000)
+                other_period=FinancialStatementPeriod(id=uuid4(),**values);db.add(other_period);db.flush()
+                record_admission_snapshot(db,other_source,other_period)
+            db.commit()
+        return {'account_ids':ids}
     @app.get('/__fixture/payments')
     def saved(db=Depends(get_db)):
         from services.financial.transaction_query import to_view

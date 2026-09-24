@@ -35,7 +35,7 @@ def partial_import(f):
     old[0]['table']['values'] = [v for v in old[0]['table']['values'] if v['row'] != 13]
     geometry.payload = old
     f.db.commit()
-    receipt = f.confirm()
+    receipt = f.confirm_legacy()
     geometry.payload = full
     f.db.commit()
     return UUID(receipt['source_document_id'])
@@ -112,8 +112,8 @@ def test_existing_investigator_work_stays_on_the_same_payment(f):
 
 def test_explicitly_excluded_payment_requires_review(f):
     request = f.request()
-    request['rows'][-1]['excluded'] = True
-    document = UUID(f.confirm(request)['source_document_id'])
+    next(row for row in reversed(request['rows']) if not row['excluded'])['excluded'] = True
+    document = UUID(f.confirm_legacy(request)['source_document_id'])
     count = len(rows(f, document))
     item = snapshot(f)
     recovery.recover_one(f.SessionLocal, item, Path)
@@ -298,7 +298,7 @@ def test_legacy_balance_only_import_recovers_untouched_unclassified_rows(f):
     request = f.request()
     for row in request['rows']:
         row['excluded'] = True
-    document = UUID(f.confirm(request)['source_document_id'])
+    document = UUID(f.confirm_legacy(request)['source_document_id'])
     assert not rows(f, document)
     # Simulate an older reader which left all payment lines as untouched,
     # excluded source text. This is different from an investigator exclusion.
@@ -335,9 +335,11 @@ def test_amount_correction_and_its_history_survive_additive_recovery(f):
             actor=f.actor, reason='Synthetic saved correction')
         replacement_id = UUID(changed['replacement_id'])
         corrected_amount = db.get(FinancialTransaction, replacement_id).amount_minor
+    before = {r.id for r in rows(f, document)}
     item = snapshot(f)
     recovery.recover_one(f.SessionLocal, item, Path)
-    assert outcome(f, item)[0] == 'recovered', outcome(f, item)
+    assert outcome(f, item)[0] == 'review', outcome(f, item)
+    assert {r.id for r in rows(f, document)} == before
     with f.SessionLocal() as db:
         assert db.get(FinancialTransaction, old_id).superseded_by_id == replacement_id
         assert db.get(FinancialTransaction, replacement_id).amount_minor == corrected_amount

@@ -35,6 +35,21 @@ const resultSchema = z.object({
   checks_revision: z.string(),
   applied: z.literal(false),
   checks: z.array(arithmeticCheck),
+  admission: z
+    .object({
+      can_import: z.boolean(),
+      status: z.string(),
+      revision: z.string(),
+      blockers: z.array(
+        z.object({
+          message: z.string(),
+          row_id: z.string().nullish(),
+          field: z.string().optional(),
+          kind: z.string().optional(),
+        })
+      ),
+    })
+    .optional(),
 })
 
 // Associate every response with its exact edit snapshot. An old response must
@@ -46,6 +61,13 @@ export function useStatementChecks(
     expected_revision: string
     statement_id: string | null
     currency: string
+    holder?: string
+    account_number?: string
+    institution?: string
+    period_start?: string
+    period_end?: string
+    no_activity_confirmed?: boolean
+    no_activity_revision?: string | null
     rows: unknown[]
   }
 ) {
@@ -91,6 +113,7 @@ export function useStatementChecks(
   return {
     checks: current?.data?.checks ?? [],
     revision: current?.data?.checks_revision,
+    admission: current?.data?.admission,
     pending: !current,
     error: current?.error,
     retry: () => {

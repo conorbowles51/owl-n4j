@@ -52,6 +52,8 @@ def plan_additions(proposal, document, transactions):
     if incomplete_records(proposal, request):
         raise PdfMappingError('The new reading still has incomplete payments. Review them beside the source.', 409)
     checks = check_proposed_rows(proposal, raw['rows'])
+    from services.financial.statement_admission import require_admission
+    require_admission(proposal, request, checks)
     if arithmetic_problems(checks):
         raise PdfMappingError('The new reading does not agree with the printed controls. Review the statement before adding payments.', 409)
 
@@ -202,6 +204,8 @@ def append_recovered(session, *, document, proposal, plan, run, actor, release):
                 row['date'] = day.isoformat() if day else ''
         checked = StatementImportRequest.model_validate(effective)
         checks = check_proposed_rows(proposal, effective['rows'])
+        from services.financial.statement_admission import require_admission
+        metadata['statement_admission'] = require_admission(proposal, checked, checks)
         receipts[plan['revision']]['previous_issues'] = metadata.get('statement_import_issues', [])
         metadata['statement_import_checks'] = checks
         metadata['statement_import_issues'] = retained_issues(proposal, checked, arithmetic=checks) + [
@@ -209,4 +213,6 @@ def append_recovered(session, *, document, proposal, plan, run, actor, release):
     document.metadata_ = metadata
     if period:
         reconcile_period(session, period)
+        from services.financial.account_history import record_admission_snapshot
+        record_admission_snapshot(session, document, period)
     return len(written)

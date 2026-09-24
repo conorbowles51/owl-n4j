@@ -1,5 +1,7 @@
 # Loupe financial investigator workflow reference
 
+**Current work — 24 September collected feedback:** [prepare details → reconcile → save transactions or inactive periods → compare account history](reconciliation-and-account-history-plan-2026-09-24.md) covers batch dates/month shortcut, Apply USD, copying/opening the source, strict reconciliation and visible zero-activity history. Its admission policy supersedes earlier descriptions of optional unresolved statement checks. Implementation/acceptance remain open in that plan.
+
 **24 September duplicate-review follow-up:** [unchanged preparation → matching-statement hold → compare → leave copy unimported or record an exception → import once → reopen](duplicate-statement-review-2026-09-24.md) records the shared safeguards, retained decisions and live-incident limits.
 
 **24 September saved-work follow-up:** [compact finding cards and readable saved text](finding-cards-2026-09-24.md) replaces full-width rows with square cards, groups Edit/Timeline beneath each title and fixes visible storage headings in existing notes with empty follow-up fields.

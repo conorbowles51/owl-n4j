@@ -137,6 +137,12 @@ beforeEach(() => {
     retry: vi.fn(),
   })
   vi.mocked(useStatementChecks).mockReturnValue({
+    admission: {
+      can_import: true,
+      status: "reconciled",
+      revision: "c".repeat(64),
+      blockers: [],
+    },
     checks: [],
     pending: false,
     error: undefined,
@@ -2063,6 +2069,12 @@ it("switches periods directly and restores a correction when returning", async (
 
 it("shows a clean statement ready for a single confirmation without opening corrections", async () => {
   vi.mocked(useStatementChecks).mockReturnValue({
+    admission: {
+      can_import: true,
+      status: "reconciled",
+      revision: "c".repeat(64),
+      blockers: [],
+    },
     checks: [
       {
         kind: "closing_balance",
@@ -2170,8 +2182,19 @@ it("restores a server-saved bulk review, focuses its row and saves without impor
   expect(sent).toHaveLength(0)
 })
 
-it("allows importing a printed difference and retains an optional explanation", async () => {
+it("holds a printed difference even after an explanation is saved", async () => {
   vi.mocked(useStatementChecks).mockReturnValue({
+    admission: {
+      can_import: false,
+      status: "needs_review",
+      revision: "c".repeat(64),
+      blockers: [
+        {
+          message: "Payments do not add up to the closing balance.",
+          row_id: null,
+        },
+      ],
+    },
     checks: [
       {
         kind: "closing_balance",
@@ -2191,29 +2214,21 @@ it("allows importing a printed difference and retains an optional explanation", 
   const confirm = screen.getByRole("button", {
     name: "Confirm import of 1 transactions",
   })
-  expect(confirm).toBeEnabled()
+  expect(confirm).toBeDisabled()
   fireEvent.click(
     screen.getByLabelText("I checked these differences against the PDF")
   )
-  expect(confirm).toBeEnabled()
   fireEvent.change(screen.getByLabelText("Why the difference remains"), {
-    target: {
-      value: "The PDF itself shows this difference. Investigate with the bank.",
-    },
+    target: { value: "Investigate the printed discrepancy." },
   })
-  expect(confirm).toBeEnabled()
-  fireEvent.click(confirm)
-  await waitFor(() => expect(done).toHaveBeenCalledTimes(1))
-  expect(sent[0]).toMatchObject({
-    balance_exception_revision: "c".repeat(64),
-    balance_exception_reason:
-      "The PDF itself shows this difference. Investigate with the bank.",
-  })
+  expect(confirm).toBeDisabled()
+  expect(done).not.toHaveBeenCalled()
+  expect(screen.getByRole("button", { name: "Save progress" })).toBeEnabled()
 })
-
-it("keeps import available while checks are pending and after routine edits", async () => {
+it("holds import while checks are pending or fail without blocking corrections", async () => {
   const state = {
     checks: [],
+    admission: undefined,
     pending: true,
     error: undefined as string | undefined,
     revision: undefined,
@@ -2225,16 +2240,17 @@ it("keeps import available while checks are pending and after routine edits", as
   const confirm = screen.getByRole("button", {
     name: "Confirm import of 1 transactions",
   })
-  expect(confirm).toBeEnabled()
+  expect(confirm).toBeDisabled()
   state.pending = false
   state.error = "Connection interrupted"
   fireEvent.change(screen.getByLabelText("Description 1:0:1"), {
     target: { value: "Changed" },
   })
-  expect(confirm).toBeEnabled()
+  expect(confirm).toBeDisabled()
   expect(
     screen.getByRole("button", { name: "Retry statement checks" })
   ).toBeInTheDocument()
+  expect(screen.getByLabelText("Description 1:0:1")).toHaveValue("Changed")
 })
 
 it("edits beside a printed row, preserves its source text and uses the correction for import", async () => {

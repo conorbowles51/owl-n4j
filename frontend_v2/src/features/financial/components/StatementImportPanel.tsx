@@ -36,6 +36,7 @@ import { Button } from "@/components/ui/button"
 import { fetchAPI } from "@/lib/api-client"
 import { PdfReviewIntake } from "./PdfReviewIntake"
 import { TransactionSourceHighlight } from "./TransactionSourceHighlight"
+import { StatementSourceTools } from "./StatementSourceTools"
 import { StatementRowEditor } from "./StatementRowEditor"
 import { StatementCurrencyControl } from "./StatementCurrencyControl"
 import { StatementBulkCorrections } from "./StatementBulkCorrections"
@@ -1217,6 +1218,9 @@ function EditableStatement({
   const [balanceException, setBalanceException] = useState(
     saved?.balanceException ?? { revision: "", reason: "" }
   )
+  const [noActivityRevision, setNoActivityRevision] = useState(
+    saved?.noActivityRevision ?? ""
+  )
   const [coverageDecision, setCoverageDecision] = useState(
     saved?.coverageDecision ?? { revision: "", reason: "" }
   )
@@ -1570,6 +1574,8 @@ function EditableStatement({
     coverage_review_revision: coverageDecision.revision || null,
     balance_exception_reason: balanceException.reason,
     balance_exception_revision: balanceException.revision || null,
+    no_activity_confirmed: !!noActivityRevision,
+    no_activity_revision: noActivityRevision || null,
     rows: rows.map((r) => ({
       ...r,
       direction: r.direction || null,
@@ -1626,6 +1632,7 @@ function EditableStatement({
       periodEnd,
       detailsReason,
       balanceException,
+      noActivityRevision,
       coverageDecision,
       amountText,
     }
@@ -1659,6 +1666,7 @@ function EditableStatement({
     periodEnd,
     detailsReason,
     balanceException,
+    noActivityRevision,
     coverageDecision,
     amountText,
     confirm.isSuccess,
@@ -1668,13 +1676,22 @@ function EditableStatement({
     expected_revision: data.revision,
     statement_id: data.statement_id ?? null,
     currency: data.currency,
+    holder,
+    institution,
+    account_number: account,
+    period_start: periodStart,
+    period_end: periodEnd,
+    no_activity_confirmed: !!noActivityRevision,
+    no_activity_revision: noActivityRevision || null,
     rows: rows.map((r) => ({
       id: r.id,
       excluded: r.excluded,
       manual_page: r.manual_page ?? null,
       date: r.date,
       date_unprinted: Boolean(r.date_unprinted),
+      date_values: r.date_values || {},
       description: r.description,
+      counterparty: r.counterparty,
       amount_minor: r.amount_minor,
       direction: r.direction || null,
       balance_minor: r.balance_minor,
@@ -1707,12 +1724,15 @@ function EditableStatement({
     !!serverChecks.revision &&
     balanceException.revision === serverChecks.revision &&
     !!balanceException.reason.trim()
-  const unresolvedDifference = balanceMismatch && !differenceAccepted
+  const unresolvedDifference = balanceMismatch
   const incompleteCount = data.currency
     ? blockedRows.filter(({ row }) => !row.excluded).length
     : included.length
   const importDisabled =
     !canEdit ||
+    serverChecks.pending ||
+    !!serverChecks.error ||
+    !serverChecks.admission?.can_import ||
     duplicateBlocked ||
     confirm.isPending ||
     saveBatchReview.isPending ||
@@ -1726,6 +1746,15 @@ function EditableStatement({
       !hasStatementBalance &&
       !data.can_record_account_closure)
   const submitImport = () => {
+    if (
+      batchReview &&
+      !confirm.isPending &&
+      !saveBatchReview.isPending &&
+      canEdit
+    ) {
+      saveBatchReview.mutate("done")
+      return
+    }
     if (importDisabled) return
     if (batchReview) saveBatchReview.mutate("done")
     else confirm.mutate()
@@ -2241,7 +2270,7 @@ function EditableStatement({
             ? "Check which account owns these payments, then assign them to its statement. Select any value to compare it with the PDF."
             : importedHere
               ? "The account details below are the saved values. Use Edit account and balances above to change them. The original extracted rows remain below for comparison."
-              : "Import this statement now, or review a value beside its original. Reading issues remain available after import; you do not need to resolve each one first."}
+              : "Review values beside the original and save your progress. Import becomes available when the statement is reconciled."}
         </p>
       </header>
       {data.assignment_only && (
@@ -2290,7 +2319,9 @@ function EditableStatement({
                       ? `${attentionCount} items need attention`
                       : unresolvedDifference
                         ? "Check the differences below"
-                        : "Ready to confirm"}
+                        : !serverChecks.admission?.can_import
+                          ? "Reconciliation needed before import"
+                          : "Ready to confirm"}
               </h4>
               <p>
                 {included.length
@@ -2311,7 +2342,7 @@ function EditableStatement({
                   : serverChecks.pending
                     ? "Checking these values. You can keep reviewing the PDF while this runs."
                     : attentionCount || unresolvedDifference
-                      ? "You can import now and check these issues later. Records with missing or invalid fields are retained outside calculated totals."
+                      ? "Save your progress while you correct the statement. Payments stay in review until reconciliation is complete."
                       : "Confirm once to import this statement. You do not need to accept each line separately."}
               </p>
             </div>
@@ -2335,12 +2366,39 @@ function EditableStatement({
             {batchReview?.confirm && (
               <Button
                 variant="outline"
-                disabled={!!importDisabled}
-                onClick={submitImport}
+                disabled={!canEdit || saveBatchReview.isPending}
+                onClick={() => saveBatchReview.mutate("done")}
               >
                 Save draft and return to batch
               </Button>
             )}
+            {!included.length &&
+              hasStatementBalance &&
+              !data.current_import &&
+              !serverChecks.admission?.can_import &&
+              canEdit && (
+                <Button
+                  variant="outline"
+                  disabled={
+                    confirm.isPending ||
+                    saveBatchReview.isPending ||
+                    serverChecks.pending ||
+                    !!data.reading_failure
+                  }
+                  onClick={() => confirm.mutate()}
+                >
+                  Save balances for review
+                </Button>
+              )}
+            {!included.length &&
+              hasStatementBalance &&
+              !serverChecks.admission?.can_import && (
+                <p className="w-full text-sm">
+                  You can retain the printed dates and balances in Financial
+                  while reviewing this period. This creates no transactions and
+                  does not mark it as having no activity.
+                </p>
+              )}
             {confirm.isError && (
               <p className="w-full" role="alert">
                 {confirm.error.message}
@@ -2355,6 +2413,52 @@ function EditableStatement({
               </div>
             )}
             <div className="w-full">
+              {serverChecks.admission && !serverChecks.admission.can_import && (
+                <div className="rounded border p-3 space-y-2" role="status">
+                  <p className="font-semibold">
+                    Reconciliation needed before import
+                  </p>
+                  {serverChecks.admission.blockers.map((problem, index) => (
+                    <div key={index} className="flex items-center gap-2">
+                      <span>{problem.message}</span>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() =>
+                          problem.row_id
+                            ? openInlineRow(problem.row_id)
+                            : editValues()
+                        }
+                      >
+                        Review {problem.row_id ? "row" : "statement details"}
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {!included.length && !importedHere && (
+                <label className="block p-3 border rounded mt-2">
+                  <input
+                    type="checkbox"
+                    checked={
+                      !!noActivityRevision &&
+                      noActivityRevision === serverChecks.admission?.revision
+                    }
+                    disabled={
+                      !canEdit ||
+                      serverChecks.pending ||
+                      !serverChecks.admission?.revision
+                    }
+                    onChange={(e) =>
+                      setNoActivityRevision(
+                        e.target.checked ? serverChecks.admission!.revision : ""
+                      )
+                    }
+                  />{" "}
+                  I checked every page of this period: there are no
+                  transactions. Save its dates and balances in Financial.
+                </label>
+              )}
               <StatementArithmeticChecks
                 checks={serverChecks.checks}
                 format={(value) =>
@@ -2406,8 +2510,8 @@ function EditableStatement({
                   )}
                   {differenceAccepted && (
                     <p>
-                      Your explanation will be saved with the import. The
-                      difference remains recorded.
+                      Your explanation is saved with your review. The difference
+                      must still be resolved before payments can be imported.
                     </p>
                   )}
                 </div>
@@ -2653,6 +2757,16 @@ function EditableStatement({
                   Close source
                 </Button>
               </div>
+              <StatementSourceTools
+                fileId={fileId}
+                page={currentPage}
+                text={data.rows
+                  .filter((r) => r.page_number === currentPage)
+                  .map((r) =>
+                    r.source_cells.map((c) => c.expected_text).join("\t")
+                  )
+                  .join("\n")}
+              />
               <TransactionSourceHighlight
                 sourceDocumentId={fileId}
                 locatorPayload={focus.locator}
@@ -3831,8 +3945,8 @@ function EditableStatement({
               )}
               {unresolvedDifference && (
                 <p role="alert">
-                  These values leave a balance difference. You can import now;
-                  the check stays attached to the statement.
+                  These values leave a balance difference. Save your progress
+                  and resolve the difference before importing.
                 </p>
               )}
               {(blockedRows.length > 0 || detailProblems.length > 0) && (

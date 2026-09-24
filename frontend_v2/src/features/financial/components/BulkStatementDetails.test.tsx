@@ -190,3 +190,45 @@ it("rejects another case list", async () => {
   fireEvent.click(screen.getByRole("button", { name: "Edit account details" }))
   expect(await screen.findByRole("alert")).toHaveTextContent("another case")
 })
+
+it("sets an explicit month, retains custom dates and previews dates only", async () => {
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <BulkStatementDetails
+        caseId="case"
+        batchId="batch"
+        datesOnly
+        onSaved={vi.fn()}
+      />
+    </QueryClientProvider>
+  )
+  fireEvent.click(
+    screen.getByRole("button", { name: "Set dates for selected statements" })
+  )
+  fireEvent.click(
+    await screen.findByRole("button", {
+      name: "Select all 52 matching statements",
+    })
+  )
+  fireEvent.change(screen.getByLabelText("Statement month and year"), {
+    target: { value: "2024-02" },
+  })
+  expect(screen.getByLabelText("New statement start date")).toHaveValue(
+    "2024-02-01"
+  )
+  expect(screen.getByLabelText("New statement end date")).toHaveValue(
+    "2024-02-29"
+  )
+  fireEvent.change(screen.getByLabelText("New statement start date"), {
+    target: { value: "2024-02-05" },
+  })
+  fireEvent.click(
+    screen.getByRole("button", { name: "Review changes for 52 statements" })
+  )
+  await screen.findByRole("button", { name: "Save changes to 52 statements" })
+  expect(sent.find((c) => c.url.includes("/preview?"))!.body.changes).toEqual({
+    period_start: "2024-02-05",
+    period_end: "2024-02-29",
+  })
+  expect(sent.some((c) => c.url.includes("/save?"))).toBe(false)
+})

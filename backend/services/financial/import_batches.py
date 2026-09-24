@@ -18,7 +18,7 @@ from services.financial.review_arithmetic import check_proposed_rows, arithmetic
 
 log = logging.getLogger(__name__)
 TERMINAL_FILES = {'checked', 'error'}
-REVIEW_MODEL = 'recognised-payments-saved-reviews-v2'
+REVIEW_MODEL = 'reconciled-statement-v1'
 IMPORTS_PER_TURN = 4
 FILES_PER_TURN = 4
 TURN_SECONDS = 30
@@ -83,7 +83,7 @@ def initial_request(proposal):
 
 
 def assess(proposal, request=None):
-    """Checks stay visible; import availability reflects structural validity."""
+    """Preparation remains saveable; ledger admission requires reconciliation."""
     problems = []
     can_import = True
     raw = request or initial_request(proposal)
@@ -136,8 +136,15 @@ def assess(proposal, request=None):
         for issue in retained_issues(proposal, validated):
             if not any(p.get('row_id') == issue.get('row_id') and p['message'] == issue['message'] for p in problems):
                 problems.append(issue)
-    if not accepted_difference(balance, raw):
-        problems.extend(arithmetic_problems(balance))
+    problems.extend(arithmetic_problems(balance))
+    admission = None
+    if can_import:
+        from services.financial.statement_admission import assess_admission
+        admission = assess_admission(proposal, validated, balance)
+        can_import = admission['can_import']
+        for blocker in admission['blockers']:
+            if not any(p.get('row_id') == blocker.get('row_id') and p['message'] == blocker['message'] for p in problems):
+                problems.append(blocker)
     # One link per affected row, with all explanations beside it.
     combined=[]
     for problem in problems:
@@ -152,7 +159,7 @@ def assess(proposal, request=None):
     summary = dict(revision=proposal['revision'], page_number=min((r.get('page_number', 1) for r in rows if not r['excluded']), default=min(proposal.get('page_numbers') or [1])), transaction_count=sum(not r['excluded'] for r in raw['rows']), currency=proposal['currency'],
         holder=raw.get('holder',''), institution=raw.get('institution',''), account=raw.get('account_number',''), period_start=raw.get('period_start',''),period_end=raw.get('period_end',''),
         balance_status=balance['balance_status'], checks=balance['checks'],
-        can_import=can_import, balance_exception=accepted_difference(balance, raw), problems=problems[:50], problem_count=len(problems))
+        can_import=can_import, admission=admission, balance_exception=False, problems=problems[:50], problem_count=len(problems))
     summary['review_model'] = REVIEW_MODEL
     summary['account_type'] = proposal['metadata'].get('account_type') or ''
     summary['unclassified_count'] = sum(row['kind'] == 'unclassified' and reviewed.get(row['id'], {}).get('excluded', row['excluded']) for row in rows)
@@ -355,7 +362,7 @@ def rebase_review_currency(old, new, raw, currency):
     return merged
 
 
-def set_selected_currency(session, *, case_id, batch_id, selections, currency, actor):
+def set_selected_currency(session, *, case_id, batch_id, selections, currency, actor, request_id=None):
     """Change unimported statements atomically; preserve all saved corrections."""
     from services.financial.currency_correction import currency_code
     try:
@@ -372,6 +379,15 @@ def set_selected_currency(session, *, case_id, batch_id, selections, currency, a
         items = list(session.scalars(select(Item).where(Item.batch_id == batch.id, Item.id.in_([UUID(i) for i in expected])).order_by(Item.file_id, Item.id).with_for_update()))
         if len(items) != len(expected):
             raise PdfMappingError('A selected statement is not in this batch. Refresh the selection.', 404)
+        request_key = str(request_id) if request_id else None
+        fingerprint = _digest(dict(currency=currency, selections=expected, actor=str(actor.user_id)))
+        if request_key:
+            receipts = [next((entry for entry in item.summary.get('currency_history', [])
+                if entry.get('request_id') == request_key), None) for item in items]
+            if any(receipts):
+                if not all(receipt and receipt.get('request_fingerprint') == fingerprint for receipt in receipts):
+                    raise PdfMappingError('This currency request was already used for different changes. Refresh the saved result before starting another change.', 409)
+                return dict(case_id=str(case_id), batch_id=str(batch_id), updated=len(items), currency=currency, already_applied=True)
         cache = {}
         for item in items:
             if item.status not in ('ready', 'attention'):
@@ -407,7 +423,8 @@ def set_selected_currency(session, *, case_id, batch_id, selections, currency, a
             new['saved_review'] = record
             state, summary = assess(new, merged)
             history = list(item.summary.get('currency_history', []))
-            history.append(dict(before=old['currency'], after=currency, at=record['saved_at'], actor=record['saved_by']))
+            history.append(dict(before=old['currency'], after=currency, at=record['saved_at'], actor=record['saved_by'],
+                request_id=request_key, request_fingerprint=fingerprint))
             item.status = state
             item.review_request = merged
             item.summary = {**item.summary, **summary, 'currency_history': history}

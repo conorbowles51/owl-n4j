@@ -1053,6 +1053,14 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
           )}
         </div>
         {canEdit && (
+          <BulkStatementDetails
+            caseId={caseId}
+            batchId={batchId}
+            datesOnly
+            onSaved={refresh}
+          />
+        )}
+        {canEdit && (
           <BatchCurrencyEditor
             key={batchId}
             caseId={caseId}
@@ -1116,6 +1124,16 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
                   ? "Review problems"
                   : "Open statement"}
               </Button>
+              {canEdit &&
+                !["pending_import", "assigned"].includes(item.status) && (
+                  <BulkStatementDetails
+                    caseId={caseId}
+                    fileIds={[item.file_id]}
+                    statementId={item.statement_id || null}
+                    datesOnly
+                    onSaved={refresh}
+                  />
+                )}
               {canEdit &&
                 item.currency &&
                 !["pending_import", "skipped", "assigned"].includes(

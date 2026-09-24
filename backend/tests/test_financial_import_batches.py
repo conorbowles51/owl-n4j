@@ -16,6 +16,38 @@ from tests.test_financial_statement_import import StatementImportTests as Fixtur
 
 
 class BatchImportTests(TestCase):
+    def test_choose_unknown_currency_and_repeat_after_lost_response(self):
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        # No explicit symbols: an unknown-currency statement must be reparsed
+        # after selection. Euro-prefixed fixture values deliberately reject USD.
+        from postgres.models.evidence import EvidenceTableGeometry
+        import json
+        with self.f.SessionLocal() as db:
+            geometry = db.scalar(select(EvidenceTableGeometry).where(EvidenceTableGeometry.evidence_file_id == self.f.file.id))
+            geometry.payload = json.loads(json.dumps(geometry.payload, ensure_ascii=False).replace('€', ''))
+            db.commit()
+        with patch('services.financial.statement_currency.detect_statement_currency', return_value=''):
+            batch = self.create(); self.advance(batch)
+            with self.f.SessionLocal() as db:
+                item = db.scalar(select(Item).where(Item.batch_id == batch))
+                self.assertEqual(item.summary['currency'], '')
+                selection = SimpleNamespace(id=item.id, revision=service.currency_revision(item))
+                request_id = uuid4()
+                first = service.set_selected_currency(db, case_id=self.f.case.id, batch_id=batch,
+                    selections=[selection], currency='USD', actor=self.f.actor, request_id=request_id)
+                repeated = service.set_selected_currency(db, case_id=self.f.case.id, batch_id=batch,
+                    selections=[selection], currency='USD', actor=self.f.actor, request_id=request_id)
+                self.assertEqual(first['updated'], 1)
+                self.assertTrue(repeated['already_applied'])
+                self.assertEqual(item.review_request['currency'], 'USD')
+                self.assertEqual(len(item.summary['currency_history']), 1)
+                self.assertEqual(item.summary['transaction_count'], 12)
+                with self.assertRaisesRegex(PdfMappingError, 'different changes'):
+                    service.set_selected_currency(db, case_id=self.f.case.id, batch_id=batch,
+                        selections=[selection], currency='EUR', actor=self.f.actor, request_id=request_id)
+        self.assertEqual(self.f.preview()['currency'], 'USD')
+
     def test_reason_counts_filters_and_navigation_cover_the_whole_batch(self):
         batch = self.create(); self.advance(batch)
         with self.f.SessionLocal() as db:
@@ -31,7 +63,7 @@ class BatchImportTests(TestCase):
             first = service.batch_status(db, case_id=self.f.case.id, batch_id=batch, review_group='holder', limit=100)
             self.assertEqual(first['total'], 101)
             self.assertEqual(len(first['items']), 100)
-            self.assertEqual(first['review_summary']['groups'][0]['statement_count'], 101)
+            self.assertEqual(next(g for g in first['review_summary']['groups'] if g['id']=='holder')['statement_count'], 101)
             self.assertEqual(first['review_group_label'], 'Missing account holder')
             self.assertEqual(first['items'][0]['problems'][0]['review_reason'], 'holder')
             self.assertNotIn('review_reason', added[0].summary['problems'][0])
@@ -46,7 +78,7 @@ class BatchImportTests(TestCase):
                 item_id=added[0].id, review_group='holder')['item_id'], str(added[1].id))
             remaining = service.batch_status(db, case_id=self.f.case.id, batch_id=batch, review_group='holder')
             self.assertEqual(remaining['total'], 100)
-            self.assertEqual(remaining['review_summary']['groups'][0]['statement_count'], 100)
+            self.assertEqual(next(g for g in remaining['review_summary']['groups'] if g['id']=='holder')['statement_count'], 100)
             added[1].summary = {**added[1].summary, 'problem_count': 2, 'problems': [
                 dict(kind='reading', row_id='other-row', message='Check an unrelated row.'),
                 *added[1].summary['problems']]}
@@ -442,7 +474,7 @@ class BatchImportTests(TestCase):
         saved = self.status(batch)['items'][0]
         self.assertEqual(saved['holder'], raw['holder'])
         self.assertFalse(any(p.get('field') == 'holder' for p in saved['problems']))
-        self.assertTrue(saved['can_import'])
+        self.assertFalse(saved['can_import'])
         self.assertEqual(saved['transaction_count'], 0)
 
     def test_bulk_currency_uses_refreshed_reading_for_unreviewed_legacy_batch(self):
@@ -514,11 +546,10 @@ class BatchImportTests(TestCase):
                 self.assertEqual(next(r for r in item.review_request['rows'] if r['id']==row['id'])['amount_minor'], amount)
                 self.assertEqual(item.review_request['rows'][-1]['balance_minor'], balance)
             status = self.status(batch)
-            service.queue_import(db, case_id=self.f.case.id, batch_id=batch, expected_revision=status['ready_revision'], actor=self.f.actor)
-        self.advance(batch)
-        self.assertEqual(self.status(batch)['counts']['imported'], 1)
-        with self.f.SessionLocal() as db:
-            self.assertEqual({r.currency for r in db.scalars(select(FinancialTransaction))}, {'KWD'})
+            self.assertFalse(status['items'][0]['can_import'])
+            with self.assertRaisesRegex(PdfMappingError, 'no new statement records'):
+                service.queue_import(db, case_id=self.f.case.id, batch_id=batch, expected_revision=status['ready_revision'], actor=self.f.actor)
+            self.assertEqual(list(db.scalars(select(FinancialTransaction))), [])
 
     def test_bulk_currency_cannot_touch_imported_or_cross_case_items(self):
         from types import SimpleNamespace
@@ -669,11 +700,21 @@ class BatchImportTests(TestCase):
         from postgres.models.workspace_entry import WorkspaceEntry, WorkspaceEntryLink
         Base.metadata.create_all(self.f.db.connection(), tables=[WorkspaceEntry.__table__, WorkspaceEntryLink.__table__])
         self.f.db.commit()
-        self.f.standalone_balance_request([['Saldo final', '0,00 EUR']])
+        from tests.financial_reconciled_fixture import install_reconciled_source
+        from services.financial.statement_admission import assess_admission
+        install_reconciled_source(self.f, quiet=True)
         batch = self.create()
         self.advance(batch)
         before = self.status(batch)
         self.assertEqual(before['ready_transactions'], 0)
+        self.assertFalse(before['items'][0]['can_import'])
+        proposal = self.f.preview(); raw = service.initial_request(proposal)
+        assessment = assess_admission(proposal, StatementImportRequest.model_validate(raw))
+        raw.update(no_activity_confirmed=True, no_activity_revision=assessment['revision'])
+        with self.f.SessionLocal() as db:
+            service.save_review(db, case_id=self.f.case.id, batch_id=batch, item_id=UUID(before['items'][0]['id']),
+                request=StatementReviewDraft.model_validate(raw), expected_review_revision=service._digest({}))
+        before = self.status(batch)
         self.assertTrue(before['items'][0]['can_import'])
         with self.f.SessionLocal() as db:
             queued = service.queue_import(db, case_id=self.f.case.id, batch_id=batch,
@@ -798,7 +839,7 @@ class BatchImportTests(TestCase):
             item=db.scalar(select(Item).where(Item.batch_id==batch))
             self.assertEqual(next(row for row in item.review_request['rows'] if row['id']==payment['id'])['date'],'')
 
-    def test_incomplete_progress_can_be_bulk_imported_with_missing_values_retained(self):
+    def test_incomplete_progress_is_saved_but_cannot_enter_transactions(self):
         f=self.f; batch=self.create(); self.advance(batch)
         item=self.status(batch)['items'][0]
         raw=service.initial_request(f.preview())
@@ -812,18 +853,12 @@ class BatchImportTests(TestCase):
             saved=db.get(Item, UUID(item['id']))
             self.assertEqual(saved.review_request['holder'], '')
             self.assertEqual(result['review_revision'], service._digest(saved.review_request))
-            self.assertTrue(saved.summary['can_import'])
-            service.queue_import(db, case_id=f.case.id, batch_id=batch,
-                expected_revision=service.ready_revision([saved]), actor=f.actor)
-        self.advance(batch)
-        after = self.status(batch)
-        self.assertEqual(after['counts']['imported'], 1)
-        from postgres.models.financial import FinancialSourceDocument
-        with f.SessionLocal() as db:
-            source = db.scalar(select(FinancialSourceDocument).where(FinancialSourceDocument.evidence_file_id == f.file.id))
-            self.assertEqual(len(list(db.scalars(select(FinancialTransaction)))), 11)
-            self.assertEqual(source.metadata_['statement_incomplete_records'][0]['fields']['amount_minor'], '')
-            self.assertEqual(source.metadata_['statement_import_request']['holder'], '')
+            self.assertFalse(saved.summary['can_import'])
+            with self.assertRaisesRegex(PdfMappingError, 'no new statement records'):
+                service.queue_import(db, case_id=f.case.id, batch_id=batch,
+                    expected_revision=service.ready_revision([saved]), actor=f.actor)
+            self.assertEqual(list(db.scalars(select(FinancialTransaction))), [])
+            self.assertEqual(next(r for r in saved.review_request['rows'] if r['id']==payment['id'])['amount_minor'], '')
 
     def test_next_problem_crosses_list_pages_and_never_crosses_cases(self):
         f=self.f; batch=self.create(); self.advance(batch)

@@ -300,23 +300,29 @@ function ImportedRecordEditor({
         throw Error("Enter the amount shown on the original.")
       if (changeBalance && balance.trim() && correctedBalance === null)
         throw Error("Check the balance against the original.")
-      return z.object({ transaction_id: z.string() }).parse(
-        await fetchAPI(
-          `/api/financial/statement-import/sources/${record.source_document_id}/complete-record?case_id=${caseId}`,
-          {
-            method: "POST",
-            body: {
-              row: {
-                ...fields,
-                amount_minor: minor,
-                balance_minor: correctedBalance,
+      return z
+        .object({
+          transaction_id: z.string().nullable(),
+          pending_reconciliation: z.boolean().optional(),
+          message: z.string().optional(),
+        })
+        .parse(
+          await fetchAPI(
+            `/api/financial/statement-import/sources/${record.source_document_id}/complete-record?case_id=${caseId}`,
+            {
+              method: "POST",
+              body: {
+                row: {
+                  ...fields,
+                  amount_minor: minor,
+                  balance_minor: correctedBalance,
+                },
+                currency,
+                version: record.version,
               },
-              currency,
-              version: record.version,
-            },
-          }
+            }
+          )
         )
-      )
     },
     onSuccess: async (result) => {
       await cache.invalidateQueries({
@@ -325,8 +331,10 @@ function ImportedRecordEditor({
           /financial|statement-import/.test(String(q.queryKey[0])),
       })
       clearDraft()
-      onClose()
-      onOpen(result.transaction_id)
+      if (result.transaction_id) {
+        onClose()
+        onOpen(result.transaction_id)
+      }
     },
   })
   return (
@@ -501,11 +509,20 @@ function ImportedRecordEditor({
               {save.error.message}
             </p>
           )}
+          {save.data?.pending_reconciliation && (
+            <div role="status" className="rounded border p-3">
+              <p>{save.data.message}</p>
+              <Button type="button" variant="outline" onClick={onClose}>
+                Back to records — correction saved
+              </Button>
+            </div>
+          )}
           {canEdit && (
-            <Button type="submit" disabled={save.isPending}>
-              {save.isPending
-                ? "Saving…"
-                : "Save correction and open transaction"}
+            <Button
+              type="submit"
+              disabled={save.isPending || save.data?.pending_reconciliation}
+            >
+              {save.isPending ? "Saving…" : "Save correction"}
             </Button>
           )}
         </form>

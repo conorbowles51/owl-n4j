@@ -144,6 +144,12 @@ beforeEach(() => {
     retry: vi.fn(),
   })
   vi.mocked(useStatementChecks).mockReturnValue({
+    admission: {
+      can_import: true,
+      status: "reconciled",
+      revision: "c".repeat(64),
+      blockers: [],
+    },
     checks: [],
     pending: false,
     error: undefined,

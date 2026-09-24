@@ -1,5 +1,6 @@
 import { CurrencyOptions } from "./CurrencyOptions"
-import { useState } from "react"
+import { useRef, useState } from "react"
+import { newReviewId } from "../lib/statement-review-id"
 import { useMutation, useQuery } from "@tanstack/react-query"
 import { z } from "zod"
 import { Button } from "@/components/ui/button"
@@ -38,6 +39,8 @@ export function BatchCurrencyEditor({
   const [selected, setSelected] = useState<Record<string, Item>>({})
   const [page, setPage] = useState(0)
   const [message, setMessage] = useState("")
+  const attempt = useRef({ fingerprint: "", id: "" })
+  const resultRef = useRef<HTMLDivElement>(null)
   const prefix = `/api/financial/statement-import/batches/${batchId}`
   const query = useQuery({
     queryKey: ["batch-currency-selection", caseId, batchId],
@@ -70,22 +73,27 @@ export function BatchCurrencyEditor({
   const save = useMutation({
     retry: false,
     mutationFn: async () => {
+      const statements = Object.values(selected)
+        .map((item) => ({ id: item.id, revision: item.currency_revision }))
+        .sort((a, b) => a.id.localeCompare(b.id))
+      const fingerprint = JSON.stringify({ currency, statements })
+      if (attempt.current.fingerprint !== fingerprint)
+        attempt.current = { fingerprint, id: newReviewId() }
       const result = z
         .object({
           case_id: z.string(),
           batch_id: z.string(),
           updated: z.number(),
           currency: z.string(),
+          already_applied: z.boolean().optional(),
         })
         .parse(
           await fetchAPI(`${prefix}/currency?case_id=${caseId}`, {
             method: "POST",
             body: {
               currency,
-              statements: Object.values(selected).map((item) => ({
-                id: item.id,
-                revision: item.currency_revision,
-              })),
+              statements,
+              request_id: attempt.current.id,
             },
           })
         )
@@ -95,12 +103,17 @@ export function BatchCurrencyEditor({
     },
     onSuccess: (result) => {
       setMessage(
-        `${result.currency} saved for ${result.updated} statements. Amounts were not converted. Your other corrections are kept.`
+        `${result.already_applied ? "Earlier save confirmed: " : ""}${result.currency} saved for ${result.updated} statements. Amounts were not converted. Your other corrections are kept. The list shows the latest saved values.`
       )
       setSelected({})
       void query.refetch()
       onSaved()
     },
+    onSettled: () =>
+      requestAnimationFrame(() => {
+        resultRef.current?.focus({ preventScroll: true })
+        resultRef.current?.scrollIntoView({ block: "nearest" })
+      }),
   })
   const matching = (query.data || []).filter((item) =>
     [
@@ -126,7 +139,16 @@ export function BatchCurrencyEditor({
       <Button variant="outline" onClick={() => setOpen(!open)}>
         Set currency for selected statements
       </Button>
-      {message && <p role="status">{message}</p>}
+      <div ref={resultRef} tabIndex={-1}>
+        {message && <p role="status">{message}</p>}
+        {save.isError && (
+          <p role="alert">
+            {save.error.message} Your selection is kept. Retry the same save to
+            check its result, or refresh the selection before making a different
+            change.
+          </p>
+        )}
+      </div>
       {open && (
         <>
           <p className="text-sm">
@@ -262,23 +284,37 @@ export function BatchCurrencyEditor({
                 >
                   {save.isPending
                     ? "Saving currencies…"
-                    : currency ? `Apply ${currency} to ${count} statements` : "Choose currency to apply"}
+                    : currency
+                      ? `Apply ${currency} to ${count} statements`
+                      : "Choose currency to apply"}
                 </Button>
                 <Button
                   variant="outline"
                   disabled={save.isPending}
                   onClick={() => {
-                    setSelected({})
-                    void query.refetch()
+                    void query.refetch().then((result) => {
+                      if (!result.data || result.isError) return
+                      const latest = new Map(
+                        result.data.map((item) => [item.id, item])
+                      )
+                      setSelected((current) =>
+                        Object.fromEntries(
+                          Object.keys(current).flatMap((id) =>
+                            latest.has(id) ? [[id, latest.get(id)!]] : []
+                          )
+                        )
+                      )
+                      setMessage(
+                        "Selection refreshed with current saved values. Check the selected statements, then apply your change."
+                      )
+                      save.reset()
+                    })
                   }}
                 >
                   Refresh currency list
                 </Button>
               </div>
             </>
-          )}
-          {save.isError && (
-            <p role="alert">{save.error.message} Your selection is kept.</p>
           )}
         </>
       )}

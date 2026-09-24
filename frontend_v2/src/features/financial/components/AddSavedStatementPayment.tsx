@@ -136,44 +136,62 @@ function PaymentForm({
         )
       if (draft.balance.trim() && balance === null)
         throw Error("Check the printed balance or leave it blank if unknown.")
-      return z.object({ transaction_id: z.string() }).parse(
-        await fetchAPI(
-          `/api/financial/statement-import/sources/${data.source_document_id}/manual-payment?case_id=${data.case_id}`,
-          {
-            method: "POST",
-            body: {
-              request_id: draft.requestId,
-              expected_revision: draft.revision,
-              row: {
-                id: `manual:${draft.requestId}`,
-                manual_page: draft.page,
-                date: draft.date,
-                description: draft.description,
-                counterparty: draft.counterparty,
-                counterparty_link: draft.counterparty_link,
-                direction: draft.direction,
-                amount_minor: amount,
-                balance_minor:
-                  balance !== null &&
-                  draft.balance.startsWith("-") &&
-                  balance !== "0"
-                    ? `-${balance}`
-                    : balance,
-                reason: draft.reason,
+      return z
+        .object({
+          transaction_id: z.string().nullable(),
+          pending_reconciliation: z.boolean().optional(),
+        })
+        .parse(
+          await fetchAPI(
+            `/api/financial/statement-import/sources/${data.source_document_id}/manual-payment?case_id=${data.case_id}`,
+            {
+              method: "POST",
+              body: {
+                request_id: draft.requestId,
+                expected_revision: draft.revision,
+                row: {
+                  id: `manual:${draft.requestId}`,
+                  manual_page: draft.page,
+                  date: draft.date,
+                  description: draft.description,
+                  counterparty: draft.counterparty,
+                  counterparty_link: draft.counterparty_link,
+                  direction: draft.direction,
+                  amount_minor: amount,
+                  balance_minor:
+                    balance !== null &&
+                    draft.balance.startsWith("-") &&
+                    balance !== "0"
+                      ? `-${balance}`
+                      : balance,
+                  reason: draft.reason,
+                },
               },
-            },
-          }
+            }
+          )
         )
-      )
     },
     onSuccess: (result) => {
       clearDraft()
       void client.invalidateQueries({
         predicate: (q) => q.queryKey.includes(data.case_id),
       })
-      onSaved(result.transaction_id)
+      if (result.transaction_id) onSaved(result.transaction_id)
     },
   })
+  if (save.isSuccess && !save.data.transaction_id)
+    return (
+      <div role="status" className="space-y-2 border rounded p-3">
+        <p>
+          Payment saved for review. It will enter Transactions when the complete
+          statement reconciles. Continue adding missed payments or review the
+          saved records and balances.
+        </p>
+        <Button variant="outline" onClick={onClose}>
+          Back to statement — payment saved
+        </Button>
+      </div>
+    )
   return (
     <div
       className="grid gap-4 lg:grid-cols-2 rounded border p-3"
@@ -218,9 +236,9 @@ function PaymentForm({
           {data.details.account_number} · {data.currency || "Currency not set"}
         </p>
         <p className="text-sm">
-          Save adds this payment once to Transactions. The statement and its
-          existing payments stay in place. Unfinished input is retained when you
-          close this editor.
+          Save keeps this payment with the statement. It enters Transactions
+          once the complete statement reconciles. Unfinished input is retained
+          when you close this editor.
         </p>
         <fieldset disabled={save.isPending} className="space-y-3">
           <label className="block">
@@ -314,7 +332,7 @@ function PaymentForm({
           )}
           <div className="flex gap-2">
             <Button type="submit">
-              {save.isPending ? "Saving payment…" : "Save and open transaction"}
+              {save.isPending ? "Saving payment…" : "Save payment"}
             </Button>
             <Button type="button" variant="outline" onClick={onClose}>
               Close and keep draft

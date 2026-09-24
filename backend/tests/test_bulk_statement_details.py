@@ -70,10 +70,12 @@ class BulkStatementDetailsTests(TestCase):
             payments = {r.id: (r.amount_minor, r.transaction_date) for r in db.scalars(select(FinancialTransaction))}
         request = self.request(dict(holder='Should not replace', institution='Reviewed Bank'), mode='fill_missing')
         result = self.save(request)
-        self.assertEqual((result['updated'], result['imported'], result['drafts']), (2,1,1))
+        self.assertEqual((result['updated'], result['imported'], result['drafts']), (0,0,0))
         rows = self.listing()['items']
         self.assertEqual({row['values']['holder'] for row in rows}, {'Test Company', 'Second Company'})
-        self.assertEqual({row['values']['institution'] for row in rows}, {'Reviewed Bank'})
+        self.assertEqual({row['values']['institution'] for row in rows}, {'Synthetic Bank'})
+        self.save(self.request(dict(institution='Reviewed Bank')))
+        self.assertEqual({row['values']['institution'] for row in self.listing()['items']}, {'Reviewed Bank'})
         self.save(self.request())
         self.assertEqual({row['values']['holder'] for row in self.listing()['items']}, {'Reviewed Company'})
         with self.f.SessionLocal() as db:

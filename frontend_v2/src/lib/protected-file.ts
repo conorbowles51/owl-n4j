@@ -105,18 +105,20 @@ export async function downloadProtectedFile(url: string, filename: string) {
   window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000)
 }
 
-export async function openProtectedFile(url: string) {
+export async function openProtectedFile(url: string, page?: number) {
   const targetWindow = window.open("", "_blank")
-  if (targetWindow) targetWindow.opener = null
+  if (!targetWindow)
+    throw new Error(
+      "Your browser blocked the new tab. Allow pop-ups for Loupe, then try again. Your work is kept here."
+    )
+  targetWindow.opener = null
 
   try {
     const blob = await fetchProtectedBlob(url)
     const objectUrl = URL.createObjectURL(blob)
-    if (targetWindow) {
-      targetWindow.location.href = objectUrl
-    } else {
-      window.open(objectUrl, "_blank", "noopener,noreferrer")
-    }
+    targetWindow.location.href =
+      objectUrl +
+      (page && Number.isInteger(page) && page > 0 ? `#page=${page}` : "")
     window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000)
   } catch (err) {
     targetWindow?.close()
