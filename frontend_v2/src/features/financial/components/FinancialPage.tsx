@@ -145,11 +145,14 @@ function FinancialPageContent() {
     caseId: string | undefined
     section: StatementSection
   }>({ caseId, section: "files" })
-  const section = params.get("batch")
-    ? "batches"
-    : statementSection.caseId === caseId
-      ? statementSection.section
-      : "files"
+  const section =
+    params.get("files") === "1"
+      ? "files"
+      : params.get("batch")
+        ? "batches"
+        : statementSection.caseId === caseId
+          ? statementSection.section
+          : "files"
   const reviewingAccounts = section === "accounts"
   const statementScroll = useRef<HTMLDivElement>(null)
   const owner = useAuthStore(
@@ -165,7 +168,8 @@ function FinancialPageContent() {
       useStatementWorkspace.getState().setOpen(workspaceScope, false)
     setParams((current) => {
       const updated = new URLSearchParams(current)
-      for (const key of ["batch", "batchItem", "batchRow"]) updated.delete(key)
+      for (const key of ["batch", "batchItem", "batchRow", "files"])
+        updated.delete(key)
       return updated
     })
   }

@@ -143,3 +143,5 @@ from postgres.models.evidence_upload import EvidenceUploadSession, EvidenceUploa
 __all__ += ["EvidenceUploadSession"]
 from postgres.models.financial_money_trails import FinancialMoneyTrail
 __all__ += ["FinancialMoneyTrail"]
+from postgres.models.financial_recovery import FinancialRecoveryRelease, FinancialRecoveryRun, FinancialRecoveryItem
+__all__ += ['FinancialRecoveryRelease', 'FinancialRecoveryRun', 'FinancialRecoveryItem']

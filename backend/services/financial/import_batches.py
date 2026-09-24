@@ -286,6 +286,8 @@ def checked_batch_items(session, case_id, items):
         summary['disposition_revision'] = _digest(dict(status=item.status, request=item.review_request,
             decision=item.summary.get('import_decision')))
         summary['currency_revision'] = currency_revision(item, summary)
+        from services.financial.batch_review_summary import tagged_problems
+        summary['problems'] = tagged_problems(summary)
         result.append(SimpleNamespace(id=item.id, file_id=item.file_id, statement_key=item.statement_key,
             status=state, summary=summary, review_request=projected_request,
             review_revision=_digest(item.review_request or {})))
@@ -397,7 +399,9 @@ def set_selected_currency(session, *, case_id, batch_id, selections, currency, a
         raise
 
 
-def next_problem(session, *, case_id, batch_id, item_id, direction="next"):
+def next_problem(session, *, case_id, batch_id, item_id, direction="next", review_group=None):
+    from services.financial.batch_review_summary import matches_group, validate_group
+    validate_group(review_group)
     batch_for(session, case_id, batch_id)
     items = checked_batch_items(session, case_id, list(session.scalars(select(Item).where(Item.batch_id == batch_id))))
     items.sort(key=lambda i: (i.summary.get('filename',''), i.summary.get('account',''), i.summary.get('period_start',''), str(i.id)))
@@ -407,45 +411,72 @@ def next_problem(session, *, case_id, batch_id, item_id, direction="next"):
     ordered = items[index+1:] + items[:index]
     if direction == 'previous':
         ordered.reverse()
-    remaining = [i for i in ordered if i.summary.get('problem_count', 0) and i.status != 'skipped']
+    remaining = [i for i in ordered if i.summary.get('problem_count', 0) and i.status != 'skipped' and matches_group(i, review_group)]
     following = remaining[0] if remaining else None
+    problems = following.summary.get('problems', []) if following else []
+    if review_group and review_group != 'blocked':
+        problems = [p for p in problems if p.get('review_reason') == review_group]
     return dict(case_id=str(case_id), batch_id=str(batch_id), remaining=len(remaining),
         item_id=str(following.id) if following else None,
-        row_id=next((p.get('row_id') for p in following.summary.get('problems', []) if p.get('row_id')), None) if following else None)
+        row_id=next((p.get('row_id') for p in problems if p.get('row_id')), None))
 
 
-def next_statement(session, *, case_id, batch_id, item_id, direction="next"):
+def next_statement(session, *, case_id, batch_id, item_id, direction="next", review_group=None):
+    from services.financial.batch_review_summary import matches_group, validate_group
+    validate_group(review_group)
     batch_for(session, case_id, batch_id)
     items = list(session.scalars(select(Item).where(Item.batch_id == batch_id, Item.status != 'removed')))
+    if review_group:
+        items = checked_batch_items(session, case_id, items)
     items.sort(key=lambda i: (i.summary.get('filename', ''), i.summary.get('account', ''),
                              i.summary.get('period_start', ''), str(i.id)))
     index = next((n for n, item in enumerate(items) if item.id == item_id), None)
     if index is None:
         raise PdfMappingError('Statement not found in this batch.', 404)
+    if review_group:
+        matching = [i for i in items if matches_group(i, review_group)]
+        ordered = list(reversed(items[:index])) if direction == 'previous' else items[index+1:]
+        following = next((i for i in ordered if matches_group(i, review_group)), None)
+        return dict(case_id=str(case_id), batch_id=str(batch_id), item_id=str(following.id) if following else None,
+            row_id=None, position=matching.index(following)+1 if following else 0, total=len(matching))
     target = index + (-1 if direction == 'previous' else 1)
     following = items[target] if 0 <= target < len(items) else None
     return dict(case_id=str(case_id), batch_id=str(batch_id), item_id=str(following.id) if following else None,
                 row_id=None, position=(target if following else index) + 1, total=len(items))
 
 
-def batch_status(session, *, case_id, batch_id, offset=0, limit=100, only_problems=False):
-    from services.financial.import_operations import operations_for
-    batch = batch_for(session,case_id,batch_id)
-    items=list(session.scalars(select(Item).where(Item.batch_id==batch.id).order_by(Item.file_id,Item.statement_key)))
-    items=checked_batch_items(session, case_id, items)
-    items.sort(key=lambda i: (i.summary.get('filename',''),i.summary.get('account',''),i.summary.get('period_start',''),str(i.id)))
-    shown=[i for i in items if not only_problems or i.summary.get('problem_count', 0)]
-    counts={state:sum(i.status==state for i in items) for state in ('ready','attention','pending_import','imported','skipped','assigned')}
-    file_ids = {UUID(f['file_id']) for f in batch.files if f.get('file_id')}
-    job_ids = list(session.scalars(select(EvidenceFile.engine_job_id).where(EvidenceFile.case_id == case_id, EvidenceFile.id.in_(file_ids), EvidenceFile.engine_job_id.is_not(None)))) if file_ids else []
-    files = deepcopy(batch.files)
+def available_batch_references(session, case_id, files):
     referenced = {UUID(f[key]) for f in files for key in ('source_id', 'file_id') if f.get(key)}
-    available = {str(id) for id in session.scalars(select(EvidenceFile.id).where(EvidenceFile.case_id == case_id, EvidenceFile.id.in_(referenced)))}
+    return {str(id) for id in session.scalars(select(EvidenceFile.id).where(EvidenceFile.case_id == case_id, EvidenceFile.id.in_(referenced)))}
+
+
+def project_batch_files(files, available):
+    """Keep batch list, detail and recovery consistent without writes on GET."""
+    files = deepcopy(files)
     for file in files:
         file['review_file_id'] = file.get('file_id') if file.get('file_id') in available else file.get('source_id') if file.get('source_id') in available else None
         if file.get('file_id') not in available:
             file['error'] = ('The prepared reading is unavailable. The original PDF is retained; Retry this file prepares a new reading without removing saved payments.' if file.get('source_id') in available else 'The original PDF is not available in this case. Restore the original evidence before retrying; existing payment history is retained.')
+            if file['status'] in TERMINAL_FILES:
+                file['status'] = 'error'
+    return files
+
+
+def batch_status(session, *, case_id, batch_id, offset=0, limit=100, only_problems=False, review_group=None):
+    from services.financial.import_operations import operations_for
+    from services.financial.batch_review_summary import matches_group, review_summary, validate_group, group_label
+    validate_group(review_group)
+    batch = batch_for(session,case_id,batch_id)
+    items=list(session.scalars(select(Item).where(Item.batch_id==batch.id).order_by(Item.file_id,Item.statement_key)))
+    items=checked_batch_items(session, case_id, items)
+    items.sort(key=lambda i: (i.summary.get('filename',''),i.summary.get('account',''),i.summary.get('period_start',''),str(i.id)))
+    shown=[i for i in items if matches_group(i, review_group) and (not only_problems or i.summary.get('problem_count', 0))]
+    counts={state:sum(i.status==state for i in items) for state in ('ready','attention','pending_import','imported','skipped','assigned')}
+    file_ids = {UUID(f['file_id']) for f in batch.files if f.get('file_id')}
+    job_ids = list(session.scalars(select(EvidenceFile.engine_job_id).where(EvidenceFile.case_id == case_id, EvidenceFile.id.in_(file_ids), EvidenceFile.engine_job_id.is_not(None)))) if file_ids else []
+    files = project_batch_files(batch.files, available_batch_references(session, case_id, batch.files))
     return dict(id=str(batch.id),case_id=str(case_id),status=batch.status,files=files,counts=counts, reading_job_ids=job_ids,
+        review_summary=review_summary(items), review_group=review_group, review_group_label=group_label(review_group),
         operations=operations_for(session, case_id, batch_id),
         statements_with_issues=sum(bool(i.summary.get('problem_count', 0)) for i in items if i.status != 'skipped'),
         available_statements=sum(import_available(i) for i in items),
@@ -823,7 +854,13 @@ def retry_file(session, *, case_id, batch_id, source_id):
     files=deepcopy(batch.files)
     target=next((f for f in files if f['source_id']==str(source_id)),None)
     if target is None: raise PdfMappingError('File not found in this batch.',404)
-    if target['status'] != 'error':
+    prepared = session.scalar(select(EvidenceFile.id).where(EvidenceFile.case_id == case_id,
+        EvidenceFile.id == UUID(target['file_id']))) if target.get('file_id') else None
+    # Status reads can discover a missing prepared reference after the worker
+    # recorded "checked". Honour the retry offered by that view, using only
+    # this case's original. Active work remains idempotent and is not restarted.
+    missing_prepared = target['status'] == 'checked' and prepared is None
+    if target['status'] != 'error' and not missing_prepared:
         return dict(queued=False, status=target['status'])
     # Error files are terminal and cannot belong to the worker's active turn.
     # Its per-file merge preserves this newly queued entry; don't block recovery

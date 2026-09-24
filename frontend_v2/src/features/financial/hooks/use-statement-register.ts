@@ -15,6 +15,10 @@ export const statementFile = z.object({
 })
 export type StatementFile = z.infer<typeof statementFile>
 
+// Reader capability only; Financial membership is determined by the server.
+export const usesPdfStatementReader = (file: { original_filename: string }) =>
+  file.original_filename.toLowerCase().endsWith(".pdf")
+
 export function groupStatementReadings(files: StatementFile[]) {
   const groups = new Map<string, StatementFile[]>()
   for (const file of files) {
@@ -96,9 +100,7 @@ export function useStatementFiles(
       )
       if (result.files.some((file) => file.case_id !== caseId))
         throw Error("The returned file list belongs to another case.")
-      return result.files.filter((file) =>
-        file.original_filename.toLowerCase().endsWith(".pdf")
-      )
+      return result.files
     },
     refetchInterval: (query) =>
       uploading ||

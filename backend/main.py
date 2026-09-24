@@ -123,8 +123,12 @@ async def lifespan(app: FastAPI):
     from services.financial.identity_graph import run_identity_graph_forever
     identity_graph_task = asyncio.create_task(run_identity_graph_forever(), name="financial-reviewed-identities")
 
+    from services.financial.deployment_recovery import run_recovery_forever
+    recovery_task = asyncio.create_task(run_recovery_forever(), name="financial-deployment-recovery")
+
     yield
 
+    recovery_task.cancel()
     identity_graph_task.cancel()
     financial_batches_task.cancel()
     cleanup_task.cancel()
@@ -133,7 +137,7 @@ async def lifespan(app: FastAPI):
         platform_update_task.cancel()
 
     # Finish atomic statement/graph units before closing their clients.
-    await asyncio.gather(identity_graph_task, financial_batches_task, return_exceptions=True)
+    await asyncio.gather(recovery_task, identity_graph_task, financial_batches_task, return_exceptions=True)
 
     # Stop job status subscriber
     try:

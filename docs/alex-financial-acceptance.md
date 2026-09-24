@@ -1,6 +1,8 @@
 # Alex's financial workflow acceptance
 
-**24 September correction:** Ordinary Evidence PDFs were incorrectly listed as statement files. The [scope correction and connected acceptance](financial-workflows/evidence-file-scope-2026-09-24.md) separates explicit financial work from general Evidence while retaining saved reviews, imports and sources. Live verification remains separate.
+**24 September connected release:** [source selection, compact saved work and one-time recovery](financial-workflows/next-release-2026-09-24.md). Implementation is complete locally with workflow verification. The content/provenance cleanup remains a separate scheduled production pass; publication and live results are recorded separately.
+
+**24 September correction:** Ordinary Evidence PDFs were incorrectly listed as statement files. The [scope correction and connected acceptance](financial-workflows/evidence-file-scope-2026-09-24.md) separates explicit financial work from general Evidence while retaining saved reviews, imports and sources in any format. The follow-up supports explicit CSV, spreadsheet, Word, image and other source selection; non-PDF files do not enter the PDF reader. Legacy XLS/DOC still need conversion for processing. Live verification remains separate.
 
 **23 September feedback implementation:** The [complete implementation plan](financial-workflows/feedback-implementation-plan-2026-09-23.md) covers F01–F28 and J01–J12. That implementation was pushed as `60b6706a`; [the acceptance record](financial-workflows/implementation-progress-2026-09-23.md) records local tests and remaining live limits. The earlier results below are historical and do not override newly reported failures.
 
@@ -166,3 +168,7 @@ automatic deployment triggered by publication.
 ## Complete 23 September follow-up feedback
 
 All F01–F28 reports are mapped to implemented workflows and local evidence in the [current acceptance record](financial-workflows/implementation-progress-2026-09-23.md). This includes both late additions: retained review filters/active manual rows and direction-aware existing counterparty/account links. Real-service Chromium checks save/import/reopen through production FastAPI routes and independently read back a second bulk correction. The source PDF, account/period/currency, payment identity, history and next action remain part of each journey. Live incident verification is separately blocked by the origin-authorization review described in that record; no live client records were changed.
+
+## 24 September: explain the batch before individual review
+
+The report that almost every statement appears problematic adds an explicit acceptance requirement: show the reasons and import consequences at batch level, then retain the selected reason through review, correction, next/previous and return. This workflow is implemented and locally verified in the [connected release record](financial-workflows/next-release-2026-09-24.md#follow-up-understand-and-work-through-batch-checks), together with the missing-reading Retry repair and the earlier source-selection, compact saved-work and background-recovery work. Counts span all pages; absent balance inputs do not become false differences; correcting a shared missing holder updates the group without importing or changing payments. Exact causes in the reported live batch and the three unresolved file failures are not established by the synthetic tests. Publication/live access remain blocked as recorded there.

@@ -1,4 +1,4 @@
-"""Resolve case folders and reuse or prepare existing PDFs for financial review."""
+"""Select financial sources in any format; prepare PDFs with the statement reader."""
 from uuid import NAMESPACE_URL, UUID, uuid5
 from sqlalchemy import select, or_, exists
 from postgres.models.evidence import EvidenceFile, EvidenceFolder, EvidenceDocumentText, EvidenceTableGeometry
@@ -7,7 +7,7 @@ from services.financial.file_visibility import financial_file_visibility, set_fi
 from services.financial.statement_reprocessing import create_statement_version
 
 
-def resolve_financial_selection(session, *, case_id, file_ids, folder_ids):
+def resolve_financial_selection(session, *, case_id, file_ids, folder_ids, include_other_formats=False):
     file_ids, folder_ids = set(file_ids), set(folder_ids)
     if not file_ids and not folder_ids:
         raise PdfMappingError('Select files or folders first.', 422)
@@ -26,11 +26,57 @@ def resolve_financial_selection(session, *, case_id, file_ids, folder_ids):
         raise PdfMappingError('This selection contains more than 10,000 files. Select fewer folders and send them in separate groups. Nothing has been sent.', 422)
     pdfs = [file for file in files if file.original_filename.lower().endswith('.pdf')]
     from services.financial.source_lineage import select_current_files, lineage_id
-    current = select_current_files(session, case_id, pdfs)
-    return dict(case_id=str(case_id), skipped_non_pdf=len(files)-len(pdfs), files=[dict(
+    eligible = files if include_other_formats else pdfs
+    current = select_current_files(session, case_id, eligible)
+    return dict(case_id=str(case_id), skipped_non_pdf=0 if include_other_formats else len(files)-len(pdfs), files=[dict(
         id=str(file.id), original_filename=file.original_filename, status=file.status,
         root_file_id=lineage_id(file),
-        **financial_file_visibility(file)) for file in current], grouped_readings=len(pdfs)-len(current))
+        **financial_file_visibility(file)) for file in current], grouped_readings=len(eligible)-len(current))
+
+
+def include_financial_sources(session, *, case_id, selections, actor):
+    """Record the investigator's financial selection, without reading or importing.
+
+    No format allow-list: a missing reader is not evidence of non-financial content.
+    Check the complete preview before any writes. Retries are idempotent, and
+    a removal after the preview must not be silently undone.
+    """
+    from datetime import datetime, timezone
+    from uuid import uuid4
+    from postgres.models.case import Case
+    from postgres.models.evidence import IngestionLog
+    from services.financial.file_scope import mark_financial_workspace, SCHEMA
+    session.execute(select(Case.id).where(Case.id == case_id).with_for_update()).all()
+    files = list(session.scalars(select(EvidenceFile).where(EvidenceFile.case_id == case_id,
+        EvidenceFile.id.in_([item.evidence_file_id for item in selections]))
+        .with_for_update().execution_options(populate_existing=True)))
+    by_id = {file.id: file for file in files}
+    if len(by_id) != len(selections):
+        raise PdfMappingError('A selected file is no longer available in this case, or was selected twice. Refresh the selection.', 404)
+    for item in selections:
+        file = by_id[item.evidence_file_id]
+        current = financial_file_visibility(file)
+        enrolled = ((file.metadata_ or {}).get('financial_workspace') or {}).get('schema') == SCHEMA
+        if (file.metadata_ or {}).get('financial_import_removal'):
+            raise PdfMappingError('This file has removed imports. Use its recovery action in Financial before adding it again.', 409)
+        if current['financial_visibility_revision'] != item.expected_revision and (current['financial_removed'] or not enrolled):
+            raise PdfMappingError('A selected file changed after the preview. Review the selection again.', 409)
+    for file in files:
+        current = financial_file_visibility(file)
+        enrolled = ((file.metadata_ or {}).get('financial_workspace') or {}).get('schema') == SCHEMA
+        if enrolled and not current['financial_removed']:
+            continue
+        mark_financial_workspace(file, user_id=actor.user_id)
+        actor_data = dict(user_id=str(actor.user_id), name=actor.name, email=actor.email)
+        if current['financial_removed']:
+            file.metadata_ = {**file.metadata_, 'financial_file_visibility': dict(
+                removed=False, revision=str(uuid4()), changed_at=datetime.now(timezone.utc).isoformat(), actor=actor_data)}
+        session.add(IngestionLog(case_id=case_id, evidence_file_id=file.id,
+            filename=file.original_filename, level='info',
+            message='Selected existing evidence for Financial review; no processing or import started.',
+            extra=dict(action='financial_source_selected', actor=actor_data)))
+    session.commit()
+    return dict(case_id=str(case_id), file_ids=[str(item.evidence_file_id) for item in selections])
 
 
 def has_financial_reading(session, file):

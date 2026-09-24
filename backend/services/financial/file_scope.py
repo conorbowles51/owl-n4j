@@ -1,4 +1,4 @@
-"""Financial's library contains explicit financial work, not every Evidence PDF.
+"""Financial's library contains explicit financial work in any source format.
 
 Older work is recognised from its saved reviews, batches and imports. Reading
 text/tables in the ordinary evidence pipeline is not financial enrolment. This
@@ -70,4 +70,4 @@ def financial_file_ids(session, *, case_id):
     # independently uploaded file with the same name or hash.
     return {file.id for versions in lineage_groups(files).values()
             if any(str(file.id) in selected for file in versions)
-            for file in versions if file.original_filename.lower().endswith('.pdf')}
+            for file in versions}

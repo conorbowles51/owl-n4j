@@ -1,7 +1,12 @@
+import { StatementRecoveryPanel } from "./StatementRecoveryPanel"
 import { ResumableUploadsPanel } from "@/features/evidence/components/ResumableUploadsPanel"
 import { BulkStatementDetails } from "./BulkStatementDetails"
 import { FinancialRemovalAction } from "./FinancialRemovalAction"
-import { useStatementRegister } from "../hooks/use-statement-register"
+import {
+  useStatementRegister,
+  usesPdfStatementReader,
+} from "../hooks/use-statement-register"
+import { FinancialSourceFile } from "./FinancialSourceFile"
 import { FinancialFileAction } from "./FinancialFileAction"
 import { EvidenceFinancialPicker } from "./EvidenceFinancialPicker"
 import { useFinancialAccess } from "../hooks/use-financial-access"
@@ -102,6 +107,7 @@ export function StatementFilesPanel({
       ?.filter((file) =>
         file.original_filename.toLowerCase().includes(search.toLowerCase())
       )
+      .filter((file) => !removalMode || usesPdfStatementReader(file))
       .filter((file) => {
         const saved = imports.data?.files.find(
           (item) => item.evidence_file_id === file.id
@@ -129,8 +135,14 @@ export function StatementFilesPanel({
       }) ?? []
   const selectedIds = (selection.scope === scope ? selection.ids : []).filter(
     (id) =>
-      files.data?.some((file) => file.id === id && !file.financial_removed)
+      files.data?.some(
+        (file) =>
+          file.id === id &&
+          !file.financial_removed &&
+          usesPdfStatementReader(file)
+      )
   )
+  const selectableFiles = visibleFiles.filter(usesPdfStatementReader)
   const hiddenSelected = selectedIds.filter(
     (id) => !visibleFiles.some((file) => file.id === id)
   ).length
@@ -175,6 +187,18 @@ export function StatementFilesPanel({
       aria-label="Statement files"
       className={register ? "space-y-4" : "h-full overflow-auto p-3 space-y-3"}
     >
+      {!removalMode && register && (
+        <StatementRecoveryPanel
+          key={caseId}
+          caseId={caseId}
+          onReview={(fileId) => {
+            useStatementWorkspace.getState().select(scope, fileId)
+            useFinancialStore.getState().setMainView("statements")
+            useFinancialStore.getState().setMode("transactions")
+            onOpen?.()
+          }}
+        />
+      )}
       <h2 className="font-semibold">
         {removalMode
           ? "Remove imports or start again"
@@ -191,7 +215,7 @@ export function StatementFilesPanel({
         {!removalMode &&
           "Supported wire reports and deposit receipts open their own review."}
         {!removalMode &&
-          " Other Evidence documents stay in Evidence. Use Choose from Evidence to send selected PDFs here."}
+          " Financial sources can also be CSV, spreadsheets, Word documents, images or other formats. Use Choose from Evidence to select relevant content; each source opens with its available reader."}
       </p>
       {removalMode && (
         <p className="text-sm">
@@ -320,8 +344,8 @@ export function StatementFilesPanel({
           </label>
           {files.data && (
             <span>
-              {files.data.filter((file) => !file.financial_removed).length} PDFs
-              in Financial ·{" "}
+              {files.data.filter((file) => !file.financial_removed).length}{" "}
+              files in Financial ·{" "}
               {imports.data?.files.filter(
                 (file) =>
                   file.current_transactions > 0 || file.periods.length > 0
@@ -392,18 +416,18 @@ export function StatementFilesPanel({
             </span>
             <Button
               variant="outline"
-              disabled={preparing || !visibleFiles.length}
+              disabled={preparing || !selectableFiles.length}
               onClick={() =>
                 selectFiles([
                   ...new Set([
                     ...selectedIds,
-                    ...visibleFiles.map((file) => file.id),
+                    ...selectableFiles.map((file) => file.id),
                   ]),
                 ])
               }
             >
-              Select all {visibleFiles.length} shown{" "}
-              {visibleFiles.length === 1 ? "file" : "files"}
+              Select all {selectableFiles.length} shown{" "}
+              {selectableFiles.length === 1 ? "file" : "files"}
             </Button>
             <Button
               variant="ghost"
@@ -453,7 +477,7 @@ export function StatementFilesPanel({
           <p className="text-sm text-muted-foreground">
             {removalMode
               ? "Tick individual files below or select all shown files, then review the removal. Nothing is removed until you confirm."
-              : "Select files to edit account details across their statements, prepare them together or remove their imports. Edit account details lets you choose the individual periods before saving."}
+              : "Select PDFs to edit account details across their statements, prepare them together or remove their imports. Other sources have their own review and removal actions. Edit account details lets you choose the individual periods before saving."}
           </p>
         </section>
       )}
@@ -461,6 +485,15 @@ export function StatementFilesPanel({
         const saved = imports.data?.files.find(
           (item) => item.evidence_file_id === file.id
         )
+        if (!usesPdfStatementReader(file))
+          return (
+            <FinancialSourceFile
+              key={file.id}
+              caseId={caseId}
+              file={file}
+              importedPayments={saved?.current_transactions}
+            />
+          )
         return (
           <div
             key={file.id}
@@ -711,8 +744,8 @@ export function StatementFilesPanel({
       )}
       {files.data?.length === 0 && (
         <p>
-          No PDFs have been added to Financial. Upload statements or choose them
-          from Evidence.
+          No files have been added to Financial. Upload statements or choose
+          financial sources from Evidence.
         </p>
       )}
     </section>

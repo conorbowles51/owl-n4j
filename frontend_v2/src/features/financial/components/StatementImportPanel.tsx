@@ -9,7 +9,10 @@ import { SavedStatementPayments } from "./SavedStatementPayments"
 import { useStatementCoverageReview } from "../hooks/use-statement-coverage-review"
 import { StatementCoverageReview } from "./StatementCoverageReview"
 import { useBatchReview } from "../lib/batch-review-context"
-import { useStatementFiles } from "../hooks/use-statement-register"
+import {
+  useStatementFiles,
+  usesPdfStatementReader,
+} from "../hooks/use-statement-register"
 import {
   StatementPeriodSelect,
   StatementSectionPicker,
@@ -397,7 +400,9 @@ export function StatementImportPanel({
               >
                 <option value="">Choose a statement</option>
                 {files.data
-                  ?.filter((f) => !f.financial_removed)
+                  ?.filter(
+                    (f) => !f.financial_removed && usesPdfStatementReader(f)
+                  )
                   .map((f) => (
                     <option key={f.id} value={f.id}>
                       {f.original_filename}

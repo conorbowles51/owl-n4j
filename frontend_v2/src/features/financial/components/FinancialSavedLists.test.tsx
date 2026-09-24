@@ -164,3 +164,39 @@ it("retries a failed report page without returning to the first page", async () 
     expect.objectContaining({ offset: 25, tag: "financial-report" })
   )
 })
+
+it("keeps findings compact while preserving expansion, filters and report selection", async () => {
+  const first = setup("findings")
+  const title = await screen.findByRole("button", { name: "Saved item 0" })
+  expect(title).toHaveAttribute("aria-expanded", "false")
+  expect(screen.queryByText("Synthetic note")).toBeNull()
+  expect(screen.getByRole("button", { name: "Edit" })).toBeVisible()
+  expect(screen.getByRole("button", { name: "Add to Timeline" })).toBeVisible()
+  fireEvent.click(screen.getByLabelText("Include Saved item 0 in report"))
+  fireEvent.click(title)
+  expect(screen.getByText("Synthetic note")).toBeVisible()
+  first.unmount()
+  const second = setup("findings")
+  expect(
+    await screen.findByRole("button", { name: "Saved item 0" })
+  ).toHaveAttribute("aria-expanded", "true")
+  expect(screen.getByLabelText("Include Saved item 0 in report")).toBeChecked()
+  fireEvent.change(screen.getByLabelText("Finding type"), {
+    target: { value: "financial-question" },
+  })
+  fireEvent.change(screen.getByLabelText("Progress"), {
+    target: { value: "in-progress" },
+  })
+  second.unmount()
+  setup("findings")
+  expect(screen.getByLabelText("Finding type")).toHaveValue(
+    "financial-question"
+  )
+  expect(screen.getByLabelText("Progress")).toHaveValue("in-progress")
+  await waitFor(() =>
+    expect(list).toHaveBeenLastCalledWith(
+      "case-one",
+      expect.objectContaining({ tag: "financial-question-in-progress" })
+    )
+  )
+})

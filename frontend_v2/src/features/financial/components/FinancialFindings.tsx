@@ -50,14 +50,18 @@ export function FinancialFindings({
   const [view, setView] = useFinancialDraft(caseId || "", "findings-list", {
     search: "",
     page: 0,
+    kind: "financial",
+    progress: "all",
+    expanded: [] as string[],
   })
   const { search, page } = view
+  const kind = view.kind ?? "financial"
+  const progress = view.progress ?? "all"
+  const expanded = view.expanded ?? []
   const setPage = (page: number) => setView((current) => ({ ...current, page }))
   const { canEdit } = useFinancialAccess()
   const [timeline, setTimeline] = useState<CaseworkEntry | null>(null)
   const [editing, setEditing] = useState<CaseworkEntry | "new" | null>(null)
-  const [kind, setKind] = useState("financial")
-  const [progress, setProgress] = useState("all")
   const [error, setError] = useState("")
   const [source, setSource] = useState<string | null>(null)
   const query = useCaseworkEntries(caseId, {
@@ -103,8 +107,11 @@ export function FinancialFindings({
             className="block rounded border bg-card p-2"
             value={kind}
             onChange={(e) => {
-              setKind(e.target.value)
-              setPage(0)
+              setView((current) => ({
+                ...current,
+                kind: e.target.value,
+                page: 0,
+              }))
             }}
           >
             <option value="financial">All saved work</option>
@@ -122,8 +129,11 @@ export function FinancialFindings({
             value={progress}
             disabled={kind === "financial-report"}
             onChange={(e) => {
-              setProgress(e.target.value)
-              setPage(0)
+              setView((current) => ({
+                ...current,
+                progress: e.target.value,
+                page: 0,
+              }))
             }}
           >
             <option value="all">All progress</option>
@@ -144,7 +154,11 @@ export function FinancialFindings({
           className="block w-full max-w-lg rounded border bg-background p-2"
           value={search}
           onChange={(e) => {
-            setView({ search: e.target.value, page: 0 })
+            setView((current) => ({
+              ...current,
+              search: e.target.value,
+              page: 0,
+            }))
           }}
         />
       </label>
@@ -195,7 +209,8 @@ export function FinancialFindings({
       {entries.map((entry) => (
         <article
           key={entry.id}
-          className="finance-panel rounded border p-4 space-y-3"
+          className="finance-panel rounded border px-3 py-2 space-y-2"
+          aria-label={entry.title || "Untitled note"}
           data-finance-tone={
             entry.tags.includes("financial-workspace") &&
             findingDraft(entry).kind === "question"
@@ -215,9 +230,35 @@ export function FinancialFindings({
                   ? ` · ${findingPaymentIds(entry).length} supporting payments`
                   : ""}
               </p>
-              <h3 className="font-semibold text-lg mt-1">
-                {entry.title || "Untitled note"}
+              <h3 className="font-semibold mt-1">
+                <button
+                  type="button"
+                  className="text-left hover:underline"
+                  aria-expanded={expanded.includes(entry.id)}
+                  aria-controls={`finding-details-${entry.id}`}
+                  onClick={() =>
+                    setView((current) => ({
+                      ...current,
+                      expanded: expanded.includes(entry.id)
+                        ? expanded.filter((id) => id !== entry.id)
+                        : [...expanded, entry.id],
+                    }))
+                  }
+                >
+                  <span aria-hidden="true">
+                    {expanded.includes(entry.id) ? "▾" : "▸"}{" "}
+                  </span>
+                  {entry.title || "Untitled note"}
+                </button>
               </h3>
+              <p className="text-xs text-muted-foreground mt-1">
+                {entry.author_name ||
+                  entry.author_email ||
+                  "Author not recorded"}
+                {entry.updated_at
+                  ? ` · ${new Date(entry.updated_at).toLocaleDateString()}`
+                  : ""}
+              </p>
             </div>
             {canEdit && !entry.tags.includes("financial-report") && (
               <div className="flex flex-wrap gap-2">
@@ -268,203 +309,214 @@ export function FinancialFindings({
               Include in report
             </label>
           )}
-          {entry.tags.includes("financial-report") && (
-            <SavedFinancialReport
-              key={entry.id + ":" + entry.version}
-              caseId={caseId}
-              entry={entry}
-            />
-          )}
-          <p className="text-xs text-muted-foreground">
-            {entry.entry_type} ·{" "}
-            {entry.author_name || entry.author_email || "Author not recorded"}
-            {entry.updated_at
-              ? ` · ${new Date(entry.updated_at).toLocaleString()}`
-              : ""}
-          </p>
-          {entry.links.some(
-            (link) => link.metadata.schema === indirectWorkpaperSchema
-          ) ? (
-            <details>
-              <summary className="cursor-pointer">
-                Written explanation and recorded amounts
-              </summary>
-              <p className="whitespace-pre-wrap mt-2">{entry.body}</p>
-            </details>
-          ) : entry.tags.includes("financial-workspace") ? (
-            <div className="space-y-3 text-sm">
-              <p className="whitespace-pre-wrap">
-                {findingDraft(entry).explanation}
+          {expanded.includes(entry.id) && (
+            <div
+              id={`finding-details-${entry.id}`}
+              className="border-t pt-3 space-y-3"
+            >
+              {entry.tags.includes("financial-report") && (
+                <SavedFinancialReport
+                  key={entry.id + ":" + entry.version}
+                  caseId={caseId}
+                  entry={entry}
+                />
+              )}
+              <p className="text-xs text-muted-foreground">
+                {entry.entry_type} ·{" "}
+                {entry.author_name ||
+                  entry.author_email ||
+                  "Author not recorded"}
+                {entry.updated_at
+                  ? ` · ${new Date(entry.updated_at).toLocaleString()}`
+                  : ""}
               </p>
-              {(findingDraft(entry).nextAction ||
-                findingDraft(entry).owner) && (
-                <div
-                  className="finance-tint rounded border p-3"
-                  data-finance-tone="review"
-                >
-                  {findingDraft(entry).nextAction && (
-                    <h4 className="font-medium">Next action</h4>
-                  )}
+              {entry.links.some(
+                (link) => link.metadata.schema === indirectWorkpaperSchema
+              ) ? (
+                <details>
+                  <summary className="cursor-pointer">
+                    Written explanation and recorded amounts
+                  </summary>
+                  <p className="whitespace-pre-wrap mt-2">{entry.body}</p>
+                </details>
+              ) : entry.tags.includes("financial-workspace") ? (
+                <div className="space-y-3 text-sm">
                   <p className="whitespace-pre-wrap">
-                    {findingDraft(entry).nextAction}
+                    {findingDraft(entry).explanation}
                   </p>
-                  {findingDraft(entry).owner && (
-                    <p className="mt-2 text-muted-foreground">
-                      Assigned to {findingDraft(entry).owner}
-                    </p>
+                  {(findingDraft(entry).nextAction ||
+                    findingDraft(entry).owner) && (
+                    <div
+                      className="finance-tint rounded border p-3"
+                      data-finance-tone="review"
+                    >
+                      {findingDraft(entry).nextAction && (
+                        <h4 className="font-medium">Next action</h4>
+                      )}
+                      <p className="whitespace-pre-wrap">
+                        {findingDraft(entry).nextAction}
+                      </p>
+                      {findingDraft(entry).owner && (
+                        <p className="mt-2 text-muted-foreground">
+                          Assigned to {findingDraft(entry).owner}
+                        </p>
+                      )}
+                    </div>
                   )}
                 </div>
+              ) : (
+                <p className="whitespace-pre-wrap">{entry.body}</p>
               )}
-            </div>
-          ) : (
-            <p className="whitespace-pre-wrap">{entry.body}</p>
-          )}
-          {entry.links.map((link) => {
-            const ids = Array.isArray(
-              link.source_anchor?.financial_transaction_ids
-            )
-              ? link.source_anchor.financial_transaction_ids.filter(
-                  (id): id is string => typeof id === "string"
+              {entry.links.map((link) => {
+                const ids = Array.isArray(
+                  link.source_anchor?.financial_transaction_ids
                 )
-              : []
-            const snapshots = Array.isArray(link.metadata?.transactions)
-              ? link.metadata.transactions.flatMap((value) => {
-                  const parsed = transactionDetail.safeParse(value)
-                  return parsed.success && parsed.data.case_id === caseId
-                    ? [parsed.data]
-                    : []
-                })
-              : []
-            return (
-              <div key={link.id} className="space-y-2">
-                <p className="text-sm font-medium">
-                  {link.target_label || "Supporting record"}
-                </p>
-                {link.metadata.schema === paymentDocumentSchema && (
-                  <SavedPaymentDocument
-                    metadata={link.metadata}
-                    caseId={caseId}
-                    fileId={link.target_id}
-                  />
-                )}
-                {link.metadata?.schema ===
-                  "loupe.financial.event_context/1" && (
-                  <>
-                    <p className="text-sm">
-                      {String(link.metadata.date || "Date not recorded")} ·{" "}
-                      {String(link.metadata.summary || "")}
+                  ? link.source_anchor.financial_transaction_ids.filter(
+                      (id): id is string => typeof id === "string"
+                    )
+                  : []
+                const snapshots = Array.isArray(link.metadata?.transactions)
+                  ? link.metadata.transactions.flatMap((value) => {
+                      const parsed = transactionDetail.safeParse(value)
+                      return parsed.success && parsed.data.case_id === caseId
+                        ? [parsed.data]
+                        : []
+                    })
+                  : []
+                return (
+                  <div key={link.id} className="space-y-2">
+                    <p className="text-sm font-medium">
+                      {link.target_label || "Supporting record"}
                     </p>
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        selectNodes([link.target_id])
-                        expand("detail")
-                      }}
-                    >
-                      Open case event
-                    </Button>
-                  </>
-                )}
-                {link.metadata?.schema === indirectWorkpaperSchema && (
-                  <SavedIndirectFinding
+                    {link.metadata.schema === paymentDocumentSchema && (
+                      <SavedPaymentDocument
+                        metadata={link.metadata}
+                        caseId={caseId}
+                        fileId={link.target_id}
+                      />
+                    )}
+                    {link.metadata?.schema ===
+                      "loupe.financial.event_context/1" && (
+                      <>
+                        <p className="text-sm">
+                          {String(link.metadata.date || "Date not recorded")} ·{" "}
+                          {String(link.metadata.summary || "")}
+                        </p>
+                        <Button
+                          variant="outline"
+                          onClick={() => {
+                            selectNodes([link.target_id])
+                            expand("detail")
+                          }}
+                        >
+                          Open case event
+                        </Button>
+                      </>
+                    )}
+                    {link.metadata?.schema === indirectWorkpaperSchema && (
+                      <SavedIndirectFinding
+                        key={entry.id + ":" + entry.version}
+                        entry={entry}
+                        link={link}
+                        caseId={caseId}
+                      />
+                    )}
+                    {link.target_type === "entry" && (
+                      <a
+                        className="underline text-sm"
+                        href={`/cases/${caseId}/workspace?view=casework&entry=${encodeURIComponent(link.target_id)}`}
+                      >
+                        Open linked note
+                      </a>
+                    )}
+                    {savedAnalysisSummary(link.metadata?.analysis).map(
+                      (line, index) => (
+                        <p key={index} className="text-sm">
+                          {line}
+                        </p>
+                      )
+                    )}
+                    {link.metadata?.schema ===
+                      "loupe.financial.saved_trace/1" && (
+                      <SavedTraceFinding
+                        key={entry.id + ":" + entry.version}
+                        caseId={caseId}
+                        envelope={link.metadata.envelope}
+                      />
+                    )}
+                    {!!link.metadata?.analysis &&
+                      typeof link.metadata.analysis === "object" &&
+                      "summary" in link.metadata.analysis && (
+                        <p className="text-sm">
+                          {String(link.metadata.analysis.summary)}
+                        </p>
+                      )}
+                    {ids.length > 0 && (
+                      <SavedPaymentLinks
+                        key={entry.id + ":" + link.id + ":" + entry.version}
+                        ids={ids}
+                        snapshots={snapshots}
+                        refs={link.source_anchor.financial_ref_ids}
+                        onOpen={setSource}
+                      />
+                    )}
+                  </div>
+                )
+              })}
+              {canEdit && !entry.tags.includes("financial-report") && (
+                <details className="rounded border p-3 space-y-2">
+                  <summary className="cursor-pointer font-medium">
+                    Create a report from this note
+                  </summary>
+                  <p className="text-sm">
+                    Includes this note and any saved payment values and
+                    statement references attached to it. The original PDFs are
+                    not included. Open the downloaded HTML file to read it or
+                    print it to PDF.
+                  </p>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setError("")
+                      try {
+                        const url = URL.createObjectURL(
+                          new Blob([findingReport(entry, caseId)], {
+                            type: "text/html;charset=utf-8",
+                          })
+                        )
+                        const link = document.createElement("a")
+                        link.href = url
+                        link.download = `financial-note-${entry.id}.html`
+                        link.click()
+                        setTimeout(() => URL.revokeObjectURL(url), 1000)
+                      } catch (failure) {
+                        setError(
+                          failure instanceof Error
+                            ? failure.message
+                            : "The report could not be created."
+                        )
+                      }
+                    }}
+                  >
+                    Download this note and its payments
+                  </Button>
+                  <FindingReportBundle
                     key={entry.id + ":" + entry.version}
                     entry={entry}
-                    link={link}
                     caseId={caseId}
                   />
-                )}
-                {link.target_type === "entry" && (
-                  <a
-                    className="underline text-sm"
-                    href={`/cases/${caseId}/workspace?view=casework&entry=${encodeURIComponent(link.target_id)}`}
-                  >
-                    Open linked note
-                  </a>
-                )}
-                {savedAnalysisSummary(link.metadata?.analysis).map(
-                  (line, index) => (
-                    <p key={index} className="text-sm">
-                      {line}
-                    </p>
-                  )
-                )}
-                {link.metadata?.schema === "loupe.financial.saved_trace/1" && (
-                  <SavedTraceFinding
-                    key={entry.id + ":" + entry.version}
-                    caseId={caseId}
-                    envelope={link.metadata.envelope}
-                  />
-                )}
-                {!!link.metadata?.analysis &&
-                  typeof link.metadata.analysis === "object" &&
-                  "summary" in link.metadata.analysis && (
-                    <p className="text-sm">
-                      {String(link.metadata.analysis.summary)}
-                    </p>
-                  )}
-                {ids.length > 0 && (
-                  <SavedPaymentLinks
-                    key={entry.id + ":" + link.id + ":" + entry.version}
-                    ids={ids}
-                    snapshots={snapshots}
-                    refs={link.source_anchor.financial_ref_ids}
-                    onOpen={setSource}
-                  />
-                )}
-              </div>
-            )
-          })}
-          {canEdit && !entry.tags.includes("financial-report") && (
-            <details className="rounded border p-3 space-y-2">
-              <summary className="cursor-pointer font-medium">
-                Create a report from this note
-              </summary>
-              <p className="text-sm">
-                Includes this note and any saved payment values and statement
-                references attached to it. The original PDFs are not included.
-                Open the downloaded HTML file to read it or print it to PDF.
-              </p>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setError("")
-                  try {
-                    const url = URL.createObjectURL(
-                      new Blob([findingReport(entry, caseId)], {
-                        type: "text/html;charset=utf-8",
-                      })
-                    )
-                    const link = document.createElement("a")
-                    link.href = url
-                    link.download = `financial-note-${entry.id}.html`
-                    link.click()
-                    setTimeout(() => URL.revokeObjectURL(url), 1000)
-                  } catch (failure) {
-                    setError(
-                      failure instanceof Error
-                        ? failure.message
-                        : "The report could not be created."
-                    )
-                  }
-                }}
+                </details>
+              )}
+              <a
+                className="inline-block underline text-sm"
+                href={`/cases/${caseId}/workspace?view=casework&entry=${entry.id}`}
               >
-                Download this note and its payments
-              </Button>
-              <FindingReportBundle
-                key={entry.id + ":" + entry.version}
-                entry={entry}
-                caseId={caseId}
-              />
-            </details>
+                {entry.tags.includes("financial-report")
+                  ? "Open report record in Workspace"
+                  : "Edit or review in Workspace"}
+              </a>
+            </div>
           )}
-          <a
-            className="inline-block underline text-sm"
-            href={`/cases/${caseId}/workspace?view=casework&entry=${entry.id}`}
-          >
-            {entry.tags.includes("financial-report")
-              ? "Open report record in Workspace"
-              : "Edit or review in Workspace"}
-          </a>
         </article>
       ))}
       {(query.data?.total ?? 0) > 25 && (

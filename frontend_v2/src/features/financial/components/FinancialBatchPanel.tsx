@@ -2,6 +2,8 @@ import { BatchReadingJobs } from "./BatchReadingJobs"
 import { FinancialRemovalAction } from "./FinancialRemovalAction"
 import { BatchStatementImportChoice } from "./BatchStatementImportChoice"
 import { BatchCurrencyEditor } from "./BatchCurrencyEditor"
+import { BatchReviewSummary } from "./BatchReviewSummary"
+import { batchReviewSummarySchema } from "../lib/batch-review-summary"
 import { BulkStatementDetails } from "./BulkStatementDetails"
 import { coverageReview } from "../hooks/use-statement-coverage-review"
 import { useEffect, useRef, useState } from "react"
@@ -77,9 +79,17 @@ const itemSchema = z.object({
       page: z.number().nullish(),
       field: z.string().optional(),
       kind: z.string().optional(),
+      review_reason: z.string().optional(),
     })
   ),
 })
+function reviewProblems(item: z.infer<typeof itemSchema>, group: string) {
+  if (!group || group === "blocked") return item.problems
+  return [...item.problems].sort(
+    (a, b) =>
+      Number(b.review_reason === group) - Number(a.review_reason === group)
+  )
+}
 const batchSchema = z.object({
   id: z.string(),
   case_id: z.string(),
@@ -104,6 +114,9 @@ const batchSchema = z.object({
   available_incomplete: z.number().optional(),
   issues_count: z.number().optional(),
   statements_with_issues: z.number().optional(),
+  review_summary: batchReviewSummarySchema.optional(),
+  review_group: z.string().nullish(),
+  review_group_label: z.string().nullish(),
   operations: z.array(operationSchema).default([]),
   ready_transactions: z.number(),
   ready_revision: z.string(),
@@ -141,6 +154,9 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
   const [params, setParams] = useSearchParams()
   const batchId = params.get("batch"),
     itemId = params.get("batchItem")
+  const reviewGroup = params.get("batchCheck") || ""
+  const statementList = useRef<HTMLHeadingElement>(null)
+  const focusStatementList = useRef(false)
   const [offset, setOffset] = useState(0),
     [onlyProblems, setOnlyProblems] = useState(false)
   const client = useQueryClient()
@@ -163,12 +179,19 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
   const [retryMessage, setRetryMessage] = useState("")
   const prefix = `/api/financial/statement-import/batches`
   const query = useQuery({
-    queryKey: ["financial-batch", caseId, batchId, offset, onlyProblems],
+    queryKey: [
+      "financial-batch",
+      caseId,
+      batchId,
+      offset,
+      onlyProblems,
+      reviewGroup,
+    ],
     enabled: !!batchId,
     queryFn: async () => {
       const result = batchSchema.parse(
         await fetchAPI(
-          `${prefix}/${batchId}?case_id=${caseId}&offset=${offset}&only_problems=${onlyProblems}`
+          `${prefix}/${batchId}?case_id=${caseId}&offset=${offset}&only_problems=${onlyProblems}${reviewGroup ? `&review_group=${encodeURIComponent(reviewGroup)}` : ""}`
         )
       )
       if (result.case_id !== caseId || result.id !== batchId)
@@ -181,6 +204,43 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
         ? 3000
         : false,
   })
+  useEffect(() => {
+    if (
+      query.data &&
+      !query.isFetching &&
+      offset > 0 &&
+      offset >= query.data.total
+    ) {
+      setOffset(Math.max(0, Math.ceil(query.data.total / 100) - 1) * 100)
+    }
+  }, [query.data, query.isFetching, offset])
+  useEffect(() => {
+    if (
+      focusStatementList.current &&
+      !query.isFetching &&
+      query.data &&
+      (query.data.review_group || "") === reviewGroup &&
+      !itemId
+    ) {
+      focusStatementList.current = false
+      statementList.current?.focus({ preventScroll: true })
+      statementList.current?.scrollIntoView({
+        block: "start",
+        behavior: "smooth",
+      })
+    }
+  }, [query.data, query.isFetching, reviewGroup, itemId])
+  const selectReviewGroup = (group: string) => {
+    setOffset(0)
+    setOnlyProblems(false)
+    focusStatementList.current = true
+    setParams((current) => {
+      const next = new URLSearchParams(current)
+      if (group) next.set("batchCheck", group)
+      else next.delete("batchCheck")
+      return next
+    })
+  }
   const importedCount = query.data?.counts.imported || 0
   const batchState = query.data?.status
   useEffect(() => {
@@ -209,6 +269,7 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
       const next = new URLSearchParams(current)
       next.set("view", "statements")
       for (const key of ["batch", "batchItem", "batchRow"]) next.delete(key)
+      if (batch !== batchId) next.delete("batchCheck")
       if (batch) next.set("batch", batch)
       if (item) next.set("batchItem", item)
       if (row) next.set("batchRow", row)
@@ -507,6 +568,10 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
       </div>
     )
   const batch = query.data
+  const displayItems = batch.items.map((item) => ({
+    ...item,
+    problems: reviewProblems(item, reviewGroup),
+  }))
   const problems = batch.issues_count ?? batch.counts.attention ?? 0
   const available = batch.available_statements ?? batch.counts.ready ?? 0
   const availableRecords = batch.available_records ?? batch.ready_transactions
@@ -588,13 +653,15 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
           ],
           ["Statement periods available to import", available],
           [
-            "Review checks",
-            `${problems}${batch.statements_with_issues !== undefined ? ` across ${batch.statements_with_issues} statements` : ""}`,
+            batch.review_summary ? "Cannot import yet" : "Review checks",
+            batch.review_summary
+              ? String(batch.review_summary.blocked_statements)
+              : `${problems}${batch.statements_with_issues !== undefined ? ` across ${batch.statements_with_issues} statements` : ""}`,
           ],
           ["Statement periods imported", batch.counts.imported || 0],
         ].map(([title, value]) => (
           <div
-            className={`rounded border p-3 ${title === "Review checks" && problems ? "border-amber-400 bg-amber-50/60 dark:bg-amber-950/20" : "bg-card"}`}
+            className={`rounded border p-3 ${(title === "Review checks" && problems) || (title === "Cannot import yet" && batch.review_summary?.blocked_statements) ? "border-amber-400 bg-amber-50/60 dark:bg-amber-950/20" : "bg-card"}`}
             key={title}
           >
             <p className="text-sm text-muted-foreground">{title}</p>
@@ -602,6 +669,26 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
           </div>
         ))}
       </div>
+      {batch.review_summary && (
+        <BatchReviewSummary
+          summary={batch.review_summary}
+          selected={reviewGroup}
+          onSelect={selectReviewGroup}
+        />
+      )}
+      {canEdit && (
+        <div className="flex flex-wrap items-center gap-3 rounded border p-3">
+          <BulkStatementDetails
+            caseId={caseId}
+            batchId={batchId}
+            onSaved={refresh}
+          />
+          <p className="text-sm text-muted-foreground">
+            Select statements from this batch to fill or correct account details
+            together. Preview changes before saving.
+          </p>
+        </div>
+      )}
       <p className="text-sm text-muted-foreground">
         Reading a PDF prepares its statements. Importing saves their payments to
         Transactions. An imported statement may still have checks to review;
@@ -621,6 +708,12 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
             : "unassigned page reviews are"}{" "}
           complete. Check and import their payments in the destination
           statements.
+        </p>
+      )}
+      {(reviewGroup || onlyProblems) && (
+        <p className="text-sm">
+          Import covers all available statements in this batch, including
+          statements outside the review filter.
         </p>
       )}
       <div className="rounded border bg-card p-4 flex flex-wrap gap-3 items-center justify-between">
@@ -939,20 +1032,26 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
         )}
       </div>
       <div className="space-y-2">
-        {canEdit && (
-          <div className="rounded border p-3 space-y-2">
-            <BulkStatementDetails
-              caseId={caseId}
-              batchId={batchId}
-              onSaved={refresh}
-            />
-            <p className="text-sm text-muted-foreground">
-              Set account holder, account number, bank, currency or dates for
-              several statements together, including statements already
-              imported.
-            </p>
-          </div>
-        )}
+        <div className="flex flex-wrap items-center gap-3">
+          <h3
+            ref={statementList}
+            tabIndex={-1}
+            className="font-semibold scroll-mt-24"
+          >
+            {reviewGroup
+              ? `Statements: ${batch.review_group_label || (reviewGroup === "blocked" ? "Cannot be imported yet" : batch.review_summary?.groups.find((g) => g.id === reviewGroup)?.label || "Selected review reason")}`
+              : "Statements in this batch"}
+          </h3>
+          {reviewGroup && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => selectReviewGroup("")}
+            >
+              Clear reason filter
+            </Button>
+          )}
+        </div>
         {canEdit && (
           <BatchCurrencyEditor
             key={batchId}
@@ -961,7 +1060,7 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
             onSaved={refresh}
           />
         )}
-        {batch.items.map((item) => (
+        {displayItems.map((item) => (
           <article
             key={item.id}
             className={`rounded border p-4 space-y-2 ${item.status === "attention" ? "border-amber-500/50" : "bg-card"}`}
@@ -984,7 +1083,7 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
                     ? "Available to import"
                     : (labels[item.status] ?? item.status)}
                   {!!(item.problem_count ?? item.problems.length) &&
-                    ` · ${item.problem_count ?? item.problems.length} issues`}
+                    ` · ${item.problem_count ?? item.problems.length} checks`}
                   {item.status !== "assigned" && (
                     <>
                       {" "}
@@ -1004,7 +1103,12 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
                   change(
                     batchId,
                     item.id,
-                    item.problems.find((p) => p.row_id)?.row_id ?? undefined
+                    (reviewGroup && reviewGroup !== "blocked"
+                      ? item.problems.find(
+                          (p) => p.review_reason === reviewGroup
+                        )?.row_id
+                      : item.problems.find((p) => p.row_id)?.row_id) ??
+                      undefined
                   )
                 }
               >
@@ -1125,59 +1229,64 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
               </p>
             )}
             {item.problems.length > 0 && (
-              <details open={item.problems.length <= 3} className="text-sm">
-                <summary className="cursor-pointer font-medium">
-                  {item.problems.every(
-                    (problem) => problem.kind === "statement_detail"
-                  ) && item.problems.length
-                    ? "Missing account details — statement can still be imported"
-                    : !item.currency
-                      ? "Choose currency to prepare this statement"
-                      : `${item.problem_count ?? item.problems.length} checks · ${item.can_import ? "import is available" : "open review for the next step"}`}
-                </summary>
-                {item.problems.map((problem, index) => (
-                  <div
-                    className="flex flex-wrap items-center gap-2 text-sm"
-                    key={index}
-                  >
-                    <span>
-                      {problem.page ? `PDF page ${problem.page}: ` : ""}
-                      {problem.message}
-                    </span>
-                    {problem.row_id && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() =>
-                          change(batchId, item.id, problem.row_id!)
-                        }
-                      >
-                        Go to this row
-                      </Button>
-                    )}
-                    {!problem.row_id &&
-                      ["holder", "account_number", "period"].includes(
-                        problem.field || ""
-                      ) && (
+              <>
+                {item.problems.length > 3 && (
+                  <p className="text-sm">{item.problems[0].message}</p>
+                )}
+                <details open={item.problems.length <= 3} className="text-sm">
+                  <summary className="cursor-pointer font-medium">
+                    {item.problems.every(
+                      (problem) => problem.kind === "statement_detail"
+                    ) && item.problems.length
+                      ? "Missing account details — statement can still be imported"
+                      : !item.currency
+                        ? "Choose currency to prepare this statement"
+                        : `${item.problem_count ?? item.problems.length} checks · ${item.can_import ? "import is available" : "open review for the next step"}`}
+                  </summary>
+                  {item.problems.map((problem, index) => (
+                    <div
+                      className="flex flex-wrap items-center gap-2 text-sm"
+                      key={index}
+                    >
+                      <span>
+                        {problem.page ? `PDF page ${problem.page}: ` : ""}
+                        {problem.message}
+                      </span>
+                      {problem.row_id && (
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => change(batchId, item.id)}
+                          onClick={() =>
+                            change(batchId, item.id, problem.row_id!)
+                          }
                         >
-                          Edit{" "}
-                          {problem.field === "holder"
-                            ? "account holder"
-                            : problem.field === "account_number"
-                              ? "account number"
-                              : "statement dates"}
+                          Go to this row
                         </Button>
                       )}
-                  </div>
-                ))}
-                {(item.problem_count ?? 0) > item.problems.length && (
-                  <p>Open the statement to review the remaining checks.</p>
-                )}
-              </details>
+                      {!problem.row_id &&
+                        ["holder", "account_number", "period"].includes(
+                          problem.field || ""
+                        ) && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => change(batchId, item.id)}
+                          >
+                            Edit{" "}
+                            {problem.field === "holder"
+                              ? "account holder"
+                              : problem.field === "account_number"
+                                ? "account number"
+                                : "statement dates"}
+                          </Button>
+                        )}
+                    </div>
+                  ))}
+                  {(item.problem_count ?? 0) > item.problems.length && (
+                    <p>Open the statement to review the remaining checks.</p>
+                  )}
+                </details>
+              </>
             )}
           </article>
         ))}
@@ -1186,9 +1295,11 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
         <p>
           {batch.status === "preparing"
             ? "Statements will appear here as each file is checked."
-            : onlyProblems
-              ? "No statements need attention."
-              : "No statements were prepared. Check the file errors above."}
+            : reviewGroup
+              ? "No statements match this reason now. Clear the reason filter to see the rest of the batch."
+              : onlyProblems
+                ? "No statements need attention."
+                : "No statements were prepared. Check the file errors above."}
         </p>
       )}
       <div className="flex gap-3 items-center">
@@ -1228,7 +1339,11 @@ function BatchStatementReview({
   rowId?: string
   onBack: () => void
 }) {
-  const [, setParams] = useSearchParams()
+  const [params, setParams] = useSearchParams()
+  const reviewGroup = params.get("batchCheck") || ""
+  const reviewGroupQuery = reviewGroup
+    ? `&review_group=${encodeURIComponent(reviewGroup)}`
+    : ""
   const user = useAuthStore((state) => state.user),
     owner = user?.id || user?.username || "anonymous"
   const query = useQuery({
@@ -1281,14 +1396,16 @@ function BatchStatementReview({
         })
         .parse(
           await fetchAPI(
-            `/api/financial/statement-import/batches/${batchId}/items/${itemId}/next-statement?case_id=${caseId}&direction=${direction}`
+            `/api/financial/statement-import/batches/${batchId}/items/${itemId}/next-statement?case_id=${caseId}&direction=${direction}${reviewGroupQuery}`
           )
         )
       if (result.case_id !== caseId || result.batch_id !== batchId)
         throw Error("The statement belongs to another batch.")
       if (!result.item_id) {
         setNavigationStatus(
-          `You are at the ${direction === "next" ? "last" : "first"} statement (${result.position} of ${result.total}).`
+          reviewGroup
+            ? "No further statements match this review reason. Return to the batch to see the updated checks."
+            : `You are at the ${direction === "next" ? "last" : "first"} statement (${result.position} of ${result.total}).`
         )
         return
       }
@@ -1320,7 +1437,7 @@ function BatchStatementReview({
         })
         .parse(
           await fetchAPI(
-            `/api/financial/statement-import/batches/${batchId}/items/${itemId}/next-problem?case_id=${caseId}&direction=${direction}`
+            `/api/financial/statement-import/batches/${batchId}/items/${itemId}/next-problem?case_id=${caseId}&direction=${direction}${reviewGroupQuery}`
           )
         )
       if (result.case_id !== caseId || result.batch_id !== batchId)
@@ -1392,6 +1509,12 @@ function BatchStatementReview({
         </span>
         {navigationStatus && <p role="status">{navigationStatus}</p>}
       </div>
+      {reviewGroup && (
+        <p className="text-sm">
+          Previous and next stay within the selected review reason. Return to
+          the batch to change or clear this filter.
+        </p>
+      )}
       {item?.status === "skipped" && (
         <p className="rounded border p-3">
           This statement was left unimported. Return to the batch and choose
@@ -1417,10 +1540,14 @@ function BatchStatementReview({
             beforeNavigate,
             rowId,
             field: !rowId
-              ? (item.problems.find((problem) =>
-                  ["holder", "account_number", "period"].includes(
-                    problem.field || ""
-                  )
+              ? (reviewProblems(item, reviewGroup).find(
+                  (problem) =>
+                    (!reviewGroup ||
+                      reviewGroup === "blocked" ||
+                      problem.review_reason === reviewGroup) &&
+                    ["holder", "account_number", "period"].includes(
+                      problem.field || ""
+                    )
                 )?.field as "holder" | "account_number" | "period" | undefined)
               : undefined,
             draftRevision: item.review_revision,

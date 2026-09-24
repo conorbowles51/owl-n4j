@@ -16,6 +16,48 @@ from tests.test_financial_statement_import import StatementImportTests as Fixtur
 
 
 class BatchImportTests(TestCase):
+    def test_reason_counts_filters_and_navigation_cover_the_whole_batch(self):
+        batch = self.create(); self.advance(batch)
+        with self.f.SessionLocal() as db:
+            original = db.scalar(select(Item).where(Item.batch_id == batch))
+            added = []
+            for number in range(101):
+                extra = Item(id=uuid4(), batch_id=batch, file_id=original.file_id,
+                    statement_key=f'synthetic-period-{number}', status='attention',
+                    summary={**original.summary, 'filename': f'{number:03d}-synthetic.pdf', 'holder': '',
+                        'problems': [dict(kind='statement_detail', field='holder', row_id=None, message='The account holder has not been identified.')], 'problem_count': 1})
+                db.add(extra); added.append(extra)
+            db.commit()
+            first = service.batch_status(db, case_id=self.f.case.id, batch_id=batch, review_group='holder', limit=100)
+            self.assertEqual(first['total'], 101)
+            self.assertEqual(len(first['items']), 100)
+            self.assertEqual(first['review_summary']['groups'][0]['statement_count'], 101)
+            self.assertEqual(first['review_group_label'], 'Missing account holder')
+            self.assertEqual(first['items'][0]['problems'][0]['review_reason'], 'holder')
+            self.assertNotIn('review_reason', added[0].summary['problems'][0])
+            second = service.batch_status(db, case_id=self.f.case.id, batch_id=batch, review_group='holder', offset=100)
+            self.assertEqual(len(second['items']), 1)
+            self.assertEqual(second['review_summary'], first['review_summary'])
+            self.assertEqual(service.next_statement(db, case_id=self.f.case.id, batch_id=batch,
+                item_id=added[0].id, review_group='holder')['item_id'], str(added[1].id))
+            added[0].summary = {**added[0].summary, 'holder': 'Reviewed synthetic holder', 'problems': [], 'problem_count': 0}
+            db.commit()
+            self.assertEqual(service.next_statement(db, case_id=self.f.case.id, batch_id=batch,
+                item_id=added[0].id, review_group='holder')['item_id'], str(added[1].id))
+            remaining = service.batch_status(db, case_id=self.f.case.id, batch_id=batch, review_group='holder')
+            self.assertEqual(remaining['total'], 100)
+            self.assertEqual(remaining['review_summary']['groups'][0]['statement_count'], 100)
+            added[1].summary = {**added[1].summary, 'problem_count': 2, 'problems': [
+                dict(kind='reading', row_id='other-row', message='Check an unrelated row.'),
+                *added[1].summary['problems']]}
+            db.commit()
+            next_problem = service.next_problem(db, case_id=self.f.case.id, batch_id=batch,
+                item_id=added[0].id, review_group='holder')
+            self.assertEqual(next_problem['item_id'], str(added[1].id))
+            self.assertIsNone(next_problem['row_id'])
+            with self.assertRaises(PdfMappingError):
+                service.batch_status(db, case_id=uuid4(), batch_id=batch, review_group='holder')
+
     def test_pending_holder_directory_is_case_scoped_and_explains_unimported_statements(self):
         from services.financial.candidate_store import list_candidate_accounts
         batch = self.create(); self.advance(batch)
@@ -82,6 +124,99 @@ class BatchImportTests(TestCase):
             self.assertEqual(record.files[0]['status'], 'waiting')
             again = service.retry_file(db, case_id=self.f.case.id, batch_id=batch, source_id=UUID(files[0]['source_id']))
             self.assertFalse(again['queued'])
+
+    def test_retry_recovers_a_checked_file_when_its_prepared_reference_is_missing(self):
+        batch = self.create(); self.advance(batch)
+        with self.f.SessionLocal() as db:
+            record = db.get(Batch, batch)
+            files = deepcopy(record.files)
+            original = UUID(files[0]['source_id'])
+            files[0].update(file_id=str(uuid4()), status='checked')
+            record.files = files
+            db.commit()
+            shown = service.batch_status(db, case_id=self.f.case.id, batch_id=batch)
+            self.assertEqual(shown['files'][0]['status'], 'error')
+            self.assertEqual(shown['files'][0]['review_file_id'], str(original))
+            result = service.retry_file(db, case_id=self.f.case.id, batch_id=batch, source_id=original)
+            self.assertEqual(result, dict(queued=True, status='waiting'))
+            self.assertFalse(service.retry_file(db, case_id=self.f.case.id, batch_id=batch, source_id=original)['queued'])
+        self.advance(batch)
+        shown = self.status(batch)
+        self.assertEqual(shown['files'][0]['status'], 'checked')
+        self.assertEqual(shown['available_statements'], 1)
+        self.assertEqual(shown['ready_transactions'], 12)
+        self.assertEqual(len(shown['items']), 1)
+
+    def test_retry_missing_reference_preserves_saved_payments_and_review(self):
+        from routers.financial_statement_import import list_financial_batches
+        batch = self.create(); self.advance(batch)
+        with self.f.SessionLocal() as db:
+            service.queue_import(db, case_id=self.f.case.id, batch_id=batch,
+                expected_revision=self.status(batch)['ready_revision'], actor=self.f.actor)
+        self.advance(batch)
+        with self.f.SessionLocal() as db:
+            before = set(db.scalars(select(FinancialTransaction.id)))
+            item = db.scalar(select(Item).where(Item.batch_id == batch))
+            item.review_request = {**service.initial_request(self.f.preview()), 'holder': 'Investigator reviewed holder'}
+            reviewed = deepcopy(item.review_request)
+            record = db.get(Batch, batch)
+            record.files = [{**record.files[0], 'file_id': str(uuid4()), 'status': 'checked'}]
+            db.commit()
+            listed = list_financial_batches(case_id=self.f.case.id, db=db)['batches'][0]
+            self.assertFalse(listed['completed'])
+            self.assertEqual(listed['failed_files'], 1)
+            self.assertEqual(listed['checked_files'], 0)
+            service.retry_file(db, case_id=self.f.case.id, batch_id=batch, source_id=self.f.file.id)
+        self.advance(batch)
+        with self.f.SessionLocal() as db:
+            self.assertEqual(set(db.scalars(select(FinancialTransaction.id))), before)
+            item = db.scalar(select(Item).where(Item.batch_id == batch))
+            self.assertEqual(item.status, 'imported')
+            self.assertEqual(item.review_request, reviewed)
+            self.assertEqual(self.status(batch)['files'][0]['status'], 'checked')
+            self.assertEqual(list_financial_batches(case_id=self.f.case.id, db=db)['batches'][0]['failed_files'], 0)
+
+    def test_retry_missing_reference_never_uses_another_cases_original(self):
+        batch = self.create(); self.advance(batch)
+        with self.f.SessionLocal() as db:
+            record = db.get(Batch, batch)
+            foreign = self.f.evidence('f' * 64)
+            foreign.case_id = self.f.other_case.id
+            self.f.db.commit()
+            record.files = [{**record.files[0], 'source_id': str(foreign.id),
+                'file_id': str(uuid4()), 'status': 'checked'}]
+            db.commit()
+            with self.assertRaisesRegex(PdfMappingError, 'original PDF is no longer available'):
+                service.retry_file(db, case_id=self.f.case.id, batch_id=batch, source_id=foreign.id)
+            db.refresh(record)
+            self.assertEqual(record.files[0]['status'], 'checked')
+
+    def test_retry_failed_engine_reading_submits_once_then_waits_for_completion(self):
+        from postgres.models.evidence import EvidenceFile
+        batch = self.create()
+        with self.f.SessionLocal() as db:
+            record = db.get(Batch, batch)
+            record.files = [{**record.files[0], 'status': 'error', 'error': 'Reading interrupted'}]
+            record.status = 'review'
+            db.get(EvidenceFile, self.f.file.id).status = 'failed'
+            db.commit()
+            service.retry_file(db, case_id=self.f.case.id, batch_id=batch, source_id=self.f.file.id)
+        async def process(db, **kwargs):
+            self.assertEqual(kwargs['preparation_mode'], 'pdf_review')
+            self.assertEqual(kwargs['file_ids'], [self.f.file.id])
+            db.get(EvidenceFile, self.f.file.id).status = 'processing'
+            db.commit()
+            return {'job_ids': ['synthetic-retry-job']}
+        worker = AsyncMock(side_effect=process)
+        asyncio.run(service.advance_batch(self.f.SessionLocal, batch, Path, worker))
+        worker.assert_awaited_once()
+        self.assertEqual(self.status(batch)['files'][0]['status'], 'processing')
+        with self.f.SessionLocal() as db:
+            self.assertFalse(service.retry_file(db, case_id=self.f.case.id, batch_id=batch, source_id=self.f.file.id)['queued'])
+            db.get(EvidenceFile, self.f.file.id).status = 'processed'
+            db.commit()
+        self.advance(batch)
+        self.assertEqual(self.status(batch)['ready_transactions'], 12)
 
     def test_check_specific_import_request_before_during_and_after_execution(self):
         from services.financial.import_operations import check_operation

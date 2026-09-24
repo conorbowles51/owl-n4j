@@ -2,6 +2,8 @@
 
 ## Current release authorisation
 
+- On 24 September 2026, after the specific pending release and publication block were explained, the user instructed **“deploy when this is ready”**. This authorizes committing and pushing the verified code-only release for any-format Financial source selection, compact Findings & Observations, one-time statement recovery, missing-reading Retry and grouped batch-review reasons. Client documents, extracted data, screenshots, exports and credentials remain excluded. Push is the deployment trigger; this authorization does not permit bypassing a separate live-origin access denial.
+
 - **Push triggers the user's automatic deployment.** Confirmed explicitly on 23 September 2026. When asked to release completed work, finish verification and push the authorized code; do not request Google Cloud login or start a separate manual deployment. The user confirmed the previous release was deployed. An inability to inspect the server is not evidence that deployment is pending.
 
 - On 22 September 2026 the user explicitly instructed: **“Finish the work”** and **“Give me an eta then commit and push all”**, following their instruction to push and deploy. This lifts the earlier hold for all agreed, completed and verified code changes in this task, including financial implementation. Complete the connected workflows before publication; do not silently reduce the release to a subset.
@@ -23,6 +25,8 @@
 - Do not delete local originals or rewrite repository history to enforce this rule without separate authorization.
 
 ## Investigator workflows are the acceptance standard
+
+- **Financial content is not a file format.** The user explicitly confirmed on 24 September 2026 that any Evidence file must be eligible to send to Financial; PDF, Excel (XLS/XLSX), Word (DOC/DOCX), images and CSV are examples, not an allow-list. Determine financial relevance from the contents and the investigator's decision, never the filename extension. Extensions and MIME types select a compatible reader; they must not define Financial membership. Ordinary Evidence upload alone does not classify or import a financial record. Keep source selection, reading/classification, and confirmed transaction import distinct, and explain reader limitations without labelling an unsupported file non-financial.
 
 - Treat product requests as complete investigator workflows, not isolated features. Before editing, identify the investigator's objective, starting screen, actions, visible state changes, destination, recovery path and way back.
 - Preserve requirements agreed with the user across follow-ups. For financial work, read `docs/financial-workflows/README.md` and `docs/alex-financial-acceptance.md`; keep the flow reference and unresolved acceptance items current. Do not silently reduce scope to the newest screenshot or easiest control.

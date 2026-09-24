@@ -1,4 +1,7 @@
 import { useNavigate } from "react-router-dom"
+import { usesPdfStatementReader } from "../hooks/use-statement-register"
+import { useAuthStore } from "@/features/auth/hooks/use-auth"
+import { useStatementWorkspace } from "../stores/statement-workspace"
 import { newReviewId } from "../lib/statement-review-id"
 import { z } from "zod"
 import { useState } from "react"
@@ -42,10 +45,11 @@ export function EvidenceFinancialPicker({
         <DialogContent className="flex max-h-[92dvh] flex-col sm:max-w-5xl">
           <DialogTitle>Send existing evidence to Financial</DialogTitle>
           <DialogDescription>
-            Select PDFs or folders from this case. Folders include their
-            subfolders. Other file types are skipped. Previously processed PDFs
-            are reused where possible. Financial opens automatically to check
-            the statements and prepare them for bulk import.
+            Select files whose contents are relevant to your financial
+            investigation, including CSV, spreadsheets, Word documents, images
+            and PDFs. Folders include their subfolders; review the list before
+            sending. File type determines the available reader, not financial
+            relevance.
           </DialogDescription>
           {open && (
             <EvidenceBrowser
@@ -119,7 +123,14 @@ function EvidenceBrowser({
       const result = intakeSelection.parse(
         await fetchAPI(
           `/api/financial/statement-import/selection/resolve?${new URLSearchParams({ case_id: caseId })}`,
-          { method: "POST", body: { file_ids: files, folder_ids: folders } }
+          {
+            method: "POST",
+            body: {
+              file_ids: files,
+              folder_ids: folders,
+              include_other_formats: true,
+            },
+          }
         )
       )
       if (result.case_id !== caseId)
@@ -235,22 +246,13 @@ function EvidenceBrowser({
                 <input
                   type="checkbox"
                   aria-label={`Select file ${file.original_filename}`}
-                  disabled={
-                    !file.original_filename.toLowerCase().endsWith(".pdf")
-                  }
                   checked={files.includes(file.id)}
                   onChange={() => setFiles(toggle(files, file.id))}
                 />
                 <span className="min-w-0 flex-1 break-words">
                   {file.original_filename}
                 </span>
-                <span className="text-xs">
-                  {file.original_filename.toLowerCase().endsWith(".pdf")
-                    ? file.status === "processed"
-                      ? "Processed"
-                      : file.status
-                    : "Not a PDF"}
-                </span>
+                <span className="text-xs">{file.status}</span>
               </label>
             ))}
             {listing.data &&
@@ -290,7 +292,7 @@ function EvidenceBrowser({
               disabled={busy || (!files.length && !folders.length)}
               onClick={() => void inspect()}
             >
-              {busy ? "Checking selection…" : "Review selected PDFs"}
+              {busy ? "Checking selection…" : "Review selected files"}
             </Button>
             <Button
               variant="outline"
@@ -306,27 +308,47 @@ function EvidenceBrowser({
       ) : (
         <>
           <h3 className="font-semibold">
-            {review.files.length} PDFs to send to Financial
+            {review.files.length} files to send to Financial
           </h3>
           <p className="text-sm">
-            {review.skipped_non_pdf} other files skipped. Files selected more
-            than once are included once. Previously removed PDFs will be
-            restored to Financial.
+            Files selected more than once are included once. Previously removed
+            sources will be restored to Financial. Remove any unrelated files
+            from this preview before sending.
           </p>
           <ul className="max-h-[35dvh] overflow-auto divide-y rounded border">
             {review.files.map((file) => (
               <li className="p-2 text-sm break-words" key={file.id}>
                 {file.original_filename}
                 {file.financial_removed ? " · removed, will be restored" : ""}
+                <span className="block text-muted-foreground">
+                  {usesPdfStatementReader(file)
+                    ? "PDF statement reading"
+                    : "Source review; no automatic transaction import"}
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={busy}
+                  aria-label={`Remove ${file.original_filename} from selection`}
+                  onClick={() => {
+                    setRequestId(newReviewId())
+                    setReview({
+                      ...review,
+                      files: review.files.filter((item) => item.id !== file.id),
+                    })
+                  }}
+                >
+                  Remove from selection
+                </Button>
               </li>
             ))}
           </ul>
           <p className="text-sm">
-            Completed evidence results are kept. If a processed PDF needs a new
-            financial reading, it gets a separate reading version. No
-            transactions are imported at this step. Financial will open
-            automatically. Processing continues on the server if you leave the
-            page.
+            PDFs enter statement preparation; existing evidence results are
+            kept. Other formats are added as sources to review, with their
+            processing status and a link to the original. Adding a source does
+            not confirm its contents as transactions. No transactions are
+            imported at this step.
           </p>
           <div className="flex flex-wrap gap-2">
             <Button
@@ -335,40 +357,89 @@ function EvidenceBrowser({
                 setError("")
                 setBusy(true)
                 try {
-                  const batch = z
-                    .object({ id: z.string(), case_id: z.string() })
-                    .parse(
-                      await fetchAPI(
-                        `/api/financial/statement-import/batches?case_id=${caseId}`,
-                        {
-                          method: "POST",
-                          body: {
-                            request_id: requestId,
-                            file_ids: review.files.map((file) => file.id),
-                            folder_ids: [],
-                          },
-                        }
+                  const otherSources = review.files.filter(
+                    (file) => !usesPdfStatementReader(file)
+                  )
+                  if (otherSources.length) {
+                    const included = z
+                      .object({
+                        case_id: z.string(),
+                        file_ids: z.array(z.string()),
+                      })
+                      .parse(
+                        await fetchAPI(
+                          `/api/financial/statement-import/selection/include?case_id=${caseId}`,
+                          {
+                            method: "POST",
+                            body: {
+                              files: otherSources.map((file) => ({
+                                evidence_file_id: file.id,
+                                expected_revision:
+                                  file.financial_visibility_revision,
+                              })),
+                            },
+                          }
+                        )
+                      )
+                    if (
+                      included.case_id !== caseId ||
+                      included.file_ids.length !== otherSources.length ||
+                      otherSources.some(
+                        (file) => !included.file_ids.includes(file.id)
                       )
                     )
-                  if (batch.case_id !== caseId)
-                    throw Error("The batch belongs to another case.")
+                      throw Error(
+                        "The returned sources do not match this selection. Refresh Financial to check the result."
+                      )
+                    changed()
+                  }
+                  const pdfs = review.files.filter(usesPdfStatementReader)
+                  let batchId: string | undefined
+                  if (pdfs.length) {
+                    const batch = z
+                      .object({ id: z.string(), case_id: z.string() })
+                      .parse(
+                        await fetchAPI(
+                          `/api/financial/statement-import/batches?case_id=${caseId}`,
+                          {
+                            method: "POST",
+                            body: {
+                              request_id: requestId,
+                              file_ids: pdfs.map((file) => file.id),
+                              folder_ids: [],
+                            },
+                          }
+                        )
+                      )
+                    if (batch.case_id !== caseId)
+                      throw Error("The batch belongs to another case.")
+                    batchId = batch.id
+                  }
                   changed()
+                  const user = useAuthStore.getState().user
+                  useStatementWorkspace
+                    .getState()
+                    .setOpen(
+                      `${user?.id || user?.username || "anonymous"}:${caseId}`,
+                      false
+                    )
                   onStarted()
                   go(
-                    `/cases/${caseId}/financial?view=statements&batch=${encodeURIComponent(batch.id)}`
+                    `/cases/${caseId}/financial?view=statements${batchId && !otherSources.length ? `&batch=${encodeURIComponent(batchId)}` : "&files=1"}`
                   )
                 } catch (error) {
                   setError(
-                    error instanceof Error
+                    (error instanceof Error
                       ? error.message
-                      : "The batch could not be started. Retry to check the same request."
+                      : "The selection could not be confirmed.") +
+                      " Some sources may already be saved in Financial. Retry checks the same selection without creating copies."
                   )
                 } finally {
                   setBusy(false)
                 }
               }}
             >
-              Send {review.files.length} PDFs to Financial
+              Send {review.files.length} files to Financial
             </Button>
             <Button
               variant="outline"

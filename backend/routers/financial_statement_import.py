@@ -117,6 +117,32 @@ def incomplete_records(account_ids: Annotated[list[UUID] | None, Query()] = None
         start_date=start_date, end_date=end_date, offset=offset, limit=limit, source_document_id=source_document_id)
 
 
+@router.get('/deployment-recovery')
+def deployment_recovery_status(case_id: UUID = Query(...), offset: int = Query(0, ge=0),
+        limit: int = Query(50, ge=1, le=100), db: Session = Depends(get_db)):
+    from services.financial.deployment_recovery import status
+    return status(db, case_id, offset=offset, limit=limit)
+
+
+@router.post('/deployment-recovery/{action}', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
+def deployment_recovery_control(action: Literal['pause', 'resume'], case_id: UUID = Query(...),
+        db: Session = Depends(get_db)):
+    from services.financial.deployment_recovery import control
+    try:
+        return control(db, case_id, action)
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+@router.post('/deployment-recovery/items/{item_id}/retry', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
+def retry_deployment_recovery_item(item_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    from services.financial.deployment_recovery import retry_item
+    try:
+        return retry_item(db, case_id, item_id)
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
 @router.get('/{evidence_file_id}')
 def preview(evidence_file_id: UUID, case_id: UUID = Query(...),
             currency: str | None = Query(None, pattern=r'^[A-Z]{3}$'),
@@ -366,12 +392,41 @@ class EvidencePreparationRequest(BaseModel):
     expected_revision: str = Field(min_length=1, max_length=64)
 
 
+class FinancialSourceSelection(EvidenceSelectionRequest):
+    include_other_formats: bool = False
+
+
+class FinancialSourceChoice(EvidencePreparationRequest):
+    evidence_file_id: UUID
+
+
+class FinancialSourcesRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    files: list[FinancialSourceChoice] = Field(min_length=1, max_length=10000)
+
+
 @router.post('/selection/resolve')
-def resolve_selection(body: EvidenceSelectionRequest, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+def resolve_selection(body: FinancialSourceSelection, case_id: UUID = Query(...), db: Session = Depends(get_db)):
     try:
-        return resolve_financial_selection(db, case_id=case_id, file_ids=body.file_ids, folder_ids=body.folder_ids)
+        return resolve_financial_selection(db, case_id=case_id, file_ids=body.file_ids, folder_ids=body.folder_ids,
+            include_other_formats=body.include_other_formats)
     except PdfMappingError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+@router.post('/selection/include', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
+def include_sources(body: FinancialSourcesRequest, case_id: UUID = Query(...),
+                    user=Depends(get_current_db_user), db: Session = Depends(get_db)):
+    from services.financial.evidence_intake import include_financial_sources
+    try:
+        return include_financial_sources(db, case_id=case_id, selections=body.files, actor=actor_from_user(user))
+    except PdfMappingError as exc:
+        db.rollback()
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception:
+        db.rollback()
+        logger.exception('Financial source selection failed')
+        raise HTTPException(status_code=500, detail='The selection could not be confirmed. Retry to check the same files; source evidence is retained.')
 
 
 @router.post('/{evidence_file_id}/prepare-existing', dependencies=[
@@ -518,6 +573,8 @@ def list_financial_batches(case_id: UUID = Query(...), db: Session = Depends(get
     from sqlalchemy import select
     from postgres.models.financial_import_batches import FinancialImportBatch, FinancialImportBatchItem
     batches=list(db.scalars(select(FinancialImportBatch).where(FinancialImportBatch.case_id==case_id, FinancialImportBatch.status != 'removed').order_by(FinancialImportBatch.created_at.desc()).limit(100)))
+    references = import_batches.available_batch_references(db, case_id, [f for b in batches for f in b.files])
+    files_by_batch = {b.id: import_batches.project_batch_files(b.files, references) for b in batches}
     by_batch = {b.id: [] for b in batches}
     if by_batch:
         for item in db.scalars(select(FinancialImportBatchItem).where(FinancialImportBatchItem.batch_id.in_(by_batch), FinancialImportBatchItem.status != 'removed')):
@@ -526,18 +583,18 @@ def list_financial_batches(case_id: UUID = Query(...), db: Session = Depends(get
         items = by_batch[batch.id]
         checks = sum(bool(i.summary.get('problem_count', 0)) for i in items if i.status != 'skipped')
         ready = sum(import_batches.import_available(i) for i in items)
-        complete = bool(items) and all(f['status'] == 'checked' for f in batch.files) and not checks and all(i.status in ('imported', 'skipped', 'assigned') for i in items)
+        complete = bool(items) and all(f['status'] == 'checked' for f in files_by_batch[batch.id]) and not checks and all(i.status in ('imported', 'skipped', 'assigned') for i in items)
         return dict(completed=complete, available_statements=ready, statements_with_checks=checks)
     return dict(case_id=str(case_id),batches=[dict(id=str(b.id),status=b.status,created_at=b.created_at.isoformat(),file_count=len(b.files), **counts(b),
         created_by=(b.actor or {}).get('name', ''), filenames=[f['filename'] for f in b.files[:3]],
-        checked_files=sum(f['status'] == 'checked' for f in b.files),
-        failed_files=sum(f['status'] == 'error' for f in b.files)) for b in batches])
+        checked_files=sum(f['status'] == 'checked' for f in files_by_batch[b.id]),
+        failed_files=sum(f['status'] == 'error' for f in files_by_batch[b.id])) for b in batches])
 
 
 @router.get('/batches/{batch_id}')
-def get_financial_batch(batch_id: UUID, case_id: UUID = Query(...), offset: int = Query(0,ge=0), limit: int = Query(100,ge=1,le=500),only_problems: bool = Query(False),db: Session = Depends(get_db)):
+def get_financial_batch(batch_id: UUID, case_id: UUID = Query(...), offset: int = Query(0,ge=0), limit: int = Query(100,ge=1,le=500),only_problems: bool = Query(False),review_group: str | None = Query(None),db: Session = Depends(get_db)):
     try:
-        return import_batches.batch_status(db,case_id=case_id,batch_id=batch_id,offset=offset,limit=limit,only_problems=only_problems)
+        return import_batches.batch_status(db,case_id=case_id,batch_id=batch_id,offset=offset,limit=limit,only_problems=only_problems,review_group=review_group)
     except PdfMappingError as exc:
         raise HTTPException(status_code=exc.status_code,detail=str(exc)) from exc
 
@@ -653,18 +710,18 @@ def choose_batch_import(batch_id: UUID, item_id: UUID, body: BatchImportChoice,
 
 @router.get('/batches/{batch_id}/items/{item_id}/next-problem')
 def next_financial_problem(batch_id: UUID, item_id: UUID, case_id: UUID=Query(...),
-                           direction: Literal["next", "previous"] = Query("next"), db: Session=Depends(get_db)):
+                           direction: Literal["next", "previous"] = Query("next"), review_group: str | None = Query(None), db: Session=Depends(get_db)):
     try:
-        return import_batches.next_problem(db, case_id=case_id, batch_id=batch_id, item_id=item_id, direction=direction)
+        return import_batches.next_problem(db, case_id=case_id, batch_id=batch_id, item_id=item_id, direction=direction, review_group=review_group)
     except PdfMappingError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
 
 @router.get('/batches/{batch_id}/items/{item_id}/next-statement')
 def next_financial_statement(batch_id: UUID, item_id: UUID, case_id: UUID = Query(...),
-        direction: Literal['next', 'previous'] = Query('next'), db: Session = Depends(get_db)):
+        direction: Literal['next', 'previous'] = Query('next'), review_group: str | None = Query(None), db: Session = Depends(get_db)):
     try:
-        return import_batches.next_statement(db, case_id=case_id, batch_id=batch_id, item_id=item_id, direction=direction)
+        return import_batches.next_statement(db, case_id=case_id, batch_id=batch_id, item_id=item_id, direction=direction, review_group=review_group)
     except PdfMappingError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 

@@ -1,3 +1,6 @@
+vi.mock("./StatementRecoveryPanel", () => ({
+  StatementRecoveryPanel: () => null,
+}))
 // This existing workflow fixture has case editing and upload access.
 vi.mock("../hooks/use-financial-access", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../hooks/use-financial-access")>()),
@@ -317,4 +320,47 @@ it("keeps a balance-only statement in the imported file filter", async () => {
   expect(
     screen.queryByText("Statement saved · 1 recorded period · no payments")
   ).not.toBeInTheDocument()
+})
+
+it("shows non-PDF financial sources with their original and keeps them out of PDF bulk controls", async () => {
+  responses([
+    file,
+    ...[
+      "payments.csv",
+      "invoice.docx",
+      "accounts.xlsx",
+      "receipt.png",
+      "legacy.xls",
+    ].map((name) => ({
+      ...file,
+      id: name,
+      original_filename: name,
+      status: "unprocessed",
+    })),
+  ])
+  mount(true)
+  const source = await screen.findByRole("article", {
+    name: "Financial source payments.csv",
+  })
+  expect(source).toHaveTextContent(
+    "Adding this source to Financial does not import transactions"
+  )
+  expect(
+    screen.getByRole("article", { name: "Financial source legacy.xls" })
+  ).toHaveTextContent("converted to XLSX or CSV")
+  expect(
+    screen.getAllByRole("link", { name: "Open source in Evidence" })[0]
+  ).toHaveAttribute(
+    "href",
+    "/cases/case/evidence?file=payments.csv&from=financial"
+  )
+  expect(screen.queryByLabelText("Select payments.csv")).not.toBeInTheDocument()
+  fireEvent.click(
+    screen.getByRole("button", { name: "Select all 1 shown file" })
+  )
+  expect(
+    screen.getByRole("button", { name: "Prepare statements from 1 file" })
+  ).toBeEnabled()
+  expect(screen.getByText("1 file selected")).toBeVisible()
+  expect(evidenceAPI.preparePdfReview).not.toHaveBeenCalled()
 })

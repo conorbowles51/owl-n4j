@@ -159,3 +159,82 @@ def test_explicit_reuse_of_processed_evidence_records_intent_without_ai_job(f):
     assert result['outcome'] == 'ready'
     process.assert_not_called()
     assert len(listing(f, financial=True)) == 1
+
+
+@pytest.mark.parametrize('extension', ['csv', 'tsv', 'xlsx', 'xls', 'docx', 'doc', 'png', 'jpeg', 'xml', 'dat'])
+def test_financial_membership_is_independent_of_format_and_does_not_start_processing(f, extension):
+    from routers.financial_statement_import import FinancialSourceChoice
+    from services.financial.evidence_intake import include_financial_sources, resolve_financial_selection
+    f.file.original_filename = f'Financial source.{extension}'
+    f.db.commit()
+    assert listing(f, financial=True) == []  # A financial-looking name is not classification.
+    preview = resolve_financial_selection(f.db, case_id=f.case.id, file_ids=[f.file.id],
+        folder_ids=[], include_other_formats=True)
+    assert preview['skipped_non_pdf'] == 0
+    assert [item['id'] for item in preview['files']] == [str(f.file.id)]
+    choice = FinancialSourceChoice(evidence_file_id=f.file.id, expected_revision='initial')
+    before = (f.file.sha256, f.file.stored_path, f.file.status, f.file.engine_job_id)
+    result = include_financial_sources(f.db, case_id=f.case.id, selections=[choice], actor=f.actor)
+    assert result['file_ids'] == [str(f.file.id)]
+    assert len(listing(f, financial=True)) == 1
+    assert include_financial_sources(f.db, case_id=f.case.id, selections=[choice], actor=f.actor) == result
+    assert len(list(f.db.scalars(select(IngestionLog)))) == 1
+    f.db.refresh(f.file)
+    assert before == (f.file.sha256, f.file.stored_path, f.file.status, f.file.engine_job_id)
+    assert not f.db.scalar(select(FinancialImportBatch.id))
+    removed = set_financial_file_visibility(f.db, case_id=f.case.id, evidence_file_id=f.file.id,
+        removed=True, expected_revision='initial', actor=f.actor)
+    from services.financial.pdf_candidates import PdfMappingError
+    with pytest.raises(PdfMappingError, match='changed after the preview'):
+        include_financial_sources(f.db, case_id=f.case.id, selections=[choice], actor=f.actor)
+    f.db.rollback()
+    choice.expected_revision = removed['financial_visibility_revision']
+    include_financial_sources(f.db, case_id=f.case.id, selections=[choice], actor=f.actor)
+    assert listing(f, financial=True)[0]['financial_removed'] is False
+    assert len(listing(f)) == 1  # No copies or deleted originals.
+
+
+def test_existing_non_pdf_financial_source_survives_scope_filter(f):
+    f.confirm()
+    f.file.original_filename = 'native-bank-export.xml'
+    f.db.commit()
+    assert len(listing(f, financial=True)) == 1
+
+
+def test_source_selection_is_case_scoped_and_all_or_nothing(f):
+    from routers.financial_statement_import import FinancialSourceChoice
+    from services.financial.evidence_intake import include_financial_sources
+    from services.financial.pdf_candidates import PdfMappingError
+    foreign = f.evidence('z' * 64)
+    foreign.case_id = f.other_case.id
+    f.db.commit()
+    choices = [FinancialSourceChoice(evidence_file_id=file.id, expected_revision='initial')
+        for file in (f.file, foreign)]
+    with pytest.raises(PdfMappingError, match='no longer available'):
+        include_financial_sources(f.db, case_id=f.case.id, selections=choices, actor=f.actor)
+    f.db.rollback()
+    assert listing(f, financial=True) == []
+    assert not list(f.db.scalars(select(IngestionLog)))
+
+
+def test_source_selection_route_requires_case_edit_permission(f):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from types import SimpleNamespace
+    from unittest.mock import patch
+    from routers import financial_statement_import as routes
+    from tests.test_route_authorization import _CaseAccessDb
+    from postgres.session import get_db
+    from routers.users import get_current_db_user
+    app = FastAPI()
+    app.include_router(routes.router)
+    user = SimpleNamespace(id=uuid4(), global_role='user', is_active=True)
+    db = _CaseAccessDb(membership=SimpleNamespace(permissions={'case': {'view': True, 'edit': False}}))
+    app.dependency_overrides[get_current_db_user] = lambda: user
+    app.dependency_overrides[get_db] = lambda: db
+    with patch('services.financial.evidence_intake.include_financial_sources') as include:
+        response = TestClient(app).post('/api/financial/statement-import/selection/include',
+            params={'case_id': str(db.case.id)}, json={'files': [
+                {'evidence_file_id': str(f.file.id), 'expected_revision': 'initial'}]})
+    assert response.status_code == 403
+    include.assert_not_called()

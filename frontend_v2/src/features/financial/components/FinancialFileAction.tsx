@@ -15,7 +15,10 @@ import {
 import { fetchAPI } from "@/lib/api-client"
 import { useAuthStore } from "@/features/auth/hooks/use-auth"
 import { useFinancialAccess } from "../hooks/use-financial-access"
-import type { StatementFile } from "../hooks/use-statement-register"
+import {
+  usesPdfStatementReader,
+  type StatementFile,
+} from "../hooks/use-statement-register"
 import { useStatementWorkspace } from "../stores/statement-workspace"
 
 const answer = z.object({
@@ -42,7 +45,7 @@ export function FinancialFileAction({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
   if (!canEdit) return null
-  if (!file.financial_removed)
+  if (!file.financial_removed && usesPdfStatementReader(file))
     return (
       <FinancialRemovalAction
         caseId={caseId}
@@ -78,7 +81,7 @@ export function FinancialFileAction({
           "The returned file does not match this change. Refresh files to check its status."
         )
       client.setQueryData<StatementFile[]>(
-        ["statement-import-files", caseId],
+        ["statement-import-files", caseId, "financial-only"],
         (current) =>
           current?.map((item) =>
             item.id === file.id

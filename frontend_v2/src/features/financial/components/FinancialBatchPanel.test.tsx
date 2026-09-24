@@ -30,6 +30,7 @@ vi.mock("./StatementImportPanel", () => ({
       <>
         <p>Focused row: {ctx?.rowId}</p>
         <p>Saved holder: {ctx?.draft?.holder}</p>
+        <p>Focused field: {ctx?.field}</p>
         <button
           onClick={() => onImported({ transaction_count: 0, record_count: 0 })}
         >
@@ -126,6 +127,152 @@ beforeEach(() => {
       } as never
     return batch as never
   })
+})
+it("filters by the whole-batch reason, focuses the right detail, and retains the reason through review navigation", async () => {
+  const original = vi.mocked(fetchAPI).getMockImplementation()!
+  vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
+    if (url.includes("/next-statement?"))
+      return {
+        case_id: "case",
+        batch_id: "batch",
+        item_id: "next",
+        position: 2,
+        total: 201,
+      } as never
+    if (url.includes("/items/"))
+      return {
+        ...item,
+        id: url.includes("/next?") ? "next" : "item",
+        review_revision: "b".repeat(64),
+        problems: [
+          {
+            message: "Check this payment",
+            row_id: "1:0:2",
+            review_reason: "reading",
+          },
+          {
+            message: "The account holder has not been identified.",
+            field: "holder",
+            kind: "statement_detail",
+            review_reason: "holder",
+          },
+        ],
+      } as never
+    if (!options?.method) {
+      const filter = new URL(url, "http://localhost").searchParams.get(
+        "review_group"
+      )
+      return {
+        ...batch,
+        total: filter ? 201 : 202,
+        review_group: filter,
+        review_group_label: filter ? "Missing account holder" : null,
+        review_summary: {
+          blocked_statements: 1,
+          importable_with_checks: 201,
+          imported_with_checks: 0,
+          unchecked_balance_statements: 30,
+          groups: [
+            {
+              id: "holder",
+              label: "Missing account holder",
+              explanation: "Add the holder printed on the statement.",
+              statement_count: 201,
+              check_count: 201,
+              blocked_statements: 0,
+              importable_statements: 201,
+              imported_statements: 0,
+            },
+          ],
+        },
+        items: [
+          {
+            ...item,
+            problems: [
+              {
+                message: "Check this payment",
+                row_id: "1:0:2",
+                review_reason: "reading",
+              },
+              {
+                message: "The account holder has not been identified.",
+                field: "holder",
+                kind: "statement_detail",
+                review_reason: "holder",
+              },
+            ],
+          },
+        ],
+      } as never
+    }
+    return original(url, options)
+  })
+  mount()
+  fireEvent.click(
+    await screen.findByRole("button", {
+      name: "Show statements: Missing account holder",
+    })
+  )
+  await waitFor(() =>
+    expect(
+      screen.getByRole("heading", {
+        name: "Statements: Missing account holder",
+      })
+    ).toHaveFocus()
+  )
+  expect(screen.getByText("1–100 of 201")).toBeVisible()
+  expect(
+    screen.getByText(/Import covers all available statements/)
+  ).toBeVisible()
+  fireEvent.click(screen.getByRole("button", { name: "Review problems" }))
+  await screen.findByText("Focused field: holder")
+  expect(screen.getByLabelText("Location").textContent).toContain(
+    "batchCheck=holder"
+  )
+  expect(screen.getByLabelText("Location").textContent).not.toContain(
+    "batchRow="
+  )
+  fireEvent.click(screen.getByRole("button", { name: "Next statement" }))
+  await waitFor(() =>
+    expect(fetchAPI).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "/next-statement?case_id=case&direction=next&review_group=holder"
+      )
+    )
+  )
+  await waitFor(() =>
+    expect(screen.getByLabelText("Location").textContent).toContain(
+      "batchItem=next"
+    )
+  )
+  fireEvent.click(screen.getByRole("button", { name: "Back to bulk import" }))
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Clear reason filter" })
+  )
+  await screen.findByRole("heading", { name: "Statements in this batch" })
+  expect(screen.getByLabelText("Location").textContent).not.toContain(
+    "batchCheck="
+  )
+  expect(
+    vi.mocked(fetchAPI).mock.calls.some(([url]) => url.includes("/confirm?"))
+  ).toBe(false)
+})
+it("returns to an existing page when corrections remove the last page of matching statements", async () => {
+  let total = 101
+  vi.mocked(fetchAPI).mockImplementation(
+    async () => ({ ...batch, total }) as never
+  )
+  mount()
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Next statements" })
+  )
+  await screen.findByText("101–101 of 101")
+  total = 100
+  fireEvent.click(screen.getByRole("button", { name: "Refresh batch" }))
+  await screen.findByText("1–100 of 100")
+  expect(
+    screen.getByRole("button", { name: "Previous statements" })
+  ).toBeDisabled()
 })
 it("submits without randomUUID and checks the retained request after a lost response", async () => {
   const random = Object.getOwnPropertyDescriptor(

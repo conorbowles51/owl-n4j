@@ -29,8 +29,6 @@ def set_financial_file_visibility(session, *, case_id, evidence_file_id, removed
         EvidenceFile.case_id == case_id).with_for_update().execution_options(populate_existing=True))
     if file is None:
         raise PdfMappingError('File not found in this case.', 404)
-    if not file.original_filename.lower().endswith('.pdf'):
-        raise PdfMappingError('This action is for PDFs in the financial file list.', 422)
     if not removed and (file.metadata_ or {}).get('financial_import_removal'):
         raise PdfMappingError('These imports were removed. Use Process PDF afresh to start without the old readings or reviews.', 409)
     current = financial_file_visibility(file)

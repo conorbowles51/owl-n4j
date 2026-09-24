@@ -90,6 +90,10 @@ class FinancialFileIntakeTests(DuplicateTestCase):
         result = resolve_financial_selection(self.db, case_id=self.case.id, file_ids=[two.id], folder_ids=[parent.id, child.id])
         self.assertEqual({f['id'] for f in result['files']}, {str(one.id), str(two.id)})
         self.assertEqual(result['skipped_non_pdf'], 1)
+        general = resolve_financial_selection(self.db, case_id=self.case.id, file_ids=[two.id],
+            folder_ids=[parent.id, child.id], include_other_formats=True)
+        self.assertEqual({f['original_filename'] for f in general['files']}, {'one.PDF', 'two.pdf', 'notes.txt'})
+        self.assertEqual(general['skipped_non_pdf'], 0)
         foreign = self.new_file('foreign.pdf', case=self.other_case); self.db.commit()
         with self.assertRaisesRegex(PdfMappingError, 'no longer available'):
             resolve_financial_selection(self.db, case_id=self.case.id, file_ids=[foreign.id], folder_ids=[parent.id])
