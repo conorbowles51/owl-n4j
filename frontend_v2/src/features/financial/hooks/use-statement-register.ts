@@ -52,6 +52,19 @@ export function groupStatementReadings(files: StatementFile[]) {
 const listing = z.object({
   files: z.array(statementFile),
 })
+const readyPeriod = z.object({
+  statement_id: z.string(),
+  holder: z.string(),
+  institution: z.string(),
+  account: z.string(),
+  currency: z.string(),
+  period_start: z.string(),
+  period_end: z.string(),
+  transaction_count: z.number().int().nonnegative(),
+  incomplete_count: z.number().int().nonnegative(),
+  problem_count: z.number().int().nonnegative(),
+})
+export type ReadyStatementPeriod = z.infer<typeof readyPeriod>
 const importStates = z.object({
   case_id: z.string(),
   truncated: z.boolean(),
@@ -64,6 +77,7 @@ const importStates = z.object({
       wire_review_count: z.number().int().nonnegative().default(0),
       prepared_periods: z.number().int().nonnegative().optional(),
       available_periods: z.number().int().nonnegative().default(0),
+      ready_periods: z.array(readyPeriod).default([]),
       pending_periods: z.number().int().nonnegative().default(0),
       periods_with_checks: z.number().int().nonnegative().default(0),
       periods: z.array(
@@ -179,6 +193,7 @@ export function useStatementRegister(
                   .length,
                 prepared_periods: latest?.prepared_periods,
                 available_periods: latest?.available_periods || 0,
+                ready_periods: latest?.ready_periods || [],
                 pending_periods: latest?.pending_periods || 0,
                 periods_with_checks: latest?.periods_with_checks || 0,
               },

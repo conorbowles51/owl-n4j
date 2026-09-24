@@ -171,6 +171,8 @@ All F01–F28 reports are mapped to implemented workflows and local evidence in 
 
 ## 24 September: future bank and card collections
 
+Latest file-register follow-up: [Ready-to-import workflow acceptance](financial-workflows/ready-statement-workflow-2026-09-24.md) records the repair for the apparently inactive ready counter. It now reveals and focuses ready periods with direct review/import actions; real-service browser checks confirm import, refreshed availability and return to the same filter. The prior live-origin restriction remains separate from this verified local implementation.
+
 The additional statement types are shared processing capabilities, not case- or
 file-specific repairs. The [collection acceptance record](financial-workflows/statement-collections-2026-09-24.md)
 covers Credit One cards, Andrews account/share dates and currency, targeted image

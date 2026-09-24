@@ -16,7 +16,9 @@ def _selection(session, case_id, batch_ids, file_ids, lock=False):
         raise PdfMappingError('Select batches or statement files to remove.', 422)
     if lock:
         session.execute(select(Case.id).where(Case.id == case_id).with_for_update()).all()
-    batches_query = select(Batch).where(Batch.case_id == case_id).order_by(Batch.id)
+    # A worker may have changed metadata already loaded in this session. Both
+    # preview and confirmation must fingerprint current persisted state.
+    batches_query = select(Batch).where(Batch.case_id == case_id).order_by(Batch.id).execution_options(populate_existing=True)
     batches = list(session.scalars(batches_query.with_for_update().execution_options(populate_existing=True) if lock else batches_query))
     chosen = [b for b in batches if b.id in set(batch_ids) and b.status != 'removed']
     if {b.id for b in chosen} != set(batch_ids):
@@ -25,7 +27,7 @@ def _selection(session, case_id, batch_ids, file_ids, lock=False):
     for batch in chosen:
         ids.update(UUID(f['file_id']) for f in batch.files)
         ids.update(UUID(f['source_id']) for f in batch.files)
-    query = select(EvidenceFile).where(EvidenceFile.case_id == case_id).order_by(EvidenceFile.id)
+    query = select(EvidenceFile).where(EvidenceFile.case_id == case_id).order_by(EvidenceFile.id).execution_options(populate_existing=True)
     files = list(session.scalars(query.with_for_update().execution_options(populate_existing=True) if lock else query))
     selected = [f for f in files if f.id in ids]
     if {f.id for f in selected} != ids or any(not f.original_filename.lower().endswith('.pdf') for f in selected):
@@ -38,10 +40,10 @@ def _selection(session, case_id, batch_ids, file_ids, lock=False):
     related = [b for b in batches if b.status != 'removed' and
                any(f['file_id'] in affected_ids or f['source_id'] in affected_ids for f in b.files)]
     source_query = select(Source).where(Source.case_id == case_id,
-        Source.evidence_file_id.in_([f.id for f in affected])).order_by(Source.id)
+        Source.evidence_file_id.in_([f.id for f in affected])).order_by(Source.id).execution_options(populate_existing=True)
     sources = list(session.scalars(source_query.with_for_update().execution_options(populate_existing=True) if lock else source_query))
     row_query = select(Transaction).where(Transaction.case_id == case_id,
-        Transaction.source_document_id.in_([s.id for s in sources])).order_by(Transaction.id)
+        Transaction.source_document_id.in_([s.id for s in sources])).order_by(Transaction.id).execution_options(populate_existing=True)
     rows = list(session.scalars(row_query.with_for_update().execution_options(populate_existing=True) if lock else row_query))
     return affected, related, sources, rows
 

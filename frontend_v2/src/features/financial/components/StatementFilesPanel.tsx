@@ -1,4 +1,5 @@
 import { StatementRecoveryPanel } from "./StatementRecoveryPanel"
+import { ReadyStatementPeriods } from "./ReadyStatementPeriods"
 import { ResumableUploadsPanel } from "@/features/evidence/components/ResumableUploadsPanel"
 import { BulkStatementDetails } from "./BulkStatementDetails"
 import { FinancialRemovalAction } from "./FinancialRemovalAction"
@@ -10,7 +11,7 @@ import { FinancialSourceFile } from "./FinancialSourceFile"
 import { FinancialFileAction } from "./FinancialFileAction"
 import { EvidenceFinancialPicker } from "./EvidenceFinancialPicker"
 import { useFinancialAccess } from "../hooks/use-financial-access"
-import { useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { useQueryClient } from "@tanstack/react-query"
 import { z } from "zod"
@@ -49,6 +50,8 @@ export function StatementFilesPanel({
   const input = useRef<HTMLInputElement>(null)
   const [search, setSearch] = useState("")
   const [status, setStatus] = useState("all")
+  const resultsHeading = useRef<HTMLHeadingElement>(null)
+  const [filterAction, setFilterAction] = useState(0)
   const [removed, setRemoved] = useState(false)
   const [error, setError] = useState("")
   const [reading, setReading] = useState<Record<string, boolean>>({})
@@ -67,6 +70,33 @@ export function StatementFilesPanel({
   const selected = useStatementWorkspace(
     (state) => state.selections[scope]?.fileId
   )
+  const reviewOpen = useStatementWorkspace(
+    (state) => state.selections[scope]?.open ?? false
+  )
+  const showResults = (value: string, clearSearch = false) => {
+    setStatus(value)
+    if (clearSearch) setSearch("")
+    setFilterAction((previous) => previous + 1)
+  }
+  useEffect(() => {
+    if (!filterAction || reviewOpen || !register || removed || removalMode)
+      return
+    const frame = requestAnimationFrame(() => {
+      resultsHeading.current?.focus({ preventScroll: true })
+      resultsHeading.current?.scrollIntoView({ block: "start" })
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [filterAction, reviewOpen, register, removed, removalMode])
+  const openStatement = (fileId: string, statementId?: string) => {
+    if (statementId !== undefined)
+      useStatementWorkspace
+        .getState()
+        .setReviewChoice(`${scope}:${fileId}`, { statementId, currency: "" })
+    useStatementWorkspace.getState().select(scope, fileId)
+    useFinancialStore.getState().setMainView("statements")
+    useFinancialStore.getState().setMode("transactions")
+    onOpen?.()
+  }
   const { files, imports } = useStatementRegister(
     caseId,
     !!queue?.running,
@@ -133,6 +163,20 @@ export function StatementFilesPanel({
             ["failed", "unprocessed"].includes(file.status))
         )
       }) ?? []
+  const readyCount = (imports.data?.files ?? [])
+    .filter((item) =>
+      files.data?.some(
+        (file) => file.id === item.evidence_file_id && !file.financial_removed
+      )
+    )
+    .reduce((total, file) => total + (file.available_periods || 0), 0)
+  const visibleReadyCount = visibleFiles.reduce(
+    (total, file) =>
+      total +
+      (imports.data?.files.find((item) => item.evidence_file_id === file.id)
+        ?.available_periods || 0),
+    0
+  )
   const selectedIds = (selection.scope === scope ? selection.ids : []).filter(
     (id) =>
       files.data?.some(
@@ -331,7 +375,7 @@ export function StatementFilesPanel({
             <select
               className="rounded border bg-background p-2"
               value={status}
-              onChange={(e) => setStatus(e.target.value)}
+              onChange={(e) => showResults(e.target.value)}
             >
               <option value="all">All files</option>
               <option value="ready">Ready to import</option>
@@ -362,14 +406,20 @@ export function StatementFilesPanel({
           className="rounded border p-3 space-y-2"
         >
           <div className="flex flex-wrap gap-2">
-            <Button variant="outline" onClick={() => setStatus("ready")}>
-              {imports.data.files.reduce(
-                (n, f) => n + (f.available_periods || 0),
-                0
-              )}{" "}
-              statement periods ready to import
+            <Button
+              variant="outline"
+              aria-pressed={status === "ready"}
+              onClick={() => showResults("ready", true)}
+            >
+              Show {readyCount} statement{" "}
+              {readyCount === 1 ? "period" : "periods"} ready to import
             </Button>
-            <Button variant="outline" onClick={() => setStatus("checks")}>
+            <Button
+              variant="outline"
+              aria-pressed={status === "checks"}
+              onClick={() => showResults("checks", true)}
+            >
+              Show{" "}
               {
                 imports.data.files.filter(
                   (f) => f.periods_with_checks || f.incomplete_count
@@ -377,14 +427,19 @@ export function StatementFilesPanel({
               }{" "}
               files with checks to review
             </Button>
-            <Button variant="outline" onClick={() => setStatus("pending")}>
+            <Button
+              variant="outline"
+              aria-pressed={status === "pending"}
+              onClick={() => showResults("pending", true)}
+            >
+              Show{" "}
               {imports.data.files.reduce(
                 (n, f) => n + (f.pending_periods || 0),
                 0
               )}{" "}
               statement imports pending
             </Button>
-            <Button variant="ghost" onClick={() => setStatus("all")}>
+            <Button variant="ghost" onClick={() => showResults("all", true)}>
               Show all files
             </Button>
           </div>
@@ -403,6 +458,14 @@ export function StatementFilesPanel({
         </section>
       )}
       {files.isError && <p role="alert">{files.error.message}</p>}
+      {imports.isError && (
+        <div role="alert">
+          Statement import status could not be loaded.{" "}
+          <Button variant="outline" onClick={() => void imports.refetch()}>
+            Retry import status
+          </Button>
+        </div>
+      )}
       {register && (!removed || removalMode) && canEdit && (
         <section
           aria-label="Selected statement files"
@@ -481,6 +544,27 @@ export function StatementFilesPanel({
           </p>
         </section>
       )}
+      {register && !removed && !removalMode && (
+        <div className="space-y-1">
+          <h3
+            ref={resultsHeading}
+            tabIndex={-1}
+            className="font-semibold scroll-mt-24 focus:outline-none"
+            aria-live="polite"
+          >
+            {status === "ready"
+              ? `Ready to import · ${visibleReadyCount} statement ${visibleReadyCount === 1 ? "period" : "periods"} in ${visibleFiles.length} ${visibleFiles.length === 1 ? "file" : "files"}`
+              : `${visibleFiles.length} matching files`}
+          </h3>
+          {status === "ready" && (
+            <p className="text-sm">
+              Choose Review and import beside a statement to check its source
+              and confirm the import. Your list stays here when you return. Use
+              the file selection controls above to review several PDFs together.
+            </p>
+          )}
+        </div>
+      )}
       {visibleFiles.map((file) => {
         const saved = imports.data?.files.find(
           (item) => item.evidence_file_id === file.id
@@ -533,12 +617,7 @@ export function StatementFilesPanel({
                   ? `grid w-full gap-2 rounded p-2 text-left text-sm md:grid-cols-[minmax(220px,1fr)_minmax(220px,1fr)] ${removalMode ? "" : "hover:bg-accent disabled:opacity-60"}`
                   : "block w-full rounded border p-3 text-left text-sm hover:bg-accent aria-pressed:border-primary aria-pressed:bg-accent disabled:opacity-60"
               }
-              onClick={() => {
-                useStatementWorkspace.getState().select(scope, file.id)
-                useFinancialStore.getState().setMainView("statements")
-                useFinancialStore.getState().setMode("transactions")
-                onOpen?.()
-              }}
+              onClick={() => openStatement(file.id)}
             >
               <span className="block break-words font-medium">
                 {file.original_filename}
@@ -629,6 +708,26 @@ export function StatementFilesPanel({
                 </span>
               )}
             </button>
+            {status === "ready" &&
+              !removed &&
+              !removalMode &&
+              file.status === "processed" &&
+              (saved?.ready_periods.length ? (
+                <ReadyStatementPeriods
+                  periods={saved.ready_periods}
+                  canEdit={canEdit}
+                  onReview={(statementId) =>
+                    openStatement(file.id, statementId)
+                  }
+                />
+              ) : (
+                <Button
+                  variant="outline"
+                  onClick={() => openStatement(file.id)}
+                >
+                  {canEdit ? "Review and import" : "Review statement"}
+                </Button>
+              ))}
             {!removalMode && (
               <FinancialFileAction
                 caseId={caseId}

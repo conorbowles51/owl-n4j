@@ -1,5 +1,7 @@
 # Loupe financial investigator workflow reference
 
+**24 September ready-to-import follow-up:** [counter → ready periods → review → import → return](ready-statement-workflow-2026-09-24.md) records direct period actions, visible focus/navigation, persisted results and the final local checks.
+
 **Processing capabilities:** [banks, statement families and source formats](processing-capabilities.md) records the shared readers and their specific limits.
 
 **24 September statement collections:** [reusable bank/card readers and acceptance](statement-collections-2026-09-24.md) records the Credit One layout, Andrews date spacing, targeted image rereads and the mixed-account import/reopen journey. These shared readers apply to future files in every case; private source material is excluded from the repository.

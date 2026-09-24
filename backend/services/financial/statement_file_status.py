@@ -129,8 +129,19 @@ def statement_file_status(session, *, case_id):
         item = files.setdefault(key, dict(evidence_file_id=key, current_transactions=0, periods=[]))
         item['prepared_periods'] = item.get('prepared_periods', 0) + 1
         already_saved = (file_hashes.get(prepared_item.file_id), prepared_item.statement_key or None) in saved_scopes
+        available = not already_saved and prepared_item.status in ('ready', 'attention') and prepared_item.summary.get('can_import', False)
+        if available:
+            summary = prepared_item.summary
+            item.setdefault('ready_periods', []).append(dict(
+                statement_id=prepared_item.statement_key or '',
+                holder=summary.get('holder') or '', institution=summary.get('institution') or '',
+                account=summary.get('account') or '', currency=summary.get('currency') or '',
+                period_start=summary.get('period_start') or '', period_end=summary.get('period_end') or '',
+                transaction_count=summary.get('transaction_count', 0),
+                incomplete_count=summary.get('incomplete_count', 0),
+                problem_count=summary.get('problem_count', 0)))
         for field, matched in (
-            ('available_periods', not already_saved and prepared_item.status in ('ready', 'attention') and prepared_item.summary.get('can_import', False)),
+            ('available_periods', available),
             ('pending_periods', prepared_item.status == 'pending_import'),
             ('periods_with_checks', bool(prepared_item.summary.get('problem_count', 0)) and prepared_item.status != 'skipped'),
         ):

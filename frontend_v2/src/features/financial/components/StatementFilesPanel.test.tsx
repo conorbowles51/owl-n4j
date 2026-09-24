@@ -16,6 +16,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { beforeEach, expect, it, vi } from "vitest"
 import { MemoryRouter, useLocation } from "react-router-dom"
 import { StatementFilesPanel } from "./StatementFilesPanel"
+import { useStatementWorkspace } from "../stores/statement-workspace"
 import { fetchAPI } from "@/lib/api-client"
 import { evidenceAPI } from "@/features/evidence/api"
 vi.mock("@/lib/api-client", () => ({ fetchAPI: vi.fn() }))
@@ -63,7 +64,104 @@ function mount(register = false) {
 }
 beforeEach(() => {
   vi.resetAllMocks()
+  useStatementWorkspace.setState({ selections: {}, reviewChoices: {} })
   responses()
+})
+it("reveals ready periods, clears stale search and opens the exact period without importing", async () => {
+  vi.mocked(fetchAPI).mockImplementation(async (url) =>
+    url.includes("/statement-import/files")
+      ? {
+          case_id: "case",
+          truncated: false,
+          files: [
+            {
+              evidence_file_id: "file",
+              current_transactions: 0,
+              periods: [],
+              prepared_periods: 2,
+              available_periods: 1,
+              ready_periods: [
+                {
+                  statement_id: "ready-second-period",
+                  holder: "Synthetic holder",
+                  institution: "Example Bank",
+                  account: "TEST-2",
+                  currency: "USD",
+                  period_start: "2024-02-01",
+                  period_end: "2024-02-29",
+                  transaction_count: 3,
+                  incomplete_count: 0,
+                  problem_count: 1,
+                },
+              ],
+            },
+          ],
+        }
+      : { files: [{ ...file, status: "processed" }] }
+  )
+  mount(true)
+  const ready = await screen.findByRole("button", {
+    name: "Show 1 statement period ready to import",
+  })
+  fireEvent.change(screen.getByLabelText("Search statement files"), {
+    target: { value: "no matching filename" },
+  })
+  fireEvent.click(ready)
+  expect(screen.getByLabelText("Search statement files")).toHaveValue("")
+  expect(ready).toHaveAttribute("aria-pressed", "true")
+  expect(screen.getByText("2024-02-01 to 2024-02-29")).toBeVisible()
+  expect(screen.getByText(/3 payments ready to import/)).toHaveTextContent(
+    "1 check to review"
+  )
+  const heading = screen.getByRole("heading", {
+    name: "Ready to import · 1 statement period in 1 file",
+  })
+  await waitFor(() => expect(heading).toHaveFocus())
+  fireEvent.click(ready)
+  await waitFor(() => expect(heading).toHaveFocus())
+  fireEvent.click(screen.getByRole("button", { name: "Review and import" }))
+  expect(
+    Object.values(useStatementWorkspace.getState().reviewChoices)
+  ).toContainEqual({ statementId: "ready-second-period", currency: "" })
+  expect(
+    Object.values(useStatementWorkspace.getState().selections)
+  ).toContainEqual({ fileId: "file", open: true })
+  expect(
+    vi
+      .mocked(fetchAPI)
+      .mock.calls.every(
+        ([, options]) => !options?.method || options.method === "GET"
+      )
+  ).toBe(true)
+})
+
+it("keeps the review action available while an older server has only readiness counts", async () => {
+  vi.mocked(fetchAPI).mockImplementation(async (url) =>
+    url.includes("/statement-import/files")
+      ? {
+          case_id: "case",
+          truncated: false,
+          files: [
+            {
+              evidence_file_id: "file",
+              current_transactions: 0,
+              periods: [],
+              available_periods: 1,
+            },
+          ],
+        }
+      : { files: [{ ...file, status: "processed" }] }
+  )
+  mount(true)
+  fireEvent.click(
+    await screen.findByRole("button", {
+      name: "Show 1 statement period ready to import",
+    })
+  )
+  fireEvent.click(screen.getByRole("button", { name: "Review and import" }))
+  expect(
+    Object.values(useStatementWorkspace.getState().selections)
+  ).toContainEqual({ fileId: "file", open: true })
 })
 it("prepares all selected files directly, keeps hidden selections and reuses a failed request", async () => {
   const files = Array.from({ length: 3 }, (_, n) => ({

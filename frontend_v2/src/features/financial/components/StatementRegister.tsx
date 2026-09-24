@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button"
 import { useAuthStore } from "@/features/auth/hooks/use-auth"
 import { useStatementWorkspace } from "../stores/statement-workspace"
 import { StatementFilesPanel } from "./StatementFilesPanel"
-import type { ReactNode } from "react"
+import { useEffect, useRef, type ReactNode } from "react"
 
 export function StatementRegister({
   caseId,
@@ -25,6 +25,12 @@ export function StatementRegister({
   const review = useStatementWorkspace((state) => state.selections[scope])
   const open = !!review?.open
   const batches = mode === "batches" || !!params.get("batch")
+  const reviewPanel = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open || batches || mode === "remove") return
+    reviewPanel.current?.focus({ preventScroll: true })
+    reviewPanel.current?.scrollIntoView({ block: "start" })
+  }, [open, batches, mode, review?.fileId])
   return (
     <div className="space-y-4">
       {batches && <FinancialBatchPanel caseId={caseId} />}
@@ -36,7 +42,13 @@ export function StatementRegister({
           onFinishRemoval={onBackToFiles}
         />
       </div>
-      <div hidden={batches || !open || mode === "remove"} className="space-y-3">
+      <div
+        ref={reviewPanel}
+        tabIndex={-1}
+        aria-label="Selected statement review"
+        hidden={batches || !open || mode === "remove"}
+        className="space-y-3 scroll-mt-24 focus:outline-none"
+      >
         {children}
       </div>
       {!batches && !open && mode === "files" && review && (

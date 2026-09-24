@@ -20,6 +20,7 @@ import {
 import { ImportedStatementDetails } from "./ImportedStatementDetails"
 import { BulkStatementDetails } from "./BulkStatementDetails"
 import { StatementFilesPanel } from "./StatementFilesPanel"
+import { StatementRegister } from "./StatementRegister"
 import { FinancialBatchPanel } from "./FinancialBatchPanel"
 import { InvestigationTransactionTable } from "./InvestigationTransactionTable"
 import { useFinancialDraftStore } from "../stores/financial-drafts"
@@ -66,6 +67,122 @@ async function service(
   return result
 }
 const run = import.meta.env.VITE_FINANCIAL_REAL_SERVICE === "1" ? it : it.skip
+run(
+  "opens ready periods from the file register, imports the chosen period and returns to the updated list",
+  async () => {
+    await service("/__fixture/reset", { method: "POST" })
+    await service("/__fixture/mixed-statements", { method: "POST" })
+    const { case_id: caseId, file_id: fileId } = await service("/__fixture")
+    const batch = await service(
+      `/api/financial/statement-import/batches?case_id=${caseId}`,
+      {
+        method: "POST",
+        body: {
+          request_id: "11111111-1111-4111-8111-111111111111",
+          file_ids: [fileId],
+          folder_ids: [],
+        },
+      }
+    )
+    await service(`/__fixture/advance-batch/${batch.id}`, { method: "POST" })
+    useFinancialDraftStore.setState({ drafts: {} })
+    useStatementWorkspace.setState({
+      selections: {},
+      reviewChoices: {},
+      pages: {},
+    })
+    vi.mocked(fetchAPI)
+      .mockClear()
+      .mockImplementation((url, options) => service(url, options))
+    await page.viewport(1360, 900)
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    let receipt: StatementImportReceipt | undefined
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter>
+          <StatementRegister caseId={caseId}>
+            <StatementImportPanel
+              caseId={caseId}
+              onImported={(value) => {
+                receipt = value
+              }}
+            />
+          </StatementRegister>
+        </MemoryRouter>
+      </QueryClientProvider>
+    )
+    await screen.findByRole("button", {
+      name: "Show 3 statement periods ready to import",
+    })
+    fireEvent.change(screen.getByLabelText("Search statement files"), {
+      target: { value: "old search" },
+    })
+    await page
+      .getByRole("button", { name: "Show 3 statement periods ready to import" })
+      .click()
+    const heading = await screen.findByRole("heading", {
+      name: "Ready to import · 3 statement periods in 1 file",
+    })
+    await waitFor(() => expect(heading).toHaveFocus())
+    const list = screen.getByRole("list", { name: "Ready statement periods" })
+    expect(
+      within(list).getAllByRole("button", { name: "Review and import" })
+    ).toHaveLength(3)
+    await page.screenshot({
+      path: "/private/tmp/loupe-ready-statements-wide.png",
+    })
+    const card = within(list)
+      .getByText(/Credit One Bank/)
+      .closest("li")!
+    fireEvent.click(
+      within(card).getByRole("button", { name: "Review and import" })
+    )
+    const importButton = await screen.findByRole("button", {
+      name: "Import 3 payments and view Transactions",
+    })
+    expect((await service("/__fixture/payments")).payments).toHaveLength(0)
+    fireEvent.click(importButton)
+    await waitFor(() => expect(receipt?.transaction_count).toBe(3))
+    await screen.findByRole("heading", {
+      name: "Ready to import · 2 statement periods in 1 file",
+    })
+    expect((await service("/__fixture/payments")).payments).toHaveLength(3)
+    const remaining = screen.getByRole("list", {
+      name: "Ready statement periods",
+    })
+    expect(within(remaining).queryByText(/Credit One Bank/)).toBeNull()
+    await page.viewport(390, 844)
+    await page
+      .getByRole("button", { name: "Show 2 statement periods ready to import" })
+      .click()
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", {
+          name: "Ready to import · 2 statement periods in 1 file",
+        })
+      ).toHaveFocus()
+    )
+    await page.screenshot({
+      path: "/private/tmp/loupe-ready-statements-narrow.png",
+    })
+    fireEvent.click(
+      within(remaining).getAllByRole("button", { name: "Review and import" })[0]
+    )
+    await screen.findByRole("button", {
+      name: /Import 1 payment.*view Transactions/,
+    })
+    fireEvent.click(screen.getByRole("button", { name: "All files & imports" }))
+    await screen.findByRole("heading", {
+      name: "Ready to import · 2 statement periods in 1 file",
+    })
+    expect(screen.getByLabelText("Show files")).toHaveValue("ready")
+    expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(390)
+    cleanup()
+  },
+  60000
+)
 run(
   "chooses bank and credit-card sections from one PDF, imports and reopens each independently",
   async () => {

@@ -1,6 +1,6 @@
 {
   "scope": "Financial TSX controls, including conditional and legacy controls. Templates describe actions; they are not proof that every runtime branch works. Shared PDF, table and dialog controls are covered in the workflow reference.",
-  "count": 1662,
+  "count": 1667,
   "actions": [
     {
       "component": "AccountConsolidation",
@@ -13237,6 +13237,42 @@
       }
     },
     {
+      "component": "ReadyStatementPeriods",
+      "file": "frontend_v2/src/features/financial/components/ReadyStatementPeriods.tsx",
+      "line": 54,
+      "control": "Button",
+      "label": "{canEdit ? \"Review and import\" : \"Review statement\"}",
+      "disabled": null,
+      "destination": null,
+      "events": {
+        "onClick": "{() => onReview(period.statement_id)}"
+      }
+    },
+    {
+      "component": "ReadyStatementPeriods",
+      "file": "frontend_v2/src/features/financial/components/ReadyStatementPeriods.tsx",
+      "line": 65,
+      "control": "Button",
+      "label": "Previous ready statements",
+      "disabled": "{current === 0}",
+      "destination": null,
+      "events": {
+        "onClick": "{() => setPage(current - 1)}"
+      }
+    },
+    {
+      "component": "ReadyStatementPeriods",
+      "file": "frontend_v2/src/features/financial/components/ReadyStatementPeriods.tsx",
+      "line": 75,
+      "control": "Button",
+      "label": "Next ready statements",
+      "disabled": "{current === lastPage}",
+      "destination": null,
+      "events": {
+        "onClick": "{() => setPage(current + 1)}"
+      }
+    },
+    {
       "component": "ReferencedAccounts",
       "file": "frontend_v2/src/features/financial/components/ReferencedAccounts.tsx",
       "line": 126,
@@ -15481,7 +15517,7 @@
     {
       "component": "StatementFilesPanel",
       "file": "frontend_v2/src/features/financial/components/StatementFilesPanel.tsx",
-      "line": 227,
+      "line": 271,
       "control": "input",
       "label": "\"Statement PDFs\"",
       "disabled": null,
@@ -15493,7 +15529,7 @@
     {
       "component": "StatementFilesPanel",
       "file": "frontend_v2/src/features/financial/components/StatementFilesPanel.tsx",
-      "line": 251,
+      "line": 295,
       "control": "Button",
       "label": "Upload PDFs",
       "disabled": "{queue?.running}",
@@ -15505,7 +15541,7 @@
     {
       "component": "StatementFilesPanel",
       "file": "frontend_v2/src/features/financial/components/StatementFilesPanel.tsx",
-      "line": 258,
+      "line": 302,
       "control": "Button",
       "label": "Refresh files",
       "disabled": null,
@@ -15517,7 +15553,7 @@
     {
       "component": "StatementFilesPanel",
       "file": "frontend_v2/src/features/financial/components/StatementFilesPanel.tsx",
-      "line": 267,
+      "line": 311,
       "control": "Button",
       "label": "{removed ? \"Back to financial files\" : `Removed files (${files.data?.filter((file) => file.financial_removed).length ?? 0})`}",
       "disabled": null,
@@ -15529,7 +15565,7 @@
     {
       "component": "StatementFilesPanel",
       "file": "frontend_v2/src/features/financial/components/StatementFilesPanel.tsx",
-      "line": 320,
+      "line": 364,
       "control": "input",
       "label": "\"Search statement files\"",
       "disabled": null,
@@ -15541,67 +15577,79 @@
     {
       "component": "StatementFilesPanel",
       "file": "frontend_v2/src/features/financial/components/StatementFilesPanel.tsx",
-      "line": 331,
+      "line": 375,
       "control": "select",
       "label": "All files Ready to import Checks to review Reading or importing With imported statements Without imported statements Reading failed or not started",
       "disabled": null,
       "destination": null,
       "events": {
-        "onChange": "{(e) => setStatus(e.target.value)}"
+        "onChange": "{(e) => showResults(e.target.value)}"
       }
     },
     {
       "component": "StatementFilesPanel",
       "file": "frontend_v2/src/features/financial/components/StatementFilesPanel.tsx",
-      "line": 365,
+      "line": 409,
       "control": "Button",
-      "label": "{imports.data.files.reduce( (n, f) => n + (f.available_periods || 0), 0 )} {\" \"} statement periods ready to import",
+      "label": "Show {readyCount} statement {\" \"} {readyCount === 1 ? \"period\" : \"periods\"} ready to import",
       "disabled": null,
       "destination": null,
       "events": {
-        "onClick": "{() => setStatus(\"ready\")}"
-      }
-    },
-    {
-      "component": "StatementFilesPanel",
-      "file": "frontend_v2/src/features/financial/components/StatementFilesPanel.tsx",
-      "line": 372,
-      "control": "Button",
-      "label": "{imports.data.files.filter( (f) => f.periods_with_checks || f.incomplete_count ).length} {\" \"} files with checks to review",
-      "disabled": null,
-      "destination": null,
-      "events": {
-        "onClick": "{() => setStatus(\"checks\")}"
-      }
-    },
-    {
-      "component": "StatementFilesPanel",
-      "file": "frontend_v2/src/features/financial/components/StatementFilesPanel.tsx",
-      "line": 380,
-      "control": "Button",
-      "label": "{imports.data.files.reduce( (n, f) => n + (f.pending_periods || 0), 0 )} {\" \"} statement imports pending",
-      "disabled": null,
-      "destination": null,
-      "events": {
-        "onClick": "{() => setStatus(\"pending\")}"
-      }
-    },
-    {
-      "component": "StatementFilesPanel",
-      "file": "frontend_v2/src/features/financial/components/StatementFilesPanel.tsx",
-      "line": 387,
-      "control": "Button",
-      "label": "Show all files",
-      "disabled": null,
-      "destination": null,
-      "events": {
-        "onClick": "{() => setStatus(\"all\")}"
+        "onClick": "{() => showResults(\"ready\", true)}"
       }
     },
     {
       "component": "StatementFilesPanel",
       "file": "frontend_v2/src/features/financial/components/StatementFilesPanel.tsx",
       "line": 417,
+      "control": "Button",
+      "label": "Show {\" \"} {imports.data.files.filter( (f) => f.periods_with_checks || f.incomplete_count ).length} {\" \"} files with checks to review",
+      "disabled": null,
+      "destination": null,
+      "events": {
+        "onClick": "{() => showResults(\"checks\", true)}"
+      }
+    },
+    {
+      "component": "StatementFilesPanel",
+      "file": "frontend_v2/src/features/financial/components/StatementFilesPanel.tsx",
+      "line": 430,
+      "control": "Button",
+      "label": "Show {\" \"} {imports.data.files.reduce( (n, f) => n + (f.pending_periods || 0), 0 )} {\" \"} statement imports pending",
+      "disabled": null,
+      "destination": null,
+      "events": {
+        "onClick": "{() => showResults(\"pending\", true)}"
+      }
+    },
+    {
+      "component": "StatementFilesPanel",
+      "file": "frontend_v2/src/features/financial/components/StatementFilesPanel.tsx",
+      "line": 442,
+      "control": "Button",
+      "label": "Show all files",
+      "disabled": null,
+      "destination": null,
+      "events": {
+        "onClick": "{() => showResults(\"all\", true)}"
+      }
+    },
+    {
+      "component": "StatementFilesPanel",
+      "file": "frontend_v2/src/features/financial/components/StatementFilesPanel.tsx",
+      "line": 464,
+      "control": "Button",
+      "label": "Retry import status",
+      "disabled": null,
+      "destination": null,
+      "events": {
+        "onClick": "{() => void imports.refetch()}"
+      }
+    },
+    {
+      "component": "StatementFilesPanel",
+      "file": "frontend_v2/src/features/financial/components/StatementFilesPanel.tsx",
+      "line": 480,
       "control": "Button",
       "label": "Select all {selectableFiles.length} shown {\" \"} {selectableFiles.length === 1 ? \"file\" : \"files\"}",
       "disabled": "{preparing || !selectableFiles.length}",
@@ -15613,7 +15661,7 @@
     {
       "component": "StatementFilesPanel",
       "file": "frontend_v2/src/features/financial/components/StatementFilesPanel.tsx",
-      "line": 432,
+      "line": 495,
       "control": "Button",
       "label": "Clear selection",
       "disabled": "{preparing || !selectedIds.length}",
@@ -15625,7 +15673,7 @@
     {
       "component": "StatementFilesPanel",
       "file": "frontend_v2/src/features/financial/components/StatementFilesPanel.tsx",
-      "line": 440,
+      "line": 503,
       "control": "Button",
       "label": "{preparing ? \"Preparing statements…\" : `Prepare statements from ${selectedIds.length} ${selectedIds.length === 1 ? \"file\" : \"files\"}`}",
       "disabled": "{ !canUpload || preparing || !selectedIds.length || files.isError }",
@@ -15637,7 +15685,7 @@
     {
       "component": "StatementFilesPanel",
       "file": "frontend_v2/src/features/financial/components/StatementFilesPanel.tsx",
-      "line": 472,
+      "line": 535,
       "control": "Button",
       "label": "Back to files",
       "disabled": null,
@@ -15649,7 +15697,7 @@
     {
       "component": "StatementFilesPanel",
       "file": "frontend_v2/src/features/financial/components/StatementFilesPanel.tsx",
-      "line": 504,
+      "line": 588,
       "control": "input",
       "label": "{`Select ${file.original_filename}`}",
       "disabled": "{preparing}",
@@ -15661,19 +15709,31 @@
     {
       "component": "StatementFilesPanel",
       "file": "frontend_v2/src/features/financial/components/StatementFilesPanel.tsx",
-      "line": 522,
+      "line": 606,
       "control": "button",
       "label": "{ register ? `${removalMode ? \"Imported file\" : \"Review\"} ${file.original_filename}` : undefined }",
       "disabled": "{removalMode || removed || file.status !== \"processed\"}",
       "destination": null,
       "events": {
-        "onClick": "{() => { useStatementWorkspace.getState().select(scope, file.id) useFinancialStore.getState().setMainView(\"statements\") useFinancialStore.getState().setMode(\"transactions\") onOpen?.() }}"
+        "onClick": "{() => openStatement(file.id)}"
       }
     },
     {
       "component": "StatementFilesPanel",
       "file": "frontend_v2/src/features/financial/components/StatementFilesPanel.tsx",
-      "line": 642,
+      "line": 724,
+      "control": "Button",
+      "label": "{canEdit ? \"Review and import\" : \"Review statement\"}",
+      "disabled": null,
+      "destination": null,
+      "events": {
+        "onClick": "{() => openStatement(file.id)}"
+      }
+    },
+    {
+      "component": "StatementFilesPanel",
+      "file": "frontend_v2/src/features/financial/components/StatementFilesPanel.tsx",
+      "line": 741,
       "control": "a",
       "label": "Open saved wire reviews in Findings",
       "disabled": null,
@@ -15683,7 +15743,7 @@
     {
       "component": "StatementFilesPanel",
       "file": "frontend_v2/src/features/financial/components/StatementFilesPanel.tsx",
-      "line": 650,
+      "line": 749,
       "control": "a",
       "label": "Open saved receipt reviews in Findings",
       "disabled": null,
@@ -15693,7 +15753,7 @@
     {
       "component": "StatementFilesPanel",
       "file": "frontend_v2/src/features/financial/components/StatementFilesPanel.tsx",
-      "line": 660,
+      "line": 759,
       "control": "Button",
       "label": "{`${file.status === \"failed\" ? \"Retry reading\" : \"Read statement\"}: ${file.original_filename}`}",
       "disabled": "{ reading[file.id] || queue?.running || (file.status === \"unprocessed\" && queuedReadings.has(file.id)) }",
@@ -15705,7 +15765,7 @@
     {
       "component": "StatementFilesPanel",
       "file": "frontend_v2/src/features/financial/components/StatementFilesPanel.tsx",
-      "line": 680,
+      "line": 779,
       "control": "summary",
       "label": "Reading history ( {file.readingVersions.length} versions of this PDF)",
       "disabled": null,
@@ -15715,7 +15775,7 @@
     {
       "component": "StatementFilesPanel",
       "file": "frontend_v2/src/features/financial/components/StatementFilesPanel.tsx",
-      "line": 691,
+      "line": 790,
       "control": "Button",
       "label": "{version.id === file.id ? \"Current reading\" : \"Earlier reading\"} {\" \"} · {\" \"} {version.created_at ? new Date(version.created_at).toLocaleString() : version.id.slice(0, 8)} {\" \"} · {\" \"} {version.financial_removed ? \"Removed from Financial\" : version.status}",
       "disabled": "{ version.status !== \"processed\" || version.financial_removed }",
@@ -16997,7 +17057,7 @@
     {
       "component": "StatementRegister",
       "file": "frontend_v2/src/features/financial/components/StatementRegister.tsx",
-      "line": 43,
+      "line": 55,
       "control": "Button",
       "label": "Continue last statement review",
       "disabled": null,
