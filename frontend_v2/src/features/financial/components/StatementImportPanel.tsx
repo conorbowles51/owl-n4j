@@ -1230,6 +1230,7 @@ function EditableStatement({
       currency: data.currency,
       institution,
       account_number: account,
+      holder,
       period_start: periodStart,
       period_end: periodEnd,
       ...(replacePrevious && data.current_import
@@ -1244,6 +1245,7 @@ function EditableStatement({
     !!coverage.data?.candidates.length &&
     (coverageDecision.revision !== coverage.data.revision ||
       !coverageDecision.reason.trim())
+  const duplicateBlocked = coverageBlocked && coverage.data?.matching_statement
   const detailsChanged =
     institution !== data.metadata.institution ||
     holder !== data.metadata.holder ||
@@ -1434,8 +1436,9 @@ function EditableStatement({
   const detailProblems: { message: string; field?: string }[] = []
   if (coverageBlocked)
     detailProblems.push({
-      message:
-        "Another statement covers these dates. You can compare the statements now or after importing.",
+      message: duplicateBlocked
+        ? "A matching statement needs a duplicate decision before import. Compare the existing statement below."
+        : "Another statement covers these dates. You can compare the statements now or after importing.",
       field:
         coverageDecision.revision === coverage.data?.revision
           ? "Reason for importing overlapping statements"
@@ -1710,6 +1713,7 @@ function EditableStatement({
     : included.length
   const importDisabled =
     !canEdit ||
+    duplicateBlocked ||
     confirm.isPending ||
     saveBatchReview.isPending ||
     assignmentSaving ||
@@ -3839,9 +3843,9 @@ function EditableStatement({
                 >
                   <h4 className="font-semibold">Issues and edits</h4>
                   <p className="text-sm">
-                    Reading issues do not block import. Your corrections and the
-                    original readings are saved automatically. Notes are
-                    optional.
+                    {duplicateBlocked
+                      ? "This possible duplicate is held from import. Compare the existing statement and record why both are needed, or leave this copy unimported. Your corrections remain available."
+                      : "Reading issues do not block import. Your corrections and the original readings are saved automatically. Notes are optional."}
                   </p>
                   {detailProblems.map((problem, index) => (
                     <div

@@ -68,6 +68,142 @@ async function service(
 }
 const run = import.meta.env.VITE_FINANCIAL_REAL_SERVICE === "1" ? it : it.skip
 run(
+  "holds duplicate statements, retains the investigator's choice and resumes the same completed batch",
+  async () => {
+    await service("/__fixture/reset", { method: "POST" })
+    const { other_file_id: otherId } = await service(
+      "/__fixture/duplicate-statements",
+      { method: "POST" }
+    )
+    const { case_id: caseId, file_id: fileId } = await service("/__fixture")
+    const create = (requestId: string) =>
+      service(`/api/financial/statement-import/batches?case_id=${caseId}`, {
+        method: "POST",
+        body: {
+          request_id: requestId,
+          file_ids: [fileId, otherId],
+          folder_ids: [],
+        },
+      })
+    const batch = await create("11111111-1111-4111-8111-111111111111")
+    await service(`/__fixture/advance-batch/${batch.id}`, { method: "POST" })
+    useFinancialDraftStore.setState({ drafts: {} })
+    useStatementWorkspace.setState({
+      selections: {},
+      pages: {},
+      reviewChoices: {},
+    })
+    useStatementWorkspace.getState().select(`anonymous:${caseId}`, otherId)
+    vi.mocked(fetchAPI)
+      .mockClear()
+      .mockImplementation((url, options) => service(url, options))
+    await page.viewport(1360, 900)
+    const wrap = (children: React.ReactNode) => (
+      <QueryClientProvider
+        client={
+          new QueryClient({ defaultOptions: { queries: { retry: false } } })
+        }
+      >
+        <MemoryRouter
+          initialEntries={[
+            `/cases/${caseId}/financial?view=statements&batch=${batch.id}`,
+          ]}
+        >
+          <main className="p-5">{children}</main>
+        </MemoryRouter>
+      </QueryClientProvider>
+    )
+    render(
+      wrap(
+        <StatementImportPanel
+          caseId={caseId}
+          onImported={() => {
+            throw Error("Duplicate import should be held")
+          }}
+        />
+      )
+    )
+    const held = await screen.findByRole("heading", {
+      name: "Possible duplicate statement — import on hold",
+    })
+    expect(
+      screen.getByRole("button", { name: "Confirm import of 12 transactions" })
+    ).toBeDisabled()
+    held.scrollIntoView({ block: "center" })
+    await page.screenshot({
+      path: "/private/tmp/loupe-duplicate-import-hold.png",
+    })
+    expect((await service("/__fixture/payments")).payments).toHaveLength(0)
+    cleanup()
+
+    render(wrap(<FinancialBatchPanel caseId={caseId} />))
+    await screen.findByRole("button", { name: "No new statements to import" })
+    await screen.findByText("Possible duplicate statements")
+    const copy = (
+      await screen.findByRole("heading", { name: "Comparison copy.pdf" })
+    ).closest("article")!
+    fireEvent.click(
+      within(copy).getByRole("button", { name: "Leave unimported" })
+    )
+    fireEvent.change(
+      within(copy).getByLabelText("Reason to leave unimported"),
+      {
+        target: {
+          value:
+            "Compared the original; keep the primary statement and retain this copy without importing.",
+        },
+      }
+    )
+    fireEvent.click(
+      within(copy).getByRole("button", { name: "Leave unimported" })
+    )
+    await screen.findByRole("button", {
+      name: "Import 12 transactions",
+    })
+    await page
+      .getByRole("button", { name: "Import 12 transactions", exact: true })
+      .click()
+    await screen.findByText(/Importing 1 statements/)
+    await service(`/__fixture/advance-batch/${batch.id}`, { method: "POST" })
+    fireEvent.click(screen.getByRole("button", { name: "Refresh batch" }))
+    await screen.findByRole("button", { name: "No new statements to import" })
+    const saved = (await service("/__fixture/payments")).payments
+    expect(saved).toHaveLength(12)
+    cleanup()
+
+    expect((await create("22222222-2222-4222-8222-222222222222")).id).toBe(
+      batch.id
+    )
+    render(wrap(<FinancialBatchPanel caseId={caseId} />))
+    await screen.findByRole("button", { name: "No new statements to import" })
+    const problems = screen.getByRole("checkbox", {
+      name: "Show statements with issues only",
+    })
+    if ((problems as HTMLInputElement).checked) fireEvent.click(problems)
+    await screen.findByRole("button", { name: "Restore to review" })
+    expect(
+      (await service("/__fixture/payments")).payments.map(
+        (p: { id: string }) => p.id
+      )
+    ).toEqual(saved.map((p: { id: string }) => p.id))
+    await page.viewport(420, 900)
+    const retained = screen
+      .getByRole("heading", { name: "Comparison copy.pdf" })
+      .closest("article")!
+    expect(within(retained).queryByText(/Available to import/)).toBeNull()
+    expect(
+      within(retained).getByText(/Left unimported · 12 records/)
+    ).toBeVisible()
+    retained.scrollIntoView({ block: "start" })
+    await page.screenshot({
+      path: "/private/tmp/loupe-duplicate-decision-retained.png",
+    })
+    expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(420)
+    cleanup()
+  },
+  60000
+)
+run(
   "opens ready periods from the file register, imports the chosen period and returns to the updated list",
   async () => {
     await service("/__fixture/reset", { method: "POST" })

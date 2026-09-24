@@ -170,6 +170,7 @@ class StatementCoverageRequest(_Contract):
     currency: str = Field(pattern=r'^[A-Z]{3}$')
     institution: str = Field(default='', max_length=128)
     account_number: str = Field(default='', max_length=128)
+    holder: str | None = Field(default=None, max_length=255)
     period_start: str = Field(default='', max_length=32)
     period_end: str = Field(default='', max_length=32)
 
@@ -207,7 +208,9 @@ def check_import_coverage(evidence_file_id: UUID, body: StatementCoverageRequest
         if proposal['revision'] != body.expected_revision:
             raise PdfMappingError('The statement reading changed. Reopen it before comparing dates.', 409)
         return dict(case_id=str(case_id), evidence_file_id=str(evidence_file_id),
-                    **coverage_review(db, case_id=case_id, file_id=evidence_file_id, request=body.model_dump(mode='json')))
+                    **coverage_review(db, case_id=case_id, file_id=evidence_file_id, request={**body.model_dump(mode='json'),
+                        'holder': body.holder if body.holder is not None else proposal['metadata'].get('holder', ''),
+                        'account_type': proposal['metadata'].get('account_type') or ''}))
     except PdfMappingError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 

@@ -6,6 +6,7 @@ export const coverageReview = z.object({
   available: z.boolean(),
   revision: z.string().nullable(),
   reason: z.string().optional(),
+  matching_statement: z.boolean().optional(),
   candidates: z.array(
     z.object({
       file_id: z.string(),
@@ -16,6 +17,7 @@ export const coverageReview = z.object({
       status: z.enum(["imported", "awaiting_import"]),
       period_start: z.string(),
       period_end: z.string(),
+      matching_statement: z.boolean().optional(),
     })
   ),
 })
@@ -30,6 +32,7 @@ export function useStatementCoverageReview(
     currency: string
     institution: string
     account_number: string
+    holder?: string
     period_start: string
     period_end: string
   },

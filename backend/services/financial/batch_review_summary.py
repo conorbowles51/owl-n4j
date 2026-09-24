@@ -13,6 +13,7 @@ REASONS = {
     'balance': ('Balances or totals differ', 'Compare the printed balance or total with the selected payments. The statement review shows the calculation and source.'),
     'count': ('Possible missing payments', 'The selected payments do not match the printed count, or possible payments were left out. Compare the source rows.'),
     'overlap': ('Overlapping statement dates', 'Compare the statements for duplicate payments. Overlapping dates alone do not establish a duplicate.'),
+    'duplicate': ('Possible duplicate statements', 'A separate file has matching bank, account, holder, currency and statement dates. Compare the original, then leave the copy unimported or record why both are needed.'),
     'saved_review': ('Earlier corrections need comparison', 'Compare and keep the investigator’s saved corrections before confirming the new reading.'),
     'assignment': ('Payments need an account', 'Open the review to assign these payments to the correct account and period.'),
     'import_failed': ('Import needs recovery', 'Open the statement to check the saved import result and retry without duplicating payments.'),
@@ -29,6 +30,8 @@ def reason(problem):
         return {'holder': 'holder', 'account_number': 'account', 'period': 'dates'}.get(field, 'reading')
     if kind == 'coverage_load':
         return 'reading'
+    if kind == 'coverage' and problem.get('matching_statement'):
+        return 'duplicate'
     if kind == 'coverage' or 'another statement covers' in message:
         return 'overlap'
     if kind in ('transaction_count', 'omitted_transactions'):

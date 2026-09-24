@@ -68,6 +68,9 @@ class StatementOverlapTests(TestCase):
         status = self.b.status(batch)
         self.assertEqual(status['counts']['attention'], 2, status)
         self.assertEqual(status['counts']['ready'], 0)
+        self.assertEqual(status['available_statements'], 0, status)
+        group = next(g for g in status['review_summary']['groups'] if g['id'] == 'duplicate')
+        self.assertEqual(group['blocked_statements'], 2)
         item = next(i for i in status['items'] if i['file_id'] == str(other.id))
         self.f.file = other
         raw = self.f.request()
@@ -83,6 +86,7 @@ class StatementOverlapTests(TestCase):
         status = self.b.status(batch)
         self.assertEqual(status['counts']['ready'], 1, status)
         self.assertEqual(status['counts']['skipped'], 1)
+        self.assertFalse(next(i for i in status['items'] if i['file_id'] == str(other.id))['can_import'])
         with self.f.SessionLocal() as db:
             batches.queue_import(db, case_id=self.f.case.id, batch_id=batch, expected_revision=status['ready_revision'], actor=self.f.actor)
         self.b.advance(batch)
@@ -156,7 +160,7 @@ class StatementOverlapTests(TestCase):
         first = self.create(self.primary, other)
         with self.f.SessionLocal() as db:
             for item in db.scalars(select(Item).where(Item.batch_id == first)):
-                summary = dict(item.summary); summary.pop('institution')
+                summary = dict(item.summary); summary.pop('institution'); summary.pop('account_type')
                 item.summary = summary
             db.commit()
         status = self.b.status(first)
@@ -201,3 +205,90 @@ class StatementOverlapTests(TestCase):
             source.metadata_ = metadata
             db.commit()
         self.assertFalse(self.f.confirm(raw)['created'])
+
+    def test_matching_account_holder_and_exact_period_hold_a_second_import(self):
+        first = self.f.confirm()
+        other = self.copy_file()
+        self.f.file = other
+        raw = self.f.request()
+        review = self.review(other, raw)
+        self.assertTrue(review['matching_statement'])
+        with self.assertRaisesRegex(PdfMappingError, 'Compare the existing statement'):
+            self.f.confirm(raw)
+        with self.f.SessionLocal() as db:
+            self.assertEqual(len(list(db.scalars(select(FinancialTransaction)))), 12)
+            self.assertIsNotNone(db.get(EvidenceFile, other.id))
+        raw.update(coverage_review_revision=review['revision'], coverage_review_reason='Reviewed the revised source; additional records need separate retention.')
+        second = self.f.confirm(raw)
+        self.assertTrue(second['created'])
+        self.assertNotEqual(first['source_document_id'], second['source_document_id'])
+        self.assertFalse(self.f.confirm(raw)['created'])
+
+    def test_identity_match_does_not_guess_masked_accounts_holders_or_different_products(self):
+        raw = self.f.request()
+        own = overlap.scope(raw)
+        self.assertTrue(overlap.same_statement(own, overlap.scope({**raw, 'holder': ' TEST COMPANY '})))
+        for changes in ({'holder': ''}, {'holder': 'Another Company'}, {'account_number': '***123'},
+                        {'currency': 'USD'}, {'period_start': '2023-02-01'}, {'account_type': 'credit_card'}):
+            self.assertFalse(overlap.same_statement(own, overlap.scope({**raw, **changes})), changes)
+
+    def test_new_section_key_cannot_make_a_statement_compare_against_itself(self):
+        batch = self.create(self.primary)
+        with self.f.SessionLocal() as db:
+            item = db.scalar(select(Item).where(Item.batch_id == batch))
+            item.statement_key = 'a' * 64
+            db.commit()
+        raw = self.f.request()
+        raw['statement_id'] = 'b' * 64
+        self.assertEqual(self.review(self.primary, raw)['candidates'], [])
+
+    def test_false_lineage_with_different_bytes_still_requires_comparison(self):
+        self.create(self.primary)
+        other = self.copy_file()
+        other.metadata_ = {**(other.metadata_ or {}), 'statement_root_evidence_id': str(self.primary.id)}
+        self.f.db.commit()
+        self.assertTrue(self.review(other)['matching_statement'])
+
+    def test_old_internal_readings_are_history_not_competing_pending_statements(self):
+        from datetime import timedelta
+        first = self.create(self.primary)
+        newer = self.copy_file()
+        Path(newer.stored_path).write_bytes(self.f.path.read_bytes())
+        newer.sha256 = self.primary.sha256
+        newer.created_at = self.primary.created_at + timedelta(seconds=1)
+        newer.metadata_ = {**(newer.metadata_ or {}), 'statement_root_evidence_id': str(self.primary.id),
+            'statement_parent_evidence_id': str(self.primary.id)}
+        self.f.db.commit()
+        # Simulate a stale reader having a different section key and coverage.
+        with self.f.SessionLocal() as db:
+            item = db.scalar(select(Item).where(Item.batch_id == first))
+            item.statement_key = 'a' * 64
+            item.summary = {**item.summary, 'period_start': '2022-12-01'}
+            db.commit()
+        self.assertEqual(self.review(newer)['candidates'], [])
+        second = self.create(newer)
+        self.assertNotEqual(second, first)
+        self.assertEqual(self.create(self.primary), second)
+        self.assertEqual(self.b.status(second)['available_statements'], 1)
+
+    def test_repreparing_the_same_selection_resumes_saved_work_instead_of_making_another_batch(self):
+        batch = self.create(self.primary)
+        item = self.b.status(batch)['items'][0]
+        with self.f.SessionLocal() as db:
+            batches.leave_unimported(db, case_id=self.f.case.id, batch_id=batch, item_id=UUID(item['id']),
+                action='skip', reason='Already compared this source.', expected_revision=item['disposition_revision'], actor=self.f.actor)
+        repeated = self.create(self.primary)
+        self.assertEqual(repeated, batch)
+        self.assertEqual(self.b.status(repeated)['counts']['skipped'], 1)
+
+    def test_statement_register_does_not_offer_identity_matches_as_ready(self):
+        from postgres.base import Base
+        from postgres.models.workspace_entry import WorkspaceEntry, WorkspaceEntryLink
+        Base.metadata.create_all(self.f.engine, tables=[WorkspaceEntry.__table__, WorkspaceEntryLink.__table__])
+        other = self.copy_file()
+        self.create(self.primary, other)
+        from services.financial.statement_file_status import statement_file_status
+        with self.f.SessionLocal() as db:
+            status = statement_file_status(db, case_id=self.f.case.id)
+        self.assertEqual(sum(f.get('available_periods', 0) for f in status['files']), 0)
+        self.assertEqual(sum(f.get('periods_with_checks', 0) for f in status['files']), 2)

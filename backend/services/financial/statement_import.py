@@ -797,9 +797,12 @@ def confirm_statement_import(*, session_factory, case_id, evidence_file_id, requ
                 elif request.replaces_source_document_id is not None:
                     raise PdfMappingError('The import selected for replacement is no longer current.', 409)
                 originals = check_import_request(proposal, request)
-                from services.financial.statement_import_overlap import coverage_review, requires_decision
+                from services.financial.statement_import_overlap import coverage_review, requires_decision, duplicate_hold
+                coverage_request = {**request.model_dump(mode='json'), 'account_type': proposal['metadata'].get('account_type') or ''}
                 coverage = coverage_review(session, case_id=case_id, file_id=evidence_file_id,
-                                           request=request.model_dump(mode='json'))
+                                           request=coverage_request)
+                if duplicate_hold(coverage, coverage_request):
+                    raise PdfMappingError('A separate file matches this bank, full account, holder, currency and statement period. Compare the existing statement, then leave this copy unimported or record why both are needed.', 409)
                 coverage['requires_review'] = requires_decision(coverage, request.model_dump(mode='json'))
                 from services.financial.review_arithmetic import check_proposed_rows
                 arithmetic = check_proposed_rows(proposal, [r.model_dump() for r in request.rows])

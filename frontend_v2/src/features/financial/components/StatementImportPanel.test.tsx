@@ -2268,52 +2268,56 @@ it("edits beside a printed row, preserves its source text and uses the correctio
   )
 })
 
-it("allows overlapping statements to import and retains optional comparison notes", async () => {
-  vi.mocked(useStatementCoverageReview).mockReturnValue({
-    data: {
-      available: true,
-      revision: "d".repeat(64),
-      candidates: [
-        {
-          file_id: "other-file",
-          filename: "Other statement.pdf",
-          statement_id: null,
-          source_document_id: "other-source",
-          status: "imported",
-          period_start: "2023-01-01",
-          period_end: "2023-01-31",
-        },
-      ],
-    },
-    pending: false,
-    error: undefined,
-    retry: vi.fn(),
-  })
-  mount()
-  await open()
-  const confirm = screen.getByRole("button", {
-    name: "Confirm import of 1 transactions",
-  })
-  expect(confirm).toBeEnabled()
-  expect(screen.getByText("Other statement.pdf")).toBeVisible()
-  fireEvent.click(
-    screen.getByRole("checkbox", {
-      name: "I have compared these files and need to import this statement too",
+it.each([false, true])(
+  "holds matching statements (%s) while keeping partial-overlap comparison optional",
+  async (matching) => {
+    vi.mocked(useStatementCoverageReview).mockReturnValue({
+      data: {
+        available: true,
+        matching_statement: matching,
+        revision: "d".repeat(64),
+        candidates: [
+          {
+            file_id: "other-file",
+            filename: "Other statement.pdf",
+            statement_id: null,
+            source_document_id: "other-source",
+            status: "imported",
+            period_start: "2023-01-01",
+            period_end: "2023-01-31",
+          },
+        ],
+      },
+      pending: false,
+      error: undefined,
+      retry: vi.fn(),
     })
-  )
-  expect(confirm).toBeEnabled()
-  fireEvent.change(
-    screen.getByLabelText("Reason for importing overlapping statements"),
-    { target: { value: "Additional records in this statement." } }
-  )
-  expect(confirm).toBeEnabled()
-  fireEvent.click(confirm)
-  await waitFor(() => expect(sent).toHaveLength(1))
-  expect(sent[0]).toMatchObject({
-    coverage_review_reason: "Additional records in this statement.",
-    coverage_review_revision: "d".repeat(64),
-  })
-})
+    mount()
+    await open()
+    const confirm = screen.getByRole<HTMLButtonElement>("button", {
+      name: "Confirm import of 1 transactions",
+    })
+    expect(confirm.disabled).toBe(matching)
+    expect(screen.getByText("Other statement.pdf")).toBeVisible()
+    fireEvent.click(
+      screen.getByRole("checkbox", {
+        name: "I have compared these files and need to import this statement too",
+      })
+    )
+    expect(confirm.disabled).toBe(matching)
+    fireEvent.change(
+      screen.getByLabelText("Reason for importing overlapping statements"),
+      { target: { value: "Additional records in this statement." } }
+    )
+    expect(confirm).toBeEnabled()
+    fireEvent.click(confirm)
+    await waitFor(() => expect(sent).toHaveLength(1))
+    expect(sent[0]).toMatchObject({
+      coverage_review_reason: "Additional records in this statement.",
+      coverage_review_revision: "d".repeat(64),
+    })
+  }
+)
 
 it("keeps labels beside correction inputs and imports routine changes without reasons", async () => {
   mount()

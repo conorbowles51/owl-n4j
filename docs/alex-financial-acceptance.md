@@ -173,6 +173,8 @@ All F01–F28 reports are mapped to implemented workflows and local evidence in 
 
 ## 24 September: future bank and card collections
 
+The later repeated-review report is addressed by the [duplicate statement workflow](financial-workflows/duplicate-statement-review-2026-09-24.md): unchanged selections reuse their preparation, old internal readings do not become competing pending work, strong account/holder/period matches are held before import, and a recorded leave-unimported choice survives reopening. This is prevention and local workflow acceptance; the reported live statement's provenance and any already duplicated payments remain unaudited. No evidence or investigator corrections are deleted.
+
 Latest file-register follow-up: [Ready-to-import workflow acceptance](financial-workflows/ready-statement-workflow-2026-09-24.md) records the repair for the apparently inactive ready counter. It now reveals and focuses ready periods with direct review/import actions; real-service browser checks confirm import, refreshed availability and return to the same filter. The prior live-origin restriction remains separate from this verified local implementation.
 
 The additional statement types are shared processing capabilities, not case- or

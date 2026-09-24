@@ -120,6 +120,9 @@ def statement_file_status(session, *, case_id):
     file_hashes = dict(session.execute(select(EvidenceFile.id, EvidenceFile.sha256)
         .where(EvidenceFile.case_id == case_id, EvidenceFile.id.in_([p.file_id for p in prepared]))).all())
     seen_periods = set()
+    from services.financial.statement_import_overlap import comparison_sources, coverage_review, summary_request, duplicate_hold, scope
+    coverage_sources = None
+    coverage_prepared = {}
     for prepared_item in prepared[:20000]:
         key = str(prepared_item.file_id)
         identity = (key, prepared_item.statement_key)
@@ -130,6 +133,17 @@ def statement_file_status(session, *, case_id):
         item['prepared_periods'] = item.get('prepared_periods', 0) + 1
         already_saved = (file_hashes.get(prepared_item.file_id), prepared_item.statement_key or None) in saved_scopes
         available = not already_saved and prepared_item.status in ('ready', 'attention') and prepared_item.summary.get('can_import', False)
+        held = False
+        if available:
+            raw = {**(prepared_item.review_request or summary_request(prepared_item.summary)),
+                'statement_id': prepared_item.statement_key or None, 'account_type': prepared_item.summary.get('account_type', '')}
+            if scope(raw) is not None:
+                if coverage_sources is None:
+                    coverage_sources, coverage_prepared = comparison_sources(session, case_id)
+                raw = {**coverage_prepared.get(prepared_item.id, raw), 'statement_id': prepared_item.statement_key or None}
+                held = duplicate_hold(coverage_review(session, case_id=case_id, file_id=prepared_item.file_id,
+                    request=raw, sources=coverage_sources), raw)
+            available = not held
         if available:
             summary = prepared_item.summary
             item.setdefault('ready_periods', []).append(dict(
@@ -143,7 +157,7 @@ def statement_file_status(session, *, case_id):
         for field, matched in (
             ('available_periods', available),
             ('pending_periods', prepared_item.status == 'pending_import'),
-            ('periods_with_checks', bool(prepared_item.summary.get('problem_count', 0)) and prepared_item.status != 'skipped'),
+            ('periods_with_checks', (held or bool(prepared_item.summary.get('problem_count', 0))) and prepared_item.status != 'skipped'),
         ):
             item[field] = item.get(field, 0) + int(matched)
     return dict(case_id=str(case_id), files=list(files.values()), truncated=truncated)

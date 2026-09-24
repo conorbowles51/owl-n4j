@@ -1,5 +1,7 @@
 # Loupe financial investigator workflow reference
 
+**24 September duplicate-review follow-up:** [unchanged preparation → matching-statement hold → compare → leave copy unimported or record an exception → import once → reopen](duplicate-statement-review-2026-09-24.md) records the shared safeguards, retained decisions and live-incident limits.
+
 **24 September saved-work follow-up:** [compact finding cards and readable saved text](finding-cards-2026-09-24.md) replaces full-width rows with square cards, groups Edit/Timeline beneath each title and fixes visible storage headings in existing notes with empty follow-up fields.
 
 **24 September ready-to-import follow-up:** [counter → ready periods → review → import → return](ready-statement-workflow-2026-09-24.md) records direct period actions, visible focus/navigation, persisted results and the final local checks.

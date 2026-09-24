@@ -35,6 +35,8 @@ def batch_for(session, case_id, batch_id, lock=False):
 
 
 def create_batch(session, *, case_id, request_id, file_ids, folder_ids, actor):
+    from postgres.models.case import Case
+    session.execute(select(Case.id).where(Case.id == case_id).with_for_update()).all()
     selection = resolve_financial_selection(session, case_id=case_id, file_ids=file_ids, folder_ids=folder_ids)
     existing = session.get(Batch, request_id)
     if existing:
@@ -50,6 +52,15 @@ def create_batch(session, *, case_id, request_id, file_ids, folder_ids, actor):
         return existing.id
     if not selection['files']:
         raise PdfMappingError('No PDF files were found in this selection.', 422)
+    selected_ids = {f['id'] for f in selection['files']}
+    if not any(f.get('financial_removed') for f in selection['files']):
+        # Preparing an unchanged selection resumes the existing work, including
+        # its corrections, choices and import receipts. An explicit new reading
+        # has new evidence IDs and therefore gets a fresh preparation.
+        for previous in session.scalars(select(Batch).where(Batch.case_id == case_id,
+                Batch.status != 'removed').order_by(Batch.created_at.desc(), Batch.id)):
+            if {f['file_id'] for f in previous.files} == selected_ids:
+                return previous.id
     session.add(Batch(id=request_id, case_id=case_id, created_by=actor.user_id, status='preparing',
         actor=dict(name=actor.name, email=actor.email, user_id=str(actor.user_id)),
         files=[dict(source_id=f['id'], file_id=f['id'], filename=f['original_filename'],
@@ -143,6 +154,7 @@ def assess(proposal, request=None):
         balance_status=balance['balance_status'], checks=balance['checks'],
         can_import=can_import, balance_exception=accepted_difference(balance, raw), problems=problems[:50], problem_count=len(problems))
     summary['review_model'] = REVIEW_MODEL
+    summary['account_type'] = proposal['metadata'].get('account_type') or ''
     summary['unclassified_count'] = sum(row['kind'] == 'unclassified' and reviewed.get(row['id'], {}).get('excluded', row['excluded']) for row in rows)
     if can_import:
         from services.financial.import_issues import incomplete_records
@@ -224,10 +236,10 @@ def ready_revision(items):
 def checked_batch_items(session, case_id, items):
     """Project current coverage concerns without making a GET write changes."""
     items = [item for item in items if item.status != "removed"]
-    from services.financial.statement_import_overlap import coverage_review, summary_request, requires_decision, comparison_sources
+    from services.financial.statement_import_overlap import coverage_review, summary_request, requires_decision, comparison_sources, duplicate_hold
     pending = session.execute(select(Item, EvidenceFile).join(Batch, Batch.id == Item.batch_id)
         .join(EvidenceFile, EvidenceFile.id == Item.file_id).where(Batch.case_id == case_id,
-        EvidenceFile.case_id == case_id, Item.status.in_(('ready','attention','pending_import')))).all()
+        EvidenceFile.case_id == case_id, Batch.status != 'removed', Item.status.in_(('ready','attention','pending_import')))).all()
     sources, prepared = comparison_sources(session, case_id, pending)
     cache = {}
     from postgres.models.financial import FinancialSourceDocument
@@ -255,15 +267,20 @@ def checked_batch_items(session, case_id, items):
                 except PdfMappingError as error:
                     summary.update(can_import=False, problems=[dict(message=str(error), row_id=None)], problem_count=1)
             if state in ('ready', 'attention'):
-                raw = {**(projected_request or prepared.get(item.id) or summary_request(summary)), 'statement_id': item.statement_key or None}
+                raw = {**(projected_request or prepared.get(item.id) or summary_request(summary)),
+                    'statement_id': item.statement_key or None,
+                    'account_type': summary.get('account_type', (prepared.get(item.id) or {}).get('account_type', ''))}
                 review = coverage_review(session, case_id=case_id, file_id=item.file_id, request=raw, sources=sources)
                 problems = [p for p in summary.get('problems', []) if p.get('kind') not in ('coverage', 'coverage_load')]
                 extra_count = max(0, summary.get('problem_count', 0) - len(summary.get('problems', [])))
                 if raw.get('_coverage_error'):
                     problems.append(dict(kind='coverage_load', row_id=None, message=raw['_coverage_error']))
                 if requires_decision(review, raw):
-                    problems.append(dict(kind='coverage', row_id=None,
-                        message='Another statement covers some of these dates. You can compare their payments now or after importing.'))
+                    problems.append(dict(kind='coverage', matching_statement=duplicate_hold(review, raw), row_id=None,
+                        message=('A separate file matches this bank, full account, holder, currency and statement period. Compare the existing statement before importing another copy.'
+                            if duplicate_hold(review, raw) else 'Another statement covers some of these dates. You can compare their payments now or after importing.')))
+                if duplicate_hold(review, raw):
+                    summary['can_import'] = False
                 summary.update(coverage_review=review, problems=problems, problem_count=len(problems) + extra_count)
                 state = 'attention' if problems else 'ready'
         if state == 'imported' and summary.get('source_document_id') and summary['source_document_id'] not in retained:
@@ -283,6 +300,8 @@ def checked_batch_items(session, case_id, items):
             unresolved = sum(not r.get('resolved_transaction_id') for r in records)
             summary.update(problems=issues[:50], problem_count=len(issues), incomplete_count=unresolved,
                 transaction_count=current['transaction_count'], record_count=current['transaction_count'] + unresolved)
+        if state not in ('ready', 'attention'):
+            summary['can_import'] = False
         summary['disposition_revision'] = _digest(dict(status=item.status, request=item.review_request,
             decision=item.summary.get('import_decision')))
         summary['currency_revision'] = currency_revision(item, summary)

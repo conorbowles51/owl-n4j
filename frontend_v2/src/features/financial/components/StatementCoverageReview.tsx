@@ -24,16 +24,23 @@ export function StatementCoverageReview({
   )
   if (!review.candidates.length) return null
   const checked = decision.revision === review.revision
+  const decided = checked && !!decision.reason.trim()
   return (
     <section
       aria-label="Compare overlapping statements"
       className="rounded border border-amber-300 bg-amber-50/40 dark:bg-amber-950/20 p-3 space-y-3 text-sm"
     >
-      <h3 className="font-semibold">Another statement covers these dates</h3>
+      <h3 className="font-semibold">
+        {review.matching_statement
+          ? decided
+            ? "Possible duplicate statement — comparison recorded"
+            : "Possible duplicate statement — import on hold"
+          : "Another statement covers these dates"}
+      </h3>
       <p>
-        These files have overlapping dates for the same bank and account
-        reference. Compare them before importing both. A matching account ending
-        or date range does not establish that the payments are duplicates.
+        {review.matching_statement
+          ? "A separate file matches the bank, full account number, account holder, currency and exact statement dates. Compare its original before adding another import. Matching details can also occur on a revised statement, so neither file is deleted."
+          : "These files have overlapping dates for the same bank and account reference. A matching account ending or date range alone does not establish that the payments are duplicates."}
       </p>
       <ul className="space-y-2 max-h-64 overflow-y-auto">
         {review.candidates.map((other) => (
@@ -48,6 +55,8 @@ export function StatementCoverageReview({
                 {other.status === "imported"
                   ? "Already imported"
                   : "Awaiting import"}
+                {other.matching_statement &&
+                  " · Same account, holder, currency and period"}
               </p>
             </div>
             <Button size="sm" variant="outline" onClick={() => setFile(other)}>

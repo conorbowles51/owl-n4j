@@ -75,6 +75,23 @@ def create_app():
         from tests.test_financial_statement_import_credit_one import install_collection
         install_collection(fixture)
         return {'synthetic': True}
+    @app.post('/__fixture/duplicate-statements')
+    def duplicate_statements():
+        from hashlib import sha256
+        from postgres.models.evidence import EvidenceDocumentText
+        from tests.test_financial_statement_overlap import StatementOverlapTests
+        from services.financial.file_scope import mark_financial_workspace
+        text = fixture.db.get(EvidenceDocumentText, fixture.file.id)
+        text.content += 'Bank: Synthetic Bank\nStatement Period: January 1, 2023 - December 31, 2023\n'
+        text.content_sha256 = sha256(text.content.encode()).hexdigest()
+        text.character_count = len(text.content)
+        fixture.db.commit()
+        helper = StatementOverlapTests()
+        helper.f, helper.primary = fixture, fixture.file
+        other = helper.copy_file()
+        mark_financial_workspace(other, user_id=fixture.user.id)
+        fixture.db.commit()
+        return {'synthetic': True, 'other_file_id': str(other.id)}
     @app.post('/__fixture/recovery')
     def recover_fixture():
         from tests.test_financial_deployment_recovery import partial_import, snapshot
