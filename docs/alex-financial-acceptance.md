@@ -169,6 +169,17 @@ automatic deployment triggered by publication.
 
 All F01–F28 reports are mapped to implemented workflows and local evidence in the [current acceptance record](financial-workflows/implementation-progress-2026-09-23.md). This includes both late additions: retained review filters/active manual rows and direction-aware existing counterparty/account links. Real-service Chromium checks save/import/reopen through production FastAPI routes and independently read back a second bulk correction. The source PDF, account/period/currency, payment identity, history and next action remain part of each journey. Live incident verification is separately blocked by the origin-authorization review described in that record; no live client records were changed.
 
+## 24 September: future bank and card collections
+
+The additional statement types are shared processing capabilities, not case- or
+file-specific repairs. The [collection acceptance record](financial-workflows/statement-collections-2026-09-24.md)
+covers Credit One cards, Andrews account/share dates and currency, targeted image
+rereads, mixed bank/card selection, separate imports and saved reopening. Source
+uncertainties and an apparent missing printed page remain explicit review items;
+they are not silently completed with guessed values. Private documents and source
+checks remain outside Git. The existing production-access restriction still
+prevents independent live verification.
+
 ## 24 September: explain the batch before individual review
 
 The report that almost every statement appears problematic adds an explicit acceptance requirement: show the reasons and import consequences at batch level, then retain the selected reason through review, correction, next/previous and return. This workflow is implemented and locally verified in the [connected release record](financial-workflows/next-release-2026-09-24.md#follow-up-understand-and-work-through-batch-checks), together with the missing-reading Retry repair and the earlier source-selection, compact saved-work and background-recovery work. Counts span all pages; absent balance inputs do not become false differences; correcting a shared missing holder updates the group without importing or changing payments. Exact causes in the reported live batch and the three unresolved file failures are not established by the synthetic tests. Publication/live access remain blocked as recorded there.

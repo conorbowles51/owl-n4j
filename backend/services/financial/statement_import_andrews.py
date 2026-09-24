@@ -13,7 +13,7 @@ from services.financial.pdf_candidates import _digest
 from services.financial.statement_import_proposal import exact_amount
 
 _LAYOUT = 'andrews-share-statement'
-_DATE = r'\d{2}/\d{2}'
+_DATE = r'\d\s*\d\s*/\s*\d\s*\d'
 _SPACED_MONEY = r'[+-]?\s*(?:\d{1,3}(?:,\d{3})+|\d+)\s*\.\s*\d{2}'
 _FULL_DATE = r'\d\s*\d\s*/\s*\d\s*\d\s*/\s*(?:2\s*0\s*)?\d\s*\d'
 _TYPES = {'BASE SHARE SAVINGS': 'savings', 'FREE CHECKING': 'checking', 'VISA PAYMENT': 'other'}
@@ -27,7 +27,7 @@ _CLOSED = re.compile(r'^(\d{2}/\d{2}) ID (\d{4}) (BASE SHARE SAVINGS|FREE CHECKI
 _WITHDRAWAL = r'\s*'.join('Withdrawal')
 _DEPOSIT = r'\s*'.join('Deposit')
 _RECURRING = r'\s*'.join('Recurring')
-_PAYMENT = re.compile(r'^(\S+)(?: (\d{2}/\d{2}))? ((?:' + _RECURRING +
+_PAYMENT = re.compile(r'^(' + _DATE + r'|\S+)(?: (' + _DATE + r'))? ((?:' + _RECURRING +
                       r'\s+)?(' + _WITHDRAWAL + '|' + _DEPOSIT + r')\b.*)$')
 _DAMAGED_DATE_PAYMENT = re.compile(r'^(.{1,12}?) ((?:' + _RECURRING +
                                  r'\s+)?(' + _WITHDRAWAL + '|' + _DEPOSIT + r')\b.*)$')
@@ -347,6 +347,7 @@ def unassigned_andrews_groups(sources, handled):
 
 
 def _period_date(text, statement):
+    text = re.sub(r'\s+', '', text)
     if not re.fullmatch(_DATE, text):
         return None
     start, end = date.fromisoformat(statement['period_start']), date.fromisoformat(statement['period_end'])
@@ -360,6 +361,7 @@ def _period_date(text, statement):
 
 def _ordinary_additional_date(printed, primary):
     """Recognise nearby date text without assigning it a transaction-date role."""
+    printed = re.sub(r'\s+', '', printed)
     if not primary or not re.fullmatch(_DATE, printed):
         return False
     first = date.fromisoformat(primary)

@@ -15727,7 +15727,7 @@
     {
       "component": "StatementImportPanel",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 357,
+      "line": 358,
       "control": "Button",
       "label": "{open ? \"All files & imports\" : canEdit ? \"Import a statement\" : \"Open statements\"}",
       "disabled": null,
@@ -15739,7 +15739,7 @@
     {
       "component": "StatementImportPanel",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 371,
+      "line": 372,
       "control": "Button",
       "label": "Upload a statement",
       "disabled": null,
@@ -15751,7 +15751,7 @@
     {
       "component": "StatementImportPanel",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 395,
+      "line": 396,
       "control": "select",
       "label": "\"Uploaded statement\"",
       "disabled": null,
@@ -15763,7 +15763,7 @@
     {
       "component": "StatementImportPanel",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 423,
+      "line": 424,
       "control": "StatementReview",
       "label": "(label supplied by parent)",
       "disabled": null,
@@ -15775,7 +15775,7 @@
     {
       "component": "StatementReview",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 497,
+      "line": 498,
       "control": "Button",
       "label": "Retry statement review",
       "disabled": null,
@@ -15787,7 +15787,7 @@
     {
       "component": "StatementReview",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 501,
+      "line": 502,
       "control": "Button",
       "label": "Change currency",
       "disabled": null,
@@ -15799,7 +15799,7 @@
     {
       "component": "StatementReview",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 536,
+      "line": 537,
       "control": "Button",
       "label": "Choose another statement or receipt",
       "disabled": null,
@@ -15811,7 +15811,7 @@
     {
       "component": "StatementReview",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 546,
+      "line": 547,
       "control": "StatementSectionPicker",
       "label": "(label supplied by parent)",
       "disabled": null,
@@ -15823,7 +15823,7 @@
     {
       "component": "StatementReview",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 560,
+      "line": 561,
       "control": "Button",
       "label": "{hasReceipts ? \"Choose another statement or receipt\" : \"Choose another statement period\"}",
       "disabled": null,
@@ -15835,7 +15835,7 @@
     {
       "component": "StatementReview",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 568,
+      "line": 569,
       "control": "select",
       "label": "\"Statement currency\"",
       "disabled": null,
@@ -15847,7 +15847,7 @@
     {
       "component": "StatementReview",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 629,
+      "line": 630,
       "control": "Button",
       "label": "View {query.data.current_import.transaction_count} payments in Transactions for this period",
       "disabled": null,
@@ -15859,7 +15859,7 @@
     {
       "component": "StatementReview",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 662,
+      "line": 663,
       "control": "StatementCurrencyControl",
       "label": "(label supplied by parent)",
       "disabled": "{ !canEdit || !!batchReview?.readOnly || !!query.data.current_import }",
@@ -15871,7 +15871,7 @@
     {
       "component": "StatementReview",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 672,
+      "line": 673,
       "control": "StatementPeriodSelect",
       "label": "(label supplied by parent)",
       "disabled": null,
@@ -15883,7 +15883,7 @@
     {
       "component": "StatementReview",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 679,
+      "line": 680,
       "control": "Button",
       "label": "{hasReceipts ? \"Choose another statement or receipt\" : \"Choose another statement period\"}",
       "disabled": null,
@@ -15895,7 +15895,7 @@
     {
       "component": "StatementReview",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 704,
+      "line": 705,
       "control": "Button",
       "label": "Review duplicate decision",
       "disabled": null,
@@ -15905,7 +15905,7 @@
     {
       "component": "StatementReview",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 705,
+      "line": 706,
       "control": "a",
       "label": "Review duplicate decision",
       "disabled": null,
@@ -15915,7 +15915,7 @@
     {
       "component": "StatementReview",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 764,
+      "line": 765,
       "control": "RefreshStoredReading",
       "label": "(label supplied by parent)",
       "disabled": null,
@@ -15927,7 +15927,7 @@
     {
       "component": "StatementReview",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 787,
+      "line": 788,
       "control": "summary",
       "label": "Recorded import decisions ( {query.data.current_import.review_decisions.length} )",
       "disabled": null,
@@ -15937,7 +15937,7 @@
     {
       "component": "StatementReview",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 836,
+      "line": 837,
       "control": "EditableStatement",
       "label": "(label supplied by parent)",
       "disabled": null,
@@ -15949,7 +15949,7 @@
     {
       "component": "RefreshStoredReading",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 922,
+      "line": 923,
       "control": "Button",
       "label": "{update.isPending ? \"Updating saved reading…\" : paymentCount ? `Save ${paymentCount} payments to Transactions` : \"Save statement balances and open account\"}",
       "disabled": "{update.isPending || (comparisonRequired && !compared)}",
@@ -15961,7 +15961,7 @@
     {
       "component": "FailedStatementReading",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 969,
+      "line": 970,
       "control": "select",
       "label": "\"Original PDF page\"",
       "disabled": null,
@@ -15973,7 +15973,7 @@
     {
       "component": "rowTools",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 1901,
+      "line": 1902,
       "control": "Button",
       "label": "{changed(edit) ? \"View correction\" : \"View recorded check\"}",
       "disabled": null,
@@ -15985,7 +15985,7 @@
     {
       "component": "rowTools",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 1912,
+      "line": 1913,
       "control": "Button",
       "label": "Edit this row",
       "disabled": null,
@@ -15997,7 +15997,7 @@
     {
       "component": "statementDetails",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 1995,
+      "line": 1996,
       "control": "input",
       "label": "\"Account holder\"",
       "disabled": null,
@@ -16009,7 +16009,7 @@
     {
       "component": "statementDetails",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 2005,
+      "line": 2006,
       "control": "input",
       "label": "\"Account number\"",
       "disabled": null,
@@ -16021,7 +16021,7 @@
     {
       "component": "statementDetails",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 2028,
+      "line": 2029,
       "control": "input",
       "label": "\"Bank\"",
       "disabled": null,
@@ -16033,7 +16033,7 @@
     {
       "component": "statementDetails",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 2038,
+      "line": 2039,
       "control": "input",
       "label": "\"Period start\"",
       "disabled": null,
@@ -16045,7 +16045,7 @@
     {
       "component": "statementDetails",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 2049,
+      "line": 2050,
       "control": "input",
       "label": "\"Period end\"",
       "disabled": null,
@@ -16057,7 +16057,7 @@
     {
       "component": "statementDetails",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 2063,
+      "line": 2064,
       "control": "input",
       "label": "\"Reason for detail corrections\"",
       "disabled": null,
@@ -16069,7 +16069,7 @@
     {
       "component": "statementDetails",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 2077,
+      "line": 2078,
       "control": "Button",
       "label": "{saveBatchReview.isPending ? \"Saving details…\" : \"Save account details\"}",
       "disabled": "{ assignmentSaving || saveBatchReview.isPending || confirm.isPending || (savedReadingChanged && !previousReviewChecked) }",
@@ -16081,7 +16081,7 @@
     {
       "component": "EditableStatement",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 2177,
+      "line": 2178,
       "control": "Button",
       "label": "{saveBatchReview.isPending ? \"Saving progress…\" : \"Save progress\"}",
       "disabled": "{ assignmentSaving || saveBatchReview.isPending || confirm.isPending || (savedReadingChanged && !previousReviewChecked) }",
@@ -16093,7 +16093,7 @@
     {
       "component": "EditableStatement",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 2190,
+      "line": 2191,
       "control": "Button",
       "label": "Save and open previous problem",
       "disabled": "{ assignmentSaving || saveBatchReview.isPending || confirm.isPending }",
@@ -16105,7 +16105,7 @@
     {
       "component": "EditableStatement",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 2203,
+      "line": 2204,
       "control": "Button",
       "label": "Save and open next problem",
       "disabled": "{ assignmentSaving || saveBatchReview.isPending || confirm.isPending }",
@@ -16117,7 +16117,7 @@
     {
       "component": "EditableStatement",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 2313,
+      "line": 2314,
       "control": "Button",
       "label": "{confirm.isPending || saveBatchReview.isPending ? \"Saving statement…\" : batchReview && !batchReview.confirm ? \"Save and return to batch\" : included.length ? `Import ${included.length - incompleteCount} payments and view Transactions` : data.can_record_account_closure ? \"Save closure now\" : \"Save balances now\"}",
       "disabled": "{!!importDisabled}",
@@ -16129,7 +16129,7 @@
     {
       "component": "EditableStatement",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 2331,
+      "line": 2332,
       "control": "Button",
       "label": "Save draft and return to batch",
       "disabled": "{!!importDisabled}",
@@ -16141,7 +16141,7 @@
     {
       "component": "EditableStatement",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 2347,
+      "line": 2348,
       "control": "Button",
       "label": "Retry statement checks",
       "disabled": null,
@@ -16153,7 +16153,7 @@
     {
       "component": "EditableStatement",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 2368,
+      "line": 2369,
       "control": "input",
       "label": "\"checkbox\"",
       "disabled": "{!canEdit || serverChecks.pending}",
@@ -16165,7 +16165,7 @@
     {
       "component": "EditableStatement",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 2388,
+      "line": 2389,
       "control": "textarea",
       "label": "\"Why the difference remains\"",
       "disabled": "{!canEdit}",
@@ -16177,7 +16177,7 @@
     {
       "component": "EditableStatement",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 2418,
+      "line": 2419,
       "control": "Button",
       "label": "{attentionCount ? \"Show items to check\" : \"Go to confirmation\"}",
       "disabled": null,
@@ -16189,7 +16189,7 @@
     {
       "component": "EditableStatement",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 2456,
+      "line": 2457,
       "control": "Button",
       "label": "Exclude {emptyEntries.length} blank rows from import",
       "disabled": "{ confirm.isPending || saveBatchReview.isPending || assignmentSaving }",
@@ -16201,7 +16201,7 @@
     {
       "component": "EditableStatement",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 2475,
+      "line": 2476,
       "control": "Button",
       "label": "Undo excluding blank rows",
       "disabled": "{ confirm.isPending || saveBatchReview.isPending || assignmentSaving }",
@@ -16213,7 +16213,7 @@
     {
       "component": "EditableStatement",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 2505,
+      "line": 2506,
       "control": "Button",
       "label": "Previous problem",
       "disabled": "{problemIndex <= 0}",
@@ -16225,7 +16225,7 @@
     {
       "component": "EditableStatement",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 2518,
+      "line": 2519,
       "control": "Button",
       "label": "{problemIndex < 0 ? \"First problem\" : \"Next problem\"}",
       "disabled": "{problemIndex >= problemIds.length - 1}",
@@ -16237,7 +16237,7 @@
     {
       "component": "EditableStatement",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 2529,
+      "line": 2530,
       "control": "div",
       "label": "\"Transaction navigation\"",
       "disabled": null,
@@ -16249,7 +16249,7 @@
     {
       "component": "EditableStatement",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 2542,
+      "line": 2543,
       "control": "Button",
       "label": "Previous transaction",
       "disabled": "{activeTransaction <= 0}",
@@ -16261,7 +16261,7 @@
     {
       "component": "EditableStatement",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 2555,
+      "line": 2556,
       "control": "Button",
       "label": "{activeTransaction < 0 ? \"First transaction\" : \"Next transaction\"}",
       "disabled": "{activeTransaction >= included.length - 1}",
@@ -16273,7 +16273,7 @@
     {
       "component": "EditableStatement",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 2571,
+      "line": 2572,
       "control": "Button",
       "label": "Previous page",
       "disabled": "{pageIndex <= 0}",
@@ -16285,7 +16285,7 @@
     {
       "component": "EditableStatement",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 2580,
+      "line": 2581,
       "control": "select",
       "label": "\"Statement viewer page\"",
       "disabled": null,
@@ -16297,7 +16297,7 @@
     {
       "component": "EditableStatement",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 2594,
+      "line": 2595,
       "control": "Button",
       "label": "Next page",
       "disabled": "{pageIndex < 0 || pageIndex >= data.page_numbers.length - 1}",
@@ -16309,7 +16309,7 @@
     {
       "component": "EditableStatement",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 2603,
+      "line": 2604,
       "control": "Button",
       "label": "{data.current_import?.evidence_file_id === fileId ? canEdit ? \"Edit imported transactions\" : data.current_import.transaction_count ? \"Open imported transactions\" : data.current_import.incomplete_count ? \"Review saved incomplete records\" : \"View saved account and balances\" : \"Edit import values\"}",
       "disabled": null,
@@ -16321,7 +16321,7 @@
     {
       "component": "EditableStatement",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 2647,
+      "line": 2648,
       "control": "Button",
       "label": "Close source",
       "disabled": null,
@@ -16333,7 +16333,7 @@
     {
       "component": "EditableStatement",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 2664,
+      "line": 2665,
       "control": "Button",
       "label": "Add a missed transaction",
       "disabled": "{!canEdit || !data.page_numbers.length}",
@@ -16345,7 +16345,7 @@
     {
       "component": "EditableStatement",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 2720,
+      "line": 2721,
       "control": "select",
       "label": "\"Manual payment source page\"",
       "disabled": null,
@@ -16357,7 +16357,7 @@
     {
       "component": "EditableStatement",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 2858,
+      "line": 2859,
       "control": "Button",
       "label": "{correctionsOpen ? \"Hide corrections and import choices\" : \"Show corrections and import choices\"}",
       "disabled": null,
@@ -16369,7 +16369,7 @@
     {
       "component": "EditableStatement",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 2871,
+      "line": 2872,
       "control": "input",
       "label": "\"checkbox\"",
       "disabled": null,
@@ -16381,7 +16381,7 @@
     {
       "component": "EditableStatement",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 2882,
+      "line": 2883,
       "control": "input",
       "label": "\"checkbox\"",
       "disabled": null,
@@ -16393,7 +16393,7 @@
     {
       "component": "EditableStatement",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 2940,
+      "line": 2941,
       "control": "input",
       "label": "{`Include row ${r.id}`}",
       "disabled": "{ original.kind === \"balance\" || original.kind === \"statement_total\" }",
@@ -16405,7 +16405,7 @@
     {
       "component": "EditableStatement",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 2953,
+      "line": 2954,
       "control": "Button",
       "label": "Done editing row",
       "disabled": null,
@@ -16417,7 +16417,7 @@
     {
       "component": "EditableStatement",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 2988,
+      "line": 2989,
       "control": "input",
       "label": "{`Date ${r.id}`}",
       "disabled": "{r.excluded}",
@@ -16429,7 +16429,7 @@
     {
       "component": "EditableStatement",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 3010,
+      "line": 3011,
       "control": "input",
       "label": "{`${dateLabels[role]} ${r.id}`}",
       "disabled": "{r.excluded}",
@@ -16441,7 +16441,7 @@
     {
       "component": "EditableStatement",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 3051,
+      "line": 3052,
       "control": "input",
       "label": "{`Description ${r.id}`}",
       "disabled": "{r.excluded}",
@@ -16453,7 +16453,7 @@
     {
       "component": "EditableStatement",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 3063,
+      "line": 3064,
       "control": "input",
       "label": "{`Counterparty ${r.id}`}",
       "disabled": "{r.excluded}",
@@ -16465,7 +16465,7 @@
     {
       "component": "EditableStatement",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 3073,
+      "line": 3074,
       "control": "PaymentCounterpartyPicker",
       "label": "(label supplied by parent)",
       "disabled": "{r.excluded}",
@@ -16477,7 +16477,7 @@
     {
       "component": "EditableStatement",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 3098,
+      "line": 3099,
       "control": "Button",
       "label": "Mark checked",
       "disabled": null,
@@ -16489,7 +16489,7 @@
     {
       "component": "EditableStatement",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 3115,
+      "line": 3116,
       "control": "select",
       "label": "{`Source page ${r.id}`}",
       "disabled": null,
@@ -16501,7 +16501,7 @@
     {
       "component": "EditableStatement",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 3143,
+      "line": 3144,
       "control": "input",
       "label": "{`Reason ${r.id}`}",
       "disabled": null,
@@ -16513,7 +16513,7 @@
     {
       "component": "EditableStatement",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 3157,
+      "line": 3158,
       "control": "Button",
       "label": "{c.expected_text}",
       "disabled": null,
@@ -16525,7 +16525,7 @@
     {
       "component": "EditableStatement",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 3186,
+      "line": 3187,
       "control": "input",
       "label": "{`${direction === \"credit\" ? \"Credit\" : \"Debit\"} ${r.id}`}",
       "disabled": "{ r.excluded || (!!r.amount_minor && r.amount_minor !== \"0\" && !!r.direction && r.direction !== direction) }",
@@ -16537,7 +16537,7 @@
     {
       "component": "EditableStatement",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 3223,
+      "line": 3224,
       "control": "Button",
       "label": "Move amount to {\" \"} {direction === \"credit\" ? \"Credit / money in\" : \"Debit / money out\"}",
       "disabled": null,
@@ -16549,7 +16549,7 @@
     {
       "component": "EditableStatement",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 3245,
+      "line": 3246,
       "control": "input",
       "label": "{`Balance ${r.id}`}",
       "disabled": null,
@@ -16561,7 +16561,7 @@
     {
       "component": "EditableStatement",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 3279,
+      "line": 3280,
       "control": "Button",
       "label": "View source",
       "disabled": null,
@@ -16573,7 +16573,7 @@
     {
       "component": "EditableStatement",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 3308,
+      "line": 3309,
       "control": "Button",
       "label": "Previous review rows",
       "disabled": "{!currentCorrectionPage}",
@@ -16585,7 +16585,7 @@
     {
       "component": "EditableStatement",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 3317,
+      "line": 3318,
       "control": "select",
       "label": "\"Review page\"",
       "disabled": null,
@@ -16597,7 +16597,7 @@
     {
       "component": "EditableStatement",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 3341,
+      "line": 3342,
       "control": "Button",
       "label": "Next review rows",
       "disabled": "{ (currentCorrectionPage + 1) * 50 >= visible.length }",
@@ -16609,7 +16609,7 @@
     {
       "component": "EditableStatement",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 3377,
+      "line": 3378,
       "control": "input",
       "label": "\"Replace the previous import\"",
       "disabled": "{!canEdit}",
@@ -16621,7 +16621,7 @@
     {
       "component": "EditableStatement",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 3400,
+      "line": 3401,
       "control": "summary",
       "label": "About this statement",
       "disabled": null,
@@ -16631,7 +16631,7 @@
     {
       "component": "EditableStatement",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 3530,
+      "line": 3531,
       "control": "button",
       "label": "{`${canEdit ? \"Edit\" : \"Inspect\"} ${label}${controls.length > 1 ? ` on page ${originals.get(control.id)?.page_number}, row ${originals.get(control.id)!.row_index + 1}` : \"\"}`}",
       "disabled": null,
@@ -16643,7 +16643,7 @@
     {
       "component": "EditableStatement",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 3557,
+      "line": 3558,
       "control": "Button",
       "label": "Add {role} balance",
       "disabled": null,
@@ -16655,7 +16655,7 @@
     {
       "component": "EditableStatement",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 3595,
+      "line": 3596,
       "control": "input",
       "label": "{`Statement ${role} balance${controls.length > 1 ? ` ${control.id}` : \"\"}`}",
       "disabled": null,
@@ -16667,7 +16667,7 @@
     {
       "component": "EditableStatement",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 3629,
+      "line": 3630,
       "control": "select",
       "label": "{`${role} balance source page`}",
       "disabled": null,
@@ -16679,7 +16679,7 @@
     {
       "component": "EditableStatement",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 3658,
+      "line": 3659,
       "control": "summary",
       "label": "Inspect another page of the original PDF {data.unassigned_page_numbers.length ? ` (${data.unassigned_page_numbers.length} pages need a coverage check)` : \"\"}",
       "disabled": null,
@@ -16689,7 +16689,7 @@
     {
       "component": "EditableStatement",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 3683,
+      "line": 3684,
       "control": "select",
       "label": "\"Original PDF page\"",
       "disabled": null,
@@ -16701,7 +16701,7 @@
     {
       "component": "EditableStatement",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 3713,
+      "line": 3714,
       "control": "Button",
       "label": "Show selected page",
       "disabled": null,
@@ -16713,7 +16713,7 @@
     {
       "component": "EditableStatement",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 3755,
+      "line": 3756,
       "control": "Button",
       "label": "Retry overlap check",
       "disabled": null,
@@ -16725,7 +16725,7 @@
     {
       "component": "EditableStatement",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 3768,
+      "line": 3769,
       "control": "Button",
       "label": "View account closure in PDF",
       "disabled": null,
@@ -16737,7 +16737,7 @@
     {
       "component": "EditableStatement",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 3791,
+      "line": 3792,
       "control": "Button",
       "label": "{batchReview ? saveBatchReview.isPending ? \"Saving checked statement…\" : included.length === 0 ? data.can_record_account_closure ? \"Save account closure\" : \"Save statement balances\" : \"Save for bulk import\" : confirm.isPending ? \"Importing statement…\" : data.can_record_account_closure && included.length === 0 ? \"Save account closure\" : included.length === 0 ? \"Save statement balances\" : `Confirm import of ${included.length} transactions`}",
       "disabled": "{!!importDisabled}",
@@ -16749,7 +16749,7 @@
     {
       "component": "EditableStatement",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 3852,
+      "line": 3853,
       "control": "Button",
       "label": "Go to field",
       "disabled": null,
@@ -16761,7 +16761,7 @@
     {
       "component": "EditableStatement",
       "file": "frontend_v2/src/features/financial/components/StatementImportPanel.tsx",
-      "line": 3881,
+      "line": 3882,
       "control": "Button",
       "label": "Review row",
       "disabled": null,
@@ -17454,7 +17454,7 @@
     {
       "component": "StatementPeriodSelect",
       "file": "frontend_v2/src/features/financial/components/StatementSectionPicker.tsx",
-      "line": 107,
+      "line": 117,
       "control": "select",
       "label": "\"Statement account\"",
       "disabled": null,
@@ -17466,7 +17466,7 @@
     {
       "component": "StatementPeriodSelect",
       "file": "frontend_v2/src/features/financial/components/StatementSectionPicker.tsx",
-      "line": 141,
+      "line": 152,
       "control": "select",
       "label": "\"Statement period\"",
       "disabled": null,
@@ -17478,7 +17478,7 @@
     {
       "component": "StatementPeriodSelect",
       "file": "frontend_v2/src/features/financial/components/StatementSectionPicker.tsx",
-      "line": 166,
+      "line": 179,
       "control": "input",
       "label": "\"Find a period\"",
       "disabled": null,
@@ -17490,7 +17490,7 @@
     {
       "component": "StatementPeriodSelect",
       "file": "frontend_v2/src/features/financial/components/StatementSectionPicker.tsx",
-      "line": 175,
+      "line": 188,
       "control": "Button",
       "label": "Previous period",
       "disabled": "{index <= 0}",
@@ -17502,7 +17502,7 @@
     {
       "component": "StatementPeriodSelect",
       "file": "frontend_v2/src/features/financial/components/StatementSectionPicker.tsx",
-      "line": 185,
+      "line": 198,
       "control": "Button",
       "label": "Next period",
       "disabled": "{index < 0 || index >= periods.length - 1}",
@@ -17514,7 +17514,7 @@
     {
       "component": "StatementPeriodSelect",
       "file": "frontend_v2/src/features/financial/components/StatementSectionPicker.tsx",
-      "line": 203,
+      "line": 216,
       "control": "button",
       "label": "Clear period search",
       "disabled": null,
@@ -17526,7 +17526,7 @@
     {
       "component": "StatementSectionPicker",
       "file": "frontend_v2/src/features/financial/components/StatementSectionPicker.tsx",
-      "line": 248,
+      "line": 261,
       "control": "StatementPeriodSelect",
       "label": "(label supplied by parent)",
       "disabled": null,
@@ -17538,7 +17538,7 @@
     {
       "component": "StatementSectionPicker",
       "file": "frontend_v2/src/features/financial/components/StatementSectionPicker.tsx",
-      "line": 252,
+      "line": 265,
       "control": "input",
       "label": "\"Account, year, date or PDF page\"",
       "disabled": null,
@@ -17550,7 +17550,7 @@
     {
       "component": "StatementSectionPicker",
       "file": "frontend_v2/src/features/financial/components/StatementSectionPicker.tsx",
-      "line": 261,
+      "line": 274,
       "control": "Button",
       "label": "Clear search",
       "disabled": null,
@@ -17562,7 +17562,7 @@
     {
       "component": "StatementSectionPicker",
       "file": "frontend_v2/src/features/financial/components/StatementSectionPicker.tsx",
-      "line": 277,
+      "line": 290,
       "control": "Button",
       "label": "{sectionLabel(item)}",
       "disabled": null,

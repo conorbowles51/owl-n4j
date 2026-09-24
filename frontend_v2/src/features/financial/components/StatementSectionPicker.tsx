@@ -7,6 +7,7 @@ export type StatementSection = {
   institution: string
   account_reference: string
   account_label?: string
+  account_type?: string
   currency?: string
   assignment_only?: boolean
   document_kind?: "deposit_receipt"
@@ -22,6 +23,13 @@ export type StatementSection = {
     transaction_count?: number
   }
 }
+function accountTypeLabel(item: StatementSection) {
+  if (item.document_kind) return ""
+  if (item.account_type === "credit_card") return "Credit card"
+  if (item.account_type === "checking") return "Checking account"
+  if (item.account_type === "savings") return "Savings account"
+  return ""
+}
 function sectionLabel(item: StatementSection) {
   return [
     item.document_kind ? "Deposit receipt" : item.institution,
@@ -29,6 +37,7 @@ function sectionLabel(item: StatementSection) {
       ? "Unassigned payments"
       : item.account_reference || "Account needs review",
     item.account_label,
+    accountTypeLabel(item),
     item.currency,
     item.period_start
       ? `${item.period_start} to ${item.period_end}`
@@ -79,6 +88,7 @@ export function StatementPeriodSelect({
       item.institution,
       item.account_reference,
       item.account_label,
+      item.account_type,
       item.currency,
       item.document_kind,
     ])
@@ -127,6 +137,7 @@ export function StatementPeriodSelect({
                     ? "Unassigned payments"
                     : item.account_reference || "Account needs review",
                   item.account_label,
+                  accountTypeLabel(item),
                   item.currency,
                   item.document_kind ? "Deposit receipts" : "",
                 ]
@@ -149,7 +160,9 @@ export function StatementPeriodSelect({
             </option>
             {shown.map((item) => (
               <option key={item.id} value={item.id}>
-                {!account ? `${item.account_reference}${item.currency ? ` · ${item.currency}` : ""} · ` : ""}
+                {!account
+                  ? `${item.account_reference}${item.currency ? ` · ${item.currency}` : ""} · `
+                  : ""}
                 {item.period_start
                   ? `${item.period_start} to ${item.period_end}`
                   : item.statement_date || "Check printed date"}

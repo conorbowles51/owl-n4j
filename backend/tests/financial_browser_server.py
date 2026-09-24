@@ -70,6 +70,11 @@ def create_app():
         rows = db.scalars(select(FinancialTransaction).where(FinancialTransaction.case_id == fixture.case.id,
             FinancialTransaction.superseded_by_id.is_(None))).all()
         return {'payments':[to_view(row, account=row.account).to_json() for row in rows]}
+    @app.post('/__fixture/mixed-statements')
+    def mixed_statements():
+        from tests.test_financial_statement_import_credit_one import install_collection
+        install_collection(fixture)
+        return {'synthetic': True}
     @app.post('/__fixture/recovery')
     def recover_fixture():
         from tests.test_financial_deployment_recovery import partial_import, snapshot

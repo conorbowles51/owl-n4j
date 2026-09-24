@@ -16,7 +16,7 @@ _LABEL = re.compile(r'^(?:(?:(?:statement|account)\s+)?currency|moneda)\s*:?\s*(
 _CURRENCY_NAMES = {'EURO': 'EUR', 'EUROS': 'EUR', 'PESOS MEXICANOS': 'MXN',
     'DOLARES AMERICANOS': 'USD', 'DOLARES ESTADOUNIDENSES': 'USD', 'US DOLLARS': 'USD',
     'U.S. DOLLARS': 'USD', 'MEXICAN PESOS': 'MXN'}
-_US_LAYOUTS = {'capital-one-card', 'merrick-card', 'andrews-share-statement'}
+_US_LAYOUTS = {'capital-one-card', 'merrick-card', 'credit-one-card', 'andrews-share-statement'}
 
 
 def _code(text):
@@ -83,6 +83,11 @@ def detect_statement_currency(sources, *, layout_id=None, header_text=''):
                 candidates.append({_PREFIXES[marker]})
             elif code := _code(marker):
                 candidates.append({code})
+    # Andrews' US share layout prints bare amounts. Its verified institution,
+    # account and period establish USD when no currency evidence conflicts.
+    # Explicit printed currency and monetary markers above still take priority.
+    if not candidates and layout_id == 'andrews-share-statement':
+        return 'USD'
     supported = set.intersection(*candidates) if candidates else set()
     return next(iter(supported)) if len(supported) == 1 else ''
 

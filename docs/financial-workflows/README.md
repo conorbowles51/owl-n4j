@@ -1,5 +1,9 @@
 # Loupe financial investigator workflow reference
 
+**Processing capabilities:** [banks, statement families and source formats](processing-capabilities.md) records the shared readers and their specific limits.
+
+**24 September statement collections:** [reusable bank/card readers and acceptance](statement-collections-2026-09-24.md) records the Credit One layout, Andrews date spacing, targeted image rereads and the mixed-account import/reopen journey. These shared readers apply to future files in every case; private source material is excluded from the repository.
+
 **24 September connected release:** [source selection, compact saved work and one-time recovery](next-release-2026-09-24.md). Local implementation and workflow verification are recorded there, including the later missing-reading Retry repair and batch-wide review-reason workflow. Review reasons now distinguish import blockers, importable checks and already-imported checks; selecting a reason retains that scope through review, correction and return. The newly reported live BBVA failures still require their matching sources/error records; the supplied zero-activity statement passes local import. The content/provenance cleanup remains a separate scheduled production pass; publication and live results are recorded separately.
 
 Owner: the product workflow, not an individual component. Updated 23 September 2026.

@@ -168,6 +168,7 @@ const proposalSchema = z.object({
         layout_id: z.string().optional(),
         account_reference: z.string(),
         account_label: z.string().optional(),
+        account_type: z.string().optional(),
         currency: z.string().optional(),
         assignment_only: z.boolean().optional(),
         document_kind: z.literal("deposit_receipt").optional(),

@@ -269,7 +269,7 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
         metadata.update(account_type=selected.get('account_type', 'credit_card'), institution=selected['institution'], account_number=selected['account_reference'],
                         period_start=selected['period_start'], period_end=selected['period_end'],
                         period=(selected['period_start'] + ' - ' + selected['period_end']) if selected['period_start'] else selected.get('printed_statement_date') or selected.get('printed_closing_date', ''))
-        if selected.get('layout_id') in ('capital-one-card', 'merrick-card'):
+        if selected.get('layout_id') in ('capital-one-card', 'merrick-card', 'credit-one-card'):
             metadata['balance_convention'] = 'liability_owed'
         if selected.get('layout_id') in ('bbva-mexico-cash-management', 'scotiabank-mexico-zero-activity', 'monex-mexico-currency-summary', 'kapital-mexico-product-statement', 'intercam-mexico-product-statement', 'santander-mexico-movements'):
             metadata['balance_convention'] = 'asset_balance'
@@ -301,7 +301,8 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
         elif selected.get('layout_id') == 'merrick-card' and not selected.get('statement_date'):
             issues.append('The printed statement date could not be read. Check it against the PDF. Transaction years are proposed only where the printed month and year-to-date heading agree.')
         if metadata.get('balance_convention') == 'liability_owed':
-            issues.append('This is a credit-card statement. Debits increase the amount owed; credits reduce it. A card ending is a partial account reference.')
+            issues.append('This is a credit-card statement. Debits increase the amount owed; credits reduce it.'
+                + (' A card ending is a partial account reference.' if selected['account_reference'].startswith('****') else ''))
         if selected.get('layout_id') == 'andrews-share-statement':
             metadata['balance_convention'] = 'asset_balance'
             if selected.get('account_closure'):
@@ -430,7 +431,10 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
         _check_review_size(rows)
     for source in ([] if selected and selected.get('layout_id') in ('andrews-share-statement', 'bbva-mexico-cash-management', 'scotiabank-mexico-zero-activity', 'monex-mexico-currency-summary', 'kapital-mexico-product-statement', 'intercam-mexico-product-statement', 'santander-mexico-movements') else sources):
         try:
-            if selected and selected.get('layout_id') == 'merrick-card':
+            if selected and selected.get('layout_id') == 'credit-one-card':
+                from services.financial.statement_import_credit_one import propose_credit_one_table
+                proposal = propose_credit_one_table(source, chosen_currency, selected)
+            elif selected and selected.get('layout_id') == 'merrick-card':
                 from services.financial.statement_import_merrick import propose_merrick_table
                 proposal = propose_merrick_table(source, chosen_currency, selected)
             elif selected:

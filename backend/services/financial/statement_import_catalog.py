@@ -51,6 +51,9 @@ def statement_catalog(sources):
     from services.financial.statement_import_andrews import andrews_catalog, is_andrews_fee_summary, unassigned_andrews_groups
     andrews, handled, incomplete = andrews_catalog(sources)
     groups = {statement['id']: statement for statement in andrews}
+    from services.financial.statement_import_credit_one import credit_one_catalog
+    credit_one, credit_one_handled = credit_one_catalog(sources)
+    groups.update({statement['id']: statement for statement in credit_one})
     from services.financial.statement_import_bbva import bbva_catalog
     bbva, bbva_handled = bbva_catalog(sources)
     groups.update({statement['id']: statement for statement in bbva})
@@ -75,7 +78,7 @@ def statement_catalog(sources):
     capital_pages, information_pages = _capital_page_contexts(sources)
     for source in sources:
         address = (source['page_number'], source['table_index'])
-        if address in bbva_handled or address in scotiabank_handled or address in monex_handled or address in kapital_handled or address in intercam_handled or address in santander_handled:
+        if address in credit_one_handled or address in bbva_handled or address in scotiabank_handled or address in monex_handled or address in kapital_handled or address in intercam_handled or address in santander_handled:
             continue
         if address in handled:
             if address in incomplete:

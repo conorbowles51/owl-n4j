@@ -1,5 +1,9 @@
 # Bank statement layout workflow acceptance
 
+Current inventory: [shared processing capabilities](processing-capabilities.md).
+Later collection work: [24 September bank/card acceptance](statement-collections-2026-09-24.md).
+The historical limits below are scoped to their original verification date.
+
 22 September 2026. Implementation and verification are local. The user has
 subsequently authorised completion, commit, push and deployment of all relevant
 implementation. No client case, worker, upload or live import was changed by

@@ -31,7 +31,7 @@ LOW_CONFIDENCE_THRESHOLD = 60.0
 MIN_OCR_DPI = 150
 MIN_RELIABLE_OSD_CONFIDENCE = 15.0
 MAX_OSD_TIMEOUT_SECONDS = 30.0
-PDF_READING_REVISION = 'bank-payment-rows-v5'
+PDF_READING_REVISION = 'bank-payment-rows-v6'
 OSD_INSUFFICIENT_TEXT_MARKERS = ("too few characters", "skipping this page")
 
 
@@ -299,6 +299,33 @@ def _extract_native_tables(
         )
         return [], []
     return reader.chunks_of(tables), list(tables)
+
+
+def _statement_reading_quality(tables):
+    """Optional source-bound check; unavailable backend support never blocks PDFs."""
+    try:
+        from services.financial.statement_reading_quality import assess_statement_reading
+        return assess_statement_reading([table.to_json() for table in tables])
+    except Exception:
+        logger.debug('Statement reading assessment unavailable', exc_info=True)
+        return None
+
+
+def _prefer_statement_image(original, image):
+    from services.financial.statement_reading_quality import prefer_image_reading
+    return prefer_image_reading(original, image)
+
+
+def _retain_native_statement(page_result, original, table_chunks, extracted_tables, reason):
+    page_result.text = original['text']
+    page_result.text_origin = original['origin']
+    page_result.extraction_method = 'native'
+    page_result.ocr_status = 'native_retained'
+    page_result.ocr_geometry_status = 'native_retained'
+    page_result.ocr_refinements.append(dict(field='statement_page_reading', decision='native_retained',
+        reason=reason, original_quality=original['quality']))
+    table_chunks.extend(original['chunks'])
+    extracted_tables.extend(original['tables'])
 
 
 def _table_geometry_metadata(chunk_count: int, extracted_tables: list[Any]) -> dict:
@@ -662,7 +689,7 @@ def _page_span(page_result: _PageResult, start_char: int) -> dict:
         "text_origin": page_result.text_origin,
         "detection_reason": page_result.detection_reason,
     }
-    if page_result.extraction_method == "tesseract_ocr":
+    if page_result.ocr_status is not None:
         span.update(
             {
                 "ocr_status": page_result.ocr_status,
@@ -742,6 +769,7 @@ def _extract_pdf_sync(
 
         pages: list[_PageResult] = []
         ocr_indexes: list[int] = []
+        native_alternatives = {}
         for page_index, page in enumerate(document):
             page_number = page_index + 1
             checkpoint = page_cache / f'native-{page_index}.json' if page_cache else None
@@ -765,9 +793,17 @@ def _extract_pdf_sync(
                     text_origin=_embedded_text_origin(page),
                 )
                 page_chunks, page_tables = _extract_native_tables(page, page_number)
-                table_chunks.extend(page_chunks)
-                extracted_tables.extend(page_tables)
-                if checkpoint:
+                quality = _statement_reading_quality(page_tables)
+                if quality and quality['unreadable']:
+                    native_alternatives[page_index] = dict(text=native_text, origin=page_result.text_origin,
+                        chunks=page_chunks, tables=page_tables, quality=quality)
+                    page_result.extraction_method = 'tesseract_ocr'
+                    page_result.detection_reason = 'unreadable_statement_fields'
+                    ocr_indexes.append(page_index)
+                else:
+                    table_chunks.extend(page_chunks)
+                    extracted_tables.extend(page_tables)
+                if checkpoint and page_index not in native_alternatives:
                     from app.services.ingestion_checkpoints import atomic_json
                     atomic_json(checkpoint, dict(text=native_text, text_origin=page_result.text_origin,
                         chunks=page_chunks, tables=[dict(chunk=t.chunk, metadata=t.to_json()) for t in page_tables]))
@@ -807,32 +843,22 @@ def _extract_pdf_sync(
                         from app.services.ingestion_checkpoints import atomic_json
                         atomic_json(checkpoint, [text, confidence, dpi, words, refinements])
                 page_result.ocr_refinements = refinements
-            except PdfOcrError as exc:
-                logger.error(
-                    "PDF OCR failed page=%d reason=%s",
-                    page_result.page_number,
-                    exc,
-                )
-                raise PdfOcrError(
-                    f"OCR failed on PDF page {page_result.page_number}: {exc}"
-                ) from exc
-            except pytesseract.TesseractNotFoundError as exc:
-                logger.error(
-                    "PDF OCR failed page=%d reason=tesseract_not_found",
-                    page_result.page_number,
-                )
-                raise PdfOcrError(
-                    f"OCR failed on PDF page {page_result.page_number}: "
-                    "Tesseract executable was not found"
-                ) from exc
             except Exception as exc:
+                if original := native_alternatives.get(page_index):
+                    _retain_native_statement(page_result, original, table_chunks, extracted_tables,
+                        'Image reread unavailable; unresolved embedded readings remain for review.')
+                    if report_progress:
+                        report_progress(PdfExtractionProgress('Kept original statement reading for review',
+                            completed, ocr_count, page_result.page_number))
+                    continue
                 logger.error(
                     "PDF OCR failed page=%d reason=%s",
                     page_result.page_number,
                     exc,
                 )
+                message = 'Tesseract executable was not found' if isinstance(exc, pytesseract.TesseractNotFoundError) else str(exc)
                 raise PdfOcrError(
-                    f"OCR failed on PDF page {page_result.page_number}: {exc}"
+                    f"OCR failed on PDF page {page_result.page_number}: {message}"
                 ) from exc
 
             page_result.text = text
@@ -843,18 +869,31 @@ def _extract_pdf_sync(
             page_result.ocr_language = settings.tesseract_lang
             page_result.ocr_geometry_status = "unavailable"
             reader = _load_table_reader()
+            ocr_tables = []
             if words is not None and reader is not None:
                 try:
                     ocr_tables = reader.read_positioned_ocr_words(words,
                         page_number=page_result.page_number,
                         page_width=document[page_index].rect.width,
                         page_height=document[page_index].rect.height)
-                    table_chunks.extend(reader.chunks_of(ocr_tables))
-                    extracted_tables.extend(ocr_tables)
                     if any(table.geometry_source.value == "cell_rectangles" for table in ocr_tables):
                         page_result.ocr_geometry_status = "available"
                 except Exception:
                     logger.warning("OCR source geometry unavailable on page %s", page_result.page_number, exc_info=True)
+
+            original = native_alternatives.get(page_index)
+            quality = _statement_reading_quality(ocr_tables) if original else None
+            if original and not _prefer_statement_image(original['quality'], quality):
+                _retain_native_statement(page_result, original, table_chunks, extracted_tables,
+                    'Image reread did not safely improve the same account, period and payment rows.')
+            else:
+                if reader is not None:
+                    table_chunks.extend(reader.chunks_of(ocr_tables))
+                extracted_tables.extend(ocr_tables)
+                if original:
+                    page_result.ocr_refinements.append(dict(field='statement_page_reading', decision='image_selected',
+                        original_quality=original['quality'], image_quality=quality,
+                        original_text_sha256=hashlib.sha256(original['text'].encode()).hexdigest()))
 
             if report_progress:
                 report_progress(
@@ -883,9 +922,10 @@ def _extract_pdf_sync(
             and page.ocr_confidence < LOW_CONFIDENCE_THRESHOLD
             for page in pages
         )
-        if not ocr_count:
+        used_ocr_count = sum(page.extraction_method == 'tesseract_ocr' for page in pages)
+        if not used_ocr_count:
             extraction_mode = "native"
-        elif ocr_count == len(pages):
+        elif used_ocr_count == len(pages):
             extraction_mode = "ocr"
         else:
             extraction_mode = "hybrid"
@@ -898,8 +938,9 @@ def _extract_pdf_sync(
             "page_count": len(pages),
             "is_scanned": ocr_count > 0,
             "extraction_mode": extraction_mode,
-            "ocr_page_count": ocr_count,
-            "native_page_count": len(pages) - ocr_count,
+            "ocr_page_count": used_ocr_count,
+            "ocr_attempted_page_count": ocr_count,
+            "native_page_count": len(pages) - used_ocr_count,
             "low_confidence_page_count": low_confidence_count,
             "page_spans": page_spans,
             "table_geometry": _table_geometry_metadata(
@@ -920,8 +961,8 @@ def _extract_pdf_sync(
             "low_confidence_pages=%d ocr_seconds=%.3f total_seconds=%.3f",
             extraction_mode,
             len(pages),
-            len(pages) - ocr_count,
-            ocr_count,
+            len(pages) - used_ocr_count,
+            used_ocr_count,
             low_confidence_count,
             ocr_elapsed,
             time.perf_counter() - started,

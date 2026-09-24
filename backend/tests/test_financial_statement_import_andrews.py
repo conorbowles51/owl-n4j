@@ -62,6 +62,27 @@ def wrapped_vouchers():
 
 
 class AndrewsReaderTests(unittest.TestCase):
+    def test_spaced_date_digits_remain_source_bound_without_losing_payments(self):
+        data = source([
+            [(15, '06/01 ID 0040 FREE CHECKING Previous Balance'), (350, '100.00')],
+            [(15, '0 6 / 0 3'), (75, 'Withdrawal Debit Card'), (310, '-20.00'), (350, '80.00')],
+            [(15, '06/04 0 6 / 0 3 Withdrawal Debit Card'), (310, '-5.00'), (350, '75.00')],
+            [(15, '06/30'), (75, 'Ending Balance'), (350, '75.00')]])
+        before = deepcopy(data)
+        statement, result = selected([data])
+        payments = [r for r in result['rows'] if not r['excluded']]
+        self.assertEqual([r['fields']['date'] for r in payments], ['2020-06-03', '2020-06-04'])
+        self.assertEqual(payments[1]['fields']['additional_printed_date'], '0 6 / 0 3')
+        self.assertFalse(any(r['issues'] for r in result['rows']))
+        self.assertEqual(data, before)
+        from services.financial.statement_currency import currencies_by_statement
+        self.assertEqual(currencies_by_statement([statement], [data])[0]['currency'], 'USD')
+        data['rows'][10]['cells'][0]['expected_text'] = '0 6 / O 3'
+        _, damaged = selected([data])
+        payment = next(r for r in damaged['rows'] if not r['excluded'])
+        self.assertNotIn('date', payment['fields'])
+        self.assertTrue(payment['issues'])
+
     def test_long_vouchers_read_printed_money_without_changing_original_cells(self):
         data = wrapped_vouchers()
         before = deepcopy(data)

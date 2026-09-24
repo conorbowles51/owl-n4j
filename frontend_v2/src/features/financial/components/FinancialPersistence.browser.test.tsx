@@ -67,6 +67,117 @@ async function service(
 }
 const run = import.meta.env.VITE_FINANCIAL_REAL_SERVICE === "1" ? it : it.skip
 run(
+  "chooses bank and credit-card sections from one PDF, imports and reopens each independently",
+  async () => {
+    await service("/__fixture/reset", { method: "POST" })
+    await service("/__fixture/mixed-statements", { method: "POST" })
+    const { case_id: caseId, file_id: fileId } = await service("/__fixture")
+    useFinancialDraftStore.setState({ drafts: {} })
+    useStatementWorkspace.setState({
+      selections: {},
+      pages: {},
+      reviewChoices: {},
+    })
+    vi.mocked(fetchAPI)
+      .mockClear()
+      .mockImplementation((url, options) => service(url, options))
+    await page.viewport(1360, 900)
+    let receipt: StatementImportReceipt | undefined
+    const mount = () =>
+      render(
+        <QueryClientProvider
+          client={
+            new QueryClient({ defaultOptions: { queries: { retry: false } } })
+          }
+        >
+          <MemoryRouter>
+            <StatementImportPanel
+              caseId={caseId}
+              onImported={(value) => {
+                receipt = value
+              }}
+            />
+          </MemoryRouter>
+        </QueryClientProvider>
+      )
+    mount()
+    fireEvent.click(screen.getByRole("button", { name: "Import a statement" }))
+    await waitFor(() =>
+      expect(
+        screen.getByLabelText("Uploaded statement").querySelectorAll("option")
+          .length
+      ).toBeGreaterThan(1)
+    )
+    fireEvent.change(screen.getByLabelText("Uploaded statement"), {
+      target: { value: fileId },
+    })
+    const card = await screen.findByRole("button", {
+      name: /Credit One Bank.*Credit card/,
+    })
+    expect(
+      screen.getByRole("button", { name: /Andrews.*Checking account/ })
+    ).toBeVisible()
+    expect(
+      screen.getByRole("button", { name: /Andrews.*Savings account/ })
+    ).toBeVisible()
+    fireEvent.click(card)
+    await screen.findByText(
+      /Debits increase the amount owed; credits reduce it/
+    )
+    expect(screen.getByLabelText("Statement account")).toHaveTextContent(
+      "Credit card"
+    )
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: /Import 3 payments and view Transactions/,
+      })
+    )
+    await waitFor(() => expect(receipt?.transaction_count).toBe(3), {
+      timeout: 15000,
+    })
+    const cardAccount = receipt!.account_id
+    cleanup()
+    mount()
+    fireEvent.click(screen.getByRole("button", { name: "Import a statement" }))
+    await screen.findByText(/Already imported: 3 payments/)
+    fireEvent.click(
+      screen.getByRole("button", { name: "Choose another statement period" })
+    )
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Andrews.*Checking account/ })
+    )
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: /Import 1 payment.*view Transactions/,
+      })
+    )
+    await waitFor(() => expect(receipt?.transaction_count).toBe(1), {
+      timeout: 15000,
+    })
+    expect(receipt!.account_id).not.toBe(cardAccount)
+    const saved = await service("/__fixture/payments")
+    expect(saved.payments).toHaveLength(4)
+    cleanup()
+    mount()
+    fireEvent.click(screen.getByRole("button", { name: "Import a statement" }))
+    await screen.findByText(/Already imported: 1 payments/)
+    fireEvent.click(
+      screen.getByRole("button", { name: "Choose another statement period" })
+    )
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: /Credit One Bank.*Credit card/,
+      })
+    )
+    await screen.findByText(/Already imported: 3 payments/)
+    await page.screenshot({
+      path: "/private/tmp/loupe-mixed-statements-review/mixed-reopened.png",
+    })
+    cleanup()
+  },
+  60000
+)
+run(
   "explains batch checks, retains a reason through review, and clears it after a saved bulk correction",
   async () => {
     await service("/__fixture/reset", { method: "POST" })
