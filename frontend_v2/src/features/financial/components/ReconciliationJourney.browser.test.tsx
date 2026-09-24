@@ -261,21 +261,21 @@ run(
     // separate visible run with VITE_FINANCIAL_NATIVE_PDF=1.
     if (import.meta.env.VITE_FINANCIAL_NATIVE_PDF === "1") {
       const nativeOpen = window.open.bind(window)
-      let opened: Window | null = null
+      const opened: { current: Window | null } = { current: null }
       vi.spyOn(window, "open").mockImplementation((...args) => {
-        opened = nativeOpen(...args)
-        return opened
+        opened.current = nativeOpen(...args)
+        return opened.current
       })
       fireEvent.click(
         screen.getByRole("button", { name: "Open original in new tab" })
       )
       await waitFor(() =>
-        expect(opened?.location.href).toMatch(/^blob:.*#page=1$/)
+        expect(opened.current?.location.href).toMatch(/^blob:.*#page=1$/)
       )
       expect(
         screen.getByLabelText("Unfinished payment description")
       ).toHaveValue("Still adding this payment")
-      opened?.close()
+      opened.current?.close()
     }
     fireEvent.click(screen.getByRole("button", { name: "Copy page text" }))
     await page.screenshot({ path: "/private/tmp/loupe-copyable-original.png" })
