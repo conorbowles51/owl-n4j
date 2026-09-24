@@ -883,6 +883,10 @@ class EvidenceDBStorage:
         ef = db.get(EvidenceFile, file_id)
         if not ef:
             return
+        if (profile_snapshot.get('preparation_mode') == 'pdf_review'
+                or (ef.last_processed_profile_snapshot or {}).get('preparation_mode') == 'pdf_review'):
+            from services.financial.file_scope import mark_financial_workspace
+            mark_financial_workspace(ef)
         ef.last_processed_profile_snapshot = profile_snapshot
         ef.last_processed_folder_id = folder_id
         db.flush()

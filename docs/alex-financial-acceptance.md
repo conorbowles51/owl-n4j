@@ -1,6 +1,8 @@
 # Alex's financial workflow acceptance
 
-**23 September feedback update:** The [complete implementation plan](financial-workflows/feedback-implementation-plan-2026-09-23.md) is now the active scope for the user's feedback collection and follow-ups. Its F01–F28 register covers all reports and its J01–J12 journeys define acceptance. Extraction, statement saves, repeat bulk correction, manual payment entry, review-filter persistence, retry/import outcomes, account filtering, duplicate-account consolidation and existing-counterparty/account selection remain open for this pass. The earlier results below are historical; they do not establish that these newly reported failures are fixed. This update records planning only, with no application change or push.
+**24 September correction:** Ordinary Evidence PDFs were incorrectly listed as statement files. The [scope correction and connected acceptance](financial-workflows/evidence-file-scope-2026-09-24.md) separates explicit financial work from general Evidence while retaining saved reviews, imports and sources. Live verification remains separate.
+
+**23 September feedback implementation:** The [complete implementation plan](financial-workflows/feedback-implementation-plan-2026-09-23.md) covers F01–F28 and J01–J12. That implementation was pushed as `60b6706a`; [the acceptance record](financial-workflows/implementation-progress-2026-09-23.md) records local tests and remaining live limits. The earlier results below are historical and do not override newly reported failures.
 
 20 September 2026. Earlier component tests and public deployment checks did not establish that Alex's 588-file workflow worked. This pass covers the reported failures together, including existing saved work.
 

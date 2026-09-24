@@ -179,7 +179,7 @@ export function StatementFilesPanel({
         {removalMode
           ? "Remove imports or start again"
           : register
-            ? "Files in this case"
+            ? "Files in Financial"
             : "Statement files"}
       </h2>
       <p className="text-sm text-muted-foreground">
@@ -190,6 +190,8 @@ export function StatementFilesPanel({
             : "Select a ready file to open its original PDF and extracted statement."}{" "}
         {!removalMode &&
           "Supported wire reports and deposit receipts open their own review."}
+        {!removalMode &&
+          " Other Evidence documents stay in Evidence. Use Choose from Evidence to send selected PDFs here."}
       </p>
       {removalMode && (
         <p className="text-sm">
@@ -262,11 +264,11 @@ export function StatementFilesPanel({
         <p className="text-xs text-muted-foreground">
           Up to 20 PDFs per selection. Pause or resume uploads here. If the
           browser closes, reselect the same files to send only missing parts.
-          Uploaded PDFs remain below; choose Read PDF if reading has not
-          started, then open a ready file to review.
+          Uploaded PDFs are retained in Evidence. If reading has not started,
+          use Choose from Evidence to send the retained PDF for review.
         </p>
       )}
-      {canUpload && <ResumableUploadsPanel caseId={caseId} />}
+      {canUpload && <ResumableUploadsPanel caseId={caseId} financialContext />}
       {error && <p role="alert">{error}</p>}
       {queue && (
         <div aria-live="polite" className="space-y-2">
@@ -708,7 +710,10 @@ export function StatementFilesPanel({
         </p>
       )}
       {files.data?.length === 0 && (
-        <p>No PDFs have been uploaded to this case.</p>
+        <p>
+          No PDFs have been added to Financial. Upload statements or choose them
+          from Evidence.
+        </p>
       )}
     </section>
   )

@@ -809,6 +809,7 @@ async def list_evidence(
     status_filter: Optional[str] = Query(None, alias="status"),
     include_cellebrite_artifacts: bool = False,
     include_reading_versions: bool = False,
+    financial_only: bool = False,
     user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -822,6 +823,10 @@ async def list_evidence(
     """
     try:
         db_files = EvidenceDBStorage.list_files(db, case_id=UUID(case_id), status=status_filter, include_reading_versions=include_reading_versions)
+        if financial_only:
+            from services.financial.file_scope import financial_file_ids
+            financial_ids = financial_file_ids(db, case_id=UUID(case_id))
+            db_files = [row for row in db_files if row.id in financial_ids]
         if not include_cellebrite_artifacts:
             db_files = [row for row in db_files if row.source_type != "cellebrite"]
         from services.financial.source_lineage import reading_history, case_lineage

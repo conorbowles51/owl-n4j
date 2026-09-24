@@ -87,11 +87,11 @@ export function useStatementFiles(
     enabled: enabled && !!caseId,
     select: (files) =>
       includeRemoved ? files : files.filter((file) => !file.financial_removed),
-    queryKey: ["statement-import-files", caseId],
+    queryKey: ["statement-import-files", caseId, "financial-only"],
     queryFn: async () => {
       const result = listing.parse(
         await fetchAPI(
-          `/api/evidence?${new URLSearchParams({ case_id: caseId!, include_reading_versions: "true" })}`
+          `/api/evidence?${new URLSearchParams({ case_id: caseId!, include_reading_versions: "true", financial_only: "true" })}`
         )
       )
       if (result.files.some((file) => file.case_id !== caseId))

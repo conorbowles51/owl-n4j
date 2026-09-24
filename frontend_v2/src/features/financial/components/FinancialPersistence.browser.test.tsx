@@ -18,6 +18,7 @@ import {
 } from "./StatementImportPanel"
 import { ImportedStatementDetails } from "./ImportedStatementDetails"
 import { BulkStatementDetails } from "./BulkStatementDetails"
+import { StatementFilesPanel } from "./StatementFilesPanel"
 import { InvestigationTransactionTable } from "./InvestigationTransactionTable"
 import { useFinancialDraftStore } from "../stores/financial-drafts"
 import { useStatementWorkspace } from "../stores/statement-workspace"
@@ -63,6 +64,80 @@ async function service(
   return result
 }
 const run = import.meta.env.VITE_FINANCIAL_REAL_SERVICE === "1" ? it : it.skip
+run(
+  "keeps ordinary Evidence PDFs out of Financial until explicitly sent, including after reopening",
+  async () => {
+    await service("/__fixture/reset", { method: "POST" })
+    const { case_id: caseId } = (await service("/__fixture")) as {
+      case_id: string
+    }
+    vi.mocked(fetchAPI).mockImplementation((url, options) =>
+      service(url, options)
+    )
+    await page.viewport(1360, 900)
+    const mount = () =>
+      render(
+        <QueryClientProvider
+          client={
+            new QueryClient({ defaultOptions: { queries: { retry: false } } })
+          }
+        >
+          <MemoryRouter>
+            <StatementFilesPanel caseId={caseId} register />
+          </MemoryRouter>
+        </QueryClientProvider>
+      )
+    type Files = {
+      files: {
+        id: string
+        original_filename: string
+        status: string
+        engine_job_id?: string | null
+      }[]
+    }
+    const before = (await service(`/api/evidence?case_id=${caseId}`)) as Files
+    expect(
+      before.files.some(
+        (file) => file.original_filename === "Interview transcript.pdf"
+      )
+    ).toBe(true)
+    const pending = before.files.find(
+      (file) => file.original_filename === "Unsent statement.pdf"
+    )!
+    expect(pending.status).toBe("unprocessed")
+    mount()
+    await screen.findByLabelText("Select statement-1.pdf")
+    expect(screen.queryByText("Interview transcript.pdf")).toBeNull()
+    expect(screen.queryByText("Unsent statement.pdf")).toBeNull()
+    fireEvent.click(
+      screen.getByRole("button", { name: "Choose from Evidence" })
+    )
+    fireEvent.click(
+      await screen.findByLabelText("Select file Unsent statement.pdf")
+    )
+    fireEvent.click(
+      screen.getByRole("button", { name: "Review selected PDFs" })
+    )
+    await screen.findByText("1 PDFs to send to Financial")
+    fireEvent.click(screen.getByRole("button", { name: /Send .*Financial/ }))
+    await screen.findByLabelText("Select Unsent statement.pdf")
+    expect(screen.queryByText("Interview transcript.pdf")).toBeNull()
+    cleanup()
+    mount()
+    await screen.findByLabelText("Select Unsent statement.pdf")
+    expect(screen.queryByText("Interview transcript.pdf")).toBeNull()
+    const after = (await service(`/api/evidence?case_id=${caseId}`)) as Files
+    expect(after.files.map((file) => file.id).sort()).toEqual(
+      before.files.map((file) => file.id).sort()
+    )
+    expect(after.files.find((file) => file.id === pending.id)?.status).toBe(
+      "unprocessed"
+    )
+    expect(after.files.every((file) => !file.engine_job_id)).toBe(true)
+    cleanup()
+  },
+  30000
+)
 run(
   "saves a review, imports, reopens current values and corrects the same bulk selection twice through real persistence",
   async () => {

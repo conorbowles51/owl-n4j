@@ -146,7 +146,7 @@ function PdfReviewIntakeForm({
       aria-label="Prepare PDF for review"
       className="space-y-3 rounded border p-3"
     >
-      <ResumableUploadsPanel caseId={caseId} />
+      <ResumableUploadsPanel caseId={caseId} financialContext />
       <h3 className="font-semibold">
         {automaticReview ? "Upload a bank statement" : "Add a PDF for review"}
       </h3>

@@ -59,6 +59,9 @@ async def prepare_existing_financial_file(session, *, case_id, evidence_file_id,
         set_financial_file_visibility(session, case_id=case_id, evidence_file_id=file.id,
             removed=False, expected_revision=expected_revision, actor=actor)
         if file.status == 'processed' and has_financial_reading(session, file):
+            from services.financial.file_scope import mark_financial_workspace
+            mark_financial_workspace(file, user_id=actor.user_id)
+            session.commit()
             return dict(case_id=str(case_id), source_file_id=str(file.id), evidence_file_id=str(file.id), outcome='ready')
         if file.status == 'processed':
             if (file.metadata_ or {}).get('statement_version_request'):

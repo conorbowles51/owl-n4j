@@ -243,11 +243,23 @@ function UploadRow({ upload }: { upload: UploadSession }) {
   )
 }
 
-export function ResumableUploadsPanel({ caseId }: { caseId: string }) {
+export function ResumableUploadsPanel({
+  caseId,
+  financialContext = false,
+}: {
+  caseId: string
+  financialContext?: boolean
+}) {
   const { data } = useResumableUploads(caseId)
   const { data: groups } = useResumableUploadGroups(caseId)
   return (
     <>
+      {financialContext && (!!groups?.length || !!data?.length) && (
+        <p className="text-sm text-muted-foreground">
+          Evidence upload activity for this case. These uploads only appear in
+          the Financial file list when you choose them for financial review.
+        </p>
+      )}
       {groups?.map((group) => (
         <GroupRow key={group.id} group={group} />
       ))}

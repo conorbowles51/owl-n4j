@@ -13,14 +13,25 @@ from postgres.models.case_membership import CaseMembership
 from postgres.models.enums import CaseMembershipRole
 from postgres.models.user import User
 from postgres.models.financial import FinancialTransaction
+from postgres.models.evidence import IngestionLog
+from postgres.models.financial_candidates import FinancialCandidateMapping, FinancialStatementReviewDraft
+from postgres.models.workspace_entry import WorkspaceEntry, WorkspaceEntryLink
 from routers.users import get_current_db_user
-from routers import financial_statement_import, financial_ledger, financial_adjudication
+from routers import evidence, evidence_folders, financial_statement_import, financial_ledger, financial_adjudication
 from tests.test_financial_statement_import import StatementImportTests
 
 
 def new_fixture():
     fixture = StatementImportTests(); fixture.setUp()
-    Base.metadata.create_all(fixture.engine, tables=[CaseMembership.__table__])
+    Base.metadata.create_all(fixture.engine, tables=[CaseMembership.__table__, IngestionLog.__table__,
+        FinancialCandidateMapping.__table__, FinancialStatementReviewDraft.__table__,
+        WorkspaceEntry.__table__, WorkspaceEntryLink.__table__])
+    from services.financial.file_scope import mark_financial_workspace
+    mark_financial_workspace(fixture.file, user_id=fixture.user.id)
+    fixture.file.status = 'processed'
+    for name in ('Interview transcript.pdf', 'Unsent statement.pdf'):
+        ordinary = fixture.evidence(('b' if name.startswith('Interview') else 'c') * 64)
+        ordinary.original_filename = name
     fixture.db.add(CaseMembership(case_id=fixture.case.id, user_id=fixture.user.id,
         membership_role=CaseMembershipRole.owner, added_by_user_id=fixture.user.id,
         permissions={'case':{'view':True,'edit':True},'evidence':{'upload':True,'view':True}}))
@@ -41,7 +52,8 @@ def create_app():
     def user(db=Depends(get_db)): return db.get(User, fixture.user.id)
     app.dependency_overrides[get_db] = db_session
     app.dependency_overrides[get_current_db_user] = user
-    for router in (financial_statement_import.router, financial_ledger.router, financial_adjudication.router):
+    app.dependency_overrides[evidence.get_current_user] = lambda: {'username': fixture.user.email}
+    for router in (evidence.router, evidence_folders.router, financial_statement_import.router, financial_ledger.router, financial_adjudication.router):
         app.include_router(router)
     @app.post('/__fixture/reset')
     def reset():
@@ -51,10 +63,6 @@ def create_app():
     @app.get('/__fixture')
     def identity():
         return {'synthetic':True,'case_id':str(fixture.case.id),'file_id':str(fixture.file.id)}
-    @app.get('/api/evidence')
-    def files():
-        return {'files':[{'id':str(fixture.file.id),'case_id':str(fixture.case.id),
-            'original_filename':fixture.file.original_filename,'status':'processed'}]}
     @app.get('/__fixture/payments')
     def saved(db=Depends(get_db)):
         from services.financial.transaction_query import to_view
