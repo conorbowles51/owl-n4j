@@ -34,13 +34,17 @@ export function findingBody(draft: InvestigatorFindingDraft) {
 }
 export function findingDraft(entry: CaseworkEntry): InvestigatorFindingDraft {
   const match = entry.tags.includes("financial-workspace")
-    ? /^(.*)\n\n## Next action\n(.*)\n\n## Assigned to\n(.*)$/s.exec(entry.body)
+    ? // Saved text can have its final newline trimmed when Assigned to is empty.
+      // Read those existing records without showing storage headings or changing them.
+      /^(.*)\n\n## Next action\n(.*)\n\n## Assigned to(?:\n(.*))?$/s.exec(
+        entry.body.replace(/\r\n/g, "\n")
+      )
     : null
   return {
     title: entry.title || "",
     explanation: match ? unescape(match[1]) : entry.body,
     nextAction: match ? unescape(match[2]) : "",
-    owner: match ? unescape(match[3]) : "",
+    owner: match ? unescape(match[3] ?? "") : "",
     kind: entry.tags.includes("financial-conclusion")
       ? "conclusion"
       : entry.tags.includes("financial-observation")

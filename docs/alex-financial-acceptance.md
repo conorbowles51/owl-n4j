@@ -1,5 +1,7 @@
 # Alex's financial workflow acceptance
 
+**24 September card-layout follow-up:** [Findings and Observations card workflow](financial-workflows/finding-cards-2026-09-24.md) covers the request for smaller square cards, nearby Edit/Timeline actions and formatted expanded text. It supersedes the earlier full-width compact-row design; existing saved text with trimmed empty follow-up fields is included.
+
 **24 September connected release:** [source selection, compact saved work and one-time recovery](financial-workflows/next-release-2026-09-24.md). Implementation is complete locally with workflow verification. The content/provenance cleanup remains a separate scheduled production pass; publication and live results are recorded separately.
 
 **24 September correction:** Ordinary Evidence PDFs were incorrectly listed as statement files. The [scope correction and connected acceptance](financial-workflows/evidence-file-scope-2026-09-24.md) separates explicit financial work from general Evidence while retaining saved reviews, imports and sources in any format. The follow-up supports explicit CSV, spreadsheet, Word, image and other source selection; non-PDF files do not enter the PDF reader. Legacy XLS/DOC still need conversion for processing. Live verification remains separate.

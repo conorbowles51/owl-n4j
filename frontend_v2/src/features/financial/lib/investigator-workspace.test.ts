@@ -184,4 +184,30 @@ describe("investigator comparisons and charts", () => {
       )
     ).not.toContain("financial-in-progress")
   })
+  it.each([
+    { nextAction: "", owner: "" },
+    { nextAction: "Compare the original records.", owner: "" },
+    { nextAction: "", owner: "Investigator" },
+  ])(
+    "reopens trimmed optional sections without leaking storage headings: %j",
+    (optional) => {
+      const draft = {
+        ...emptyFinding,
+        title: "Source review",
+        explanation: "## Evidence\nThe payment needs review.",
+        ...optional,
+      }
+      for (const newline of ["\n", "\r\n"]) {
+        const body = findingBody(draft).trimEnd().replace(/\n/g, newline)
+        const entry = {
+          title: draft.title,
+          tags: findingTags(draft),
+          body,
+          links: [],
+        } as unknown as CaseworkEntry
+        expect(findingDraft(entry)).toEqual(draft)
+        expect(entry.body).toBe(body)
+      }
+    }
+  )
 })

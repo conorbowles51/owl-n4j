@@ -84,6 +84,36 @@
   background-size: 100% 125px;
   background-repeat: no-repeat;
 }
+.financial-findings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 17rem), 1fr));
+  align-items: start;
+  gap: 1rem;
+}
+.finding-card {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
+  max-width: 22rem;
+  aspect-ratio: 1;
+  padding: 1rem;
+  overflow-wrap: anywhere;
+}
+.finding-card-summary {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.finding-card[data-expanded="true"] {
+  grid-column: 1 / -1;
+  max-width: none;
+  aspect-ratio: auto;
+}
+.finding-card[data-expanded="true"] .finding-card-summary {
+  max-width: 36rem;
+}
 .finance-metric {
   min-width: 0;
   padding: 0.75rem;

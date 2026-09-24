@@ -5444,9 +5444,57 @@
       }
     },
     {
+      "component": "FinancialFindingCard",
+      "file": "frontend_v2/src/features/financial/components/FinancialFindingCard.tsx",
+      "line": 59,
+      "control": "button",
+      "label": "{title}",
+      "disabled": null,
+      "destination": null,
+      "events": {
+        "onClick": "{(event) => { const button = event.currentTarget onToggle() requestAnimationFrame(() => button.scrollIntoView({ block: \"nearest\" }) ) }}"
+      }
+    },
+    {
+      "component": "FinancialFindingCard",
+      "file": "frontend_v2/src/features/financial/components/FinancialFindingCard.tsx",
+      "line": 78,
+      "control": "Button",
+      "label": "Add to Timeline",
+      "disabled": null,
+      "destination": null,
+      "events": {
+        "onClick": "{onTimeline}"
+      }
+    },
+    {
+      "component": "FinancialFindingCard",
+      "file": "frontend_v2/src/features/financial/components/FinancialFindingCard.tsx",
+      "line": 81,
+      "control": "Button",
+      "label": "Edit",
+      "disabled": null,
+      "destination": null,
+      "events": {
+        "onClick": "{onEdit}"
+      }
+    },
+    {
+      "component": "FinancialFindingCard",
+      "file": "frontend_v2/src/features/financial/components/FinancialFindingCard.tsx",
+      "line": 105,
+      "control": "input",
+      "label": "{`Include ${title} in report`}",
+      "disabled": "{selectionDisabled}",
+      "destination": null,
+      "events": {
+        "onChange": "{(event) => onInclude(event.target.checked)}"
+      }
+    },
+    {
       "component": "FinancialFindings",
       "file": "frontend_v2/src/features/financial/components/FinancialFindings.tsx",
-      "line": 99,
+      "line": 97,
       "control": "Button",
       "label": "Create finding",
       "disabled": null,
@@ -5458,7 +5506,7 @@
     {
       "component": "FinancialFindings",
       "file": "frontend_v2/src/features/financial/components/FinancialFindings.tsx",
-      "line": 105,
+      "line": 103,
       "control": "select",
       "label": "\"Finding type\"",
       "disabled": null,
@@ -5470,7 +5518,7 @@
     {
       "component": "FinancialFindings",
       "file": "frontend_v2/src/features/financial/components/FinancialFindings.tsx",
-      "line": 126,
+      "line": 124,
       "control": "select",
       "label": "\"Progress\"",
       "disabled": "{kind === \"financial-report\"}",
@@ -5482,7 +5530,7 @@
     {
       "component": "FinancialFindings",
       "file": "frontend_v2/src/features/financial/components/FinancialFindings.tsx",
-      "line": 153,
+      "line": 151,
       "control": "input",
       "label": "(label supplied by parent)",
       "disabled": null,
@@ -5494,7 +5542,7 @@
     {
       "component": "FinancialFindings",
       "file": "frontend_v2/src/features/financial/components/FinancialFindings.tsx",
-      "line": 169,
+      "line": 167,
       "control": "Button",
       "label": "{query.isFetching ? \"Retrying…\" : \"Try loading saved work again\"}",
       "disabled": "{query.isFetching}",
@@ -5506,7 +5554,7 @@
     {
       "component": "FinancialFindings",
       "file": "frontend_v2/src/features/financial/components/FinancialFindings.tsx",
-      "line": 189,
+      "line": 187,
       "control": "Button",
       "label": "Choose payments to investigate",
       "disabled": null,
@@ -5518,55 +5566,7 @@
     {
       "component": "FinancialFindings",
       "file": "frontend_v2/src/features/financial/components/FinancialFindings.tsx",
-      "line": 234,
-      "control": "button",
-      "label": "{expanded.includes(entry.id) ? \"▾\" : \"▸\"} {\" \"} {entry.title || \"Untitled note\"}",
-      "disabled": null,
-      "destination": null,
-      "events": {
-        "onClick": "{() => setView((current) => ({ ...current, expanded: expanded.includes(entry.id) ? expanded.filter((id) => id !== entry.id) : [...expanded, entry.id], })) }"
-      }
-    },
-    {
-      "component": "FinancialFindings",
-      "file": "frontend_v2/src/features/financial/components/FinancialFindings.tsx",
-      "line": 265,
-      "control": "Button",
-      "label": "Add to Timeline",
-      "disabled": null,
-      "destination": null,
-      "events": {
-        "onClick": "{() => setTimeline(entry)}"
-      }
-    },
-    {
-      "component": "FinancialFindings",
-      "file": "frontend_v2/src/features/financial/components/FinancialFindings.tsx",
-      "line": 272,
-      "control": "Button",
-      "label": "Edit",
-      "disabled": null,
-      "destination": null,
-      "events": {
-        "onClick": "{() => setEditing(entry)}"
-      }
-    },
-    {
-      "component": "FinancialFindings",
-      "file": "frontend_v2/src/features/financial/components/FinancialFindings.tsx",
-      "line": 284,
-      "control": "input",
-      "label": "{`Include ${entry.title || \"Untitled note\"} in report`}",
-      "disabled": "{query.isPlaceholderData}",
-      "destination": null,
-      "events": {
-        "onChange": "{(event) => setReportDraft((current) => ({ ...current, selected: event.target.checked ? [ ...current.selected.filter( (note) => note.id !== entry.id ), { id: entry.id, title: entry.title || \"Untitled note\", version: entry.version, }, ] : current.selected.filter((note) => note.id !== entry.id), })) }"
-      }
-    },
-    {
-      "component": "FinancialFindings",
-      "file": "frontend_v2/src/features/financial/components/FinancialFindings.tsx",
-      "line": 337,
+      "line": 255,
       "control": "summary",
       "label": "Written explanation and recorded amounts",
       "disabled": null,
@@ -5576,7 +5576,7 @@
     {
       "component": "FinancialFindings",
       "file": "frontend_v2/src/features/financial/components/FinancialFindings.tsx",
-      "line": 405,
+      "line": 328,
       "control": "Button",
       "label": "Open case event",
       "disabled": null,
@@ -5588,7 +5588,7 @@
     {
       "component": "FinancialFindings",
       "file": "frontend_v2/src/features/financial/components/FinancialFindings.tsx",
-      "line": 425,
+      "line": 348,
       "control": "a",
       "label": "Open linked note",
       "disabled": null,
@@ -5598,7 +5598,7 @@
     {
       "component": "FinancialFindings",
       "file": "frontend_v2/src/features/financial/components/FinancialFindings.tsx",
-      "line": 455,
+      "line": 378,
       "control": "SavedPaymentLinks",
       "label": "(label supplied by parent)",
       "disabled": null,
@@ -5610,7 +5610,7 @@
     {
       "component": "FinancialFindings",
       "file": "frontend_v2/src/features/financial/components/FinancialFindings.tsx",
-      "line": 468,
+      "line": 391,
       "control": "summary",
       "label": "Create a report from this note",
       "disabled": null,
@@ -5620,7 +5620,7 @@
     {
       "component": "FinancialFindings",
       "file": "frontend_v2/src/features/financial/components/FinancialFindings.tsx",
-      "line": 477,
+      "line": 399,
       "control": "Button",
       "label": "Download this note and its payments",
       "disabled": null,
@@ -5632,7 +5632,7 @@
     {
       "component": "FinancialFindings",
       "file": "frontend_v2/src/features/financial/components/FinancialFindings.tsx",
-      "line": 510,
+      "line": 432,
       "control": "a",
       "label": "{entry.tags.includes(\"financial-report\") ? \"Open report record in Workspace\" : \"Edit or review in Workspace\"}",
       "disabled": null,
@@ -5642,7 +5642,7 @@
     {
       "component": "FinancialFindings",
       "file": "frontend_v2/src/features/financial/components/FinancialFindings.tsx",
-      "line": 524,
+      "line": 445,
       "control": "Button",
       "label": "Previous notes",
       "disabled": "{page === 0 || query.isPlaceholderData || query.isFetching}",
@@ -5654,7 +5654,7 @@
     {
       "component": "FinancialFindings",
       "file": "frontend_v2/src/features/financial/components/FinancialFindings.tsx",
-      "line": 530,
+      "line": 451,
       "control": "Button",
       "label": "Next notes",
       "disabled": "{ query.isPlaceholderData || query.isFetching || (page + 1) * 25 >= (query.data?.total ?? 0) }",
@@ -5666,7 +5666,7 @@
     {
       "component": "SavedPaymentLinks",
       "file": "frontend_v2/src/features/financial/components/FinancialFindings.tsx",
-      "line": 581,
+      "line": 502,
       "control": "summary",
       "label": "{ids.length} linked payments",
       "disabled": null,
@@ -5676,7 +5676,7 @@
     {
       "component": "SavedPaymentLinks",
       "file": "frontend_v2/src/features/financial/components/FinancialFindings.tsx",
-      "line": 589,
+      "line": 510,
       "control": "Button",
       "label": "{row ? `${row.ordering_date} · ${row.description || \"Payment\"} · ${formatLedgerAmount(row.amount_minor, row.currency).text} ${row.currency}` : `Open transaction ${Array.isArray(refs) ? refs[index] || index + 1 : index + 1}`}",
       "disabled": null,
@@ -5688,7 +5688,7 @@
     {
       "component": "SavedPaymentLinks",
       "file": "frontend_v2/src/features/financial/components/FinancialFindings.tsx",
-      "line": 604,
+      "line": 525,
       "control": "Button",
       "label": "Previous saved payments",
       "disabled": "{!page}",
@@ -5700,7 +5700,7 @@
     {
       "component": "SavedPaymentLinks",
       "file": "frontend_v2/src/features/financial/components/FinancialFindings.tsx",
-      "line": 613,
+      "line": 534,
       "control": "select",
       "label": "\"Saved payment page\"",
       "disabled": null,
@@ -5712,7 +5712,7 @@
     {
       "component": "SavedPaymentLinks",
       "file": "frontend_v2/src/features/financial/components/FinancialFindings.tsx",
-      "line": 633,
+      "line": 554,
       "control": "Button",
       "label": "Next saved payments",
       "disabled": "{(page + 1) * 50 >= ids.length}",

@@ -200,3 +200,21 @@ it("keeps findings compact while preserving expansion, filters and report select
     )
   )
 })
+
+it("renders existing saved narrative as formatted text and omits empty follow-up sections", async () => {
+  const data = result("case-one", { tag: "financial" })
+  data.entries[0].tags = ["financial", "financial-workspace"]
+  data.entries[0].body =
+    "## Evidence reviewed\nThe **original** record supports this.\n\n- Check the reference\n- Compare dates\n\n## Next action\n\n\n## Assigned to"
+  list.mockResolvedValue(data)
+  setup("findings")
+  fireEvent.click(await screen.findByRole("button", { name: "Saved item 0" }))
+  expect(
+    screen.getByRole("heading", { name: "Evidence reviewed" })
+  ).toBeVisible()
+  expect(screen.getByText("original").tagName).toBe("STRONG")
+  expect(screen.getAllByRole("listitem")).toHaveLength(2)
+  expect(screen.queryByText(/##/)).toBeNull()
+  expect(screen.queryByText("Next action")).toBeNull()
+  expect(screen.queryByText("Assigned to")).toBeNull()
+})
