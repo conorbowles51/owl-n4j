@@ -879,3 +879,31 @@ amounts, categories and sender/beneficiary labels; a subsequent EUR filter expor
 exactly 40. Both browser tests, forced TypeScript and scoped lint pass. This closes
 the local download-content gap; no client export has been published or treated
 as independently live-verified.
+
+
+### Transaction filters and downloaded data — 25 September
+
+The CSV regression was pushed as `ce5028de`. Live verification in the authorized
+test case downloaded from page two and independently read every exported row.
+The export included the complete filtered set, with unique references and
+account/currency/category scope and credit/debit totals matching the screen.
+The private export remains outside Git. Exact synthetic row membership is also
+covered by the Chromium download test described above.
+
+A new native Chromium regression exercises date entry with bank, account, category
+and currency filters, checks both request dates and inclusive month boundaries,
+then leaves, returns and resets dates alone. The browser test, forced TypeScript,
+scoped lint and independent review pass. No production date-filter change was
+needed. Live verification initially encountered dates set visibly by the computer
+use fill tool without being committed to the form; keyboard events resolved that
+input discrepancy. The applied month narrowed the live results correctly and
+survived leaving and returning. Date, account, bank, category and currency filters
+were subsequently cleared independently, restoring the complete case totals.
+
+The larger restored-source recovery campaign and the test campaign have finished.
+Another campaign remains incomplete with two waiting items; a second supported
+pause was refused because the case was busy. Administrator inspection of the
+backend recovery log and held transaction has been requested. No transaction was
+terminated and no release gate was bypassed. Latest production-code publication
+and its actual release remain distinct; the last confirmed successful revision
+is still `12300095` at this checkpoint.
