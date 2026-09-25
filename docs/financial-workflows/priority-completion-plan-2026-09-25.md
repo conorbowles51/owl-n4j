@@ -866,3 +866,16 @@ rules remain intact. Across three forced initialization failures, the queue was
 read zero times before the repair and three times afterward. All 103 connected
 recovery tests pass, with independent review and a clean diff. This demonstrates
 the code defect; the triggering live exception has not been observed.
+
+The repair was pushed as `c7509d81`. A supported pause of the automatic campaign
+previously resumed for verification was refused with the expected busy-case
+conflict. Its work was not paused or cancelled, and the release gate was not
+bypassed. The actual worker transition and final recovery outcome remain open.
+
+Additional CSV acceptance now clicks the real download action in Chromium and
+decodes its generated Blob independently. From page two it contains all 80
+matching synthetic payments, including exact references, dates, both currencies,
+amounts, categories and sender/beneficiary labels; a subsequent EUR filter exports
+exactly 40. Both browser tests, forced TypeScript and scoped lint pass. This closes
+the local download-content gap; no client export has been published or treated
+as independently live-verified.

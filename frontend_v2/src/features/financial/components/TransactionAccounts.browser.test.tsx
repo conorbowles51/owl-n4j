@@ -25,6 +25,7 @@ import { MemoryRouter, Routes, Route } from "react-router-dom"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { RetainedFinancialTab } from "./FinancialNavigation"
 import { Button } from "@/components/ui/button"
+import type { LedgerTransaction } from "../api"
 vi.mock("@/lib/api-client", async (original) => ({
   ...(await original<typeof import("@/lib/api-client")>()),
   fetchAPI: vi.fn(async () => ({
@@ -44,7 +45,7 @@ vi.mock("@/lib/api-client", async (original) => ({
     case_id: "case",
     total: 0,
     entries: [],
-    categories: [],
+    categories: ["Due diligence", "Travel"],
   })),
 }))
 vi.mock("../hooks/use-financial-access", () => ({
@@ -67,7 +68,11 @@ const rows = Array.from({ length: 123 }, (_, i) => ({
         ? "Example Company · Bank B · 002"
         : "Other Company · Bank A · 003",
 }))
-function Workspace() {
+function Workspace({
+  transactions = rows,
+}: {
+  transactions?: LedgerTransaction[]
+}) {
   const [tab, setTab] = useState("transactions")
   const [params] = useInvestigationScope("case")
   return (
@@ -97,7 +102,7 @@ function Workspace() {
           <LedgerRowBrowser
             investigation
             exportContext={{ caseId: "case", params }}
-            transactions={rows}
+            transactions={transactions}
           />
         </main>
       </RetainedFinancialTab>
@@ -112,6 +117,202 @@ afterEach(() => {
   cleanup()
   useFinancialDraftStore.setState({ drafts: {} })
   useInvestigationScopeStore.getState().reset()
+  vi.restoreAllMocks()
+})
+
+it("downloads the complete filtered CSV across pages and reflects a later currency change in its actual contents", async () => {
+  await page.viewport(1440, 1000)
+  const transactions: LedgerTransaction[] = rows.map((row, index) => ({
+    ...row,
+    account_institution:
+      index < 60 ? "Bank A" : index < 120 ? "Bank B" : "Bank C",
+    ordering_date: `2026-${index < 60 ? "01" : "02"}-${String((index % 28) + 1).padStart(2, "0")}`,
+    ordering_date_context:
+      index === 119 ? "statement_end_ordering_only" : undefined,
+    direction: index % 2 ? "credit" : "debit",
+    from_name: index % 2 ? 'Client "East", Ltd' : "Example Company",
+    to_name: index % 2 ? "Example Company" : 'Supplier "North", LLC',
+    category: index % 3 ? "Due diligence" : "Travel",
+    label_sources: {
+      from_name: { source: "investigator" },
+      to_name: { source: "investigator" },
+      category: { source: "investigator" },
+    },
+  }))
+  // Observe the browser's real Blob and anchor download without replacing the
+  // production CSV serializer or preventing the native download.
+  const generated: { blob: Blob; url: string }[] = []
+  const downloads: { href: string; filename: string }[] = []
+  const createUrl = URL.createObjectURL.bind(URL)
+  vi.spyOn(URL, "createObjectURL").mockImplementation((source) => {
+    const url = createUrl(source)
+    if (source instanceof Blob && source.type.startsWith("text/csv"))
+      generated.push({ blob: source, url })
+    return url
+  })
+  const clickAnchor = HTMLAnchorElement.prototype.click
+  vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (
+    this: HTMLAnchorElement
+  ) {
+    if (this.download)
+      downloads.push({ href: this.href, filename: this.download })
+    clickAnchor.call(this)
+  })
+  render(
+    <QueryClientProvider
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
+    >
+      <MemoryRouter>
+        <Workspace transactions={transactions} />
+      </MemoryRouter>
+    </QueryClientProvider>
+  )
+  fireEvent.click(
+    screen.getByLabelText("Person or company filter").querySelector("summary")!
+  )
+  await act(async () => {
+    await page
+      .getByRole("checkbox", { name: "Example Company", exact: true })
+      .click()
+  })
+  expect(screen.getByText("1–50 of 120 matching rows")).toBeVisible()
+  await act(async () => {
+    await page
+      .getByRole("combobox", { name: "Filter financial payments by category" })
+      .selectOptions("Due diligence")
+  })
+  expect(screen.getByText("1–50 of 80 matching rows")).toBeVisible()
+  await act(async () => {
+    await page.getByRole("button", { name: "Next ledger rows" }).click()
+  })
+  expect(screen.getByText("51–80 of 80 matching rows")).toBeVisible()
+  expect(
+    screen
+      .getByRole("table", { name: "Investigation transactions" })
+      .querySelectorAll("tbody tr")
+  ).toHaveLength(30)
+  await act(async () => {
+    await page
+      .getByRole("button", { name: "Download CSV (80)", exact: true })
+      .click()
+  })
+
+  async function readDownload(index: number) {
+    expect(downloads[index]).toEqual({
+      href: generated[index].url,
+      filename: "loupe-filtered-transactions.csv",
+    })
+    expect(generated[index].blob.type).toBe("text/csv;charset=utf-8")
+    const text = (await generated[index].blob.text()).replace(/^\uFEFF/, "")
+    // Independent decoder for this fully quoted CSV, including embedded commas
+    // and doubled quotes. Require every byte to belong to a complete cell.
+    const cells = [...text.matchAll(/"((?:[^"]|"")*)"(?:,|\r\n|$)/g)]
+    expect(cells.map((cell) => cell[0]).join("")).toBe(text)
+    const values = cells.map((cell) => cell[1].replace(/""/g, '"'))
+    const headers = values.splice(0, 16)
+    expect(headers).toEqual([
+      "ref_id",
+      "date",
+      "description",
+      "from",
+      "to",
+      "category",
+      "from_basis",
+      "to_basis",
+      "category_basis",
+      "account",
+      "direction",
+      "amount",
+      "currency",
+      "printed_balance",
+      "printed_balance_status",
+      "notes",
+    ])
+    expect(values.length % headers.length).toBe(0)
+    return Array.from(
+      { length: values.length / headers.length },
+      (_, rowIndex) =>
+        Object.fromEntries(
+          headers.map((name, column) => [
+            name,
+            values[rowIndex * headers.length + column],
+          ])
+        )
+    )
+  }
+  const exported = await readDownload(0)
+  const matching = transactions.filter(
+    (_, index) => index < 120 && index % 3 !== 0
+  )
+  expect(exported).toHaveLength(80)
+  expect(exported.map((row) => row.ref_id).sort()).toEqual(
+    matching.map((row) => row.ref_id!).sort()
+  )
+  expect(new Set(exported.map((row) => row.currency))).toEqual(
+    new Set(["USD", "EUR"])
+  )
+  for (const expected of matching) {
+    expect(
+      exported.find((row) => row.ref_id === expected.ref_id)
+    ).toMatchObject({
+      date:
+        expected.ordering_date_context === "statement_end_ordering_only"
+          ? ""
+          : expected.ordering_date,
+      description: expected.description,
+      from: expected.from_name,
+      to: expected.to_name,
+      category: "Due diligence",
+      from_basis: "investigator",
+      to_basis: "investigator",
+      category_basis: "investigator",
+      account: expected.account_label,
+      direction: expected.direction,
+      amount: "100.00",
+      currency: expected.currency,
+      printed_balance: "",
+      printed_balance_status: "unavailable",
+    })
+  }
+  expect(
+    screen.getByRole("combobox", {
+      name: "Filter financial payments by category",
+    })
+  ).toHaveValue("Due diligence")
+  expect(
+    screen.getByRole("checkbox", { name: /^Example Company$/ })
+  ).toBeChecked()
+  expect(screen.getByText("51–80 of 80 matching rows")).toBeVisible()
+  fireEvent.click(screen.getByText("Filters (1)", { exact: true }))
+  await act(async () => {
+    await page
+      .getByRole("combobox", { name: "Currency", exact: true })
+      .selectOptions("EUR")
+  })
+  expect(screen.getByText("40 of 123 imported transactions")).toBeVisible()
+  expect(
+    screen
+      .getByRole("table", { name: "Investigation transactions" })
+      .querySelectorAll("tbody tr")
+  ).toHaveLength(40)
+  await act(async () => {
+    await page
+      .getByRole("button", { name: "Download CSV (40)", exact: true })
+      .click()
+  })
+  const narrowed = await readDownload(1)
+  expect(narrowed).toHaveLength(40)
+  expect(narrowed.map((row) => row.ref_id).sort()).toEqual(
+    matching
+      .filter((row) => row.currency === "EUR")
+      .map((row) => row.ref_id!)
+      .sort()
+  )
+  expect(narrowed.every((row) => row.currency === "EUR")).toBe(true)
+  expect(downloads).toHaveLength(2)
+  expect(generated).toHaveLength(2)
 })
 it("starts with all imported payments and filters across banks without a load step", async () => {
   await page.viewport(1440, 1000)
