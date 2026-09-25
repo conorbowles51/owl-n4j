@@ -1,7 +1,12 @@
 import { expect, it } from "vitest"
-import { duplicateCandidates } from "@/test/duplicate-fixture"
+import {
+  duplicateCandidates,
+  duplicateContextCandidates,
+} from "@/test/duplicate-fixture"
 import {
   duplicateMatchLabel,
+  duplicateRowsLabel,
+  duplicateStatementLabel,
   readDuplicateCandidates,
 } from "./duplicate-format"
 
@@ -9,6 +14,42 @@ it("accepts a complete comparison and preserves actual status separately from ma
   const data = readDuplicateCandidates(duplicateCandidates(), "case-1")
   expect(data.groups[0].members[1].status).toBe("superseded")
   expect(data.groups[0].members[1].match).toBe("identical_reading")
+})
+
+it("preserves all saved periods, zero rows and unknown counts without payment-date inference", () => {
+  const result = readDuplicateCandidates(
+    duplicateContextCandidates(1),
+    "case-1"
+  )
+  expect(result.groups[0].members[0].statement_context).toHaveLength(2)
+  expect(duplicateRowsLabel(result.groups[0].members[0].rows_by_status)).toBe(
+    "0 stored rows"
+  )
+  expect(duplicateRowsLabel(undefined)).toBe("Stored row count unavailable")
+  const context = result.groups[0].members[0].statement_context[0]
+  expect(
+    duplicateStatementLabel({
+      ...context,
+      bank: null,
+      account_holder: null,
+      account_number: null,
+      currency: "",
+      period_start: null,
+      period_end: null,
+    })
+  ).toBe(
+    "Bank not recorded · Account holder not recorded · Account number not recorded · Currency not recorded · Start date not recorded to End date not recorded"
+  )
+})
+
+it("rejects duplicate period identities and malformed registered source references", () => {
+  const data = duplicateContextCandidates(1)
+  const member = data.groups[0].members[0]
+  member.statement_context.push(member.statement_context[0])
+  expect(() => readDuplicateCandidates(data, "case-1")).toThrow()
+  member.statement_context.pop()
+  member.evidence_file_id = "not-a-file-id"
+  expect(() => readDuplicateCandidates(data, "case-1")).toThrow()
 })
 it.each([
   (d: ReturnType<typeof duplicateCandidates>) => {

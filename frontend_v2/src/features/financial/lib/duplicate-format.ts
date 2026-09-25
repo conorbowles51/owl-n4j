@@ -1,11 +1,29 @@
 import { z } from "zod"
 
 const count = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER)
+const statementContext = z.object({
+  period_id: z.string().min(1),
+  account_id: z.string().min(1),
+  bank: z.string().nullable(),
+  account_holder: z.string().nullable(),
+  account_number: z.string().nullable(),
+  currency: z.string(),
+  period_start: z.string().nullable(),
+  period_end: z.string().nullable(),
+})
 const document = z.object({
   document_id: z.string().min(1),
   filename: z.string(),
   status: z.string().min(1),
   superseded_by_id: z.string().nullable(),
+  evidence_file_id: z.string().uuid().nullable().optional(),
+  statement_id: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/)
+    .nullable()
+    .optional(),
+  statement_context: z.array(statementContext).default([]),
+  rows_by_status: z.record(z.string(), count).optional(),
 })
 const reviewedDocument = document.extend({
   revision: z.string().regex(/^[a-f0-9]{64}$/),
@@ -49,6 +67,45 @@ const schema = z.object({
   ),
 })
 export type DuplicateCandidates = z.infer<typeof schema>
+export type DuplicateDocument = z.infer<typeof document>
+export type DuplicateStatementContext = z.infer<typeof statementContext>
+
+export function duplicateStatementLabel(
+  row: DuplicateStatementContext
+): string {
+  return [
+    row.bank?.trim() || "Bank not recorded",
+    row.account_holder?.trim() || "Account holder not recorded",
+    row.account_number?.trim()
+      ? `Account ${row.account_number}`
+      : "Account number not recorded",
+    row.currency?.trim() || "Currency not recorded",
+    `${row.period_start || "Start date not recorded"} to ${row.period_end || "End date not recorded"}`,
+  ].join(" · ")
+}
+
+export function duplicateRowsLabel(
+  rows: DuplicateDocument["rows_by_status"]
+): string {
+  if (!rows) return "Stored row count unavailable"
+  return (
+    Object.entries(rows)
+      .map(
+        ([status, amount]) =>
+          `${amount} ${
+            (
+              {
+                admitted: "included rows",
+                superseded: "excluded or corrected rows",
+                quarantined: "rows needing review",
+                rejected: "rejected rows",
+              } as Record<string, string>
+            )[status] || `${status} rows`
+          }`
+      )
+      .join(" · ") || "0 stored rows"
+  )
+}
 
 export function readDuplicateCandidates(
   value: unknown,
@@ -59,9 +116,20 @@ export function readDuplicateCandidates(
     throw new Error("The duplicate comparison response is incomplete.")
   const data = result.data
   const members = data.groups.flatMap((group) => group.members)
+  const documents = [
+    ...members,
+    ...data.skipped,
+    ...data.excluded_documents,
+    ...data.source_hash_groups.flatMap((group) => group.members),
+  ]
   const ids = [...members, ...data.skipped].map((row) => row.document_id)
   if (
     data.case_id !== caseId ||
+    documents.some(
+      (row) =>
+        new Set(row.statement_context.map((period) => period.period_id))
+          .size !== row.statement_context.length
+    ) ||
     new Set(data.source_hash_groups.map((g) => g.sha256_at_ingestion)).size !==
       data.source_hash_groups.length ||
     data.source_hash_groups.some(

@@ -731,3 +731,50 @@ they do not release the existing live transaction. The authorized test campaign
 still needs resume/observation, and the restored-source campaign, replacement
 checks, removed-source navigation and full month labels require post-deployment
 verification once the automatic release can proceed.
+
+## Existing-source audit and duplicate-review follow-up — 25 September
+
+The read-only relevance audit now covers every case visible to the authenticated
+investigator, including archived cases. Current source families were inspected
+using retained content and selection/work/history indicators, not extensions.
+Bank and card statements, quiet periods, account-opening records and bank
+disclosures remain Financial evidence. Two uncertain contextual records were
+retained; one already has an unanswered investigator-context question and the
+other has explicit selection and a saved note. No source membership, imported
+payment or Evidence original was changed during this audit. The private audit
+holds case/source identifiers and counts outside Git. This establishes source
+relevance only, not complete transaction extraction or ledger uniqueness.
+
+The audit also exposed historical overlapping imports. The existing duplicate
+comparison succeeds across the complete live case and distinguishes matching
+saved readings from overlap. Already-imported copies remain included until a
+reviewed exclusion is recorded; new-import duplicate protection does not silently
+rewrite historical totals. No exclusion was performed during this inspection.
+
+That comparison exposed a usability gap: repeated filenames across many statement
+periods were not accompanied by bank/account/currency/date context, and its
+transaction-based source action did not serve saved zero-row periods. The bounded
+follow-up now provides each registered period's case-scoped saved context and
+source citation. Missing details stay explicit; original-file fallback does not
+invent a period or PDF page. Zero-row records are labelled saved statements with
+no transactions. Source inspection and decision confirmation keep the selected
+account/period visible and return to the same comparison group, including when
+a refresh temporarily disables the original button.
+
+Matching, revisions, exclusion/restoration and investigator corrections are
+unchanged. Backend verification passed 118 tests and eight subtests; frontend
+verification passed 40 unit and seven Chromium tests, with independent review.
+Browser journeys cover repeated filenames, two registered periods, zero rows,
+source errors, exact citation requests, original preview and decision cancel/
+return at 1280px and 390px. Source preview used synthetic text; this is not a live
+PDF extraction claim. Wide/narrow screenshots were inspected privately. Forced
+TypeScript, the production build, scoped ESLint and diff checks pass. The action
+inventory now records 1,739 controls across 179 files. Live verification awaits
+the same safe release transition.
+
+`ac3c7a67` is pushed. The captured automatic attempt at 05:48 UTC again deferred
+before service replacement; the last successful release remains `f091ffb9`.
+The existing database transaction still requires maintenance inspection. An
+authorized ten-minute heartbeat will check for meaningful changes and resume the
+remaining live verification after a safe release; it does not bypass the gate or
+terminate database sessions.

@@ -1,15 +1,22 @@
 import { useFinancialAccess } from "../hooks/use-financial-access"
-import { useRef } from "react"
+import { useEffect, useRef } from "react"
 import { useFinancialDraft } from "../stores/financial-drafts"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { z } from "zod"
 import { ApiError, fetchAPI } from "@/lib/api-client"
 import { Button } from "@/components/ui/button"
+import {
+  duplicateRowsLabel,
+  duplicateStatementLabel,
+  type DuplicateStatementContext,
+} from "../lib/duplicate-format"
 
 export interface ReviewedDocument {
   document_id: string
   filename: string
   revision: string
+  statement_context?: DuplicateStatementContext[]
+  rows_by_status?: Record<string, number>
 }
 export interface DuplicateSelection {
   caseId: string
@@ -38,6 +45,11 @@ function DuplicateDecisionFormForm({
     ""
   )
   const lock = useRef(false)
+  const heading = useRef<HTMLHeadingElement>(null)
+  useEffect(() => {
+    heading.current?.focus({ preventScroll: true })
+    heading.current?.scrollIntoView({ block: "start" })
+  }, [])
   const client = useQueryClient()
   const action = selection.primary ? "exclude" : "restore"
   const mutation = useMutation({
@@ -120,12 +132,23 @@ function DuplicateDecisionFormForm({
         )
       }}
     >
-      <h3 className="text-sm font-semibold">
+      <h3 ref={heading} tabIndex={-1} className="text-sm font-semibold">
         {action === "exclude"
           ? "Confirm duplicate exclusion"
           : "Restore excluded document"}
       </h3>
-      <p className="text-sm">{selection.document.filename}</p>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <DecisionDocumentContext
+          document={selection.document}
+          label={action === "exclude" ? "Copy to exclude" : "Copy to restore"}
+        />
+        {selection.primary && (
+          <DecisionDocumentContext
+            document={selection.primary}
+            label="Copy to keep"
+          />
+        )}
+      </div>
       {selection.primary ? (
         <p className="text-sm">
           Keep: {selection.primary.filename}. Payments in the excluded copy will
@@ -171,7 +194,7 @@ function DuplicateDecisionFormForm({
             : "The decision could not be confirmed. It may have been recorded. Check the refreshed comparison and decision history before trying again."}
         </p>
       )}
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         {!mutation.isSuccess && !mutation.isError && (
           <Button type="submit" disabled={!reason.trim() || mutation.isPending}>
             {mutation.isPending ? "Recording decision..." : "Record decision"}
@@ -187,6 +210,35 @@ function DuplicateDecisionFormForm({
         </Button>
       </div>
     </form>
+  )
+}
+
+function DecisionDocumentContext({
+  document,
+  label,
+}: {
+  document: ReviewedDocument
+  label: string
+}) {
+  return (
+    <section
+      aria-label={label}
+      className="space-y-2 rounded border p-3 text-sm break-words"
+    >
+      <h4 className="font-semibold">
+        {label}: {document.filename}
+      </h4>
+      <p>{duplicateRowsLabel(document.rows_by_status)}</p>
+      {document.statement_context?.length ? (
+        <ul className="space-y-1">
+          {document.statement_context.map((period) => (
+            <li key={period.period_id}>{duplicateStatementLabel(period)}</li>
+          ))}
+        </ul>
+      ) : (
+        <p>Saved statement account and period details are unavailable.</p>
+      )}
+    </section>
   )
 }
 

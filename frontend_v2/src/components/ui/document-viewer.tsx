@@ -56,6 +56,7 @@ interface DocumentViewerProps {
   evidenceId?: string
   open: boolean
   onOpenChange: (open: boolean) => void
+  onCloseAutoFocus?: (event: Event) => void
   documentUrl?: string
   documentName?: string
   initialPage?: number
@@ -75,6 +76,7 @@ export function DocumentViewer({
   evidenceId,
   open,
   onOpenChange,
+  onCloseAutoFocus,
   documentUrl,
   documentName,
   initialPage = 1,
@@ -284,6 +286,7 @@ export function DocumentViewer({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
+        onCloseAutoFocus={onCloseAutoFocus}
         className={cn(
           "h-[90vh] flex flex-col p-0 gap-0",
           fileType === "audio"

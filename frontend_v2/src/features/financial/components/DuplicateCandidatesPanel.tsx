@@ -1,5 +1,5 @@
 import { LedgerSourceDialog } from "./LedgerSourceDialog"
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { CrossCaseDuplicatePanel } from "./CrossCaseDuplicatePanel"
 import { Button } from "@/components/ui/button"
 import { useDuplicateCandidates } from "../hooks/use-duplicate-candidates"
@@ -9,22 +9,58 @@ import {
   type DuplicateSelection,
 } from "./DuplicateDecisionForm"
 import { duplicateMatchLabel } from "../lib/duplicate-format"
+import {
+  DuplicateDocumentContext,
+  DuplicateGroupContext,
+} from "./DuplicateDocumentContext"
 
-export function DuplicateCandidatesPanel({
-  caseId,
-  autoLoad = false,
-  showCrossCase = true,
-}: {
+type Props = {
   caseId: string | undefined
   autoLoad?: boolean
   showCrossCase?: boolean
-}) {
+}
+
+export function DuplicateCandidatesPanel(props: Props) {
+  return (
+    <DuplicateCandidatesCasePanel key={props.caseId || "no-case"} {...props} />
+  )
+}
+
+function DuplicateCandidatesCasePanel({
+  caseId,
+  autoLoad = false,
+  showCrossCase = true,
+}: Props) {
   const { canEdit, ready } = useFinancialAccess()
   const [sourceId, setSourceId] = useState<string | null>(null)
   const [groupPage, setGroupPage] = useState(0)
   const [hashPage, setHashPage] = useState(0)
   const [opened, setOpened] = useState(autoLoad)
   const [selection, setSelection] = useState<DuplicateSelection | null>(null)
+  const heading = useRef<HTMLHeadingElement>(null)
+  const selectionOrigin = useRef<{
+    button: HTMLElement
+    group: HTMLElement | null
+  } | null>(null)
+  useEffect(() => {
+    if (selection || !selectionOrigin.current) return
+    const { button, group } = selectionOrigin.current
+    const target = button.isConnected && !button.matches(":disabled")
+      ? button
+      : group?.isConnected
+        ? group
+        : heading.current
+    target?.focus({ preventScroll: true })
+    target?.scrollIntoView({ block: "center" })
+    selectionOrigin.current = null
+  }, [selection])
+  const openDecision = (value: DuplicateSelection, button: HTMLElement) => {
+    selectionOrigin.current = {
+      button,
+      group: button.closest("details")?.querySelector("summary") || null,
+    }
+    setSelection(value)
+  }
   const { data, isPending, isError, error, isFetching, refetch } =
     useDuplicateCandidates(caseId, opened)
   const visibleGroupPage = Math.min(
@@ -40,7 +76,9 @@ export function DuplicateCandidatesPanel({
       aria-label="Duplicate candidates"
       className="space-y-3 rounded-lg border bg-card p-4"
     >
-      <h2 className="text-sm font-semibold">Duplicate candidates</h2>
+      <h2 ref={heading} tabIndex={-1} className="text-sm font-semibold">
+        Duplicate candidates
+      </h2>
       <p className="text-xs text-muted-foreground">
         Find statements that may have been imported twice. Open each source,
         then choose which copy to keep. This comparison does not exclude
@@ -115,8 +153,8 @@ export function DuplicateCandidatesPanel({
                 <summary className="cursor-pointer">What was compared</summary>
                 <p className="mt-2">
                   The comparison includes original transaction values, balances
-                  and rows previously excluded or corrected. Open the PDFs to
-                  check whether either file contains additional information
+                  and rows previously excluded or corrected. Open the originals
+                  to check whether either file contains additional information
                   before excluding a copy.
                 </p>
                 {data.stored_rows_in_case !== undefined && (
@@ -135,6 +173,7 @@ export function DuplicateCandidatesPanel({
                         <summary>
                           {group.members.length} documents ·{" "}
                           {group.sha256_at_ingestion.slice(0, 12)}…
+                          <DuplicateGroupContext documents={group.members} />
                         </summary>
                         <p>{group.limitation}</p>
                         <p className="break-all">
@@ -149,23 +188,29 @@ export function DuplicateCandidatesPanel({
                               {row.filename} · {row.status}
                               <br />
                               Document: {row.document_id}
-                              {row.source_transaction_id && (
-                                <Button
-                                  onClick={() =>
-                                    setSourceId(row.source_transaction_id!)
-                                  }
-                                >
-                                  Inspect source for document{" "}
-                                  {row.document_id.slice(0, 8)}
-                                </Button>
-                              )}
+                              <DuplicateDocumentContext
+                                caseId={caseId}
+                                document={row}
+                              />
+                              {!row.statement_context.length &&
+                                !row.evidence_file_id &&
+                                row.source_transaction_id && (
+                                  <Button
+                                    onClick={() =>
+                                      setSourceId(row.source_transaction_id!)
+                                    }
+                                  >
+                                    Inspect source for document{" "}
+                                    {row.document_id.slice(0, 8)}
+                                  </Button>
+                                )}
                             </li>
                           ))}
                         </ul>
                       </details>
                     ))}
                   {data.source_hash_groups.length > 10 && (
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <Button
                         disabled={!visibleHashPage}
                         onClick={() => setHashPage(visibleHashPage - 1)}
@@ -199,36 +244,52 @@ export function DuplicateCandidatesPanel({
                 data.groups
                   .slice(visibleGroupPage * 10, visibleGroupPage * 10 + 10)
                   .map((group, index) => (
-                    <details key={group.group_key}>
+                    <details
+                      key={group.group_key}
+                      className="rounded border p-3"
+                    >
                       <summary className="cursor-pointer text-sm font-medium">
                         Candidate group {visibleGroupPage * 10 + index + 1} ·{" "}
                         {group.members.length} documents
+                        <DuplicateGroupContext documents={group.members} />
                       </summary>
-                      <ul className="mt-2 space-y-3">
-                        {group.members.map((row) => (
+                      <ul className="mt-2 grid items-start gap-3 lg:grid-cols-2">
+                        {group.members.map((row, memberIndex) => (
                           <li
                             key={row.document_id}
-                            className="rounded border p-3 text-sm"
+                            aria-label={`Copy ${memberIndex + 1}: ${row.filename}`}
+                            className="min-w-0 space-y-2 rounded border p-3 text-sm"
                           >
                             <p className="font-medium break-all">
                               {row.filename}
                             </p>
-                            {row.source_transaction_id && (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                aria-label={`View source for ${row.filename}`}
-                                onClick={() =>
-                                  setSourceId(row.source_transaction_id!)
-                                }
-                              >
-                                View source
-                              </Button>
-                            )}
+                            {!row.statement_context.length &&
+                              !row.evidence_file_id &&
+                              row.source_transaction_id && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  aria-label={`View source for ${row.filename}`}
+                                  onClick={() =>
+                                    setSourceId(row.source_transaction_id!)
+                                  }
+                                >
+                                  View source
+                                </Button>
+                              )}
+                            <DuplicateDocumentContext
+                              caseId={caseId}
+                              document={row}
+                              returnLabel={`Back to candidate group ${visibleGroupPage * 10 + index + 1}`}
+                            />
                             <p>{duplicateMatchLabel(row.match)}</p>
                             <p>
                               {row.status === "admitted"
-                                ? "Included in Transactions"
+                                ? Object.values(row.rows_by_status).every(
+                                    (count) => count === 0
+                                  )
+                                  ? "Saved statement · no transactions"
+                                  : "Included in Transactions"
                                 : "Excluded from Transactions"}
                             </p>
                             {row.superseded_by_id && (
@@ -240,24 +301,6 @@ export function DuplicateCandidatesPanel({
                                 )?.filename ?? "See document identifiers"}
                               </p>
                             )}
-                            <p>
-                              {Object.entries(row.rows_by_status)
-                                .map(
-                                  ([status, count]) =>
-                                    `${count} ${
-                                      (
-                                        {
-                                          admitted: "included rows",
-                                          superseded:
-                                            "excluded or corrected rows",
-                                          quarantined: "rows needing review",
-                                          rejected: "rejected rows",
-                                        } as Record<string, string>
-                                      )[status] ?? `${status} rows`
-                                    }`
-                                )
-                                .join(" · ") || "No stored rows"}
-                            </p>
                             <details className="text-xs break-all">
                               <summary className="cursor-pointer">
                                 Document identifiers
@@ -283,12 +326,15 @@ export function DuplicateCandidatesPanel({
                                     variant="outline"
                                     size="sm"
                                     disabled={!!selection || isFetching}
-                                    onClick={() =>
-                                      setSelection({
-                                        caseId,
-                                        document: row,
-                                        primary,
-                                      })
+                                    onClick={(event) =>
+                                      openDecision(
+                                        {
+                                          caseId,
+                                          document: row,
+                                          primary,
+                                        },
+                                        event.currentTarget
+                                      )
                                     }
                                   >
                                     Exclude this copy; retain {primary.filename}
@@ -301,7 +347,7 @@ export function DuplicateCandidatesPanel({
                   ))
               )}
               {data.groups.length > 10 && (
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <Button
                     disabled={!visibleGroupPage}
                     onClick={() => setGroupPage(visibleGroupPage - 1)}
@@ -330,16 +376,25 @@ export function DuplicateCandidatesPanel({
                     {data.excluded_documents.map((row) => (
                       <li
                         key={row.document_id}
-                        className="flex items-center justify-between gap-2 text-sm"
+                        className="space-y-2 rounded border p-3 text-sm"
                       >
-                        <span>{row.filename}</span>
+                        <p className="font-medium break-words">
+                          {row.filename}
+                        </p>
+                        <DuplicateDocumentContext
+                          caseId={caseId}
+                          document={row}
+                        />
                         {canEdit && (
                           <Button
                             variant="outline"
                             size="sm"
                             disabled={!!selection || isFetching}
-                            onClick={() =>
-                              setSelection({ caseId, document: row })
+                            onClick={(event) =>
+                              openDecision(
+                                { caseId, document: row },
+                                event.currentTarget
+                              )
                             }
                           >
                             Restore {row.filename}
@@ -358,7 +413,13 @@ export function DuplicateCandidatesPanel({
                   <ul className="mt-2 space-y-2 text-sm">
                     {data.skipped.map((row) => (
                       <li key={row.document_id}>
-                        {row.filename}: {row.reason}
+                        <p>
+                          {row.filename}: {row.reason}
+                        </p>
+                        <DuplicateDocumentContext
+                          caseId={caseId}
+                          document={row}
+                        />
                       </li>
                     ))}
                   </ul>

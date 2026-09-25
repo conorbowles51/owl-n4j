@@ -1,7 +1,7 @@
 import { ImportedStatementDetails } from "./ImportedStatementDetails"
 import { useFinancialAccess } from "../hooks/use-financial-access"
 import { SourceCustodyPanel } from "./SourceCustodyPanel"
-import { useState } from "react"
+import { useRef, useState } from "react"
 import { useAuthStore } from "@/features/auth/hooks/use-auth"
 import { useStatementWorkspace } from "../stores/statement-workspace"
 import { useQuery } from "@tanstack/react-query"
@@ -75,14 +75,19 @@ export function StatementSourceButton({
   sourceDocumentId,
   onReviewStatement,
   label = "Inspect statement source",
+  contextLabel,
+  returnLabel,
 }: {
   caseId: string
   periodId: string
   sourceDocumentId: string
   onReviewStatement?: (fileId: string) => void
   label?: string
+  contextLabel?: string
+  returnLabel?: string
 }) {
   const { canEdit } = useFinancialAccess()
+  const trigger = useRef<HTMLButtonElement>(null)
   const [opened, setOpened] = useState(false),
     [viewFile, setViewFile] = useState(false),
     [controlRole, setControlRole] = useState<string | null>(null)
@@ -112,20 +117,41 @@ export function StatementSourceButton({
   })
   return (
     <>
-      <Button variant="outline" onClick={() => setOpened(true)}>
+      <Button
+        ref={trigger}
+        className="h-auto whitespace-normal text-left"
+        variant="outline"
+        onClick={() => setOpened(true)}
+      >
         {label}
       </Button>
       <Dialog
         open={opened && (!viewFile || query.isError)}
         onOpenChange={setOpened}
       >
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-4xl">
+        <DialogContent
+          className="max-h-[90vh] overflow-y-auto sm:max-w-4xl"
+          onCloseAutoFocus={(event) => {
+            if (!viewFile) {
+              event.preventDefault()
+              trigger.current?.focus({ preventScroll: true })
+            }
+          }}
+        >
           <DialogHeader>
             <DialogTitle>Statement source</DialogTitle>
             <DialogDescription>
               Inspect the registered document for this statement period.
             </DialogDescription>
           </DialogHeader>
+          {contextLabel && (
+            <p className="text-sm font-medium break-words">{contextLabel}</p>
+          )}
+          {returnLabel && (
+            <Button variant="outline" onClick={() => setOpened(false)}>
+              {returnLabel}
+            </Button>
+          )}
           {query.isPending ? (
             <p role="status">Loading statement citation…</p>
           ) : query.isError ? (
@@ -281,6 +307,13 @@ export function StatementSourceButton({
               <Button onClick={() => setViewFile(true)}>
                 Open statement file
               </Button>
+              {contextLabel && (
+                <p className="text-xs text-muted-foreground">
+                  The original may contain several statement periods. Use the
+                  saved source controls above when available; an exact page is
+                  not assumed.
+                </p>
+              )}
             </>
           )}
         </DialogContent>
