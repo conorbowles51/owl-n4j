@@ -79,6 +79,26 @@ and campaigns, finished work, and results awaiting investigator review do not
 block deployment. An abandoned upload still marked active must be completed or
 explicitly paused; the gate does not silently expire it.
 
+When work blocks a release, the deployment log includes a read-only diagnostic
+breakdown: `engine_jobs`, `pending_financial_imports`, `financial_batch_leases`,
+`recovery_items`, `upload_groups` and `upload_sessions`. Each nonempty category
+shows its full blocking count and at most 10 record references, ordered by the
+oldest available update timestamp, with the number of omitted references.
+References include case/record UUIDs, applicable batch/run/group UUIDs, recognized
+statuses, creation/update timestamps and active lease deadlines. Filenames,
+document contents, worker tokens and credentials are never included. Missing
+legacy diagnostic fields appear as `null`; unrecognized identifiers, statuses
+or timestamps are redacted as `unrecognized`. Redaction never removes their
+records from the blocking count.
+
+These are counts of blocking records, not unique investigations or tasks: one
+operation can be represented in multiple categories. Grouped upload members
+count only through their group when that schema is available. Counts and samples
+can change while work runs, and an old timestamp alone does not establish that
+work is abandoned. The diagnostic does not pause, expire, retry or change any
+record. A diagnostic query failure still defers the release with code 75 and
+prints only the exception type, without connection details or query parameters.
+
 Docker images are built before a fresh idle check permits container replacement.
 Another check runs before the backend restarts. The check is retained in memory
 across checkout changes, including automatic and standalone rollback. Rollback

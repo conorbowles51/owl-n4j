@@ -678,3 +678,13 @@ was explicitly paused for release and must be resumed and observed afterward.
 No team ingestion was cancelled and no deployment gate was bypassed. The recovery
 worker currently advances selected units sequentially; a slow unit in another case
 is a possible scheduling limitation, not a proven explanation of this incident.
+
+`97df9e26` was pushed. The automatic runner checked out that revision, then safely
+deferred the release at 04:49:50 UTC because three ingestion, recovery or upload
+records were queued or running. The last successful running release remains
+`f091ffb9`; checkout advancement alone does not establish deployment. No service
+replacement was allowed by that attempt. A diagnostic follow-up retains every
+blocking predicate and adds bounded UUID/status/time references so the next
+automatic attempt can identify the work without inspecting evidence or changing
+its state. Forty focused diagnostic and deployment/rollback checks passed, with
+independent review. The test-case recovery remains paused pending this transition.
