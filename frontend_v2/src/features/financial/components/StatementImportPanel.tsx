@@ -27,7 +27,10 @@ import {
   statementDuplicateDisposition,
   statementDuplicateResponse,
 } from "../lib/statement-duplicate"
-import { statementBlocker } from "../lib/statement-assessment"
+import {
+  statementAssessment,
+  statementBlocker,
+} from "../lib/statement-assessment"
 import { ReprocessStatement } from "./ReprocessStatement"
 import { newReviewId } from "../lib/statement-review-id"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
@@ -40,7 +43,7 @@ import {
   serverStatementDraft,
 } from "../lib/statement-review-draft"
 import { Button } from "@/components/ui/button"
-import { fetchAPI } from "@/lib/api-client"
+import { ApiError, fetchAPI } from "@/lib/api-client"
 import { PdfReviewIntake } from "./PdfReviewIntake"
 import { TransactionSourceHighlight } from "./TransactionSourceHighlight"
 import { StatementSourceTools } from "./StatementSourceTools"
@@ -212,6 +215,15 @@ const proposalSchema = z.object({
       refresh_available: z.boolean().optional(),
       refresh_review_required: z.boolean().optional(),
       refresh_transaction_count: z.number().optional(),
+      refresh_admission: statementAssessment.nullish(),
+      refresh_requires_reconciliation: z.boolean().optional(),
+      refresh_currency_conflict: z
+        .object({
+          saved_currency: z.string(),
+          reading_currency: z.string(),
+          message: z.string(),
+        })
+        .nullish(),
       details: z
         .object({
           holder: z.string(),
@@ -349,12 +361,6 @@ export function StatementImportPanel({
   const files = useStatementFiles(caseId, false, [], true, open)
   const selectedFile = files.data?.find((file) => file.id === fileId)
 
-  useEffect(() => {
-    if (selectedFile?.financial_removed) {
-      useStatementWorkspace.getState().select(scope, null)
-      useStatementWorkspace.getState().setOpen(scope, false)
-    }
-  }, [scope, selectedFile?.financial_removed])
   if (!caseId) return null
   return (
     <section
@@ -417,6 +423,14 @@ export function StatementImportPanel({
                 onChange={(e) => setFileId(e.target.value || null)}
               >
                 <option value="">Choose a statement</option>
+                {fileId &&
+                  (!selectedFile || selectedFile.financial_removed) && (
+                    <option value={fileId}>
+                      {selectedFile
+                        ? `${selectedFile.original_filename} · removed from Financial`
+                        : `Selected source · ${fileId}`}
+                    </option>
+                  )}
                 {files.data
                   ?.filter(
                     (f) => !f.financial_removed && usesPdfStatementReader(f)
@@ -437,20 +451,48 @@ export function StatementImportPanel({
             </label>
           </div>
         )}
-        {fileId && (
-          <StatementReview
-            key={`${caseId}:${fileId}`}
-            caseId={caseId}
-            fileId={fileId}
-            onReprocessed={(id) => {
-              setFileId(id)
-              void files.refetch()
-            }}
-            onImported={(result) => {
-              setOpen(false)
-              onImported(result)
-            }}
-          />
+        {fileId && files.isPending ? (
+          <p role="status">Loading the selected source…</p>
+        ) : fileId && selectedFile?.financial_removed ? (
+          <div className="rounded border p-3 space-y-3" role="alert">
+            <h3 className="font-semibold">
+              This source was removed from Financial
+            </h3>
+            <p className="text-sm break-words">
+              {selectedFile.original_filename}
+            </p>
+            <p className="text-sm">
+              This retained source is not available for statement review here.
+              Opening this link has not restored it or changed any saved work.
+              Another upload with the same name is a separate source.
+            </p>
+            <p className="text-xs text-muted-foreground break-all">
+              Source reference: {fileId}
+            </p>
+            <Button variant="outline" asChild>
+              <a
+                href={`/cases/${encodeURIComponent(caseId)}/evidence?file=${encodeURIComponent(fileId)}&from=financial`}
+              >
+                Open source location in Evidence
+              </a>
+            </Button>
+          </div>
+        ) : (
+          fileId && (
+            <StatementReview
+              key={`${caseId}:${fileId}`}
+              caseId={caseId}
+              fileId={fileId}
+              onReprocessed={(id) => {
+                setFileId(id)
+                void files.refetch()
+              }}
+              onImported={(result) => {
+                setOpen(false)
+                onImported(result)
+              }}
+            />
+          )
         )}
       </div>
     </section>
@@ -469,6 +511,10 @@ function StatementReview({
   onReprocessed: (id: string) => void
 }) {
   const batchReview = useBatchReview()
+  const [detailsRequest, setDetailsRequest] = useState(0)
+  const savedDetails = useRef<HTMLDivElement>(null)
+  const [checkingSavedCurrency, setCheckingSavedCurrency] = useState(false)
+  const recordedStatement = useRef<HTMLElement>(null)
   const { canEdit } = useFinancialAccess()
   const owner = useAuthStore(
     (state) => state.user?.id || state.user?.username || "anonymous"
@@ -502,32 +548,62 @@ function StatementReview({
       return data
     },
   })
+  useEffect(() => {
+    if (checkingSavedCurrency && !query.isFetching && query.data) {
+      setCheckingSavedCurrency(false)
+      recordedStatement.current?.scrollIntoView({ block: "start" })
+      recordedStatement.current?.focus({ preventScroll: true })
+    }
+  }, [checkingSavedCurrency, query.isFetching, query.data])
   if (query.isPending)
     return (
       <p role="status" className="py-4">
         Reading the statement and checking its transactions…
       </p>
     )
-  if (query.isError)
+  if (query.isError) {
+    const unavailable =
+      query.error instanceof ApiError && [404, 410].includes(query.error.status)
     return (
       <div className="py-4 space-y-2">
+        <h3 className="font-semibold">Statement review unavailable</h3>
         <p role="alert">{query.error.message}</p>
+        <p className="text-xs text-muted-foreground break-all">
+          Source reference: {fileId}
+        </p>
+        {unavailable && (
+          <p className="text-sm">
+            This exact source could not be found for review in this case. Check
+            its location in Evidence or return to the processing batch. Another
+            upload with the same name has not been substituted.
+          </p>
+        )}
         <Button onClick={() => void query.refetch()}>
           Retry statement review
+        </Button>
+        <Button variant="outline" asChild>
+          <a
+            href={`/cases/${encodeURIComponent(caseId)}/evidence?file=${encodeURIComponent(fileId)}&from=financial`}
+          >
+            Open source location in Evidence
+          </a>
         </Button>
         {currency && (
           <Button variant="outline" onClick={() => setCurrency("")}>
             Change currency
           </Button>
         )}
-        <ReprocessStatement
-          key={fileId}
-          caseId={caseId}
-          fileId={fileId}
-          onReady={onReprocessed}
-        />
+        {!unavailable && (
+          <ReprocessStatement
+            key={fileId}
+            caseId={caseId}
+            fileId={fileId}
+            onReady={onReprocessed}
+          />
+        )}
       </div>
     )
+  }
   if (query.data.reading_failure)
     return (
       <FailedStatementReading
@@ -666,14 +742,15 @@ function StatementReview({
       !query.data.current_import.excluded_as_duplicate &&
       canEdit &&
       !batchReview?.readOnly ? (
-        <div id="saved-statement-details" tabIndex={-1}>
+        <div id="saved-statement-details" ref={savedDetails} tabIndex={-1}>
           <ImportedStatementDetails
             key={query.data.current_import.source_document_id}
             caseId={caseId}
             sourceId={query.data.current_import.source_document_id}
             withSource
             initiallyOpen
-            focusField={batchReview?.field}
+            focusField={detailsRequest ? "balances" : batchReview?.field}
+            editRequest={detailsRequest}
           />
         </div>
       ) : (
@@ -742,6 +819,8 @@ function StatementReview({
           <section
             className="rounded border p-4 space-y-3"
             aria-label="Recorded statement import"
+            ref={recordedStatement}
+            tabIndex={-1}
           >
             <h3 className="font-semibold">
               {query.data.current_import.transaction_count
@@ -775,13 +854,58 @@ function StatementReview({
                 hasIncomplete={!!query.data.current_import.incomplete_count}
               />
             )}
+            {query.data.current_import.refresh_currency_conflict && (
+              <section
+                aria-label="Replacement currency review"
+                className="rounded border border-amber-500 p-3 space-y-2"
+              >
+                <h4 className="font-semibold">
+                  Check the replacement currency
+                </h4>
+                <p>
+                  {query.data.current_import.refresh_currency_conflict.message}
+                </p>
+                <p>
+                  Checking the reading in the saved currency does not convert
+                  amounts or change your saved payments. The replacement must
+                  still pass its reconciliation checks before it can be saved.
+                </p>
+                <Button
+                  variant="outline"
+                  disabled={query.isFetching}
+                  onClick={() => {
+                    const savedCurrency =
+                      query.data.current_import!.refresh_currency_conflict!
+                        .saved_currency
+                    setCheckingSavedCurrency(true)
+                    if (currency === savedCurrency) void query.refetch()
+                    else setCurrency(savedCurrency)
+                  }}
+                >
+                  Check this reading in saved{" "}
+                  {
+                    query.data.current_import.refresh_currency_conflict
+                      .saved_currency
+                  }
+                </Button>
+              </section>
+            )}
             {canEdit &&
               query.data.current_import.evidence_file_id === fileId &&
+              !query.data.current_import.refresh_currency_conflict &&
               (query.data.current_import.refresh_available ||
                 query.data.current_import.refresh_review_required) && (
                 <RefreshStoredReading
+                  key={`${query.data.revision}:${query.data.current_import.revision}:${query.data.saved_review?.review_revision ?? ""}`}
                   data={query.data}
                   onImported={onImported}
+                  checking={query.isFetching}
+                  onRecheck={() => void query.refetch()}
+                  onReviewDetails={() => {
+                    setDetailsRequest((value) => value + 1)
+                    savedDetails.current?.scrollIntoView({ block: "start" })
+                    savedDetails.current?.focus({ preventScroll: true })
+                  }}
                 />
               )}
             {query.data.transaction_count !==
@@ -867,9 +991,15 @@ function StatementReview({
 function RefreshStoredReading({
   data,
   onImported,
+  checking,
+  onRecheck,
+  onReviewDetails,
 }: {
   data: Proposal
   onImported: (result?: StatementImportReceipt) => void
+  checking: boolean
+  onRecheck: () => void
+  onReviewDetails: () => void
 }) {
   const client = useQueryClient()
   const [compared, setCompared] = useState(false)
@@ -877,6 +1007,10 @@ function RefreshStoredReading({
   const priorDraft = serverStatementDraft(data.saved_review?.request)
   const paymentCount =
     data.current_import?.refresh_transaction_count ?? data.transaction_count
+  const admission = data.current_import?.refresh_admission
+  const requiresReconciliation =
+    data.current_import?.refresh_requires_reconciliation ?? true
+  const ready = !requiresReconciliation || admission?.can_import === true
   const update = useMutation({
     retry: false,
     mutationFn: async () => {
@@ -912,14 +1046,56 @@ function RefreshStoredReading({
     },
   })
   return (
-    <div className="rounded border p-3 space-y-2">
+    <div
+      className="rounded border p-3 space-y-2"
+      role="region"
+      aria-label="Replacement reading checks"
+    >
       <p>
         {paymentCount
-          ? `The current reading identifies ${paymentCount} payments in ${data.currency}. Save these to Transactions with your saved account details and balances.`
-          : `This statement has printed balances in ${data.currency} and no payments. Save its account and balances without adding empty transactions.`}{" "}
+          ? `The current reading identifies ${paymentCount} payments in ${data.currency}. Its checks include your saved account details and balances.`
+          : requiresReconciliation
+            ? "The current reading contains selected payments that still need correction. Check them before saving to Transactions."
+            : `This statement has printed balances in ${data.currency} and no usable payments. Saving balance observations does not confirm no activity.`}{" "}
         The earlier reading stays in history; this does not add duplicate
         payments.
       </p>
+      <p role="status" className="font-medium">
+        {checking
+          ? "Checking the replacement reading against your saved details…"
+          : !admission
+            ? "Replacement checks are unavailable. Refresh them before saving payments."
+            : admission.can_import
+              ? "The replacement reading reconciles with your saved controls."
+              : requiresReconciliation
+                ? "Payments remain in review. Resolve these checks before saving to Transactions."
+                : "Balances can be saved as unverified observations. Statement review is still required."}
+      </p>
+      <StatementReconciliationSummary
+        calculation={admission?.calculation}
+        pending={checking}
+        controlBasis="saved"
+        format={(value) =>
+          `${displayAmount(value, exponent(data.currency))} ${data.currency}`
+        }
+      />
+      {!checking && !!admission?.blockers.length && (
+        <ul className="list-disc pl-5 space-y-1">
+          {admission.blockers.map((blocker, index) => (
+            <li key={blocker.reason_id || index}>{blocker.message}</li>
+          ))}
+        </ul>
+      )}
+      {(!admission || !admission.can_import) && (
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" onClick={onReviewDetails}>
+            Review saved details and balances
+          </Button>
+          <Button variant="outline" disabled={checking} onClick={onRecheck}>
+            Refresh replacement checks
+          </Button>
+        </div>
+      )}
       {comparisonRequired && priorDraft && (
         <>
           <SavedReviewConflict
@@ -938,14 +1114,21 @@ function RefreshStoredReading({
         </>
       )}
       <Button
-        disabled={update.isPending || (comparisonRequired && !compared)}
+        disabled={
+          update.isPending ||
+          checking ||
+          !ready ||
+          (comparisonRequired && !compared)
+        }
         onClick={() => update.mutate()}
       >
         {update.isPending
           ? "Updating saved reading…"
           : paymentCount
             ? `Save ${paymentCount} payments to Transactions`
-            : "Save statement balances and open account"}
+            : requiresReconciliation
+              ? "Save reviewed payments to Transactions"
+              : "Save statement balances and open account"}
       </Button>
       {update.isError && <p role="alert">{update.error.message}</p>}
     </div>
@@ -1515,6 +1698,10 @@ function EditableStatement({
       field: "Period end",
     })
   if (data.current_import) {
+    if (data.current_import.refresh_currency_conflict)
+      detailProblems.push({
+        message: data.current_import.refresh_currency_conflict.message,
+      })
     if (data.current_import.evidence_file_id === fileId)
       detailProblems.push({
         message:
@@ -1830,6 +2017,7 @@ function EditableStatement({
     serverChecks.pending ||
     !!serverChecks.error ||
     !serverChecks.admission?.can_import ||
+    !!data.current_import?.refresh_currency_conflict ||
     duplicateIgnored ||
     duplicateCheck.isPending ||
     duplicateActionBusy ||
@@ -3807,14 +3995,21 @@ function EditableStatement({
             </p>
             {data.current_import.evidence_file_id === fileId ? (
               <p>
-                {data.current_import.refresh_available
-                  ? (data.current_import.refresh_transaction_count ??
-                    data.transaction_count)
-                    ? "Use Save payments above to add the current reading to Transactions."
-                    : "Use Save statement balances above to update this account. No payments will be added."
-                  : data.current_import.transaction_count
-                    ? "Open Transactions to work with the saved payments."
-                    : "The saved account, balances and original PDF remain available in this statement."}
+                {data.current_import.refresh_currency_conflict
+                  ? "Check the replacement currency above before saving this reading. Your saved statement has not changed."
+                  : data.current_import.refresh_available ||
+                      data.current_import.refresh_review_required
+                    ? data.current_import.refresh_requires_reconciliation !==
+                        false &&
+                      !data.current_import.refresh_admission?.can_import
+                      ? "The replacement reading still needs review. Resolve the replacement checks above before saving payments to Transactions."
+                      : (data.current_import.refresh_transaction_count ??
+                          data.transaction_count)
+                        ? "Use Save payments above to add the current reading to Transactions."
+                        : "Use Save statement balances above to update this account. No payments will be added."
+                    : data.current_import.transaction_count
+                      ? "Open Transactions to work with the saved payments."
+                      : "The saved account, balances and original PDF remain available in this statement."}
               </p>
             ) : (
               <label className="flex gap-2">

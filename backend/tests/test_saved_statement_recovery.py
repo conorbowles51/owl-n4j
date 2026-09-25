@@ -137,7 +137,7 @@ class SavedStatementRecoveryTests(TestCase):
         with self.f.SessionLocal() as db, self.assertRaisesRegex(PdfMappingError, 'not found'):
             read_recovery(db, case_id=uuid4(), source_id=self.source_id)
 
-    def test_incomplete_record_must_be_assigned_and_can_be_completed_after_split(self):
+    def test_incomplete_record_is_assigned_and_correction_remains_pending_after_unreconciled_split(self):
         from pathlib import Path
         from services.financial.imported_records import CompleteImportedRecord, complete_record
         self.f.tearDown()
@@ -147,7 +147,7 @@ class SavedStatementRecoveryTests(TestCase):
         correct_date = pending['date']
         pending['date'] = ''
         pending['reason'] = 'The date needs source review.'
-        self.source_id = UUID(self.f.confirm(request)['source_document_id'])
+        self.source_id = UUID(self.f.confirm_legacy(request)['source_document_id'])
         raw = self.request()
         with self.assertRaisesRegex(PdfMappingError, 'incomplete record'):
             self.preview(raw)
@@ -164,10 +164,15 @@ class SavedStatementRecoveryTests(TestCase):
         result = complete_record(session_factory=self.f.SessionLocal, case_id=self.f.case.id, source_id=source,
             request=CompleteImportedRecord.model_validate(dict(row=corrected, currency='USD', version=record.get('version', 0))),
             actor=self.f.actor)
+        self.assertTrue(result['pending_reconciliation'])
+        self.assertIsNone(result['transaction_id'])
         with self.f.SessionLocal() as db:
-            row = db.get(FinancialTransaction, UUID(result['transaction_id']))
-            self.assertEqual(row.currency, 'USD')
-            self.assertEqual(row.source_document_id, source)
+            document = db.get(FinancialSourceDocument, source)
+            saved_record = document.metadata_['statement_incomplete_records'][0]
+            self.assertEqual(saved_record['correction_currency'], 'USD')
+            self.assertEqual(saved_record['correction']['date'], correct_date)
+            self.assertFalse(saved_record.get('resolved_transaction_id'))
+            self.assertEqual(saved_record['version'], record.get('version', 0) + 1)
 
     def test_old_ready_batch_does_not_offer_split_records_as_new_import(self):
         from postgres.models.financial_import_batches import FinancialImportBatch as Batch, FinancialImportBatchItem as Item

@@ -84,6 +84,11 @@ def _stored(file, statement_id):
     return (file.metadata_ or {}).get(METADATA_KEY, {}).get(statement_id or '')
 
 
+def _requires_review_comparison(proposal):
+    recovery = proposal.get('review_recovery') or {}
+    return bool(recovery.get('required') and not recovery.get('acknowledged'))
+
+
 def _target_available(session, case_id, decision):
     retained = decision.get('retained') or {}
     try:
@@ -109,7 +114,7 @@ def _target_available(session, case_id, decision):
                 _include_period_checks=False, _include_duplicate_disposition=False)
         except PdfMappingError:
             return False
-        if proposal['revision'] != decision['retained_reading_revision']:
+        if proposal['revision'] != decision['retained_reading_revision'] or _requires_review_comparison(proposal):
             return False
     return True
 
@@ -126,7 +131,7 @@ def read_duplicate_disposition(session, file, proposal, request=None):
         from services.financial.pending_duplicate_projection import capture_projection_guard
         valid = valid and previous.get('projection_guard') == capture_projection_guard(session, file, proposal.get('statement_id'), previous)
     if previous.get('status') == 'ignored':
-        valid = valid and _target_available(session, file.case_id, previous)
+        valid = valid and not _requires_review_comparison(proposal) and _target_available(session, file.case_id, previous)
     result['current'] = valid
     if not valid:
         result.update(status='needs_comparison', label='Compare this statement',
@@ -178,6 +183,8 @@ def _candidate(session, case_id, entry, cache):
             _cache=cache, _include_period_checks=False, _include_duplicate_disposition=False)
     except PdfMappingError:
         return None
+    if _requires_review_comparison(proposal):
+        return None
     # Batch drafts can precede the shared Save progress record.
     from postgres.models.financial_import_batches import FinancialImportBatch as Batch, FinancialImportBatchItem as Item
     drafts = list(session.scalars(select(Item).join(Batch, Batch.id == Item.batch_id).where(
@@ -208,6 +215,9 @@ def apply_duplicate_disposition(session, *, case_id, file, proposal, request=Non
     if current.get('evidence_file_id') == str(file.id):
         return _persist(file, proposal, request, dict(status='retained', label='Retained statement', basis=None,
             retained=_own_link(file, proposal, current.get('source_document_id')), reason='This statement already has a saved import.'), actor)
+    if _requires_review_comparison(proposal):
+        return _persist(file, proposal, request, dict(status='needs_comparison', label='Compare this statement', basis=None,
+            retained=None, reason='Compare the earlier saved reviews with this reading before deciding whether it is a duplicate. Saved corrections remain available.'), actor)
     if not own or not own.get('full_reference') or not own.get('holder'):
         return _persist(file, proposal, request, dict(status='not_duplicate', label='No confirmed duplicate', basis=None,
             retained=None, reason='Complete bank, full account, holder, currency and exact dates are required.'), actor)

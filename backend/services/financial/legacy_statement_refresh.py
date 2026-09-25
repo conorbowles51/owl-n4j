@@ -4,6 +4,24 @@ from postgres.models.financial import FinancialSourceDocument, FinancialTransact
 from services.financial.pdf_candidates import PdfMappingError, _digest
 
 
+def refresh_currency_conflict(document, proposal):
+    """A reader default cannot reverse an investigator's denomination choice."""
+    metadata = document.metadata_ or {}
+    review = metadata.get('statement_details_review') or {}
+    saved = review.get('currency')
+    reading = proposal.get('currency')
+    original = (metadata.get('statement_import_request') or {}).get('currency')
+    changed = bool(saved and saved != original) or any(
+        entry.get('before', {}).get('currency') != entry.get('after', {}).get('currency')
+        for entry in metadata.get('statement_details_history', [])
+        if entry.get('before', {}).get('currency') and entry.get('after', {}).get('currency'))
+    if saved and reading and saved != reading and changed:
+        return dict(saved_currency=saved, reading_currency=reading,
+            message=f'The saved statement currency was corrected to {saved}, but this reading uses {reading}. '
+                f'Check this reading in saved {saved} before replacing the import. Saved amounts and currency have not changed.')
+    return None
+
+
 def refresh_available(session, document, proposal):
     metadata = document.metadata_ or {}
     original, request = metadata.get('statement_import_original'), metadata.get('statement_import_request')
@@ -49,14 +67,30 @@ def refresh_payment_count(document, proposal):
     return sum(not row.excluded for row in request.rows) - len(incomplete_records(proposal, request))
 
 
+def refresh_assessment(document, proposal):
+    """Assess the exact replacement rows with the investigator's saved controls.
+
+    A readable replacement is not permission to admit its payments. The final
+    writer rechecks this same request; source-only balance observations remain
+    distinct from payment admission and confirmed no activity.
+    """
+    from services.financial.statement_import import StatementImportRequest
+    from services.financial.statement_admission import assess_admission
+    request = StatementImportRequest.model_validate(refresh_request(document, proposal))
+    return assess_admission(proposal, request), any(not row.excluded for row in request.rows)
+
+
 def refresh_request(document, proposal):
     """Carry saved account details and page-cited balances into the new reading."""
     from services.financial.import_batches import initial_request
-    from services.financial.statement_details import saved_details
+    from services.financial.statement_details import saved_details, saved_currency
+    from services.financial.currency_correction import rescale_minor
+    if conflict := refresh_currency_conflict(document, proposal):
+        raise PdfMappingError(conflict['message'], 409)
     raw = initial_request(proposal)
     original_details = document.metadata_['statement_import_original']['metadata']
     for key, value in saved_details(document).items():
-        if value and value != original_details.get(key, ''):
+        if value != original_details.get(key, ''):
             raw[key] = value
     originals = {row['id']: row for row in proposal['rows']}
     for role, edit in document.metadata_.get('statement_details_review', {}).get('balances', {}).items():
@@ -70,9 +104,15 @@ def refresh_request(document, proposal):
             if original['kind'] == 'balance' and original['fields'].get('description', '').lower() == role + ' balance':
                 row['balance_minor'] = None
         if edit.get('amount_minor') is not None:
+            amount = edit['amount_minor']
+            prior_currency = saved_currency(document)
+            if prior_currency and prior_currency != proposal['currency']:
+                # A legacy denomination may be corrected by the new reading.
+                # Preserve the printed number, not its old minor-unit integer.
+                amount = rescale_minor(amount, prior_currency, proposal['currency'])
             raw['rows'].append(dict(id=f'manual:{role}-balance', excluded=True, manual_page=edit['page'],
                 date='', description=f'{role.title()} Balance', counterparty='', amount_minor='0', direction=None,
-                balance_minor=edit['amount_minor'], reason='Preserved the investigator’s saved balance and source page.'))
+                balance_minor=amount, reason='Preserved the investigator’s saved balance and source page.'))
     return raw
 
 
@@ -98,6 +138,8 @@ def refresh_legacy_import(*, session_factory, case_id, source_id, expected_revis
             raise PdfMappingError('This import changed. Reload the statement before updating it.', 409)
         proposal = read_statement_import(session, case_id=case_id, evidence_file_id=source.evidence_file_id,
             currency=currency or saved_currency(source), statement_id=source.metadata_.get('statement_import_statement_id'))
+        if conflict := refresh_currency_conflict(source, proposal):
+            raise PdfMappingError(conflict['message'], 409)
         if expected_reading_revision and proposal['revision'] != expected_reading_revision:
             raise PdfMappingError('The statement reading changed. Reload it before saving its payments.', 409)
         if compared_review_revision:

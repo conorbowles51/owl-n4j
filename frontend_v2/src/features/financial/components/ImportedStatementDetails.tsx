@@ -45,15 +45,23 @@ export function ImportedStatementDetails({
   withSource = false,
   initiallyOpen = false,
   focusField,
+  editRequest = 0,
 }: {
   caseId: string
   sourceId: string
   withSource?: boolean
   initiallyOpen?: boolean
   focusField?: string
+  editRequest?: number
 }) {
   const [open, setOpen] = useState(initiallyOpen)
   const [saved, setSaved] = useState(false)
+  useEffect(() => {
+    if (editRequest) {
+      setOpen(true)
+      setSaved(false)
+    }
+  }, [editRequest])
   const query = useQuery({
     queryKey: ["imported-statement-details", caseId, sourceId],
     enabled: true,
@@ -172,6 +180,7 @@ export function ImportedStatementDetails({
           data={query.data}
           withSource={withSource}
           focusField={focusField}
+          focusRequest={editRequest}
           onCancel={() => setOpen(false)}
           onSaved={() => {
             setSaved(true)
@@ -189,12 +198,14 @@ function DetailsForm({
   onCancel,
   onSaved,
   focusField,
+  focusRequest,
 }: {
   data: Details
   withSource: boolean
   onCancel: () => void
   onSaved: () => void
   focusField?: string
+  focusRequest: number
 }) {
   const form = useRef<HTMLFormElement>(null)
   useEffect(() => {
@@ -204,6 +215,7 @@ function DetailsForm({
         account_number: "Saved account number",
         period: "Saved period start",
         currency: "Saved statement currency",
+        balances: "Saved opening balance",
       } as Record<string, string>
     )[focusField || ""]
     if (!name) return
@@ -212,7 +224,7 @@ function DetailsForm({
     )
     control?.focus({ preventScroll: true })
     control?.scrollIntoView({ block: "center" })
-  }, [focusField])
+  }, [focusField, focusRequest])
   const client = useQueryClient()
   const [scope, applyScope] = useInvestigationScope(data.case_id)
   const initialAmount = (role: (typeof roles)[number]) =>

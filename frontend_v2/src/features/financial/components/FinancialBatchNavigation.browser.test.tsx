@@ -5,7 +5,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from "react-router-dom"
 import { afterEach, beforeEach, expect, it, vi } from "vitest"
 import { TooltipProvider } from "@/components/ui/tooltip"
-import { fetchAPI } from "@/lib/api-client"
+import { ApiError, fetchAPI } from "@/lib/api-client"
 import { useAuthStore } from "@/features/auth/hooks/use-auth"
 import { useFinancialDraftStore } from "../stores/financial-drafts"
 import { useFinancialStore } from "../stores/financial.store"
@@ -98,6 +98,150 @@ beforeEach(async () => {
   await page.viewport(1360, 1000)
 })
 afterEach(cleanup)
+
+for (const sourceState of ["removed", "missing"] as const) {
+  it(`retains the exact ${sourceState} failed source and return path with the full file register already loaded`, async () => {
+    const failedId = `${sourceState}-original`
+    const independent = {
+      ...file,
+      id: "independent-same-name",
+      created_at: "2026-09-26T12:00:00Z",
+    }
+    const unavailableBatch = {
+      ...batch,
+      files: [
+        {
+          ...batch.files[0],
+          source_id: failedId,
+          file_id: failedId,
+          review_file_id: failedId,
+          error: "Statement not found in this case.",
+        },
+      ],
+    }
+    const original = vi.mocked(fetchAPI).getMockImplementation()!
+    vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
+      if (options?.method)
+        throw Error(
+          "Opening an unavailable review must not change or reprocess any source."
+        )
+      if (url.startsWith("/api/evidence?"))
+        return {
+          files: [
+            ...(sourceState === "removed"
+              ? [
+                  {
+                    ...file,
+                    id: failedId,
+                    financial_removed: true,
+                    created_at: "2026-09-25T12:00:00Z",
+                  },
+                ]
+              : []),
+            independent,
+            otherFile,
+          ],
+        } as never
+      if (url.includes(`/batches/${batch.id}?`))
+        return unavailableBatch as never
+      if (url.includes(`/statement-import/${failedId}?`))
+        throw new ApiError("Statement not found in this case.", 404)
+      if (url.includes(`/statement-import/${independent.id}?`))
+        throw Error(
+          "An independent same-name upload must never be substituted."
+        )
+      return original(url, options)
+    })
+    await page.viewport(sourceState === "removed" ? 1360 : 480, 1000)
+    const first = mount()
+    // Await the populated full register, not only its loading shell. The removed
+    // source is already cached when batch navigation opens the selected review.
+    await screen.findByRole("button", {
+      name: `Review ${file.original_filename}`,
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Processing batches" }))
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Open batch batch-or" })
+    )
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Open file review" })
+    )
+    const title =
+      sourceState === "removed"
+        ? "This source was removed from Financial"
+        : "Statement review unavailable"
+    expect(await screen.findByRole("heading", { name: title })).toBeVisible()
+    expect(screen.getByLabelText("Uploaded statement")).toHaveValue(failedId)
+    expect(screen.getByText(`Source reference: ${failedId}`)).toBeVisible()
+    expect(screen.getByLabelText("Selected statement review")).toHaveFocus()
+    expect(
+      screen.getByRole("button", { name: "Back to processing batch" })
+    ).toBeVisible()
+    expect(
+      screen.getByRole("link", { name: "Open source location in Evidence" })
+    ).toHaveAttribute(
+      "href",
+      `/cases/case/evidence?file=${failedId}&from=financial`
+    )
+    expect(screen.getByLabelText("Current route")).toHaveTextContent(
+      `reviewFile=${failedId}`
+    )
+    expect(screen.getByLabelText("Current route")).toHaveTextContent(
+      `returnBatch=${batch.id}`
+    )
+    expect(
+      screen.queryByRole("button", { name: "Continue last statement review" })
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByText("Read the statement again")
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByText(`Synthetic original: ${independent.id}`)
+    ).not.toBeInTheDocument()
+    await page.screenshot({
+      path: `/private/tmp/loupe-batch-${sourceState}-review.png`,
+    })
+    await page.screenshot({
+      element: screen.getByLabelText("Selected statement review"),
+      path: `/private/tmp/loupe-batch-${sourceState}-review-detail.png`,
+    })
+    const destination = screen.getByLabelText("Current route").textContent!
+    first.unmount()
+    mount(`/cases/case/financial${destination}`)
+    expect(await screen.findByRole("heading", { name: title })).toBeVisible()
+    expect(screen.getByLabelText("Current route")).toHaveTextContent(
+      `reviewFile=${failedId}`
+    )
+    fireEvent.click(
+      screen.getByRole("button", { name: "Back to processing batch" })
+    )
+    expect(
+      await screen.findByRole("region", { name: "Financial processing batch" })
+    ).toBeVisible()
+    expect(screen.getByLabelText("Current route")).toHaveTextContent(
+      `batch=${batch.id}`
+    )
+    expect(
+      vi.mocked(fetchAPI).mock.calls.every(([, options]) => !options?.method)
+    ).toBe(true)
+    expect(
+      vi
+        .mocked(fetchAPI)
+        .mock.calls.some(([url]) =>
+          url.includes(`/statement-import/${independent.id}?`)
+        )
+    ).toBe(false)
+    if (sourceState === "removed")
+      expect(
+        vi
+          .mocked(fetchAPI)
+          .mock.calls.some(([url]) =>
+            url.includes(`/statement-import/${failedId}?`)
+          )
+      ).toBe(false)
+  })
+}
+
 
 it("opens file review from the actual page after selecting Processing batches and returns to its batch", async () => {
   mount()

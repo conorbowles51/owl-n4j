@@ -188,6 +188,30 @@ def test_failed_retry_is_not_automatically_repeated(f):
     assert len(result['batch_retry_receipts']) == 1
 
 
+def test_retry_handoff_saved_review_error_reaches_terminal_review(f, monkeypatch):
+    from services.financial.pdf_candidates import PdfMappingError
+    batch_id = failed_batch(f)
+    [item_id] = followup(f)
+    recovery.recover_one(f.SessionLocal, item_id, Path)
+    message = ('This file has saved corrections from an earlier reading. Open its '
+               'individual statement review, compare them and save progress before adding it to bulk import.')
+    def retained_review_requires_comparison(*args):
+        raise PdfMappingError(message, 409)
+    monkeypatch.setattr(import_batches, '_review_file', retained_review_requires_comparison)
+    asyncio.run(import_batches.advance_batch(f.SessionLocal, batch_id, Path, AsyncMock()))
+    with f.SessionLocal() as db:
+        batch = db.get(Batch, batch_id)
+        assert batch.status == 'review'
+        assert batch.files[0]['status'] == 'error'
+        assert batch.files[0]['recovery']['stage'] == 'failed'
+        assert batch.files[0]['recovery']['message'] == message
+        assert not batch.worker_token
+    recovery.recover_one(f.SessionLocal, item_id, Path)
+    state, result = outcome(f, item_id)
+    assert state == 'review' and result['message'] == message
+    assert len(result['batch_retry_receipts']) == 1
+
+
 def test_missing_original_in_batch_is_actionable_without_queueing(f):
     batch_id = failed_batch(f, source_id=uuid4())
     [item_id] = followup(f)

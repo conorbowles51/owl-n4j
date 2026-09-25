@@ -201,6 +201,13 @@ export function AccountHistory({
                   })
                 ),
               }))
+              // Keep every represented month readable. Skipping axis labels
+              // would make covered months look like gaps in the evidence.
+              const chartMinWidth = Math.max(360, points.length * 72 + 100)
+              const chartAccountType =
+                series[0].balance_kind === "liability"
+                  ? "credit card"
+                  : "bank account"
               return (
                 <div key={unit} className="space-y-3 border rounded p-3">
                   <h4 className="font-semibold">
@@ -213,31 +220,46 @@ export function AccountHistory({
                     Closing balances · points at the last statement end in each
                     month
                   </p>
-                  <div className="h-56">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={points}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="month" />
-                        <YAxis width={80} />
-                        <Tooltip />
-                        <Legend />
-                        {series.map((g) => (
-                          <Line
-                            key={g.key}
-                            name={g.label}
-                            dataKey={`${g.key}-balance`}
-                            stroke={accountColor(g.key)}
-                            connectNulls={false}
-                            strokeWidth={0}
-                            dot={{
-                              r: 4,
-                              fill: accountColor(g.key),
-                              strokeWidth: 1,
-                            }}
+                  <p className="text-xs text-muted-foreground">
+                    Every supported month is labelled. Scroll each chart
+                    horizontally when needed to see the full timeline.
+                  </p>
+                  <div
+                    className="overflow-x-auto"
+                    role="region"
+                    tabIndex={0}
+                    aria-label={`${series[0].currency} ${chartAccountType} closing balance chart`}
+                  >
+                    <div className="h-56" style={{ minWidth: chartMinWidth }}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={points}>
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis
+                            dataKey="month"
+                            interval={0}
+                            padding={{ left: 32, right: 32 }}
                           />
-                        ))}
-                      </LineChart>
-                    </ResponsiveContainer>
+                          <YAxis width={80} />
+                          <Tooltip />
+                          <Legend />
+                          {series.map((g) => (
+                            <Line
+                              key={g.key}
+                              name={g.label}
+                              dataKey={`${g.key}-balance`}
+                              stroke={accountColor(g.key)}
+                              connectNulls={false}
+                              strokeWidth={0}
+                              dot={{
+                                r: 4,
+                                fill: accountColor(g.key),
+                                strokeWidth: 1,
+                              }}
+                            />
+                          ))}
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
                   </div>
                   <p className="text-sm">
                     {metric === "count"
@@ -247,27 +269,38 @@ export function AccountHistory({
                         : "Debits"}{" "}
                     · per month
                   </p>
-                  <div className="h-56">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={points}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="month" />
-                        <YAxis width={80} />
-                        <Tooltip />
-                        <Legend />
-                        {series.map((g) => (
-                          <Bar
-                            key={g.key}
-                            name={g.label}
-                            dataKey={`${g.key}-activity`}
-                            fill={accountColor(g.key)}
-                            onClick={(_, index) =>
-                              selectMonth(points[index].month)
-                            }
+                  <div
+                    className="overflow-x-auto"
+                    role="region"
+                    tabIndex={0}
+                    aria-label={`${series[0].currency} ${chartAccountType} activity chart`}
+                  >
+                    <div className="h-56" style={{ minWidth: chartMinWidth }}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={points}>
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis
+                            dataKey="month"
+                            interval={0}
+                            padding={{ left: 32, right: 32 }}
                           />
-                        ))}
-                      </BarChart>
-                    </ResponsiveContainer>
+                          <YAxis width={80} />
+                          <Tooltip />
+                          <Legend />
+                          {series.map((g) => (
+                            <Bar
+                              key={g.key}
+                              name={g.label}
+                              dataKey={`${g.key}-activity`}
+                              fill={accountColor(g.key)}
+                              onClick={(_, index) =>
+                                selectMonth(points[index].month)
+                              }
+                            />
+                          ))}
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
                   </div>
                 </div>
               )

@@ -50,6 +50,9 @@ def snapshot_case(session, case_id, cutoff, campaign=None):
     run_id = uuid5(NAMESPACE_URL, campaign.release + ':' + str(case_id))
     if session.get(Run, run_id):
         return True
+    from services.financial import recovery_followup
+    if campaign.repair_of and not recovery_followup.repair_snapshot_available(session, case_id, campaign.repair_of):
+        return True
     ids = financial_file_ids(session, case_id=case_id)
     files = list(session.scalars(select(EvidenceFile).where(EvidenceFile.case_id == case_id,
         EvidenceFile.id.in_(ids), EvidenceFile.created_at <= cutoff))) if ids else []
@@ -57,8 +60,8 @@ def snapshot_case(session, case_id, cutoff, campaign=None):
         return True
     versions_by_root = lineage_groups(files)
     selected = []
-    from services.financial import recovery_followup
-    followup = recovery_followup.eligibility_context(session, case_id, cutoff) if campaign.unresolved_followup else None
+    followup = recovery_followup.eligibility_context(session, case_id, cutoff,
+        require_reopened=bool(campaign.repair_of)) if campaign.unresolved_followup else None
     previous = list(session.scalars(select(Item).join(Run, Item.run_id == Run.id).where(
         Run.case_id == case_id, Run.release != campaign.release)
         .order_by(Item.updated_at.desc(), Item.id))) if not campaign.initial_snapshot else []
@@ -136,6 +139,7 @@ def _guard(session, item, file):
             return 'review', 'A newer statement reading was created after recovery was scheduled. Review that reading; saved work was kept.'
         if visibility['financial_removed'] or visibility['financial_imports_removed']:
             return 'kept', 'The recovery reading was removed by an investigator. That choice was retained.'
+    ids = [UUID(value) for value in item.result.get('followup_scope_ids', item.result['lineage_ids'])]
     active_batches = session.scalars(select(Batch).where(Batch.case_id == file.case_id,
         Batch.status.in_(('preparing', 'pausing', 'paused'))))
     identities = {str(value) for value in ids}
@@ -143,7 +147,7 @@ def _guard(session, item, file):
             and entry.get('status') not in ('checked', 'error') for entry in batch.files) for batch in active_batches):
         return 'waiting', 'Waiting for the existing processing batch. Its reading and pause choices are unchanged.'
     batches = session.execute(select(BatchItem.status, Batch.status).join(Batch, BatchItem.batch_id == Batch.id).where(
-        Batch.case_id == file.case_id, BatchItem.file_id.in_(ids))).all()
+        Batch.case_id == file.case_id, Batch.status != 'removed', BatchItem.file_id.in_(ids))).all()
     if any(status == 'skipped' for status, _ in batches):
         return 'kept', 'An investigator chose to leave this statement unimported. That choice was retained.'
     if any(status == 'duplicate_ignored' for status, _ in batches):
@@ -226,7 +230,7 @@ def recover_one(factory, item_id, resolve_path):
                 _outcome(db, item, file, *retry_outcome)
                 db.commit()
                 return
-            ids = [UUID(value) for value in item.result['lineage_ids']]
+            ids = [UUID(value) for value in item.result.get('followup_scope_ids', item.result['lineage_ids'])]
             documents = list(db.scalars(select(FinancialSourceDocument).where(
                 FinancialSourceDocument.case_id == case_id, FinancialSourceDocument.evidence_file_id.in_(ids),
                 FinancialSourceDocument.status != 'superseded').with_for_update()))
@@ -238,7 +242,7 @@ def recover_one(factory, item_id, resolve_path):
             marker = (file.metadata_ or {}).get('financial_workspace') or {}
             explicitly_batched = any(any(entry.get('source_id') in {str(value) for value in ids} for entry in batch.files)
                 for batch in db.scalars(select(Batch).where(Batch.case_id == case_id, Batch.status != 'removed')))
-            recognized = item.result.get('eligibility_basis') == 'recognized_statement_content'
+            recognized = item.result.get('eligibility_basis') in ('recognized_statement_content', 'explicit_reopening')
             if not documents and not marker.get('selected_by') and not explicitly_batched and not recognized:
                 _outcome(db, item, file, 'review', 'Financial relevance needs a content check before automatic reading. The Evidence original is retained.')
                 db.commit()

@@ -1,4 +1,5 @@
 from copy import deepcopy
+from datetime import datetime, timezone
 from unittest import TestCase
 from uuid import uuid4
 from sqlalchemy import select
@@ -160,6 +161,10 @@ class ReviewRecoveryTests(TestCase):
     def test_changed_source_keeps_batch_editable_but_out_of_ready_imports(self):
         item = self.batch_draft()
         previous = self.new_version()
+        # The older candidate must win duplicate ranking, independently of
+        # timestamp precision or randomly generated evidence IDs.
+        previous.created_at = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        self.f.file.created_at = datetime(2024, 1, 2, tzinfo=timezone.utc)
         page = self.f.db.get(EvidenceTableGeometry, (self.f.file.id, 1))
         payload = deepcopy(page.payload)
         payload[0]['table']['unlocated_values'] = 1
@@ -168,6 +173,11 @@ class ReviewRecoveryTests(TestCase):
         proposal = self.f.preview()
         self.assertNotEqual(proposal['revision'], item.review_request['expected_revision'])
         self.assertTrue(proposal['review_recovery']['required'])
+        from services.financial.pending_statement_duplicates import decide_duplicate_disposition
+        with self.f.SessionLocal() as db:
+            result = decide_duplicate_disposition(db, case_id=self.f.case.id, evidence_file_id=self.f.file.id,
+                action='check', expected_reading_revision=proposal['revision'], actor=self.f.actor)
+            self.assertEqual(result['duplicate_disposition']['status'], 'needs_comparison')
         batch = Batch(id=uuid4(), case_id=self.f.case.id, created_by=self.f.user.id,
             status='preparing', files=[], actor={'name': self.f.user.name})
         self.f.db.add(batch); self.f.db.commit()
@@ -178,3 +188,16 @@ class ReviewRecoveryTests(TestCase):
             self.assertEqual(prepared.status, 'attention')
             self.assertIsNone(prepared.review_request)
             self.assertIn('earlier saved reviews', prepared.summary['problems'][0]['message'])
+            self.assertEqual(prepared.summary['duplicate_disposition']['status'], 'needs_comparison')
+            self.assertEqual(db.get(Item, item.id).review_request, item.review_request)
+        # Completing the explicit comparison releases this hold. The retained
+        # older source still carries the correction, so its matching copy can
+        # now be ignored without discarding unresolved investigator work.
+        self.compare(proposal['review_recovery']['revision'])
+        current = self.f.preview()
+        self.assertTrue(current['review_recovery']['acknowledged'])
+        with self.f.SessionLocal() as db:
+            result = decide_duplicate_disposition(db, case_id=self.f.case.id, evidence_file_id=self.f.file.id,
+                action='check', expected_reading_revision=current['revision'], actor=self.f.actor)
+            self.assertEqual(result['duplicate_disposition']['status'], 'ignored')
+            self.assertEqual(db.get(Item, item.id).review_request, item.review_request)

@@ -31,6 +31,11 @@ vi.mock("../hooks/use-statement-coverage-review", async (original) => ({
 vi.mock("../hooks/use-statement-checks", async (original) => ({
   ...(await original<typeof import("../hooks/use-statement-checks")>()),
   useStatementChecks: () => ({
+    admission: {
+      can_import: true,
+      status: "confirmed_no_activity",
+      blockers: [],
+    },
     checks: [],
     pending: false,
     revision: "c".repeat(64),
@@ -256,6 +261,12 @@ it("replaces false incomplete readings with saved zero balances and clears the T
         incomplete_count: repaired ? 0 : 162,
         refresh_available: !repaired,
         refresh_transaction_count: 0,
+        refresh_requires_reconciliation: false,
+        refresh_admission: {
+          can_import: true,
+          status: "confirmed_no_activity",
+          blockers: [],
+        },
       },
     } as never
   })
@@ -307,7 +318,7 @@ it("replaces false incomplete readings with saved zero balances and clears the T
     name: "Save statement balances and open account",
   })
   expect(
-    screen.getByText(/printed balances in MXN and no payments/)
+    screen.getByText(/printed balances in MXN and no usable payments/)
   ).toBeVisible()
   expect(
     screen.queryByText(/transaction table could not be reconstructed/)

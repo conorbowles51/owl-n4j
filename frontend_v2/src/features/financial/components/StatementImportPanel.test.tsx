@@ -17,6 +17,7 @@ vi.mock("../hooks/use-financial-access", async (importOriginal) => ({
 }))
 import { receiptFixture } from "../lib/payment-document.test-support"
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -99,11 +100,12 @@ const data = {
 }
 let sent: unknown[] = [],
   failure = false
-function mount() {
+function mount(client?: QueryClient) {
   const done = vi.fn()
   render(
     <QueryClientProvider
       client={
+        client ||
         new QueryClient({
           defaultOptions: {
             queries: { retry: false },
@@ -1414,6 +1416,47 @@ it("requires an explicit replacement decision and reason for an existing import"
   })
 })
 
+it("does not confirm a newer evidence version while its currency conflicts with the saved choice", async () => {
+  const base = vi.mocked(fetchAPI).getMockImplementation()!
+  vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
+    if (String(url).includes("/statement-import/") && !options?.method)
+      return {
+        ...data,
+        current_import: {
+          source_document_id: "previous",
+          evidence_file_id: "older-file",
+          revision: "b".repeat(64),
+          transaction_count: 1,
+          currency: "JPY",
+          refresh_currency_conflict: {
+            saved_currency: "JPY",
+            reading_currency: "EUR",
+            message:
+              "The newer reading uses EUR but the saved statement was corrected to JPY.",
+          },
+        },
+      } as never
+    return base(url, options)
+  })
+  mount()
+  await open()
+  fireEvent.click(
+    screen.getByRole("checkbox", { name: /Replace the previous import/ })
+  )
+  fireEvent.change(screen.getByLabelText("Reason for detail corrections"), {
+    target: { value: "Compared the newer reading." },
+  })
+  const confirm = screen.getByRole("button", {
+    name: "Confirm import of 1 transactions",
+  })
+  expect(confirm).toBeDisabled()
+  fireEvent.click(confirm)
+  expect(sent).toHaveLength(0)
+  expect(
+    screen.getByRole("button", { name: "Check this reading in saved JPY" })
+  ).toBeEnabled()
+})
+
 it("updates an eligible empty legacy import and opens its usable results", async () => {
   const base = vi.mocked(fetchAPI).getMockImplementation()!
   vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
@@ -1448,6 +1491,12 @@ it("updates an eligible empty legacy import and opens its usable results", async
           transaction_count: 0,
           incomplete_count: 250,
           refresh_available: true,
+          refresh_admission: {
+            can_import: true,
+            status: "reconciled",
+            blockers: [],
+          },
+          refresh_requires_reconciliation: true,
         },
       } as never
     return base(url, options)
@@ -1475,13 +1524,17 @@ it("updates an eligible empty legacy import and opens its usable results", async
 
 it("lets an empty legacy import compare an older draft and save its current payments", async () => {
   const base = vi.mocked(fetchAPI).getMockImplementation()!
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
+  let draftRevision = "c".repeat(64)
   vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
     if (
       String(url).includes("/refresh-reading") &&
       options?.method === "POST"
     ) {
       expect(options.body).toMatchObject({
-        compared_review_revision: "c".repeat(64),
+        compared_review_revision: draftRevision,
       })
       return {
         case_id: "case",
@@ -1496,7 +1549,7 @@ it("lets an empty legacy import compare an older draft and save its current paym
       return {
         ...data,
         saved_review: {
-          review_revision: "c".repeat(64),
+          review_revision: draftRevision,
           saved_at: "2026-09-20T12:00:00Z",
           saved_by: { name: "Reviewer" },
           request: {
@@ -1518,11 +1571,17 @@ it("lets an empty legacy import compare an older draft and save its current paym
           refresh_available: false,
           refresh_review_required: true,
           refresh_transaction_count: 1,
+          refresh_admission: {
+            can_import: true,
+            status: "reconciled",
+            blockers: [],
+          },
+          refresh_requires_reconciliation: true,
         },
       } as never
     return base(url, options)
   })
-  const done = mount()
+  const done = mount(client)
   await open(false)
   const save = screen.getByRole("button", {
     name: "Save 1 payments to Transactions",
@@ -1535,13 +1594,156 @@ it("lets an empty legacy import compare an older draft and save its current paym
     screen.getByLabelText("I have compared the previous saved review")
   )
   expect(save).toBeEnabled()
-  fireEvent.click(save)
+  draftRevision = "d".repeat(64)
+  await act(async () => {
+    await client.invalidateQueries({
+      queryKey: ["statement-import", "case", "file"],
+    })
+  })
+  expect(
+    screen.getByLabelText("I have compared the previous saved review")
+  ).not.toBeChecked()
+  const changedSave = screen.getByRole("button", {
+    name: "Save 1 payments to Transactions",
+  })
+  expect(changedSave).toBeDisabled()
+  fireEvent.click(
+    screen.getByLabelText("I have compared the previous saved review")
+  )
+  expect(changedSave).toBeEnabled()
+  fireEvent.click(changedSave)
   await waitFor(() =>
     expect(done).toHaveBeenCalledWith(
       expect.objectContaining({ transaction_count: 1 })
     )
   )
 })
+
+it("rechecks a currency conflict using the saved denomination without saving or bypassing reconciliation", async () => {
+  const base = vi.mocked(fetchAPI).getMockImplementation()!
+  vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
+    if (String(url).includes("/statement-import/") && !options?.method) {
+      const rechecked = String(url).includes("currency=JPY")
+      return {
+        ...data,
+        currency: rechecked ? "JPY" : "EUR",
+        current_import: {
+          source_document_id: "previous",
+          evidence_file_id: "file",
+          revision: "b".repeat(64),
+          currency: "JPY",
+          transaction_count: 0,
+          // A stale available flag must never override the explicit conflict.
+          refresh_available: true,
+          refresh_transaction_count: 1,
+          refresh_requires_reconciliation: true,
+          refresh_currency_conflict: rechecked
+            ? null
+            : {
+                saved_currency: "JPY",
+                reading_currency: "EUR",
+                message:
+                  "Your saved currency is JPY; the current reading uses EUR.",
+              },
+          refresh_admission: {
+            can_import: false,
+            status: "needs_review",
+            blockers: [
+              {
+                message:
+                  "The JPY payments do not match the saved closing balance.",
+              },
+            ],
+          },
+        },
+      } as never
+    }
+    return base(url, options)
+  })
+  const done = mount()
+  await open(false)
+  expect(screen.getByText(/saved currency is JPY/)).toBeVisible()
+  expect(
+    screen.queryByRole("button", { name: "Save 1 payments to Transactions" })
+  ).not.toBeInTheDocument()
+  fireEvent.click(
+    screen.getByRole("button", { name: "Check this reading in saved JPY" })
+  )
+  expect(await screen.findByText(/JPY payments do not match/)).toBeVisible()
+  expect(
+    screen.getByRole("button", { name: "Save 1 payments to Transactions" })
+  ).toBeDisabled()
+  expect(
+    screen.queryByRole("region", { name: "Replacement currency review" })
+  ).not.toBeInTheDocument()
+  expect(
+    vi
+      .mocked(fetchAPI)
+      .mock.calls.some(([, options]) =>
+        ["PUT", "POST"].includes(options?.method ?? "")
+      )
+  ).toBe(false)
+  expect(done).not.toHaveBeenCalled()
+})
+
+it.each([false, undefined])(
+  "does not enable a replacement with unresolved or unavailable admission (%s), even with zero usable payments",
+  async (canImport) => {
+    const base = vi.mocked(fetchAPI).getMockImplementation()!
+    vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
+      if (String(url).includes("/statement-import/") && !options?.method)
+        return {
+          ...data,
+          current_import: {
+            source_document_id: "previous",
+            evidence_file_id: "file",
+            revision: "b".repeat(64),
+            transaction_count: 0,
+            refresh_available: true,
+            refresh_transaction_count: 0,
+            refresh_requires_reconciliation: true,
+            refresh_admission:
+              canImport === undefined
+                ? undefined
+                : {
+                    can_import: false,
+                    status: "needs_review",
+                    blockers: [
+                      {
+                        message:
+                          "Complete the unreadable selected payment before importing.",
+                      },
+                    ],
+                  },
+          },
+        } as never
+      return base(url, options)
+    })
+    const done = mount()
+    await open(false)
+    const save = screen.getByRole("button", {
+      name: "Save reviewed payments to Transactions",
+    })
+    expect(save).toBeDisabled()
+    fireEvent.click(save)
+    expect(done).not.toHaveBeenCalled()
+    expect(
+      screen.getByText(
+        canImport === undefined
+          ? /Replacement checks are unavailable/
+          : /Complete the unreadable selected payment/
+      )
+    ).toBeVisible()
+    expect(
+      vi
+        .mocked(fetchAPI)
+        .mock.calls.some(
+          ([url, options]) =>
+            url.includes("/refresh-reading") && options?.method === "POST"
+        )
+    ).toBe(false)
+  }
+)
 
 it("does not offer to import the same active reading twice", async () => {
   const base = vi.mocked(fetchAPI).getMockImplementation()!

@@ -15,6 +15,7 @@ class RecoveryCampaign:
     initial_snapshot: bool = False
     source_probe: str | None = None
     unresolved_followup: bool = False
+    repair_of: str | None = None
 
     def __post_init__(self):
         if not self.release or len(self.release) > 64:
@@ -37,9 +38,11 @@ class RecoveryCampaign:
 
 INITIAL_RELEASE = 'statement-recovery-2026-09-24-v1'
 FOLLOWUP_RELEASE = 'statement-recovery-2026-09-25-unresolved-v1'
+RESTORED_REPAIR_RELEASE = 'statement-recovery-2026-09-25-restored-v2'
 ANDREWS_BALANCE_RELEASE = 'statement-recovery-2026-09-25-andrews-balances-v1'
 CAMPAIGNS = (RecoveryCampaign(INITIAL_RELEASE, initial_snapshot=True),
-    RecoveryCampaign(FOLLOWUP_RELEASE, unresolved_followup=True))
+    RecoveryCampaign(FOLLOWUP_RELEASE, unresolved_followup=True),
+    RecoveryCampaign(RESTORED_REPAIR_RELEASE, unresolved_followup=True, repair_of=FOLLOWUP_RELEASE))
 # Retain the measured diagnosis without automatically scheduling a new campaign:
 # the current Andrews sample has not demonstrated an additional admitted period.
 REGISTERED_CAMPAIGNS = (*CAMPAIGNS,

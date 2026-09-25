@@ -7,6 +7,29 @@ This follow-up is a separate one-time snapshot for the user's existing-data
 backfill request. It retains the original run, its receipts and all source work.
 The Andrews OCR-specific campaign remains registered but dormant.
 
+## Repair of an empty, historically protected snapshot
+
+`statement-recovery-2026-09-25-restored-v2` applies only when the v1 run is
+complete, has no recovery items, and its durable scope records every considered
+source as protected with none scheduled. Running, paused, partly scheduled or
+successful recovery runs are not replayed.
+
+The repair recognizes an explicit current branch only from a verified Process
+PDF afresh request tied to its removal receipt and investigator, or a matching
+case/file/revision restore audit. A newer visible reading alone is insufficient.
+Retired batches, hidden ancestors and rejected imports remain in history; their
+records are never reopened or used as targets for automatic additions. Every
+existing failed-batch source and prepared-reading reference must be inside the
+reopened branch. Missing or mismatched reset references still require review;
+a same-name upload is never substituted.
+
+Current removals, skips, duplicate ignores, pending edits and active/paused work
+remain protected. The branch receipt is checked again before execution, and a
+changed receipt stops recovery for comparison. Sources without verified reset
+or restore provenance remain protected. Consequently this repair does not
+promise that every visible historical source will be scheduled; its actual
+scope and outcomes must be verified after deployment.
+
 ## Eligibility and execution
 
 The snapshot considers case-owned Financial source families created before its
@@ -78,6 +101,41 @@ The case-level ingestion audit stores the same scope with operation
 available through the existing history/status contract.
 
 ## Acceptance and limits
+
+### Saved replacement readings
+
+An available newer reading is distinct from one whose payments may enter
+Transactions. The preview exposes `current_import.refresh_admission` using the
+final assigned rows and the same replacement request as confirmation, including
+the investigator's saved controls and explicitly cleared details. The separate
+`refresh_requires_reconciliation` flag is true whenever any payment row remains
+selected, even when none is yet usable.
+
+The replacement panel shows the saved-balance calculation and exact blockers.
+Payment saving is disabled for missing, pending or failed assessments. Review
+saved details and balances opens and focuses the saved editor; saving corrections
+refreshes the assessment. A prior-draft comparison still requires an explicit
+acknowledgment bound to the current reading/import/draft revisions. Reopening
+does not waive it. Source-only balance observations can still be saved without
+claiming a reconciled statement or confirmed no activity. Confirmation rechecks
+the strict payment gate and retains the earlier source and edits.
+
+An explicit saved currency correction also remains authoritative. A conflicting
+reading exposes `current_import.refresh_currency_conflict` with `saved_currency`,
+`reading_currency` and an actionable message; it cannot report replacement
+readiness or overwrite the saved denomination. This applies to both the same
+reading and a new retained evidence version. **Check this reading in saved JPY**
+(example currency) reruns the read-only preview with that currency and focuses the
+result. It makes no payment or balance write and performs no currency conversion.
+The investigator must still resolve the saved-control blockers and deliberately
+confirm the replacement. Historical imports with no explicit currency correction
+may use an improved reader's denomination; preserved saved balance values are
+rescaled by the denomination's decimal places to retain the same printed number.
+
+The currency workflow is covered by a synthetic real-browser journey at 390px:
+conflict → read-only saved-currency check → remaining exact balance difference →
+correct saved controls → ready → reopen → deliberate payment save. Companion
+backend checks prove preview/POST parity and protect explicit correction history.
 
 Synthetic tests cover partial additions and stable IDs, duplicate retry receipt
 handling, rollback atomicity, saved corrections, manual additions, exclusions,

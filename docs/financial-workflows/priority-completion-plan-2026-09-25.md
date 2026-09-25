@@ -604,5 +604,77 @@ admission tests with seven subtests, 52 statement-review unit tests, and the
 affected admin, saved-details and recovery-banner unit/browser checks. Forced
 TypeScript checking, production build, affected lint and diff checks pass. Counts
 overlap; they are not an aggregate total. Publication and live verification of
-this follow-up, including actual recovery outcomes, are still pending at this
-checkpoint. Existing source uncertainties remain investigator review items.
+this follow-up were pending at that checkpoint. The actual release and subsequent
+results are recorded below. Existing source uncertainties remain investigator
+review items.
+
+### Follow-up deployment and investigator verification
+
+`57aa156c` was pushed. Its automatic release built successfully but failed while
+installing the service shutdown override: the runner could not use `/dev/stdin`.
+The repair uses a regular temporary file and atomic installation, retaining the
+same ingestion gates and shutdown grace. It passed 20 regression checks and an
+isolated Linux test without `/dev/stdin`. `f091ffb9` was then pushed and its automatic
+deployment completed successfully: start 03:34:32 UTC, duration 164 seconds,
+healthy workers, current database schema, connected dependencies and active app
+services. The optional manual updater was not used.
+
+Live verification in the authorized test case established:
+
+- Corrected saved opening and closing controls both resolve to the saved values;
+  a genuinely quiet period confirms no activity, reconciles and keeps that result
+  after leaving and reopening. No payments were added.
+- A statement opens its exact saved payments, a payment opens its highlighted
+  source, and returning to Statements resumes the same review.
+- Clearing bank filters restores all 317 payments across four accounts and two
+  banks. Selecting one bank shows its 12 payments and one account. Currency totals
+  remain separate. Pending unidentified accounts are labelled separately.
+- Sender and category corrections save and persist after reopening. Their original
+  values were restored in the synthetic test payment; the correction audit remains.
+- Payment charts show March, May, July, October, November and December, matching
+  their dated payments. The separate account-history view includes all months
+  supported by its annual statement, without inventing a closing balance.
+
+The live follow-up exposed two historical-state defects. A removed ancestor could
+protect a later reading even after a recorded investigator reset/restore, causing
+an empty recovery snapshot. Separately, opening a removed batch source silently
+returned to the register. The next repair recognizes only verified reopenings,
+keeps removed imports and unrelated uploads untouched, and retains an explicit
+unavailable-source explanation with the original batch return path. Its automatic
+repair campaign is restricted to the prior empty/all-protected snapshot; successful
+or active campaigns are not replayed. Actual eligible counts must be observed
+after that repair is deployed.
+
+Final connected checks also exposed a duplicate decision hiding an unresolved
+saved-review comparison, a replacement reading presented as ready despite failing
+admission, and chart tick thinning obscuring a supported month label. These are
+fixed in the follow-up: comparison remains actionable, replacement checks use the
+saved controls and disable payment saving until ready, and every represented
+month stays labelled in a horizontally scrollable chart.
+
+A replacement cannot reverse a saved currency correction. The conflict offers a
+read-only check in the saved denomination, followed by the same reconciliation
+requirements. Both replacement writers enforce that protection. Saved cleared
+dates remain unknown; missing pending amounts remain missing and outside totals
+during currency correction. Nonempty unreadable amounts give an actionable error
+and roll back the entire correction. No conversion or invented zero is involved.
+
+The connected backend run passed 312 tests and 12 subtests. Subsequent currency
+and recovery checks passed 65 tests, with 35 focused saved-currency/detail checks.
+Navigation, chart and replacement Chromium journeys cover real parent navigation,
+blocked-to-ready correction, reopening, exact month labels, and 390px layouts.
+Counts overlap and are not an aggregate. Independent review signed off the source
+boundary, duplicate precedence and replacement admission/currency contracts.
+
+The live bulk editor also saved a one-period currency correction, reopened with
+that value, and saved/reopened its reversal. Its native month shortcut populated
+the first/last calendar dates; the preview correctly omitted unchanged dates.
+Original currency, dates and payment counts are restored; audit history remains.
+
+One test-case recovery item still displayed its accepted retry receipt after its
+batch had returned a saved-review error. The exact local retry/error/next-turn
+sequence passes, so its live cause is not established. The idle test-case campaign
+was explicitly paused for release and must be resumed and observed afterward.
+No team ingestion was cancelled and no deployment gate was bypassed. The recovery
+worker currently advances selected units sequentially; a slow unit in another case
+is a possible scheduling limitation, not a proven explanation of this incident.

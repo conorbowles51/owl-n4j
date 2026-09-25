@@ -121,7 +121,18 @@ def complete_currency_records(session, *, document, period, metadata, currency, 
         previous_currency = item.get('correction_currency') or raw.get('currency')
         if previous_currency and previous_currency != currency:
             for key in ('amount_minor', 'balance_minor'):
-                fields[key] = rescale_minor(fields.get(key), previous_currency, currency)
+                value = fields.get(key)
+                if value is None or value == '':
+                    # The current draft contract represents a missing amount
+                    # as an empty string. Preserve its absence, never zero.
+                    fields[key] = '' if key == 'amount_minor' and value is None else value
+                    continue
+                try:
+                    fields[key] = rescale_minor(value, previous_currency, currency)
+                except (TypeError, ValueError) as exc:
+                    label = 'amount' if key == 'amount_minor' else 'printed balance'
+                    raise PdfMappingError(f'A pending payment has an unreadable {label}. '
+                        f'Review that payment before changing the statement currency. No changes were saved.', 422) from exc
             item.update(correction=fields, correction_currency=currency)
         row = DraftImportRow.model_validate(fields)
         item['missing_fields'] = incomplete_fields(row, request)

@@ -528,18 +528,23 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
                 revision=revision, current_import=current_import, applied=False)
     from services.financial.review_upgrade import attach_upgrade
     attach_upgrade(result, snapshot)
-    if current_import and current and current.evidence_file_id == file.id and not excluded_copy:
-        from services.financial.legacy_statement_refresh import refresh_available, refresh_payment_count
-        current_import['refresh_available'] = refresh_available(session, current, result)
-        saved = result.get('saved_review')
-        current_import['refresh_review_required'] = bool(not current_import['refresh_available'] and saved
-            and saved['request'].get('expected_revision') != result['revision']
-            and refresh_available(session, current, {**result, 'saved_review': None}))
-        if current_import['refresh_available'] or current_import['refresh_review_required']:
-            current_import['refresh_transaction_count'] = refresh_payment_count(current, result)
     if _apply_assignments:
         from services.financial.statement_row_assignment import assigned_proposal
         result = assigned_proposal(session, file, result, cache)
+    replacement = result.get('current_import')
+    if replacement and current and not excluded_copy:
+        from services.financial.legacy_statement_refresh import refresh_currency_conflict
+        replacement['refresh_currency_conflict'] = refresh_currency_conflict(current, result)
+    if replacement and current and current.evidence_file_id == file.id and not excluded_copy:
+        from services.financial.legacy_statement_refresh import refresh_available, refresh_payment_count, refresh_assessment
+        replacement['refresh_available'] = refresh_available(session, current, result)
+        saved = result.get('saved_review')
+        replacement['refresh_review_required'] = bool(not replacement['refresh_available'] and saved
+            and saved['request'].get('expected_revision') != result['revision']
+            and refresh_available(session, current, {**result, 'saved_review': None}))
+        if replacement['refresh_available'] or replacement['refresh_review_required']:
+            replacement['refresh_transaction_count'] = refresh_payment_count(current, result)
+            replacement['refresh_admission'], replacement['refresh_requires_reconciliation'] = refresh_assessment(current, result)
     if _include_duplicate_disposition:
         from services.financial.pending_statement_duplicates import read_duplicate_disposition
         result['duplicate_disposition'] = read_duplicate_disposition(session, file, result)
@@ -802,7 +807,9 @@ def confirm_statement_import(*, session_factory, case_id, evidence_file_id, requ
                     if current_file is None:
                         raise PdfMappingError('The existing import has no available evidence file to compare. Open its source history before replacing it.', 409)
                     current_root = (current_file.metadata_ or {}).get('statement_root_evidence_id', str(current_file.id))
-                    from services.financial.legacy_statement_refresh import refresh_available
+                    from services.financial.legacy_statement_refresh import refresh_available, refresh_currency_conflict
+                    if conflict := refresh_currency_conflict(existing, proposal):
+                        raise PdfMappingError(conflict['message'], 409)
                     same_file_refresh = existing.evidence_file_id == file.id and refresh_available(session, existing, proposal)
                     if (not same_file_refresh and (not parent or root != current_root)) or request.replaces_source_document_id != existing.id:
                         raise PdfMappingError('This statement already has imported transactions. Open them to correct values, or reprocess a new version.', 409)
