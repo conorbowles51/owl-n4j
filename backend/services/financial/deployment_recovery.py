@@ -458,14 +458,31 @@ async def run_recovery_forever():
             if not initialized:
                 results = []
                 for campaign in CAMPAIGNS:
-                    with factory() as db:
-                        cutoff = activate(db, campaign.release)
-                        case_ids = list(db.scalars(select(Case.id).where(Case.created_at <= cutoff).order_by(Case.id)))
+                    try:
+                        with factory() as db:
+                            cutoff = activate(db, campaign.release)
+                            case_ids = list(db.scalars(select(Case.id).where(Case.created_at <= cutoff).order_by(Case.id)))
+                    except Exception:
+                        results.append(False)
+                        log.exception('Recovery initialization failed for release %s; existing recovery work will continue and initialization will retry',
+                            campaign.release)
+                        continue
                     def initialize_case(case_id):
                         with factory() as db:
                             return snapshot_case(db, case_id, cutoff, campaign)
                     for case_id in case_ids:
-                        results.append(await _finish_atomic(initialize_case, case_id))
+                        try:
+                            results.append(await _finish_atomic(initialize_case, case_id))
+                        except asyncio.CancelledError:
+                            raise
+                        except Exception:
+                            # One unsnapshotted case must not prevent existing
+                            # durable work in this or another case from running.
+                            # Its session has rolled back; False retries this
+                            # snapshot against the same release cutoff next turn.
+                            results.append(False)
+                            log.exception('Recovery snapshot failed for case %s, release %s; existing recovery work will continue and this snapshot will retry',
+                                case_id, campaign.release)
                 initialized = all(results)
             with factory() as db:
                 ids = next_recovery_items(db, after)

@@ -848,3 +848,21 @@ Chromium journeys, including a quiet account, five linked accounts, filters,
 return and narrow layout. Independent review, scoped lint, production build and
 diff checks passed; wide/narrow screenshots were inspected privately. This
 paragraph records local acceptance; publication and live results follow separately.
+
+The quiet-account packet was pushed as `44a3af2e`. The latest captured automatic
+attempt safely deferred before service replacement because two automatic recovery
+items were waiting. The last successful release remains `12300095`; this is a new
+queue deferral, not the earlier database-lock incident. The larger restored-source
+campaign has now finished checking its scheduled sources, retaining review reasons
+and protected decisions. The two waiting items in another campaign remain under
+investigation; completed batch readings alone do not establish campaign completion.
+
+Independent reproduction found an orchestration defect: a failure while creating
+one campaign/case snapshot prevented existing durable recovery work from being
+dispatched at all. The repair isolates campaign setup and case snapshot failures,
+continues existing work, and retries failed initialization against the same cutoff.
+Per-case rollback, snapshot idempotency, cancellation draining and admission/gate
+rules remain intact. Across three forced initialization failures, the queue was
+read zero times before the repair and three times afterward. All 103 connected
+recovery tests pass, with independent review and a clean diff. This demonstrates
+the code defect; the triggering live exception has not been observed.
