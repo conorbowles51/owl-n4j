@@ -1,5 +1,11 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { fireEvent, render, screen, waitFor } from "@testing-library/react"
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react"
 import { expect, it, vi } from "vitest"
 import { fetchAPI } from "@/lib/api-client"
 import { StatementRecoveryPanel } from "./StatementRecoveryPanel"
@@ -153,4 +159,106 @@ it("keeps legacy campaign progress compatible when scope is null", async () => {
   )
   expect(screen.queryByLabelText("Follow-up scope")).not.toBeInTheDocument()
   expect(screen.getByText(/This one-time check/)).toBeVisible()
+})
+
+it("groups identical review reasons within each file without losing distinct reasons or counting other outcomes", async () => {
+  const repeated =
+    "New reading ready to review. Confirm its account and currency."
+  const section = (message: string, status = "review") => ({
+    statement_id: null,
+    status,
+    message,
+    added: 0,
+  })
+  vi.mocked(fetchAPI).mockResolvedValue({
+    ...data,
+    run: { ...data.run, status: "complete" },
+    items: [
+      {
+        ...data.items[0],
+        sections: [
+          ...Array.from({ length: 52 }, () => section(repeated)),
+          section("Compare an overlap."),
+          section("Compare an overlap."),
+          section("The saved currency differs."),
+          section(repeated, "unchanged"),
+        ],
+      },
+      {
+        ...data.items[0],
+        id: "second",
+        filename: "Second file.pdf",
+        file_id: "second-file",
+        sections: [section(repeated)],
+      },
+    ],
+  })
+  mount()
+  await screen.findByRole("status")
+  fireEvent.click(screen.getByText("Review recovery results"))
+  const first = screen.getByText("Synthetic statement.pdf").closest("li")!
+  expect(first).toHaveTextContent("55 sections need review · 3 reasons")
+  expect(within(first).getAllByText(repeated)).toHaveLength(1)
+  expect(within(first).getByText("52 sections")).toBeVisible()
+  expect(within(first).getByText("2 sections")).toBeVisible()
+  expect(within(first).getByText("The saved currency differs.")).toBeVisible()
+  expect(
+    within(first).getByRole("list", { name: "Section review reasons" }).children
+  ).toHaveLength(3)
+  expect(
+    within(first).getByRole("button", { name: "Open statement" })
+  ).toBeVisible()
+  expect(
+    within(first).getByRole("button", { name: "Retry recovery" })
+  ).toBeVisible()
+  const second = screen.getByText("Second file.pdf").closest("li")!
+  expect(second).toHaveTextContent("1 section needs review · 1 reason")
+})
+
+it("retains every distinct reason in a keyboard-reachable bounded list", async () => {
+  vi.mocked(fetchAPI).mockResolvedValue({
+    ...data,
+    run: { ...data.run, status: "complete" },
+    items: [
+      {
+        ...data.items[0],
+        sections: Array.from({ length: 20 }, (_, index) => ({
+          statement_id: `section-${index}`,
+          status: "review",
+          message: `Specific source reason ${index + 1}`,
+          added: 0,
+        })),
+      },
+    ],
+  })
+  mount()
+  await screen.findByRole("status")
+  fireEvent.click(screen.getByText("Review recovery results"))
+  const reasons = screen.getByRole("list", { name: "Section review reasons" })
+  expect(reasons).toHaveAttribute("tabindex", "0")
+  expect(within(reasons).getAllByRole("listitem")).toHaveLength(20)
+  expect(reasons).toHaveTextContent("Specific source reason 20")
+})
+
+it("counts blank review messages while explaining that their sections still need review", async () => {
+  vi.mocked(fetchAPI).mockResolvedValue({
+    ...data,
+    run: { ...data.run, status: "complete" },
+    items: [
+      {
+        ...data.items[0],
+        sections: ["", "  \n"].map((message) => ({
+          statement_id: null,
+          status: "review",
+          message,
+          added: 0,
+        })),
+      },
+    ],
+  })
+  mount()
+  await screen.findByRole("status")
+  fireEvent.click(screen.getByText("Review recovery results"))
+  expect(screen.getByText("2 sections need review · 1 reason")).toBeVisible()
+  expect(screen.getByText("Review this statement section.")).toBeVisible()
 })

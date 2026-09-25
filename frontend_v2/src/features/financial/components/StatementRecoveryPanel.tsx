@@ -44,6 +44,55 @@ const recoverySchema = z.object({
   ),
 })
 
+type RecoverySections = NonNullable<
+  z.infer<typeof recoverySchema>["items"][number]["sections"]
+>
+
+function RecoveryReviewReasons({
+  sections = [],
+}: {
+  sections?: RecoverySections
+}) {
+  // Each result belongs to a section of this file. Only identical review text
+  // is grouped; no statement identity, outcome or saved source is changed.
+  const reasons = new Map<string, number>()
+  let count = 0
+  for (const section of sections) {
+    if (section.status !== "review") continue
+    count += 1
+    const message = section.message.trim() ? section.message : ""
+    reasons.set(message, (reasons.get(message) || 0) + 1)
+  }
+  if (!count) return null
+  return (
+    <div className="space-y-1 text-sm">
+      <p className="font-medium">
+        {count} {count === 1 ? "section needs" : "sections need"} review ·{" "}
+        {reasons.size} {reasons.size === 1 ? "reason" : "reasons"}
+      </p>
+      <ul
+        aria-label="Section review reasons"
+        tabIndex={0}
+        className="max-h-44 overflow-y-auto space-y-1 rounded border p-2 focus-visible:outline-2 focus-visible:outline-offset-2"
+      >
+        {[...reasons].map(([message, sections]) => (
+          <li
+            key={message}
+            className="flex flex-col sm:flex-row gap-1 sm:gap-2"
+          >
+            <span className="shrink-0 font-medium">
+              {sections} {sections === 1 ? "section" : "sections"}
+            </span>
+            <span className="min-w-0 break-words text-muted-foreground">
+              {message || "Review this statement section."}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
 export function StatementRecoveryPanel({
   caseId,
   onReview,
@@ -245,16 +294,7 @@ export function StatementRecoveryPanel({
                   )}
                 </div>
               </div>
-              {item.sections
-                ?.filter((section) => section.status === "review")
-                .map((section, index) => (
-                  <p
-                    key={section.statement_id || index}
-                    className="text-sm text-muted-foreground"
-                  >
-                    {section.message}
-                  </p>
-                ))}
+              <RecoveryReviewReasons sections={item.sections} />
             </li>
           ))}
         </ul>

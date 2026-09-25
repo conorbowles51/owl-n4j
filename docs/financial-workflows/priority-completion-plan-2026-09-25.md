@@ -7,6 +7,48 @@ The work packages below are implemented or in final integration as recorded in
 the dated completion checkpoint. Publication, live verification and the source
 audit remain separate acceptance steps.
 
+## Current checkpoint — 25 September, late morning
+
+This section supersedes historical “uncommitted”, “not pushed”, source-audit and
+maintenance-blocker statements in the dated record below.
+
+- **Published:** verified code and regression coverage through `11a746d6`.
+  The last independently confirmed successful automatic release is `12300095`.
+  A later attempt at 09:55:59 UTC deferred safely for one remaining recovery
+  item, down from two. Checkout version alone is not deployment evidence.
+- **Recovery:** the larger restored-source campaign and authorized test campaign
+  have finished. The remaining campaign has checked 11 of 12 scheduled sources.
+  The newest completed source needs overlap review; it did not add payments.
+  The last waiting item and safe automatic release remain under observation.
+  Earlier busy-case pause failures prompted an administrator-diagnosis request;
+  progress has since resumed without intervention by this verification.
+- **Completed content audit:** all current Financial source families across all
+  visible cases were inspected for content and provenance. Two uncertain
+  contextual sources remain retained. Nothing was removed by this audit. Source
+  relevance is not a certification of every payment or historical duplicate.
+- **Live acceptance:** saved date/currency/balance reopening, quiet-period
+  confirmation, manual draft stability/discard, original-source and batch return,
+  duplicate period/source/preview/cancel, represented-month charts, combined
+  transaction filters and complete filtered CSV contents have been observed.
+  Detailed evidence and limitations are retained in the dated entries below.
+- **Remaining independent acceptance:** compact duplicate summaries and quiet
+  account profiles after their actual release; final recovery outcomes; a typed
+  identity save/reopen and confirmed multi-account owner journey where an
+  appropriate authorized fixture exists. The test case currently has no matching
+  existing sender identity and no confirmed owner; these are fixture limits, not
+  demonstrated product failures. Both journeys have local browser/service
+  coverage. The rare saved-reading replacement branch likewise has no eligible
+  live record and must not be fabricated by changing client evidence.
+- **Current bounded follow-up:** expanded recovery results now group identical
+  reasons with accurate section counts. Distinct explanations and the existing
+  review/retry actions remain available. Eight unit and four Chromium checks,
+  forced TypeScript, lint, production build and independent review pass.
+  Actual publication/live acceptance are recorded separately below.
+
+Historical duplicate decisions, unread/ambiguous source values and uncertain
+content still require investigator review. Do not blanket-import them or equate
+completed recovery checks with reconciled, imported transactions.
+
 ## Intended outcome and scope
 
 Alex opens a batch and can account for every file and statement period. A failed
@@ -907,3 +949,26 @@ backend recovery log and held transaction has been requested. No transaction was
 terminated and no release gate was bypassed. Latest production-code publication
 and its actual release remain distinct; the last confirmed successful revision
 is still `12300095` at this checkpoint.
+
+
+### Recovery results that can be scanned — 25 September
+
+Live inspection found that a large file could print the same recovery explanation
+more than fifty times before the next file. The result panel now groups exact
+matching review messages within each file and displays the number of affected
+sections. Its summary retains the total review sections and distinct reasons.
+Every distinct explanation remains in a keyboard-focusable bounded list, and
+Open statement, Retry recovery and the Evidence fallback remain beside the file.
+Missing messages get an explicit review prompt. Non-review sections do not inflate
+these counts; missing or repeated section identifiers do not erase outcomes.
+No recovery, import, duplicate or source-selection decision changed.
+
+Eight unit checks and four Chromium journeys pass. The browser fixtures include
+53- and 104-section collections, mixed/distinct reasons, the twentieth reason
+reached by keyboard, retained source routing/return and the exact retry request.
+The source-return harness verifies callbacks locally, not the live PDF viewer.
+Wide and narrow screenshots were inspected; forced TypeScript, scoped lint,
+independent review and the production build (7.65 seconds) passed. Existing
+non-fatal test act warnings and build chunk warnings remain. The regenerated
+action inventory has 1,740 controls across 179 files. Live acceptance awaits the
+automatic release; the last observed remaining recovery source is still running.

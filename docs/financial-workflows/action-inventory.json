@@ -17759,7 +17759,7 @@
     {
       "component": "StatementRecoveryPanel",
       "file": "frontend_v2/src/features/financial/components/StatementRecoveryPanel.tsx",
-      "line": 112,
+      "line": 161,
       "control": "button",
       "label": "Retry recovery status",
       "disabled": null,
@@ -17771,7 +17771,7 @@
     {
       "component": "StatementRecoveryPanel",
       "file": "frontend_v2/src/features/financial/components/StatementRecoveryPanel.tsx",
-      "line": 141,
+      "line": 190,
       "control": "Button",
       "label": "{busy ? \"Saving…\" : data.run.status === \"paused\" ? \"Resume recovery\" : \"Pause recovery\"}",
       "disabled": "{busy}",
@@ -17783,7 +17783,7 @@
     {
       "component": "StatementRecoveryPanel",
       "file": "frontend_v2/src/features/financial/components/StatementRecoveryPanel.tsx",
-      "line": 202,
+      "line": 251,
       "control": "summary",
       "label": "Review recovery results",
       "disabled": null,
@@ -17793,7 +17793,7 @@
     {
       "component": "StatementRecoveryPanel",
       "file": "frontend_v2/src/features/financial/components/StatementRecoveryPanel.tsx",
-      "line": 219,
+      "line": 268,
       "control": "Button",
       "label": "Open statement",
       "disabled": null,
@@ -17805,7 +17805,7 @@
     {
       "component": "StatementRecoveryPanel",
       "file": "frontend_v2/src/features/financial/components/StatementRecoveryPanel.tsx",
-      "line": 229,
+      "line": 278,
       "control": "a",
       "label": "Open source in Evidence",
       "disabled": null,
@@ -17815,7 +17815,7 @@
     {
       "component": "StatementRecoveryPanel",
       "file": "frontend_v2/src/features/financial/components/StatementRecoveryPanel.tsx",
-      "line": 237,
+      "line": 286,
       "control": "Button",
       "label": "Retry recovery",
       "disabled": "{busy}",
@@ -17827,7 +17827,7 @@
     {
       "component": "StatementRecoveryPanel",
       "file": "frontend_v2/src/features/financial/components/StatementRecoveryPanel.tsx",
-      "line": 263,
+      "line": 303,
       "control": "Button",
       "label": "Previous recovery results",
       "disabled": "{offset === 0 || query.isFetching}",
@@ -17839,7 +17839,7 @@
     {
       "component": "StatementRecoveryPanel",
       "file": "frontend_v2/src/features/financial/components/StatementRecoveryPanel.tsx",
-      "line": 273,
+      "line": 313,
       "control": "Button",
       "label": "Next recovery results",
       "disabled": "{offset + 50 >= data.total || query.isFetching}",
