@@ -73,6 +73,7 @@ EnvironmentFile=${ENV_FILE}
 ExecStart=/bin/bash -lc 'exec ${VENV_DIR}/bin/uvicorn main:app --host 0.0.0.0 --port \${API_PORT:-8002} --workers 2'
 Restart=on-failure
 RestartSec=5
+TimeoutStopSec=14500
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=owl-backend-v2

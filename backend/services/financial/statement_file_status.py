@@ -91,9 +91,13 @@ def statement_file_status(session, *, case_id):
     # Preparation and admission are separate facts. A PDF with 50 saved periods
     # and one prepared period must not be labelled simply "Imported".
     from postgres.models.financial_import_batches import FinancialImportBatch as Batch, FinancialImportBatchItem as Item
+    active_file = (
+        EvidenceFile.metadata_['financial_file_visibility']['removed'].as_boolean().is_not(True),
+        EvidenceFile.metadata_['financial_import_removal'].as_string().is_(None),
+    )
     prepared = session.scalars(select(Item).join(Batch, Item.batch_id == Batch.id)
         .join(EvidenceFile, Item.file_id == EvidenceFile.id).where(Batch.case_id == case_id,
-            EvidenceFile.case_id == case_id, Batch.status != 'removed', Item.status.notin_(('removed', 'assigned')))
+            EvidenceFile.case_id == case_id, *active_file, Batch.status != 'removed', Item.status.notin_(('removed', 'assigned', 'superseded_reading')))
         .order_by(Item.updated_at.desc(), Item.id).limit(20001)).all()
     truncated = truncated or len(prepared) > 20000
     # A statement imported from an individual review can leave older batch
@@ -119,6 +123,38 @@ def statement_file_status(session, *, case_id):
                 ancestors.add(parent)
     file_hashes = dict(session.execute(select(EvidenceFile.id, EvidenceFile.sha256)
         .where(EvidenceFile.case_id == case_id, EvidenceFile.id.in_([p.file_id for p in prepared]))).all())
+    # Decisions can be recorded directly from a statement, without updating its
+    # old batch snapshot. Validate their lightweight source/review fingerprints
+    # together; reconstructing every PDF on a listing would be prohibitively
+    # expensive and a stale ignored label must never suppress current work.
+    from services.financial.pending_statement_duplicates import METADATA_KEY
+    from services.financial.pending_duplicate_projection import load_projection_context, cached_disposition
+    # Removal retains duplicate decisions as evidence history. That history
+    # must not recreate active prepared periods after the imports were removed.
+    decision_files = list(session.scalars(select(EvidenceFile).where(EvidenceFile.case_id == case_id,
+        *active_file, EvidenceFile.metadata_[METADATA_KEY].as_string().is_not(None)).order_by(EvidenceFile.id).limit(5001)))
+    truncated = truncated or len(decision_files) > 5000
+    decision_files = decision_files[:5000]
+    related_ids = set()
+    for file in decision_files:
+        for decision in (file.metadata_ or {}).get(METADATA_KEY, {}).values():
+            try:
+                related_ids.add(UUID((decision.get('retained') or {})['evidence_file_id']))
+            except (KeyError, ValueError, TypeError):
+                continue
+    known_ids = {file.id for file in decision_files}
+    related_files = list(session.scalars(select(EvidenceFile).where(EvidenceFile.case_id == case_id,
+        EvidenceFile.id.in_(related_ids - known_ids)))) if related_ids - known_ids else []
+    context = load_projection_context(session, case_id, [*decision_files, *related_files]) if decision_files else None
+    decisions = {}
+    for file in decision_files:
+        for statement_id in (file.metadata_ or {}).get(METADATA_KEY, {}):
+            decision = cached_disposition(context, file, statement_id)
+            decisions[(str(file.id), statement_id)] = decision
+            if decision['status'] in ('ignored', 'needs_comparison', 'restored'):
+                item = files.setdefault(str(file.id), dict(evidence_file_id=str(file.id), current_transactions=0, periods=[]))
+                item.setdefault('duplicate_dispositions', []).append(dict(statement_id=statement_id or None,
+                    currency=(decision.get('scope') or {}).get('currency'), decision=decision))
     seen_periods = set()
     from services.financial.statement_import_overlap import comparison_sources, coverage_review, summary_request, duplicate_hold, scope
     coverage_sources = None
@@ -131,8 +167,13 @@ def statement_file_status(session, *, case_id):
         seen_periods.add(identity)
         item = files.setdefault(key, dict(evidence_file_id=key, current_transactions=0, periods=[]))
         item['prepared_periods'] = item.get('prepared_periods', 0) + 1
+        decision = decisions.get(identity)
+        ignored = bool(decision and decision['current'] and decision['status'] == 'ignored')
+        duplicate_review = bool(decision and (not decision['current'] or
+            decision['status'] in ('needs_comparison', 'restored'))) or (
+            prepared_item.status == 'duplicate_ignored' and not ignored)
         already_saved = (file_hashes.get(prepared_item.file_id), prepared_item.statement_key or None) in saved_scopes
-        available = not already_saved and prepared_item.status in ('ready', 'attention') and prepared_item.summary.get('can_import', False)
+        available = not already_saved and not ignored and not duplicate_review and prepared_item.status in ('ready', 'attention') and prepared_item.summary.get('can_import', False)
         held = False
         if available:
             raw = {**(prepared_item.review_request or summary_request(prepared_item.summary)),
@@ -156,8 +197,19 @@ def statement_file_status(session, *, case_id):
                 problem_count=summary.get('problem_count', 0)))
         for field, matched in (
             ('available_periods', available),
-            ('pending_periods', prepared_item.status == 'pending_import'),
-            ('periods_with_checks', (held or bool(prepared_item.summary.get('problem_count', 0))) and prepared_item.status != 'skipped'),
+            ('ignored_periods', ignored),
+            ('pending_periods', prepared_item.status == 'pending_import' and not ignored),
+            ('periods_with_checks', not ignored and (duplicate_review or held or bool(prepared_item.summary.get('problem_count', 0))) and prepared_item.status != 'skipped'),
         ):
             item[field] = item.get(field, 0) + int(matched)
+    # Direct statement decisions also appear before the file joins a batch.
+    for (key, statement_id), decision in decisions.items():
+        if (key, statement_id) in seen_periods:
+            continue
+        item = files.setdefault(key, dict(evidence_file_id=key, current_transactions=0, periods=[]))
+        item['prepared_periods'] = item.get('prepared_periods', 0) + 1
+        ignored = decision['current'] and decision['status'] == 'ignored'
+        item['ignored_periods'] = item.get('ignored_periods', 0) + int(ignored)
+        if not decision['current'] or decision['status'] in ('needs_comparison', 'restored'):
+            item['periods_with_checks'] = item.get('periods_with_checks', 0) + 1
     return dict(case_id=str(case_id), files=list(files.values()), truncated=truncated)

@@ -3,6 +3,7 @@
 A matching account reference and overlapping period are a reason to compare
 sources, not a determination that the payments or account holders are identical.
 """
+import re
 from datetime import date
 from sqlalchemy import select
 from postgres.models.evidence import EvidenceFile
@@ -28,14 +29,16 @@ def scope(raw):
     holder = _fold(raw.get('holder'))
     return dict(identity=identity.key, currency=raw.get('currency'), start=start.isoformat(), end=end.isoformat(),
                 holder=holder if holder not in NON_VALUES else '', account_type=_fold(raw.get('account_type')),
-                full_reference=not identity.is_provisional)
+                account_reference=re.sub(r'[\s-]+', '', _fold(raw.get('account_number'))),
+                full_reference=not identity.is_provisional and bool(_fold(raw.get('institution')))
+                    and _fold(raw.get('institution')) not in NON_VALUES)
 
 
 def same_statement(left, right):
     """Strong metadata is a hold for comparison, never proof to delete a source."""
     return bool(left and right and left.get('full_reference') and right.get('full_reference')
         and left.get('holder') and left['holder'] == right.get('holder')
-        and all(left.get(key) == right.get(key) for key in ('identity', 'currency', 'start', 'end', 'account_type')))
+        and all(left.get(key) == right.get(key) for key in ('identity', 'account_reference', 'currency', 'start', 'end', 'account_type')))
 
 
 def overlaps(left, right):
@@ -110,6 +113,19 @@ def comparison_sources(session, case_id, pending=None):
             except PdfMappingError:
                 raw = {**raw, '_coverage_error': 'Reopen this older review to check its current bank, account and statement dates.'}
         prepared[item.id] = raw
+        from services.financial.pending_statement_duplicates import METADATA_KEY, read_duplicate_disposition
+        decision = (file.metadata_ or {}).get(METADATA_KEY, {}).get(item.statement_key or '')
+        if decision and decision.get('status') == 'ignored':
+            from services.financial.statement_import import read_statement_import
+            try:
+                proposal = read_statement_import(session, case_id=case_id, evidence_file_id=file.id,
+                    currency=item.summary.get('currency'), statement_id=item.statement_key or None,
+                    _cache=cache, _include_period_checks=False, _include_duplicate_disposition=False)
+                current_decision = read_duplicate_disposition(session, file, proposal, item.review_request)
+                if current_decision and current_decision.get('current') and current_decision['status'] == 'ignored':
+                    continue
+            except PdfMappingError:
+                pass  # An unreadable current source still requires comparison.
         # Old internal readings remain in history, not as fresh competing work.
         if str(file.id) not in current_ids:
             continue
@@ -121,6 +137,26 @@ def comparison_sources(session, case_id, pending=None):
             file_id=str(file.id), statement_id=item.statement_key or None, source_document_id=None,
             filename=file.original_filename, status='awaiting_import', page_number=item.summary.get('page_number', 1),
             period_start=own['start'], period_end=own['end']))
+    # A statement reviewed individually may have no batch item yet. Register
+    # only explicit current decisions, never guess candidates from file names.
+    registered = {(entry['file_id'], entry.get('statement_id') or '') for values in entries.values() for entry in values}
+    from services.financial.pending_statement_duplicates import METADATA_KEY
+    inactive = {(str(file_id), key or '') for file_id, key in session.execute(select(Item.file_id, Item.statement_key)
+        .join(Batch, Batch.id == Item.batch_id).where(Batch.case_id == case_id,
+            Item.status.in_(('skipped', 'assigned', 'removed', 'superseded_reading')))).all()}
+    for versions in groups.values():
+        for file in versions:
+            if str(file.id) not in current_ids:
+                continue
+            for key, decision in (file.metadata_ or {}).get(METADATA_KEY, {}).items():
+                own = decision.get('scope')
+                if (str(file.id), key) in registered or (str(file.id), key) in inactive or not own or decision.get('status') not in ('retained', 'restored', 'needs_comparison'):
+                    continue
+                add(own['identity'], own['currency'], dict(key=(families.get(str(file.id), str(file.id)), key),
+                    scope=own, file_id=str(file.id), statement_id=key or None, source_document_id=None,
+                    filename=file.original_filename, status='awaiting_import',
+                    page_number=(decision.get('retained') or {}).get('page_number', 1),
+                    period_start=own['start'], period_end=own['end']))
     return entries, prepared
 
 

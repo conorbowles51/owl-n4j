@@ -1,3 +1,7 @@
+import { statementAssessment } from "../lib/statement-assessment"
+import { statementDuplicateDisposition } from "../lib/statement-duplicate"
+import { StatementReconciliationSummary } from "./StatementReconciliationSummary"
+import { formatLedgerAmount } from "../lib/ledger-format"
 import { BatchReadingJobs } from "./BatchReadingJobs"
 import { FinancialRemovalAction } from "./FinancialRemovalAction"
 import { BatchStatementImportChoice } from "./BatchStatementImportChoice"
@@ -8,7 +12,7 @@ import { BulkStatementDetails } from "./BulkStatementDetails"
 import { coverageReview } from "../hooks/use-statement-coverage-review"
 import { useEffect, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { useSearchParams } from "react-router-dom"
+import { Link, useSearchParams } from "react-router-dom"
 import { z } from "zod"
 import { Button } from "@/components/ui/button"
 import { fetchAPI } from "@/lib/api-client"
@@ -23,6 +27,14 @@ import { resetPaymentTableView } from "../lib/payment-table-draft"
 import { useInvestigationScopeStore } from "../stores/investigation-scope"
 import { useFinancialStore } from "../stores/financial.store"
 import { useFinancialDraft } from "../stores/financial-drafts"
+const recoveryReceipt = z.object({
+  attempt_id: z.string().optional(),
+  action: z.string().optional(),
+  stage: z.string().optional(),
+  message: z.string().optional(),
+  review_file_id: z.string().nullish(),
+  reading_file_id: z.string().nullish(),
+})
 const operationSchema = z.object({
   id: z.string(),
   status: z.string(),
@@ -32,6 +44,7 @@ const operationSchema = z.object({
   failed: z.number(),
   imported: z.number(),
   already_present: z.number(),
+  duplicate_ignored: z.number().default(0),
   transaction_count: z.number(),
   incomplete_count: z.number(),
   outcomes: z.array(
@@ -62,6 +75,8 @@ const itemSchema = z.object({
   unclassified_count: z.number().optional(),
   problem_count: z.number().optional(),
   can_import: z.boolean().optional(),
+  admission: statementAssessment.nullish(),
+  duplicate_disposition: statementDuplicateDisposition.nullish(),
   balance_status: z.string().optional(),
   balance_exception: z.boolean().optional(),
   source_id: z.string(),
@@ -105,6 +120,7 @@ const batchSchema = z.object({
       error: z.string().optional(),
       last_progress_at: z.string().optional(),
       last_checked_at: z.string().optional(),
+      recovery: recoveryReceipt.nullish(),
     })
   ),
   counts: z.record(z.string(), z.number()),
@@ -146,6 +162,8 @@ const labels: Record<string, string> = {
   attention: "Needs attention",
   pending_import: "Import accepted · waiting for completion",
   imported: "Imported",
+  duplicate_ignored: "Duplicate - Ignored by system",
+  superseded_reading: "Earlier reading retained in history",
   skipped: "Left unimported",
   assigned: "Payments assigned",
 }
@@ -156,6 +174,7 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
     itemId = params.get("batchItem")
   const reviewGroup = params.get("batchCheck") || ""
   const statementList = useRef<HTMLHeadingElement>(null)
+  const readingJobs = useRef<HTMLDivElement>(null)
   const focusStatementList = useRef(false)
   const [offset, setOffset] = useState(0),
     [onlyProblems, setOnlyProblems] = useState(false)
@@ -268,11 +287,47 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
     setParams((current) => {
       const next = new URLSearchParams(current)
       next.set("view", "statements")
-      for (const key of ["batch", "batchItem", "batchRow"]) next.delete(key)
+      for (const key of [
+        "batch",
+        "batchItem",
+        "batchRow",
+        "files",
+        "reviewFile",
+        "returnBatch",
+        "returnBatchCheck",
+      ])
+        next.delete(key)
       if (batch !== batchId) next.delete("batchCheck")
       if (batch) next.set("batch", batch)
       if (item) next.set("batchItem", item)
       if (row) next.set("batchRow", row)
+      return next
+    })
+  }
+  const openStatementFiles = (fileId?: string) => {
+    const workspace = useStatementWorkspace.getState()
+    const scope = `${user?.id || user?.username || "anonymous"}:${caseId}`
+    if (fileId) workspace.select(scope, fileId)
+    else workspace.setOpen(scope, false)
+    setParams((current) => {
+      const next = new URLSearchParams(current)
+      next.set("view", "statements")
+      next.set("files", "1")
+      for (const key of [
+        "batch",
+        "batchItem",
+        "batchRow",
+        "batchCheck",
+        "reviewFile",
+        "returnBatch",
+        "returnBatchCheck",
+      ])
+        next.delete(key)
+      if (fileId) {
+        next.set("reviewFile", fileId)
+        if (batchId) next.set("returnBatch", batchId)
+        if (reviewGroup) next.set("returnBatchCheck", reviewGroup)
+      }
       return next
     })
   }
@@ -562,16 +617,18 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
       <div>
         <p role="alert">{query.error.message}</p>
         <Button onClick={() => void query.refetch()}>Retry batch</Button>
-        <Button variant="outline" onClick={() => change(null)}>
-          Back to statements
+        <Button variant="outline" onClick={() => openStatementFiles()}>
+          Back to statement files
         </Button>
       </div>
     )
   const batch = query.data
-  const displayItems = batch.items.map((item) => ({
-    ...item,
-    problems: reviewProblems(item, reviewGroup),
-  }))
+  const displayItems = batch.items
+    .filter((item) => !["removed", "superseded_reading"].includes(item.status))
+    .map((item) => ({
+      ...item,
+      problems: reviewProblems(item, reviewGroup),
+    }))
   const problems = batch.issues_count ?? batch.counts.attention ?? 0
   const available = batch.available_statements ?? batch.counts.ready ?? 0
   const availableRecords = batch.available_records ?? batch.ready_transactions
@@ -624,7 +681,7 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
                 : "Open imported transactions"}
             </Button>
           )}
-          <Button variant="outline" onClick={() => change(null)}>
+          <Button variant="outline" onClick={() => openStatementFiles()}>
             Back to all statements
           </Button>
         </div>
@@ -639,11 +696,13 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
           separate pause controls below.
         </p>
       )}
-      <BatchReadingJobs
-        caseId={caseId}
-        jobIds={batch.reading_job_ids}
-        canEdit={canEdit}
-      />
+      <div ref={readingJobs}>
+        <BatchReadingJobs
+          caseId={caseId}
+          jobIds={batch.reading_job_ids}
+          canEdit={canEdit}
+        />
+      </div>
       {openImported.isError && <p role="alert">{openImported.error.message}</p>}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[
@@ -787,7 +846,7 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
                   ? `Import accepted: ${checkImport.data.pending} statements are still being processed. ${checkImport.data.imported} imported so far.`
                   : checkImport.data.failed
                     ? `Import finished: ${checkImport.data.imported} imported and ${checkImport.data.failed} need review. Open the affected statements in Import results below.`
-                    : `Import complete: ${checkImport.data.imported} imported, ${checkImport.data.already_present} already included. ${checkImport.data.transaction_count} transactions saved.`}
+                    : `Import complete: ${checkImport.data.imported} imported, ${checkImport.data.already_present} already included, ${checkImport.data.duplicate_ignored} duplicates ignored. ${checkImport.data.transaction_count} transactions saved.`}
             </p>
           )}
           {checkImport.isSuccess &&
@@ -836,6 +895,9 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
                 className="my-2 text-sm"
               >
                 {operation.statement_count} statements submitted ·{" "}
+                {operation.duplicate_ignored > 0 && (
+                  <>{operation.duplicate_ignored} duplicates ignored · </>
+                )}
                 {operation.imported} imported · {operation.already_present}{" "}
                 already included · {operation.pending} pending ·{" "}
                 {operation.failed} need review. {operation.transaction_count}{" "}
@@ -862,6 +924,7 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
                         queued: "Accepted — waiting for import",
                         importing: "Importing",
                         imported: "Imported",
+                        duplicate_ignored: "Duplicate - Ignored by system",
                         already_present:
                           "Already included — no duplicate added",
                         failed: "Not imported — review required",
@@ -916,74 +979,110 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
                     : ""}
                 </p>
               )}
-              {file.error && (
-                <>
-                  <p role="alert">{file.error}</p>
-                  <div className="flex gap-2 mt-2">
+              {file.recovery?.message && (
+                <p className="mt-1 text-sm" role="status">
+                  {file.recovery.message}
+                </p>
+              )}
+              <>
+                {file.error && <p role="alert">{file.error}</p>}
+                <div className="flex gap-2 mt-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={file.review_file_id === null}
+                    onClick={() => {
+                      openStatementFiles(
+                        file.recovery?.review_file_id ||
+                          file.review_file_id ||
+                          file.file_id
+                      )
+                    }}
+                  >
+                    Open file review
+                  </Button>
+                  {canEdit && canUpload && (
                     <Button
                       variant="outline"
                       size="sm"
-                      disabled={file.review_file_id === null}
-                      onClick={() => {
-                        useStatementWorkspace
-                          .getState()
-                          .select(
-                            `${user?.id || user?.username || "anonymous"}:${caseId}`,
-                            file.review_file_id || file.file_id
-                          )
-                        change(null)
-                      }}
-                    >
-                      Open file review
-                    </Button>
-                    {canEdit && canUpload && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={!!retryingFile || paused}
-                        onClick={async () => {
-                          setError("")
-                          setRetryMessage("")
-                          setRetryingFile(file.source_id)
-                          try {
-                            const result = z
-                              .object({
-                                queued: z.boolean(),
-                                status: z.string(),
-                              })
-                              .parse(
-                                await fetchAPI(
-                                  `${prefix}/${batchId}/files/${file.source_id}/retry?case_id=${caseId}`,
-                                  { method: "POST" }
-                                )
+                      disabled={!!retryingFile || paused}
+                      onClick={async () => {
+                        setError("")
+                        setRetryMessage("")
+                        setRetryingFile(file.source_id)
+                        try {
+                          const result = z
+                            .object({
+                              queued: z.boolean(),
+                              status: z.string(),
+                            })
+                            .merge(recoveryReceipt)
+                            .parse(
+                              await fetchAPI(
+                                `${prefix}/${batchId}/files/${file.source_id}/retry?case_id=${caseId}`,
+                                { method: "POST" }
                               )
-                            refresh()
-                            setRetryMessage(
-                              result.queued
+                            )
+                          refresh()
+                          setRetryMessage(
+                            result.message
+                              ? `${file.filename}: ${result.message}`
+                              : result.queued
                                 ? `Retry accepted for ${file.filename}. Its progress will appear here.`
                                 : result.status === "checked"
                                   ? `${file.filename} has already been read. Open its statement review below.`
                                   : `${file.filename} is already queued or being read. Its progress will appear here.`
-                            )
-                          } catch (error) {
-                            setError(
-                              error instanceof Error
-                                ? error.message
-                                : "The file could not be retried."
-                            )
-                          } finally {
-                            setRetryingFile(null)
-                          }
-                        }}
+                          )
+                        } catch (error) {
+                          setError(
+                            error instanceof Error
+                              ? error.message
+                              : "The file could not be retried."
+                          )
+                        } finally {
+                          setRetryingFile(null)
+                        }
+                      }}
+                    >
+                      {retryingFile === file.source_id
+                        ? "Requesting retry…"
+                        : file.error
+                          ? file.recovery?.action === "source_unavailable"
+                            ? "Check source again"
+                            : "Retry this file"
+                          : "Check reading"}
+                    </Button>
+                  )}
+                  {file.recovery?.action === "source_unavailable" && (
+                    <Button variant="outline" size="sm" asChild>
+                      <Link
+                        to={`/cases/${encodeURIComponent(caseId)}/evidence`}
                       >
-                        {retryingFile === file.source_id
-                          ? "Requesting retry…"
-                          : "Retry this file"}
-                      </Button>
-                    )}
-                  </div>
-                </>
-              )}
+                        Find source in Evidence
+                      </Link>
+                    </Button>
+                  )}
+                  {file.recovery?.action === "resume_reading" && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        const details =
+                          readingJobs.current?.querySelector("details")
+                        if (details) details.open = true
+                        const summary = details?.querySelector("summary")
+                        summary?.focus({ preventScroll: true })
+                        summary?.scrollIntoView({
+                          block: "center",
+                          behavior: "smooth",
+                        })
+                      }}
+                    >
+                      Open reading jobs to resume
+                    </Button>
+                  )}
+                </div>
+              </>
             </li>
           ))}
         </ul>
@@ -1187,6 +1286,30 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
                 </select>
               </label>
             )}
+            {item.duplicate_disposition?.status === "ignored" && (
+              <p className="text-sm">
+                {item.duplicate_disposition.reason}{" "}
+                {item.duplicate_disposition.retained && (
+                  <>
+                    Retained statement:{" "}
+                    <strong>
+                      {item.duplicate_disposition.retained.filename}
+                    </strong>
+                    . Open this review to inspect or restore the copy.
+                  </>
+                )}
+              </p>
+            )}
+            {item.admission?.calculation &&
+              item.status !== "duplicate_ignored" && (
+                <StatementReconciliationSummary
+                  calculation={item.admission.calculation}
+                  compact
+                  format={(minor) =>
+                    `${formatLedgerAmount(minor, item.currency || "").text} ${item.currency || ""}`
+                  }
+                />
+              )}
             {item.balance_status === "matches" && (
               <p className="text-sm text-teal-700 dark:text-teal-300">
                 Opening balance, transactions and closing balance agree.
@@ -1227,9 +1350,12 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
             )}
             {canEdit &&
               item.disposition_revision &&
-              !["imported", "pending_import", "assigned"].includes(
-                item.status
-              ) && (
+              ![
+                "imported",
+                "pending_import",
+                "assigned",
+                "duplicate_ignored",
+              ].includes(item.status) && (
                 <BatchStatementImportChoice
                   caseId={caseId}
                   batchId={batchId}

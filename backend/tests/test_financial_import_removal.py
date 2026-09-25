@@ -44,8 +44,20 @@ class FinancialImportRemovalTests(TestCase):
             **(selection or dict(batch_ids=[self.batch])))
 
     def test_bulk_removal_excludes_payments_and_archives_related_batches_but_retains_source_history(self):
-        second = self.fixture.create()
-        self.fixture.advance(second)
+        # Unchanged new requests reuse the existing preparation. Seed a legacy
+        # duplicate batch explicitly to retain coverage of older case history.
+        self.assertEqual(self.fixture.create(), self.batch)
+        from postgres.models.financial_import_batches import FinancialImportBatchItem as Item
+        first = self.f.db.get(Batch, self.batch)
+        second = uuid4()
+        self.f.db.add(Batch(id=second, case_id=first.case_id, created_by=first.created_by,
+            status=first.status, files=deepcopy(first.files), actor=deepcopy(first.actor)))
+        self.f.db.flush()
+        for item in self.f.db.scalars(select(Item).where(Item.batch_id == first.id)):
+            self.f.db.add(Item(id=uuid4(), batch_id=second, file_id=item.file_id,
+                statement_key=item.statement_key, status=item.status,
+                summary=deepcopy(item.summary), review_request=deepcopy(item.review_request)))
+        self.f.db.commit()
         proposal = self.preview(batch_ids=[self.batch, second])
         self.assertEqual((proposal['file_count'], proposal['batch_count'], proposal['transaction_count']), (1, 2, 12))
         original_bytes = self.f.path.read_bytes()

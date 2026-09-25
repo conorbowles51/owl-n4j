@@ -30,7 +30,7 @@ class StatementOverlapTests(TestCase):
     def tearDown(self):
         self.b.tearDown()
 
-    def copy_file(self):
+    def copy_file(self, *, revised=False):
         f = self.f
         raw = f.path.read_bytes() + ('\n% copy ' + str(uuid4())).encode()
         path = Path(f._directory) / (str(uuid4()) + '.pdf')
@@ -46,6 +46,13 @@ class StatementOverlapTests(TestCase):
             engine_job_id=text.engine_job_id, source_locations=deepcopy(text.source_locations)))
         f.db.add(EvidenceTableGeometry(evidence_file_id=file.id, page_number=1,
             engine_job_id=geometry.engine_job_id, payload=deepcopy(geometry.payload)))
+        if revised:
+            f.db.flush()
+            copied = f.db.get(EvidenceTableGeometry, (file.id, 1))
+            payload = deepcopy(copied.payload)
+            value = next(item for item in payload[0]['table']['values'] if item['row'] == 2 and item['column'] == 1)
+            value['text'] = 'Revised source payment detail'
+            copied.payload = payload
         f.db.commit()
         return file
 
@@ -63,7 +70,7 @@ class StatementOverlapTests(TestCase):
             return overlap.coverage_review(db, case_id=self.f.case.id, file_id=file.id, request=request)
 
     def test_pending_overlap_skip_import_and_restore_preserve_original_and_draft(self):
-        other = self.copy_file()
+        other = self.copy_file(revised=True)
         batch = self.create(self.primary, other)
         status = self.b.status(batch)
         self.assertEqual(status['counts']['attention'], 2, status)
@@ -106,7 +113,7 @@ class StatementOverlapTests(TestCase):
         self.assertEqual(next(i for i in status['items'] if i['file_id'] == str(other.id))['coverage_review']['candidates'][0]['status'], 'imported')
 
     def test_reason_bound_to_coverage_stays_valid_when_peer_imports(self):
-        other = self.copy_file()
+        other = self.copy_file(revised=True)
         batch = self.create(self.primary, other)
         for item in self.b.status(batch)['items']:
             file = self.primary if item['file_id'] == str(self.primary.id) else other
@@ -156,7 +163,7 @@ class StatementOverlapTests(TestCase):
         self.assertFalse(self.f.confirm(raw)['created'])
 
     def test_legacy_batch_and_scope_changes_and_duplicate_batch_membership(self):
-        other = self.copy_file()
+        other = self.copy_file(revised=True)
         first = self.create(self.primary, other)
         with self.f.SessionLocal() as db:
             for item in db.scalars(select(Item).where(Item.batch_id == first)):
@@ -208,7 +215,7 @@ class StatementOverlapTests(TestCase):
 
     def test_matching_account_holder_and_exact_period_hold_a_second_import(self):
         first = self.f.confirm()
-        other = self.copy_file()
+        other = self.copy_file(revised=True)
         self.f.file = other
         raw = self.f.request()
         review = self.review(other, raw)
@@ -285,7 +292,7 @@ class StatementOverlapTests(TestCase):
         from postgres.base import Base
         from postgres.models.workspace_entry import WorkspaceEntry, WorkspaceEntryLink
         Base.metadata.create_all(self.f.engine, tables=[WorkspaceEntry.__table__, WorkspaceEntryLink.__table__])
-        other = self.copy_file()
+        other = self.copy_file(revised=True)
         self.create(self.primary, other)
         from services.financial.statement_file_status import statement_file_status
         with self.f.SessionLocal() as db:

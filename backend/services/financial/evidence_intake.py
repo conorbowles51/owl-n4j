@@ -94,6 +94,10 @@ async def prepare_existing_financial_file(session, *, case_id, evidence_file_id,
     reset = (file.metadata_ or {}).get('financial_import_removal')
     target = file
     if reset:
+        from services.financial.reading_recovery import retry_reference_problem
+        problem = retry_reference_problem(session, case_id=case_id, source_id=file.id, source=file)
+        if problem:
+            raise PdfMappingError(problem['message'], 409)
         if financial_file_visibility(file)['financial_visibility_revision'] != expected_revision:
             raise PdfMappingError('The removal changed. Refresh files before preparing them again.', 409)
         target = create_statement_version(session, case_id=case_id,

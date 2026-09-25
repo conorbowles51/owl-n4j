@@ -131,6 +131,86 @@ def _cleaned_line_readings(page, rect, rotation, deadline, language):
     return observations
 
 
+def refine_credit_one_native_cells(page, tables, *, deadline, language):
+    """Recover only missing card money from its original measured cell.
+
+    A failed whole-page reread may drop a payment. This preserves every native
+    row and only accepts independent crop consensus for an unreadable value;
+    complete existing values and conflicting crop readings remain unchanged.
+    """
+    from dataclasses import replace
+    from services.financial import pdf_tables
+    from services.financial.statement_import_credit_one import credit_one_catalog, propose_credit_one_table
+    from services.financial.statement_reading_quality import sources_from_tables, assess_statement_reading, prefer_image_reading
+    if page.rotation or deadline - time.monotonic() < 2:
+        return tables, []
+    sources = sources_from_tables([table.to_json() for table in tables])
+    cards, _ = credit_one_catalog(sources)
+    if len(cards) != 1:
+        return tables, []
+    before = assess_statement_reading([table.to_json() for table in tables])
+    if not before or not before['unreadable']:
+        return tables, []
+    replacements, records = {}, []
+    deadline = min(deadline, time.monotonic() + 30)
+    for source in sources:
+        for row in propose_credit_one_table(source, 'USD', cards[0])['rows']:
+            fields = row['fields']
+            field = 'balance' if row['kind'] == 'balance' else 'amount_minor' if row['kind'] == 'transaction' else None
+            column = fields.get('balance_column' if field == 'balance' else 'amount_column')
+            if field is None or field in fields or column is None or deadline - time.monotonic() < 2:
+                continue
+            matches = [c for c in row['source_cells'] if str(c['column_index']) == column]
+            if len(matches) != 1:
+                continue
+            cell = matches[0]
+            locator = cell.get('locator') or {}
+            rect = locator.get('rect') or []
+            size = locator.get('page_size') or []
+            if (locator.get('kind') != 'page_rectangle' or locator.get('page') != page.number + 1
+                    or len(rect) != 4 or len(size) != 2 or not all(type(v) is int for v in rect + size)
+                    or not 0 <= rect[0] < rect[2] <= size[0] or not 0 <= rect[1] < rect[3] <= size[1]
+                    or abs(size[0] - page.rect.width * 1000) > 2 or abs(size[1] - page.rect.height * 1000) > 2
+                    or rect[2] - rect[0] > size[0] * .13 or len(cell['expected_text']) > 24):
+                continue
+            try:
+                observations = _cleaned_line_readings(page, rect, 0, deadline, language)
+            except (RuntimeError, pytesseract.TesseractError):
+                continue
+            valid = [o for o in observations if _money(o['text'])]
+            if (len(observations) != 6 or not _money(observations[0]['text']) or len(valid) < 4
+                    or len({o['dpi'] for o in valid}) != 2 or len({o['text'] for o in valid}) != 1):
+                continue
+            value = valid[0]['text']
+            replacements[(source['table_index'], row['row_index'], int(column))] = value
+            records.append(dict(method='tesseract_native_statement_cell_consensus', page=page.number + 1,
+                table_index=source['table_index'], row_index=row['row_index'], column_index=int(column),
+                field=field, original_text=cell['expected_text'], text=value, source_locator=locator,
+                observations=observations, reason='unreadable_native_card_money'))
+    if not replacements:
+        return tables, []
+    refined = []
+    for index, table in enumerate(tables):
+        if table.geometry is None:
+            return tables, []
+        cells = tuple(replace(cell, text=replacements.get((index, cell.row, cell.column), cell.text))
+            for cell in table.geometry.cells)
+        rows = {}
+        for cell in cells:
+            rows.setdefault(cell.row, {})[cell.column] = cell.text
+        grid = [[row.get(column, '') for column in range(max(row) + 1)] for _, row in sorted(rows.items())]
+        chunk = pdf_tables._chunk(grid, page.number + 1)
+        if not chunk:
+            return tables, []
+        refined.append(replace(table, geometry=replace(table.geometry, cells=cells), chunk=chunk))
+    after = assess_statement_reading([table.to_json() for table in refined])
+    if not prefer_image_reading(before, after):
+        return tables, []
+    for record in records:
+        record.update(original_quality=before, refined_quality=after)
+    return refined, records
+
+
 def reread_financial_amounts(page, data, *, rotation, image_width, image_height,
                              reader, deadline, language):
     page_text = ' '.join(text.strip() for text in data['text'] if text.strip())

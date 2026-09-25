@@ -1,4 +1,5 @@
 import type { LedgerTransaction } from "../api"
+import type { AccountParties } from "./account-parties"
 
 export function paymentDay(row: LedgerTransaction): string | null {
   if (row.ordering_date_context === "statement_end_ordering_only") return null
@@ -24,85 +25,186 @@ export function paymentGroup(row: LedgerTransaction) {
   return `${row.currency}:${row.account_type === "credit_card" ? "card" : "bank"}`
 }
 
+export type ProfileScope = "owned_accounts" | "counterparty_payments"
+export interface ProfileAccount {
+  id: string
+  label: string
+  currency: string | null
+  relationships: AccountParties["accounts"][number]["relationships"]
+}
 export interface PaymentProfile {
   id: string
   name: string
   kind: "account" | "name" | "owner"
   unidentified: boolean
   rows: LedgerTransaction[]
+  counterpartyRows: LedgerTransaction[]
   accounts: string[]
+  accountDetails: ProfileAccount[]
+  nestedUnderOwner: boolean
   sources: string[]
   first: string | null
   last: string | null
 }
 
-export function paymentProfiles(rows: LedgerTransaction[]): PaymentProfile[] {
-  const groups = new Map<
-    string,
-    {
-      name: string
-      kind: "account" | "name" | "owner"
-      rows: LedgerTransaction[]
+/** A reviewed holder relationship applies only within its recorded dates. */
+export function ownsPayment(row: LedgerTransaction, partyId: string) {
+  const links = (row.account_relationships ?? []).filter(
+    (link) => link.role === "holder" && link.party.id === partyId
+  )
+  if (!links.length)
+    return (
+      !row.account_relationships?.length &&
+      !!row.account_holder_parties?.some((party) => party.id === partyId)
+    )
+  const day = paymentDay(row)
+  return links.some(
+    (link) =>
+      (!link.effective_from && !link.effective_to) ||
+      (!!day &&
+        (!link.effective_from || day >= link.effective_from) &&
+        (!link.effective_to || day <= link.effective_to))
+  )
+}
+
+export function paymentProfiles(
+  rows: LedgerTransaction[],
+  directory: AccountParties["accounts"] = []
+): PaymentProfile[] {
+  type Group = {
+    name: string
+    kind: PaymentProfile["kind"]
+    rows: Map<string, LedgerTransaction>
+    counterpartyRows: Map<string, LedgerTransaction>
+    accounts: Map<string, ProfileAccount>
+    nestedUnderOwner: boolean
+  }
+  const groups = new Map<string, Group>()
+  const ensure = (id: string, name: string, kind: PaymentProfile["kind"]) => {
+    let group = groups.get(id)
+    if (!group) {
+      group = {
+        name,
+        kind,
+        rows: new Map(),
+        counterpartyRows: new Map(),
+        accounts: new Map(),
+        nestedUnderOwner: false,
+      }
+      groups.set(id, group)
     }
-  >()
+    return group
+  }
+  for (const account of directory) {
+    const id = account.canonical_id || account.id
+    const detail = {
+      id,
+      label:
+        [
+          account.institution,
+          account.identifier_as_printed,
+          account.holder_as_recorded,
+        ]
+          .filter(Boolean)
+          .join(" · ") || "Account details missing",
+      currency: account.currency,
+      relationships: account.relationships,
+    }
+    const accountGroup = ensure(`account:${id}`, detail.label, "account")
+    // Prefer the canonical account label while retaining alias relationships.
+    if (account.id === id) accountGroup.name = detail.label
+    const existing = accountGroup.accounts.get(id)
+    accountGroup.accounts.set(id, {
+      ...detail,
+      relationships: [
+        ...(existing?.relationships || []),
+        ...detail.relationships,
+      ].filter(
+        (link, index, all) =>
+          all.findIndex((other) => other.id === link.id) === index
+      ),
+    })
+    for (const party of account.holder_parties) {
+      const owner = ensure(`owner:${party.id}`, party.name, "owner")
+      const prior = owner.accounts.get(id)
+      owner.accounts.set(id, {
+        ...detail,
+        relationships: [
+          ...(prior?.relationships || []),
+          ...detail.relationships,
+        ].filter(
+          (link, index, all) =>
+            all.findIndex((other) => other.id === link.id) === index
+        ),
+      })
+      accountGroup.nestedUnderOwner = true
+    }
+  }
   for (const row of rows) {
-    const seen = new Set<string>()
-    const counterparty =
+    const id = row.canonical_account_id || row.account_id
+    const own = ensure(
+      `account:${id}`,
+      row.canonical_account_label ||
+        row.account_label ||
+        "Account name not recorded",
+      "account"
+    )
+    own.rows.set(row.key, row)
+    if (!own.accounts.has(id))
+      own.accounts.set(id, {
+        id,
+        label: own.name,
+        currency: row.currency,
+        relationships: row.account_relationships || [],
+      })
+    const name =
       (row.direction === "credit" ? row.from_name : row.to_name) ??
       row.counterparty_raw
-    for (const [id, name, kind] of [
-      [
-        `account:${row.canonical_account_id || row.account_id}`,
-        row.canonical_account_label ||
-          row.account_label ||
-          "Account name not recorded",
-        "account",
-      ],
-      [
-        row.counterparty_link
-          ? `${row.counterparty_link.kind === "party" ? "owner" : "account"}:${row.counterparty_link.id}`
-          : `name:${counterparty ?? ""}`,
-        counterparty?.trim() ? counterparty : "Name not recorded",
-        row.counterparty_link?.kind === "party"
-          ? "owner"
-          : row.counterparty_link?.kind === "account"
-            ? "account"
-            : "name",
-      ],
-    ] as const) {
-      if (seen.has(id)) continue
-      seen.add(id)
-      const group = groups.get(id) ?? { name, kind, rows: [] }
-      group.rows.push(row)
-      groups.set(id, group)
+    const link = row.counterparty_link
+    if (link) {
+      const other = ensure(
+        `${link.kind === "party" ? "owner" : "account"}:${link.id}`,
+        link.label || name || "Name not recorded",
+        link.kind === "party" ? "owner" : "account"
+      )
+      other.counterpartyRows.set(row.key, row)
+    } else {
+      ensure(
+        `name:${name ?? ""}`,
+        name?.trim() ? name : "Name not recorded",
+        "name"
+      ).rows.set(row.key, row)
     }
     for (const party of row.account_holder_parties ?? []) {
-      const id = `owner:${party.id}`
-      if (seen.has(id)) continue
-      seen.add(id)
-      const group = groups.get(id) ?? {
-        name: party.name,
-        kind: "owner" as const,
-        rows: [],
-      }
-      group.rows.push(row)
-      groups.set(id, group)
+      const owner = ensure(`owner:${party.id}`, party.name, "owner")
+      own.nestedUnderOwner = true
+      if (!owner.accounts.has(id)) owner.accounts.set(id, own.accounts.get(id)!)
+      if (ownsPayment(row, party.id)) owner.rows.set(row.key, row)
     }
   }
   return [...groups].map(([id, group]) => {
-    const dates = group.rows
+    const rows = [...group.rows.values()]
+    const dates = rows
       .flatMap((row) => (paymentDay(row) ? [paymentDay(row)!] : []))
       .sort()
     return {
       id,
-      ...group,
+      name: group.name,
+      kind: group.kind,
+      nestedUnderOwner: group.nestedUnderOwner,
+      rows,
+      counterpartyRows: [...group.counterpartyRows.values()],
       unidentified: group.kind === "name" && !id.slice(5).trim(),
-      accounts: [
-        ...new Set(
-          group.rows.map((row) => row.canonical_account_id || row.account_id)
-        ),
-      ],
-      sources: [...new Set(group.rows.map((row) => row.source_document_id))],
+      accounts:
+        group.kind === "name"
+          ? [
+              ...new Set(
+                rows.map((row) => row.canonical_account_id || row.account_id)
+              ),
+            ]
+          : [...group.accounts.keys()],
+      accountDetails: [...group.accounts.values()],
+      sources: [...new Set(rows.map((row) => row.source_document_id))],
       first: dates[0] ?? null,
       last: dates.at(-1) ?? null,
     }
@@ -172,7 +274,7 @@ export interface PaymentPeriod {
   unreadable: number
 }
 
-/** Fill the calendar, but an empty bucket means no imported entries, not proven inactivity. */
+/** Monthly charts use observed months; daily comparisons retain their chosen window. */
 export function paymentPeriods(
   rows: LedgerTransaction[],
   granularity: "month" | "day",
@@ -232,7 +334,7 @@ export function paymentPeriods(
         period.unreadable++
       else period[row.direction as "credit" | "debit"] += amount
     }
-    result.push(period)
+    if (granularity !== "month" || period.rows.length) result.push(period)
     cursor.setTime(next.getTime())
   }
   return result

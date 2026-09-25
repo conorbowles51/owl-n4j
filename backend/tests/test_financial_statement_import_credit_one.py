@@ -274,3 +274,42 @@ class StatementReadingQualityTests(unittest.TestCase):
         self.assertEqual(assess_statement_reading([self.table(data)])['unreadable'], 0)
         data['rows'][14]['cells'][2]['expected_text'] = '-2O.00'
         self.assertGreater(assess_statement_reading([self.table(data)])['unreadable'], 0)
+
+    def test_andrews_missing_running_balance_alone_requests_a_better_image_reading(self):
+        from services.financial.statement_reading_quality import assess_statement_reading, prefer_image_reading
+        from tests.test_financial_statement_import_andrews import two_shares
+        clean = two_shares()
+        damaged = deepcopy(clean)
+        damaged['rows'][14]['cells'][3]['expected_text'] = '18O.00'
+        before = assess_statement_reading([self.table(damaged)])
+        after = assess_statement_reading([self.table(clean)])
+        self.assertEqual(before['unreadable'], 1)
+        self.assertEqual(after['unreadable'], 0)
+        self.assertTrue(prefer_image_reading(before, after))
+        # A complete but inconsistent balance remains for reconciliation;
+        # arithmetic is not a reason to substitute another reading.
+        damaged['rows'][14]['cells'][3]['expected_text'] = '181.00'
+        self.assertEqual(assess_statement_reading([self.table(damaged)])['unreadable'], 0)
+        self.assertFalse(prefer_image_reading(before, {**after, 'payments': after['payments'] - 1}))
+
+    def test_readable_zero_interest_keeps_its_physical_row_without_becoming_a_payment(self):
+        from services.financial.statement_reading_quality import assess_statement_reading, prefer_image_reading
+        clean = source()
+        damaged = deepcopy(clean)
+        damaged['rows'][16]['cells'][-1]['expected_text'] = 'O.00'
+        before = assess_statement_reading([self.table(damaged)])
+        after = assess_statement_reading([self.table(clean)])
+        self.assertEqual(before['payments'], after['payments'] + 1)
+        self.assertEqual(before['payment_rows'], after['payment_rows'])
+        self.assertTrue(prefer_image_reading(before, after))
+        clean['rows'].pop(9)
+        lost = assess_statement_reading([self.table(clean)])
+        self.assertFalse(prefer_image_reading(before, lost))
+
+    def test_reading_cannot_trade_a_readable_amount_for_several_better_balances(self):
+        from services.financial.statement_reading_quality import prefer_image_reading
+        before = dict(identity=['synthetic'], payments=4, balances=2, unreadable=3,
+            missing_fields=dict(amount_minor=0, balance=3))
+        after = dict(identity=['synthetic'], payments=4, balances=2, unreadable=1,
+            missing_fields=dict(amount_minor=1, balance=0))
+        self.assertFalse(prefer_image_reading(before, after))

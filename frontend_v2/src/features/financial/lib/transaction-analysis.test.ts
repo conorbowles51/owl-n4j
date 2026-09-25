@@ -142,9 +142,9 @@ describe("connected transaction analysis", () => {
     ])
     expect(series.months.map((m) => [m.month, m.count])).toEqual([
       ["2026-01", 1],
-      ["2026-02", 0],
       ["2026-03", 1],
     ])
+    expect(series.omittedEmptyMonths).toBe(true)
     expect(series.categories[0].debit).toBe(9007199254741093n)
     expect(series.undated).toBe(1)
     expect(

@@ -12,6 +12,7 @@ from postgres.models.evidence import EvidenceFile, IngestionLog
 from postgres.models.financial import FinancialSourceDocument
 from postgres.models.financial_candidates import FinancialCandidateMapping, FinancialStatementReviewDraft
 from postgres.models.financial_import_batches import FinancialImportBatch
+from postgres.models.financial_recovery import FinancialRecoveryRun, FinancialRecoveryItem
 from postgres.models.workspace_entry import WorkspaceEntry, WorkspaceEntryLink
 from services.evidence_db_storage import EvidenceDBStorage
 from services.financial.file_scope import financial_file_ids, mark_financial_workspace
@@ -28,7 +29,7 @@ def f():
     value.seeded_file_ids = set(value.db.scalars(select(EvidenceFile.id))) - {value.file.id}
     Base.metadata.create_all(value.engine, tables=[FinancialCandidateMapping.__table__,
         FinancialStatementReviewDraft.__table__, WorkspaceEntry.__table__, WorkspaceEntryLink.__table__,
-        IngestionLog.__table__])
+        IngestionLog.__table__, FinancialRecoveryRun.__table__, FinancialRecoveryItem.__table__])
     yield value
     value.tearDown()
 
@@ -136,11 +137,15 @@ def test_reading_family_is_preserved_but_same_hash_upload_is_not_enrolled(f):
 
 
 def test_hidden_file_can_be_restored_and_ordinary_evidence_is_unchanged(f):
+    from routers.evidence import EvidenceListResponse
     mark_financial_workspace(f.file, user_id=f.user.id)
     f.db.commit()
     result = set_financial_file_visibility(f.db, case_id=f.case.id, evidence_file_id=f.file.id,
         removed=True, expected_revision='initial', actor=f.actor)
     assert listing(f, financial=True)[0]['financial_removed'] is True
+    serialized = EvidenceListResponse.model_validate({'files': listing(f, financial=True)}).model_dump()
+    assert serialized['files'][0]['financial_visibility_changed_at'] == result['financial_visibility_changed_at']
+    assert result['financial_visibility_changed_at']
     assert len(listing(f)) == 1
     set_financial_file_visibility(f.db, case_id=f.case.id, evidence_file_id=f.file.id,
         removed=False, expected_revision=result['financial_visibility_revision'], actor=f.actor)

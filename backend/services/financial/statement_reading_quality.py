@@ -48,15 +48,30 @@ def assess_statement_reading(tables):
         or 'date_column' in r['fields'] or 'amount_column' in r['fields'])]
     balances = [r for r in rows if r['kind'] == 'balance']
     # Valid but different balances require review, not another guess at digits.
-    unreadable = sum(1 for r in payments for field in ('date', 'amount_minor', 'direction')
-        if not r['fields'].get(field))
-    unreadable += sum('booking_date_column' in r['fields'] and not r['fields'].get('booking_date') for r in payments)
-    unreadable += sum('balance_column' in r['fields'] and 'balance' not in r['fields'] for r in payments)
-    unreadable += sum('balance' not in r['fields'] for r in balances)
-    return dict(identity=identity, payments=len(payments), balances=len(balances), unreadable=unreadable)
+    missing = {field: sum(not r['fields'].get(field) for r in payments)
+        for field in ('date', 'amount_minor', 'direction')}
+    missing['booking_date'] = sum('booking_date_column' in r['fields'] and not r['fields'].get('booking_date') for r in payments)
+    # Andrews prints a running balance on every payment. Its parser can only
+    # identify balance_column after separating readable money; relying on that
+    # successful parse concealed damaged balances from the image-reread check.
+    missing['balance'] = sum(('balance_column' in r['fields']
+        or r['fields'].get('statement_layout') == 'andrews-share-statement')
+        and 'balance' not in r['fields'] for r in payments)
+    missing['statement_balance'] = sum('balance' not in r['fields'] for r in balances)
+    zero_charges = sum(r['kind'] == 'zero_charge' for r in rows)
+    return dict(identity=identity, payments=len(payments), payment_rows=len(payments) + zero_charges,
+        zero_charge_rows=zero_charges, balances=len(balances), missing_fields=missing, unreadable=sum(missing.values()))
 
 
 def prefer_image_reading(original, image):
+    def physical_rows(reading):
+        if 'payment_rows' not in reading:
+            return reading['payments']
+        count = reading['payments'] + reading.get('zero_charge_rows', 0)
+        return count if count == reading['payment_rows'] else None
     return bool(original and image and original['identity'] == image['identity']
-        and original['payments'] == image['payments'] and original['balances'] == image['balances']
+        and physical_rows(original) is not None and physical_rows(original) == physical_rows(image)
+        and original['balances'] == image['balances']
+        and (not original.get('missing_fields') or not image.get('missing_fields') or
+            all(image['missing_fields'].get(field, 0) <= count for field, count in original['missing_fields'].items()))
         and image['unreadable'] < original['unreadable'])

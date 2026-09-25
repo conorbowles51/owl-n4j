@@ -54,6 +54,31 @@ class StatementDetailsTests(TestCase):
             self.assertEqual(db.get(FinancialAccount, UUID(saved['account_id'])).identifier_as_printed, '000123456789')
             self.assertEqual(db.get(FinancialAccount, UUID(before['account_id'])).identifier_as_printed, 'TEST123')
 
+    def test_manual_position_context_is_opt_in_scoped_and_outside_audit_history(self):
+        from services.financial.pdf_candidates import _digest
+        with self.f.SessionLocal() as db:
+            source = db.get(FinancialSourceDocument, self.source_id)
+            metadata = deepcopy(source.metadata_)
+            metadata['statement_import_original']['statement_page_numbers'] = [1, 2]
+            metadata['statement_import_original']['page_numbers'] = [1, 2, 3]
+            metadata['statement_import_original_sha256'] = _digest(metadata['statement_import_original'])
+            source.metadata_ = metadata
+            db.commit()
+            context = read_statement_details(db, case_id=self.f.case.id, source_id=self.source_id, include_positions=True)
+        self.assertEqual(context['pages'], [1, 2])
+        self.assertEqual(context['revision'], self.read()['revision'])
+        self.assertNotIn('source_position_rows', self.read())
+        self.assertTrue(context['source_position_rows'])
+        self.assertTrue(all(row['kind'] in ('transaction', 'unresolved') for row in context['source_position_rows']))
+        self.assertTrue(all(set(row['fields']) == {'date', 'description'} for row in context['source_position_rows']))
+        self.assertTrue(context['requires_manual_position'])
+        self.save(self.request(holder='Reviewed synthetic holder'))
+        with self.f.SessionLocal() as db:
+            history = db.get(FinancialSourceDocument, self.source_id).metadata_['statement_details_history']
+            self.assertNotIn('source_position_rows', history[-1]['before'])
+            with self.assertRaises(PdfMappingError):
+                read_statement_details(db, case_id=uuid4(), source_id=self.source_id, include_positions=True)
+
     def test_repeated_holder_corrections_update_transaction_identity_not_just_saved_summary(self):
         for bank in ('', 'Synthetic Bank'):
             for holder in ('Wrong synthetic holder', 'Corrected synthetic holder', 'Final synthetic holder'):
@@ -86,6 +111,14 @@ class StatementDetailsTests(TestCase):
         self.assertIsNone(removed['balances']['opening']['amount_minor'])
         with self.f.SessionLocal() as db:
             self.assertEqual(db.get(FinancialStatementPeriod, UUID(removed['period_id'])).opening_balance_source, 'absent')
+
+    def test_saved_details_explain_why_reconciliation_remains_in_review(self):
+        saved = self.save(self.request(closing=dict(amount_minor='1', page=1)))
+        self.assertFalse(saved['admission']['can_import'])
+        self.assertEqual(saved['admission']['status'], 'needs_review')
+        self.assertTrue(saved['admission']['blockers'])
+        self.assertTrue(all(item['message'] for item in saved['admission']['blockers']))
+        self.assertEqual(self.read()['admission'], saved['admission'])
 
     def test_statement_dates_persist_without_rewriting_payment_dates_or_original(self):
         with self.f.SessionLocal() as db:

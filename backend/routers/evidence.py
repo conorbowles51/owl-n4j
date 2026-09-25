@@ -659,6 +659,7 @@ class EvidenceRecord(BaseModel):
     statement_parent_evidence_id: Optional[str] = None
     reading_versions: list[dict] = Field(default_factory=list)
     financial_visibility_revision: str = "initial"
+    financial_visibility_changed_at: Optional[str] = None
     financial_imports_removed: bool = False
     processing_stale: bool = False
     is_duplicate: bool = False

@@ -53,6 +53,7 @@ beforeEach(() => {
   useStatementWorkspace.setState({ selections: {}, reviewChoices: {} })
   file = {
     ...file,
+    original_filename: "letter.pdf",
     financial_imports_removed: false,
     financial_removed: false,
     financial_visibility_revision: "initial",
@@ -60,29 +61,6 @@ beforeEach(() => {
   vi.mocked(fetchAPI).mockReset()
   vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
     if (url.startsWith("/api/evidence-upload-")) return [] as never
-    const preview = {
-      case_id: "case",
-      revision: "a".repeat(64),
-      file_count: 1,
-      reading_count: 1,
-      transaction_count: 17,
-      incomplete_count: 0,
-      statement_count: 1,
-      batch_count: 1,
-      archived_batch_count: 1,
-      updated_batch_count: 0,
-      can_remove: true,
-      files: [{ id: "file", filename: "letter.pdf" }],
-    }
-    if (url.includes("/removals/preview")) return preview
-    if (url.includes("/removals/confirm")) {
-      file = {
-        ...file,
-        financial_removed: true,
-        financial_imports_removed: true,
-      }
-      return { ...preview, removed: true, restart_file_ids: ["file"] }
-    }
     if (url.includes("/visibility?")) {
       const body = options?.body as { removed: boolean }
       file = {
@@ -97,67 +75,123 @@ beforeEach(() => {
     return { files: [file] } as never
   })
 })
-it("removes imported records only after a preview, retains the PDF and offers fresh processing", async () => {
-  useStatementWorkspace.getState().select("anonymous:case", "file")
-  mount()
-  fireEvent.click(
-    await screen.findByRole("button", {
-      name: "Remove from Financial: letter.pdf",
-    })
-  )
-  const dialog = screen.getByRole("dialog")
-  await within(dialog).findByText(/17 transactions/)
-  expect(dialog).toHaveTextContent(
-    "Original PDFs, case notes, findings and cited import history are retained"
-  )
-  expect(
-    vi.mocked(fetchAPI).mock.calls.some(([url]) => url.includes("/confirm"))
-  ).toBe(false)
-  fireEvent.click(
-    within(dialog).getByRole("button", { name: "Remove imports" })
-  )
-  await waitFor(() => expect(file.financial_removed).toBe(true))
-  await waitFor(() =>
+it.each(["letter.pdf", "ledger.csv", "source.unusual"])(
+  "hides and restores %s using only membership changes, retaining the saved review",
+  async (filename) => {
+    file.original_filename = filename
+    useStatementWorkspace.getState().select("anonymous:case", "file")
+    useStatementWorkspace
+      .getState()
+      .setReviewChoice("anonymous:case:file", {
+        statementId: "saved-period",
+        currency: "USD",
+      })
+    mount()
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: `Remove from Financial: ${filename}`,
+      })
+    )
+    const dialog = screen.getByRole("dialog")
+    expect(dialog).toHaveTextContent(
+      "Saved notes, corrections and batch reviews are kept"
+    )
     expect(
-      useStatementWorkspace.getState().selections["anonymous:case"]?.fileId
-    ).toBeNull()
-  )
-  fireEvent.click(screen.getByRole("button", { name: /Removed files/ }))
+      vi
+        .mocked(fetchAPI)
+        .mock.calls.some(([, options]) => options?.method === "POST")
+    ).toBe(false)
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Remove from Financial" })
+    )
+    await waitFor(() => expect(file.financial_removed).toBe(true))
+    await waitFor(() =>
+      expect(
+        useStatementWorkspace.getState().selections["anonymous:case"]?.fileId
+      ).toBeNull()
+    )
+    const notice = await screen.findByText(
+      `${filename} removed from Financial. The original and saved reviews are retained.`
+    )
+    expect(notice.parentElement).toHaveFocus()
+    fireEvent.click(screen.getByRole("button", { name: "View removed files" }))
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: `Restore to Financial: ${filename}`,
+      })
+    )
+    await screen.findByText(
+      `${filename} restored to Financial with its saved reviews.`
+    )
+    fireEvent.click(
+      screen.getByRole("button", { name: "View financial files" })
+    )
+    expect(
+      await screen.findByRole("button", {
+        name: `Remove from Financial: ${filename}`,
+      })
+    ).toBeEnabled()
+    expect(file.financial_imports_removed).toBe(false)
+    expect(
+      useStatementWorkspace.getState().reviewChoices["anonymous:case:file"]
+    ).toEqual({ statementId: "saved-period", currency: "USD" })
+    const writes = vi
+      .mocked(fetchAPI)
+      .mock.calls.filter(([, options]) => options?.method === "POST")
+    expect(writes.map(([url]) => url)).toEqual(
+      Array(2).fill(
+        "/api/financial/statement-import/file/visibility?case_id=case"
+      )
+    )
+    expect(writes.map(([, options]) => options?.body)).toEqual([
+      { removed: true, expected_revision: "initial" },
+      { removed: false, expected_revision: "removed" },
+    ])
+  }
+)
+it.each([
+  "Another user changed this file. Refresh files before changing it again.",
+  "This file or one of its retained readings is still processing. No job was stopped.",
+  "This file already has imported financial records. Use Remove imports only if you intend to withdraw those saved records.",
+])(
+  "keeps the file and review visible after the server guard: %s",
+  async (reason) => {
+    const base = vi.mocked(fetchAPI).getMockImplementation()!
+    vi.mocked(fetchAPI).mockImplementation((url, options) =>
+      url.includes("/visibility?")
+        ? Promise.reject(Error(reason))
+        : base(url, options)
+    )
+    mount()
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Remove from Financial: letter.pdf",
+      })
+    )
+    const confirm = await screen.findByRole("button", {
+      name: "Remove from Financial",
+    })
+    await waitFor(() => expect(confirm).toBeEnabled())
+    fireEvent.click(confirm)
+    expect(await screen.findByRole("alert")).toHaveTextContent(reason)
+    expect(file.financial_removed).toBe(false)
+    fireEvent.click(screen.getByRole("button", { name: "Keep file" }))
+    expect(
+      screen.getByRole("button", { name: "Remove from Financial: letter.pdf" })
+    ).toBeVisible()
+  }
+)
+it("keeps explicit import removal separate: withdrawn imports require fresh processing", async () => {
+  file.financial_removed = true
+  file.financial_imports_removed = true
+  mount()
+  fireEvent.click(await screen.findByRole("button", { name: /Removed files/ }))
   expect(
     await screen.findByRole("button", { name: "Process PDF afresh" })
   ).toBeEnabled()
   expect(
-    vi
-      .mocked(fetchAPI)
-      .mock.calls.find(([url]) => url.includes("/removals/confirm"))?.[1]?.body
-  ).toEqual({
-    batch_ids: [],
-    file_ids: ["file"],
-    expected_revision: "a".repeat(64),
-  })
-})
-it("keeps the imports visible when the preview has become stale", async () => {
-  const base = vi.mocked(fetchAPI).getMockImplementation()!
-  vi.mocked(fetchAPI).mockImplementation((url, options) =>
-    url.includes("/removals/confirm")
-      ? Promise.reject(Error("These imports changed since the preview."))
-      : base(url, options)
-  )
-  mount()
-  fireEvent.click(
-    await screen.findByRole("button", {
-      name: "Remove from Financial: letter.pdf",
-    })
-  )
-  const confirm = await screen.findByRole("button", {
-    name: "Remove imports",
-  })
-  await waitFor(() => expect(confirm).toBeEnabled())
-  fireEvent.click(confirm)
-  expect(await screen.findByRole("alert")).toHaveTextContent(
-    "changed since the preview"
-  )
-  expect(file.financial_removed).toBe(false)
+    screen.queryByRole("button", { name: /Restore to Financial/ })
+  ).not.toBeInTheDocument()
 })
 it("shows persisted removed files to a viewer without offering restore", async () => {
   file.financial_removed = true

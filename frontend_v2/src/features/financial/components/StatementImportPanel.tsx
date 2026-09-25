@@ -21,6 +21,13 @@ import { useFinancialAccess } from "../hooks/use-financial-access"
 import { statementRowLocator } from "../lib/statement-row-locator"
 import { useStatementChecks } from "../hooks/use-statement-checks"
 import { StatementArithmeticChecks } from "./StatementArithmeticChecks"
+import { StatementReconciliationSummary } from "./StatementReconciliationSummary"
+import { StatementDuplicateDecision } from "./StatementDuplicateDecision"
+import {
+  statementDuplicateDisposition,
+  statementDuplicateResponse,
+} from "../lib/statement-duplicate"
+import { statementBlocker } from "../lib/statement-assessment"
 import { ReprocessStatement } from "./ReprocessStatement"
 import { newReviewId } from "../lib/statement-review-id"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
@@ -38,6 +45,7 @@ import { PdfReviewIntake } from "./PdfReviewIntake"
 import { TransactionSourceHighlight } from "./TransactionSourceHighlight"
 import { StatementSourceTools } from "./StatementSourceTools"
 import { StatementRowEditor } from "./StatementRowEditor"
+import { ManualTransactionPosition } from "./ManualTransactionPosition"
 import { StatementCurrencyControl } from "./StatementCurrencyControl"
 import { StatementBulkCorrections } from "./StatementBulkCorrections"
 import { StatementRowAssignment } from "./StatementRowAssignment"
@@ -89,6 +97,7 @@ const proposalSchema = z.object({
   statement_page_numbers: z.array(z.number()).default([]),
   document_review: paymentDocumentProposal.optional(),
   reading_failure: z.string().nullish(),
+  duplicate_disposition: statementDuplicateDisposition.nullish(),
   case_id: z.string(),
   evidence_file_id: z.string(),
   filename: z.string(),
@@ -245,6 +254,7 @@ type Edit = {
   id: string
   excluded: boolean
   manual_page?: number | null
+  source_order_anchor?: { relation: "before" | "after"; row_id: string } | null
   date: string
   date_unprinted?: boolean
   date_values?: Partial<Record<DateRole, string>>
@@ -262,12 +272,18 @@ const receipt = z.object({
   transaction_count: z.number(),
   record_count: z.number().optional(),
   incomplete_count: z.number().optional(),
-  source_document_id: z.string().optional(),
+  source_document_id: z
+    .string()
+    .nullish()
+    .transform((value) => value ?? undefined),
   account_id: z
     .string()
     .nullish()
     .transform((value) => value ?? undefined),
   applied: z.literal(true),
+  outcome: z.string().optional(),
+  ignored: z.boolean().optional(),
+  duplicate_disposition: statementDuplicateDisposition.optional(),
   account_closed_on: z.string().nullable().optional(),
 })
 
@@ -1061,6 +1077,10 @@ function EditableStatement({
     },
   })
   const { canEdit: caseCanEdit } = useFinancialAccess()
+  const [localDuplicate, setLocalDuplicate] =
+    useState<z.infer<typeof statementDuplicateDisposition>>()
+  const duplicateDecision = localDuplicate ?? data.duplicate_disposition
+  const [duplicateActionBusy, setDuplicateActionBusy] = useState(false)
   const excludedCopy = !!data.current_import?.excluded_as_duplicate
   const importedHere = data.current_import?.evidence_file_id === fileId
   const importedDetails = importedHere
@@ -1093,10 +1113,13 @@ function EditableStatement({
       ),
     [data.saved_review?.request, data.previous_saved_review?.request]
   )
+  const [browserDraft] = useState(() =>
+    readStatementDraft(draftKey, data.revision)
+  )
   const [saved] = useState(() =>
     importedHere
       ? null
-      : (readStatementDraft(draftKey, data.revision) ??
+      : (browserDraft ??
         (batchReview?.draft?.revision === data.revision
           ? batchReview.draft
           : !batchReview && recovered?.revision === data.revision
@@ -1471,13 +1494,13 @@ function EditableStatement({
   if (!holder.trim())
     detailProblems.push({
       message:
-        "Account holder not identified. You can import and check it later.",
+        "Enter the account holder shown on the statement before importing payments.",
       field: "Account holder",
     })
   if (!account.trim())
     detailProblems.push({
       message:
-        "Account number not identified. You can import and check it later.",
+        "Enter the account number shown on the statement before importing payments.",
       field: "Account number",
     })
   if (Boolean(periodStart) !== Boolean(periodEnd))
@@ -1583,6 +1606,71 @@ function EditableStatement({
     })),
   })
   currentRequestSnapshot.current = JSON.stringify(importRequest())
+  const renderSnapshot = currentRequestSnapshot.current
+  const initialReviewSnapshot = useRef(renderSnapshot)
+  const duplicateCheckDirty =
+    savedServerSnapshot !== renderSnapshot &&
+    (renderSnapshot !== initialReviewSnapshot.current || !!browserDraft)
+  const duplicateIgnored =
+    !!duplicateDecision?.current &&
+    duplicateDecision.status === "ignored" &&
+    !duplicateCheckDirty
+  const automaticDuplicateSnapshot = useRef<string | null>(null)
+  const duplicateCheck = useMutation({
+    retry: false,
+    mutationFn: async (snapshot: string) => {
+      const result = statementDuplicateResponse.parse(
+        await fetchAPI(
+          `/api/financial/statement-import/${fileId}/duplicate-disposition?${new URLSearchParams({ case_id: caseId })}`,
+          {
+            method: "POST",
+            body: {
+              action: "check",
+              expected_reading_revision: data.revision,
+              statement_id: data.statement_id ?? null,
+              currency: data.currency,
+            },
+          }
+        )
+      )
+      if (
+        result.case_id !== caseId ||
+        result.evidence_file_id !== fileId ||
+        (result.statement_id || null) !== (data.statement_id || null) ||
+        result.duplicate_disposition.reading_revision !== data.revision
+      )
+        throw Error(
+          "The duplicate check no longer matches this review. Reopen this statement to inspect its saved decision."
+        )
+      return { snapshot, decision: result.duplicate_disposition }
+    },
+    onSuccess: ({ snapshot, decision }) => {
+      if (snapshot === currentRequestSnapshot.current)
+        setLocalDuplicate(decision)
+      void client.invalidateQueries({
+        queryKey: ["statement-import-status", caseId],
+      })
+      void client.invalidateQueries({ queryKey: ["financial-batch", caseId] })
+    },
+  })
+  const checkDuplicate = duplicateCheck.mutate
+  const automaticDuplicateEligible =
+    !!coverage.data?.matching_statement &&
+    !duplicateDecision &&
+    !saved &&
+    !detailsChanged &&
+    !rows.some((row) => changed(row) || row.reason) &&
+    !data.current_import &&
+    caseCanEdit
+  useEffect(() => {
+    if (
+      !automaticDuplicateEligible ||
+      automaticDuplicateSnapshot.current !== null
+    )
+      return
+    automaticDuplicateSnapshot.current = currentRequestSnapshot.current
+    checkDuplicate(currentRequestSnapshot.current)
+  }, [automaticDuplicateEligible, checkDuplicate])
   const confirm = useMutation({
     retry: false,
     mutationFn: async () => {
@@ -1601,18 +1689,23 @@ function EditableStatement({
       if (
         result.case_id !== caseId ||
         result.evidence_file_id !== fileId ||
-        (result.record_count ?? result.transaction_count) !== included.length
+        (!result.ignored &&
+          (result.record_count ?? result.transaction_count) !== included.length)
       )
         throw Error("The import result does not match the reviewed statement.")
       return result
     },
     onSuccess: (result) => {
       void client.invalidateQueries()
+      if (result.ignored && result.duplicate_disposition) {
+        setLocalDuplicate(result.duplicate_disposition)
+        return
+      }
       onImported({ ...result, filename: data.filename })
     },
   })
   useEffect(() => {
-    if (confirm.isSuccess || importedHere) {
+    if ((confirm.isSuccess && !confirm.data.ignored) || importedHere) {
       if (draftKey)
         try {
           sessionStorage.removeItem(draftKey)
@@ -1670,6 +1763,7 @@ function EditableStatement({
     coverageDecision,
     amountText,
     confirm.isSuccess,
+    confirm.data?.ignored,
     importedHere,
   ])
   const serverChecks = useStatementChecks(caseId, fileId, {
@@ -1687,6 +1781,7 @@ function EditableStatement({
       id: r.id,
       excluded: r.excluded,
       manual_page: r.manual_page ?? null,
+      source_order_anchor: r.source_order_anchor ?? null,
       date: r.date,
       date_unprinted: Boolean(r.date_unprinted),
       date_values: r.date_values || {},
@@ -1730,9 +1825,14 @@ function EditableStatement({
     : included.length
   const importDisabled =
     !canEdit ||
+    !holder.trim() ||
+    !account.trim() ||
     serverChecks.pending ||
     !!serverChecks.error ||
     !serverChecks.admission?.can_import ||
+    duplicateIgnored ||
+    duplicateCheck.isPending ||
+    duplicateActionBusy ||
     duplicateBlocked ||
     confirm.isPending ||
     saveBatchReview.isPending ||
@@ -1913,6 +2013,81 @@ function EditableStatement({
         ),
     ]),
   ]
+  const inspectBlocker = (problem: z.infer<typeof statementBlocker>) => {
+    const target = problem.target
+    const id = target?.row_id || problem.row_id
+    if (id) {
+      if (target?.kind === "balance") editBalance(id)
+      else {
+        openInlineRow(id)
+        const field = target?.field || problem.field
+        requestAnimationFrame(() => {
+          const names: Record<string, string> = {
+            date: "Corrected transaction date",
+            description: "Corrected description",
+            counterparty: "Corrected paid by or paid to",
+            balance_minor: "Corrected printed balance",
+            balance: "Corrected printed balance",
+            amount:
+              editsById.get(id)?.direction === "credit"
+                ? "Corrected credit"
+                : "Corrected debit",
+            direction:
+              editsById.get(id)?.direction === "credit"
+                ? "Corrected credit"
+                : "Corrected debit",
+            amount_minor:
+              editsById.get(id)?.direction === "credit"
+                ? "Corrected credit"
+                : "Corrected debit",
+            source_order_anchor: `Printed position ${id}`,
+          }
+          const name = names[field || ""]
+          const element = [
+            ...(printedControls.current?.querySelectorAll<HTMLElement>(
+              "[aria-label]"
+            ) ?? []),
+          ].find((node) => node.getAttribute("aria-label") === name)
+          element?.focus({ preventScroll: true })
+          element?.scrollIntoView({ block: "nearest", behavior: "smooth" })
+        })
+      }
+      return
+    }
+    if (target?.kind === "statement_field") {
+      const labels: Record<string, string> = {
+        holder: "Account holder",
+        account_number: "Account number",
+        institution: "Bank",
+        period_start: "Period start",
+        period_end: "Period end",
+      }
+      const label = labels[target.field || ""]
+      if (label) {
+        focusDetail(label)
+        return
+      }
+    }
+    if (target?.kind === "no_activity") {
+      const input = document.querySelector<HTMLElement>(
+        '[aria-label="Confirm no activity for this statement"]'
+      )
+      input?.focus({ preventScroll: true })
+      input?.scrollIntoView({ block: "center", behavior: "smooth" })
+      return
+    }
+    if (target?.kind === "balance") {
+      focusDetail("Statement balances")
+      return
+    }
+    if (target?.page && data.page_numbers.includes(target.page))
+      showPage(target.page)
+    printedControls.current?.scrollIntoView({
+      block: "start",
+      behavior: "smooth",
+    })
+    if (!target || target.kind === "saved_review") editValues()
+  }
   const problemIndex = problemIds.indexOf(focus?.rowId ?? "")
   const rowTools = (id: string) => {
     if (!canEdit || (data.current_import && !replacePrevious)) return null
@@ -1948,53 +2123,72 @@ function EditableStatement({
         </Button>
       )
     return (
-      <StatementRowEditor
-        caseId={caseId}
-        row={edit}
-        statementEnd={periodEnd}
-        additionalPrintedDate={original.fields.additional_printed_date}
-        kind={original.kind}
-        problems={rowProblems(edit)}
-        update={(patch) => update(id, patch)}
-        close={() => {
-          setInlineRowId(null)
-          setActiveRows((current) => {
-            const next = new Set(current)
-            next.delete(id)
-            return next
-          })
-        }}
-        text={(field) =>
-          field === "balance"
-            ? (amountText[`balance:${id}`] ??
-              (edit.balance_minor === null
-                ? ""
-                : displayAmount(edit.balance_minor, digits)))
-            : edit.direction === field
-              ? (amountText[id] ?? displayAmount(edit.amount_minor, digits))
-              : ""
-        }
-        amount={(direction, value) => {
-          if (!value && edit.direction !== direction) return
-          setAmountText((previous) => ({ ...previous, [id]: value }))
-          update(id, { direction, amount_minor: minorAmount(value, digits) })
-        }}
-        balance={(value) => {
-          setAmountText((previous) => ({
-            ...previous,
-            [`balance:${id}`]: value,
-          }))
-          const negative = value.startsWith("-")
-          const minor = minorAmount(negative ? value.slice(1) : value, digits)
-          update(id, {
-            balance_minor: value
-              ? minor
-                ? `${negative ? "-" : ""}${minor}`
+      <>
+        {edit.manual_page && (
+          <ManualTransactionPosition
+            rowId={id}
+            page={edit.manual_page}
+            value={edit.source_order_anchor}
+            rows={data.rows}
+            statementPages={
+              data.statement_page_numbers.length
+                ? data.statement_page_numbers
+                : data.page_numbers
+            }
+            disabled={!canEdit || edit.excluded}
+            onChange={(source_order_anchor) =>
+              update(id, { source_order_anchor })
+            }
+          />
+        )}
+        <StatementRowEditor
+          caseId={caseId}
+          row={edit}
+          statementEnd={periodEnd}
+          additionalPrintedDate={original.fields.additional_printed_date}
+          kind={original.kind}
+          problems={rowProblems(edit)}
+          update={(patch) => update(id, patch)}
+          close={() => {
+            setInlineRowId(null)
+            setActiveRows((current) => {
+              const next = new Set(current)
+              next.delete(id)
+              return next
+            })
+          }}
+          text={(field) =>
+            field === "balance"
+              ? (amountText[`balance:${id}`] ??
+                (edit.balance_minor === null
+                  ? ""
+                  : displayAmount(edit.balance_minor, digits)))
+              : edit.direction === field
+                ? (amountText[id] ?? displayAmount(edit.amount_minor, digits))
                 : ""
-              : null,
-          })
-        }}
-      />
+          }
+          amount={(direction, value) => {
+            if (!value && edit.direction !== direction) return
+            setAmountText((previous) => ({ ...previous, [id]: value }))
+            update(id, { direction, amount_minor: minorAmount(value, digits) })
+          }}
+          balance={(value) => {
+            setAmountText((previous) => ({
+              ...previous,
+              [`balance:${id}`]: value,
+            }))
+            const negative = value.startsWith("-")
+            const minor = minorAmount(negative ? value.slice(1) : value, digits)
+            update(id, {
+              balance_minor: value
+                ? minor
+                  ? `${negative ? "-" : ""}${minor}`
+                  : ""
+                : null,
+            })
+          }}
+        />
+      </>
     )
   }
   const initialBatchRow = useRef(batchReview?.rowId)
@@ -2136,6 +2330,44 @@ function EditableStatement({
   )
   return (
     <div ref={statementControls} className="space-y-4 pt-4">
+      {!data.current_import &&
+        (duplicateDecision || coverage.data?.matching_statement) && (
+          <StatementDuplicateDecision
+            caseId={caseId}
+            fileId={fileId}
+            statementId={data.statement_id}
+            currency={data.currency}
+            readingRevision={data.revision}
+            decision={duplicateDecision}
+            canEdit={caseCanEdit && !duplicateCheck.isPending}
+            canCheck={!duplicateCheckDirty}
+            checkDisabledReason="Save your current corrections with Save progress before checking duplicates. Your unfinished edits stay here."
+            onBusy={setDuplicateActionBusy}
+            onDecision={(decision) => {
+              if (renderSnapshot !== currentRequestSnapshot.current) return
+              setLocalDuplicate(decision)
+              confirm.reset()
+              void client.invalidateQueries({
+                queryKey: ["financial-batch", caseId],
+              })
+              void client.invalidateQueries({
+                queryKey: ["statement-import-status", caseId],
+              })
+            }}
+          />
+        )}
+      {duplicateCheck.isPending && (
+        <p role="status">
+          Checking whether this statement is already represented. No
+          transactions are being imported.
+        </p>
+      )}
+      {duplicateCheck.isError && (
+        <p role="alert">
+          {duplicateCheck.error.message} Use Check duplicate status above to try
+          again.
+        </p>
+      )}
       <header>
         <h3 className="text-lg font-semibold">Review {data.filename}</h3>
 
@@ -2413,6 +2645,13 @@ function EditableStatement({
               </div>
             )}
             <div className="w-full">
+              <StatementReconciliationSummary
+                calculation={serverChecks.admission?.calculation}
+                pending={serverChecks.pending}
+                format={(value) =>
+                  `${displayAmount(value, digits)} ${data.currency}`
+                }
+              />
               {serverChecks.admission && !serverChecks.admission.can_import && (
                 <div className="rounded border p-3 space-y-2" role="status">
                   <p className="font-semibold">
@@ -2420,15 +2659,18 @@ function EditableStatement({
                   </p>
                   {serverChecks.admission.blockers.map((problem, index) => (
                     <div key={index} className="flex items-center gap-2">
-                      <span>{problem.message}</span>
+                      <span>
+                        {problem.message}
+                        {problem.expected_format && (
+                          <span className="block text-xs text-muted-foreground">
+                            Expected: {problem.expected_format}
+                          </span>
+                        )}
+                      </span>
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={() =>
-                          problem.row_id
-                            ? openInlineRow(problem.row_id)
-                            : editValues()
-                        }
+                        onClick={() => inspectBlocker(problem)}
                       >
                         Review {problem.row_id ? "row" : "statement details"}
                       </Button>
@@ -2440,6 +2682,7 @@ function EditableStatement({
                 <label className="block p-3 border rounded mt-2">
                   <input
                     type="checkbox"
+                    aria-label="Confirm no activity for this statement"
                     checked={
                       !!noActivityRevision &&
                       noActivityRevision === serverChecks.admission?.revision
@@ -2740,6 +2983,8 @@ function EditableStatement({
       <fieldset
         disabled={
           assignmentSaving ||
+          duplicateActionBusy ||
+          duplicateIgnored ||
           confirm.isPending ||
           confirm.isSuccess ||
           saveBatchReview.isPending
@@ -2778,6 +3023,18 @@ function EditableStatement({
             ref={printedControls}
             className="min-w-0 overflow-y-auto overflow-x-hidden max-h-[65vh]"
           >
+            {!importedHere && (
+              <div className="sticky top-0 z-10 bg-background pb-2">
+                <StatementReconciliationSummary
+                  calculation={serverChecks.admission?.calculation}
+                  pending={serverChecks.pending}
+                  compact
+                  format={(value) =>
+                    `${displayAmount(value, digits)} ${data.currency}`
+                  }
+                />
+              </div>
+            )}
             {!importedHere && statementDetails}
             {!excludedCopy && !importedHere && !data.assignment_only && (
               <Button
@@ -2843,7 +3100,10 @@ function EditableStatement({
                     }
                     onChange={(event) => {
                       const page = Number(event.target.value)
-                      update(inlineRowId, { manual_page: page })
+                      update(inlineRowId, {
+                        manual_page: page,
+                        source_order_anchor: null,
+                      })
                       setFocus({
                         rowId: inlineRowId,
                         locator: { kind: "page_only", page },
@@ -3084,6 +3344,37 @@ function EditableStatement({
                                 Done editing row
                               </Button>
                             )}
+                            {original.kind === "manual_entry" &&
+                              !data.rows.some(
+                                (source) => source.id === r.id
+                              ) && (
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => {
+                                    setRows((current) =>
+                                      current.filter((row) => row.id !== r.id)
+                                    )
+                                    setInlineRowId((current) =>
+                                      current === r.id ? null : current
+                                    )
+                                    setActiveRows((current) => {
+                                      const next = new Set(current)
+                                      next.delete(r.id)
+                                      return next
+                                    })
+                                    setAmountText((current) => {
+                                      const next = { ...current }
+                                      delete next[r.id]
+                                      delete next[`balance:${r.id}`]
+                                      return next
+                                    })
+                                  }}
+                                >
+                                  Discard added row
+                                </Button>
+                              )}
                           </td>
                           <td className="p-2 border-b align-top">
                             <label
@@ -3229,6 +3520,23 @@ function EditableStatement({
                                 </Button>
                               )}
                             {r.manual_page && (
+                              <ManualTransactionPosition
+                                rowId={r.id}
+                                page={r.manual_page}
+                                value={r.source_order_anchor}
+                                rows={data.rows}
+                                statementPages={
+                                  data.statement_page_numbers.length
+                                    ? data.statement_page_numbers
+                                    : data.page_numbers
+                                }
+                                disabled={!canEdit || r.excluded}
+                                onChange={(source_order_anchor) =>
+                                  update(r.id, { source_order_anchor })
+                                }
+                              />
+                            )}
+                            {r.manual_page && (
                               <label className="block mt-2">
                                 Source page
                                 <select
@@ -3237,6 +3545,7 @@ function EditableStatement({
                                   onChange={(e) => {
                                     update(r.id, {
                                       manual_page: Number(e.target.value),
+                                      source_order_anchor: null,
                                     })
                                     setFocus({
                                       rowId: r.id,
@@ -3959,7 +4268,7 @@ function EditableStatement({
                   <p className="text-sm">
                     {duplicateBlocked
                       ? "This possible duplicate is held from import. Compare the existing statement and record why both are needed, or leave this copy unimported. Your corrections remain available."
-                      : "Reading issues do not block import. Your corrections and the original readings are saved automatically. Notes are optional."}
+                      : "New payments can be imported only after the statement reconciles. Follow the checks below to resolve missing or conflicting values. Original readings and saved corrections remain available."}
                   </p>
                   {detailProblems.map((problem, index) => (
                     <div
@@ -4031,11 +4340,13 @@ function EditableStatement({
       )}
       {confirm.isSuccess && (
         <p role="status">
-          {confirm.data.account_closed_on
-            ? "Account closure recorded. Open Review accounts in Statements to inspect its source."
-            : confirm.data.transaction_count === 0
-              ? "Statement balances saved. Use Review accounts in Statements to see its coverage."
-              : `Imported ${confirm.data.transaction_count} transactions. Open Transactions to investigate them.`}
+          {confirm.data.ignored
+            ? "Duplicate - Ignored by system. No transactions were added; the original and your review are retained."
+            : confirm.data.account_closed_on
+              ? "Account closure recorded. Open Review accounts in Statements to inspect its source."
+              : confirm.data.transaction_count === 0
+                ? "Statement balances saved. Use Review accounts in Statements to see its coverage."
+                : `Imported ${confirm.data.transaction_count} transactions. Open Transactions to investigate them.`}
         </p>
       )}
     </div>

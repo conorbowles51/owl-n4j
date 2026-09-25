@@ -3,6 +3,7 @@ from typing import Annotated, Literal
 from pydantic import Field
 from services.financial.pdf_candidates import _Contract, _Digest, PdfMappingError
 from services.financial.review_arithmetic import check_proposed_rows
+from services.financial.manual_row_placement import SourceOrderAnchor
 
 
 class CheckRow(_Contract):
@@ -18,6 +19,7 @@ class CheckRow(_Contract):
     balance_minor: Annotated[str | None, Field(max_length=32)] = None
     reason: Annotated[str, Field(max_length=4096)] = ''
     counterparty: Annotated[str, Field(max_length=4096)] = ''
+    source_order_anchor: SourceOrderAnchor | None = None
 
 
 class StatementCheckRequest(_Contract):

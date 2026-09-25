@@ -1,9 +1,15 @@
 import { z } from "zod"
 
+export const sourceOrderAnchor = z.object({
+  relation: z.enum(["before", "after"]),
+  row_id: z.string(),
+})
+
 const draftRow = z.object({
   id: z.string(),
   excluded: z.boolean(),
   manual_page: z.number().int().positive().nullable().optional(),
+  source_order_anchor: sourceOrderAnchor.nullish(),
   date: z.string(),
   date_unprinted: z.boolean().optional(),
   date_values: z

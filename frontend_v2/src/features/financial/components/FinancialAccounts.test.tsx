@@ -34,6 +34,8 @@ function mount() {
           { ...account, id: "b", holder: "Other holder", identifier: "002" },
         ],
       }
+    else if (value.includes("/account-history"))
+      data = { case_id: "case", applied: false, groups: [] }
     else if (value.includes("/statement-checks"))
       data = {
         case_id: "case",
@@ -109,7 +111,7 @@ it("reviews an account, checks dates and opens that account's transactions witho
   ).toBeVisible()
   await waitFor(() =>
     expect(requests.filter((url) => url.includes("account_id=a"))).toHaveLength(
-      2
+      3
     )
   )
   fireEvent.change(within(review).getByLabelText("Statement check from"), {
@@ -162,7 +164,7 @@ it("reviews an account, checks dates and opens that account's transactions witho
   expect(screen.queryByText(/GBP: 0 of 28/)).not.toBeInTheDocument()
   await waitFor(() =>
     expect(requests.filter((url) => url.includes("account_id=b"))).toHaveLength(
-      2
+      3
     )
   )
 })

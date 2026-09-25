@@ -122,6 +122,10 @@ def correct_transaction(session, *, case_id, transaction_id, amount_minor, direc
         session.flush()
         if document.proof_class != preview["verification"]["proposed_proof_class"]:
             raise CorrectionPreviewError("Verification changed during recording; nothing was committed.", 409)
+        if (document.metadata_ or {}).get('statement_import_original') and (document.metadata_ or {}).get('statement_import_request'):
+            from services.financial.saved_statement_admission import refresh_saved_assessment
+            for period in periods:
+                refresh_saved_assessment(session, document, period)
         result = {"case_id": str(case_id), "transaction_id": str(transaction_id),
                   "replacement_id": str(replacement_id), "replacement_ref_id": reference,
                   "adjudication_id": str(event.id), "applied": True,

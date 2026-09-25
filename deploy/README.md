@@ -71,6 +71,28 @@ The deployed frontend serves `frontend_v2/dist`; it does not expose Vite's
 development `/src` module graph. The production server retains the `/api`
 and WebSocket proxy used by the application.
 
+Deployment and rollback check for queued/running engine work, accepted financial
+imports, active statement review leases, unfinished running recovery campaigns,
+and unfinished uploads/registration. The check is read-only and exits with code
+75 when work exists or its state cannot be verified. Explicitly paused uploads
+and campaigns, finished work, and results awaiting investigator review do not
+block deployment. An abandoned upload still marked active must be completed or
+explicitly paused; the gate does not silently expire it.
+
+Docker images are built before a fresh idle check permits container replacement.
+Another check runs before the backend restarts. The check is retained in memory
+across checkout changes, including automatic and standalone rollback. Rollback
+uses the same deployment lock as deployment.
+
+These checks are snapshots, not an intake lock: new work can arrive after the
+last check. Existing workers finish their current jobs during graceful shutdown
+(14,430-second worker wait and 14,500-second Docker grace). The backend service
+gets a 14,500-second systemd stop window; Uvicorn waits for requests and the
+application awaits its shielded atomic statement/recovery units. The installer
+reloads this service configuration without restarting a running job. This is a
+bounded graceful transition, not a guarantee for work that exceeds that window
+or for a host forced shutdown.
+
 ## Admin-Triggered Updates
 
 To allow admins to update the platform from the OWL admin UI:

@@ -12,9 +12,10 @@ import {
 } from "../stores/financial-drafts"
 import { paymentTableDraftName } from "../lib/payment-table-draft"
 import { useFinancialStore } from "../stores/financial.store"
+import { useStatementWorkspace } from "../stores/statement-workspace"
 vi.mock("@/lib/api-client", () => ({ fetchAPI: vi.fn() }))
 vi.mock("../hooks/use-financial-access", () => ({
-  useFinancialAccess: () => ({ canEdit: true }),
+  useFinancialAccess: () => ({ canEdit: true, canUpload: true }),
 }))
 vi.mock("./StatementImportPanel", () => ({
   StatementImportPanel: ({
@@ -101,6 +102,7 @@ function mount(entry = "/cases/case/financial?view=statements&batch=batch") {
   )
 }
 beforeEach(() => {
+  useStatementWorkspace.setState({ selections: {}, reviewChoices: {} })
   useFinancialDraftStore.setState({ drafts: {} })
   vi.resetAllMocks()
   vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
@@ -127,6 +129,99 @@ beforeEach(() => {
       } as never
     return batch as never
   })
+})
+
+it("explains an unavailable source and opens Evidence without an endless Retry prompt", async () => {
+  vi.mocked(fetchAPI).mockResolvedValue({
+    ...batch,
+    files: [
+      {
+        ...batch.files[0],
+        status: "error",
+        review_file_id: null,
+        error: "The original is unavailable in this case.",
+        recovery: {
+          action: "source_unavailable",
+          stage: "source_unavailable",
+          message:
+            "Restore the source in Evidence or select the correct source.",
+          review_file_id: null,
+        },
+      },
+    ],
+  } as never)
+  mount()
+  expect(
+    await screen.findByText(
+      "Restore the source in Evidence or select the correct source."
+    )
+  ).toBeVisible()
+  expect(
+    screen.getByRole("button", { name: "Open file review" })
+  ).toBeDisabled()
+  expect(screen.queryByRole("button", { name: "Retry this file" })).toBeNull()
+  expect(
+    screen.getByRole("button", { name: "Check source again" })
+  ).toBeEnabled()
+  expect(
+    screen.getByRole("link", { name: "Find source in Evidence" })
+  ).toHaveAttribute("href", "/cases/case/evidence")
+})
+
+it("keeps a blocked statement reviewable when no admission calculation is available", async () => {
+  vi.mocked(fetchAPI).mockResolvedValue({
+    ...batch,
+    items: [{ ...item, admission: null, can_import: false, problems: [{ message: "Choose the printed currency.", field: "currency" }] }],
+  } as never)
+  mount()
+  expect(await screen.findByText("Choose the printed currency.")).toBeVisible()
+  expect(screen.getByRole("button", { name: "Open file review" })).toBeEnabled()
+})
+
+it("opens the recovered file in Statement files and preserves the originating batch filter", async () => {
+  vi.mocked(fetchAPI).mockResolvedValue({
+    ...batch,
+    files: [
+      {
+        ...batch.files[0],
+        review_file_id: "older-file",
+        recovery: { review_file_id: "recovered-file" },
+      },
+    ],
+  } as never)
+  mount("/cases/case/financial?view=statements&batch=batch&batchCheck=balance")
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Open file review" })
+  )
+  const destination = new URLSearchParams(
+    screen.getByLabelText("Location").textContent || ""
+  )
+  expect(destination.get("files")).toBe("1")
+  expect(destination.get("reviewFile")).toBe("recovered-file")
+  expect(destination.get("returnBatch")).toBe("batch")
+  expect(destination.get("returnBatchCheck")).toBe("balance")
+  expect(destination.has("batch")).toBe(false)
+  expect(
+    Object.values(useStatementWorkspace.getState().selections)
+  ).toContainEqual({ fileId: "recovered-file", open: true })
+})
+
+it("Back to all statements opens the file register rather than the batch list or a stale review", async () => {
+  useStatementWorkspace.getState().select("anonymous:case", "unfinished-file")
+  mount()
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Back to all statements" })
+  )
+  const destination = new URLSearchParams(
+    screen.getByLabelText("Location").textContent || ""
+  )
+  expect(destination.get("files")).toBe("1")
+  expect(destination.has("batch")).toBe(false)
+  expect(destination.has("reviewFile")).toBe(false)
+  expect(destination.has("returnBatch")).toBe(false)
+  expect(useStatementWorkspace.getState().selections["anonymous:case"]).toEqual(
+    { fileId: "unfinished-file", open: false }
+  )
 })
 it("filters by the whole-batch reason, focuses the right detail, and retains the reason through review navigation", async () => {
   const original = vi.mocked(fetchAPI).getMockImplementation()!
@@ -678,4 +773,78 @@ it("keeps completed assignments separate from ready imports and removes the skip
     screen.getByRole("button", { name: "No new statements to import" })
   ).toBeDisabled()
   expect(screen.queryByRole("button", { name: /Leave unimported/ })).toBeNull()
+})
+
+it("shows the actual retry decision, prevents repeat clicks and retains the receipt after reopening", async () => {
+  let receipt: Record<string, unknown> | undefined = undefined
+  let finish: (result: unknown) => void = () => {}
+  let requests = 0
+  vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
+    if (url.includes("/retry?") && options?.method === "POST") {
+      requests++
+      return new Promise((resolve) => {
+        finish = (result) => resolve(result as never)
+      })
+    }
+    return {
+      ...batch,
+      files: [
+        {
+          ...batch.files[0],
+          status: "error",
+          error: "Reading failed.",
+          recovery: receipt,
+        },
+      ],
+    } as never
+  })
+  const view = mount()
+  const retry = await screen.findByRole("button", { name: "Retry this file" })
+  fireEvent.click(retry)
+  expect(
+    screen.getByRole("button", { name: "Requesting retry…" })
+  ).toBeDisabled()
+  fireEvent.click(screen.getByRole("button", { name: "Requesting retry…" }))
+  expect(requests).toBe(1)
+  receipt = {
+    attempt_id: "attempt",
+    action: "review_required",
+    stage: "review",
+    message:
+      "The reading is complete. Review its balance difference; no new reading was started.",
+    review_file_id: "file",
+  }
+  finish({ queued: false, status: "checked", ...receipt })
+  await screen.findByText(/Checking.pdf: The reading is complete/)
+  expect(screen.queryByText(/Retry accepted for/)).not.toBeInTheDocument()
+  view.unmount()
+  mount()
+  await screen.findByText(String(receipt.message))
+  expect(screen.getByRole("button", { name: "Open file review" })).toBeEnabled()
+})
+
+it("reports an unavailable reading status without claiming a retry was queued", async () => {
+  vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
+    if (url.includes("/retry?") && options?.method === "POST")
+      return {
+        queued: false,
+        status: "processing",
+        action: "check_status",
+        stage: "status_unavailable",
+        message:
+          "The current reading job could not be verified. No duplicate job was started.",
+      } as never
+    return {
+      ...batch,
+      files: [{ ...batch.files[0], status: "processing" }],
+    } as never
+  })
+  mount()
+  fireEvent.click(await screen.findByRole("button", { name: "Check reading" }))
+  await screen.findByText(
+    /Checking.pdf: The current reading job could not be verified/
+  )
+  expect(
+    screen.queryByText(/already queued or being read/)
+  ).not.toBeInTheDocument()
 })

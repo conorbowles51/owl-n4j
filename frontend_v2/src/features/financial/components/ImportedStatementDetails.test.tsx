@@ -50,6 +50,67 @@ function mount() {
     </QueryClientProvider>
   )
 }
+it("opens legacy saved details with a specific blocker when no calculation can be made", async () => {
+  vi.mocked(fetchAPI).mockResolvedValue({
+    ...initial(),
+    admission: {
+      can_import: false, status: "needs_review", calculation: null,
+      blockers: [{ message: "Choose the printed currency before checking the balances." }],
+    },
+  } as never)
+  mount()
+  expect(await screen.findByText("Choose the printed currency before checking the balances.")).toBeVisible()
+  fireEvent.click(screen.getByRole("button", { name: "Edit account, dates, currency and balances" }))
+  expect(screen.getByLabelText("Saved statement currency")).toBeEnabled()
+})
+it("explains a saved but unconfirmed quiet period instead of implying the checks passed", async () => {
+  const data = { ...initial(), has_payment_readings: false }
+  const checked = {
+    ...data,
+    revision: "b".repeat(64),
+    admission: {
+      status: "needs_review",
+      can_import: false,
+      blockers: [
+        {
+          message:
+            "Check the printed closing balance against the opening balance.",
+        },
+      ],
+    },
+  }
+  let stored = data
+  vi.mocked(fetchAPI).mockImplementation(async (_url, options) => {
+    if (options?.method === "PUT") {
+      expect(options.body).toMatchObject({ no_activity_confirmed: true })
+      stored = checked
+    }
+    return stored as never
+  })
+  mount()
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: "Edit account, dates, currency and balances",
+    })
+  )
+  fireEvent.click(
+    await screen.findByRole("checkbox", { name: /I checked every page/ })
+  )
+  fireEvent.click(screen.getByRole("button", { name: "Save changes" }))
+  await screen.findByText(/Changes saved/)
+  expect(screen.getByLabelText("Saved statement checks")).toHaveTextContent(
+    "Details are saved, but the statement still needs review."
+  )
+  expect(screen.getByLabelText("Saved statement checks")).toHaveTextContent(
+    checked.admission.blockers[0].message
+  )
+  cleanup()
+  mount()
+  await screen.findByText(checked.admission.blockers[0].message)
+  expect(
+    screen.queryByText(/No activity confirmed at the last save/)
+  ).not.toBeInTheDocument()
+})
 it("edits account and balances beside the PDF, saves and reopens without losing leading zeros", async () => {
   useInvestigationScopeStore
     .getState()
@@ -75,7 +136,9 @@ it("edits account and balances beside the PDF, saves and reopens without losing 
   })
   mount()
   fireEvent.click(
-    screen.getByRole("button", { name: "Edit account, dates, currency and balances" })
+    screen.getByRole("button", {
+      name: "Edit account, dates, currency and balances",
+    })
   )
   await screen.findByLabelText("Saved account number")
   expect(
@@ -107,7 +170,9 @@ it("edits account and balances beside the PDF, saves and reopens without losing 
   cleanup()
   mount()
   fireEvent.click(
-    screen.getByRole("button", { name: "Edit account, dates, currency and balances" })
+    screen.getByRole("button", {
+      name: "Edit account, dates, currency and balances",
+    })
   )
   expect(await screen.findByLabelText("Saved account number")).toHaveValue(
     "00123448932"
@@ -123,7 +188,9 @@ it("retains edits after a failed save and requires a page only for changed balan
   })
   mount()
   fireEvent.click(
-    screen.getByRole("button", { name: "Edit account, dates, currency and balances" })
+    screen.getByRole("button", {
+      name: "Edit account, dates, currency and balances",
+    })
   )
   await screen.findByLabelText("Saved account number")
   fireEvent.change(screen.getByLabelText("Saved account number"), {
@@ -146,36 +213,41 @@ it("retains edits after a failed save and requires a page only for changed balan
   ).toHaveLength(1)
 })
 
-it.each(["GBP", "JPY", "KWD", "CLF"])("corrects saved currency to %s without changing printed numbers", async (currency) => {
-  const data = {
-    ...initial(),
-    balances: {
-      opening: { amount_minor: "6000", page: 2 },
-      closing: { amount_minor: "2520", page: 2 },
-    },
-  }
-  vi.mocked(fetchAPI).mockImplementation(async (_url, options) => {
-    if (options?.method === "PUT") {
-      expect(options.body).toMatchObject({
-        currency,
-        expected_revision: data.revision,
-      })
-      expect(options.body).not.toHaveProperty("opening")
-      expect(options.body).not.toHaveProperty("closing")
-      return { ...data, currency, revision: "b".repeat(64) } as never
+it.each(["GBP", "JPY", "KWD", "CLF"])(
+  "corrects saved currency to %s without changing printed numbers",
+  async (currency) => {
+    const data = {
+      ...initial(),
+      balances: {
+        opening: { amount_minor: "6000", page: 2 },
+        closing: { amount_minor: "2520", page: 2 },
+      },
     }
-    return data as never
-  })
-  mount()
-  fireEvent.click(
-    screen.getByRole("button", { name: "Edit account, dates, currency and balances" })
-  )
-  fireEvent.change(await screen.findByLabelText("Saved statement currency"), {
-    target: { value: currency },
-  })
-  expect(screen.getByLabelText("Saved opening balance")).toHaveValue("60.00")
-  expect(screen.getByLabelText("Saved closing balance")).toHaveValue("25.20")
-  expect(screen.getByText(/no exchange-rate conversion/)).toBeVisible()
-  fireEvent.click(screen.getByRole("button", { name: "Save changes" }))
-  await screen.findByText(/Changes saved/)
-})
+    vi.mocked(fetchAPI).mockImplementation(async (_url, options) => {
+      if (options?.method === "PUT") {
+        expect(options.body).toMatchObject({
+          currency,
+          expected_revision: data.revision,
+        })
+        expect(options.body).not.toHaveProperty("opening")
+        expect(options.body).not.toHaveProperty("closing")
+        return { ...data, currency, revision: "b".repeat(64) } as never
+      }
+      return data as never
+    })
+    mount()
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Edit account, dates, currency and balances",
+      })
+    )
+    fireEvent.change(await screen.findByLabelText("Saved statement currency"), {
+      target: { value: currency },
+    })
+    expect(screen.getByLabelText("Saved opening balance")).toHaveValue("60.00")
+    expect(screen.getByLabelText("Saved closing balance")).toHaveValue("25.20")
+    expect(screen.getByText(/no exchange-rate conversion/)).toBeVisible()
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }))
+    await screen.findByText(/Changes saved/)
+  }
+)

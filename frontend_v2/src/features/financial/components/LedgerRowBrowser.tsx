@@ -64,7 +64,11 @@ export function LedgerRowBrowser({
   exportContext?: {
     caseId: string
     params: LedgerQueryParams
-    profile?: { id: string; group: string }
+    profile?: {
+      id: string
+      group: string
+      scope?: "owned_accounts" | "counterparty_payments"
+    }
   }
 }) {
   const [accountScope, applyAccountScope] = useInvestigationScope(
@@ -621,8 +625,17 @@ export function LedgerRowBrowser({
         <>
           <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
             <strong>
-              {rows.length.toLocaleString()} of{" "}
-              {transactions.length.toLocaleString()} imported transactions
+              <span>
+                {rows.length.toLocaleString()} of{" "}
+                {transactions.length.toLocaleString()} imported transactions
+              </span>
+              {exportContext.profile
+                ? " in this profile"
+                : Object.values(exportContext.params).some((value) =>
+                      Array.isArray(value) ? value.length : value
+                    )
+                  ? " in the current account/date scope"
+                  : " in this case"}
             </strong>
             <span className="text-xs text-muted-foreground">
               Totals and analysis include every matching transaction, across all
@@ -923,6 +936,9 @@ export function LedgerRowBrowser({
                 ? {
                     profile_id: exportContext.profile.id,
                     profile_group: exportContext.profile.group,
+                    ...(exportContext.profile.scope
+                      ? { profile_scope: exportContext.profile.scope }
+                      : {}),
                   }
                 : {}),
               search,

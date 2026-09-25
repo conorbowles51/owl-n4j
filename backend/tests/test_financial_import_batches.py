@@ -137,6 +137,7 @@ class BatchImportTests(TestCase):
         self.assertEqual(self.status(batch)['files'][0]['status'], 'checked')
 
     def test_retry_failed_file_during_another_worker_turn_preserves_lease(self):
+        from postgres.models.evidence import EvidenceFile
         from datetime import datetime, timedelta, timezone
         batch = self.create(); self.advance(batch)
         token = str(uuid4())
@@ -144,6 +145,7 @@ class BatchImportTests(TestCase):
             record = db.get(Batch, batch)
             files = deepcopy(record.files)
             files[0].update(status='error', error='A transient reading failure')
+            db.get(EvidenceFile, UUID(files[0]['file_id'])).status = 'failed'
             record.files = files
             record.status = 'preparing'
             record.worker_token = token
@@ -170,7 +172,9 @@ class BatchImportTests(TestCase):
             self.assertEqual(shown['files'][0]['status'], 'error')
             self.assertEqual(shown['files'][0]['review_file_id'], str(original))
             result = service.retry_file(db, case_id=self.f.case.id, batch_id=batch, source_id=original)
-            self.assertEqual(result, dict(queued=True, status='waiting'))
+            self.assertTrue(result['queued'])
+            self.assertEqual(result['status'], 'waiting')
+            self.assertEqual(result['action'], 'retry_reading')
             self.assertFalse(service.retry_file(db, case_id=self.f.case.id, batch_id=batch, source_id=original)['queued'])
         self.advance(batch)
         shown = self.status(batch)
@@ -218,10 +222,13 @@ class BatchImportTests(TestCase):
             record.files = [{**record.files[0], 'source_id': str(foreign.id),
                 'file_id': str(uuid4()), 'status': 'checked'}]
             db.commit()
-            with self.assertRaisesRegex(PdfMappingError, 'original PDF is no longer available'):
-                service.retry_file(db, case_id=self.f.case.id, batch_id=batch, source_id=foreign.id)
+            result = service.retry_file(db, case_id=self.f.case.id, batch_id=batch, source_id=foreign.id)
+            self.assertFalse(result['queued'])
+            self.assertEqual(result['action'], 'source_unavailable')
+            self.assertIsNone(result['review_file_id'])
             db.refresh(record)
-            self.assertEqual(record.files[0]['status'], 'checked')
+            self.assertEqual(record.files[0]['status'], 'error')
+            self.assertIn('Restore the original in Evidence', record.files[0]['error'])
 
     def test_retry_failed_engine_reading_submits_once_then_waits_for_completion(self):
         from postgres.models.evidence import EvidenceFile
@@ -391,7 +398,13 @@ class BatchImportTests(TestCase):
         self.assertEqual(shown['available_statements'], 0)
         self.assertEqual(shown['items'][0]['source_document_id'], receipt['source_document_id'])
         self.assertNotIn('Old invalid page', str(shown['items'][0]['problems']))
-        self.assertEqual(shown['items'][0]['balance_status'], 'matches')
+        # The edited opening/closing pair adds up, but zeroing the opening
+        # conflicts with the first printed running balance. The current batch
+        # projection must explain that real issue rather than keep old issues
+        # or certify the period from the closing identity alone.
+        self.assertEqual(shown['items'][0]['balance_status'], 'difference')
+        self.assertEqual(shown['items'][0]['admission']['calculation']['difference_minor'], '0')
+        self.assertTrue(any(p.get('check') == 'running_balance' for p in shown['items'][0]['problems']))
         with self.f.SessionLocal() as db:
             scope = imported_batch_scope(db, case_id=self.f.case.id, batch_id=batch)
             self.assertEqual(scope['transaction_count'], 12)

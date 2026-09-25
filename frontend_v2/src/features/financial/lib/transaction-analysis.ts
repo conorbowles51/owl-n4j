@@ -276,25 +276,17 @@ export function activitySeries(rows: LedgerTransaction[]) {
     period.count++
     months.set(month, period)
   }
-  // Dense time axes are useful for normal statement ranges. For very long spans,
-  // show only recorded months and explicitly disclose the omitted empty periods.
+  // Only source-backed payment months belong on the axis. An absent month is
+  // unknown, not a zero-valued financial observation.
   const sorted = [...months.keys()].sort()
-  let omittedEmptyMonths = false
-  if (sorted.length) {
-    const ordinal = (key: string) => {
-      const [year, month] = key.split("-").map(Number)
-      return year * 12 + month - 1
-    }
-    const start = ordinal(sorted[0]),
-      end = ordinal(sorted.at(-1)!)
-    omittedEmptyMonths = end - start > 600
-    if (!omittedEmptyMonths)
-      for (let cursor = start; cursor <= end; cursor++) {
-        const key = `${String(Math.floor(cursor / 12)).padStart(4, "0")}-${String((cursor % 12) + 1).padStart(2, "0")}`
-        if (!months.has(key))
-          months.set(key, { month: key, credit: 0n, debit: 0n, count: 0 })
-      }
+  const ordinal = (key: string) => {
+    const [year, month] = key.split("-").map(Number)
+    return year * 12 + month - 1
   }
+  const omittedEmptyMonths = sorted.some(
+    (month, index) =>
+      index > 0 && ordinal(month) - ordinal(sorted[index - 1]) > 1
+  )
   return {
     omittedEmptyMonths,
     months: [...months.values()].sort((a, b) => a.month.localeCompare(b.month)),

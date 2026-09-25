@@ -117,3 +117,25 @@ it("restores older server drafts with unknown dates and optional raw fields", ()
     balance_minor: null,
   })
 })
+
+it("retains a manually positioned payment and its reference after save and reload", () => {
+  const positioned: StatementDraft = {
+    ...draft,
+    rows: [
+      {
+        ...draft.rows[0],
+        id: "manual:payment",
+        manual_page: 2,
+        source_order_anchor: { relation: "after", row_id: "2:0:4" },
+      },
+    ],
+  }
+  expect(saveStatementDraft("positioned", positioned)).toBe(true)
+  expect(
+    readStatementDraft("positioned", "first")?.rows[0].source_order_anchor
+  ).toEqual({ relation: "after", row_id: "2:0:4" })
+  expect(
+    serverStatementDraft({ expected_revision: "first", rows: positioned.rows })
+      ?.rows[0].source_order_anchor
+  ).toEqual({ relation: "after", row_id: "2:0:4" })
+})

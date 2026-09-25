@@ -116,10 +116,10 @@ def complete_record(*, session_factory, case_id, source_id, request, actor):
         with session_factory() as session:
             from postgres.models.case import Case
             session.execute(select(Case.id).where(Case.id == case_id).with_for_update()).all()
-            document = session.scalar(select(FinancialSourceDocument).where(FinancialSourceDocument.id == source_id,
-                FinancialSourceDocument.case_id == case_id, FinancialSourceDocument.status == 'admitted').with_for_update())
-            if document is None:
-                raise PdfMappingError('This imported statement is no longer available.', 404)
+            from services.financial.statement_details import _load
+            # Promotion uses the same sealed original/review and single-period
+            # validation as saved-detail edits and manual additions.
+            document, period, _account = _load(session, case_id, source_id, lock=True)
             metadata = deepcopy(document.metadata_)
             record = next((r for r in metadata.get('statement_incomplete_records', []) if r['id'] == request.row.id), None)
             if record is None:
@@ -129,6 +129,18 @@ def complete_record(*, session_factory, case_id, source_id, request, actor):
                     return dict(transaction_id=record['resolved_transaction_id'], created=False)
                 raise PdfMappingError('This record has already been corrected. Open its transaction.', 409)
             if record.get('version', 0) != request.version:
+                if (record.get('version') == request.version + 1 and
+                        record.get('correction') == request.row.model_dump(mode='json') and
+                        record.get('correction_currency') == currency):
+                    # A correction can be safely saved while the whole statement
+                    # still needs work. Replay that receipt after a lost response
+                    # without writing the same pending correction a second time.
+                    from services.financial.saved_statement_admission import current_saved_assessment
+                    admission = current_saved_assessment(session, document, period)
+                    return dict(transaction_id=None, created=False, pending_reconciliation=True,
+                        version=record['version'],
+                        message='Correction saved. This statement still needs reconciliation before its repaired payments enter Transactions.',
+                        blockers=admission.get('blockers', []))
                 raise PdfMappingError('Another investigator changed this record. Reload it before saving.', 409)
             original = record['original']
             fields = original.get('fields', {})
@@ -143,8 +155,6 @@ def complete_record(*, session_factory, case_id, source_id, request, actor):
             checked_request = StatementImportRequest.model_validate({**raw, 'currency': currency})
             if incomplete_fields(request.row, checked_request):
                 raise PdfMappingError('The record still has incomplete values.', 422)
-            period = session.scalar(select(FinancialStatementPeriod).where(FinancialStatementPeriod.source_document_id == source_id,
-                FinancialStatementPeriod.case_id == case_id))
             if period and period.currency != currency:
                 raise PdfMappingError('Use the currency recorded for this statement.', 422)
             record.update(correction=request.row.model_dump(mode='json'), correction_currency=currency,

@@ -162,13 +162,47 @@ function FinancialPageContent() {
   const workspaceReview = useStatementWorkspace(
     (state) => state.selections[workspaceScope]
   )
+  const routedReviewFile = params.get("reviewFile")
+  const returnBatch = params.get("returnBatch")
+  const explicitFiles = params.get("files") === "1"
+  const appliedFileRoute = useRef("")
+  const changingStatementRoute = useRef(false)
+  useEffect(() => {
+    const route = JSON.stringify([workspaceScope, section, explicitFiles, routedReviewFile])
+    const workspace = useStatementWorkspace.getState()
+    if (route !== appliedFileRoute.current) {
+      appliedFileRoute.current = route
+      changingStatementRoute.current = false
+      if (section === "files" && routedReviewFile)
+        workspace.select(workspaceScope, routedReviewFile)
+      else if (section === "files" && explicitFiles)
+        workspace.setOpen(workspaceScope, false)
+      return
+    }
+    if (changingStatementRoute.current || section !== "files" || !explicitFiles) return
+    // Keep the route accurate when the review's file selector or close action
+    // changes the workspace, so refresh and browser Back restore that choice.
+    const selected = workspace.selections[workspaceScope]
+    const fileId = selected?.open ? selected.fileId : null
+    if (fileId === routedReviewFile) return
+    setParams((current) => {
+      const next = new URLSearchParams(current)
+      if (fileId) next.set("reviewFile", fileId)
+      else next.delete("reviewFile")
+      return next
+    }, { replace: true })
+  }, [section, explicitFiles, routedReviewFile, workspaceScope, workspaceReview?.open, workspaceReview?.fileId, setParams])
   const showStatementSection = (next: StatementSection) => {
+    changingStatementRoute.current = true
     setStatementSection({ caseId, section: next })
     if (next === "files" || next === "remove")
       useStatementWorkspace.getState().setOpen(workspaceScope, false)
     setParams((current) => {
       const updated = new URLSearchParams(current)
-      for (const key of ["batch", "batchItem", "batchRow", "files"])
+      for (const key of [
+        "batch", "batchItem", "batchRow", "batchCheck", "files",
+        "reviewFile", "returnBatch", "returnBatchCheck",
+      ])
         updated.delete(key)
       return updated
     })
@@ -177,6 +211,23 @@ function FinancialPageContent() {
     showStatementSection("files")
     useStatementWorkspace.getState().select(workspaceScope, fileId)
     store.setMainView("statements")
+  }
+  const returnToBatch = () => {
+    if (!returnBatch) return
+    changingStatementRoute.current = true
+    setStatementSection({ caseId, section: "batches" })
+    setParams((current) => {
+      const next = new URLSearchParams(current)
+      const check = next.get("returnBatchCheck")
+      for (const key of [
+        "files", "reviewFile", "returnBatch", "returnBatchCheck",
+        "batchItem", "batchRow", "batchCheck",
+      ]) next.delete(key)
+      next.set("view", "statements")
+      next.set("batch", returnBatch)
+      if (check) next.set("batchCheck", check)
+      return next
+    })
   }
   useEffect(() => {
     statementScroll.current?.scrollTo?.({ top: 0 })
@@ -836,6 +887,11 @@ function FinancialPageContent() {
               </details>
             </div>
             <div hidden={reviewingAccounts}>
+              {section === "files" && returnBatch && workspaceReview?.open && (
+                <Button variant="outline" onClick={returnToBatch}>
+                  Back to processing batch
+                </Button>
+              )}
               {caseId && (
                 <StatementRegister
                   mode={
@@ -861,7 +917,7 @@ function FinancialPageContent() {
                         (result?.record_count ?? result?.transaction_count) ===
                         0
                       ) {
-                        setStatementSection({ caseId, section: "accounts" })
+                        showStatementSection("accounts")
                         store.setMainView("statements")
                       } else {
                         store.setMainView("transactions")

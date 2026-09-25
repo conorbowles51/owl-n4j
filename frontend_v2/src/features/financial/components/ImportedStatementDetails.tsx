@@ -8,6 +8,8 @@ import { correctionMinor, correctionMoney } from "../lib/correction-contract"
 import { TransactionSourceHighlight } from "./TransactionSourceHighlight"
 import { useInvestigationScope } from "../stores/investigation-scope"
 import { useFinancialDraft } from "../stores/financial-drafts"
+import { statementAssessment } from "../lib/statement-assessment"
+import { StatementReconciliationSummary } from "./StatementReconciliationSummary"
 
 const balance = z.object({
   amount_minor: z.string().nullable(),
@@ -32,6 +34,7 @@ const response = z.object({
   pages: z.array(z.number()),
   balances: z.object({ opening: balance, closing: balance }),
   has_payment_readings: z.boolean().optional(),
+  admission: statementAssessment.optional(),
 })
 type Details = z.infer<typeof response>
 const roles = ["opening", "closing"] as const
@@ -122,6 +125,35 @@ export function ImportedStatementDetails({
               Changes saved. The statement details and balance checks are
               updated.
             </p>
+          )}
+          {query.data?.admission && (
+            <div
+              aria-label="Saved statement checks"
+              className="space-y-2 text-sm"
+            >
+              <p className="font-medium">
+                {query.data.admission.assessment_current === false
+                  ? "Changes are saved; reconciliation needs updating."
+                  : query.data.admission.can_import
+                    ? query.data.admission.status === "confirmed_no_activity"
+                      ? "No activity confirmed at the last save. No payments were added."
+                      : "The statement reconciled at its last saved check."
+                    : "Details are saved, but the statement still needs review."}
+              </p>
+              <StatementReconciliationSummary
+                calculation={query.data.admission.calculation}
+                format={(value) =>
+                  `${correctionMoney(value, query.data!.currency || "")} ${query.data!.currency || ""}`
+                }
+              />
+              {!query.data.admission.can_import && (
+                <ul className="list-disc pl-5 space-y-1">
+                  {query.data.admission.blockers.map((blocker, index) => (
+                    <li key={index}>{blocker.message}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
           )}
         </>
       ) : query.isPending ? (

@@ -46,7 +46,8 @@ export function StatementArithmeticChecks({
                   <span>
                     Page {item.page}: payments give{" "}
                     {format(item.expected_minor)}; printed balance{" "}
-                    {format(item.printed_minor)}.
+                    {format(item.printed_minor)}. Difference{" "}
+                    {format(item.difference_minor)}.
                   </span>
                   {item.row_id && (
                     <Button
@@ -98,6 +99,38 @@ export function StatementArithmeticChecks({
           )}
         </div>
       ))}
+      {checks.flatMap((check) =>
+        (check.unavailable_intervals || []).map((interval, index) => (
+          <div
+            key={`${check.kind}:${index}`}
+            className="border rounded p-3 text-sm"
+          >
+            <p>
+              Page {interval.page ?? "not identified"}: {interval.reason}
+            </p>
+            {(interval.unplaced_row_ids || []).map((id) => (
+              <Button
+                key={id}
+                variant="outline"
+                size="sm"
+                onClick={() => onInspect(id)}
+              >
+                Set the added transaction’s printed position
+              </Button>
+            ))}
+            {(interval.invalid_row_ids || []).map((id) => (
+              <Button
+                key={id}
+                variant="outline"
+                size="sm"
+                onClick={() => onInspect(id)}
+              >
+                Review the invalid transaction value
+              </Button>
+            ))}
+          </div>
+        ))
+      )}
       {unavailable.length > 0 && (
         <details className="text-muted-foreground">
           <summary className="cursor-pointer">
@@ -111,8 +144,9 @@ export function StatementArithmeticChecks({
             ))}
           </ul>
           <p className="mt-2">
-            A missing printed total does not prevent import. You can compare the
-            transactions with the PDF.
+            A total that is not printed cannot be compared. An unreadable or
+            conflicting printed control still needs review. Follow the current
+            reconciliation result before importing.
           </p>
         </details>
       )}

@@ -11,6 +11,21 @@ from tests.test_route_authorization import _CaseAccessDb
 
 
 class StatementImportAuthorizationTests(unittest.TestCase):
+    def test_duplicate_disposition_requires_case_edit_and_valid_reading_revision(self):
+        body = dict(action='check', expected_reading_revision='a' * 64, currency='EUR')
+        with patch('services.financial.pending_statement_duplicates.decide_duplicate_disposition',
+                return_value={'duplicate_disposition': {'status': 'ignored'}}) as decide, patch.object(module, 'actor_from_user'):
+            self.assertEqual(self.client.post(self.endpoint('/duplicate-disposition'), json=body).status_code, 401)
+            self.user({'case': {'view': True, 'edit': False}})
+            self.assertEqual(self.client.post(self.endpoint('/duplicate-disposition'), json=body).status_code, 403)
+            decide.assert_not_called()
+            self.user({'case': {'view': True, 'edit': True}})
+            self.assertEqual(self.client.post(self.endpoint('/duplicate-disposition'), json=body).status_code, 200)
+            self.assertEqual(decide.call_args.kwargs['case_id'], self.db.case.id)
+            self.assertEqual(decide.call_args.kwargs['evidence_file_id'], self.file_id)
+            self.assertEqual(self.client.post(self.endpoint('/duplicate-disposition'), json={**body,
+                'expected_reading_revision': 'bad'}).status_code, 422)
+
     def test_bulk_account_details_require_case_edit_and_preview_selection(self):
         body = dict(targets=[dict(file_id=str(uuid4()), revision='a'*64)],
             changes=dict(holder='Synthetic holder'), request_id=str(uuid4()), preview_revision='b'*64)

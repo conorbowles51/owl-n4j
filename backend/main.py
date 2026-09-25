@@ -219,6 +219,8 @@ app.include_router(admin_update_router)
 app.include_router(financial_router)
 app.include_router(financial_ledger_router)
 app.include_router(financial_statement_import_router)
+from routers.financial_source_audit import router as financial_source_audit_router
+app.include_router(financial_source_audit_router)
 app.include_router(financial_ingest_router)
 app.include_router(financial_adjudication_router)
 app.include_router(financial_reconciliation_router)

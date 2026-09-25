@@ -6,6 +6,8 @@ from uuid import UUID, uuid4
 from sqlalchemy import select
 from tests import test_financial_statement_import as fixtures
 from services.financial.statement_import import StatementImportRequest
+from services.financial.statement_admission import assess_admission
+from services.financial.pdf_candidates import PdfMappingError
 from services.financial.import_batches import initial_request, assess
 from services.financial.imported_records import imported_records, complete_record, CompleteImportedRecord
 from postgres.models.financial import FinancialTransaction, FinancialSourceDocument
@@ -32,21 +34,32 @@ class OptionalImportReviewTests(TestCase):
         with patch('services.financial.statement_import.read_statement_import', return_value=proposal):
             return self.f.confirm(raw)
 
-    def test_unchanged_flagged_reading_imports_and_retains_issue(self):
+    def save_legacy(self, proposal):
+        # Rehearse records left by the former permissive importer. Only fixture
+        # construction bypasses admission; every correction/retry below uses
+        # the current production gate and immutable saved source contract.
+        with patch('services.financial.statement_admission.require_admission', side_effect=assess_admission):
+            return self.save(proposal)
+
+    def test_unchanged_flagged_reading_stays_in_review_without_new_payments(self):
         proposal, row = self.proposal()
         state, summary = assess(proposal)
         self.assertEqual(state, 'attention')
-        self.assertTrue(summary['can_import'])
-        receipt = self.save(proposal)
-        self.assertEqual(receipt['transaction_count'], 12)
-        self.assertTrue(any(i['row_id'] == row['id'] for i in receipt['issues']))
+        self.assertFalse(summary['can_import'])
+        self.assertTrue(any(i.get('row_id') == row['id'] for i in summary['admission']['blockers']))
         with self.f.SessionLocal() as db:
-            document = db.get(FinancialSourceDocument, UUID(receipt['source_document_id']))
-            self.assertEqual(document.metadata_['statement_import_issues'], receipt['issues'])
+            existing_sources = set(db.scalars(select(FinancialSourceDocument.id)))
+        with self.assertRaisesRegex(PdfMappingError, 'remains in review'):
+            self.save(proposal)
+        with self.f.SessionLocal() as db:
+            self.assertEqual(list(db.scalars(select(FinancialTransaction))), [])
+            self.assertEqual(set(db.scalars(select(FinancialSourceDocument.id))), existing_sources)
 
     def test_missing_amount_is_retained_without_zero_and_can_be_completed_once(self):
         proposal, row = self.proposal('amount_minor')
-        receipt = self.save(proposal)
+        with self.assertRaises(PdfMappingError):
+            self.save(proposal)
+        receipt = self.save_legacy(proposal)
         self.assertEqual((receipt['record_count'], receipt['transaction_count'], receipt['incomplete_count']), (12, 11, 1))
         with self.f.SessionLocal() as db:
             result = imported_records(db, case_id=self.f.case.id)
@@ -82,7 +95,9 @@ class OptionalImportReviewTests(TestCase):
 
     def test_missing_date_is_not_replaced_with_an_invented_date(self):
         proposal, _ = self.proposal('date')
-        receipt = self.save(proposal)
+        with self.assertRaises(PdfMappingError):
+            self.save(proposal)
+        receipt = self.save_legacy(proposal)
         self.assertEqual(receipt['incomplete_count'], 1)
         with self.f.SessionLocal() as db:
             record = imported_records(db, case_id=self.f.case.id)['records'][0]
@@ -90,7 +105,7 @@ class OptionalImportReviewTests(TestCase):
 
     def test_import_retry_retains_incomplete_count(self):
         proposal, _ = self.proposal('amount_minor')
-        first = self.save(proposal)
+        first = self.save_legacy(proposal)
         second = self.save(proposal)
         self.assertFalse(second['created'])
         self.assertEqual(first['source_document_id'], second['source_document_id'])
@@ -100,7 +115,7 @@ class OptionalImportReviewTests(TestCase):
     def test_incomplete_correction_rejects_wrong_case_conflicting_version_and_fabricated_date_basis(self):
         from services.financial.pdf_candidates import PdfMappingError
         proposal, row = self.proposal('date')
-        receipt = self.save(proposal)
+        receipt = self.save_legacy(proposal)
         with self.f.SessionLocal() as db:
             record = imported_records(db, case_id=self.f.case.id)['records'][0]
         corrected = {**record['fields'], 'date':'2023-03-18', 'reason':'Checked original date.'}
@@ -122,7 +137,9 @@ class OptionalImportReviewTests(TestCase):
     def test_unknown_currency_keeps_all_records_outside_calculation(self):
         proposal, _ = self.proposal()
         proposal['currency'] = ''
-        receipt = self.save(proposal)
+        with self.assertRaises(PdfMappingError):
+            self.save(proposal)
+        receipt = self.save_legacy(proposal)
         self.assertEqual((receipt['record_count'], receipt['transaction_count'], receipt['incomplete_count']), (12, 0, 12))
         with self.f.SessionLocal() as db:
             page = imported_records(db, case_id=self.f.case.id, offset=5, limit=3)
@@ -131,23 +148,24 @@ class OptionalImportReviewTests(TestCase):
             self.assertTrue(all('currency' in record['missing_fields'] for record in page['records']))
             self.assertEqual(list(db.scalars(select(FinancialTransaction))), [])
             record = page['records'][0]
-        complete_record(session_factory=self.f.SessionLocal, case_id=self.f.case.id,
+        corrected = complete_record(session_factory=self.f.SessionLocal, case_id=self.f.case.id,
             source_id=UUID(receipt['source_document_id']), actor=self.f.actor,
             request=CompleteImportedRecord(row={**record['fields'], 'reason':'Currency read from the original.'},
                 currency='EUR', version=0))
+        self.assertTrue(corrected['pending_reconciliation'])
         with self.f.SessionLocal() as db:
-            self.assertEqual(imported_records(db, case_id=self.f.case.id)['total'], 11)
-            self.assertEqual(len(list(db.scalars(select(FinancialTransaction)))), 1)
-            source = db.get(FinancialSourceDocument, UUID(receipt['source_document_id']))
-            currency_issues = [i for i in source.metadata_['statement_import_issues'] if i.get('field') == 'currency']
-            self.assertEqual(len(currency_issues), 11)
-            self.assertNotIn(record['id'], [i['row_id'] for i in currency_issues])
+            retained = imported_records(db, case_id=self.f.case.id)
+            self.assertEqual(retained['total'], 12)
+            self.assertEqual(len(list(db.scalars(select(FinancialTransaction)))), 0)
+            self.assertEqual(next(row for row in retained['records'] if row['id'] == record['id'])['currency'], 'EUR')
 
     def test_setting_statement_currency_after_import_materializes_usable_records_together(self):
         from services.financial.statement_details import StatementDetailsRequest, read_statement_details, update_statement_details
         proposal, _ = self.proposal()
         proposal['currency'] = ''
-        receipt = self.save(proposal)
+        for row in proposal['rows']:
+            row['issues'] = []
+        receipt = self.save_legacy(proposal)
         source_id = UUID(receipt['source_document_id'])
         with self.f.SessionLocal() as db:
             before = read_statement_details(db, case_id=self.f.case.id, source_id=source_id)
@@ -163,7 +181,7 @@ class OptionalImportReviewTests(TestCase):
             self.assertEqual(source.metadata_['statement_import_request']['currency'], '')
             self.assertFalse(any(issue.get('kind') == 'missing_field' for issue in source.metadata_['statement_import_issues']))
 
-    def test_bulk_imports_flagged_records_and_legacy_batch_assessment(self):
+    def test_bulk_reassesses_legacy_ready_summary_and_blocks_flagged_records(self):
         from services.financial import import_batches as service
         from postgres.models.financial_import_batches import FinancialImportBatchItem as Item
         f = self.f
@@ -177,15 +195,14 @@ class OptionalImportReviewTests(TestCase):
         with f.SessionLocal() as db, patch.object(service, 'read_statement_import', return_value=proposal):
             item = db.scalar(select(Item).where(Item.batch_id == batch))
             item.status = 'attention'
+            item.review_request = initial_request(proposal)
             item.summary = {key:value for key,value in item.summary.items() if key != 'can_import'}
             db.commit()
             status = service.batch_status(db, case_id=f.case.id, batch_id=batch)
-            self.assertEqual(status['available_statements'], 1)
-            service.queue_import(db, case_id=f.case.id, batch_id=batch, expected_revision=status['ready_revision'], actor=f.actor)
-        with patch.object(service, 'read_statement_import', return_value=proposal), patch('services.financial.statement_import.read_statement_import', return_value=proposal):
-            asyncio.run(service.advance_batch(f.SessionLocal, batch, Path, AsyncMock(side_effect=AssertionError("Reuse prepared geometry"))))
-        with f.SessionLocal() as db:
-            status = service.batch_status(db, case_id=f.case.id, batch_id=batch)
-            self.assertEqual(status['counts']['imported'], 1, status)
+            self.assertEqual(status['available_statements'], 0)
+            with self.assertRaisesRegex(PdfMappingError, 'no new statement records'):
+                service.queue_import(db, case_id=f.case.id, batch_id=batch, expected_revision=status['ready_revision'], actor=f.actor)
+            self.assertEqual(status['counts'].get('imported', 0), 0, status)
             self.assertEqual(status['items'][0]['incomplete_count'], 1)
             self.assertGreater(status['issues_count'], 0)
+            self.assertEqual(list(db.scalars(select(FinancialTransaction))), [])

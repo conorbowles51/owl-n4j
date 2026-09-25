@@ -1,3 +1,4 @@
+import { paymentInventory } from "../lib/payment-inventory"
 import { openPaymentParty } from "../lib/payment-party-navigation"
 import { paymentGroup } from "../lib/investigator-workspace"
 import { amountGroupName, amountOf } from "../lib/transaction-analysis"
@@ -13,10 +14,13 @@ import {
 export function PaymentTotals({
   rows,
   label,
+  expandAccounts = true,
 }: {
   rows: LedgerTransaction[]
   label: string
+  expandAccounts?: boolean
 }) {
+  const inventory = paymentInventory(rows)
   const totals = new Map<
     string,
     {
@@ -55,8 +59,40 @@ export function PaymentTotals({
       className="space-y-3 rounded border bg-card p-3"
     >
       <h3 className="text-sm font-medium">
-        {label} · {rows.length.toLocaleString()} transactions
+        {label} · {rows.length.toLocaleString()} transactions ·{" "}
+        {inventory.accounts.length} accounts · {inventory.banks.length} banks
       </h3>
+      <p className="text-xs text-muted-foreground">
+        Currencies: {inventory.currencies.join(", ") || "None"}. Dated payments:{" "}
+        {inventory.first
+          ? `${inventory.first} to ${inventory.last}`
+          : "No printed dates available"}
+        .
+        {inventory.undated > 0 &&
+          ` ${inventory.undated} payments without a printed date.`}
+        {inventory.unknownBanks > 0 &&
+          ` ${inventory.unknownBanks} accounts with bank not identified.`}
+        {inventory.unidentifiedCounterparties > 0 &&
+          ` ${inventory.unidentifiedCounterparties} payments with counterparty not identified.`}
+      </p>
+      {expandAccounts && inventory.accounts.length > 0 && (
+        <details className="text-xs">
+          <summary className="cursor-pointer">
+            View all {inventory.accounts.length} accounts and{" "}
+            {inventory.banks.length} banks
+          </summary>
+          <p className="mt-2">
+            Banks: {inventory.banks.join(", ") || "Not identified"}
+          </p>
+          <ul className="max-h-48 overflow-auto mt-2 space-y-1">
+            {inventory.accounts.map((account) => (
+              <li key={account.id}>
+                {account.label} · {[...account.currencies].sort().join(", ")}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
       {[...totals].map(([group, total]) => {
         const [currency, kind] = group.split(":")
         const card = kind === "card"
@@ -75,12 +111,6 @@ export function PaymentTotals({
                 {total.count.toLocaleString()} transactions ·{" "}
                 {total.accounts.size}{" "}
                 {total.accounts.size === 1 ? "account" : "accounts"}
-              </span>
-              <span
-                className="truncate text-muted-foreground"
-                title={[...total.labels].join("; ")}
-              >
-                {[...total.labels].join("; ")}
               </span>
             </div>
             <dl className="grid grid-cols-3 gap-2 text-sm">

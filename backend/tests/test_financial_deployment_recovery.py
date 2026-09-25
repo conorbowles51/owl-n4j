@@ -90,10 +90,18 @@ def test_manual_added_payment_is_kept_for_comparison_not_duplicated(f):
             description='Investigator entered missing payment', counterparty='Supplier', amount_minor='27000000',
             direction='debit', balance_minor=None, reason='')))
     before = {r.id for r in rows(f, document)}
+    with f.SessionLocal() as db:
+        metadata = db.get(FinancialSourceDocument, document).metadata_
+        pending = deepcopy(metadata['statement_incomplete_records'])
+        additions = deepcopy(metadata['statement_manual_additions'])
     item = snapshot(f)
     recovery.recover_one(f.SessionLocal, item, Path)
     assert outcome(f, item)[0] == 'review', outcome(f, item)
     assert before == {r.id for r in rows(f, document)}
+    with f.SessionLocal() as db:
+        metadata = db.get(FinancialSourceDocument, document).metadata_
+        assert metadata['statement_incomplete_records'] == pending
+        assert metadata['statement_manual_additions'] == additions
 
 
 def test_existing_investigator_work_stays_on_the_same_payment(f):

@@ -1,7 +1,4 @@
-import {
-  FinancialRemovalAction,
-  ProcessRemovedFile,
-} from "./FinancialRemovalAction"
+import { ProcessRemovedFile } from "./FinancialRemovalAction"
 import { useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { z } from "zod"
@@ -15,10 +12,7 @@ import {
 import { fetchAPI } from "@/lib/api-client"
 import { useAuthStore } from "@/features/auth/hooks/use-auth"
 import { useFinancialAccess } from "../hooks/use-financial-access"
-import {
-  usesPdfStatementReader,
-  type StatementFile,
-} from "../hooks/use-statement-register"
+import { type StatementFile } from "../hooks/use-statement-register"
 import { useStatementWorkspace } from "../stores/statement-workspace"
 
 const answer = z.object({
@@ -31,10 +25,12 @@ const answer = z.object({
 export function FinancialFileAction({
   caseId,
   file,
+  onVisibilityChanged,
 }: {
   caseId: string
   file: StatementFile
   imported?: boolean
+  onVisibilityChanged?: (removed: boolean) => void
 }) {
   const { canEdit } = useFinancialAccess()
   const owner = useAuthStore(
@@ -45,15 +41,6 @@ export function FinancialFileAction({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
   if (!canEdit) return null
-  if (!file.financial_removed && usesPdfStatementReader(file))
-    return (
-      <FinancialRemovalAction
-        caseId={caseId}
-        fileIds={[file.id]}
-        label="Remove imports…"
-        accessibleLabel={`Remove from Financial: ${file.original_filename}`}
-      />
-    )
   if (file.financial_imports_removed)
     return <ProcessRemovedFile caseId={caseId} fileId={file.id} />
   const change = async (removed: boolean) => {
@@ -101,6 +88,7 @@ export function FinancialFileAction({
         workspace.setOpen(scope, false)
       }
       setOpen(false)
+      onVisibilityChanged?.(removed)
     } catch (failure) {
       setError(
         (failure instanceof Error
@@ -112,6 +100,15 @@ export function FinancialFileAction({
       await Promise.all([
         client.invalidateQueries({
           queryKey: ["statement-import-files", caseId],
+        }),
+        client.invalidateQueries({
+          queryKey: ["statement-import-status", caseId],
+        }),
+        client.invalidateQueries({
+          queryKey: ["financial-source-audit", caseId],
+        }),
+        client.invalidateQueries({
+          queryKey: ["financial-source-audit-detail", caseId],
         }),
         client.invalidateQueries({
           queryKey: ["financial-candidates", caseId, "uploaded-pdfs"],
@@ -152,9 +149,11 @@ export function FinancialFileAction({
           <DialogTitle>Remove this file from Financial?</DialogTitle>
           <DialogDescription>
             {file.original_filename} will leave the financial file list for
-            everyone in this case. The original stays in Evidence. Saved notes
-            and review drafts are kept. You can bring it back using Removed
-            files.
+            everyone in this case, together with its retained readings. The
+            originals stay in Evidence. Saved notes, corrections and batch
+            reviews are kept. You can restore the file using Removed files. This
+            action does not remove imported transactions, clear preparation or
+            stop processing.
           </DialogDescription>
           {error && <p role="alert">{error}</p>}
           <div className="flex flex-wrap gap-2">

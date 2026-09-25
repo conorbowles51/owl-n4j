@@ -22,30 +22,32 @@ from services.financial.file_scope import financial_file_ids
 from services.financial.file_visibility import financial_file_visibility
 from services.financial.source_lineage import lineage_groups, current_version
 from services.financial.pdf_candidates import PdfMappingError
+from services.financial.recovery_campaigns import CAMPAIGNS, INITIAL_RELEASE, manifest, source_reader_evidence
 
-RELEASE = 'statement-recovery-2026-09-24-v1'
+RELEASE = INITIAL_RELEASE
 ACTOR = Actor(name='Loupe automatic statement recovery', email='statement-recovery@system.local')
 PENDING = ('pending', 'waiting', 'reading')
 log = logging.getLogger(__name__)
 
 
-def activate(session):
-    release = session.get(Release, RELEASE)
+def activate(session, release_id=RELEASE):
+    release = session.get(Release, release_id)
     if release:
         return release.cutoff
-    release = Release(release=RELEASE, cutoff=datetime.now(timezone.utc))
+    release = Release(release=release_id, cutoff=datetime.now(timezone.utc))
     session.add(release)
     try:
         session.commit()
     except IntegrityError:
         session.rollback()
-    return session.get(Release, RELEASE).cutoff
+    return session.get(Release, release_id).cutoff
 
 
-def snapshot_case(session, case_id, cutoff):
+def snapshot_case(session, case_id, cutoff, campaign=None):
+    campaign = campaign or manifest(RELEASE)
     if session.scalar(select(Case.id).where(Case.id == case_id).with_for_update(skip_locked=True)) is None:
         return False
-    run_id = uuid5(NAMESPACE_URL, RELEASE + ':' + str(case_id))
+    run_id = uuid5(NAMESPACE_URL, campaign.release + ':' + str(case_id))
     if session.get(Run, run_id):
         return True
     ids = financial_file_ids(session, case_id=case_id)
@@ -53,15 +55,36 @@ def snapshot_case(session, case_id, cutoff):
         EvidenceFile.id.in_(ids), EvidenceFile.created_at <= cutoff))) if ids else []
     if not files:
         return True
-    run = Run(id=run_id, case_id=case_id, release=RELEASE, status='running')
+    versions_by_root = lineage_groups(files)
+    selected = []
+    previous = list(session.scalars(select(Item).join(Run, Item.run_id == Run.id).where(
+        Run.case_id == case_id, Run.release != campaign.release)
+        .order_by(Item.updated_at.desc(), Item.id))) if not campaign.initial_snapshot else []
+    for versions in versions_by_root.values():
+        identifiers = {str(file.id) for file in versions}
+        latest = next((item for item in previous if str(item.file_id) in identifiers or
+            identifiers.intersection((item.result or {}).get('lineage_ids', []))), None)
+        observed = None
+        if campaign.source_probe:
+            if latest is None or latest.status not in campaign.eligible_outcomes:
+                continue
+            observed = source_reader_evidence(session, current_version(versions), campaign)
+        if campaign.eligible(latest, observed):
+            selected.append((versions, latest))
+    # Record an empty selective snapshot too: a later file cannot silently enter
+    # an already-completed campaign after its durable cutoff was established.
+    run = Run(id=run_id, case_id=case_id, release=campaign.release, status='running' if selected else 'complete')
     session.add(run)
     session.flush()
-    for versions in lineage_groups(files).values():
+    for versions, prior in selected:
         file = current_version(versions)
         session.add(Item(id=uuid5(run_id, str(file.id)), run_id=run_id, file_id=file.id,
             status='pending', result=dict(filename=file.original_filename,
                 visibility_revision=financial_file_visibility(file)['financial_visibility_revision'],
-                lineage_ids=[str(f.id) for f in versions], added=0)))
+                lineage_ids=[str(f.id) for f in versions], added=0,
+                previous_item_id=str(prior.id) if prior else None,
+                fresh_reading=bool(campaign.source_probe), source_probe=campaign.source_probe,
+                readers=(prior.result or {}).get('readers', {}) if prior else {})))
     session.commit()
     return True
 
@@ -71,7 +94,7 @@ def _outcome(session, item, file, status, message, **values):
     item.result = {**item.result, **values, 'message': message}
     session.add(IngestionLog(case_id=file.case_id, evidence_file_id=file.id,
         filename=file.original_filename, level='info', message=message,
-        extra=dict(operation='deployment_statement_recovery', release=RELEASE,
+        extra=dict(operation='deployment_statement_recovery', release=session.get(Run, item.run_id).release,
                    status=status, added=values.get('added', 0))))
 
 
@@ -104,8 +127,15 @@ def _guard(session, item, file):
         Batch.case_id == file.case_id, BatchItem.file_id.in_(ids))).all()
     if any(status == 'skipped' for status, _ in batches):
         return 'kept', 'An investigator chose to leave this statement unimported. That choice was retained.'
+    if any(status == 'duplicate_ignored' for status, _ in batches):
+        return 'kept', 'A duplicate statement was ignored. Restore its review explicitly before requesting another reading.'
     if any(status == 'pending_import' for status, _ in batches):
         return 'waiting', 'Waiting for an existing import to finish. It has not been interrupted.'
+    if item.result.get('fresh_reading') and (any((version.metadata_ or {}).get('financial_review_progress')
+            for version in session.scalars(select(EvidenceFile).where(EvidenceFile.id.in_(ids))))
+            or session.scalar(select(BatchItem.id).join(Batch, BatchItem.batch_id == Batch.id).where(
+                Batch.case_id == file.case_id, BatchItem.file_id.in_(ids), BatchItem.review_request.is_not(None)).limit(1))):
+        return 'review', 'Saved investigator corrections remain on this reading. Compare them before requesting another reading.'
     if file.status == 'processing':
         return 'waiting', 'Waiting for the existing reading or AI ingestion. It has not been interrupted.'
     return None
@@ -156,7 +186,7 @@ def recover_one(factory, item_id, resolve_path):
             return
     # System attribution is explicit; no investigator is impersonated.
     with ingestion_run(case_id=case_id, session_factory=factory,
-            config=dict(operation='deployment_statement_recovery', release=RELEASE, file_id=str(file_id))) as audit:
+            config=dict(operation='deployment_statement_recovery', release=current_run.release, file_id=str(file_id))) as audit:
         with factory() as db:
             if db.scalar(select(Case.id).where(Case.id == case_id).with_for_update(skip_locked=True)) is None:
                 return
@@ -190,6 +220,8 @@ def recover_one(factory, item_id, resolve_path):
                 db.commit()
                 return
             target = file
+            if item.result.get('fresh_reading') and not item.result.get('reading_file_id'):
+                return dict(needs_reading=True, case_id=case_id, file_id=file.id, item_id=item.id)
             if item.result.get('reading_file_id'):
                 target = db.scalar(select(EvidenceFile).where(EvidenceFile.id == UUID(item.result['reading_file_id']), EvidenceFile.case_id == case_id))
                 if target is None or target.sha256 != file.sha256:
@@ -217,6 +249,8 @@ def recover_one(factory, item_id, resolve_path):
                 choices = first.get('statement_choices') or []
                 proposals = [read_statement_import(db, case_id=case_id, evidence_file_id=target.id,
                     statement_id=choice['id'], _cache=cache) for choice in choices] or [first]
+                from services.financial.reading_recovery import reader_inventory
+                item.result = {**item.result, 'readers': reader_inventory(proposals)}
                 document_by_id = {str(doc.id): doc for doc in documents}
                 matches = Counter((p.get('current_import') or {}).get('source_document_id') for p in proposals)
                 results, added = [], 0
@@ -254,7 +288,7 @@ def recover_one(factory, item_id, resolve_path):
                                 raise PdfMappingError('A recovered payment may already be saved from another statement for this account. Compare the sources first.', 409)
                         with db.begin_nested():
                             count = append_recovered(db, document=document, proposal=proposal, plan=plan,
-                                run=audit, actor=ACTOR, release=RELEASE)
+                                run=audit, actor=ACTOR, release=run.release)
                         added += count
                         result.update(status='recovered' if count else 'unchanged', added=count,
                             source_document_id=str(document.id), message=f'{count} missing {"payment" if count == 1 else "payments"} added.' if count else 'Existing payments retained; no safe missing payments found.')
@@ -312,20 +346,30 @@ async def start_reading(factory, request, resolve_path, process_files):
                 preparation_mode='pdf_review', requested_by_user_id=None)
 
 
-def status(session, case_id, *, offset=0, limit=50):
-    run = session.scalar(select(Run).where(Run.case_id == case_id, Run.release == RELEASE))
+def _case_run(session, case_id, run_id=None, lock=False):
+    query = select(Run).where(Run.case_id == case_id)
+    if run_id is not None:
+        query = query.where(Run.id == run_id)
+    query = query.order_by(Run.created_at.desc(), Run.release.desc()).limit(1)
+    return session.scalar(query.with_for_update() if lock else query)
+
+
+def status(session, case_id, *, offset=0, limit=50, run_id=None):
+    run = _case_run(session, case_id, run_id)
     if not run:
         return dict(run=None, items=[], total=0, counts={})
     counts = dict(session.execute(select(Item.status, func.count()).where(Item.run_id == run.id).group_by(Item.status)).all())
     rows = list(session.scalars(select(Item).where(Item.run_id == run.id).order_by(Item.file_id).offset(offset).limit(limit)))
     added = session.scalar(select(func.coalesce(func.sum(Item.result['added'].as_integer()), 0)).where(Item.run_id == run.id))
-    return dict(run=dict(id=str(run.id), release=run.release, status=run.status), counts=counts, added=added,
+    history = [dict(id=str(prior.id), release=prior.release, status=prior.status) for prior in session.scalars(
+        select(Run).where(Run.case_id == case_id, Run.id != run.id).order_by(Run.created_at.desc(), Run.release.desc()))]
+    return dict(run=dict(id=str(run.id), release=run.release, status=run.status), previous_runs=history, counts=counts, added=added,
         total=sum(counts.values()), items=[dict(id=str(item.id), file_id=str(item.file_id), status=item.status, **item.result) for item in rows])
 
 
-def control(session, case_id, action):
+def control(session, case_id, action, run_id=None):
     session.execute(select(Case.id).where(Case.id == case_id).with_for_update()).all()
-    run = session.scalar(select(Run).where(Run.case_id == case_id, Run.release == RELEASE).with_for_update())
+    run = _case_run(session, case_id, run_id, lock=True)
     if not run:
         raise PdfMappingError('No recovery run exists for this case.', 404)
     if run.status != 'complete':
@@ -344,19 +388,20 @@ async def run_recovery_forever():
         try:
             factory = _get_session_local()
             if not initialized:
-                with factory() as db:
-                    cutoff = activate(db)
-                    case_ids = list(db.scalars(select(Case.id).where(Case.created_at <= cutoff).order_by(Case.id)))
-                def initialize_case(case_id):
-                    with factory() as db:
-                        return snapshot_case(db, case_id, cutoff)
                 results = []
-                for case_id in case_ids:
-                    results.append(await _finish_atomic(initialize_case, case_id))
+                for campaign in CAMPAIGNS:
+                    with factory() as db:
+                        cutoff = activate(db, campaign.release)
+                        case_ids = list(db.scalars(select(Case.id).where(Case.created_at <= cutoff).order_by(Case.id)))
+                    def initialize_case(case_id):
+                        with factory() as db:
+                            return snapshot_case(db, case_id, cutoff, campaign)
+                    for case_id in case_ids:
+                        results.append(await _finish_atomic(initialize_case, case_id))
                 initialized = all(results)
             with factory() as db:
                 ids = list(db.scalars(select(Item.id).join(Run, Item.run_id == Run.id).where(
-                    Run.release == RELEASE, Run.status == 'running', Item.status.in_(PENDING)).order_by(Item.updated_at, Item.id).limit(2)))
+                    Run.release.in_([campaign.release for campaign in CAMPAIGNS]), Run.status == 'running', Item.status.in_(PENDING)).order_by(Item.updated_at, Item.id).limit(2)))
             for item_id in ids:
                 try:
                     pending = await _finish_atomic(recover_one, factory, item_id, _resolve_stored_path)
@@ -369,7 +414,7 @@ async def run_recovery_forever():
                     await asyncio.to_thread(_record_failure, factory, item_id,
                         'Recovery could not complete this file. Open its statement to inspect the retained reading and retry.')
             with factory() as db:
-                runs = list(db.scalars(select(Run).where(Run.release == RELEASE, Run.status == 'running').with_for_update(skip_locked=True)))
+                runs = list(db.scalars(select(Run).where(Run.release.in_([campaign.release for campaign in CAMPAIGNS]), Run.status == 'running').with_for_update(skip_locked=True)))
                 for run in runs:
                     if not db.scalar(select(Item.id).where(Item.run_id == run.id, Item.status.in_(PENDING)).limit(1)):
                         run.status = 'complete'
@@ -383,7 +428,8 @@ async def run_recovery_forever():
 
 def retry_item(session, case_id, item_id):
     session.execute(select(Case.id).where(Case.id == case_id).with_for_update()).all()
-    run = session.scalar(select(Run).where(Run.case_id == case_id, Run.release == RELEASE).with_for_update())
+    run = session.scalar(select(Run).join(Item, Item.run_id == Run.id).where(Run.case_id == case_id,
+        Item.id == item_id).with_for_update(of=Run))
     item = session.scalar(select(Item).where(Item.id == item_id, Item.run_id == run.id).with_for_update()) if run else None
     if item is None:
         raise PdfMappingError('Recovery item not found in this case.', 404)

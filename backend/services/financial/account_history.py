@@ -55,8 +55,9 @@ def account_history(session, *, case_id, account_id=None, account_ids=None, acco
         if metadata.get('financial_import_removal'): continue
         current = [t for t in by_period[period.id] if t.source_document_id == document.id and t.account_id == period.account_id]
         admitted = [t for t in current if t.ledger_status == 'admitted' and t.currency == period.currency]
-        admission = metadata.get('statement_admission') or {}
-        verified = bool(admission.get('can_import') and admission.get('ledger_snapshot') == snapshot(period, current))
+        from services.financial.saved_statement_admission import current_saved_assessment
+        admission = current_saved_assessment(session, document, period, transactions=current)
+        verified = bool(admission.get('can_import') and admission.get('assessment_current'))
         quiet = verified and admission.get('no_activity_confirmed') and not admitted
         # Different currencies and liability conventions are separate series,
         # even when the bank prints them on one account or inside one PDF.
@@ -82,6 +83,7 @@ def account_history(session, *, case_id, account_id=None, account_ids=None, acco
             opening_minor=str(sign * period.opening_balance_minor) if period.opening_balance_minor is not None else None,
             closing_minor=str(sign * period.closing_balance_minor) if period.closing_balance_minor is not None else None,
             status='confirmed_no_activity' if quiet else 'reconciled' if verified else 'needs_review',
+            assessment_current=bool(admission.get('assessment_current')), blockers=admission.get('blockers', []),
             transaction_count=len(admitted), undated_count=undated,
             activity=[{**entry, 'credit_minor':str(entry['credit_minor']), 'debit_minor':str(entry['debit_minor'])} for _, entry in sorted(activity.items())]))
     return dict(case_id=str(case_id), groups=sorted(groups.values(), key=lambda g:(g['currency'],g['balance_kind'],g['label'],g['key'])), applied=False)

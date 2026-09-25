@@ -132,10 +132,12 @@ def complete_currency_records(session, *, document, period, metadata, currency, 
         pending.append((item, row))
     from services.financial.saved_statement_admission import assess_saved_additions
     admission = assess_saved_additions(session, document, period, metadata, currency) if drafts else None
-    if admission and not admission['can_import']:
-        metadata['statement_import_issues'] = admission['blockers']
+    if admission:
+        metadata['statement_import_issues'] = admission['blockers'] + [
+            issue for issue in metadata.get('statement_import_issues', []) if issue.get('kind') == 'coverage']
         metadata['statement_admission'] = admission
-        return admission
+        if not admission['can_import']:
+            return admission
     transactions = record_transactions(session, review_run(document), document, drafts, retain_prior_versions=True) if drafts else []
     for (item, row), transaction in zip(pending, transactions, strict=True):
         item.update(resolved_transaction_id=str(transaction.id), correction=row.model_dump(mode='json'),

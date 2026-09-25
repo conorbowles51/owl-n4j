@@ -86,9 +86,10 @@ from services.financial.statement_details import StatementDetailsRequest, read_s
 
 
 @router.get('/sources/{source_id}/details')
-def statement_details(source_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+def statement_details(source_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db),
+        include_positions: bool = Query(False)):
     try:
-        return read_statement_details(db, case_id=case_id, source_id=source_id)
+        return read_statement_details(db, case_id=case_id, source_id=source_id, include_positions=include_positions)
     except PdfMappingError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
@@ -173,6 +174,31 @@ class StatementCoverageRequest(_Contract):
     holder: str | None = Field(default=None, max_length=255)
     period_start: str = Field(default='', max_length=32)
     period_end: str = Field(default='', max_length=32)
+
+
+class DuplicateDispositionRequest(_Contract):
+    action: Literal['check', 'restore'] = 'check'
+    expected_reading_revision: _Digest
+    statement_id: _Digest | None = None
+    currency: str | None = Field(default=None, pattern=r'^[A-Z]{3}$')
+    expected_decision_revision: _Digest | None = None
+    reason: str = Field(default='', max_length=4096)
+
+
+@router.post('/{evidence_file_id}/duplicate-disposition', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
+def duplicate_disposition(evidence_file_id: UUID, body: DuplicateDispositionRequest,
+        case_id: UUID = Query(...), user=Depends(get_current_db_user), db: Session = Depends(get_db)):
+    from services.financial.pending_statement_duplicates import decide_duplicate_disposition
+    try:
+        return decide_duplicate_disposition(db, case_id=case_id, evidence_file_id=evidence_file_id,
+            actor=actor_from_user(user), **body.model_dump())
+    except PdfMappingError as exc:
+        db.rollback()
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception:
+        db.rollback()
+        logger.exception('Statement duplicate decision failed')
+        raise HTTPException(status_code=500, detail='The duplicate decision could not be confirmed. Reopen the statement to check its saved result.')
 
 
 class RefreshStoredReadingRequest(_Contract):
@@ -689,6 +715,8 @@ def get_financial_batch_item(batch_id: UUID,item_id: UUID,case_id: UUID=Query(..
         import_batches.batch_for(db,case_id,batch_id)
         item=db.scalar(select(FinancialImportBatchItem).where(FinancialImportBatchItem.batch_id==batch_id,FinancialImportBatchItem.id==item_id))
         if item is None: raise PdfMappingError('Statement not found in this batch.',404)
+        if item.status == 'superseded_reading':
+            raise PdfMappingError('This reading was replaced by a newer one. Return to the batch to open its current statements. Your earlier review remains in history.',409)
         item=import_batches.checked_batch_items(db,case_id,[item])[0]
         return dict(id=str(item.id),file_id=str(item.file_id),statement_id=item.statement_key or None,status=item.status,review_request=item.review_request,review_revision=item.review_revision,**item.summary)
     except PdfMappingError as exc:
@@ -731,8 +759,9 @@ def next_financial_statement(batch_id: UUID, item_id: UUID, case_id: UUID = Quer
 
 
 @router.post('/batches/{batch_id}/files/{source_id}/retry', dependencies=[Depends(case_access_dependency(lambda request,payload: ('case','edit'))),Depends(case_access_dependency(lambda request,payload: ('evidence','upload')))])
-def retry_financial_batch_file(batch_id: UUID,source_id: UUID,case_id: UUID=Query(...),db: Session=Depends(get_db)):
+async def retry_financial_batch_file(batch_id: UUID,source_id: UUID,case_id: UUID=Query(...),db: Session=Depends(get_db)):
     try:
-        return import_batches.retry_file(db,case_id=case_id,batch_id=batch_id,source_id=source_id)
+        from services.financial.reading_job_retry import retry_file_checked
+        return await retry_file_checked(db,case_id=case_id,batch_id=batch_id,source_id=source_id)
     except PdfMappingError as exc:
         db.rollback();raise HTTPException(status_code=exc.status_code,detail=str(exc)) from exc

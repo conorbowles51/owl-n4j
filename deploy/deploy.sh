@@ -89,6 +89,9 @@ else
     success "Running as user ${DEPLOY_USER}"
 fi
 
+# shellcheck source=deploy/ingestion-safety.sh
+source "${PROJECT_DIR}/deploy/ingestion-safety.sh"
+
 FRONTEND_STOPPED=false
 restore_frontend_on_exit() {
     if [ "${FRONTEND_STOPPED}" = true ]; then
@@ -155,7 +158,7 @@ fi
 success "Rollback target: $(git rev-parse --short "${ROLLBACK_TARGET}") (last known-good) on branch ${CURRENT_BRANCH}"
 
 step "Checking active ingestion before changing the checkout or dependencies"
-$RUN_AS "${VENV_DIR}/bin/python" "${PROJECT_DIR}/deploy/check_ingestion_idle.py"
+check_ingestion_idle
 
 step "Checking for local changes"
 
@@ -183,11 +186,12 @@ else
 fi
 
 step "Installing backend dependencies"
+check_ingestion_idle
 $RUN_AS "${VENV_DIR}/bin/pip" install -r "${BACKEND_DIR}/requirements.txt" --quiet
 success "Backend dependencies installed"
 
 step "Checking active ingestion before service changes"
-$RUN_AS "${VENV_DIR}/bin/python" "${PROJECT_DIR}/deploy/check_ingestion_idle.py"
+check_ingestion_idle
 
 step "Stopping frontend for dependency installation"
 $SYSTEMCTL stop owl-frontend-v2
@@ -220,7 +224,7 @@ fi
 success "Frontend service configured to serve the compiled bundle"
 
 step "Checking ingestion before migrations and service replacement"
-$RUN_AS "${VENV_DIR}/bin/python" "${PROJECT_DIR}/deploy/check_ingestion_idle.py"
+check_ingestion_idle
 
 step "Running database migrations"
 cd "${BACKEND_DIR}"
@@ -228,12 +232,17 @@ $RUN_AS "${VENV_DIR}/bin/alembic" upgrade head
 success "Database migrations complete"
 cd "${PROJECT_DIR}"
 
+step "Building Docker images without replacing running containers"
+docker compose build
+
 step "Refreshing Docker stack"
-$RUN_AS "${VENV_DIR}/bin/python" "${PROJECT_DIR}/deploy/check_ingestion_idle.py"
-docker compose up -d --build --remove-orphans
+check_ingestion_idle
+docker compose up -d --no-build --remove-orphans
 success "Docker stack refreshed"
 
 step "Restarting services"
+configure_ingestion_shutdown
+check_ingestion_idle
 $SYSTEMCTL restart owl-backend-v2
 $SYSTEMCTL restart owl-frontend-v2
 FRONTEND_STOPPED=false
@@ -286,10 +295,11 @@ else
 fi
 
 cd "${PROJECT_DIR}"
-$RUN_AS "${VENV_DIR}/bin/python" "${PROJECT_DIR}/deploy/check_ingestion_idle.py"
+check_ingestion_idle
 $RUN_AS git reset --hard "${ROLLBACK_TARGET}"
 
 step "Rollback: reinstalling dependencies"
+check_ingestion_idle
 $SYSTEMCTL stop owl-frontend-v2 || true
 FRONTEND_STOPPED=true
 $RUN_AS "${VENV_DIR}/bin/pip" install -r "${BACKEND_DIR}/requirements.txt" --quiet || true
@@ -300,9 +310,13 @@ $RUN_AS npm run build || true
 cd "${PROJECT_DIR}"
 
 step "Rollback: rebuilding Docker stack"
-docker compose up -d --build --remove-orphans || true
+docker compose build || true
+check_ingestion_idle
+docker compose up -d --no-build --remove-orphans || true
 
 step "Rollback: restarting services"
+configure_ingestion_shutdown
+check_ingestion_idle
 $SYSTEMCTL restart owl-backend-v2 || true
 $SYSTEMCTL restart owl-frontend-v2 || true
 FRONTEND_STOPPED=false

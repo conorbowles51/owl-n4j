@@ -250,6 +250,12 @@ beforeEach(() => {
   pageQueries = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
+  // The People view waits for the complete account directory before declaring
+  // an empty scope; this page fixture has no saved or quiet accounts.
+  pageQueries.setQueryDefaults(["financial-ledger", "case-1", "account-parties"], { staleTime: Infinity })
+  pageQueries.setQueryData(["financial-ledger", "case-1", "account-parties"], {
+    case_id: "case-1", revision: "a".repeat(64), accounts: [], parties: [], history: [], source_choices: [],
+  })
 })
 
 function pageTree() {

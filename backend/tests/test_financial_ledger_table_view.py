@@ -159,3 +159,24 @@ class LedgerTableViewTests(TestCase):
                 self.assertEqual(capture_table_view(ledger, filters)['row_ids'], ['linked'])
         self.assertEqual(capture_table_view(ledger, {'profile_id':'name:Supplier & Sons'})['row_ids'], ['other'])
         self.assertEqual(capture_table_view(ledger, {'sort':'from-asc'})['row_ids'], ['linked','other'])
+
+    def test_owned_activity_and_counterparty_appearances_have_distinct_exact_export_membership(self):
+        owner = {'id': 'person', 'name': 'Example Holder'}
+        own = self.row('own', account_id='a', account_holder_parties=[owner])
+        other = self.row('appearance', account_id='outsider', counterparty_link={'kind': 'party', 'id': 'person'})
+        ledger = {'readings': [own, other]}
+        owned = capture_table_view(ledger, {'profile_id': 'owner:person', 'profile_scope': 'owned_accounts'})
+        self.assertEqual(owned['row_ids'], ['own'])
+        self.assertEqual(owned['filters']['profile_scope'], 'owned_accounts')
+        self.assertEqual(capture_table_view(ledger, {'profile_id': 'owner:person', 'profile_scope': 'counterparty_payments'})['row_ids'], ['appearance'])
+        self.assertEqual(capture_table_view(ledger, {'profile_id': 'account:outsider', 'profile_scope': 'owned_accounts'})['row_ids'], ['appearance'])
+        with self.assertRaises(LedgerSummaryError):
+            capture_table_view(ledger, {'profile_scope': 'owned_accounts'})
+
+    def test_holder_activity_respects_dates_and_unknown_dates_are_not_attributed(self):
+        party = {'id': 'person', 'name': 'Example Holder'}
+        link = dict(id='link', party=party, role='holder', effective_from='2026-01-01', effective_to='2026-12-31')
+        ledger = {'readings': [self.row(key, account_holder_parties=[party], account_relationships=[link]) for key in ['before', 'during', 'undated']]}
+        ledger['readings'][0]['row']['ordering_date'] = '2025-12-31'
+        ledger['readings'][2]['row']['ordering_date_context'] = 'statement_end_ordering_only'
+        self.assertEqual(capture_table_view(ledger, {'profile_id': 'owner:person', 'profile_scope': 'owned_accounts'})['row_ids'], ['during'])

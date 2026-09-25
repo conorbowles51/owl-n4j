@@ -2,6 +2,8 @@
 
 # Alex's financial workflow acceptance
 
+**25 September priority and continuity:** [consolidated parallel completion plan](financial-workflows/priority-completion-plan-2026-09-25.md) records Alex's latest processing/retry, duplicate, reconciliation, row-reason, complete-data, filter, ownership and represented-month requirements. Three code reviews distinguish existing foundations from concrete gaps. It explicitly carries forward the paused R01–R06 live verification, uncommitted saved-check/discard fixes and outstanding existing-data cleanup. The plan now includes a dated implementation checkpoint: the core connected changes are locally implemented and tested; final safeguards, publication, live acceptance and the content/provenance audit remain explicitly tracked.
+
 **24 September card-layout follow-up:** [Findings and Observations card workflow](financial-workflows/finding-cards-2026-09-24.md) covers the request for smaller square cards, nearby Edit/Timeline actions and formatted expanded text. It supersedes the earlier full-width compact-row design; existing saved text with trimmed empty follow-up fields is included.
 
 **24 September connected release:** [source selection, compact saved work and one-time recovery](financial-workflows/next-release-2026-09-24.md). Implementation is complete locally with workflow verification. The content/provenance cleanup remains a separate scheduled production pass; publication and live results are recorded separately.

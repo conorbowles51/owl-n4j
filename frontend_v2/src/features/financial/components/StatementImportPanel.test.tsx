@@ -36,7 +36,10 @@ vi.mock("../hooks/use-statement-checks", async (original) => ({
 import { useStatementWorkspace } from "../stores/statement-workspace"
 import { useAuthStore } from "@/features/auth/hooks/use-auth"
 import { useFinancialDraftStore } from "../stores/financial-drafts"
-vi.mock("@/lib/api-client", () => ({ fetchAPI: vi.fn() }))
+vi.mock("@/lib/api-client", async (original) => ({
+  ...(await original<typeof import("@/lib/api-client")>()),
+  fetchAPI: vi.fn(),
+}))
 vi.mock("./TransactionSourceHighlight", () => ({
   TransactionSourceHighlight: vi.fn(() => (
     <div>Original PDF beside editable values</div>
@@ -186,6 +189,7 @@ beforeEach(() => {
   })
 })
 it("keeps manual rows while completing amounts and preserves review filters across adding and reopening", async () => {
+  useAuthStore.setState({ user: { id: "reviewer" } as never })
   const implementation = vi.mocked(fetchAPI).getMockImplementation()!
   vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
     const result = await implementation(url, options)
@@ -215,6 +219,11 @@ it("keeps manual rows while completing amounts and preserves review filters acro
   )
   expect(screen.getAllByLabelText(/^Debit manual:/)).toHaveLength(2)
   expect(screen.getByDisplayValue("Manually read payment")).toBeVisible()
+  fireEvent.click(
+    screen.getAllByRole("button", { name: "Discard added row" })[1]
+  )
+  expect(screen.getAllByLabelText(/^Debit manual:/)).toHaveLength(1)
+  expect(screen.getByDisplayValue("Manually read payment")).toBeVisible()
   cleanup()
   mount()
   await screen.findByText("Review statement.pdf")
@@ -223,6 +232,8 @@ it("keeps manual rows while completing amounts and preserves review filters acro
   )
   expect(screen.getByLabelText("Show excluded rows")).not.toBeChecked()
   expect(screen.getByLabelText("Show problems and edits only")).toBeChecked()
+  expect(screen.getAllByLabelText(/^Debit manual:/)).toHaveLength(1)
+  expect(screen.getByDisplayValue("Manually read payment")).toBeVisible()
 })
 it("imports directly from a batch review, carrying account edits into the visible receipt", async () => {
   const { BatchReviewContext } = await import("../lib/batch-review-context")
@@ -1907,7 +1918,7 @@ it("marks a valid flagged row checked without typing a reason and retains that d
   })
 })
 
-it("links missing account details without blocking import and clears the issue when corrected", async () => {
+it("holds import for missing account details and opens the field before clearing the issue", async () => {
   mount()
   await open()
   fireEvent.change(screen.getByLabelText("Account holder"), {
@@ -1915,10 +1926,12 @@ it("links missing account details without blocking import and clears the issue w
   })
   expect(
     screen.getByRole("button", { name: "Confirm import of 1 transactions" })
-  ).toBeEnabled()
+  ).toBeDisabled()
   expect(
     screen.getByRole("region", { name: "Statement issues and edits" })
-  ).toHaveTextContent("Account holder not identified.")
+  ).toHaveTextContent(
+    "Enter the account holder shown on the statement before importing payments."
+  )
   fireEvent.click(screen.getAllByRole("button", { name: "Go to field" })[0])
   expect(screen.getByLabelText("Account holder")).toHaveFocus()
   fireEvent.change(screen.getByLabelText("Account holder"), {

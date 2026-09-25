@@ -4,10 +4,10 @@ from sqlalchemy import select
 from postgres.models.financial import FinancialTransaction
 from services.financial.statement_details import saved_details
 from services.financial.statement_import import StatementImportRequest
-from services.financial.statement_admission import assess_admission
+from services.financial.statement_admission import assess_admission, explain_blockers, POLICY
 
 
-def assess_saved_additions(session, document, period, metadata, currency, *, no_activity_confirmed=False):
+def assess_saved_additions(session, document, period, metadata, currency, *, no_activity_confirmed=False, transactions=None):
     proposal = deepcopy(metadata['statement_import_original'])
     raw = {**deepcopy(metadata['statement_import_request']), **saved_details(document), 'currency':currency}
     from services.financial.currency_correction import rescale_minor
@@ -25,7 +25,7 @@ def assess_saved_additions(session, document, period, metadata, currency, *, no_
     for item in metadata.get('statement_incomplete_records', []):
         if item['id'] not in ids and item['original'].get('kind') == 'manual_entry':
             raw['rows'].append(deepcopy(item.get('correction') or item['fields']))
-    rows = list(session.scalars(select(FinancialTransaction).where(FinancialTransaction.case_id == document.case_id,
+    rows = list(transactions) if transactions is not None else list(session.scalars(select(FinancialTransaction).where(FinancialTransaction.case_id == document.case_id,
         FinancialTransaction.source_document_id == document.id, FinancialTransaction.superseded_by_id.is_(None))))
     current = {(t.provenance or {}).get('statement_import_original', {}).get('id'):t for t in rows}
     originals = {r['id']:r for r in proposal['rows']}
@@ -65,6 +65,83 @@ def assess_saved_additions(session, document, period, metadata, currency, *, no_
     # ignored when deciding whether newly repaired readings may enter totals.
     ids={r['id'] for r in raw['rows']}
     if any((t.provenance or {}).get('statement_import_original',{}).get('id') not in ids for t in rows):
-        result.update(can_import=False,status='needs_review')
+        result.update(can_import=False,status='needs_review',no_activity_confirmed=False)
         result['blockers'].append(dict(kind='saved_rows',row_id=None,message='Compare the saved transactions with this statement; some have no matching row in its earlier reading.'))
+    if len(current) != len(rows):
+        result.update(can_import=False,status='needs_review',no_activity_confirmed=False)
+        result['blockers'].append(dict(kind='saved_rows',row_id=None,message='More than one current saved payment refers to the same source reading. Compare those payments before confirming reconciliation.'))
+    if any(t.case_id != document.case_id or t.source_document_id != document.id or
+           t.statement_period_id != period.id or t.account_id != period.account_id or t.currency != currency for t in rows):
+        result.update(can_import=False,status='needs_review',no_activity_confirmed=False)
+        result['blockers'].append(dict(kind='saved_rows',row_id=None,message='The saved payments do not all belong to this account, currency and statement period. Review their assignments before confirming reconciliation.'))
+    result['blockers'] = explain_blockers(result['blockers'], proposal, raw)
     return result
+
+
+def current_saved_assessment(session, document, period, *, transactions=None):
+    """Project current saved checks without certifying an old or changed import.
+
+    ``transactions`` may be the caller's preloaded, nonsuperseded ORM rows for
+    this source and period. No metadata, ledger row or original is written.
+    """
+    from services.financial.account_history import snapshot
+    from services.financial.pdf_candidates import _digest, PdfMappingError
+    from pydantic import ValidationError
+    metadata = document.metadata_ or {}
+    prior = metadata.get('statement_admission') or {}
+    rows = list(transactions) if transactions is not None else list(session.scalars(select(FinancialTransaction).where(
+        FinancialTransaction.case_id == document.case_id, FinancialTransaction.source_document_id == document.id,
+        FinancialTransaction.superseded_by_id.is_(None))))
+    current_snapshot = snapshot(period, rows) if period else None
+    current = bool(current_snapshot and prior.get('ledger_snapshot') == current_snapshot)
+    try:
+        if not period or any(_digest(metadata.get(name)) != metadata.get(name + '_sha256')
+                for name in ('statement_import_original', 'statement_import_request')):
+            raise ValueError('Saved source review is unavailable or changed.')
+        review = metadata.get('statement_details_review')
+        if review and _digest(review) != metadata.get('statement_details_review_sha256'):
+            raise ValueError('Saved detail review is changed.')
+        result = assess_saved_additions(session, document, period, metadata, period.currency,
+            no_activity_confirmed=current and bool(prior.get('no_activity_confirmed')), transactions=rows)
+        current = current and prior.get('policy') == POLICY and prior.get('revision') == result['revision']
+    except (KeyError, TypeError, ValueError, ValidationError, PdfMappingError):
+        result = dict(policy=POLICY, revision=_digest(dict(source=str(document.id), ledger=current_snapshot)),
+            can_import=False, status='needs_review', no_activity_confirmed=False, checks=[], calculation=None,
+            assessment_current=False, blockers=explain_blockers([dict(kind='saved_source', row_id=None,
+                message='The saved reading or its corrections cannot be verified. Open the saved review and compare its source before confirming reconciliation.')]))
+        return result
+    # Freshly calculated failures are useful immediately. A successful current
+    # calculation alone must not silently certify an unreviewed historical import.
+    if result['can_import'] and (not current or not prior.get('can_import')):
+        kind = 'assessment_stale' if prior else 'assessment_missing'
+        result.update(can_import=False, status='needs_review', no_activity_confirmed=False, assessment_current=False)
+        result['blockers'].extend(explain_blockers([dict(kind=kind, row_id=None,
+            message=('Saved values changed after the last reconciliation. Review the current statement and save its checks again.' if prior else
+                     'This older import has no current reconciliation confirmation. Review the saved statement before confirming its checks.'))]))
+    else:
+        result['assessment_current'] = True
+    return result
+
+
+def refresh_saved_assessment(session, document, period, *, no_activity_confirmed=False):
+    """Record current checks after an explicit saved correction, in its commit."""
+    from services.financial.account_history import snapshot
+    metadata = deepcopy(document.metadata_ or {})
+    rows = list(session.scalars(select(FinancialTransaction).where(
+        FinancialTransaction.case_id == document.case_id, FinancialTransaction.source_document_id == document.id,
+        FinancialTransaction.superseded_by_id.is_(None))))
+    prior = metadata.get('statement_admission') or {}
+    current_snapshot = snapshot(period, rows)
+    admission = assess_saved_additions(session, document, period, metadata, period.currency,
+        no_activity_confirmed=no_activity_confirmed, transactions=rows)
+    if (not no_activity_confirmed and prior.get('no_activity_confirmed') and
+            prior.get('ledger_snapshot') == current_snapshot and prior.get('policy') == POLICY and
+            prior.get('revision') == admission['revision']):
+        admission = assess_saved_additions(session, document, period, metadata, period.currency,
+            no_activity_confirmed=True, transactions=rows)
+    admission['ledger_snapshot'] = current_snapshot
+    metadata['statement_admission'] = admission
+    metadata['statement_import_issues'] = admission['blockers'] + [
+        issue for issue in metadata.get('statement_import_issues', []) if issue.get('kind') == 'coverage']
+    document.metadata_ = metadata
+    return admission

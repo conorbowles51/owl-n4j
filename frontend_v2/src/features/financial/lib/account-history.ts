@@ -12,6 +12,8 @@ export const historyPeriod = z.object({
   status: z.enum(["reconciled", "confirmed_no_activity", "needs_review"]),
   transaction_count: z.number(),
   undated_count: z.number(),
+  blockers: z.array(z.object({ message: z.string() }).passthrough()).optional(),
+  assessment_current: z.boolean().optional(),
   activity: z.array(
     z.object({
       date: z.string(),
@@ -51,7 +53,9 @@ export function historyMonths(
 ) {
   const dates = groups
     .flatMap((g) =>
-      g.periods.flatMap((p) => [p.start, p.end]).filter((d): d is string => !!d)
+      g.periods
+        .flatMap((p) => [p.start, p.end, ...p.activity.map((a) => a.date)])
+        .filter((d): d is string => !!d)
     )
     .sort()
   const first = start || dates[0],
@@ -60,7 +64,7 @@ export function historyMonths(
   const result = []
   let month = first.slice(0, 7)
   while (month <= last.slice(0, 7)) {
-    if (result.length >= 240)
+    if (ordinal(month + "-01") - ordinal(first.slice(0, 7) + "-01") > 366 * 20)
       throw new Error(
         "Choose a date range of 20 years or less to compare monthly activity."
       )
@@ -69,12 +73,14 @@ export function historyMonths(
       hi = [bounds.period_end, last].sort()[0]
     const values = groups.map((group) => {
       const periods = group.periods.filter(
-        (p) => p.start && p.end && p.start <= hi && p.end >= lo
+        (p) =>
+          (p.start && p.end && p.start <= hi && p.end >= lo) ||
+          p.activity.some((a) => a.date >= lo && a.date <= hi)
       )
       let cursor = ordinal(lo),
         overlap = false
       const windows = periods
-        .filter((p) => p.status !== "needs_review")
+        .filter((p) => p.start && p.end && p.status !== "needs_review")
         .map((p) => [
           Math.max(ordinal(p.start!), ordinal(lo)),
           Math.min(ordinal(p.end!), ordinal(hi)),
@@ -90,7 +96,7 @@ export function historyMonths(
         !periods.some((p) => p.undated_count)
       // All competing periods count as overlap, including older unverified imports.
       const ordered = periods
-        .slice()
+        .filter((p) => p.start && p.end)
         .sort((a, b) => a.start!.localeCompare(b.start!))
       const ambiguous =
         overlap ||
@@ -102,7 +108,7 @@ export function historyMonths(
         .filter((a) => a.date >= lo && a.date <= hi)
       const count = readings.reduce((sum, a) => sum + a.count, 0)
       const ends = periods
-        .filter((p) => p.end! >= lo && p.end! <= hi)
+        .filter((p) => p.end && p.end >= lo && p.end <= hi)
         .sort((a, b) => b.end!.localeCompare(a.end!))
       const closing = !ambiguous && ends[0] ? ends[0].closing_minor : null
       return {
@@ -136,7 +142,10 @@ export function historyMonths(
               : "No statement available",
       }
     })
-    result.push({ month, start: lo, end: hi, values })
+    // Selected filter bounds do not create evidence. Keep genuine quiet source
+    // coverage, but omit months unsupported by every selected account.
+    if (values.some((value) => value.periods.length || (value.count ?? 0) > 0))
+      result.push({ month, start: lo, end: hi, values })
     const [y, m] = month.split("-").map(Number)
     month = `${m === 12 ? y + 1 : y}-${String(m === 12 ? 1 : m + 1).padStart(2, "0")}`
   }

@@ -51,13 +51,12 @@ it("keeps quiet months, missing coverage and bursts distinct without inventing b
       }),
     ]),
   ])
-  expect(data.map((m) => m.values[0].count)).toEqual([0, null, 2])
+  expect(data.map((m) => m.values[0].count)).toEqual([0, 2])
   expect(data.map((m) => m.values[0].closing_minor)).toEqual([
     "5000000",
-    null,
     "5050000",
   ])
-  expect(data[1].values[0].state).toBe("No statement available")
+  expect(data.map((m) => m.month)).toEqual(["2026-01", "2026-03"])
 })
 it("does not turn unreadable or partial zero-payment periods into confirmed no activity", () => {
   const data = historyMonths(
@@ -104,4 +103,54 @@ it("does not sum overlapping balances or double count overlapping source activit
   expect(value.closing_minor).toBeNull()
   expect(value.state).toMatch(/Overlapping/)
   expect(accountColor("a")).toBe(accountColor("a"))
+})
+
+it("uses represented-month union and leaves unsupported comparison accounts unavailable", () => {
+  const data = historyMonths(
+    [
+      group([
+        period("2025-10-01", "2025-11-30"),
+        period("2026-01-01", "2026-01-31"),
+      ]),
+      {
+        ...group([period("2025-10-01", "2025-10-31")]),
+        key: "b",
+        account_id: "b",
+      },
+    ],
+    "2025-01-01",
+    "2026-12-31"
+  )
+  expect(data.map((m) => m.month)).toEqual(["2025-10", "2025-11", "2026-01"])
+  expect(data[1].values[0].count).toBe(0)
+  expect(data[1].values[1]).toMatchObject({
+    count: null,
+    closing_minor: null,
+    state: "No statement available",
+  })
+})
+it("keeps actual dated payments when the statement's period dates are missing", () => {
+  const data = historyMonths([
+    group([
+      period("2025-10-01", "2025-10-31", {
+        start: null,
+        end: null,
+        status: "needs_review",
+        activity: [
+          {
+            date: "2025-11-04",
+            count: 1,
+            credit_minor: "100",
+            debit_minor: "0",
+          },
+        ],
+      }),
+    ]),
+  ])
+  expect(data.map((m) => m.month)).toEqual(["2025-11"])
+  expect(data[0].values[0]).toMatchObject({
+    count: 1,
+    closing_minor: null,
+    state: "Partial coverage or unverified reading",
+  })
 })

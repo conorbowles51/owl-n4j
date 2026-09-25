@@ -10,6 +10,10 @@ import type { LedgerQueryParams } from "../hooks/use-ledger-transactions"
 import { correctionMinor, correctionMoney } from "../lib/correction-contract"
 import { useFinancialDraft } from "../stores/financial-drafts"
 import { TransactionSourceHighlight } from "./TransactionSourceHighlight"
+import { ManualTransactionPosition } from "./ManualTransactionPosition"
+import { savedStatementPosition } from "../lib/saved-statement-position"
+import { sourceOrderAnchor } from "../lib/statement-review-draft"
+import { statementBlocker } from "../lib/statement-assessment"
 
 const recordSchema = z.object({
   id: z.string(),
@@ -26,6 +30,7 @@ const recordSchema = z.object({
     id: z.string(),
     excluded: z.boolean(),
     manual_page: z.number().nullish(),
+    source_order_anchor: sourceOrderAnchor.nullish(),
     date: z.string(),
     date_unprinted: z.boolean().optional(),
     date_values: z.record(z.string(), z.string()).optional(),
@@ -258,13 +263,46 @@ function ImportedRecordEditor({
       changeBalance: false,
     }
   )
-  const { fields, currency, amount, balance, changeBalance } = draft
+  const { currency, amount, balance, changeBalance } = draft
+  // Old browser drafts predate position support. Absence is not an explicit
+  // request to clear the already saved source anchor.
+  const fields = {
+    ...draft.fields,
+    source_order_anchor:
+      draft.fields.source_order_anchor === undefined
+        ? record.fields.source_order_anchor
+        : draft.fields.source_order_anchor,
+  }
+  const position = useQuery({
+    queryKey: ["saved-statement-position", caseId, record.source_document_id],
+    enabled: !!fields.manual_page,
+    retry: false,
+    refetchOnWindowFocus: false,
+    queryFn: async () => {
+      const result = savedStatementPosition.parse(
+        await fetchAPI(
+          `/api/financial/statement-import/sources/${record.source_document_id}/details?case_id=${caseId}&include_positions=true`
+        )
+      )
+      if (
+        result.case_id !== caseId ||
+        result.source_document_id !== record.source_document_id ||
+        result.evidence_file_id !== record.evidence_file_id
+      )
+        throw Error(
+          "The source positions do not belong to this statement. Reopen this record before choosing its position."
+        )
+      return result
+    },
+  })
   const validStoredBalance =
     !!fields.balance_minor &&
     /^-?(0|[1-9][0-9]{0,18})$/.test(fields.balance_minor) &&
     BigInt(fields.balance_minor) >= -9223372036854775808n &&
     BigInt(fields.balance_minor) <= 9223372036854775807n
-  const setFields = (update: (previous: typeof fields) => typeof fields) =>
+  const setFields = (
+    update: (previous: typeof draft.fields) => typeof draft.fields
+  ) =>
     setDraft((previous) => ({ ...previous, fields: update(previous.fields) }))
   const setCurrency = (currency: string) =>
     setDraft((previous) => ({ ...previous, currency }))
@@ -305,6 +343,7 @@ function ImportedRecordEditor({
           transaction_id: z.string().nullable(),
           pending_reconciliation: z.boolean().optional(),
           message: z.string().optional(),
+          blockers: z.array(statementBlocker).default([]),
         })
         .parse(
           await fetchAPI(
@@ -367,6 +406,37 @@ function ImportedRecordEditor({
             if (canEdit) save.mutate()
           }}
         >
+          {!!fields.manual_page &&
+            (position.isError ? (
+              <div role="alert">
+                {position.error.message} Your correction is retained.{" "}
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => void position.refetch()}
+                >
+                  Retry source positions
+                </Button>
+              </div>
+            ) : position.isPending ? (
+              <p role="status">Loading this statement's printed positions…</p>
+            ) : (
+              <ManualTransactionPosition
+                rowId={fields.id}
+                page={fields.manual_page}
+                value={fields.source_order_anchor}
+                rows={position.data.source_position_rows}
+                statementPages={position.data.pages}
+                disabled={
+                  !canEdit ||
+                  save.isPending ||
+                  save.data?.pending_reconciliation
+                }
+                onChange={(source_order_anchor) =>
+                  change({ source_order_anchor })
+                }
+              />
+            ))}
           <label className="block text-sm">
             Date
             <input
@@ -512,6 +582,13 @@ function ImportedRecordEditor({
           {save.data?.pending_reconciliation && (
             <div role="status" className="rounded border p-3">
               <p>{save.data.message}</p>
+              {!!save.data.blockers.length && (
+                <ul className="list-disc pl-5">
+                  {save.data.blockers.map((blocker, index) => (
+                    <li key={index}>{blocker.message}</li>
+                  ))}
+                </ul>
+              )}
               <Button type="button" variant="outline" onClick={onClose}>
                 Back to records — correction saved
               </Button>

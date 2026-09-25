@@ -1,10 +1,12 @@
 import { StatementRecoveryPanel } from "./StatementRecoveryPanel"
+import { FinancialSourceAudit } from "./FinancialSourceAudit"
 import { ReadyStatementPeriods } from "./ReadyStatementPeriods"
 import { ResumableUploadsPanel } from "@/features/evidence/components/ResumableUploadsPanel"
 import { BulkStatementDetails } from "./BulkStatementDetails"
 import { FinancialRemovalAction } from "./FinancialRemovalAction"
 import {
   useStatementRegister,
+  groupStatementReadings,
   usesPdfStatementReader,
 } from "../hooks/use-statement-register"
 import { FinancialSourceFile } from "./FinancialSourceFile"
@@ -53,6 +55,23 @@ export function StatementFilesPanel({
   const resultsHeading = useRef<HTMLHeadingElement>(null)
   const [filterAction, setFilterAction] = useState(0)
   const [removed, setRemoved] = useState(false)
+  const sourceReview = useRef<HTMLDivElement>(null)
+  const [auditFilter, setAuditFilter] = useState<{
+    caseId: string
+    fileId: string
+    filename: string
+  } | null>(null)
+  const [visibilityResult, setVisibilityResult] = useState<{
+    caseId: string
+    filename: string
+    removed: boolean
+  } | null>(null)
+  const visibilityNotice = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (visibilityResult?.caseId !== caseId) return
+    visibilityNotice.current?.focus()
+    visibilityNotice.current?.scrollIntoView({ block: "nearest" })
+  }, [visibilityResult, caseId])
   const [error, setError] = useState("")
   const [reading, setReading] = useState<Record<string, boolean>>({})
   const [selection, setSelection] = useState<{ scope: string; ids: string[] }>({
@@ -79,8 +98,7 @@ export function StatementFilesPanel({
     setFilterAction((previous) => previous + 1)
   }
   useEffect(() => {
-    if (!filterAction || reviewOpen || !register || removed || removalMode)
-      return
+    if (!filterAction || reviewOpen || !register || removalMode) return
     const frame = requestAnimationFrame(() => {
       resultsHeading.current?.focus({ preventScroll: true })
       resultsHeading.current?.scrollIntoView({ block: "start" })
@@ -110,6 +128,31 @@ export function StatementFilesPanel({
       queryKey: ["statement-import-files", caseId],
     })
   }
+  const findAuditFile = async (fileId: string) => {
+    const refreshed = await files.refetch()
+    if (refreshed.isError)
+      throw Error(
+        "The file list could not be refreshed. Try again before changing this source."
+      )
+    const match = groupStatementReadings(refreshed.data || []).find(
+      (file) =>
+        file.id === fileId ||
+        file.readingVersions.some((version) => version.id === fileId)
+    )
+    if (!match)
+      throw Error(
+        "This source is no longer in the Financial file list. Refresh source review to check its current location."
+      )
+    setAuditFilter({
+      caseId,
+      fileId: match.id,
+      filename: match.original_filename,
+    })
+    setRemoved(match.financial_removed)
+    setSearch("")
+    setStatus("all")
+    setFilterAction((value) => value + 1)
+  }
   const readStatement = async (fileId: string) => {
     if (!canUpload) return
     setReading((current) => ({ ...current, [fileId]: true }))
@@ -137,6 +180,14 @@ export function StatementFilesPanel({
       ?.filter((file) =>
         file.original_filename.toLowerCase().includes(search.toLowerCase())
       )
+      .filter(
+        (file) =>
+          auditFilter?.caseId !== caseId ||
+          file.id === auditFilter.fileId ||
+          file.readingVersions.some(
+            (version) => version.id === auditFilter.fileId
+          )
+      )
       .filter((file) => !removalMode || usesPdfStatementReader(file))
       .filter((file) => {
         const saved = imports.data?.files.find(
@@ -147,6 +198,7 @@ export function StatementFilesPanel({
           removed ||
           status === "all" ||
           (status === "ready" && !!saved?.available_periods) ||
+          (status === "duplicates" && !!saved?.ignored_periods) ||
           (status === "checks" &&
             (!!saved?.periods_with_checks || !!saved?.incomplete_count)) ||
           (status === "pending" &&
@@ -261,6 +313,19 @@ export function StatementFilesPanel({
         {!removalMode &&
           " Financial sources can also be CSV, spreadsheets, Word documents, images or other formats. Use Choose from Evidence to select relevant content; each source opens with its available reader."}
       </p>
+      {register && !removalMode && (
+        <div
+          ref={sourceReview}
+          tabIndex={-1}
+          className="scroll-mt-24 focus:outline-none"
+        >
+          <FinancialSourceAudit
+            key={caseId}
+            caseId={caseId}
+            onFindFile={findAuditFile}
+          />
+        </div>
+      )}
       {removalMode && (
         <p className="text-sm">
           Original PDFs, case notes, findings and import history are retained.
@@ -322,10 +387,45 @@ export function StatementFilesPanel({
             : `Removed files (${files.data?.filter((file) => file.financial_removed).length ?? 0})`}
         </Button>
       </div>
+      {visibilityResult?.caseId === caseId && (
+        <div
+          ref={visibilityNotice}
+          tabIndex={-1}
+          role="status"
+          className="rounded border bg-card p-3 text-sm space-y-2"
+        >
+          <p>
+            {visibilityResult.filename}{" "}
+            {visibilityResult.removed
+              ? "removed from Financial. The original and saved reviews are retained."
+              : "restored to Financial with its saved reviews."}
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setRemoved(visibilityResult.removed)
+              setStatus("all")
+              setSearch("")
+            }}
+          >
+            {visibilityResult.removed
+              ? "View removed files"
+              : "View financial files"}
+          </Button>
+        </div>
+      )}
       {removed && !removalMode && (
         <p className="text-sm">
           These files were removed from Financial. Their originals remain in
           Evidence. Restore a file to review it here again.
+        </p>
+      )}
+      {!removed && !removalMode && canEdit && (
+        <p className="text-xs text-muted-foreground">
+          Remove from Financial hides a file and keeps its Evidence, corrections
+          and batch reviews. To withdraw saved transactions, use Remove imports…
+          and review the affected records first.
         </p>
       )}
       {canUpload && !removalMode && (
@@ -380,6 +480,7 @@ export function StatementFilesPanel({
               <option value="all">All files</option>
               <option value="ready">Ready to import</option>
               <option value="checks">Checks to review</option>
+              <option value="duplicates">Ignored duplicates</option>
               <option value="pending">Reading or importing</option>
               <option value="imported">With imported statements</option>
               <option value="review">Without imported statements</option>
@@ -544,7 +645,35 @@ export function StatementFilesPanel({
           </p>
         </section>
       )}
-      {register && !removed && !removalMode && (
+      {register && !removalMode && auditFilter?.caseId === caseId && (
+        <div className="rounded border p-3 text-sm space-y-2">
+          <p>Showing source selected for review: {auditFilter.filename}</p>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setAuditFilter(null)
+                setFilterAction((value) => value + 1)
+              }}
+            >
+              Clear source filter
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setAuditFilter(null)
+                sourceReview.current?.focus()
+                sourceReview.current?.scrollIntoView({ block: "start" })
+              }}
+            >
+              Back to source review
+            </Button>
+          </div>
+        </div>
+      )}
+      {register && !removalMode && (
         <div className="space-y-1">
           <h3
             ref={resultsHeading}
@@ -552,9 +681,11 @@ export function StatementFilesPanel({
             className="font-semibold scroll-mt-24 focus:outline-none"
             aria-live="polite"
           >
-            {status === "ready"
-              ? `Ready to import · ${visibleReadyCount} statement ${visibleReadyCount === 1 ? "period" : "periods"} in ${visibleFiles.length} ${visibleFiles.length === 1 ? "file" : "files"}`
-              : `${visibleFiles.length} matching files`}
+            {removed
+              ? `Removed files · ${visibleFiles.length} matching files`
+              : status === "ready"
+                ? `Ready to import · ${visibleReadyCount} statement ${visibleReadyCount === 1 ? "period" : "periods"} in ${visibleFiles.length} ${visibleFiles.length === 1 ? "file" : "files"}`
+                : `${visibleFiles.length} matching files`}
           </h3>
           {status === "ready" && (
             <p className="text-sm">
@@ -569,6 +700,11 @@ export function StatementFilesPanel({
         const saved = imports.data?.files.find(
           (item) => item.evidence_file_id === file.id
         )
+        const allPreparedIgnored =
+          !!saved?.ignored_periods &&
+          saved.ignored_periods === saved.prepared_periods &&
+          !saved.current_transactions &&
+          !saved.periods.length
         if (!usesPdfStatementReader(file))
           return (
             <FinancialSourceFile
@@ -576,6 +712,13 @@ export function StatementFilesPanel({
               caseId={caseId}
               file={file}
               importedPayments={saved?.current_transactions}
+              onVisibilityChanged={(removed) =>
+                setVisibilityResult({
+                  caseId,
+                  filename: file.original_filename,
+                  removed,
+                })
+              }
             />
           )
         return (
@@ -642,22 +785,24 @@ export function StatementFilesPanel({
               >
                 {removed
                   ? "Removed from Financial"
-                  : saved?.wire_review_count
-                    ? `${saved.wire_review_count} saved wire ${saved.wire_review_count === 1 ? "review" : "reviews"}`
-                    : saved?.incomplete_count
-                      ? `${saved.current_transactions} usable transactions · ${saved.incomplete_count} incomplete records to check`
-                      : saved?.periods.length && !saved.current_transactions
-                        ? `Statement saved · ${saved.periods.length} recorded ${saved.periods.length === 1 ? "period" : "periods"} · no payments`
-                        : saved
-                          ? `${saved.current_transactions} imported payments · ${saved.periods.length} recorded ${saved.periods.length === 1 ? "period" : "periods"}`
-                          : file.status === "processed"
-                            ? imports.data && !imports.data.truncated
-                              ? "PDF read · payments not yet imported"
-                              : "Ready to open"
-                            : file.status === "unprocessed" &&
-                                queuedReadings.has(file.id)
-                              ? "Reading queued — waiting for progress"
-                              : file.status}
+                  : allPreparedIgnored
+                    ? "Duplicate - Ignored by system"
+                    : saved?.wire_review_count
+                      ? `${saved.wire_review_count} saved wire ${saved.wire_review_count === 1 ? "review" : "reviews"}`
+                      : saved?.incomplete_count
+                        ? `${saved.current_transactions} usable transactions · ${saved.incomplete_count} incomplete records to check`
+                        : saved?.periods.length && !saved.current_transactions
+                          ? `Statement saved · ${saved.periods.length} recorded ${saved.periods.length === 1 ? "period" : "periods"} · no payments`
+                          : saved
+                            ? `${saved.current_transactions} imported payments · ${saved.periods.length} recorded ${saved.periods.length === 1 ? "period" : "periods"}`
+                            : file.status === "processed"
+                              ? imports.data && !imports.data.truncated
+                                ? "PDF read · payments not yet imported"
+                                : "Ready to open"
+                              : file.status === "unprocessed" &&
+                                  queuedReadings.has(file.id)
+                                ? "Reading queued — waiting for progress"
+                                : file.status}
               </span>
               {saved?.prepared_periods !== undefined && (
                 <span className="block text-sm">
@@ -672,6 +817,9 @@ export function StatementFilesPanel({
                     : ""}
                   {saved.periods_with_checks
                     ? ` · ${saved.periods_with_checks} periods have checks to review`
+                    : ""}
+                  {saved.ignored_periods
+                    ? ` · ${saved.ignored_periods} duplicate ${saved.ignored_periods === 1 ? "period" : "periods"} ignored`
                     : ""}
                 </span>
               )}
@@ -708,6 +856,48 @@ export function StatementFilesPanel({
                 </span>
               )}
             </button>
+            {!!saved?.duplicate_dispositions.length &&
+              !removalMode &&
+              !removed && (
+                <details className="rounded border p-2 text-sm">
+                  <summary className="cursor-pointer font-medium">
+                    Duplicate decisions · evidence retained
+                  </summary>
+                  <ul className="mt-2 space-y-2">
+                    {saved.duplicate_dispositions.map(
+                      ({ statement_id, decision }) => (
+                        <li
+                          key={statement_id || "file"}
+                          className="space-y-1 rounded border p-2"
+                        >
+                          <p className="font-medium">
+                            {decision.current && decision.status === "ignored"
+                              ? "Duplicate - Ignored by system"
+                              : decision.label}
+                          </p>
+                          <p>{decision.reason}</p>
+                          {decision.retained && (
+                            <p className="break-words">
+                              Retained source: {decision.retained.filename}
+                            </p>
+                          )}
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled={file.status !== "processed"}
+                            onClick={() =>
+                              openStatement(file.id, statement_id || "")
+                            }
+                          >
+                            Review duplicate decision
+                          </Button>
+                        </li>
+                      )
+                    )}
+                  </ul>
+                </details>
+              )}
             {status === "ready" &&
               !removed &&
               !removalMode &&
@@ -732,6 +922,13 @@ export function StatementFilesPanel({
               <FinancialFileAction
                 caseId={caseId}
                 file={file}
+                onVisibilityChanged={(removed) =>
+                  setVisibilityResult({
+                    caseId,
+                    filename: file.original_filename,
+                    removed,
+                  })
+                }
                 imported={
                   !!saved?.periods.length || !!saved?.current_transactions
                 }

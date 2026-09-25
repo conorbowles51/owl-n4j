@@ -306,8 +306,8 @@ export function TransactionFilterCharts({
             </div>
             {monthData.omittedEmptyMonths && (
               <p className="text-xs text-muted-foreground">
-                Only populated months are shown because the date span exceeds 50
-                years.
+                Only months with dated matching transactions are shown. Missing
+                months do not mean zero activity.
               </p>
             )}
           </section>

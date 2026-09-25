@@ -6,6 +6,7 @@ import {
   fireEvent,
   within,
   cleanup,
+  waitFor,
 } from "@testing-library/react"
 import { afterEach, expect, it, vi } from "vitest"
 import { page } from "vitest/browser"
@@ -15,6 +16,69 @@ import { TrendComparisonWorkspace } from "./TrendComparisonWorkspace"
 import { InvestigatorPeople } from "./InvestigatorPeople"
 import { trendRows, trendCoverage } from "../lib/trend-fixture.test-support"
 import { useFinancialDraftStore } from "../stores/financial-drafts"
+let profileRows = trendRows
+let profileAccounts: {
+  id: string
+  canonical_id: string
+  institution: string
+  identifier_as_printed: string
+  holder_as_recorded: string
+  currency: string
+  party: null
+  holder_parties: { id: string; name: string }[]
+  relationships: never[]
+}[] = []
+const profileCase = "10000000-0000-4000-8000-000000000001"
+vi.mock("@/lib/api-client", async (original) => ({
+  ...(await original<typeof import("@/lib/api-client")>()),
+  fetchAPI: vi.fn(async (url: string) =>
+    url.startsWith("/api/financial/account-parties?")
+      ? {
+          case_id: "10000000-0000-4000-8000-000000000001",
+          revision: "a".repeat(64),
+          accounts: profileAccounts,
+          parties: [],
+          history: [],
+          applied: false,
+          limitation: "Synthetic directory",
+        }
+      : url.startsWith("/api/financial/account-history?")
+        ? {
+            case_id: "10000000-0000-4000-8000-000000000001",
+            applied: false,
+            groups: profileAccounts.slice(-1).map((account) => ({
+              key: account.id,
+              account_id: account.id,
+              currency: account.currency,
+              balance_kind: "asset",
+              label: `${account.institution} ${account.identifier_as_printed}`,
+              periods: [
+                {
+                  id: "quiet",
+                  source_document_id: "source",
+                  evidence_file_id: null,
+                  filename: "Synthetic quiet statement",
+                  start: "2026-01-01",
+                  end: "2026-01-31",
+                  opening_minor: "5000",
+                  closing_minor: "5000",
+                  status: "confirmed_no_activity",
+                  transaction_count: 0,
+                  undated_count: 0,
+                  activity: [],
+                },
+              ],
+            })),
+          }
+        : {
+            case_id: "10000000-0000-4000-8000-000000000001",
+            has_more: false,
+            items: [],
+            categories: [],
+            entries: [],
+          }
+  ),
+}))
 vi.mock("../hooks/use-financial-access", () => ({
   useFinancialAccess: () => ({ canEdit: true }),
 }))
@@ -23,17 +87,18 @@ vi.mock("../hooks/use-financial-finding-index", () => ({
 }))
 vi.mock("../hooks/use-investigator-payments", () => ({
   useInvestigatorPayments: () => ({
-    rows: trendRows,
+    rows: profileRows,
     params: {},
     complete: true,
     query: {
-      data: { transactions: trendRows, total: trendRows.length },
+      data: { transactions: profileRows, total: profileRows.length },
       isPending: false,
       isError: false,
     },
   }),
 }))
-vi.mock("./InvestigationWorkspaceParts", () => ({
+vi.mock("./InvestigationWorkspaceParts", async (original) => ({
+  ...(await original<typeof import("./InvestigationWorkspaceParts")>()),
   WorkspaceHeading: ({ title }: { title: string }) => <h1>{title}</h1>,
   WorkspaceScope: () => null,
   InvestigationReadState: ({ children }: { children: React.ReactNode }) => (
@@ -78,6 +143,8 @@ vi.mock("./LedgerExportButton", () => ({
 }))
 afterEach(() => {
   cleanup()
+  profileRows = trendRows
+  profileAccounts = []
   useFinancialDraftStore.setState({ drafts: {} })
   document.documentElement.classList.remove("dark")
 })
@@ -133,9 +200,11 @@ it("shows evidence-driven trends, preserves a comparison after source navigation
 })
 it("gives each profile the transaction charts and filters without leaking another profile's selection or export", async () => {
   await page.viewport(1440, 1000)
-  render(wrap(<InvestigatorPeople caseId="case" />))
+  render(wrap(<InvestigatorPeople caseId={profileCase} />))
   fireEvent.click(
-    screen.getByRole("button", { name: /Recorded payment name Software Co/ })
+    await screen.findByRole("button", {
+      name: /Recorded payment name Software Co/,
+    })
   )
   expect(screen.getByRole("button", { name: "▾ Charts" })).toBeVisible()
   expect(screen.getByText("3 of 3 imported transactions")).toBeVisible()
@@ -176,5 +245,93 @@ it("gives each profile the transaction charts and filters without leaking anothe
   await page.screenshot({
     path: "../../../../../output/financial-profile-analysis.png",
     element: screen.getByRole("region", { name: "Transaction analysis" }),
+  })
+})
+
+it("keeps a person's five accounts together and separates counterparties through drilldown and return", async () => {
+  await page.viewport(1440, 1000)
+  const holder = {
+    id: "20000000-0000-4000-8000-000000000001",
+    name: "Example Holder",
+  }
+  profileAccounts = Array.from({ length: 5 }, (_, n) => ({
+    id: `30000000-0000-4000-8000-00000000000${n}`,
+    canonical_id: `30000000-0000-4000-8000-00000000000${n}`,
+    institution: "Example Bank",
+    identifier_as_printed: `000${n}`,
+    holder_as_recorded: holder.name,
+    currency: n === 4 ? "EUR" : "USD",
+    party: null,
+    holder_parties: [holder],
+    relationships: [],
+  }))
+  profileRows = [
+    {
+      ...trendRows[0],
+      key: "owned",
+      account_id: profileAccounts[0].id,
+      account_holder_parties: [holder],
+    },
+    {
+      ...trendRows[1],
+      key: "appearance",
+      account_id: "outsider",
+      counterparty_link: { kind: "party", id: holder.id, label: holder.name },
+    },
+  ]
+  render(wrap(<InvestigatorPeople caseId={profileCase} />))
+  fireEvent.click(
+    await screen.findByRole("button", {
+      name: /Reviewed account holder Example Holder/,
+    })
+  )
+  const accountList = screen.getByRole("region", {
+    name: "Accounts belonging to this person or business",
+  })
+  expect(within(accountList).getAllByRole("button")).toHaveLength(5)
+  expect(accountList).not.toHaveTextContent("outsider")
+  expect(screen.getByText("1 of 1 imported transactions")).toBeVisible()
+  fireEvent.click(
+    screen.getByRole("button", { name: "As sender or beneficiary (1)" })
+  )
+  fireEvent.click(screen.getByText("Download these transactions"))
+  expect(
+    JSON.parse(screen.getByTestId("profile-export").textContent!)
+  ).toMatchObject({
+    profile_id: `owner:${holder.id}`,
+    profile_scope: "counterparty_payments",
+  })
+  await page.screenshot({
+    path: "/private/tmp/loupe-person-accounts-wide.png",
+    element: accountList,
+  })
+  fireEvent.click(within(accountList).getByRole("button", { name: /0004/ }))
+  expect(
+    await screen.findByRole("region", { name: "Account balances and activity" })
+  ).toBeVisible()
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "2026-01" })).toBeVisible()
+  )
+  fireEvent.click(screen.getByRole("button", { name: "2026-01" }))
+  expect(
+    screen.getByRole("region", { name: "Account balances and activity" })
+  ).toHaveTextContent("Confirmed quiet period")
+  fireEvent.click(
+    screen.getByRole("button", { name: "Back to person or business" })
+  )
+  expect(
+    screen.getByRole("region", {
+      name: "Accounts belonging to this person or business",
+    })
+  ).toBeVisible()
+  await page.viewport(420, 900)
+  await waitFor(() =>
+    expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(422)
+  )
+  await page.screenshot({
+    path: "/private/tmp/loupe-person-accounts-narrow.png",
+    element: screen.getByRole("region", {
+      name: "Accounts belonging to this person or business",
+    }),
   })
 })

@@ -17,6 +17,7 @@ def operation_view(operation):
         statement_count=len(outcomes), pending=pending, failed=failed,
         imported=sum(row['status'] == 'imported' for row in outcomes),
         already_present=sum(row['status'] == 'already_present' for row in outcomes),
+        duplicate_ignored=sum(row['status'] == 'duplicate_ignored' for row in outcomes),
         transaction_count=sum(row.get('transaction_count', 0) for row in outcomes),
         incomplete_count=sum(row.get('incomplete_count', 0) for row in outcomes), outcomes=outcomes)
 

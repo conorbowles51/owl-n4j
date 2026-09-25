@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
+from sqlalchemy.orm import object_session
 from postgres.models.financial import FinancialAccount, FinancialSourceDocument, FinancialStatementPeriod, FinancialTransaction
 from services.financial.pdf_candidates import PdfMappingError, _digest
 
@@ -81,7 +82,8 @@ def _view(document, period, account):
     convention = original['metadata'].get('balance_convention') or (
         'liability_owed' if account.account_type == 'credit_card' else 'asset_balance')
     sign = -1 if convention == 'liability_owed' else 1
-    pages = sorted({s['page_number'] for s in original.get('sources', [])})
+    pages = list(original.get('statement_page_numbers') or
+                 sorted({s['page_number'] for s in original.get('sources', [])}) or original.get('page_numbers', []))
     controls = metadata.get('statement_details_review', {}).get('balances', {})
     result = dict(case_id=str(document.case_id), source_document_id=str(document.id),
         evidence_file_id=str(document.evidence_file_id), account_id=str(account.id),
@@ -98,13 +100,28 @@ def _view(document, period, account):
         value = getattr(period, role + '_balance_minor') if period else None
         result['balances'][role] = dict(amount_minor=str(value * sign) if value is not None else None,
             page=controls.get(role, {}).get('page'))
+    session = object_session(document)
+    if session is not None:
+        from services.financial.saved_statement_admission import current_saved_assessment
+        result['admission'] = current_saved_assessment(session, document, period)
     result['revision'] = _digest(dict(view=result, account=[account.identity_key, account.holder_name,
         account.identifier_as_printed, account.institution_name], history=metadata.get('statement_details_history', [])))
     return result
 
 
-def read_statement_details(session, *, case_id, source_id):
-    return _view(*_load(session, case_id, source_id))
+def read_statement_details(session, *, case_id, source_id, include_positions=False):
+    document, period, account = _load(session, case_id, source_id)
+    result = _view(document, period, account)
+    if include_positions:
+        # This opt-in source index is for the missed-payment editors. Keep it
+        # out of ordinary details receipts and their repeatedly appended history.
+        original = document.metadata_['statement_import_original']
+        result['source_position_rows'] = [dict(id=row['id'], page_number=row['page_number'], kind=row['kind'],
+            fields={key: row.get('fields', {}).get(key, '') for key in ('date', 'description')})
+            for row in original.get('rows', []) if row.get('kind') in ('transaction', 'unresolved')]
+        result['requires_manual_position'] = any(not row.get('excluded') and
+            row.get('fields', {}).get('balance') not in (None, '') for row in original.get('rows', []))
+    return result
 
 
 def update_statement_details(session, *, case_id, source_id, request, actor, commit=True):
@@ -242,18 +259,12 @@ def update_statement_details(session, *, case_id, source_id, request, actor, com
             from services.financial.statement_currency_edit import complete_currency_records
             admission = complete_currency_records(session, document=document, period=period, metadata=metadata,
                 currency=period.currency, actor=actor)
-            if admission is None:
-                from services.financial.saved_statement_admission import assess_saved_additions
-                admission = assess_saved_additions(session, document, period, metadata, period.currency,
-                    no_activity_confirmed=request.no_activity_confirmed)
-                metadata['statement_admission'] = admission
             document.metadata_ = deepcopy(metadata)
             session.flush()
             from services.financial.reconcile import reconcile_period
             reconcile_period(session, period)
-            if admission and admission['can_import']:
-                from services.financial.account_history import record_admission_snapshot
-                record_admission_snapshot(session, document, period)
+            from services.financial.saved_statement_admission import refresh_saved_assessment
+            refresh_saved_assessment(session, document, period, no_activity_confirmed=request.no_activity_confirmed)
         result = _view(document, period, account)
         if commit:
             session.commit()

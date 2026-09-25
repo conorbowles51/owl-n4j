@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
 import { z } from "zod"
 import { fetchAPI } from "@/lib/api-client"
+import { statementAssessment } from "../lib/statement-assessment"
 
 const finding = z.object({
   row_id: z.string().nullish(),
@@ -29,27 +30,25 @@ export const arithmeticCheck = z.object({
   mismatch_count: z.number().optional(),
   findings: z.array(finding).optional(),
   findings_truncated: z.boolean().optional(),
+  unplaced_row_ids: z.array(z.string()).optional(),
+  unavailable_intervals: z
+    .array(
+      z.object({
+        row_id: z.string().nullish(),
+        page: z.number().nullish(),
+        unplaced_row_ids: z.array(z.string()).optional(),
+        invalid_row_ids: z.array(z.string()).optional(),
+        reason: z.string(),
+      })
+    )
+    .optional(),
 })
 const resultSchema = z.object({
   revision: z.string(),
   checks_revision: z.string(),
   applied: z.literal(false),
   checks: z.array(arithmeticCheck),
-  admission: z
-    .object({
-      can_import: z.boolean(),
-      status: z.string(),
-      revision: z.string(),
-      blockers: z.array(
-        z.object({
-          message: z.string(),
-          row_id: z.string().nullish(),
-          field: z.string().optional(),
-          kind: z.string().optional(),
-        })
-      ),
-    })
-    .optional(),
+  admission: statementAssessment.extend({ revision: z.string() }).optional(),
 })
 
 // Associate every response with its exact edit snapshot. An old response must

@@ -7,10 +7,12 @@ export function FinancialSourceFile({
   caseId,
   file,
   importedPayments = 0,
+  onVisibilityChanged,
 }: {
   caseId: string
   file: StatementFile
   importedPayments?: number
+  onVisibilityChanged?: (removed: boolean) => void
 }) {
   const legacyOffice = /\.(xls|doc)$/i.test(file.original_filename)
   return (
@@ -39,7 +41,11 @@ export function FinancialSourceFile({
         >
           Open source in Evidence
         </Link>
-        <FinancialFileAction caseId={caseId} file={file} />
+        <FinancialFileAction
+          caseId={caseId}
+          file={file}
+          onVisibilityChanged={onVisibilityChanged}
+        />
       </div>
     </article>
   )

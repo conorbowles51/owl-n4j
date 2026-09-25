@@ -153,7 +153,7 @@ def _existing_statement(session, case_id, file, statement_id, addresses=(), row_
     return matches[0] if matches else None
 
 
-def read_statement_import(session, *, case_id, evidence_file_id, currency=None, statement_id=None, _cache=None, _include_period_checks=True, _apply_assignments=True):
+def read_statement_import(session, *, case_id, evidence_file_id, currency=None, statement_id=None, _cache=None, _include_period_checks=True, _apply_assignments=True, _include_duplicate_disposition=True):
     file = session.scalar(select(EvidenceFile).where(EvidenceFile.id == evidence_file_id,
                                                     EvidenceFile.case_id == case_id))
     if file is None:
@@ -539,7 +539,10 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
             current_import['refresh_transaction_count'] = refresh_payment_count(current, result)
     if _apply_assignments:
         from services.financial.statement_row_assignment import assigned_proposal
-        return assigned_proposal(session, file, result, cache)
+        result = assigned_proposal(session, file, result, cache)
+    if _include_duplicate_disposition:
+        from services.financial.pending_statement_duplicates import read_duplicate_disposition
+        result['duplicate_disposition'] = read_duplicate_disposition(session, file, result)
     return result
 
 # A single confirmation carries all reviewed rows. The original proposal stays
@@ -550,6 +553,7 @@ from types import SimpleNamespace
 from uuid import UUID
 from pydantic import Field, model_validator, model_serializer
 from services.financial.payment_counterparty_link import PaymentCounterpartyLink
+from services.financial.manual_row_placement import SourceOrderAnchor
 from services.financial.pdf_candidates import _Contract, _Digest
 
 
@@ -563,12 +567,15 @@ class DraftImportRow(_Contract):
     description: Annotated[str, Field(max_length=4096)] = ''
     counterparty: Annotated[str, Field(max_length=4096)] = ''
     counterparty_link: PaymentCounterpartyLink | None = None
+    source_order_anchor: SourceOrderAnchor | None = None
 
     @model_serializer(mode='wrap')
     def serialize_compatible_row(self, handler):
         value = handler(self)
         if self.counterparty_link is None:
             value.pop('counterparty_link', None)
+        if self.source_order_anchor is None:
+            value.pop('source_order_anchor', None)
         return value
 
     amount_minor: Annotated[str, Field(max_length=32)] = '0'
@@ -768,6 +775,15 @@ def confirm_statement_import(*, session_factory, case_id, evidence_file_id, requ
                     if existing is None:
                         raise PdfMappingError('The current statement changed. Reload the review.', 409)
                 replacing = None
+                from services.financial.pending_statement_duplicates import apply_duplicate_disposition, ignored_receipt
+                if existing is not None and existing.evidence_file_id != file.id and not request.replaces_source_document_id:
+                    if request.expected_revision != proposal['revision'] or request.statement_id != proposal.get('statement_id'):
+                        raise PdfMappingError('The statement reading changed. Reopen it before comparing copies.', 409)
+                    disposition = apply_duplicate_disposition(session, case_id=case_id, file=file,
+                        proposal=proposal, request=request.model_dump(mode='json'), actor=actor)
+                    if disposition['status'] == 'ignored':
+                        session.commit()
+                        return ignored_receipt(case_id, file, disposition)
                 if existing is not None:
                     if _same_import_request(existing, request, request_hash):
                         from sqlalchemy import func
@@ -799,6 +815,12 @@ def confirm_statement_import(*, session_factory, case_id, evidence_file_id, requ
                 elif request.replaces_source_document_id is not None:
                     raise PdfMappingError('The import selected for replacement is no longer current.', 409)
                 originals = check_import_request(proposal, request)
+                if replacing is None:
+                    disposition = apply_duplicate_disposition(session, case_id=case_id, file=file,
+                        proposal=proposal, request=request.model_dump(mode='json'), actor=actor)
+                    if disposition['status'] == 'ignored':
+                        session.commit()
+                        return ignored_receipt(case_id, file, disposition)
                 from services.financial.statement_import_overlap import coverage_review, requires_decision, duplicate_hold
                 coverage_request = {**request.model_dump(mode='json'), 'account_type': proposal['metadata'].get('account_type') or ''}
                 coverage = coverage_review(session, case_id=case_id, file_id=evidence_file_id,

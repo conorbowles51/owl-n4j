@@ -1,6 +1,7 @@
 export interface LedgerTableView {
   profile_id?: string
   profile_group?: string
+  profile_scope?: "owned_accounts" | "counterparty_payments"
   from_names?: string[]
   to_names?: string[]
   perspective_names?: string[]

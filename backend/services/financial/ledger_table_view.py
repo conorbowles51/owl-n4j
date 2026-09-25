@@ -11,6 +11,7 @@ class LedgerTableView(BaseModel):
     search: Annotated[str, Field(max_length=256)] = ''
     profile_id: Annotated[str, Field(max_length=1024, pattern=r'^$|^(account|name|owner):')] = ''
     profile_group: Annotated[str, Field(pattern=r'^$|^[A-Z]{3}:(card|bank)$')] = ''
+    profile_scope: Literal['', 'owned_accounts', 'counterparty_payments'] = ''
     category: Annotated[str, Field(max_length=120)] = ''
     account_id: Annotated[str, Field(pattern=r'^$|^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')] = ''
     account_holder: Annotated[str, Field(max_length=512)] = ''
@@ -38,6 +39,8 @@ class LedgerTableView(BaseModel):
 
     @model_validator(mode='after')
     def amount_range(self):
+        if self.profile_scope and not self.profile_id:
+            raise ValueError('Choose a profile for its payment scope.')
         if (self.flow_party or self.flow_kind) and not self.perspective_names:
             raise ValueError('Choose a perspective for money flow filters.')
         if bool(self.import_batch_id) != bool(self.import_batch_revision):
@@ -76,6 +79,17 @@ def _period(row):
         return 'undated'
 
 
+def _owns_payment(row, party_id):
+    relationships = row.get('account_relationships') or []
+    holders = [link for link in relationships if link['role'] == 'holder' and link['party']['id'] == party_id]
+    if not holders:
+        return not relationships and any(p['id'] == party_id for p in row.get('account_holder_parties') or [])
+    day = None if _period(row) == 'undated' else row.get('ordering_date', '')[:10]
+    return any((not link.get('effective_from') and not link.get('effective_to')) or
+        (day and (not link.get('effective_from') or day >= link['effective_from']) and
+         (not link.get('effective_to') or day <= link['effective_to'])) for link in holders)
+
+
 def _analysis_match(row, view, selections):
     group = f"{row['currency']}:{'card' if row.get('account_type') == 'credit_card' else 'bank'}"
     if view.profile_group and group != view.profile_group:
@@ -84,15 +98,17 @@ def _analysis_match(row, view, selections):
         name = row.get('from_name' if row['direction'] == 'credit' else 'to_name')
         if name is None:
             name = row.get('counterparty_raw')
-        profiles = {f"account:{id}" for id in [row.get('account_id'), row.get('canonical_account_id'), *(row.get('account_alias_ids') or [])] if id}
-        profiles.update(f"owner:{party['id']}" for party in row.get('account_holder_parties') or [])
+        owned = {f"account:{id}" for id in [row.get('account_id'), row.get('canonical_account_id'), *(row.get('account_alias_ids') or [])] if id}
+        owned.update(f"owner:{party['id']}" for party in row.get('account_holder_parties') or [] if _owns_payment(row, party['id']))
+        appearances = set()
         link = row.get('counterparty_link')
         if link:
-            profiles.add(f"{'owner' if link['kind'] == 'party' else 'account'}:{link['id']}")
+            appearances.add(f"{'owner' if link['kind'] == 'party' else 'account'}:{link['id']}")
             if link.get('recorded_id'):
-                profiles.add(f"{'owner' if link['kind'] == 'party' else 'account'}:{link['recorded_id']}")
+                appearances.add(f"{'owner' if link['kind'] == 'party' else 'account'}:{link['recorded_id']}")
         else:
-            profiles.add(f"name:{name or ''}")
+            appearances.add(f"name:{name or ''}")
+        profiles = owned if view.profile_scope == 'owned_accounts' else appearances if view.profile_scope == 'counterparty_payments' else owned | appearances
         if view.profile_id not in profiles:
             return False
     if view.analysis_group and group != view.analysis_group:
@@ -170,7 +186,7 @@ def capture_table_view(ledger, request, *, batch_scope=None):
                 return (unquote(key.split(':', 3)[3]) if key.startswith('identity:') else key[5:] if key.startswith('name:') else 'Not identified').lower()
             return (row.get(field) or ('Uncategorized' if field == 'category' else '')).lower()
         rows.sort(key=lambda row: label(row).encode('utf-16-be', errors='surrogatepass'), reverse=direction == 'desc')
-    result = dict(schema='loupe.financial.ledger_table_view/1',filters=view.model_dump(exclude={key for key in ('profile_id', 'profile_group', 'category', 'account_id', 'account_holder', 'source_document_id', 'import_batch_id', 'import_batch_revision', 'from_names', 'to_names', 'perspective_names', 'analysis_group', 'analysis_period', 'analysis_direction', 'analysis_categories', 'flow_party', 'flow_kind') if not getattr(view, key)}),
+    result = dict(schema='loupe.financial.ledger_table_view/1',filters=view.model_dump(exclude={key for key in ('profile_id', 'profile_group', 'profile_scope', 'category', 'account_id', 'account_holder', 'source_document_id', 'import_batch_id', 'import_batch_revision', 'from_names', 'to_names', 'perspective_names', 'analysis_group', 'analysis_period', 'analysis_direction', 'analysis_categories', 'flow_party', 'flow_kind') if not getattr(view, key)}),
         row_ids=[r['key'] for r in rows],matching_rows=len(rows),
         limitation='Admitted ledger rows matching the recorded table filters, in display order, captured at export time. Display order does not establish bank sequence. The enclosing snapshot retains the full applied account/date scope and its history; its totals apply to that full scope. Source eligibility and proof classes are unchanged. All matching rows are included, not just the visible page.')
     if batch_sources is not None:

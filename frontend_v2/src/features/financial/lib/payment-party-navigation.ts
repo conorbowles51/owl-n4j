@@ -32,6 +32,8 @@ export function openPaymentParty(
     page: 0,
     ...previous,
     currencyGroup: "",
+    parentProfile: "",
+    profileScope: ownAccount ? "owned_accounts" : "counterparty_payments",
     selected: ownAccount
       ? `account:${row.canonical_account_id || row.account_id}`
       : row.counterparty_link

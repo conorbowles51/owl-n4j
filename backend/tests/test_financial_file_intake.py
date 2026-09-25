@@ -1,11 +1,15 @@
 import asyncio
 import hashlib
+from copy import deepcopy
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from uuid import uuid4
 from unittest.mock import AsyncMock
 from sqlalchemy import select
 from postgres.base import Base
 from postgres.models.evidence import EvidenceFile, EvidenceFolder, EvidenceDocumentText, EvidenceTableGeometry, IngestionLog
+from postgres.models.financial_import_batches import FinancialImportBatch as Batch, FinancialImportBatchItem as Item
+from postgres.models.financial_recovery import FinancialRecoveryRun, FinancialRecoveryItem
 from services.financial.decisions import Actor
 from services.financial.pdf_candidates import PdfMappingError
 from services.financial.file_visibility import set_financial_file_visibility, financial_file_visibility
@@ -17,7 +21,7 @@ from tests.test_financial_duplicates import DuplicateTestCase
 class FinancialFileIntakeTests(DuplicateTestCase):
     def setUp(self):
         super().setUp()
-        Base.metadata.create_all(self.db.connection(), tables=[IngestionLog.__table__, EvidenceDocumentText.__table__, EvidenceTableGeometry.__table__])
+        Base.metadata.create_all(self.db.connection(), tables=[IngestionLog.__table__, EvidenceDocumentText.__table__, EvidenceTableGeometry.__table__, Batch.__table__, Item.__table__, FinancialRecoveryRun.__table__, FinancialRecoveryItem.__table__])
         self.actor = Actor(self.user.name, self.user.email, self.user.id)
         self.file = self.new_file('letter.pdf')
         self.db.commit()
@@ -77,6 +81,118 @@ class FinancialFileIntakeTests(DuplicateTestCase):
             with self.assertRaisesRegex(PdfMappingError, 'already has imported'):
                 self.change(True, file=self.db.get(EvidenceFile, document.evidence_file_id))
             self.db.rollback()
+
+    def test_membership_removal_supports_every_format_without_clearing_saved_work(self):
+        for filename in ('reading.pdf', 'ledger.csv', 'accounts.xlsx', 'report.docx', 'scan.jpeg', 'unusual.source'):
+            with self.subTest(filename=filename):
+                file = self.new_file(filename)
+                file.metadata_ = {**file.metadata_, 'financial_workspace': {'schema': 'loupe.financial.file/1', 'selected_by': str(self.user.id)},
+                    'financial_review_progress': {'': {'request': {'holder': 'Preserve investigator correction'}}},
+                    'financial_duplicate_dispositions': {'': {'status': 'needs_comparison'}}}
+                batch = Batch(id=uuid4(), case_id=self.case.id, created_by=self.user.id, actor={}, status='review',
+                    files=[{'source_id': str(file.id), 'file_id': str(file.id), 'status': 'checked'}])
+                self.db.add(batch); self.db.flush()
+                item = Item(id=uuid4(), batch_id=batch.id, file_id=file.id, statement_key='', status='attention',
+                    summary={'problem_count': 1}, review_request={'holder': 'Saved batch correction'})
+                self.db.add(item); self.db.commit()
+                original, draft = deepcopy(file.metadata_), deepcopy(item.review_request)
+                hidden = self.change(True, file=file)
+                self.assertTrue(hidden['financial_removed'])
+                self.assertFalse(hidden['financial_imports_removed'])
+                self.assertEqual({key: file.metadata_[key] for key in original}, original)
+                self.assertEqual(item.review_request, draft)
+                self.assertEqual((batch.status, item.status), ('review', 'attention'))
+                self.change(False, hidden['financial_visibility_revision'], file=file)
+                self.assertFalse(financial_file_visibility(file)['financial_removed'])
+                self.assertEqual(item.review_request, draft)
+                self.assertTrue(Path(file.stored_path).exists())
+
+    def test_membership_removal_guards_processing_queued_and_pending_imports_without_changing_jobs(self):
+        batch = Batch(id=uuid4(), case_id=self.case.id, created_by=self.user.id, actor={}, status='review',
+            files=[{'source_id': str(self.file.id), 'file_id': str(self.file.id), 'status': 'checked'}])
+        self.db.add(batch); self.db.flush()
+        item = Item(id=uuid4(), batch_id=batch.id, file_id=self.file.id, statement_key='', status='attention', summary={}, review_request={'holder': 'Keep'})
+        self.db.add(item); self.db.commit()
+        scenarios = (
+            ('processing', 'checked', 'attention', None, None, 'still processing'),
+            ('processed', 'waiting', 'attention', None, None, 'queued or being processed'),
+            ('processed', 'processing', 'attention', None, None, 'queued or being processed'),
+            ('processed', 'checked', 'pending_import', None, None, 'import for this file is pending'),
+            ('processed', 'preparing', 'attention', 'worker', datetime.now(timezone.utc) + timedelta(minutes=5), 'queued or being processed'),
+        )
+        for file_state, batch_file_state, item_state, token, lease, message in scenarios:
+            with self.subTest(message=message):
+                self.file.status = file_state
+                batch.files = [{**batch.files[0], 'status': batch_file_state}]
+                batch.worker_token, batch.lease_until = token, lease
+                item.status = item_state
+                self.db.commit()
+                before = (deepcopy(self.file.metadata_), deepcopy(batch.files), batch.status, batch.worker_token, item.status, deepcopy(item.review_request))
+                with self.assertRaisesRegex(PdfMappingError, message):
+                    self.change(True)
+                self.db.rollback()
+                self.assertEqual((self.file.metadata_, batch.files, batch.status, batch.worker_token, item.status, item.review_request), before)
+                self.assertFalse(list(self.db.scalars(select(IngestionLog))))
+
+    def test_finished_file_can_be_hidden_while_an_independent_file_is_processing(self):
+        other = self.new_file('independent.pdf', status='processing')
+        batch = Batch(id=uuid4(), case_id=self.case.id, created_by=self.user.id, actor={}, status='preparing',
+            worker_token='worker', lease_until=datetime.now(timezone.utc) + timedelta(minutes=5),
+            files=[{'source_id': str(self.file.id), 'file_id': str(self.file.id), 'status': 'checked'},
+                   {'source_id': str(other.id), 'file_id': str(other.id), 'status': 'processing'}])
+        self.db.add(batch); self.db.commit()
+        previous = deepcopy(batch.files)
+        self.change(True)
+        self.assertTrue(financial_file_visibility(self.file)['financial_removed'])
+        self.assertFalse(financial_file_visibility(other)['financial_removed'])
+        self.assertEqual(batch.files, previous)
+        self.assertEqual((other.status, batch.worker_token), ('processing', 'worker'))
+
+    def test_processing_in_a_verified_reading_protects_the_family_but_not_a_separate_upload(self):
+        child = self.new_file('reading.pdf', status='processing')
+        child.metadata_ = {'statement_root_evidence_id': str(self.file.id)}
+        independent = self.new_file('letter.pdf')
+        self.db.commit()
+        with self.assertRaisesRegex(PdfMappingError, 'still processing'):
+            self.change(True)
+        self.db.rollback()
+        self.change(True, file=independent)
+        self.assertFalse(financial_file_visibility(self.file)['financial_removed'])
+        self.assertFalse(financial_file_visibility(child)['financial_removed'])
+        self.assertTrue(financial_file_visibility(independent)['financial_removed'])
+
+    def test_removal_groups_only_verified_readings_and_restore_keeps_earlier_removals(self):
+        from services.financial.source_lineage import current_version
+        child = self.new_file('reading.pdf')
+        earlier = self.new_file('earlier.pdf')
+        independent = self.new_file('independently uploaded.pdf')
+        for file in (child, earlier):
+            file.metadata_ = {'statement_root_evidence_id': str(self.file.id), 'statement_parent_evidence_id': str(self.file.id),
+                'financial_review_progress': {'': {'request': {'holder': 'Keep this review'}}}}
+        earlier.created_at = datetime.now(timezone.utc) + timedelta(seconds=1)
+        earlier.metadata_ = {**earlier.metadata_, 'financial_file_visibility': {'removed': True, 'revision': 'earlier-choice', 'changed_at': '2020-01-01T12:00:00+00:00'}}
+        self.db.commit()
+        hidden = self.change(True, file=child)
+        self.assertTrue(all(financial_file_visibility(file)['financial_removed'] for file in (self.file, child, earlier)))
+        self.assertFalse(financial_file_visibility(independent)['financial_removed'])
+        representative = current_version([self.file, child, earlier])
+        self.assertNotEqual(representative.id, earlier.id)
+        self.assertEqual(financial_file_visibility(representative)['financial_visibility_revision'], hidden['financial_visibility_revision'])
+        self.change(False, hidden['financial_visibility_revision'], file=child)
+        self.assertFalse(any(financial_file_visibility(file)['financial_removed'] for file in (self.file, child, independent)))
+        self.assertTrue(financial_file_visibility(earlier)['financial_removed'])
+        self.assertEqual(child.metadata_['financial_review_progress']['']['request']['holder'], 'Keep this review')
+
+    def test_an_import_on_a_retained_reading_protects_the_entire_family(self):
+        document = self.make_document()
+        root = self.db.get(EvidenceFile, document.evidence_file_id)
+        self.file.sha256 = root.sha256
+        self.file.metadata_ = {**self.file.metadata_, 'statement_root_evidence_id': str(root.id)}
+        self.db.commit()
+        with self.assertRaisesRegex(PdfMappingError, 'already has imported financial records'):
+            self.change(True)
+        self.db.rollback()
+        self.assertFalse(financial_file_visibility(self.file)['financial_removed'])
 
     def test_folder_selection_includes_descendants_deduplicates_and_skips_other_types(self):
         parent = EvidenceFolder(id=uuid4(), case_id=self.case.id, name='Financial')
@@ -254,5 +370,9 @@ class FinancialFileIntakeTests(DuplicateTestCase):
         version.status = 'processed'
         self.db.commit()
         self.change(True, file=version)
-        with self.assertRaisesRegex(PdfMappingError, 'removed from Financial'):
+        self.assertTrue(financial_file_visibility(self.file)['financial_removed'])
+        self.assertTrue(financial_file_visibility(version)['financial_removed'])
+        # The stale prepare request must not restore the family or return an
+        # older reading as ready after the investigator removed it.
+        with self.assertRaisesRegex(PdfMappingError, 'Another user changed this file'):
             self.prepare()

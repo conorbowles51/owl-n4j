@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query"
 import { z } from "zod"
 import { fetchAPI } from "@/lib/api-client"
+import { statementDuplicateDisposition } from "../lib/statement-duplicate"
 export const statementFile = z.object({
   id: z.string(),
   case_id: z.string(),
@@ -12,6 +13,7 @@ export const statementFile = z.object({
   financial_removed: z.boolean().default(false),
   financial_imports_removed: z.boolean().optional(),
   financial_visibility_revision: z.string().default("initial"),
+  financial_visibility_changed_at: z.string().nullish(),
 })
 export type StatementFile = z.infer<typeof statementFile>
 
@@ -42,6 +44,13 @@ export function groupStatementReadings(files: StatementFile[]) {
     const active = versions.filter((file) => !file.financial_removed)
     const current = [...(active.length ? active : versions)].sort(
       (a, b) =>
+        // In Removed files, restore the latest choice. A newer reading may
+        // have been hidden separately before the active family was hidden.
+        (!active.length
+          ? (b.financial_visibility_changed_at || "").localeCompare(
+              a.financial_visibility_changed_at || ""
+            )
+          : 0) ||
         (b.created_at || "").localeCompare(a.created_at || "") ||
         depth(b) - depth(a) ||
         b.id.localeCompare(a.id)
@@ -76,6 +85,16 @@ const importStates = z.object({
       receipt_review_count: z.number().int().nonnegative().default(0),
       wire_review_count: z.number().int().nonnegative().default(0),
       prepared_periods: z.number().int().nonnegative().optional(),
+      ignored_periods: z.number().int().nonnegative().default(0),
+      duplicate_dispositions: z
+        .array(
+          z.object({
+            statement_id: z.string().nullish(),
+            currency: z.string().nullish(),
+            decision: statementDuplicateDisposition,
+          })
+        )
+        .default([]),
       available_periods: z.number().int().nonnegative().default(0),
       ready_periods: z.array(readyPeriod).default([]),
       pending_periods: z.number().int().nonnegative().default(0),
@@ -192,6 +211,8 @@ export function useStatementRegister(
                   .filter((period) => period.source_status !== "admitted")
                   .length,
                 prepared_periods: latest?.prepared_periods,
+                ignored_periods: latest?.ignored_periods || 0,
+                duplicate_dispositions: latest?.duplicate_dispositions || [],
                 available_periods: latest?.available_periods || 0,
                 ready_periods: latest?.ready_periods || [],
                 pending_periods: latest?.pending_periods || 0,

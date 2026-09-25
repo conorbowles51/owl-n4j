@@ -33,7 +33,9 @@ def current_version(versions):
             seen.add(parent)
             file = by_id[parent]
         return len(seen)
-    return max(active or versions, key=lambda f: (f.created_at.isoformat() if f.created_at else '', depth(f), str(f.id)))
+    return max(active or versions, key=lambda f: (
+        '' if active else (financial_file_visibility(f)['financial_visibility_changed_at'] or ''),
+        f.created_at.isoformat() if f.created_at else '', depth(f), str(f.id)))
 
 
 def case_lineage(session, case_id):

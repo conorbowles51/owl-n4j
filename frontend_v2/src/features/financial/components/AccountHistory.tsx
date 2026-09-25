@@ -168,9 +168,10 @@ export function AccountHistory({
             </select>
           </label>
           <p className="text-xs text-muted-foreground">
-            A gap means missing or unverified evidence, not zero activity.
-            Balances are points at statement end dates; they are not added
-            together or carried across missing months. For credit cards,
+            Only months supported by statements or dated payments appear.
+            Missing months and unavailable account values do not mean zero
+            activity. Balances are points at statement end dates; they are not
+            added together or carried across missing months. For credit cards,
             balances show amounts owed, debits are charges and credits reduce
             the amount owed. Select a month below to inspect its statements.
           </p>
@@ -227,8 +228,12 @@ export function AccountHistory({
                             dataKey={`${g.key}-balance`}
                             stroke={accountColor(g.key)}
                             connectNulls={false}
-                            dot={{ r: 4 }}
-                            type="stepAfter"
+                            strokeWidth={0}
+                            dot={{
+                              r: 4,
+                              fill: accountColor(g.key),
+                              strokeWidth: 1,
+                            }}
                           />
                         ))}
                       </LineChart>
@@ -376,6 +381,13 @@ export function AccountHistory({
                               : p.status === "confirmed_no_activity"
                                 ? "Confirmed quiet period"
                                 : "Reconciled"}
+                            {!!p.blockers?.length && (
+                              <ul className="mt-1 text-xs list-disc pl-4">
+                                {p.blockers.map((reason, index) => (
+                                  <li key={index}>{reason.message}</li>
+                                ))}
+                              </ul>
+                            )}
                           </td>
                           <td className="p-2 space-y-2">
                             <StatementSourceButton

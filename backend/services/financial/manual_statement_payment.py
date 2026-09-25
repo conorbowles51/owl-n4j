@@ -43,7 +43,10 @@ def append_payment(*, session_factory, case_id, source_id, request, actor):
                     raise PdfMappingError('This payment was already saved with different values. Open it to make a correction.', 409)
                 retained = next((item for item in metadata.get('statement_incomplete_records', []) if item['id'] == row.id), {})
                 transaction_id = retained.get('resolved_transaction_id') or prior.get('transaction_id')
-                return dict(transaction_id=transaction_id, created=False, pending_reconciliation=not bool(transaction_id))
+                from services.financial.saved_statement_admission import current_saved_assessment
+                admission = current_saved_assessment(session, document, period) if not transaction_id else None
+                return dict(transaction_id=transaction_id, created=False, pending_reconciliation=not bool(transaction_id),
+                    blockers=(admission or {}).get('blockers', []))
             view = _view(document, period, account)
             if view['revision'] != request.expected_revision:
                 raise PdfMappingError('The statement details changed. Reload the saved account details before adding this payment; your draft is retained.', 409)

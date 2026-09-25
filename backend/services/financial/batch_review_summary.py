@@ -58,7 +58,7 @@ def reason(problem):
 
 
 def item_reasons(item):
-    if item.status in ('skipped', 'assigned', 'removed'):
+    if item.status in ('skipped', 'assigned', 'removed', 'duplicate_ignored', 'superseded_reading'):
         return {}
     summary = item.summary
     result = {}
@@ -106,7 +106,7 @@ def review_summary(items):
     result = dict(blocked_statements=0, importable_with_checks=0, imported_with_checks=0,
                   unchecked_balance_statements=0, groups=[])
     for item in items:
-        if item.status in ('skipped', 'assigned', 'removed'):
+        if item.status in ('skipped', 'assigned', 'removed', 'duplicate_ignored', 'superseded_reading'):
             continue
         blocked = is_blocked(item)
         importable = item.status in ('ready', 'attention') and not blocked

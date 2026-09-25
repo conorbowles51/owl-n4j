@@ -83,7 +83,7 @@ describe("investigator comparisons and charts", () => {
       ])
     ).toEqual([])
   })
-  it("fills all calendar months without inventing payments, preserving exact large amounts", () => {
+  it("shows represented monthly payments only, preserving exact large amounts", () => {
     const periods = paymentPeriods(
       [
         {
@@ -95,15 +95,12 @@ describe("investigator comparisons and charts", () => {
       "2023-01-01",
       "2023-12-31"
     )
-    expect(periods).toHaveLength(12)
+    expect(periods).toHaveLength(1)
     expect(periods[0]).toMatchObject({
-      date: "2023-01-01",
-      end: "2023-01-31",
-      rows: [],
-      credit: 0n,
+      date: "2023-03-01",
+      end: "2023-03-31",
+      credit: 9007199254740993n,
     })
-    expect(periods[2].credit).toBe(9007199254740993n)
-    expect(periods[11].end).toBe("2023-12-31")
     expect(chartRatio(9007199254740993n, 9007199254740993n)).toBe(1)
   })
   it("does not chart invalid dates or statement-end substitutes and flags unreadable amounts", () => {
@@ -210,4 +207,72 @@ describe("investigator comparisons and charts", () => {
       }
     }
   )
+})
+
+it("separates a confirmed holder's five accounts from appearances on outsiders' accounts", () => {
+  const party = { id: "person", name: "Example Holder" }
+  const directory = Array.from({ length: 5 }, (_, n) => ({
+    id: `a${n}`,
+    canonical_id: `a${n}`,
+    institution: "Example Bank",
+    identifier_as_printed: `000${n}`,
+    currency: n === 4 ? "USD" : "EUR",
+    holder_as_recorded: party.name,
+    party: null,
+    relationships: [],
+    holder_parties: [party],
+  }))
+  const owned = {
+    ...row("own", "2026-01-05", "debit", "a0"),
+    account_holder_parties: [party],
+  }
+  const incoming = {
+    ...row("outside", "2026-01-06", "debit", "outsider"),
+    to_name: party.name,
+    counterparty_link: {
+      kind: "party" as const,
+      id: party.id,
+      label: party.name,
+    },
+  }
+  const profiles = paymentProfiles([owned, owned, incoming], directory)
+  const owner = profiles.find((p) => p.id === "owner:person")!
+  expect(owner.rows.map((r) => r.key)).toEqual(["own"])
+  expect(owner.counterpartyRows.map((r) => r.key)).toEqual(["outside"])
+  expect(owner.accounts).toEqual(["a0", "a1", "a2", "a3", "a4"])
+  expect(
+    profiles.filter((p) => p.kind === "account" && p.nestedUnderOwner)
+  ).toHaveLength(5)
+  expect(profiles.find((p) => p.id === "account:a4")?.rows).toHaveLength(0)
+})
+it("limits owned activity to confirmed holder dates without losing historical account relationships", () => {
+  const party = { id: "person", name: "Example Holder" }
+  const linked = {
+    ...row("before", "2025-01-01", "credit"),
+    account_holder_parties: [party],
+    account_relationships: [
+      {
+        id: "link",
+        party,
+        role: "holder" as const,
+        basis: "investigator_knowledge" as const,
+        sources: [],
+        effective_from: "2026-01-01",
+        effective_to: "2026-12-31",
+      },
+    ],
+  }
+  const profiles = paymentProfiles([
+    linked,
+    { ...linked, key: "during", ordering_date: "2026-02-01" },
+    {
+      ...linked,
+      key: "undated",
+      ordering_date_context: "statement_end_ordering_only",
+    },
+  ])
+  expect(
+    profiles.find((p) => p.id === "owner:person")?.rows.map((r) => r.key)
+  ).toEqual(["during"])
+  expect(profiles.find((p) => p.id === "owner:person")?.accounts).toEqual(["a"])
 })

@@ -31,7 +31,7 @@ LOW_CONFIDENCE_THRESHOLD = 60.0
 MIN_OCR_DPI = 150
 MIN_RELIABLE_OSD_CONFIDENCE = 15.0
 MAX_OSD_TIMEOUT_SECONDS = 30.0
-PDF_READING_REVISION = 'bank-payment-rows-v6'
+PDF_READING_REVISION = 'bank-payment-rows-v7'
 OSD_INSUFFICIENT_TEXT_MARKERS = ("too few characters", "skipping this page")
 
 
@@ -689,6 +689,8 @@ def _page_span(page_result: _PageResult, start_char: int) -> dict:
         "text_origin": page_result.text_origin,
         "detection_reason": page_result.detection_reason,
     }
+    if page_result.ocr_refinements:
+        span['ocr_refinements'] = page_result.ocr_refinements
     if page_result.ocr_status is not None:
         span.update(
             {
@@ -884,6 +886,18 @@ def _extract_pdf_sync(
             original = native_alternatives.get(page_index)
             quality = _statement_reading_quality(ocr_tables) if original else None
             if original and not _prefer_statement_image(original['quality'], quality):
+                # A whole-page image reading can omit a row. Keep that page's
+                # original geometry and try only demonstrably unreadable card
+                # money cells; crop disagreement never replaces a value.
+                try:
+                    from app.pipeline.financial_amount_ocr import refine_credit_one_native_cells
+                    refined, refinements = refine_credit_one_native_cells(document[page_index], original['tables'],
+                        deadline=time.monotonic() + 30, language=settings.tesseract_lang)
+                    if refinements:
+                        page_result.ocr_refinements.extend(refinements)
+                        original = {**original, 'tables': refined, 'chunks': reader.chunks_of(refined)}
+                except Exception:
+                    logger.debug('Native statement cell reread unavailable', exc_info=True)
                 _retain_native_statement(page_result, original, table_chunks, extracted_tables,
                     'Image reread did not safely improve the same account, period and payment rows.')
             else:

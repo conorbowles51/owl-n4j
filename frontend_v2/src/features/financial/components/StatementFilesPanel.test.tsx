@@ -67,6 +67,212 @@ beforeEach(() => {
   useStatementWorkspace.setState({ selections: {}, reviewChoices: {} })
   responses()
 })
+
+const duplicateDecision = {
+  policy: "pending-statement-duplicate-v1",
+  reading_revision: "a".repeat(64),
+  revision: "b".repeat(64),
+  current: true,
+  status: "ignored",
+  label: "Duplicate - Ignored by system",
+  reason:
+    "The contents match the retained statement. Evidence and edits remain available.",
+  matched_fields: ["bank", "full_account_number", "account_holder"],
+  basis: "identical_financial_reading",
+  retained: {
+    evidence_file_id: "10000000-0000-4000-8000-000000000003",
+    filename: "Retained synthetic source.pdf",
+    page_number: 1,
+  },
+}
+
+it("shows an ignored file, exposes its retained source and opens its exact period for comparison", async () => {
+  const period = "c".repeat(64)
+  vi.mocked(fetchAPI).mockImplementation(async (url) =>
+    url.includes("/statement-import/files")
+      ? {
+          case_id: "case",
+          truncated: false,
+          files: [
+            {
+              evidence_file_id: "file",
+              current_transactions: 0,
+              periods: [],
+              prepared_periods: 1,
+              ignored_periods: 1,
+              available_periods: 0,
+              periods_with_checks: 0,
+              duplicate_dispositions: [
+                {
+                  statement_id: period,
+                  currency: "USD",
+                  decision: duplicateDecision,
+                },
+              ],
+            },
+          ],
+        }
+      : { files: [{ ...file, status: "processed" }] }
+  )
+  mount(true)
+  const choice = await screen.findByLabelText("Show files")
+  fireEvent.change(choice, { target: { value: "duplicates" } })
+  expect(
+    screen.getByText("Duplicate decisions · evidence retained")
+  ).toBeVisible()
+  expect(
+    screen.getAllByText("Duplicate - Ignored by system").length
+  ).toBeGreaterThan(0)
+  expect(
+    screen.getByRole("button", {
+      name: "Show 0 statement periods ready to import",
+    })
+  ).toBeVisible()
+  fireEvent.click(screen.getByText("Duplicate decisions · evidence retained"))
+  expect(
+    screen.getByText("Retained source: Retained synthetic source.pdf")
+  ).toBeVisible()
+  fireEvent.click(
+    screen.getByRole("button", { name: "Review duplicate decision" })
+  )
+  expect(
+    Object.values(useStatementWorkspace.getState().reviewChoices)
+  ).toContainEqual({ statementId: period, currency: "" })
+  expect(
+    vi
+      .mocked(fetchAPI)
+      .mock.calls.every(
+        ([, options]) => !options?.method || options.method === "GET"
+      )
+  ).toBe(true)
+})
+
+it("keeps a different period in a mixed file ready while showing its ignored copy separately", async () => {
+  vi.mocked(fetchAPI).mockImplementation(async (url) =>
+    url.includes("/statement-import/files")
+      ? {
+          case_id: "case",
+          truncated: false,
+          files: [
+            {
+              evidence_file_id: "file",
+              current_transactions: 0,
+              periods: [],
+              prepared_periods: 2,
+              ignored_periods: 1,
+              available_periods: 1,
+              periods_with_checks: 0,
+              duplicate_dispositions: [
+                {
+                  statement_id: "c".repeat(64),
+                  currency: "USD",
+                  decision: duplicateDecision,
+                },
+              ],
+              ready_periods: [
+                {
+                  statement_id: "separate-ready-period",
+                  holder: "Synthetic holder",
+                  institution: "Synthetic Bank",
+                  account: "TEST-2",
+                  currency: "USD",
+                  period_start: "2026-02-01",
+                  period_end: "2026-02-28",
+                  transaction_count: 2,
+                  incomplete_count: 0,
+                  problem_count: 0,
+                },
+              ],
+            },
+          ],
+        }
+      : { files: [{ ...file, status: "processed" }] }
+  )
+  mount(true)
+  fireEvent.click(
+    await screen.findByRole("button", {
+      name: "Show 1 statement period ready to import",
+    })
+  )
+  expect(screen.getByText(/1 duplicate period ignored/)).toBeVisible()
+  expect(screen.getByText("2026-02-01 to 2026-02-28")).toBeVisible()
+  fireEvent.click(screen.getByRole("button", { name: "Review and import" }))
+  expect(
+    Object.values(useStatementWorkspace.getState().reviewChoices)
+  ).toContainEqual({ statementId: "separate-ready-period", currency: "" })
+})
+
+it("does not carry an ignored decision from an older reading onto its current replacement", async () => {
+  vi.mocked(fetchAPI).mockImplementation(async (url) =>
+    url.includes("/statement-import/files")
+      ? {
+          case_id: "case",
+          truncated: false,
+          files: [
+            {
+              evidence_file_id: "file",
+              current_transactions: 0,
+              periods: [],
+              prepared_periods: 1,
+              ignored_periods: 1,
+              duplicate_dispositions: [
+                {
+                  statement_id: null,
+                  currency: "USD",
+                  decision: duplicateDecision,
+                },
+              ],
+            },
+            {
+              evidence_file_id: "new-reading",
+              current_transactions: 0,
+              periods: [],
+              prepared_periods: 1,
+              ignored_periods: 0,
+              periods_with_checks: 1,
+              duplicate_dispositions: [
+                {
+                  statement_id: null,
+                  currency: "USD",
+                  decision: {
+                    ...duplicateDecision,
+                    current: false,
+                    status: "needs_comparison",
+                    label: "Compare this statement",
+                    reason:
+                      "The reading changed. Check these statements again.",
+                  },
+                },
+              ],
+            },
+          ],
+        }
+      : {
+          files: [
+            { ...file, status: "processed", created_at: "2026-01-01" },
+            {
+              ...file,
+              id: "new-reading",
+              status: "processed",
+              statement_root_evidence_id: "file",
+              statement_parent_evidence_id: "file",
+              created_at: "2026-01-02",
+            },
+          ],
+        }
+  )
+  mount(true)
+  fireEvent.click(
+    await screen.findByRole("button", {
+      name: "Show 1 files with checks to review",
+    })
+  )
+  expect(
+    screen.queryByText("Duplicate - Ignored by system")
+  ).not.toBeInTheDocument()
+  fireEvent.click(screen.getByText("Duplicate decisions · evidence retained"))
+  expect(screen.getByText("Compare this statement")).toBeVisible()
+})
 it("reveals ready periods, clears stale search and opens the exact period without importing", async () => {
   vi.mocked(fetchAPI).mockImplementation(async (url) =>
     url.includes("/statement-import/files")

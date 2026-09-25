@@ -11,14 +11,14 @@ import { randomRequestId } from "@/lib/browser-crypto"
 import { useFinancialDraft } from "../stores/financial-drafts"
 import { correctionMinor } from "../lib/correction-contract"
 import { TransactionSourceHighlight } from "./TransactionSourceHighlight"
+import { ManualTransactionPosition } from "./ManualTransactionPosition"
+import { savedStatementPosition } from "../lib/saved-statement-position"
+import { sourceOrderAnchor } from "../lib/statement-review-draft"
+import { statementBlocker } from "../lib/statement-assessment"
 
-const context = z.object({
-  case_id: z.string(),
-  source_document_id: z.string(),
-  evidence_file_id: z.string(),
+const context = savedStatementPosition.extend({
   revision: z.string(),
   currency: z.string().nullable(),
-  pages: z.array(z.number()),
   details: z.object({
     holder: z.string(),
     account_number: z.string(),
@@ -44,7 +44,7 @@ export function AddSavedStatementPayment({
     queryFn: async () => {
       const value = context.parse(
         await fetchAPI(
-          `/api/financial/statement-import/sources/${sourceId}/details?case_id=${caseId}`
+          `/api/financial/statement-import/sources/${sourceId}/details?case_id=${caseId}&include_positions=true`
         )
       )
       if (value.case_id !== caseId || value.source_document_id !== sourceId)
@@ -100,6 +100,7 @@ function PaymentForm({
       requestId,
       revision: data.revision,
       page: data.pages[0] || 1,
+      source_order_anchor: null as z.infer<typeof sourceOrderAnchor> | null,
       date: "",
       description: "",
       counterparty: "",
@@ -140,6 +141,7 @@ function PaymentForm({
         .object({
           transaction_id: z.string().nullable(),
           pending_reconciliation: z.boolean().optional(),
+          blockers: z.array(statementBlocker).default([]),
         })
         .parse(
           await fetchAPI(
@@ -152,6 +154,7 @@ function PaymentForm({
                 row: {
                   id: `manual:${draft.requestId}`,
                   manual_page: draft.page,
+                  source_order_anchor: draft.source_order_anchor ?? null,
                   date: draft.date,
                   description: draft.description,
                   counterparty: draft.counterparty,
@@ -187,6 +190,13 @@ function PaymentForm({
           statement reconciles. Continue adding missed payments or review the
           saved records and balances.
         </p>
+        {!!save.data.blockers.length && (
+          <ul className="list-disc pl-5">
+            {save.data.blockers.map((blocker, index) => (
+              <li key={index}>{blocker.message}</li>
+            ))}
+          </ul>
+        )}
         <Button variant="outline" onClick={onClose}>
           Back to statement — payment saved
         </Button>
@@ -204,7 +214,11 @@ function PaymentForm({
             aria-label="Missed payment PDF page"
             value={draft.page}
             onChange={(e) =>
-              setDraft({ ...draft, page: Number(e.target.value) })
+              setDraft({
+                ...draft,
+                page: Number(e.target.value),
+                source_order_anchor: null,
+              })
             }
           >
             {data.pages.map((page) => (
@@ -241,6 +255,26 @@ function PaymentForm({
           when you close this editor.
         </p>
         <fieldset disabled={save.isPending} className="space-y-3">
+          <ManualTransactionPosition
+            rowId={`manual:${draft.requestId}`}
+            page={draft.page}
+            value={draft.source_order_anchor}
+            rows={data.source_position_rows}
+            statementPages={data.pages}
+            onChange={(source_order_anchor) =>
+              setDraft({
+                ...draft,
+                source_order_anchor: source_order_anchor ?? null,
+              })
+            }
+          />
+          {data.requires_manual_position && (
+            <p className="text-sm text-muted-foreground">
+              Choose its printed position to check running balances. You can
+              save an unfinished placement for review without importing the
+              payment.
+            </p>
+          )}
           <label className="block">
             Transaction date
             <input
