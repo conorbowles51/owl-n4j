@@ -8,13 +8,16 @@ import json
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
-from sqlalchemy import select
+from sqlalchemy import select, or_
 
 from postgres.models.case import Case
-from postgres.models.financial import FinancialAccount, FinancialSourceDocument, AdjudicationEvent
+from postgres.models.evidence import EvidenceFile
+from postgres.models.financial import FinancialAccount, FinancialSourceDocument, FinancialStatementPeriod, AdjudicationEvent
 from postgres.models.enums import AdjudicationSubject, AdjudicationDecision
 from services.financial.decisions import record
 from services.financial.account_relationships import AccountRelationshipInput, validate_relationship_sources
+
+MAX_DIRECTORY_STATEMENT_PERIODS = 10000
 
 
 class AccountPartyError(ValueError):
@@ -115,7 +118,7 @@ def _account_party_state(session, *, case_id):
             recorded_at=event.created_at.isoformat()))
     result = dict(case_id=str(case_id), accounts=[dict(id=str(a.id), canonical_id=(a.metadata_ or {}).get('canonical_account_id') or str(a.id),
         holder_as_recorded=a.holder_name, identifier_as_printed=a.identifier_as_printed,
-        institution=a.institution_name, currency=a.currency,
+        institution=a.institution_name, currency=a.currency, account_type=a.account_type,
         party=assignments.get(str(a.id)), relationships=relationships.get(str(a.id), []),
         holder_parties=list({link['party']['id']: link['party'] for link in relationships.get(str(a.id), [])
             if link['role'] == 'holder'}.values())) for a in accounts],
@@ -136,6 +139,43 @@ def _account_party_state(session, *, case_id):
     return result
 
 
+def _add_statement_periods(session, *, case_id, accounts, documents):
+    """Add registered current-source dates, independently of payment activity.
+
+    Dates may be unknown and do not imply complete extraction, reconciliation
+    or ownership. No file-format, transaction-date or balance inference is used.
+    """
+    indexed = {account['id']: account for account in accounts}
+    for account in accounts:
+        account['statement_periods'] = []
+    if not accounts:
+        return
+    sources = {document.id: document for document in documents}
+    periods = list(session.execute(select(FinancialStatementPeriod.id, FinancialStatementPeriod.account_id,
+            FinancialStatementPeriod.source_document_id, FinancialStatementPeriod.period_start,
+            FinancialStatementPeriod.period_end)
+        .join(FinancialAccount, FinancialStatementPeriod.account_id == FinancialAccount.id)
+        .join(FinancialSourceDocument, FinancialStatementPeriod.source_document_id == FinancialSourceDocument.id)
+        .outerjoin(EvidenceFile, FinancialSourceDocument.evidence_file_id == EvidenceFile.id)
+        .where(FinancialStatementPeriod.case_id == case_id, FinancialAccount.case_id == case_id,
+            FinancialSourceDocument.case_id == case_id, FinancialSourceDocument.status == 'admitted',
+            FinancialSourceDocument.superseded_by_id.is_(None),
+            or_(FinancialSourceDocument.evidence_file_id.is_(None), EvidenceFile.case_id == case_id))
+        .order_by(FinancialStatementPeriod.period_start, FinancialStatementPeriod.period_end,
+            FinancialStatementPeriod.id).limit(MAX_DIRECTORY_STATEMENT_PERIODS + 1)))
+    if len(periods) > MAX_DIRECTORY_STATEMENT_PERIODS:
+        raise AccountPartyError(f'More than {MAX_DIRECTORY_STATEMENT_PERIODS:,} saved statement periods; no incomplete account directory was returned.')
+    for period in periods:
+        document = sources.get(period.source_document_id)
+        if document is None or (document.metadata_ or {}).get('financial_import_removal'):
+            continue
+        account = indexed.get(str(period.account_id))
+        if account is not None:
+            account['statement_periods'].append(dict(id=str(period.id), source_document_id=str(document.id),
+                start=period.period_start.isoformat() if period.period_start else None,
+                end=period.period_end.isoformat() if period.period_end else None))
+
+
 def account_parties(session, *, case_id):
     """One case-scoped party choice list, including identities created on payments."""
     from services.financial.counterparty_parties import payment_party_choices
@@ -145,9 +185,11 @@ def account_parties(session, *, case_id):
     from services.financial.account_ownership import ownership_suggestions
     result['ownership_review'] = ownership_suggestions(session, case_id=case_id, accounts=result['accounts'])
     result['source_choices'] = []
-    for document in session.scalars(select(FinancialSourceDocument).where(
+    documents = list(session.scalars(select(FinancialSourceDocument).where(
             FinancialSourceDocument.case_id == case_id, FinancialSourceDocument.status == 'admitted')
-            .order_by(FinancialSourceDocument.id)):
+            .order_by(FinancialSourceDocument.id)))
+    _add_statement_periods(session, case_id=case_id, accounts=result['accounts'], documents=documents)
+    for document in documents:
         metadata = document.metadata_ or {}
         original = metadata.get('statement_import_original') or {}
         pages = sorted({s['page_number'] for s in original.get('sources', []) if isinstance(s.get('page_number'), int)})

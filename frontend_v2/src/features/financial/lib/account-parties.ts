@@ -25,6 +25,17 @@ export const accountParties = z.object({
       identifier_as_printed: z.string().nullable(),
       institution: z.string().nullable(),
       currency: z.string().nullable(),
+      account_type: z.string().nullable().optional(),
+      statement_periods: z
+        .array(
+          z.object({
+            id: z.string().uuid(),
+            source_document_id: z.string().uuid(),
+            start: z.string().nullable(),
+            end: z.string().nullable(),
+          })
+        )
+        .optional(),
       party: party.nullable(),
       relationships: z.array(accountRelationship).default([]),
       holder_parties: z.array(party).default([]),

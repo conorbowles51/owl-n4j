@@ -8737,7 +8737,7 @@
     {
       "component": "InvestigatorPeople",
       "file": "frontend_v2/src/features/financial/components/InvestigatorPeople.tsx",
-      "line": 189,
+      "line": 213,
       "control": "Button",
       "label": "Reload accounts",
       "disabled": null,
@@ -8749,7 +8749,7 @@
     {
       "component": "InvestigatorPeople",
       "file": "frontend_v2/src/features/financial/components/InvestigatorPeople.tsx",
-      "line": 199,
+      "line": 223,
       "control": "Button",
       "label": "Back to {\" \"} {returnPath.view === \"transactions\" || returnPath.view === \"ledger\" ? \"transactions\" : returnPath.view === \"follow-money\" ? \"Follow money\" : returnPath.view === \"counterparties\" ? \"previous name\" : returnPath.view}",
       "disabled": null,
@@ -8761,7 +8761,7 @@
     {
       "component": "InvestigatorPeople",
       "file": "frontend_v2/src/features/financial/components/InvestigatorPeople.tsx",
-      "line": 222,
+      "line": 246,
       "control": "Button",
       "label": "{view.parentProfile ? \"Back to person or business\" : \"Back to names and accounts\"}",
       "disabled": null,
@@ -8773,7 +8773,7 @@
     {
       "component": "InvestigatorPeople",
       "file": "frontend_v2/src/features/financial/components/InvestigatorPeople.tsx",
-      "line": 260,
+      "line": 288,
       "control": "Button",
       "label": "Search saved findings",
       "disabled": null,
@@ -8785,7 +8785,7 @@
     {
       "component": "InvestigatorPeople",
       "file": "frontend_v2/src/features/financial/components/InvestigatorPeople.tsx",
-      "line": 275,
+      "line": 303,
       "control": "Button",
       "label": "Activity on {\" \"} {selected.kind === \"owner\" ? \"owned accounts\" : \"this account\"} {\" \"} ( {selected.rows.length} )",
       "disabled": null,
@@ -8797,7 +8797,7 @@
     {
       "component": "InvestigatorPeople",
       "file": "frontend_v2/src/features/financial/components/InvestigatorPeople.tsx",
-      "line": 291,
+      "line": 319,
       "control": "Button",
       "label": "As sender or beneficiary ( {selected.counterpartyRows.length} )",
       "disabled": null,
@@ -8809,7 +8809,7 @@
     {
       "component": "InvestigatorPeople",
       "file": "frontend_v2/src/features/financial/components/InvestigatorPeople.tsx",
-      "line": 405,
+      "line": 457,
       "control": "Button",
       "label": "{account.label} · {\" \"} {account.currency || \"Currency not recorded\"}",
       "disabled": null,
@@ -8821,7 +8821,7 @@
     {
       "component": "InvestigatorPeople",
       "file": "frontend_v2/src/features/financial/components/InvestigatorPeople.tsx",
-      "line": 438,
+      "line": 490,
       "control": "summary",
       "label": "Accounts where these payments were recorded",
       "disabled": null,
@@ -8831,7 +8831,7 @@
     {
       "component": "InvestigatorPeople",
       "file": "frontend_v2/src/features/financial/components/InvestigatorPeople.tsx",
-      "line": 467,
+      "line": 519,
       "control": "button",
       "label": "Reload finding links",
       "disabled": null,
@@ -8843,7 +8843,7 @@
     {
       "component": "InvestigatorPeople",
       "file": "frontend_v2/src/features/financial/components/InvestigatorPeople.tsx",
-      "line": 483,
+      "line": 535,
       "control": "a",
       "label": "{entry.title || \"Untitled finding\"}",
       "disabled": null,
@@ -8853,7 +8853,7 @@
     {
       "component": "InvestigatorPeople",
       "file": "frontend_v2/src/features/financial/components/InvestigatorPeople.tsx",
-      "line": 540,
+      "line": 592,
       "control": "input",
       "label": "\"Name shown in a payment or account\"",
       "disabled": null,
@@ -8865,7 +8865,7 @@
     {
       "component": "InvestigatorPeople",
       "file": "frontend_v2/src/features/financial/components/InvestigatorPeople.tsx",
-      "line": 551,
+      "line": 603,
       "control": "select",
       "label": "Names and accounts Payment names Accounts Linked people and businesses",
       "disabled": null,
@@ -8877,7 +8877,7 @@
     {
       "component": "InvestigatorPeople",
       "file": "frontend_v2/src/features/financial/components/InvestigatorPeople.tsx",
-      "line": 566,
+      "line": 618,
       "control": "select",
       "label": "\"Profile currency and account type\"",
       "disabled": null,
@@ -8889,7 +8889,7 @@
     {
       "component": "InvestigatorPeople",
       "file": "frontend_v2/src/features/financial/components/InvestigatorPeople.tsx",
-      "line": 591,
+      "line": 643,
       "control": "select",
       "label": "Most payments Largest total (one currency and type) Most recent activity Name",
       "disabled": null,
@@ -8901,9 +8901,9 @@
     {
       "component": "InvestigatorPeople",
       "file": "frontend_v2/src/features/financial/components/InvestigatorPeople.tsx",
-      "line": 628,
+      "line": 680,
       "control": "button",
-      "label": "{profile.kind === \"account\" ? \"Account\" : profile.kind === \"owner\" ? profile.accounts.length ? \"Reviewed account holder\" : \"Linked person or business\" : profile.unidentified ? \"Payments to investigate\" : \"Recorded payment name\"} {profile.unidentified ? \"Counterparty not identified\" : profile.name} {profile.rows.length} payments · {profile.accounts.length} {\" \"} {profile.accounts.length === 1 ? \"account\" : \"accounts\"} · {\" \"} {profile.sources.length} source documents {profile.counterpartyRows.length > 0 && ( <p className=\"text-xs\"> Also linked as sender or beneficiary on{\" \"} {profile.counterpartyRows.length} payments. Open the profile to view these separately. </p> )} {profile.unidentified && ( <UnidentifiedBreakdown rows={profile.rows} /> )} {profile.first || \"Date unknown\"} to {\" \"} {profile.last || \"date unknown\"} {profile.unidentified ? \"Investigate payments →\" : \"Open profile →\"}",
+      "label": "{profile.kind === \"account\" ? profile.accountDetails.some( (account) => account.registered ) ? \"Account\" : \"Account reference\" : profile.kind === \"owner\" ? profile.accounts.length ? \"Reviewed account holder\" : \"Linked person or business\" : profile.unidentified ? \"Payments to investigate\" : \"Recorded payment name\"} {profile.unidentified ? \"Counterparty not identified\" : profile.name} {profile.rows.length} matching payments {profile.kind === \"name\" && ( <> {\" \"} · {profile.accounts.length}{\" \"} {profile.accounts.length === 1 ? \"account\" : \"accounts\"}{\" \"} · {profile.sources.length} source documents </> )} {profile.kind !== \"name\" && ( <ProfileStatementSummary profile={profile} /> )} {profile.rows.length > 0 ? ( <PaymentTotals expandAccounts={false} rows={profile.rows} label={ profile.kind === \"owner\" ? \"Activity on owned accounts\" : \"Recorded amounts\" } /> ) : ( <p className=\"text-xs\"> No matching imported payments. Open this profile to inspect saved statements and account history. </p> )} {profile.counterpartyRows.length > 0 && ( <p className=\"text-xs\"> Also linked as sender or beneficiary on{\" \"} {profile.counterpartyRows.length} payments. Open the profile to view these separately.",
       "disabled": null,
       "destination": null,
       "events": {
@@ -8913,7 +8913,7 @@
     {
       "component": "InvestigatorPeople",
       "file": "frontend_v2/src/features/financial/components/InvestigatorPeople.tsx",
-      "line": 702,
+      "line": 780,
       "control": "Button",
       "label": "Previous profiles",
       "disabled": "{!page}",
@@ -8925,7 +8925,7 @@
     {
       "component": "InvestigatorPeople",
       "file": "frontend_v2/src/features/financial/components/InvestigatorPeople.tsx",
-      "line": 714,
+      "line": 792,
       "control": "Button",
       "label": "Next profiles",
       "disabled": "{(page + 1) * 30 >= filtered.length}",
@@ -8937,7 +8937,7 @@
     {
       "component": "InvestigatorPeople",
       "file": "frontend_v2/src/features/financial/components/InvestigatorPeople.tsx",
-      "line": 726,
+      "line": 804,
       "control": "summary",
       "label": "Link recorded names to a person or business",
       "disabled": null,

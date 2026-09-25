@@ -236,3 +236,10 @@ The resumed recovery runs and remaining live journeys are tracked in the
 A further compact-summary correction addresses large collections without losing
 any expanded period/source action. Historical copy exclusions and uncertain
 source/account/value decisions still require investigator review.
+
+The next People & businesses correction keeps registered accounts with no matching
+payments useful: saved sources, banks, currencies and statement dates remain
+visible separately from payment totals. Unknown account references are labelled,
+and confirmed people keep all linked accounts. The
+[quiet-account acceptance record](financial-workflows/priority-completion-plan-2026-09-25.md#quiet-accounts-and-continued-live-verification--25-september)
+records the local tests and outstanding publication/live verification.

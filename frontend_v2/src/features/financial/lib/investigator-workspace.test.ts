@@ -4,6 +4,7 @@ import {
   paymentDay,
   paymentPeriods,
   paymentProfiles,
+  profileAccountGroup,
   chartRatio,
 } from "./investigator-workspace"
 import {
@@ -34,6 +35,20 @@ const row = (
 })
 
 describe("investigator comparisons and charts", () => {
+  it("does not invent an account-type filter for registered accounts with unknown type", () => {
+    expect(
+      profileAccountGroup({ currency: "EUR", accountType: null })
+    ).toBeNull()
+    expect(
+      profileAccountGroup({ currency: null, accountType: "checking" })
+    ).toBeNull()
+    expect(
+      profileAccountGroup({ currency: "EUR", accountType: "checking" })
+    ).toBe("EUR:bank")
+    expect(
+      profileAccountGroup({ currency: "EUR", accountType: "credit_card" })
+    ).toBe("EUR:card")
+  })
   it("uses suggested names in profiles but respects an explicit cleared name", () => {
     const suggested = {
       ...row("suggested", "2023-03-18", "debit"),
@@ -275,4 +290,115 @@ it("limits owned activity to confirmed holder dates without losing historical ac
     profiles.find((p) => p.id === "owner:person")?.rows.map((r) => r.key)
   ).toEqual(["during"])
   expect(profiles.find((p) => p.id === "owner:person")?.accounts).toEqual(["a"])
+})
+
+it("retains quiet statement metadata and canonical account fields across an empty alias without inventing payments", () => {
+  const holder = { id: "person", name: "Confirmed Holder" }
+  const source = "quiet-source"
+  const directory = [
+    {
+      id: "canonical",
+      canonical_id: "canonical",
+      institution: "Example Bank",
+      identifier_as_printed: "000123",
+      currency: "EUR",
+      account_type: "checking",
+      holder_as_recorded: holder.name,
+      party: null,
+      relationships: [],
+      holder_parties: [holder],
+      statement_periods: [
+        {
+          id: "jan",
+          source_document_id: source,
+          start: "2026-01-01",
+          end: "2026-01-31",
+        },
+      ],
+    },
+    {
+      id: "alias",
+      canonical_id: "canonical",
+      institution: null,
+      identifier_as_printed: null,
+      currency: null,
+      account_type: null,
+      holder_as_recorded: null,
+      party: null,
+      relationships: [],
+      holder_parties: [holder],
+      statement_periods: [
+        {
+          id: "feb",
+          source_document_id: source,
+          start: "2026-02-01",
+          end: "2026-02-28",
+        },
+      ],
+    },
+  ]
+  const profiles = paymentProfiles([], directory)
+  const quiet = profiles.find((profile) => profile.id === "account:canonical")!
+  expect(quiet.rows).toEqual([])
+  expect(quiet.first).toBeNull()
+  expect(quiet.last).toBeNull()
+  expect(quiet.statementFirst).toBe("2026-01-01")
+  expect(quiet.statementLast).toBe("2026-02-28")
+  expect(quiet.sources).toEqual([source])
+  expect(quiet.statementPeriods).toHaveLength(2)
+  expect(quiet.accountDetails).toEqual([
+    expect.objectContaining({
+      institution: "Example Bank",
+      number: "000123",
+      currency: "EUR",
+      accountType: "checking",
+      registered: true,
+    }),
+  ])
+  const owner = profiles.find((profile) => profile.id === "owner:person")!
+  expect(owner.accounts).toEqual(["canonical"])
+  expect(owner.statementPeriods).toHaveLength(2)
+  expect(owner.rows).toEqual([])
+  const linked = paymentProfiles(
+    [
+      {
+        ...row("outside", "2026-03-01", "debit", "another"),
+        counterparty_link: { kind: "account", id: "alias", label: "old alias" },
+      },
+    ],
+    directory
+  )
+  expect(linked.some((profile) => profile.id === "account:alias")).toBe(false)
+  expect(
+    linked
+      .find((profile) => profile.id === "account:canonical")
+      ?.counterpartyRows.map((r) => r.key)
+  ).toEqual(["outside"])
+})
+
+it("keeps an unresolved linked account as a labelled reference without borrowing the paying account's currency or dates", () => {
+  const profiles = paymentProfiles([
+    {
+      ...row("outside", "2026-01-01", "debit", "paying-account"),
+      counterparty_link: {
+        kind: "account",
+        id: "legacy-reference",
+        label: "Unresolved account reference",
+      },
+    },
+  ])
+  const unresolved = profiles.find(
+    (profile) => profile.id === "account:legacy-reference"
+  )!
+  expect(unresolved.accounts).toEqual(["legacy-reference"])
+  expect(unresolved.accountDetails[0]).toMatchObject({
+    registered: false,
+    currency: null,
+    institution: null,
+    number: null,
+  })
+  expect(unresolved.sources).toEqual([])
+  expect(unresolved.statementPeriods).toEqual([])
+  expect(unresolved.first).toBeNull()
+  expect(unresolved.counterpartyRows).toHaveLength(1)
 })

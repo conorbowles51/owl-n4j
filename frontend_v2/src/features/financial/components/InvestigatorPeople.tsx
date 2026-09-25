@@ -1,4 +1,5 @@
 import { paymentInventory } from "../lib/payment-inventory"
+import { ProfileStatementSummary } from "./ProfileStatementSummary"
 import { useQuery } from "@tanstack/react-query"
 import { fetchAPI } from "@/lib/api-client"
 import { accountParties } from "../lib/account-parties"
@@ -12,6 +13,7 @@ import {
   paymentProfiles,
   paymentGroup,
   minorAmount,
+  profileAccountGroup,
 } from "../lib/investigator-workspace"
 import { PaymentTotals } from "./InvestigationTransactionTable"
 import {
@@ -107,7 +109,18 @@ export function InvestigatorPeople({ caseId }: { caseId: string }) {
     search: "",
     page: 0,
   })
-  const currencyGroups = [...new Set(data.rows.map(paymentGroup))].sort()
+  const currencyGroups = [
+    ...new Set([
+      ...data.rows.map(paymentGroup),
+      ...(directory.data?.accounts || []).flatMap((account) => {
+        const group = profileAccountGroup({
+          currency: account.currency,
+          accountType: account.account_type || null,
+        })
+        return group ? [group] : []
+      }),
+    ]),
+  ].sort()
   const scopedRows = useMemo(
     () =>
       data.rows.filter(
@@ -128,12 +141,17 @@ export function InvestigatorPeople({ caseId }: { caseId: string }) {
         )
       )
     : undefined
+  const selectedDirectoryAccount = directory.data?.accounts.find(
+    (account) => `account:${account.id}` === view.selected
+  )
   const selected = profiles.find(
     (profile) =>
       profile.id ===
-      (selectedAccount?.canonical_account_id
-        ? `account:${selectedAccount.canonical_account_id}`
-        : view.selected)
+      (selectedDirectoryAccount?.canonical_id
+        ? `account:${selectedDirectoryAccount.canonical_id}`
+        : selectedAccount?.canonical_account_id
+          ? `account:${selectedAccount.canonical_account_id}`
+          : view.selected)
   )
   const activeRows = selected
     ? view.profileScope === "counterparty_payments" && selected.kind !== "name"
@@ -153,6 +171,12 @@ export function InvestigatorPeople({ caseId }: { caseId: string }) {
         (view.kind === "all"
           ? !profile.nestedUnderOwner || profile.kind !== "account"
           : profile.kind === view.kind) &&
+        (!view.currencyGroup ||
+          profile.rows.length > 0 ||
+          profile.counterpartyRows.length > 0 ||
+          profile.accountDetails.some(
+            (account) => profileAccountGroup(account) === view.currencyGroup
+          )) &&
         profile.name.toLowerCase().includes(view.search.toLowerCase())
     )
     .sort((a, b) =>
@@ -244,7 +268,11 @@ export function InvestigatorPeople({ caseId }: { caseId: string }) {
                   <div>
                     <p className="finance-badge">
                       {selected.kind === "account"
-                        ? "Account in these records"
+                        ? selected.accountDetails.some(
+                            (account) => account.registered
+                          )
+                          ? "Registered account"
+                          : "Account reference"
                         : selected.kind === "owner"
                           ? "Reviewed account holder"
                           : selected.unidentified
@@ -306,33 +334,55 @@ export function InvestigatorPeople({ caseId }: { caseId: string }) {
                     </Button>
                   </div>
                 )}
-                <PaymentTotals
-                  rows={activeRows}
-                  label={
-                    view.profileScope === "counterparty_payments" &&
-                    selected.kind !== "name"
-                      ? "Payments linked to this sender or beneficiary"
-                      : selected.kind === "account"
-                        ? "Activity on this account"
-                        : selected.kind === "owner"
-                          ? "Activity on linked accounts"
-                          : selected.unidentified
-                            ? "Payments with missing counterparty names"
-                            : "Payments involving this recorded name"
-                  }
-                />
+                {selected.kind !== "name" && (
+                  <ProfileStatementSummary profile={selected} />
+                )}
+                {activeRows.length > 0 ? (
+                  <PaymentTotals
+                    rows={activeRows}
+                    label={
+                      view.profileScope === "counterparty_payments" &&
+                      selected.kind !== "name"
+                        ? "Payments linked to this sender or beneficiary"
+                        : selected.kind === "account"
+                          ? "Activity on this account"
+                          : selected.kind === "owner"
+                            ? "Activity on linked accounts"
+                            : selected.unidentified
+                              ? "Payments with missing counterparty names"
+                              : "Payments involving this recorded name"
+                    }
+                  />
+                ) : (
+                  <p className="rounded border p-3 text-sm">
+                    No matching imported payments in this view.{" "}
+                    {selected.kind === "owner"
+                      ? selected.accountDetails.length
+                        ? "Open one of the linked accounts below to inspect its saved statements and history."
+                        : "No owned accounts are linked to this person. Sender or beneficiary links can be viewed separately."
+                      : "Saved statements can still record balances or activity awaiting review; inspect the account history below."}
+                  </p>
+                )}
                 <dl className="grid gap-4 text-sm sm:grid-cols-4">
                   <div>
                     <dt className="text-muted-foreground">
                       First dated payment
                     </dt>
-                    <dd>{activeInventory.first || "Date not recorded"}</dd>
+                    <dd>
+                      {activeRows.length
+                        ? activeInventory.first || "Date not recorded"
+                        : "No matching payments"}
+                    </dd>
                   </div>
                   <div>
                     <dt className="text-muted-foreground">
                       Last dated payment
                     </dt>
-                    <dd>{activeInventory.last || "Date not recorded"}</dd>
+                    <dd>
+                      {activeRows.length
+                        ? activeInventory.last || "Date not recorded"
+                        : "No matching payments"}
+                    </dd>
                   </div>
                   <div>
                     <dt className="text-muted-foreground">
@@ -341,7 +391,9 @@ export function InvestigatorPeople({ caseId }: { caseId: string }) {
                     <dd>{activeInventory.accounts.length}</dd>
                   </div>
                   <div>
-                    <dt className="text-muted-foreground">Source documents</dt>
+                    <dt className="text-muted-foreground">
+                      Sources of matching payments
+                    </dt>
                     <dd>
                       {
                         new Set(activeRows.map((row) => row.source_document_id))
@@ -647,7 +699,11 @@ export function InvestigatorPeople({ caseId }: { caseId: string }) {
                   >
                     <p className="finance-badge">
                       {profile.kind === "account"
-                        ? "Account"
+                        ? profile.accountDetails.some(
+                            (account) => account.registered
+                          )
+                          ? "Account"
+                          : "Account reference"
                         : profile.kind === "owner"
                           ? profile.accounts.length
                             ? "Reviewed account holder"
@@ -662,19 +718,37 @@ export function InvestigatorPeople({ caseId }: { caseId: string }) {
                         : profile.name}
                     </h3>
                     <p className="text-sm text-muted-foreground">
-                      {profile.rows.length} payments · {profile.accounts.length}{" "}
-                      {profile.accounts.length === 1 ? "account" : "accounts"} ·{" "}
-                      {profile.sources.length} source documents
+                      {profile.rows.length} matching payments
+                      {profile.kind === "name" && (
+                        <>
+                          {" "}
+                          · {profile.accounts.length}{" "}
+                          {profile.accounts.length === 1
+                            ? "account"
+                            : "accounts"}{" "}
+                          · {profile.sources.length} source documents
+                        </>
+                      )}
                     </p>
-                    <PaymentTotals
-                      expandAccounts={false}
-                      rows={profile.rows}
-                      label={
-                        profile.kind === "owner"
-                          ? "Activity on owned accounts"
-                          : "Recorded amounts"
-                      }
-                    />
+                    {profile.kind !== "name" && (
+                      <ProfileStatementSummary profile={profile} />
+                    )}
+                    {profile.rows.length > 0 ? (
+                      <PaymentTotals
+                        expandAccounts={false}
+                        rows={profile.rows}
+                        label={
+                          profile.kind === "owner"
+                            ? "Activity on owned accounts"
+                            : "Recorded amounts"
+                        }
+                      />
+                    ) : (
+                      <p className="text-xs">
+                        No matching imported payments. Open this profile to
+                        inspect saved statements and account history.
+                      </p>
+                    )}
                     {profile.counterpartyRows.length > 0 && (
                       <p className="text-xs">
                         Also linked as sender or beneficiary on{" "}
@@ -686,8 +760,12 @@ export function InvestigatorPeople({ caseId }: { caseId: string }) {
                       <UnidentifiedBreakdown rows={profile.rows} />
                     )}
                     <p className="text-xs text-muted-foreground">
-                      {profile.first || "Date unknown"} to{" "}
-                      {profile.last || "date unknown"}
+                      Payment dates:{" "}
+                      {profile.rows.length
+                        ? profile.first
+                          ? `${profile.first} to ${profile.last}`
+                          : "Not recorded"
+                        : "No matching payments"}
                     </p>
                     <span className="inline-block text-sm font-medium text-primary">
                       {profile.unidentified

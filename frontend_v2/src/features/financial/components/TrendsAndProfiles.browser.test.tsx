@@ -16,18 +16,9 @@ import { TrendComparisonWorkspace } from "./TrendComparisonWorkspace"
 import { InvestigatorPeople } from "./InvestigatorPeople"
 import { trendRows, trendCoverage } from "../lib/trend-fixture.test-support"
 import { useFinancialDraftStore } from "../stores/financial-drafts"
+import type { AccountParties } from "../lib/account-parties"
 let profileRows = trendRows
-let profileAccounts: {
-  id: string
-  canonical_id: string
-  institution: string
-  identifier_as_printed: string
-  holder_as_recorded: string
-  currency: string
-  party: null
-  holder_parties: { id: string; name: string }[]
-  relationships: never[]
-}[] = []
+let profileAccounts: AccountParties["accounts"] = []
 const profileCase = "10000000-0000-4000-8000-000000000001"
 vi.mock("@/lib/api-client", async (original) => ({
   ...(await original<typeof import("@/lib/api-client")>()),
@@ -248,8 +239,8 @@ it("gives each profile the transaction charts and filters without leaking anothe
   })
 })
 
-it("keeps a person's five accounts together and separates counterparties through drilldown and return", async () => {
-  await page.viewport(1440, 1000)
+it("shows quiet statement records and keeps a person's five accounts together through filtering, drilldown and return", async () => {
+  await page.viewport(1280, 900)
   const holder = {
     id: "20000000-0000-4000-8000-000000000001",
     name: "Example Holder",
@@ -261,6 +252,15 @@ it("keeps a person's five accounts together and separates counterparties through
     identifier_as_printed: `000${n}`,
     holder_as_recorded: holder.name,
     currency: n === 4 ? "EUR" : "USD",
+    account_type: "checking",
+    statement_periods: [
+      {
+        id: `40000000-0000-4000-8000-00000000000${n}`,
+        source_document_id: `50000000-0000-4000-8000-00000000000${n}`,
+        start: "2026-01-01",
+        end: "2026-01-31",
+      },
+    ],
     party: null,
     holder_parties: [holder],
     relationships: [],
@@ -271,6 +271,8 @@ it("keeps a person's five accounts together and separates counterparties through
       key: "owned",
       account_id: profileAccounts[0].id,
       account_holder_parties: [holder],
+      source_document_id:
+        profileAccounts[0].statement_periods![0].source_document_id,
     },
     {
       ...trendRows[1],
@@ -280,6 +282,70 @@ it("keeps a person's five accounts together and separates counterparties through
     },
   ]
   render(wrap(<InvestigatorPeople caseId={profileCase} />))
+  await screen.findByRole("button", {
+    name: /Reviewed account holder Example Holder/,
+  })
+  fireEvent.change(screen.getByRole("combobox", { name: "Show" }), {
+    target: { value: "account" },
+  })
+  fireEvent.change(
+    screen.getByRole("combobox", { name: "Profile currency and account type" }),
+    { target: { value: "EUR:bank" } }
+  )
+  const quietCard = screen.getByRole("button", {
+    name: /Account Example Bank.*0004/,
+  })
+  expect(quietCard).toHaveTextContent("0 matching payments")
+  expect(quietCard).toHaveTextContent("1 account · 1 bank · 1 source document")
+  expect(quietCard).toHaveTextContent("Currencies recorded: EUR")
+  expect(quietCard).toHaveTextContent(
+    "Saved statement dates: 2026-01-01 to 2026-01-31"
+  )
+  expect(quietCard).toHaveTextContent("Payment dates: No matching payments")
+  expect(quietCard).not.toHaveTextContent("0 accounts")
+  await page.screenshot({
+    path: "/private/tmp/loupe-quiet-profile-list-1280.png",
+  })
+  fireEvent.click(quietCard)
+  const savedSummary = screen.getByRole("group", {
+    name: "Saved account and statement records",
+  })
+  expect(savedSummary).toHaveTextContent("1 source document")
+  expect(screen.queryByText("Currencies: None")).not.toBeInTheDocument()
+  expect(
+    await screen.findByRole("region", { name: "Account balances and activity" })
+  ).toBeVisible()
+  const quietPanel = savedSummary.closest(".finance-panel") as HTMLElement
+  await page.screenshot({
+    path: "/private/tmp/loupe-quiet-profile-1280.png",
+    element: quietPanel,
+  })
+  await page.viewport(390, 900)
+  await waitFor(() =>
+    expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(392)
+  )
+  await page.screenshot({
+    path: "/private/tmp/loupe-quiet-profile-390.png",
+    element: quietPanel,
+  })
+  fireEvent.click(
+    screen.getByRole("button", { name: "Back to names and accounts" })
+  )
+  expect(screen.getByRole("combobox", { name: "Show" })).toHaveValue("account")
+  expect(
+    screen.getByRole("combobox", { name: "Profile currency and account type" })
+  ).toHaveValue("EUR:bank")
+  expect(
+    screen.getByRole("button", { name: /Account Example Bank.*0004/ })
+  ).toHaveTextContent("1 source document")
+  fireEvent.change(
+    screen.getByRole("combobox", { name: "Profile currency and account type" }),
+    { target: { value: "" } }
+  )
+  fireEvent.change(screen.getByRole("combobox", { name: "Show" }), {
+    target: { value: "all" },
+  })
+  await page.viewport(1280, 900)
   fireEvent.click(
     await screen.findByRole("button", {
       name: /Reviewed account holder Example Holder/,

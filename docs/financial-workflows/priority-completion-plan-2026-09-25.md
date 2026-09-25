@@ -811,3 +811,40 @@ final outcomes remain under observation. The restored-source follow-up is now
 active and reports its scheduled/protected/out-of-scope counts, with specific
 review reasons. Checking a source does not certify reconciliation or import it
 unconditionally. Private case identifiers and detailed counts remain outside Git.
+
+## Quiet accounts and continued live verification — 25 September
+
+The compact duplicate comparison was pushed as `b4c62974`; its actual deployment
+and live acceptance remain to be observed. Live verification on `12300095` also
+confirmed the original-file route for a removed batch source, with a clear
+explanation and return to the same batch without restoring or retrying it.
+The test recovery campaign finished. Two client recovery campaigns remain under
+observation; an accepted retry receipt is not evidence of completed recovery.
+
+Saved zero-payment account history opens its exact registered period and source,
+retains corrected balances/currency/dates, and keeps extracted readings separate.
+The rare replacement-reading eligibility branch was not available on that live
+record and was not manufactured by changing client evidence. Its automated
+acceptance remains distinct from this live source/navigation check. Account
+history charts display every represented month, include source-backed inactive
+periods, and omit unsupported intervening months.
+
+Live People & businesses inspection exposed a remaining presentation defect:
+registered quiet accounts appeared without sources, currency or dates because
+their summaries used only payment rows. The follow-up supplements payment
+summaries with case-scoped, current saved statement metadata. It shows registered
+account/bank/source counts, recorded currencies and statement dates independently
+of matching payment counts/dates. Unknown references remain explicit; a saved
+statement does not assert zero activity, reconciliation or ownership dates.
+Confirmed people retain their linked accounts, including accounts without matching
+payments. Payment amounts, admission, ownership and export scope are unchanged.
+
+Backend verification passed 174 tests and 23 subtests across ten connected suites,
+including nine new directory regressions. One stale manual-payment test was
+corrected to exercise the required pending → positioned → reconciled admission
+journey, stable retry receipts and invalid-identity rollback; production admission
+was not relaxed. Frontend verification passed 26 connected unit tests and three
+Chromium journeys, including a quiet account, five linked accounts, filters,
+return and narrow layout. Independent review, scoped lint, production build and
+diff checks passed; wide/narrow screenshots were inspected privately. This
+paragraph records local acceptance; publication and live results follow separately.

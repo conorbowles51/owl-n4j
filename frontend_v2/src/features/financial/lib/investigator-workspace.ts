@@ -30,6 +30,11 @@ export interface ProfileAccount {
   id: string
   label: string
   currency: string | null
+  institution: string | null
+  number: string | null
+  accountType: string | null
+  registered: boolean
+  statementPeriods: AccountParties["accounts"][number]["statement_periods"]
   relationships: AccountParties["accounts"][number]["relationships"]
 }
 export interface PaymentProfile {
@@ -45,6 +50,16 @@ export interface PaymentProfile {
   sources: string[]
   first: string | null
   last: string | null
+  statementPeriods: NonNullable<ProfileAccount["statementPeriods"]>
+  statementFirst: string | null
+  statementLast: string | null
+}
+
+export function profileAccountGroup(
+  account: Pick<ProfileAccount, "currency" | "accountType">
+): string | null {
+  if (!account.currency || !account.accountType) return null
+  return `${account.currency}:${account.accountType === "credit_card" ? "card" : "bank"}`
 }
 
 /** A reviewed holder relationship applies only within its recorded dates. */
@@ -80,6 +95,12 @@ export function paymentProfiles(
     nestedUnderOwner: boolean
   }
   const groups = new Map<string, Group>()
+  const canonicalIds = new Map(
+    directory.map((account) => [account.id, account.canonical_id || account.id])
+  )
+  const registeredAccounts = new Map(
+    directory.map((account) => [account.id, account])
+  )
   const ensure = (id: string, name: string, kind: PaymentProfile["kind"]) => {
     let group = groups.get(id)
     if (!group) {
@@ -97,17 +118,24 @@ export function paymentProfiles(
   }
   for (const account of directory) {
     const id = account.canonical_id || account.id
+    const recorded = registeredAccounts.get(id) || account
     const detail = {
       id,
       label:
         [
-          account.institution,
-          account.identifier_as_printed,
-          account.holder_as_recorded,
+          recorded.institution,
+          recorded.identifier_as_printed,
+          recorded.holder_as_recorded,
         ]
           .filter(Boolean)
-          .join(" · ") || "Account details missing",
-      currency: account.currency,
+          .join(" · ") ||
+        `Account reference ${id.slice(0, 8)} · details not recorded`,
+      currency: recorded.currency,
+      institution: recorded.institution,
+      number: recorded.identifier_as_printed,
+      accountType: recorded.account_type || null,
+      registered: true,
+      statementPeriods: account.statement_periods,
       relationships: account.relationships,
     }
     const accountGroup = ensure(`account:${id}`, detail.label, "account")
@@ -116,6 +144,17 @@ export function paymentProfiles(
     const existing = accountGroup.accounts.get(id)
     accountGroup.accounts.set(id, {
       ...detail,
+      statementPeriods:
+        detail.statementPeriods || existing?.statementPeriods
+          ? [
+              ...new Map(
+                [
+                  ...(existing?.statementPeriods || []),
+                  ...(detail.statementPeriods || []),
+                ].map((period) => [period.id, period])
+              ).values(),
+            ]
+          : undefined,
       relationships: [
         ...(existing?.relationships || []),
         ...detail.relationships,
@@ -129,6 +168,17 @@ export function paymentProfiles(
       const prior = owner.accounts.get(id)
       owner.accounts.set(id, {
         ...detail,
+        statementPeriods:
+          detail.statementPeriods || prior?.statementPeriods
+            ? [
+                ...new Map(
+                  [
+                    ...(prior?.statementPeriods || []),
+                    ...(detail.statementPeriods || []),
+                  ].map((period) => [period.id, period])
+                ).values(),
+              ]
+            : undefined,
         relationships: [
           ...(prior?.relationships || []),
           ...detail.relationships,
@@ -155,6 +205,11 @@ export function paymentProfiles(
         id,
         label: own.name,
         currency: row.currency,
+        institution: row.account_institution || null,
+        number: null,
+        accountType: row.account_type || null,
+        registered: false,
+        statementPeriods: undefined,
         relationships: row.account_relationships || [],
       })
     const name =
@@ -162,12 +217,26 @@ export function paymentProfiles(
       row.counterparty_raw
     const link = row.counterparty_link
     if (link) {
+      const linkedId =
+        link.kind === "account" ? canonicalIds.get(link.id) || link.id : link.id
       const other = ensure(
-        `${link.kind === "party" ? "owner" : "account"}:${link.id}`,
+        `${link.kind === "party" ? "owner" : "account"}:${linkedId}`,
         link.label || name || "Name not recorded",
         link.kind === "party" ? "owner" : "account"
       )
       other.counterpartyRows.set(row.key, row)
+      if (link.kind === "account" && !other.accounts.has(linkedId))
+        other.accounts.set(linkedId, {
+          id: linkedId,
+          label: other.name,
+          currency: null,
+          institution: null,
+          number: null,
+          accountType: null,
+          registered: false,
+          statementPeriods: undefined,
+          relationships: [],
+        })
     } else {
       ensure(
         `name:${name ?? ""}`,
@@ -187,6 +256,19 @@ export function paymentProfiles(
     const dates = rows
       .flatMap((row) => (paymentDay(row) ? [paymentDay(row)!] : []))
       .sort()
+    const statementPeriods = [
+      ...new Map(
+        [...group.accounts.values()]
+          .flatMap((account) => account.statementPeriods || [])
+          .map((period) => [period.id, period])
+      ).values(),
+    ]
+    const statementStarts = statementPeriods
+      .flatMap((period) => (period.start ? [period.start] : []))
+      .sort()
+    const statementEnds = statementPeriods
+      .flatMap((period) => (period.end ? [period.end] : []))
+      .sort()
     return {
       id,
       name: group.name,
@@ -204,9 +286,17 @@ export function paymentProfiles(
             ]
           : [...group.accounts.keys()],
       accountDetails: [...group.accounts.values()],
-      sources: [...new Set(rows.map((row) => row.source_document_id))],
+      sources: [
+        ...new Set([
+          ...rows.map((row) => row.source_document_id),
+          ...statementPeriods.map((period) => period.source_document_id),
+        ]),
+      ],
       first: dates[0] ?? null,
       last: dates.at(-1) ?? null,
+      statementPeriods,
+      statementFirst: statementStarts[0] || null,
+      statementLast: statementEnds.at(-1) || null,
     }
   })
 }
