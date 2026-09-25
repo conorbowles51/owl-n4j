@@ -1,5 +1,7 @@
 # Loupe financial investigator workflow reference
 
+**25 September agent and reading follow-up:** [authoritative imported-ledger analysis, actionable row checks and bounded batch loading](agent-analysis-and-reading-follow-up-2026-09-25.md) preserves the full analysis objective alongside the newly supplied Santander continuation failure. It records read-only tools, complete-scope totals, source references, saved-review preservation, private source verification and remaining live acceptance.
+
 **25 September later feedback — apparent balance-save failure:** [Visible row corrections and save status](row-balance-correction-2026-09-25.md) separates retained original readings from reviewed balances, per-row persistence and current reconciliation. The specific source and save outcome in Alex's screenshot remain unconfirmed.
 
 **25 September evening — matching balance, blocked import:** [Correct printed totals before import](printed-total-correction-2026-09-25.md) records separate credit/debit control checks, the unified source-bound correction journey and the still-unidentified source in Alex's screenshot. Matching closing balances alone must not override conflicting printed totals.

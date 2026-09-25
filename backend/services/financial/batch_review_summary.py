@@ -101,6 +101,45 @@ def tagged_problems(summary):
             for problem in summary.get('problems', [])]
 
 
+def statement_summary(items):
+    """Count current prepared reviews once, separately from overlapping reasons.
+
+    A prepared item can also be an unidentified/assignment-only review, so this
+    total is not a claim that every item is a fully identified statement period.
+    Zero extracted payments alone never proves that a period had no activity.
+    """
+    result = dict(total=0, available=0, blocked=0, imported=0, pending_import=0,
+        skipped=0, duplicate_ignored=0, assigned=0, other=0,
+        available_with_payments=0, available_no_activity=0, available_other=0)
+    for item in items:
+        if item.status in ('removed', 'superseded_reading'):
+            continue
+        result['total'] += 1
+        if item.status in ('ready', 'attention'):
+            if is_blocked(item):
+                result['blocked'] += 1
+                continue
+            result['available'] += 1
+            payment_count = item.summary.get('transaction_count')
+            known_payment_count = type(payment_count) is int and payment_count >= 0
+            admission = item.summary.get('admission')
+            admission = admission if isinstance(admission, dict) else {}
+            if known_payment_count and payment_count > 0:
+                result['available_with_payments'] += 1
+            elif (known_payment_count and payment_count == 0 and admission.get('can_import') is True
+                    and admission.get('assessment_current') is True
+                    and admission.get('status') == 'confirmed_no_activity'
+                    and admission.get('no_activity_confirmed') is True):
+                result['available_no_activity'] += 1
+            else:
+                result['available_other'] += 1
+        elif item.status in ('imported', 'pending_import', 'skipped', 'duplicate_ignored', 'assigned'):
+            result[item.status] += 1
+        else:
+            result['other'] += 1
+    return result
+
+
 def review_summary(items):
     grouped = {}
     result = dict(blocked_statements=0, importable_with_checks=0, imported_with_checks=0,

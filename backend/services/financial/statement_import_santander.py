@@ -62,12 +62,52 @@ def santander_catalog(sources):
                         holder = cells[i-1]['expected_text'].strip()
                         if holder and len(holder) < 200:meta['holders'].add(holder)
     groups, handled = {}, set()
+    active = None
+    previous_page = None
+
+    def attach(group, section, page, meta):
+        for source in pages[page]:
+            indices = [row['row_index'] for origin, row in section if origin is source]
+            if indices:
+                group['section_sources'].append(dict(page_number=page,
+                    table_index=source['table_index'], row_indices=indices))
+        # Cover supplies identity and currency. Only the bounded movement
+        # sections above participate in this account's payments.
+        for number in sorted({page, meta['pages'][0]}):
+            if number not in group['page_numbers']:
+                group['page_numbers'].append(number)
+                group['sources'].extend(dict(page_number=number, table_index=s['table_index'],
+                    source_revision=s['source_revision']) for s in pages[number])
+                handled.update((number, s['table_index']) for s in pages[number])
+
+    def movements(section):
+        return any(all(label in norm(text(row)) for label in
+            ('FECHA', 'DEPOSITO', 'RETIRO', 'SALDO')) for _, row in section)
+
+    def ended(section):
+        return any('SALDO FINAL DEL PERIODO' in norm(text(row)) and
+            'ANTERIOR' not in norm(text(row)) for _, row in section)
+
     for p, items in sorted(pages.items()):
         key = contexts.get(p)
+        if not key or previous_page is None or p != previous_page + 1 or (active and active[0] != key):
+            active = None
+        previous_page = p
         if not key:continue
         meta = known[key]; located = located_rows(items)
         anchors = [(i,s,r) for i,(s,r) in enumerate(located) if re.search(r'DETALLES? DE MOVIMIENTOS', norm(text(r)))]
+        # Continuations repeat the customer/period and movement columns, not
+        # the account heading. Carry only the immediately preceding open
+        # account section; never bridge a missing or differently scoped page.
+        prefix = located[:anchors[0][0]] if anchors else located
+        if active and movements(prefix):
+            attach(active[1], prefix, p, meta)
+            if ended(prefix):
+                active = None
+        elif prefix:
+            active = None
         for n,(index,_,heading) in enumerate(anchors):
+            active = None
             end = anchors[n+1][0] if n+1 < len(anchors) else len(located)
             section = located[index:end]
             cutoff = next((i for i,(_,r) in enumerate(section) if 'INFORMACION FISCAL' in norm(text(r))), len(section))
@@ -86,16 +126,9 @@ def santander_catalog(sources):
                 holder=next(iter(meta['holders'])) if len(meta['holders'])==1 else '',
                 currency=next(iter(meta['currencies'])) if len(meta['currencies'])==1 else '',currency_source='printed_account_section',
                 customer_reference=key[0], sources=[],page_numbers=[],section_sources=[]))
-            for s in items:
-                indices=[r['row_index'] for a,r in section if a is s]
-                if indices:group['section_sources'].append(dict(page_number=p,table_index=s['table_index'],row_indices=indices))
-            # Cover supplies holder, currency and RFC evidence; only movement
-            # section addresses below participate in this account's payments.
-            for page in sorted(set([p,meta['pages'][0]])):
-                if page not in group['page_numbers']:
-                    group['page_numbers'].append(page)
-                    group['sources'].extend(dict(page_number=page,table_index=s['table_index'],source_revision=s['source_revision']) for s in pages[page])
-                    handled.update((page,s['table_index']) for s in pages[page])
+            attach(group, section, p, meta)
+            if movements(section) and not ended(section):
+                active = (key, group)
     return list(groups.values()), handled
 
 
@@ -123,11 +156,18 @@ def propose_santander_statement(sources,currency,choice):
             money_names=('DEPOSITO','RETIRO','SALDO')
             if 'FECHA' in joined and all(n in labels and box(labels[n]) for n in money_names):
                 columns={n:labels[n] for n in money_names};last=None;continue
-            if columns is None:continue
+            if columns is None:
+                # A recognizable payment under an unreadable column heading
+                # is an incomplete reading, never evidence of no activity.
+                if re.match(r'^'+DATE+r'[\s|/]*\d{7}\b', joined):
+                    item.update(kind='unresolved', excluded=False)
+                    item['fields']['description'] = text(raw)
+                    item['issues'].append('The movement columns could not be read. Check the date, deposit or withdrawal and balance beside the PDF.')
+                continue
             money={n:[] for n in money_names};other=[]
             for c in cells:
                 rect=box(c)
-                if rect and rect[2] >= box(columns['DEPOSITO'])[0] and re.fullmatch(r'\$?\s*[\d,]+\.\d{2}-?',c['expected_text'].strip()):
+                if rect and rect[0] >= box(columns['DEPOSITO'])[0] and re.fullmatch(r'\$?\s*[\d,.]+\.\d{2}-?',c['expected_text'].strip()):
                     # Both ruled cells and OCR words stay in their printed
                     # monetary columns; absent cells are not shifted left.
                     name=min(money_names,key=lambda n:abs(rect[2]-box(columns[n])[2]))
@@ -145,7 +185,7 @@ def propose_santander_statement(sources,currency,choice):
             # Native date/folio cells and scanned merged fields use the same
             # explicit printed date + folio prefix. No date from a description.
             prefix=' '.join(c['expected_text'].strip() for c in other)
-            m=re.match(r'^('+DATE+r')[\s|]*(\d{7})(?:[\s|/]*)(.*)$',prefix,re.S)
+            m=re.match(r'^('+DATE+r')[\s|/]*(\d{7})(?:[\s|/]*)(.*)$',prefix,re.S)
             if not m:
                 if last and not any(money.values()) and prefix and not re.match(r'P[ÁA]GINA|BANCO SANTANDER|ESTADO DE CUENTA',norm(prefix)):
                     last['fields']['description']+=' '+prefix

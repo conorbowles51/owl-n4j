@@ -2,6 +2,10 @@ import { statementAssessment } from "../lib/statement-assessment"
 import { statementDuplicateDisposition } from "../lib/statement-duplicate"
 import { StatementReconciliationSummary } from "./StatementReconciliationSummary"
 import { formatLedgerAmount } from "../lib/ledger-format"
+import { BatchProgressSummary } from "./BatchProgressSummary"
+import { BatchReadyAction } from "./BatchReadyAction"
+import { batchSavedAccountsScope } from "../lib/batch-saved-accounts"
+import { batchStatementSummary } from "../lib/batch-statement-summary"
 import { BatchReadingJobs } from "./BatchReadingJobs"
 import { FinancialRemovalAction } from "./FinancialRemovalAction"
 import { BatchStatementImportChoice } from "./BatchStatementImportChoice"
@@ -132,6 +136,7 @@ const batchSchema = z.object({
   issues_count: z.number().optional(),
   statements_with_issues: z.number().optional(),
   review_summary: batchReviewSummarySchema.optional(),
+  statement_summary: batchStatementSummary.optional(),
   review_group: z.string().nullish(),
   review_group_label: z.string().nullish(),
   operations: z.array(operationSchema).default([]),
@@ -210,12 +215,28 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
       reviewGroup,
     ],
     enabled: !!batchId,
-    queryFn: async () => {
-      const result = batchSchema.parse(
-        await fetchAPI(
-          `${prefix}/${batchId}?case_id=${caseId}&offset=${offset}&only_problems=${onlyProblems}${reviewGroup ? `&review_group=${encodeURIComponent(reviewGroup)}` : ""}`
+    retry: false,
+    queryFn: async ({ signal }) => {
+      let response: unknown
+      try {
+        response = await fetchAPI(
+          `${prefix}/${batchId}?case_id=${caseId}&offset=${offset}&only_problems=${onlyProblems}${reviewGroup ? `&review_group=${encodeURIComponent(reviewGroup)}` : ""}`,
+          { signal, timeout: 60000 }
         )
-      )
+      } catch (error) {
+        if (
+          error &&
+          typeof error === "object" &&
+          "name" in error &&
+          error.name === "AbortError" &&
+          !signal.aborted
+        )
+          throw Error(
+            "The batch review did not respond within one minute. Reading or importing may still be running. Retry opening the review, or return to statement files; this does not restart any work."
+          )
+        throw error
+      }
+      const result = batchSchema.parse(response)
       if (result.case_id !== caseId || result.id !== batchId)
         throw Error("The batch belongs to another case.")
       return result
@@ -468,26 +489,16 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
   })
   const openImported = useMutation({
     mutationFn: async (operationId?: string) => {
-      const result = z
-        .object({
-          case_id: z.string(),
-          batch_id: z.string(),
-          revision: z.string(),
-          source_document_ids: z.array(z.string()),
-          account_ids: z.array(z.string()),
-          statement_count: z.number(),
-          transaction_count: z.number(),
-          start_date: z.string().nullable(),
-          end_date: z.string().nullable(),
-        })
+      const result = batchSavedAccountsScope
         .parse(
           await fetchAPI(
-            `${prefix}/${batchId}/imported-transactions?case_id=${caseId}${operationId ? `&operation_id=${operationId}` : ""}`
+            `${prefix}/${batchId}/imported-transactions?case_id=${caseId}${operationId ? `&operation_id=${operationId}` : ""}`,
+            { timeout: 60000 }
           )
         )
       if (result.case_id !== caseId || result.batch_id !== batchId)
         throw Error("The imported payments belong to another batch.")
-      return result
+      return { ...result, operationId }
     },
     onSuccess: (result) => {
       const scope = {
@@ -495,6 +506,11 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
           result.account_ids.length === 1 ? result.account_ids[0] : undefined,
         startDate: result.start_date || undefined,
         endDate: result.end_date || undefined,
+      }
+      if (result.transaction_count === 0) {
+        useFinancialStore.getState().setMainView("statements")
+        setParams({ view: "statements", accounts: "1", returnBatch: batchId!, savedBatch: "1", ...(reviewGroup ? { returnBatchCheck: reviewGroup } : {}), ...(result.operationId ? { savedOperation: result.operationId } : {}) })
+        return
       }
       resetPaymentTableView(caseId, scope, result)
       useInvestigationScopeStore.getState().apply(caseId, scope)
@@ -667,7 +683,22 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
       />
     )
   if (query.isPending)
-    return <p role="status">Loading the financial processing batch…</p>
+    return (
+      <section
+        aria-label="Opening financial processing batch"
+        className="space-y-3"
+      >
+        <p role="status">Loading the financial processing batch…</p>
+        <p className="text-sm text-muted-foreground">
+          Opening the latest review and processing results. You can return to
+          statement files while this loads; leaving this view does not stop
+          existing work.
+        </p>
+        <Button variant="outline" onClick={() => openStatementFiles()}>
+          Back to statement files
+        </Button>
+      </section>
+    )
   if (query.isError)
     return (
       <div>
@@ -685,8 +716,7 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
       ...item,
       problems: reviewProblems(item, reviewGroup),
     }))
-  const problems = batch.issues_count ?? batch.counts.attention ?? 0
-  const available = batch.available_statements ?? batch.counts.ready ?? 0
+  const available = batch.statement_summary?.available ?? batch.available_statements ?? batch.counts.ready ?? 0
   const availableRecords = batch.available_records ?? batch.ready_transactions
   const availablePayments = batch.available_transactions ?? availableRecords
   const incompleteRecords = batch.available_incomplete ?? 0
@@ -734,7 +764,7 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
             >
               {openImported.isPending
                 ? "Opening imported payments…"
-                : "Open imported transactions"}
+                : "Open saved results"}
             </Button>
           )}
           <Button variant="outline" onClick={() => openStatementFiles()}>
@@ -781,108 +811,29 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
         />
       </div>
       {openImported.isError && <p role="alert">{openImported.error.message}</p>}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {[
-          [
-            "PDFs read",
-            `${batch.files.filter((f) => f.status === "checked").length} of ${batch.files.length}`,
-          ],
-          ["Statement periods available to import", available],
-          [
-            batch.review_summary ? "Cannot import yet" : "Review checks",
-            batch.review_summary
-              ? String(batch.review_summary.blocked_statements)
-              : `${problems}${batch.statements_with_issues !== undefined ? ` across ${batch.statements_with_issues} statements` : ""}`,
-          ],
-          ["Statement periods imported", batch.counts.imported || 0],
-        ].map(([title, value]) => (
-          <div
-            className={`rounded border p-3 ${(title === "Review checks" && problems) || (title === "Cannot import yet" && batch.review_summary?.blocked_statements) ? "border-amber-400 bg-amber-50/60 dark:bg-amber-950/20" : "bg-card"}`}
-            key={title}
-          >
-            <p className="text-sm text-muted-foreground">{title}</p>
-            <p className="text-2xl font-semibold">{value}</p>
-          </div>
-        ))}
-      </div>
-      {batch.review_summary && (
-        <BatchReviewSummary
-          summary={batch.review_summary}
-          selected={reviewGroup}
-          onSelect={selectReviewGroup}
-        />
-      )}
-      {canEdit && (
-        <div className="flex flex-wrap items-center gap-3 rounded border p-3">
-          <BulkStatementDetails
-            caseId={caseId}
-            batchId={batchId}
-            onSaved={refresh}
-          />
-          <p className="text-sm text-muted-foreground">
-            Select statements from this batch to fill or correct account details
-            together. Preview changes before saving.
-          </p>
-        </div>
-      )}
-      <p className="text-sm text-muted-foreground">
-        Reading a PDF prepares its statements. Importing saves their payments to
-        Transactions. An imported statement may still have checks to review;
-        these are separate counts.
-      </p>
-      {!!batch.counts.skipped && (
-        <p className="text-sm">
-          {batch.counts.skipped} statements left unimported. Their files and
-          saved reviews are retained below.
-        </p>
-      )}
-      {!!batch.counts.assigned && (
-        <p className="text-sm">
-          {batch.counts.assigned}{" "}
-          {batch.counts.assigned === 1
-            ? "unassigned page review is"
-            : "unassigned page reviews are"}{" "}
-          complete. Check and import their payments in the destination
-          statements.
-        </p>
-      )}
-      {(reviewGroup || onlyProblems) && (
-        <p className="text-sm">
-          Import covers all available statements in this batch, including
-          statements outside the review filter.
-        </p>
-      )}
-      <div className="rounded border bg-card p-4 flex flex-wrap gap-3 items-center justify-between">
-        <div>
-          <p className="font-medium">
-            {available} {available === 1 ? "statement" : "statements"} available
-            · {availablePayments} transactions
-            {incompleteRecords
-              ? ` · ${incompleteRecords} incomplete records`
-              : ""}
-          </p>
-          <p className="text-sm text-muted-foreground">
-            {incompleteRecords
-              ? "Incomplete records will be saved separately for review and kept outside totals."
-              : "Account details, statement balances and transaction sources will be saved together."}{" "}
-            Text not identified as a payment stays with the original statement.
-          </p>
-        </div>
-        <Button
-          disabled={!canEdit || !available || confirm.isPending || paused}
-          onClick={() => confirm.mutate()}
-        >
-          {confirm.isPending
-            ? "Submitting import…"
-            : !available
-              ? "No new statements to import"
-              : !availableRecords
-                ? `Save ${available} ${available === 1 ? "statement" : "statements"}`
-                : incompleteRecords
-                  ? `Import ${availablePayments} transactions and ${incompleteRecords} incomplete records`
-                  : `Import ${availablePayments} transactions`}
-        </Button>
-      </div>
+      <BatchReadyAction
+        available={available}
+        payments={availablePayments}
+        incomplete={incompleteRecords}
+        summary={batch.statement_summary}
+        filtered={!!reviewGroup || onlyProblems}
+        canEdit={canEdit}
+        paused={paused}
+        pending={confirm.isPending}
+        accepted={confirm.isSuccess}
+        onConfirm={() => confirm.mutate()}
+      />
+      <BatchProgressSummary
+        files={batch.files}
+        summary={batch.statement_summary}
+        available={available}
+        imported={batch.counts.imported || 0}
+        blocked={batch.review_summary?.blocked_statements}
+        pending={batch.counts.pending_import || 0}
+        skipped={batch.counts.skipped || 0}
+        duplicates={batch.counts.duplicate_ignored || 0}
+        assigned={batch.counts.assigned || 0}
+      />
       {(confirm.isError || error) && (
         <div role="alert">
           <p>{confirm.error?.message || error}</p>
@@ -987,7 +938,9 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
                   disabled={openImported.isPending}
                   onClick={() => openImported.mutate(operation.id)}
                 >
-                  View transactions from this import
+                  {operation.transaction_count === 0
+                    ? "View saved statements in Accounts"
+                    : "View transactions from this import"}
                 </Button>
               )}
               <ul className="mt-2 max-h-64 overflow-auto divide-y">
@@ -1028,6 +981,47 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
         <p role="status">
           Importing {batch.counts.pending_import} statements. Successfully
           imported statements are retained if another one needs attention.
+        </p>
+      )}
+      {batch.review_summary && (
+        <BatchReviewSummary
+          summary={batch.review_summary}
+          selected={reviewGroup}
+          onSelect={selectReviewGroup}
+        />
+      )}
+      {canEdit && (
+        <div className="flex flex-wrap items-center gap-3 rounded border p-3">
+          <BulkStatementDetails
+            caseId={caseId}
+            batchId={batchId}
+            onSaved={refresh}
+          />
+          <p className="text-sm text-muted-foreground">
+            Select statements from this batch to fill or correct account details
+            together. Preview changes before saving.
+          </p>
+        </div>
+      )}
+      <p className="text-sm text-muted-foreground">
+        Saved statements appear in Accounts with their dates and balances.
+        Imported payments appear in Transactions. Review checks can remain
+        attached to a saved statement.
+      </p>
+      {!!batch.counts.skipped && (
+        <p className="text-sm">
+          {batch.counts.skipped} statements left unimported. Their files and
+          saved reviews are retained below.
+        </p>
+      )}
+      {!!batch.counts.assigned && (
+        <p className="text-sm">
+          {batch.counts.assigned}{" "}
+          {batch.counts.assigned === 1
+            ? "unassigned page review is"
+            : "unassigned page reviews are"}{" "}
+          complete. Check and import their payments in the destination
+          statements.
         </p>
       )}
       <details

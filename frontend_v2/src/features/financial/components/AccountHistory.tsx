@@ -37,11 +37,14 @@ import { PaymentSet } from "./InvestigationWorkspaceParts"
 export function AccountHistory({
   caseId,
   accountId,
+  accountIds,
 }: {
   caseId: string
   accountId?: string
+  accountIds?: string[]
 }) {
-  const [scope] = useInvestigationScope(caseId)
+  const [sharedScope] = useInvestigationScope(caseId)
+  const scope: typeof sharedScope = accountIds ? { accountIds } : sharedScope
   const [metric, setMetric] = useState("count")
   const [selected, setSelected] = useState<string | null>(null)
   const detailRef = useRef<HTMLDivElement>(null)
@@ -79,6 +82,8 @@ export function AccountHistory({
         throw new Error(
           "Account history belongs to a different case. Reload the view."
         )
+      if (accountIds && data.groups.some((group) => !accountIds.includes(group.account_id)))
+        throw new Error("Account history returned accounts outside this saved result. Reload the view.")
       return data
     },
   })
@@ -123,7 +128,7 @@ export function AccountHistory({
           </h3>
           <p className="text-sm text-muted-foreground">
             Compare activity with the balance left in each account, including
-            periods with no transactions. Accounts and dates above apply here.
+            periods with no transactions. {accountIds ? "Only the selected saved accounts are shown; all their recorded periods are included." : "Accounts and dates above apply here."}
           </p>
         </div>
         <Button

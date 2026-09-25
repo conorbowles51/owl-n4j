@@ -65,6 +65,7 @@ import { SavedReviewConflict } from "./SavedReviewConflict"
 import { PreviousStatementReviews } from "./PreviousStatementReviews"
 import { reviewRecoverySchema } from "../lib/review-recovery"
 import { PrintedStatementTable } from "./PrintedStatementTable"
+import { StatementRowReviewStatus } from "./StatementRowReviewStatus"
 import { PaymentDocumentReview } from "./PaymentDocumentReview"
 import { paymentDocumentProposal } from "../lib/payment-document"
 import {
@@ -2255,6 +2256,7 @@ function EditableStatement({
         '[aria-label="Edit selected statement row"]'
       )
       editor?.scrollIntoView({ block: "nearest", behavior: "smooth" })
+      editor?.focus({ preventScroll: true })
       if (original.kind === "statement_total") {
         const name = statementControlInputLabel(original.kind, original.fields)
         const input = Array.from(
@@ -2390,12 +2392,12 @@ function EditableStatement({
     )
   }, [saveBatchReview.isPending, pendingSaveSnapshot])
   const blockersByRow = useMemo(() => {
-    const result = new Map<string, string[]>()
+    const result = new Map<string, z.infer<typeof statementBlocker>[]>()
     for (const blocker of serverChecks.admission?.blockers || []) {
       const id = blocker.target?.row_id || blocker.row_id
       if (!id) continue
       const messages = result.get(id) || []
-      messages.push(blocker.message)
+      messages.push(blocker)
       result.set(id, messages)
     }
     return result
@@ -2426,8 +2428,44 @@ function EditableStatement({
     const balanceValueValid =
       edit.balance_minor === null || /^-?\d+$/.test(edit.balance_minor)
     const rowIssues = showBalanceCorrection
-      ? [...new Set([...rowProblems(edit), ...(blockersByRow.get(id) || [])])]
+      ? [
+          ...new Set([
+            ...rowProblems(edit),
+            ...(blockersByRow.get(id) || []).map((blocker) => blocker.message),
+          ]),
+        ]
       : []
+    const rowReview =
+      original.issues.length > 0 || (blockersByRow.get(id)?.length ?? 0) > 0 ? (
+        <StatementRowReviewStatus
+          rowId={id}
+          originalIssues={original.issues}
+          blockers={blockersByRow.get(id) || []}
+          localProblems={rowProblems(edit)}
+          pending={serverChecks.pending}
+          error={serverChecks.error}
+          assessed={!!serverChecks.admission}
+          reviewed={changed(edit) || !!edit.reason}
+          excluded={
+            edit.excluded &&
+            ["transaction", "unresolved"].includes(original.kind)
+          }
+          saved={savedRowSnapshots.get(id) === statementRowSnapshot(edit)}
+          saving={saveBatchReview.isPending}
+          failed={saveBatchReview.isError}
+          canMarkChecked={
+            !edit.excluded &&
+            original.issues.length > 0 &&
+            !edit.reason &&
+            !changed(edit) &&
+            rowProblems(edit).length === 0
+          }
+          onMarkChecked={() =>
+            update(id, { reason: "Checked against the original statement." })
+          }
+          onInspect={inspectBlocker}
+        />
+      ) : null
     const correction = showBalanceCorrection ? (
       <StatementRowCorrectionStatus
         rowId={id}
@@ -2466,8 +2504,9 @@ function EditableStatement({
       />
     ) : null
     if (focus?.rowId !== id)
-      return correction || changed(edit) || edit.reason ? (
+      return rowReview || correction || changed(edit) || edit.reason ? (
         <div className="space-y-2">
+          {rowReview}
           {correction}
           <Button
             size="sm"
@@ -2475,21 +2514,31 @@ function EditableStatement({
             className="text-teal-700 dark:text-teal-300"
             onClick={() => openInlineRow(id)}
           >
-            {changed(edit) ? "View correction" : "View recorded check"}
+            {changed(edit)
+              ? "View correction"
+              : edit.reason
+                ? "View recorded check"
+                : "Edit this row"}
           </Button>
         </div>
       ) : null
     if (inlineRowId !== id)
       return (
         <div className="space-y-2">
+          {rowReview}
           {correction}
           <Button size="sm" variant="outline" onClick={() => openInlineRow(id)}>
-            {correction ? "View correction" : "Edit this row"}
+            {correction
+              ? "View correction"
+              : edit.reason
+                ? "View recorded check"
+                : "Edit this row"}
           </Button>
         </div>
       )
     return (
       <>
+        {rowReview}
         {correction}
         {edit.manual_page && (
           <ManualTransactionPosition

@@ -1,6 +1,6 @@
 # Financial processing capabilities
 
-Verified against the shared reader registration and implementation on 24 September
+Verified against the shared reader registration and implementation on 25 September
 2026. These readers apply across cases and future documents; no reader is chosen
 by client name, case ID or a supplied filename. Regression tests retain the
 supported layouts as maintained product capabilities.
@@ -10,7 +10,7 @@ supported layouts as maintained product capabilities.
 | Bank or issuer | Supported statement family | Scope and limits |
 |---|---|---|
 | BBVA Mexico | Cash-management and Maestra account statements, including the tested MXN and USD layouts | Operation/value dates, deposits, withdrawals, balances and prior-period sections; native and scanned examples. Other BBVA products/layouts are not automatically certified. |
-| Santander Mexico | Account movement statements, including the tested chequing/peso/dollar and Inversion Creciente sections | Separates printed account products, deposits, withdrawals and balances. This is not support for every investment instrument or Santander country. |
+| Santander Mexico | Account movement statements, including the tested chequing/peso/dollar and Inversion Creciente sections | Separates printed account products, deposits, withdrawals and balances. Continuations require consecutive pages with matching customer/period context and repeated movement columns; shared pages retain separate account sections. This is not support for every investment instrument or Santander country. |
 | Kapital | Product statements with separately printed CLABE/currency sections | Deposits, withdrawals, fees, offsets, continuation tables and balance-only sections. Keeps account/currency compartments separate. |
 | Intercam Mexico | Product statements and continuation tables | Uses the shared product reader with Intercam recognition; separate currency/account sections and no-activity compartments. |
 | Monex | Numbered contract statements containing currency summaries with explicit zero activity | Dedicated recognition currently covers balance-only sections; movement tables and FX executions are not validated by this reader. |
@@ -22,8 +22,34 @@ supported layouts as maintained product capabilities.
 
 The latest Credit One reader and additional Andrews date/currency/reread handling
 are documented in [statement collection acceptance](statement-collections-2026-09-24.md).
-The other registered layouts predate this change. A registered reader does not
+The Santander continuation and closing-strip safeguards below extend the earlier
+registered layout. A registered reader does not
 guarantee that every scan or later redesign from its bank will be fully readable.
+
+### Santander continuation and scanned closing controls
+
+The movement reader follows an explicitly identified account section onto
+consecutive pages whose bank, customer, period and movement columns agree. A new
+account heading or printed closing balance ends that section. Missing pages,
+conflicting identities and pages without the required columns are not silently
+attached. Dated rows under unreadable columns remain incomplete records rather
+than zero activity; malformed money cells retain their original text for review.
+
+For scanned statements, reading revision `bank-payment-rows-v8` can recover an
+omitted closing strip immediately below a measured movement-total row. It requires
+the complete printed closing label and amount to agree across four source-image
+crops at two resolutions. The optional fallback is bounded in time and region
+count; it does not replace an existing closing reading, calculate an amount from
+transactions, or resolve conflicting crop values. Crop observations and measured
+locations are retained with the extraction. Other unreadable cells remain review
+items, and matching totals alone do not clear their source-reading checks.
+
+Synthetic tests cover shared-page account boundaries, continuation rejection,
+incomplete readings, crop disagreement and preservation of an earlier saved manual
+addition. Changed readings require explicit comparison with saved corrections
+before import. These changes do not automatically reprocess evidence or append
+recovered transactions to existing imports. Source documents and private sample
+measurements are excluded from the repository.
 
 ## Collection and source types
 

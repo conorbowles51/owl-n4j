@@ -414,7 +414,7 @@ it("reopens the exact routed file after refresh and returns to the retained batc
   fireEvent.click(screen.getByRole("button", { name: "Back to processing batch" }))
   await screen.findByRole("region", { name: "Financial processing batch" })
   await waitFor(() => expect(screen.getByLabelText("Current route")).toHaveTextContent("batchCheck=balance"))
-  expect(fetchAPI).toHaveBeenCalledWith(expect.stringContaining(`/${batch.id}?case_id=case&offset=0&only_problems=false&review_group=balance`))
+  expect(fetchAPI).toHaveBeenCalledWith(expect.stringContaining(`/${batch.id}?case_id=case&offset=0&only_problems=false&review_group=balance`), expect.objectContaining({ timeout: 60000 }))
   fireEvent.click(screen.getByRole("button", { name: "Open file review" }))
   expect(await screen.findByText(proposal.reading_failure)).toBeVisible()
   fireEvent.click(screen.getByRole("button", { name: "Remove imports…" }))
@@ -423,4 +423,78 @@ it("reopens the exact routed file after refresh and returns to the retained batc
   expect(screen.getByLabelText("Selected statement review")).not.toBeVisible()
   fireEvent.click(screen.getByRole("button", { name: "Statement files" }))
   expect(await screen.findByRole("heading", { name: "Files in Financial" })).toBeVisible()
+})
+
+
+it.each([1280, 390])("saves ready balance-only reviews above warnings, opens Accounts and returns to the same batch at %ipx", async (width) => {
+  await page.viewport(width, 1000)
+  const original = vi.mocked(fetchAPI).getMockImplementation()!
+  let accepted = false
+  let resolveSave: (value: unknown) => void = () => {}
+  const posts: { url: string, body: unknown }[] = []
+  const summary = { total: 14, available: 7, blocked: 6, imported: 1, pending_import: 0, skipped: 0, duplicate_ignored: 0, assigned: 0, other: 0, available_with_payments: 0, available_no_activity: 7, available_other: 0 }
+  const operation = {
+    id: "synthetic-save", status: "complete", created_at: "2026-09-25T10:00:00Z", statement_count: 7,
+    pending: 0, failed: 0, imported: 7, already_present: 0, duplicate_ignored: 0, transaction_count: 0, incomplete_count: 0,
+    outcomes: Array.from({length:7}, (_, i) => ({ item_id: `saved-${i}`, filename: `Synthetic balance ${i}.pdf`, status: "imported", period_start: "2026-01-01", period_end: "2026-01-31" })),
+  }
+  vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
+    if (options?.method) {
+      expect(url).toBe(`/api/financial/statement-import/batches/${batch.id}/confirm?case_id=case`)
+      expect(options.method).toBe("POST")
+      posts.push({url, body:options.body})
+      return new Promise((resolve) => { resolveSave = resolve })
+    }
+    if (url.includes(`/batches/${batch.id}/imported-transactions?`)) {
+      expect(url).toContain("operation_id=synthetic-save")
+      return {case_id:"case", batch_id:batch.id, revision:"c".repeat(64), source_document_ids:["saved-source"], account_ids:["eur-account"], statement_count:7, transaction_count:0, start_date:"2026-01-01", end_date:"2026-01-31"}
+    }
+    if (url.startsWith("/api/financial/account-history?")) {
+      expect(url).toContain("account_ids=eur-account")
+      expect(url).not.toContain("start_date=")
+      return {case_id:"case",applied:false,groups:[{key:"eur-account:EUR:asset",account_id:"eur-account",currency:"EUR",balance_kind:"asset",label:"Synthetic saved EUR account",periods:[{id:"saved-period",source_document_id:"saved-source",evidence_file_id:"saved-file",filename:"Synthetic balance.pdf",start:"2026-01-01",end:"2026-01-31",opening_minor:"12345",closing_minor:"12345",status:"confirmed_no_activity",assessment_current:true,transaction_count:0,undated_count:0,activity:[]}]}]}
+    }
+    if (url.includes(`/batches/${batch.id}?`)) return {
+      ...batch, files:Array.from({length:11}, (_, i)=>({source_id:`source-${i}`,file_id:`file-${i}`, filename:`Synthetic file ${i}.pdf`,status:"checked"})),
+      counts:{ready:accepted?0:7,attention:6,imported:accepted?8:1},
+      available_statements:accepted?0:7,available_records:0,available_transactions:0,
+      statement_summary:accepted?{...summary,available:0,imported:8,available_no_activity:0}:summary,
+      review_summary:{blocked_statements:6,importable_with_checks:0,imported_with_checks:1,unchecked_balance_statements:0,
+        groups:Array.from({length:18},(_,i)=>({id:`reason-${i}`,label:`Synthetic reason ${i}`,explanation:"Compare the original statement and correct the identified reading.",statement_count:6,check_count:12,blocked_statements:6,importable_statements:0,imported_statements:0}))},
+      total:1, items:[], operations:accepted?[operation]:[],
+    }
+    return original(url, options)
+  })
+  mount(`/cases/case/financial?view=statements&batch=${batch.id}&batchCheck=reason-0`)
+  const action = await screen.findByRole("button", {name:"Save 7 statements to Financial"})
+  expect(posts).toHaveLength(0)
+  expect(screen.getByText("11 of 11 files read")).toBeVisible()
+  expect(screen.getByText("14 prepared statement reviews")).toBeVisible()
+  expect(screen.getByText(/These statements are confirmed to contain no payments/)).toBeVisible()
+  expect(action.getBoundingClientRect().bottom).toBeLessThan(1000)
+  expect(action.getBoundingClientRect().top).toBeLessThan(screen.getByRole("region",{name:"Review checks by reason"}).getBoundingClientRect().top)
+  await page.screenshot({path:`/private/tmp/loupe-batch-ready-${width}.png`})
+  await page.getByRole("button", {name:"Save 7 statements to Financial",exact:true}).click()
+  await waitFor(()=>expect(posts).toHaveLength(1))
+  expect(posts[0].body).toEqual({request_id:expect.any(String),expected_ready_revision:"a".repeat(64)})
+  expect(screen.getByRole("button",{name:"Submitting save request…"})).toBeDisabled()
+  await act(async()=>{accepted=true;resolveSave({request_id:"synthetic-save"})})
+  await screen.findByRole("region",{name:"Import results"})
+  const accounts = await screen.findByRole("button",{name:"View saved statements in Accounts"})
+  expect(accounts.getBoundingClientRect().top).toBeLessThan(screen.getByRole("region",{name:"Review checks by reason"}).getBoundingClientRect().top)
+  await page.getByRole("button",{name:"View saved statements in Accounts",exact:true}).click()
+  await waitFor(()=>expect(screen.getByRole("button",{name:"Review accounts"})).toHaveAttribute("aria-pressed","true"))
+  expect(screen.getByLabelText("Current route")).toHaveTextContent(`accounts=1&returnBatch=${batch.id}`)
+  expect(screen.getByText(/Saved statements are recorded with their accounts/).parentElement).toHaveFocus()
+  await screen.findByRole("region", {name:"Account balances and activity"})
+  await waitFor(() => expect(screen.getByRole("region", {name:"Accounts from saved statements"})).toHaveTextContent("2026-01-01"))
+  expect(screen.getByRole("region", {name:"Accounts from saved statements"})).toHaveTextContent("123.45 EUR")
+  expect(screen.getByRole("region", {name:"Accounts from saved statements"})).toHaveTextContent("7 saved statements · 1 account · 0 imported transactions")
+  expect(screen.getByRole("button", {name:"Show all accounts in this case"})).toBeVisible()
+  await page.getByRole("button",{name:"Back to processing batch",exact:true}).click()
+  await screen.findByRole("region",{name:"Financial processing batch"})
+  expect(screen.getByLabelText("Current route")).toHaveTextContent(`batch=${batch.id}`)
+  expect(screen.getByRole("region",{name:"Import results"})).toBeVisible()
+  expect(screen.getByLabelText("Current route")).toHaveTextContent("batchCheck=reason-0")
+  expect(posts).toHaveLength(1)
 })

@@ -89,6 +89,41 @@ class ReviewRecoveryTests(TestCase):
         self.assertEqual(late['request']['_saved_balance_corrections']['opening'], {'amount_minor': '6000', 'page': 1})
         self.assertEqual(late['saved_by']['user_id'], str(self.f.actor.user_id))
 
+    def test_new_reading_with_shifted_rows_retains_manual_additions_for_comparison(self):
+        item = self.batch_draft()
+        saved = deepcopy(item.review_request)
+        saved['rows'].append(dict(id='manual:checked-payment', manual_page=1,
+            date='2023-12-29', description='Manually checked payment',
+            amount_minor='1250', direction='debit', excluded=False,
+            reason='Entered from the printed page'))
+        item.review_request = deepcopy(saved)
+        self.f.db.commit()
+        previous = self.new_version()
+        # A newly recovered control above a payment can shift physical row
+        # indices, even though the underlying PDF and statement are unchanged.
+        page = self.f.db.get(EvidenceTableGeometry, (self.f.file.id, 1))
+        payload = deepcopy(page.payload)
+        for cell in payload[0]['table']['values']:
+            cell['row'] += 1
+        page.payload = payload
+        self.f.db.commit()
+        proposal = self.f.preview()
+        recovery = proposal['review_recovery']
+        self.assertTrue(recovery['required'])
+        self.assertFalse(recovery['acknowledged'])
+        with self.f.SessionLocal() as db:
+            detail = review_recovery.previous_review_detail(db, case_id=self.f.case.id,
+                evidence_file_id=self.f.file.id, review_id=recovery['reviews'][0]['id'])
+            self.assertEqual(detail['request']['rows'], saved['rows'])
+            self.assertEqual(db.get(Item, item.id).review_request, saved)
+            self.assertFalse(list(db.scalars(select(FinancialTransaction))))
+        self.assertEqual(proposal['previous_saved_review']['evidence_file_id'], str(previous.id))
+        self.assertNotIn('manual:checked-payment', [r['id'] for r in proposal['rows']])
+        self.assertNotIn('Earlier corrected wording',
+            [r['fields'].get('description') for r in proposal['rows']])
+        with self.assertRaisesRegex(PdfMappingError, 'Compare the earlier'):
+            check_import_request(proposal, StatementImportRequest.model_validate(self.f.request()))
+
     def test_changed_period_requires_saved_comparison_and_never_attaches_the_old_rows(self):
         item = self.batch_draft('a' * 64)
         self.new_version()

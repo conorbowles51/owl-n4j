@@ -61,6 +61,7 @@ import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Markdown } from "@/components/ui/markdown"
+import { AgentArtifactNotes } from "./AgentArtifactNotes"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Switch } from "@/components/ui/switch"
 import { downloadProtectedFile } from "@/lib/protected-file"
@@ -349,8 +350,22 @@ function describeToolActivity(item: AgentToolTraceItem): AgentActivityItem {
       detail = "Gathering dated events so the answer can be ordered in time."
       break
     case "get_financial_records":
-      title = "Loaded financial records"
-      detail = "Checking transactions and financial intelligence linked to the request."
+      title = "Loaded financial relationship context"
+      detail = "Checking graph-linked financial evidence, separate from the complete imported payment ledger."
+      break
+    case "get_financial_transactions":
+      title = args.mode === "intelligence" ? "Loaded financial relationship context" : "Read imported payments"
+      detail = args.mode === "intelligence"
+        ? "Checking graph-linked financial evidence, separately from the imported payment ledger."
+        : "Checking saved payment rows and their sources within the selected financial scope."
+      break
+    case "analyze_financial_transactions":
+      title = "Analysed imported payments"
+      detail = "Calculating across all matching payments, keeping currencies and bank/card accounts separate."
+      break
+    case "get_financial_coverage":
+      title = "Checked financial coverage"
+      detail = "Checking which saved accounts, periods and payments are represented, and what remains outside this analysis."
       break
     case "get_map_locations":
       title = "Loaded map locations"
@@ -1496,6 +1511,9 @@ function activityIconFor(toolName?: string | null) {
       return FileSearch
     case "inspect_graph_schema":
     case "run_readonly_cypher":
+    case "get_financial_transactions":
+    case "get_financial_coverage":
+    case "analyze_financial_transactions":
       return Database
     case "build_graph_artifact":
     case "get_entity_neighborhood":
@@ -2348,7 +2366,6 @@ function ChartArtifact({
     : "bar"
   const valueKey = valueText(artifact.data.value_key)
   const series = chartSeries(artifact)
-  const notes = valueText(artifact.data.notes).trim()
 
   return (
     <ArtifactShell artifact={artifact} exportEnabled={exportEnabled}>
@@ -2358,11 +2375,7 @@ function ChartArtifact({
           <Stat label="Rows" value={rows.length} />
           <Stat label="Series" value={Math.max(series.length, valueKey ? 1 : 0)} />
         </div>
-        {notes && (
-          <p className="shrink-0 border-l-2 border-amber-500/70 pl-3 text-xs leading-5 text-muted-foreground">
-            {notes}
-          </p>
-        )}
+        <AgentArtifactNotes artifact={artifact} />
         <div className="min-h-[360px] flex-1 rounded-md bg-muted/20 p-3 text-muted-foreground">
           <ChartPreview artifact={artifact} />
         </div>
@@ -2768,6 +2781,7 @@ function TableArtifact({
   const rows = asArray<Dict>(artifact.data.rows)
   return (
     <ArtifactShell artifact={artifact} exportEnabled={exportEnabled}>
+      <AgentArtifactNotes artifact={artifact} />
       {rows.length === 0 ? (
         <SmallEmpty label="No rows returned" />
       ) : (

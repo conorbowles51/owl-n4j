@@ -65,3 +65,13 @@ No client document or case record was used as a test fixture. The exact filename
 and reopened-field behavior for Alex's report remain unconfirmed. Publication and
 live verification are recorded separately; these local checks do not establish
 that her particular save succeeded or that the unexplained text was a balance.
+
+Post-release: commit `4b93f2aa` was pushed to the existing release branch. The
+captured automatic deployment log reports success for that exact commit in 193
+seconds (`deploy-20260925-201530.log`); all recorded ingestion gates were idle.
+The new Updates page agrees on the checkout revision. The saved statement review
+in the authorized test case reopened with its imported payments, saved account
+details and original source available. Its periods were already imported, so the
+pending correction/save/import journey was not repeated live by replacing existing
+records solely to demonstrate the control. That complete journey is verified
+against the real local API and database; Alex's specific file remains unidentified.

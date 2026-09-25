@@ -332,7 +332,7 @@ it("filters by the whole-batch reason, focuses the right detail, and retains the
   )
   expect(screen.getByText("1–100 of 201")).toBeVisible()
   expect(
-    screen.getByText(/Import covers all available statements/)
+    screen.getByText(/This action covers all ready statements/)
   ).toBeVisible()
   fireEvent.click(screen.getByRole("button", { name: "Review problems" }))
   await screen.findByText("Focused field: holder")
@@ -546,11 +546,12 @@ it("confirms the displayed ready list and filters problems across the batch", as
   )
   await waitFor(() =>
     expect(fetchAPI).toHaveBeenCalledWith(
-      expect.stringContaining("only_problems=true")
+      expect.stringContaining("only_problems=true"),
+      expect.objectContaining({ timeout: 60000 })
     )
   )
   expect(
-    await screen.findByText(/2 statements available.*14 transactions/)
+    await screen.findByText(/2 prepared reviews ready.*14 transactions/)
   ).toBeVisible()
 })
 it("checks for additional periods without confirming another import", async () => {
@@ -581,7 +582,7 @@ it("offers saving a balance-only batch without asking to import zero records", a
   } as never)
   mount()
   fireEvent.click(
-    await screen.findByRole("button", { name: "Save 1 statement" })
+    await screen.findByRole("button", { name: "Save 1 statement to Financial" })
   )
   await waitFor(() =>
     expect(fetchAPI).toHaveBeenCalledWith(
@@ -683,7 +684,7 @@ it("opens the exact imported sources across the whole batch with their accounts 
   )
   mount()
   fireEvent.click(
-    await screen.findByRole("button", { name: "Open imported transactions" })
+    await screen.findByRole("button", { name: "Open saved results" })
   )
   await waitFor(() =>
     expect(screen.getByLabelText("Location")).toHaveTextContent(
@@ -785,7 +786,7 @@ it("keeps completed assignments separate from ready imports and removes the skip
   ).toBeVisible()
   expect(screen.getByText(/unassigned page review is complete/)).toBeVisible()
   expect(
-    screen.getByRole("button", { name: "No new statements to import" })
+    screen.getByRole("button", { name: "No statements ready to save" })
   ).toBeDisabled()
   expect(screen.queryByRole("button", { name: /Leave unimported/ })).toBeNull()
 })
@@ -1004,4 +1005,53 @@ it("shows a reading Retry error beside its control and refreshes a possibly save
       .mock.calls.filter(([, options]) => options?.method === "POST")
   ).toHaveLength(1)
   expect(within(reading).getByRole("button", { name: "Retry" })).toBeEnabled()
+})
+
+it("bounds a stalled batch read, gives actionable retry, and preserves the source of the request", async () => {
+  let attempts = 0
+  vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
+    if (url.includes("/batches/batch?")) {
+      attempts++
+      expect(options?.timeout).toBe(60000)
+      expect(options?.signal).toBeInstanceOf(AbortSignal)
+      if (attempts === 1) throw new DOMException("Timed out", "AbortError")
+      return batch
+    }
+    return { case_id: "case", batches: [] }
+  })
+  mount()
+  await screen.findByText(/did not respond within one minute/)
+  expect(attempts).toBe(1)
+  expect(screen.getByRole("alert")).toHaveTextContent(
+    "does not restart any work"
+  )
+  fireEvent.click(screen.getByRole("button", { name: "Retry batch" }))
+  await screen.findByRole("region", { name: "Financial processing batch" })
+  expect(attempts).toBe(2)
+})
+
+it("lets the investigator leave a pending batch read and aborts only that GET", async () => {
+  let signal: AbortSignal | null | undefined
+  vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
+    if (url.includes("/batches/batch?")) {
+      signal = options?.signal
+      return new Promise(() => {})
+    }
+    return { case_id: "case", batches: [] }
+  })
+  mount()
+  await screen.findByRole("region", {
+    name: "Opening financial processing batch",
+  })
+  expect(screen.getByText(/leaving this view does not stop/)).toBeVisible()
+  fireEvent.click(
+    screen.getByRole("button", { name: "Back to statement files" })
+  )
+  await waitFor(() =>
+    expect(screen.getByLabelText("Location")).toHaveTextContent("files=1")
+  )
+  expect(signal?.aborted).toBe(true)
+  expect(
+    vi.mocked(fetchAPI).mock.calls.every(([, options]) => !options?.method)
+  ).toBe(true)
 })

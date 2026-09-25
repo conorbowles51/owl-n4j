@@ -278,3 +278,14 @@ addresses the confusing retained malformed balance after editing: current
 reviewed balance, precise saved/unsaved status and remaining checks stay visible
 beside the original. Both standalone and batch persistence are exercised without
 claiming that Alex's unidentified save was successful or failed.
+
+## 25 September: agent analysis and continued reading feedback
+
+The [agent and statement-review acceptance record](financial-workflows/agent-analysis-and-reading-follow-up-2026-09-25.md)
+adds authoritative full-population ledger analysis to the Agent, with explicit
+coverage and source references. It also tracks the concrete continuation-page
+failure, exact row-review reasons, bounded loading recovery, and preservation of
+manual work when a reading changes. Private source material stays outside Git.
+The latest apparent missing-save report was resolved by refreshing the page;
+the visibility delay remains unconfirmed and is not reported as data loss.
+Local tests, publication and live provider/source acceptance remain distinct.

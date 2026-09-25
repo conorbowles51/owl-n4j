@@ -52,6 +52,7 @@ export function StatementRowEditor({
   return (
     <section
       aria-label="Edit selected statement row"
+      tabIndex={-1}
       className="rounded border border-primary/30 bg-background p-3 space-y-3 text-sm font-sans"
     >
       <div className="flex flex-wrap justify-between items-center gap-2">

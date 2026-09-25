@@ -1,3 +1,4 @@
+import { BatchSavedAccounts } from "./BatchSavedAccounts"
 import { PaymentCategoryFilter } from "./PaymentCategoryFilter"
 import { useAuthStore } from "@/features/auth/hooks/use-auth"
 import { useStatementWorkspace } from "../stores/statement-workspace"
@@ -148,6 +149,8 @@ function FinancialPageContent() {
   const section =
     params.get("files") === "1"
       ? "files"
+      : params.get("accounts") === "1"
+        ? "accounts"
       : params.get("batch")
         ? "batches"
         : statementSection.caseId === caseId
@@ -155,6 +158,8 @@ function FinancialPageContent() {
           : "files"
   const reviewingAccounts = section === "accounts"
   const statementScroll = useRef<HTMLDivElement>(null)
+  const accountsDestination = useRef<HTMLDivElement>(null)
+
   const owner = useAuthStore(
     (state) => state.user?.id || state.user?.username || "anonymous"
   )
@@ -164,6 +169,10 @@ function FinancialPageContent() {
   )
   const routedReviewFile = params.get("reviewFile")
   const returnBatch = params.get("returnBatch")
+  const savedBatchAccounts = reviewingAccounts && params.get("savedBatch") === "1" && !!returnBatch
+  useEffect(() => {
+    if (reviewingAccounts && returnBatch) accountsDestination.current?.focus()
+  }, [reviewingAccounts, returnBatch])
   const explicitFiles = params.get("files") === "1"
   const appliedFileRoute = useRef("")
   const changingStatementRoute = useRef(false)
@@ -200,7 +209,7 @@ function FinancialPageContent() {
     setParams((current) => {
       const updated = new URLSearchParams(current)
       for (const key of [
-        "batch", "batchItem", "batchRow", "batchCheck", "files",
+        "batch", "batchItem", "batchRow", "batchCheck", "files", "accounts", "savedBatch", "savedOperation",
         "reviewFile", "returnBatch", "returnBatchCheck",
       ])
         updated.delete(key)
@@ -220,7 +229,7 @@ function FinancialPageContent() {
       const next = new URLSearchParams(current)
       const check = next.get("returnBatchCheck")
       for (const key of [
-        "files", "reviewFile", "returnBatch", "returnBatchCheck",
+        "files", "accounts", "savedBatch", "savedOperation", "reviewFile", "returnBatch", "returnBatchCheck",
         "batchItem", "batchRow", "batchCheck",
       ]) next.delete(key)
       next.set("view", "statements")
@@ -839,8 +848,23 @@ function FinancialPageContent() {
                 </Button>
               )}
             </div>
-            <div hidden={!reviewingAccounts}>
-              {reviewingAccounts && caseId && <AccountOwnershipReview caseId={caseId} label="Review account ownership" />}
+            {reviewingAccounts && returnBatch && (
+              <div role="status" tabIndex={-1} ref={accountsDestination} className="rounded border p-3 space-y-2">
+                <p>Saved statements are recorded with their accounts, dates and balances below. No payment rows are created for statements without transactions.</p>
+                <Button variant="outline" onClick={returnToBatch}>Back to processing batch</Button>
+              </div>
+            )}
+            {savedBatchAccounts && caseId && (
+              <BatchSavedAccounts
+                key={`${caseId}:${returnBatch}:${params.get("savedOperation") || "all"}`}
+                caseId={caseId}
+                batchId={returnBatch!}
+                operationId={params.get("savedOperation")}
+                onShowAll={() => setParams((current) => { const next = new URLSearchParams(current); next.delete("savedBatch"); next.delete("savedOperation"); return next })}
+              />
+            )}
+            <div hidden={!reviewingAccounts || savedBatchAccounts}>
+              {reviewingAccounts && !savedBatchAccounts && caseId && <AccountOwnershipReview caseId={caseId} label="Review account ownership" />}
               {importReceipt &&
                 importReceipt.case_id === caseId &&
                 (importReceipt.record_count ??
@@ -856,7 +880,7 @@ function FinancialPageContent() {
               {caseId && (
                 <StatementRegisterChecks
                   caseId={caseId}
-                  active={store.mainView === "statements" && reviewingAccounts}
+                  active={store.mainView === "statements" && reviewingAccounts && !savedBatchAccounts}
                   onReviewStatement={reviewStatement}
                   onOpenTransactions={(accountId, dates) => {
                     const scope = { accountId, ...dates }
@@ -873,7 +897,7 @@ function FinancialPageContent() {
                 </summary>
                 <ErrorBoundary level="section">
                   <FinancialAccounts
-                    active={store.mainView === "statements" && reviewingAccounts}
+                    active={store.mainView === "statements" && reviewingAccounts && !savedBatchAccounts}
                     onReviewStatement={reviewStatement}
                     key={caseId}
                     caseId={caseId}
@@ -930,7 +954,7 @@ function FinancialPageContent() {
                 </StatementRegister>
               )}
             </div>
-            {reviewingAccounts && caseId && (
+            {reviewingAccounts && !savedBatchAccounts && caseId && (
               <ReferencedAccounts
                 caseId={caseId}
                 onOpenTransactions={(accountId) => {
@@ -941,7 +965,7 @@ function FinancialPageContent() {
                 }}
               />
             )}
-            {reviewingAccounts && (
+            {reviewingAccounts && !savedBatchAccounts && (
               <details className="rounded border p-3 space-y-3">
                 <summary className="cursor-pointer font-medium">
                   Account checks

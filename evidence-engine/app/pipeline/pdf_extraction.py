@@ -31,7 +31,7 @@ LOW_CONFIDENCE_THRESHOLD = 60.0
 MIN_OCR_DPI = 150
 MIN_RELIABLE_OSD_CONFIDENCE = 15.0
 MAX_OSD_TIMEOUT_SECONDS = 30.0
-PDF_READING_REVISION = 'bank-payment-rows-v7'
+PDF_READING_REVISION = 'bank-payment-rows-v8'
 OSD_INSUFFICIENT_TEXT_MARKERS = ("too few characters", "skipping this page")
 
 
@@ -669,6 +669,17 @@ def _ocr_page(page: fitz.Page) -> tuple[str, float | None, int, list | None, lis
             text, confidence = new_text, new_confidence
     except Exception:
         logger.warning('Optional money-region OCR unavailable; retaining the page reading', exc_info=True)
+    try:
+        from app.pipeline.financial_santander_ocr import reread_santander_closing
+        refined_data, comparisons = reread_santander_closing(page, best_data,
+            rotation=best_rotation, image_width=pixmap.width, image_height=pixmap.height,
+            reader=_load_table_reader(), deadline=deadline, language=settings.tesseract_lang)
+        if comparisons:
+            text, confidence = _text_and_confidence_from_tesseract(refined_data)
+            best_data = refined_data
+            refinements.extend(comparisons)
+    except Exception:
+        logger.warning('Optional Santander closing OCR unavailable; retaining the page reading', exc_info=True)
     from app.pipeline.ocr_geometry import project_ocr_words
     try:
         words = project_ocr_words(best_data, rotation=best_rotation,

@@ -1,7 +1,8 @@
 """Resolve exactly the source documents imported by a case-scoped batch."""
 from uuid import UUID
 from sqlalchemy import select, func, or_
-from postgres.models.financial import FinancialSourceDocument, FinancialTransaction
+from postgres.models.evidence import EvidenceFile
+from postgres.models.financial import FinancialAccount, FinancialSourceDocument, FinancialStatementPeriod, FinancialTransaction
 from postgres.models.financial_import_batches import FinancialImportBatch, FinancialImportBatchItem
 from services.financial.pdf_candidates import PdfMappingError, _digest
 
@@ -62,8 +63,25 @@ def imported_batch_scope(session, *, case_id, batch_id, operation_id=None):
                FinancialTransaction.ledger_status == 'admitted')
         .group_by(FinancialTransaction.account_id)).all() if source_ids else []
     dates = [d for row in counts for d in row[2:] if d is not None]
+    # A saved quiet period has an account even though it has no payment rows.
+    # Resolve only registered periods of these exact current sources; a filename,
+    # missing reading or zero transaction count cannot invent an account.
+    registered = session.execute(select(FinancialStatementPeriod.account_id,
+        FinancialSourceDocument.metadata_['financial_import_removal'].as_string())
+        .select_from(FinancialStatementPeriod)
+        .join(FinancialSourceDocument, FinancialSourceDocument.id == FinancialStatementPeriod.source_document_id)
+        .join(FinancialAccount, FinancialAccount.id == FinancialStatementPeriod.account_id)
+        .outerjoin(EvidenceFile, EvidenceFile.id == FinancialSourceDocument.evidence_file_id)
+        .where(FinancialStatementPeriod.case_id == case_id, FinancialSourceDocument.case_id == case_id,
+            FinancialAccount.case_id == case_id, FinancialSourceDocument.id.in_([UUID(s) for s in source_ids]),
+            FinancialSourceDocument.status == 'admitted', FinancialSourceDocument.superseded_by_id.is_(None),
+            or_(FinancialSourceDocument.evidence_file_id.is_(None), EvidenceFile.case_id == case_id))).all() if source_ids else []
+    from services.financial.account_consolidation import canonical_map
+    canonical = canonical_map(session, case_id)
+    account_ids = {row[0] for row in counts} | {account_id for account_id, removed in registered if not removed}
+    account_ids = sorted({str(canonical[account_id]) for account_id in account_ids if account_id in canonical})
     return dict(case_id=str(case_id), batch_id=str(batch_id),
         revision=_digest(dict(batch_id=str(batch_id), source_document_ids=source_ids)),
         source_document_ids=source_ids, statement_count=len(items),
-        transaction_count=sum(row[1] for row in counts), account_ids=sorted(str(row[0]) for row in counts),
+        transaction_count=sum(row[1] for row in counts), account_ids=account_ids,
         start_date=min(dates).isoformat() if dates else None, end_date=max(dates).isoformat() if dates else None)

@@ -574,7 +574,7 @@ def project_batch_files(files, available):
 
 def batch_status(session, *, case_id, batch_id, offset=0, limit=100, only_problems=False, review_group=None):
     from services.financial.import_operations import operations_for
-    from services.financial.batch_review_summary import matches_group, review_summary, validate_group, group_label
+    from services.financial.batch_review_summary import matches_group, review_summary, statement_summary, validate_group, group_label
     validate_group(review_group)
     batch = batch_for(session,case_id,batch_id)
     items=list(session.scalars(select(Item).where(Item.batch_id==batch.id).order_by(Item.file_id,Item.statement_key)))
@@ -586,6 +586,7 @@ def batch_status(session, *, case_id, batch_id, offset=0, limit=100, only_proble
     job_ids = list(session.scalars(select(EvidenceFile.engine_job_id).where(EvidenceFile.case_id == case_id, EvidenceFile.id.in_(file_ids), EvidenceFile.engine_job_id.is_not(None)))) if file_ids else []
     files = project_batch_files(batch.files, available_batch_references(session, case_id, batch.files))
     return dict(id=str(batch.id),case_id=str(case_id),status=batch.status,files=files,counts=counts, reading_job_ids=job_ids,
+        statement_summary=statement_summary(items),
         review_summary=review_summary(items), review_group=review_group, review_group_label=group_label(review_group),
         operations=operations_for(session, case_id, batch_id),
         statements_with_issues=sum(bool(i.summary.get('problem_count', 0)) for i in items if i.status != 'skipped'),
