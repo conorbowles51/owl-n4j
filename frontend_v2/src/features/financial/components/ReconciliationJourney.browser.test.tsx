@@ -9,6 +9,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react"
 import { expect, it, vi } from "vitest"
 import { fetchAPI } from "@/lib/api-client"
@@ -273,6 +274,112 @@ run(
             options?.method === "POST"
         )
     ).toHaveLength(1)
+    cleanup()
+  },
+  60000
+)
+
+run(
+  "retains a corrected malformed balance after saving while distinguishing remaining reconciliation checks",
+  async () => {
+    const { case_id: caseId } = await setup()
+    const source = await service("/__fixture/malformed-balance-correction", {
+      method: "POST",
+    })
+    const imported = vi.fn()
+    mount(<StatementImportPanel caseId={caseId} onImported={imported} />)
+    const confirm = await screen.findByRole("button", {
+      name: "Confirm import of 12 transactions",
+    })
+    expect(confirm).toBeDisabled()
+    await page.getByText(source.malformed_text, { exact: true }).first().click()
+    await page
+      .getByRole("button", { name: "Edit this row", exact: true })
+      .click()
+    await page
+      .getByLabelText("Corrected printed balance", { exact: true })
+      .fill(String(Number(source.wrong_balance_minor) / 100))
+    await page
+      .getByRole("button", { name: "Done editing this row", exact: true })
+      .click()
+    expect(
+      within(
+        screen.getByLabelText(`Balance correction ${source.row_id}`)
+      ).getByText("Row changes are not yet saved to the case.")
+    ).toBeVisible()
+    await page
+      .getByRole("button", { name: "Save progress", exact: true })
+      .click()
+    await screen.findByText(
+      "Progress saved to the case. You can reopen this statement on another device."
+    )
+    expect(
+      within(
+        screen.getByLabelText(`Balance correction ${source.row_id}`)
+      ).getByText("Row correction saved to the case.")
+    ).toBeVisible()
+    expect(
+      (
+        await within(
+          screen.getByLabelText(`Balance correction ${source.row_id}`)
+        ).findAllByText(/Still needs review:/)
+      ).length
+    ).toBeGreaterThan(0)
+    expect(confirm).toBeDisabled()
+    expect((await service("/__fixture/payments")).payments).toHaveLength(0)
+    cleanup()
+    useFinancialDraftStore.setState({ drafts: {} })
+    mount(<StatementImportPanel caseId={caseId} onImported={imported} />)
+    await screen.findByRole("button", {
+      name: "Confirm import of 12 transactions",
+    })
+    expect(
+      within(
+        screen.getByLabelText(`Balance correction ${source.row_id}`)
+      ).getByText("Row correction saved to the case.")
+    ).toBeVisible()
+    await page
+      .getByRole("button", { name: "View correction", exact: true })
+      .first()
+      .click()
+    expect(
+      Number(
+        (
+          (await screen.findByLabelText(
+            "Corrected printed balance"
+          )) as HTMLInputElement
+        ).value
+      )
+    ).toBe(Number(source.wrong_balance_minor) / 100)
+    await page
+      .getByLabelText("Corrected printed balance", { exact: true })
+      .fill(String(Number(source.correct_balance_minor) / 100))
+    const ready = screen.getByRole("button", {
+      name: "Confirm import of 12 transactions",
+    })
+    await waitFor(() => expect(ready).toBeEnabled())
+    await page
+      .getByRole("button", { name: "Done editing this row", exact: true })
+      .click()
+    await page
+      .getByRole("button", { name: "Save progress", exact: true })
+      .click()
+    await screen.findByText(
+      "Progress saved to the case. You can reopen this statement on another device."
+    )
+    await page.screenshot({
+      path: "/private/tmp/loupe-saved-malformed-balance-correction.png",
+    })
+    await page
+      .getByRole("button", {
+        name: "Confirm import of 12 transactions",
+        exact: true,
+      })
+      .click()
+    await waitFor(() => expect(imported).toHaveBeenCalledTimes(1))
+    expect((await service("/__fixture/payments")).payments).toHaveLength(
+      source.transaction_count
+    )
     cleanup()
   },
   60000

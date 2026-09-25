@@ -1,5 +1,7 @@
 # Loupe financial investigator workflow reference
 
+**25 September later feedback — apparent balance-save failure:** [Visible row corrections and save status](row-balance-correction-2026-09-25.md) separates retained original readings from reviewed balances, per-row persistence and current reconciliation. The specific source and save outcome in Alex's screenshot remain unconfirmed.
+
 **25 September evening — matching balance, blocked import:** [Correct printed totals before import](printed-total-correction-2026-09-25.md) records separate credit/debit control checks, the unified source-bound correction journey and the still-unidentified source in Alex's screenshot. Matching closing balances alone must not override conflicting printed totals.
 
 **25 September renewed live feedback:** [Retry, missing EUR context and slow review](retry-currency-review-performance-2026-09-25.md) reopens acceptance for initial failed batches, the misleading missing-statement error, currency discovery and slow loading/saving. Earlier release verification does not close these new reports. The work preserves investigator corrections and active jobs; zero-payment accounts must remain discoverable without creating transaction rows or claiming that unread statements have no activity.

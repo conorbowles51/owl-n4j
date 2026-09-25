@@ -655,6 +655,167 @@ it("retains current edits when another reviewer has saved first", async () => {
   )
   expect(sent).toHaveLength(0)
 })
+it.each(["success first", "failure first"])(
+  "binds overlapping batch save acknowledgments to their own rows and retains newer failed edits (%s)",
+  async (order) => {
+    const { BatchReviewContext } = await import("../lib/batch-review-context")
+    const base = vi.mocked(fetchAPI).getMockImplementation()!
+    vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
+      if (String(url).includes("statement-import/file?") && !options?.method)
+        return {
+          ...data,
+          saved_review: {
+            review_revision: "standalone",
+            saved_at: "2026-09-25T12:00:00Z",
+            saved_by: { name: "Other review" },
+            request: {
+              expected_revision: data.revision,
+              rows: [
+                {
+                  id: "1:0:1",
+                  excluded: false,
+                  ...data.rows[1].fields,
+                  balance_minor: "50025",
+                  reason: "",
+                },
+              ],
+            },
+          },
+        } as never
+      return base(url, options)
+    })
+    const attempts: {
+      request: { rows: { id: string; balance_minor: string }[] }
+      resolve: () => void
+      reject: () => void
+    }[] = []
+    const beforeNavigate: { current: (() => Promise<unknown>) | null } = {
+      current: null,
+    }
+    const save = vi.fn(
+      (request) =>
+        new Promise((resolve, reject) =>
+          attempts.push({
+            request,
+            resolve: () => resolve({ status: "ready" }),
+            reject: () => reject(Error("Newer review was not saved.")),
+          })
+        )
+    )
+    useStatementWorkspace.getState().select("anonymous:case", "file")
+    render(
+      <QueryClientProvider
+        client={
+          new QueryClient({ defaultOptions: { queries: { retry: false } } })
+        }
+      >
+        <BatchReviewContext.Provider
+          value={{ rowId: "1:0:1", save, saved: vi.fn(), beforeNavigate }}
+        >
+          <StatementImportPanel caseId="case" onImported={vi.fn()} />
+        </BatchReviewContext.Provider>
+      </QueryClientProvider>
+    )
+    const balance = await screen.findByLabelText("Corrected printed balance")
+    const note = () =>
+      screen.getByRole("note", { name: "Balance correction 1:0:1" })
+    fireEvent.change(balance, { target: { value: "500.25" } })
+    expect(note()).toHaveTextContent("Row changes are not yet saved")
+    fireEvent.click(
+      screen.getByRole("button", { name: "Save all review progress" })
+    )
+    await waitFor(() => expect(attempts).toHaveLength(1))
+    // Normal keyboard input is disabled while saving. Exercise a stale event
+    // already queued when navigation starts, so the acknowledgment cannot lie.
+    fireEvent.change(balance, { target: { value: "510.25" } })
+    let navigation!: Promise<unknown>
+    act(() => {
+      navigation = beforeNavigate.current!().catch(
+        (error: Error) => error.message
+      )
+    })
+    await waitFor(() => expect(attempts).toHaveLength(2))
+    if (order === "success first") {
+      await act(async () => attempts[0].resolve())
+      expect(note()).not.toHaveTextContent("Row correction saved to the case.")
+      await act(async () => attempts[1].reject())
+    } else {
+      await act(async () => attempts[1].reject())
+      await waitFor(() =>
+        expect(note()).toHaveTextContent("Save not confirmed.")
+      )
+      await act(async () => attempts[0].resolve())
+    }
+    expect(await navigation).toBe("Newer review was not saved.")
+    await waitFor(() => expect(note()).toHaveTextContent("Save not confirmed."))
+    expect(balance).toHaveValue("510.25")
+    expect(
+      attempts.map(
+        (attempt) =>
+          attempt.request.rows.find((row) => row.id === "1:0:1")?.balance_minor
+      )
+    ).toEqual(["50025", "51025"])
+    fireEvent.change(balance, { target: { value: "500.25" } })
+    expect(note()).toHaveTextContent("Row correction saved to the case.")
+    // A successful navigation save still must not leave if a newer queued edit exists.
+    act(() => {
+      navigation = beforeNavigate.current!().catch(
+        (error: Error) => error.message
+      )
+    })
+    await waitFor(() => expect(attempts).toHaveLength(3))
+    fireEvent.change(balance, { target: { value: "520.25" } })
+    await act(async () => attempts[2].resolve())
+    expect(await navigation).toMatch(/newer edits that were not saved/)
+    await waitFor(() =>
+      expect(note()).toHaveTextContent("Row changes are not yet saved")
+    )
+  }
+)
+it.each(["different reading", "invalid rows"])(
+  "does not acknowledge a standalone save response with %s",
+  async (mode) => {
+    const base = vi.mocked(fetchAPI).getMockImplementation()!
+    vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
+      if (String(url).includes("/progress?")) {
+        const request = (options!.body as { request: Record<string, unknown> })
+          .request
+        return {
+          case_id: "case",
+          evidence_file_id: "file",
+          review_revision: "saved",
+          saved_at: "2026-09-25T12:00:00Z",
+          saved_by: { name: "Synthetic investigator" },
+          request: {
+            ...request,
+            ...(mode === "different reading"
+              ? { expected_revision: "older" }
+              : { rows: [{ id: "invalid" }] }),
+          },
+        } as never
+      }
+      return base(url, options)
+    })
+    mount()
+    await open(false)
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Edit this row" })
+    )
+    fireEvent.change(screen.getByLabelText("Corrected printed balance"), {
+      target: { value: "500.25" },
+    })
+    fireEvent.click(
+      screen.getByRole("button", { name: "Save all review progress" })
+    )
+    const note = screen.getByRole("note", { name: "Balance correction 1:0:1" })
+    await waitFor(() => expect(note).toHaveTextContent("Save not confirmed."))
+    expect(note).not.toHaveTextContent("Row correction saved")
+    expect(screen.getByLabelText("Corrected printed balance")).toHaveValue(
+      "500.25"
+    )
+    expect(sent).toHaveLength(0)
+  }
+)
 it("shows earlier corrections when a reprocessed reading differs and requires a comparison", async () => {
   const base = vi.mocked(fetchAPI).getMockImplementation()!
   vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
@@ -1600,9 +1761,11 @@ it("lets an empty legacy import compare an older draft and save its current paym
       queryKey: ["statement-import", "case", "file"],
     })
   })
-  expect(
-    screen.getByLabelText("I have compared the previous saved review")
-  ).not.toBeChecked()
+  await waitFor(() =>
+    expect(
+      screen.getByLabelText("I have compared the previous saved review")
+    ).not.toBeChecked()
+  )
   const changedSave = screen.getByRole("button", {
     name: "Save 1 payments to Transactions",
   })

@@ -176,6 +176,38 @@ def create_app():
                 record_admission_snapshot(db,other_source,other_period)
             db.commit()
         return {'account_ids':ids}
+    @app.post('/__fixture/malformed-balance-correction')
+    def malformed_balance_correction():
+        """Preserve a malformed OCR balance beside an accurate original PDF."""
+        from copy import deepcopy
+        from hashlib import sha256
+        import fitz
+        from postgres.models.evidence import EvidenceTableGeometry
+        from tests.financial_reconciled_fixture import install_reconciled_source
+        install_reconciled_source(fixture)
+        original = next(row for row in fixture.preview()['rows'] if not row['excluded'])
+        geometry = fixture.db.get(EvidenceTableGeometry, (fixture.file.id, 1))
+        payload = deepcopy(geometry.payload)
+        cells = payload[0]['table']['values']
+        # Draw the independently accurate original before corrupting only the
+        # synthetic retained OCR reading. No review/save/admission is mocked.
+        pdf = fitz.open()
+        page = pdf.new_page(width=600, height=800)
+        page.insert_text((20, 15), 'Synthetic Company - TEST123 - EUR - January to December 2023', fontsize=9)
+        for cell in cells:
+            x, y, _, _ = cell['locator']['rect']
+            page.insert_text((x / 1000 + 1, y / 1000 + 10), cell['text'].replace('€', ''), fontsize=8)
+        pdf.save(str(fixture.path))
+        pdf.close()
+        bad = next(cell for cell in cells if cell['row'] == original['row_index']
+            and str(cell['column']) == original['fields']['balance_column'])
+        bad['text'] = '9187"'
+        geometry.payload = payload
+        fixture.file.sha256 = sha256(fixture.path.read_bytes()).hexdigest()
+        fixture.db.commit()
+        return dict(synthetic=True, file_id=str(fixture.file.id), row_id=original['id'],
+            wrong_balance_minor='223344', correct_balance_minor=original['fields']['balance'],
+            malformed_text='9187"', currency='EUR', transaction_count=12)
     @app.get('/__fixture/payments')
     def saved(db=Depends(get_db)):
         from services.financial.transaction_query import to_view

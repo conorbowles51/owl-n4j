@@ -54,3 +54,15 @@ reopening after import; no production behavior was altered for these assertions.
 Release revision and live acceptance remain separate from these local results.
 The screenshot's source-specific diagnosis remains open until its original is
 identified. No client statement has been changed to demonstrate the repair.
+
+Post-release check: commit `18567e11` was pushed and automatic deployment succeeded
+in 256 seconds, starting at 18:51:56 UTC on 25 September. The captured successful
+deployment log and fresh Updates page identify that exact revision. Ingestion
+gates were idle. The user was warned before publication about the brief service
+transition. The deployed test batch and saved statement review reopened normally;
+its available readings were already imported, so the new pending-total editor was
+not demonstrated there by replacing saved records solely for a test. The complete
+correction/import journey remains verified against the real local API and database,
+not Alex's unidentified statement. These final verification notes were retained
+locally and included with the subsequent balance-correction implementation,
+avoiding another deployment solely for documentation.

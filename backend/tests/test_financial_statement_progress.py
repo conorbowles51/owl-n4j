@@ -126,6 +126,107 @@ class StatementProgressTests(TestCase):
         with self.f.SessionLocal() as db:
             self.assertFalse(list(db.scalars(select(FinancialTransaction))))
 
+    def _malformed_balance_save_journey(self, *, in_batch):
+        from postgres.base import Base
+        from postgres.models.evidence import EvidenceTableGeometry, IngestionLog
+        from postgres.models.financial_import_batches import FinancialImportBatchItem as Item
+        from services.financial import import_batches as batches
+        from services.financial.statement_admission import assess_admission
+        from tests.test_financial_import_batches import BatchImportTests
+
+        original = next(row for row in self.f.preview()['rows'] if not row['excluded'])
+        self.assertEqual(original['fields']['balance'], '13745000')
+        with self.f.SessionLocal() as db:
+            geometry = db.get(EvidenceTableGeometry, (self.f.file.id, 1))
+            payload = deepcopy(geometry.payload)
+            cell = next(cell for cell in payload[0]['table']['values'] if cell['row'] == original['row_index']
+                and str(cell['column']) == original['fields']['balance_column'])
+            cell['text'] = '9187"'
+            geometry.payload = payload
+            db.commit()
+        proposal = self.f.preview()
+        malformed = next(row for row in proposal['rows'] if row['id'] == original['id'])
+        self.assertTrue(malformed['issues'])
+        self.assertTrue(any(cell['expected_text'] == '9187"' for cell in malformed['source_cells']))
+        raw = self.f.request()
+        edited = next(row for row in raw['rows'] if row['id'] == original['id'])
+        edited['balance_minor'] = '223344'
+        if in_batch:
+            Base.metadata.create_all(self.f.engine, tables=[IngestionLog.__table__])
+            self.f.file.status = 'processed'
+            self.f.db.commit()
+            fixture = BatchImportTests()
+            fixture.f = self.f
+            batch = fixture.create()
+            fixture.advance(batch)
+            with self.f.SessionLocal() as db:
+                item_id = db.scalar(select(Item.id).where(Item.batch_id == batch))
+
+        def save_and_reopen(revision):
+            if not in_batch:
+                saved = self.save(raw, revision)
+                return saved, self.f.preview()['saved_review']['request']
+            with self.f.SessionLocal() as db:
+                saved = batches.save_review(db, case_id=self.f.case.id, batch_id=batch, item_id=item_id,
+                    request=StatementReviewDraft.model_validate(raw), expected_review_revision=revision)
+            with self.f.SessionLocal() as db:
+                return saved, deepcopy(db.get(Item, item_id).review_request)
+
+        saved, reopened = save_and_reopen(batches._digest({}) if in_batch else 'initial')
+        self.assertEqual(next(row for row in reopened['rows'] if row['id'] == original['id'])['balance_minor'], '223344')
+        assessment = assess_admission(self.f.preview(), StatementImportRequest.model_validate(reopened))
+        self.assertFalse(assessment['can_import'])
+        self.assertEqual([(blocker['kind'], blocker.get('check')) for blocker in assessment['blockers']],
+            [('arithmetic', 'running_balance'), ('arithmetic', 'running_balance')])
+        with self.assertRaisesRegex(PdfMappingError, 'Statement remains in review'):
+            self.f.confirm(reopened)
+        with self.f.SessionLocal() as db:
+            self.assertEqual(list(db.scalars(select(FinancialTransaction))), [])
+        # The exact independently known fixture balance resolves the interval.
+        # No note is needed to suppress the earlier malformed-source warning.
+        edited['balance_minor'] = '13745000'
+        saved, reopened = save_and_reopen(saved['review_revision'])
+        self.assertEqual(next(row for row in reopened['rows'] if row['id'] == original['id'])['balance_minor'], '13745000')
+        self.assertTrue(assess_admission(self.f.preview(), StatementImportRequest.model_validate(reopened))['can_import'])
+        self.assertEqual(self.f.preview()['rows'], proposal['rows'])
+        if in_batch:
+            ready_revision = fixture.status(batch)['ready_revision']
+            with self.f.SessionLocal() as db:
+                receipt = batches.queue_import(db, case_id=self.f.case.id, batch_id=batch,
+                    expected_revision=ready_revision, actor=self.f.actor)
+            fixture.advance(batch)
+            self.assertEqual(fixture.status(batch)['counts']['imported'], 1)
+        else:
+            receipt = self.f.confirm(reopened)
+            self.assertEqual(receipt['transaction_count'], 12)
+        with self.f.SessionLocal() as db:
+            payments = list(db.scalars(select(FinancialTransaction)))
+            identities = {payment.id for payment in payments}
+            self.assertEqual(len(identities), 12)
+            payment = next(payment for payment in payments if payment.provenance['statement_import_original']['id'] == original['id'])
+            self.assertEqual(payment.running_balance_minor, 13745000)
+            self.assertEqual(payment.provenance['statement_import_review']['balance_minor'], '13745000')
+            self.assertEqual(payment.provenance['statement_import_original'], malformed)
+            self.assertEqual(db.get(EvidenceTableGeometry, (self.f.file.id, 1)).payload, payload)
+        if in_batch:
+            with self.f.SessionLocal() as db:
+                repeated = batches.queue_import(db, case_id=self.f.case.id, batch_id=batch,
+                    expected_revision=ready_revision, actor=self.f.actor)
+            self.assertEqual(repeated['operation']['id'], receipt['operation']['id'])
+            fixture.advance(batch)
+        else:
+            repeated = self.f.confirm(reopened)
+            self.assertFalse(repeated['created'])
+            self.assertEqual(repeated['source_document_id'], receipt['source_document_id'])
+        with self.f.SessionLocal() as db:
+            self.assertEqual(set(db.scalars(select(FinancialTransaction.id))), identities)
+
+    def test_malformed_source_balance_correction_survives_standalone_save_and_import(self):
+        self._malformed_balance_save_journey(in_batch=False)
+
+    def test_malformed_source_balance_correction_survives_batch_save_and_import(self):
+        self._malformed_balance_save_journey(in_batch=True)
+
     def test_scope_source_binding_and_imported_record_guard(self):
         raw = self.f.request()
         with self.assertRaisesRegex(PdfMappingError, 'not found'):

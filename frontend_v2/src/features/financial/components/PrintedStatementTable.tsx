@@ -152,10 +152,13 @@ export function PrintedStatementTable({
       )}
       {unresolved.length > 0 && (
         <section className="rounded border border-amber-500 p-3 space-y-2">
-          <h5 className="font-semibold">Rows needing a layout check</h5>
+          <h5 className="font-semibold">
+            Original readings with extraction flags
+          </h5>
           <p className="text-sm">
-            These readings could not be placed fully in a statement table. Check
-            each against the PDF and use the correction controls below.
+            These source readings were flagged during extraction. The original
+            text stays unchanged; compare the reviewed values and current checks
+            beside each row to see what still needs attention.
           </p>
           {unresolved.map((row) => (
             <div

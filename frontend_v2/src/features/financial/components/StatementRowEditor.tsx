@@ -10,6 +10,7 @@ export function StatementRowEditor({
   statementEnd,
   additionalPrintedDate,
   controlContext,
+  saveProgress,
   problems,
   update,
   amount,
@@ -28,6 +29,12 @@ export function StatementRowEditor({
     currency: string
     page: number
     row: number
+  }
+  saveProgress?: {
+    save: () => void
+    pending: boolean
+    disabled: boolean
+    error?: string
   }
   problems: string[]
   update: (patch: Partial<Edit>) => void
@@ -59,8 +66,30 @@ export function StatementRowEditor({
       </div>
       <p className="text-muted-foreground">
         The printed row above is retained. Your corrected values will be used
-        for the import.
+        for the import. Done editing closes these fields; it does not save to
+        the case.
       </p>
+      {saveProgress && (
+        <div className="space-y-1">
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={saveProgress.disabled}
+            onClick={saveProgress.save}
+          >
+            {saveProgress.pending
+              ? "Saving all review progress…"
+              : "Save all review progress"}
+          </Button>
+          <p className="text-xs text-muted-foreground">
+            Saves all current corrections and statement details to the case.
+            Reconciliation is checked separately.
+          </p>
+          {saveProgress.error && (
+            <p role="alert">{saveProgress.error} Your edits remain here.</p>
+          )}
+        </div>
+      )}
       {kind === "statement_total" && controlContext && (
         <div className="rounded border bg-muted/30 p-2 space-y-1">
           <p>

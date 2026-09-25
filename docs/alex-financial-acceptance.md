@@ -272,3 +272,9 @@ open its exact source-bound editor. Strict reconciliation is preserved. The two
 recorded zero totals require comparison with the original; the screenshot alone
 does not establish whether they were misread or belong to another section.
 Synthetic and live/source-specific acceptance remain separate.
+
+The later [row-balance correction follow-up](financial-workflows/row-balance-correction-2026-09-25.md)
+addresses the confusing retained malformed balance after editing: current
+reviewed balance, precise saved/unsaved status and remaining checks stay visible
+beside the original. Both standalone and batch persistence are exercised without
+claiming that Alex's unidentified save was successful or failed.

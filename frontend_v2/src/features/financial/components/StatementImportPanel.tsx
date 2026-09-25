@@ -48,6 +48,11 @@ import { PdfReviewIntake } from "./PdfReviewIntake"
 import { TransactionSourceHighlight } from "./TransactionSourceHighlight"
 import { StatementSourceTools } from "./StatementSourceTools"
 import { StatementRowEditor } from "./StatementRowEditor"
+import { StatementRowCorrectionStatus } from "./StatementRowCorrectionStatus"
+import {
+  statementReviewSnapshot,
+  statementRowSnapshot,
+} from "../lib/statement-row-snapshot"
 import {
   statementControlLabel,
   statementControlInputLabel,
@@ -1208,8 +1213,18 @@ function EditableStatement({
 }) {
   const batchReview = useBatchReview()
   const currentRequestSnapshot = useRef("")
-  const pendingSaveSnapshot = useRef("")
+  const [pendingSaveSnapshot, setPendingSaveSnapshot] = useState("")
   const [savedServerSnapshot, setSavedServerSnapshot] = useState("")
+  const [savedRowSnapshots, setSavedRowSnapshots] = useState(() => {
+    const draft = batchReview
+      ? batchReview.draft
+      : serverStatementDraft(data.saved_review?.request)
+    return new Map(
+      draft?.revision === data.revision
+        ? draft.rows.map((row) => [row.id, statementRowSnapshot(row)])
+        : []
+    )
+  })
   const [progressRevision, setProgressRevision] = useState(
     data.saved_review?.review_revision ?? "initial"
   )
@@ -1223,8 +1238,15 @@ function EditableStatement({
     mutationFn: async (_mode: "progress" | "done" | "next" | "previous") => {
       void _mode
       const request = importRequest()
-      pendingSaveSnapshot.current = JSON.stringify(request)
-      if (batchReview) return batchReview.save(request)
+      const submittedSnapshot = JSON.stringify(request)
+      setPendingSaveSnapshot(submittedSnapshot)
+      if (batchReview)
+        return {
+          result: await batchReview.save(request),
+          submittedSnapshot,
+          acknowledgedSnapshot: submittedSnapshot,
+          acknowledgedDraft: serverStatementDraft(request),
+        }
       const result = z
         .object({
           case_id: z.string(),
@@ -1245,6 +1267,11 @@ function EditableStatement({
         )
       if (result.case_id !== caseId || result.evidence_file_id !== fileId)
         throw Error("The saved review does not belong to this statement.")
+      const acknowledgedDraft = serverStatementDraft(result.request)
+      if (!acknowledgedDraft || acknowledgedDraft.revision !== data.revision)
+        throw Error(
+          "The save response did not confirm this reading. Keep your edits and retry Save progress."
+        )
       setProgressRevision(result.review_revision)
       client.setQueriesData<Proposal>(
         { queryKey: ["statement-import", caseId, fileId] },
@@ -1253,11 +1280,29 @@ function EditableStatement({
             ? { ...cached, saved_review: result }
             : cached
       )
-      return result
+      return {
+        result,
+        submittedSnapshot,
+        acknowledgedSnapshot:
+          statementReviewSnapshot(result.request) ===
+          statementReviewSnapshot(request)
+            ? submittedSnapshot
+            : JSON.stringify(result.request),
+        acknowledgedDraft,
+      }
     },
-    onSuccess: async (_result, mode) => {
-      setSavedServerSnapshot(pendingSaveSnapshot.current)
-      if (pendingSaveSnapshot.current !== currentRequestSnapshot.current) return
+    onSuccess: async ({ acknowledgedSnapshot, acknowledgedDraft }, mode) => {
+      setSavedServerSnapshot(acknowledgedSnapshot)
+      if (acknowledgedDraft)
+        setSavedRowSnapshots(
+          new Map(
+            acknowledgedDraft.rows.map((row) => [
+              row.id,
+              statementRowSnapshot(row),
+            ])
+          )
+        )
+      if (acknowledgedSnapshot !== currentRequestSnapshot.current) return
       if (mode === "previous") await batchReview!.previousProblem?.()
       else if (mode === "next") await batchReview!.nextProblem?.()
       else if (mode === "done") batchReview!.saved()
@@ -1283,7 +1328,14 @@ function EditableStatement({
     const navigation = batchReview?.beforeNavigate
     if (!navigation) return
     navigation.current = canEdit
-      ? () => saveBatchReview.mutateAsync("progress")
+      ? async () => {
+          const result = await saveBatchReview.mutateAsync("progress")
+          if (result.acknowledgedSnapshot !== currentRequestSnapshot.current)
+            throw Error(
+              "There are newer edits that were not saved. Save progress before leaving this statement."
+            )
+          return result
+        }
       : null
     return () => {
       navigation.current = null
@@ -2311,6 +2363,43 @@ function EditableStatement({
     if (!target || target.kind === "saved_review") editValues()
   }
   const problemIndex = problemIds.indexOf(focus?.rowId ?? "")
+  const savedRowsById = useMemo(() => {
+    const draft = savedServerSnapshot
+      ? serverStatementDraft(JSON.parse(savedServerSnapshot))
+      : batchReview
+        ? batchReview.draft
+        : serverStatementDraft(data.saved_review?.request)
+    return new Map(
+      draft?.revision === data.revision
+        ? draft.rows.map((row) => [row.id, row])
+        : []
+    )
+  }, [
+    savedServerSnapshot,
+    data.saved_review?.request,
+    data.revision,
+    batchReview,
+  ])
+  const pendingRowSnapshots = useMemo(() => {
+    const draft =
+      saveBatchReview.isPending && pendingSaveSnapshot
+        ? serverStatementDraft(JSON.parse(pendingSaveSnapshot))
+        : null
+    return new Map(
+      draft?.rows.map((row) => [row.id, statementRowSnapshot(row)]) || []
+    )
+  }, [saveBatchReview.isPending, pendingSaveSnapshot])
+  const blockersByRow = useMemo(() => {
+    const result = new Map<string, string[]>()
+    for (const blocker of serverChecks.admission?.blockers || []) {
+      const id = blocker.target?.row_id || blocker.row_id
+      if (!id) continue
+      const messages = result.get(id) || []
+      messages.push(blocker.message)
+      result.set(id, messages)
+    }
+    return result
+  }, [serverChecks.admission?.blockers])
   const rowTools = (id: string) => {
     if (!canEdit || (data.current_import && !replacePrevious)) return null
     const edit = editsById.get(id)
@@ -2327,25 +2416,81 @@ function EditableStatement({
       ].includes(original.kind)
     )
       return null
+    const balanceChanged =
+      edit.balance_minor !== (original.fields.balance ?? null) ||
+      (savedRowsById.has(id) &&
+        savedRowsById.get(id)?.balance_minor !==
+          (original.fields.balance ?? null))
+    const showBalanceCorrection =
+      balanceChanged && ["transaction", "unresolved"].includes(original.kind)
+    const balanceValueValid =
+      edit.balance_minor === null || /^-?\d+$/.test(edit.balance_minor)
+    const rowIssues = showBalanceCorrection
+      ? [...new Set([...rowProblems(edit), ...(blockersByRow.get(id) || [])])]
+      : []
+    const correction = showBalanceCorrection ? (
+      <StatementRowCorrectionStatus
+        rowId={id}
+        original={
+          original.value_sources?.balance?.source_cell.expected_text ||
+          original.source_cells.find(
+            (cell) =>
+              String(cell.column_index) === original.fields.balance_column
+          )?.expected_text ||
+          original.fields.balance ||
+          "Not read"
+        }
+        reviewed={
+          edit.balance_minor === null
+            ? "Not entered"
+            : balanceValueValid
+              ? `${amountText[`balance:${id}`] ?? displayAmount(edit.balance_minor, digits)} ${data.currency}`
+              : `Not a valid amount${amountText[`balance:${id}`] ? ` (entered: ${amountText[`balance:${id}`]})` : ""}`
+        }
+        saved={
+          balanceValueValid &&
+          savedRowSnapshots.get(id) === statementRowSnapshot(edit)
+        }
+        saving={saveBatchReview.isPending}
+        newer={
+          pendingRowSnapshots.has(id) &&
+          pendingRowSnapshots.get(id) !== statementRowSnapshot(edit)
+        }
+        failed={saveBatchReview.isError}
+        pendingChecks={serverChecks.pending}
+        checksError={!!serverChecks.error}
+        canImport={
+          serverChecks.admission?.can_import === true && rowIssues.length === 0
+        }
+        problems={rowIssues}
+      />
+    ) : null
     if (focus?.rowId !== id)
-      return changed(edit) || edit.reason ? (
-        <Button
-          size="sm"
-          variant="ghost"
-          className="text-teal-700 dark:text-teal-300"
-          onClick={() => openInlineRow(id)}
-        >
-          {changed(edit) ? "View correction" : "View recorded check"}
-        </Button>
+      return correction || changed(edit) || edit.reason ? (
+        <div className="space-y-2">
+          {correction}
+          <Button
+            size="sm"
+            variant="ghost"
+            className="text-teal-700 dark:text-teal-300"
+            onClick={() => openInlineRow(id)}
+          >
+            {changed(edit) ? "View correction" : "View recorded check"}
+          </Button>
+        </div>
       ) : null
     if (inlineRowId !== id)
       return (
-        <Button size="sm" variant="outline" onClick={() => openInlineRow(id)}>
-          Edit this row
-        </Button>
+        <div className="space-y-2">
+          {correction}
+          <Button size="sm" variant="outline" onClick={() => openInlineRow(id)}>
+            {correction ? "View correction" : "Edit this row"}
+          </Button>
+        </div>
       )
     return (
       <>
+        {correction}
         {edit.manual_page && (
           <ManualTransactionPosition
             rowId={id}
@@ -2369,6 +2514,18 @@ function EditableStatement({
           statementEnd={periodEnd}
           additionalPrintedDate={original.fields.additional_printed_date}
           kind={original.kind}
+          saveProgress={{
+            save: () => saveBatchReview.mutate("progress"),
+            pending: saveBatchReview.isPending,
+            disabled:
+              assignmentSaving ||
+              saveBatchReview.isPending ||
+              confirm.isPending ||
+              (savedReadingChanged && !previousReviewChecked),
+            error: saveBatchReview.isError
+              ? saveBatchReview.error.message
+              : undefined,
+          }}
           controlContext={
             original.kind === "statement_total"
               ? {
