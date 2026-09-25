@@ -89,7 +89,7 @@ def missing_reading_reason(proposal):
     return None
 
 
-def inspect_completed_reading(session, *, case_id, file, currency=None):
+def inspect_completed_reading(session, *, case_id, file, currency=None, _continue=None):
     from services.financial.evidence_intake import has_financial_reading
     from services.financial.statement_import import read_statement_import
     if not has_financial_reading(session, file):
@@ -100,8 +100,13 @@ def inspect_completed_reading(session, *, case_id, file, currency=None):
         first = read_statement_import(session, case_id=case_id, evidence_file_id=file.id,
             currency=currency, _cache=cache)
         choices = first.get('statement_choices') or []
-        proposals = [read_statement_import(session, case_id=case_id, evidence_file_id=file.id,
-            currency=currency, statement_id=choice['id'], _cache=cache) for choice in choices] or [first]
+        proposals = []
+        for choice in choices:
+            if _continue is not None and not _continue():
+                return None
+            proposals.append(read_statement_import(session, case_id=case_id, evidence_file_id=file.id,
+                currency=currency, statement_id=choice['id'], _cache=cache))
+        proposals = proposals or [first]
     except PdfMappingError as error:
         return dict(action='review_required', stage='statement_review', message=str(error), review_available=False)
     reasons = [reason for proposal in proposals if (reason := missing_reading_reason(proposal))]

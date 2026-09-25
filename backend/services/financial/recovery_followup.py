@@ -218,7 +218,7 @@ def pending_saved_work(session, item, file):
         BatchItem.review_request.is_not(None)).limit(1)))
 
 
-def retry_failed_batches(session, item, file):
+def retry_failed_batches(session, item, file, *, prepared_readings=None):
     """Hand terminal failures to the existing durable Retry operation once.
 
 The caller holds the case lock and commits the batch receipts together with the
@@ -255,7 +255,7 @@ reading remains subject to the ordinary saved-work guards and later review.
                         EvidenceFile.case_id == file.case_id)):
                 return 'review', 'The batch points to a reading outside this verified source history or its explicitly reopened scope. Compare the original and retained reading before retrying; saved work was kept.'
         receipt = retry_file(session, case_id=file.case_id, batch_id=batch.id,
-            source_id=UUID(reference['source_id']), _commit=False)
+            source_id=UUID(reference['source_id']), _commit=False, _prepared_readings=prepared_readings)
         receipts.append({**reference, **receipt})
         item.result = {**item.result, 'batch_retry_receipts': receipts}
         # One reading/preparation handoff at a time across repeated batches.

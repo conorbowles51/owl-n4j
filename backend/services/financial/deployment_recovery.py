@@ -177,12 +177,12 @@ def _verify_bytes(file, resolve_path):
 
 
 def recover_one(factory, item_id, resolve_path):
-    """A case lock serializes corrections, removal and this additive commit."""
+    """Prepare without case locks; revalidate before the additive commit."""
     from services.financial.runs import ingestion_run
     from services.financial.evidence_intake import has_financial_reading
-    from services.financial.statement_import import read_statement_import
     from services.financial.recovery_additions import plan_additions, append_recovered
     from services.financial.statement_import_overlap import coverage_review
+    from services.financial.recovery_preparation import prepare_readings, input_revision, lock_inputs
     with factory() as db:
         context = db.execute(select(Run.case_id, Item.file_id).join(Item, Item.run_id == Run.id).where(Item.id == item_id)).first()
     if not context:
@@ -207,17 +207,22 @@ def recover_one(factory, item_id, resolve_path):
             item.updated_at = datetime.now(timezone.utc)
             db.commit()
             return
+    prepared = prepare_readings(factory, item_id, resolve_path)
+    if prepared is None:
+        return  # Paused or changed while reading; the durable unit remains queued.
     # System attribution is explicit; no investigator is impersonated.
     with ingestion_run(case_id=case_id, session_factory=factory,
             config=dict(operation='deployment_statement_recovery', release=current_run.release, file_id=str(file_id))) as audit:
         with factory() as db:
             if db.scalar(select(Case.id).where(Case.id == case_id).with_for_update(skip_locked=True)) is None:
                 return
-            item = db.scalar(select(Item).where(Item.id == item_id).with_for_update())
-            run = db.scalar(select(Run).where(Run.id == item.run_id).with_for_update())
-            if run.status != 'running' or item.status not in PENDING:
+            item = db.scalar(select(Item).where(Item.id == item_id).with_for_update(skip_locked=True))
+            if item is None:
                 return
-            file = db.scalar(select(EvidenceFile).where(EvidenceFile.id == file_id, EvidenceFile.case_id == case_id).with_for_update())
+            run = db.scalar(select(Run).where(Run.id == item.run_id).with_for_update(skip_locked=True))
+            if run is None or run.status != 'running' or item.status not in PENDING:
+                return
+            file = db.scalar(select(EvidenceFile).where(EvidenceFile.id == file_id, EvidenceFile.case_id == case_id))
             if not file:
                 return
             guard = _guard(db, item, file)
@@ -225,8 +230,12 @@ def recover_one(factory, item_id, resolve_path):
                 _outcome(db, item, file, *guard)
                 db.commit()
                 return
+            if not lock_inputs(db, case_id, prepared):
+                return
+            if input_revision(db, case_id, item) != prepared['revision']:
+                return  # Fresh edits/reading/coverage must be prepared again.
             from services.financial.recovery_followup import retry_failed_batches
-            if retry_outcome := retry_failed_batches(db, item, file):
+            if retry_outcome := retry_failed_batches(db, item, file, prepared_readings=prepared['diagnoses']):
                 _outcome(db, item, file, *retry_outcome)
                 db.commit()
                 return
@@ -277,12 +286,11 @@ def recover_one(factory, item_id, resolve_path):
                 # Engine submission happens separately, after this transaction.
                 return dict(needs_reading=True, case_id=case_id, file_id=file.id, item_id=item.id)
             try:
-                _verify_bytes(target, resolve_path)
-                cache = {}
-                first = read_statement_import(db, case_id=case_id, evidence_file_id=target.id, _cache=cache)
-                choices = first.get('statement_choices') or []
-                proposals = [read_statement_import(db, case_id=case_id, evidence_file_id=target.id,
-                    statement_id=choice['id'], _cache=cache) for choice in choices] or [first]
+                if prepared['error']:
+                    raise PdfMappingError(prepared['error'], 409)
+                proposals = prepared['proposals']
+                if proposals is None:
+                    return
                 from services.financial.reading_recovery import reader_inventory
                 item.result = {**item.result, 'readers': reader_inventory(proposals)}
                 document_by_id = {str(doc.id): doc for doc in documents}
@@ -304,7 +312,8 @@ def recover_one(factory, item_id, resolve_path):
                         from services.financial.import_batches import initial_request
                         raw = initial_request(proposal)
                         raw['replaces_source_document_id'] = str(document.id)
-                        if coverage_review(db, case_id=case_id, file_id=target.id, request=raw)['candidates']:
+                        if coverage_review(db, case_id=case_id, file_id=target.id, request=raw,
+                                sources=prepared['coverage'])['candidates']:
                             raise PdfMappingError('Another statement overlaps this account and period. Compare the sources to avoid duplicates.', 409)
                         rows = list(db.scalars(select(FinancialTransaction).where(FinancialTransaction.case_id == case_id,
                             FinancialTransaction.source_document_id == document.id).with_for_update()))
@@ -349,7 +358,8 @@ def _record_failure(factory, item_id, message):
             return
         db.execute(select(Case.id).where(Case.id == context).with_for_update()).all()
         item = db.scalar(select(Item).where(Item.id == item_id).with_for_update())
-        if item.status not in PENDING:
+        run = db.scalar(select(Run).where(Run.id == item.run_id).with_for_update()) if item else None
+        if not run or run.status != 'running' or item.status not in PENDING:
             return
         file = db.get(EvidenceFile, item.file_id)
         _outcome(db, item, file, 'review', message)

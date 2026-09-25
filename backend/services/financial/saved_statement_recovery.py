@@ -50,13 +50,14 @@ class StatementRecoveryRequest(BaseModel):
     expected_preview: str | None = Field(default=None, pattern=r'^[a-f0-9]{64}$')
 
 
-def _current(session, document):
-    return list(session.scalars(select(FinancialTransaction).where(
+def _current(session, document, *, lock=True):
+    query = select(FinancialTransaction).where(
         FinancialTransaction.source_document_id == document.id,
         FinancialTransaction.case_id == document.case_id,
         FinancialTransaction.ledger_status != 'superseded',
         FinancialTransaction.superseded_by_id.is_(None))
-        .order_by(FinancialTransaction.id).with_for_update().execution_options(populate_existing=True)))
+    query = query.order_by(FinancialTransaction.id).execution_options(populate_existing=True)
+    return list(session.scalars(query.with_for_update() if lock else query))
 
 
 def read_recovery(session, *, case_id, source_id):
@@ -237,7 +238,7 @@ def recovery_catalog(session, file, choices, selected_id):
     for document in documents:
         original = document.metadata_['statement_import_original']
         details = saved_details(document)
-        rows = _current(session, document)
+        rows = _current(session, document, lock=False)
         incomplete = [r for r in document.metadata_.get('statement_incomplete_records', []) if not r.get('resolved_transaction_id')]
         identity = document.metadata_['statement_import_statement_id']
         pages = sorted({source['page_number'] for source in original.get('sources', [])})

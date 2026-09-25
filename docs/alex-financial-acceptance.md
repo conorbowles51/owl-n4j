@@ -243,3 +243,10 @@ visible separately from payment totals. Unknown account references are labelled,
 and confirmed people keep all linked accounts. The
 [quiet-account acceptance record](financial-workflows/priority-completion-plan-2026-09-25.md#quiet-accounts-and-continued-live-verification--25-september)
 records the local tests and outstanding publication/live verification.
+
+The [safe-pause follow-up](financial-workflows/priority-completion-plan-2026-09-25.md#pause-large-background-rechecks-safely--25-september-afternoon)
+records preparation outside case locks, unchanged admission safeguards and
+verified Pause/Resume, edited-input and competing-worker behavior in isolated
+PostgreSQL tests. All previously observed recovery campaigns have now finished
+their background checks; overlap decisions still require investigator review.
+Publication and live acceptance of the prevention fix are tracked separately.

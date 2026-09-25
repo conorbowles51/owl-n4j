@@ -988,7 +988,7 @@ async def run_batches_forever():
         await asyncio.sleep(5)
 
 
-def retry_file(session, *, case_id, batch_id, source_id, _commit=True):
+def retry_file(session, *, case_id, batch_id, source_id, _commit=True, _prepared_readings=None):
     from services.financial.file_visibility import financial_file_visibility
     from services.financial.reading_recovery import inspect_completed_reading, retry_reference_problem, persist_unavailable_retry
     batch=batch_for(session,case_id,batch_id,True)
@@ -1034,7 +1034,12 @@ def retry_file(session, *, case_id, batch_id, source_id, _commit=True):
             'This reading is already queued or running. Its existing attempt has been retained; no second job was started.')
     missing_prepared = prepared is None
     if prepared and prepared.status == 'processed':
-        diagnosis = inspect_completed_reading(session, case_id=case_id, file=prepared, currency=target.get('currency'))
+        if _prepared_readings is None:
+            diagnosis = inspect_completed_reading(session, case_id=case_id, file=prepared, currency=target.get('currency'))
+        else:
+            diagnosis = _prepared_readings.get((str(prepared.id), target.get('currency')))
+            if diagnosis is None:
+                raise PdfMappingError('This retained reading changed while recovery was preparing it. Retry will check its current state.', 409)
         if diagnosis['action'] == 'review_required':
             if (target['status'] == 'error' and diagnosis.get('review_available')
                     and not any(financial_file_visibility(file)['financial_imports_removed'] for file in (source, prepared))):

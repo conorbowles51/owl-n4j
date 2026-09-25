@@ -7,21 +7,23 @@ The work packages below are implemented or in final integration as recorded in
 the dated completion checkpoint. Publication, live verification and the source
 audit remain separate acceptance steps.
 
-## Current checkpoint — 25 September, late morning
+## Current checkpoint — 25 September, afternoon
 
 This section supersedes historical “uncommitted”, “not pushed”, source-audit and
 maintenance-blocker statements in the dated record below.
 
-- **Published:** verified code and regression coverage through `11a746d6`.
+- **Published:** verified code and regression coverage through `3d699d94`.
   The last independently confirmed successful automatic release is `12300095`.
-  A later attempt at 09:55:59 UTC deferred safely for one remaining recovery
-  item, down from two. Checkout version alone is not deployment evidence.
+  The latest captured attempt at 10:17:51 UTC deferred safely for one remaining
+  recovery item. Its completion below does not establish a subsequent successful
+  release. Checkout version alone is not deployment evidence.
 - **Recovery:** the larger restored-source campaign and authorized test campaign
-  have finished. The remaining campaign has checked 11 of 12 scheduled sources.
-  The newest completed source needs overlap review; it did not add payments.
-  The last waiting item and safe automatic release remain under observation.
+  have finished. At 12:32 UTC the remaining campaign also showed **12 of 12
+  scheduled sources checked**, all requiring review. The last source added no
+  payments and reported overlapping account/period coverage. Its review decisions
+  remain separate from background processing and do not themselves block release.
   Earlier busy-case pause failures prompted an administrator-diagnosis request;
-  progress has since resumed without intervention by this verification.
+  the work subsequently finished naturally, without cancellation or forced release.
 - **Completed content audit:** all current Financial source families across all
   visible cases were inspected for content and provenance. Two uncertain
   contextual sources remain retained. Nothing was removed by this audit. Source
@@ -32,7 +34,7 @@ maintenance-blocker statements in the dated record below.
   transaction filters and complete filtered CSV contents have been observed.
   Detailed evidence and limitations are retained in the dated entries below.
 - **Remaining independent acceptance:** compact duplicate summaries and quiet
-  account profiles after their actual release; final recovery outcomes; a typed
+  account profiles and grouped recovery reasons after their actual release; a typed
   identity save/reopen and confirmed multi-account owner journey where an
   appropriate authorized fixture exists. The test case currently has no matching
   existing sender identity and no confirmed owner; these are fixture limits, not
@@ -43,7 +45,13 @@ maintenance-blocker statements in the dated record below.
   reasons with accurate section counts. Distinct explanations and the existing
   review/retry actions remain available. Eight unit and four Chromium checks,
   forced TypeScript, lint, production build and independent review pass.
-  Actual publication/live acceptance are recorded separately below.
+  Published in `3d699d94`; live verification is pending its actual release.
+- **Safe-pause prevention:** large retained-reading reconstruction previously
+  held Case/Run locks throughout parsing. The verified repair prepares readings
+  outside those locks, rechecks current saved inputs before additive writes, and
+  respects Pause. Publication and live acceptance remain separate. The release
+  gates remain unchanged. This did not cause the already running old worker to
+  finish. Details and concurrency evidence appear in the follow-up below.
 
 Historical duplicate decisions, unread/ambiguous source values and uncertain
 content still require investigator review. Do not blanket-import them or equate
@@ -972,3 +980,46 @@ independent review and the production build (7.65 seconds) passed. Existing
 non-fatal test act warnings and build chunk warnings remain. The regenerated
 action inventory has 1,740 controls across 179 files. Live acceptance awaits the
 automatic release; the last observed remaining recovery source is still running.
+
+## Pause large background rechecks safely — 25 September afternoon
+
+Investigator journey: open Statements & accounts while earlier statements are
+being rechecked → Pause recovery → see the retained paused run → continue normal
+case review → Resume the same run. Pausing must neither cancel the team's separate
+AI ingestion nor lose verified payments, manual corrections or pending sources.
+
+The old recovery worker held the Case/Run locks while checking source bytes,
+reconstructing every statement period and comparing other statement coverage.
+That made the supported Pause control report a busy case during long reads.
+The final outstanding live source completed naturally before this repair was
+published; its outcome was overlap review with no payments added.
+
+The repair prepares source readings, Retry diagnoses and comparison coverage
+without those locks. It checks whether the run is still active between periods
+and before coverage. The currently executing catalog or period finishes naturally;
+Pause does not forcibly terminate a parser. Final saving reacquires the normal
+case boundary, freezes relevant stored inputs without waiting on another writer,
+and compares a fresh fingerprint with the prepared inputs. An intervening edit,
+new reading, removal, changed coverage or competing recovery leaves the attempt
+uncommitted for a fresh pass. Existing reconciliation, duplicate and additive
+admission rules still decide whether any payment can be added. Late failures also
+respect a paused run. Source catalogs no longer acquire payment write locks merely
+to display saved periods; correction writers retain their locks.
+
+Verification: 119 connected recovery tests; 250 shared import, saved-review,
+catalog and deployment-safety tests; and 12 real PostgreSQL concurrency tests
+passed. The PostgreSQL tests use a disposable synthetic schema in a dedicated
+local database, never the configured client database. They cover Pause during
+blocked byte verification/parsing, resumed exactly-once additions with retained
+IDs, edited source/payment preservation, immediate deferral for busy Evidence,
+text and geometry rows, yielding to an owned recovery item/run without holding
+the case, frozen-input writes and competing prepared workers.
+Independent code review found no remaining blocker. Existing recovery UI tests
+also passed: eight unit tests and four Chromium tests covering explanations,
+Retry and source return. Those browser tests mock HTTP; real database concurrency
+is established by the separate PostgreSQL suite, not by the browser mocks.
+
+No release gate was weakened, no deployment hold state was introduced, and no
+live transaction was terminated. A deferred automatic attempt is not successful
+deployment; verify the subsequent automatic release and affected live journeys.
+Do not start new recovery against client records just to demonstrate Pause.
