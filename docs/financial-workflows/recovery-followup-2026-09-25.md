@@ -148,3 +148,20 @@ The known old CAAL failure can be re-prepared automatically only when its actual
 stored references satisfy these conditions. A same-name replacement upload is
 not sufficient. Unsupported readers, unresolved OCR values, conflicting reviews,
 unknown content and missing source identity remain explicit investigator work.
+
+## Fair recovery polling
+
+The global worker rotates through pending recovery item IDs using an in-memory
+keyset cursor, two sequential units per turn. A busy case skipped by the existing
+row lock cannot permanently occupy the oldest two queue positions. The cursor
+wraps after the pending tail and reaches newly eligible lower IDs on that pass.
+Pause, campaign eligibility, durable status checks and atomic shutdown behavior
+are unchanged; polling does not modify receipts or pretend a skipped file made
+progress. A restart safely starts selection again using the retained statuses.
+
+Synthetic tests reproduce the original starvation using the exact PostgreSQL
+SKIP LOCKED result and verify rotation, tail/wrap, new lower IDs, paused and
+terminal exclusions, and draining the current shielded unit on shutdown. They do
+not prove the cause of an observed live waiting campaign. A long running unit or
+an externally held database lock can still delay work; this selection fix does
+not cancel that work, release locks, or bypass the deployment gate.

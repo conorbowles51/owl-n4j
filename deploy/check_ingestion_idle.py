@@ -5,6 +5,8 @@ release; this script never pauses, retries, clears or changes ingestion records.
 """
 import sys
 import json
+import re
+from itertools import islice
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import UUID
@@ -12,11 +14,14 @@ from uuid import UUID
 # explicit backend path also lets rollback use the current gate with old code.
 backend_path = Path(sys.argv[1]) if __name__ == '__main__' and len(sys.argv) > 1 else Path(__file__).resolve().parents[1] / 'backend'
 sys.path.insert(0, str(backend_path))
-from sqlalchemy import inspect, text
+from sqlalchemy import bindparam, inspect, text
 from postgres.session import _get_engine
 
 
 SAMPLE_LIMIT = 10  # At most 60 references across the six blocking categories.
+LOCK_SAMPLE_LIMIT = 10
+ACTIVITY_STATES = frozenset({'active', 'idle', 'idle in transaction',
+    'idle in transaction (aborted)', 'fastpath function call', 'disabled'})
 KNOWN_STATUSES = frozenset({
     'pending', 'processing', 'extracting_text', 'chunking', 'extracting_entities',
     'resolving_entities', 'resolving_relationships', 'generating_summaries',
@@ -148,9 +153,100 @@ def active_work(engine):
     return active_work_report(engine, sample_limit=0)['total']
 
 
+def _safe_activity(record):
+    """Accept only PostgreSQL activity metadata, never arbitrary result fields."""
+    def integer(value):
+        return value if type(value) is int and value >= 0 else None
+
+    def event_name(value):
+        if value is None:
+            return None
+        return value if isinstance(value, str) and re.fullmatch(r'[A-Za-z][A-Za-z0-9_]{0,63}', value) else 'unrecognized'
+
+    state = record.get('state')
+    return dict(pid=integer(record.get('pid')),
+        state=state if state is None or state in ACTIVITY_STATES else 'unrecognized',
+        wait_event_type=event_name(record.get('wait_event_type')),
+        wait_event=event_name(record.get('wait_event')),
+        transaction_age_seconds=integer(record.get('transaction_age_seconds')))
+
+
+def lock_wait_report(engine):
+    """Bounded current-database lock metadata, separate from release predicates.
+
+    This runs only after active work has already deferred the release. Local
+    timeouts apply only to this short-lived connection and roll back on close.
+    Neither query reads SQL text, identity, addresses or evidence columns.
+    """
+    if engine.dialect.name != 'postgresql':
+        return dict(status='not_applicable')
+    activity = '''a.pid, a.state, a.wait_event_type, a.wait_event,
+        CASE WHEN a.xact_start IS NOT NULL THEN
+            GREATEST(0, EXTRACT(EPOCH FROM clock_timestamp() - a.xact_start))::bigint
+        END AS transaction_age_seconds'''
+    database = 'a.datid = (SELECT oid FROM pg_database WHERE datname = current_database())'
+    with engine.connect() as connection:
+        connection.execute(text("SET LOCAL statement_timeout = '2000ms'"))
+        connection.execute(text("SET LOCAL lock_timeout = '500ms'"))
+        rows = connection.execute(text(f'''
+            WITH waiting AS (
+                SELECT {activity}, pg_blocking_pids(a.pid) AS blocking_pids
+                FROM pg_stat_activity a
+                WHERE {database} AND a.pid <> pg_backend_pid()
+                    AND a.wait_event_type = 'Lock'
+            )
+            SELECT pid, state, wait_event_type, wait_event, transaction_age_seconds,
+                blocking_pids[1:{LOCK_SAMPLE_LIMIT}] AS blocking_pids,
+                cardinality(blocking_pids) AS blocking_pid_count
+            FROM waiting WHERE cardinality(blocking_pids) > 0
+            ORDER BY transaction_age_seconds DESC NULLS LAST, pid
+            LIMIT :sample_limit
+        '''), {'sample_limit': LOCK_SAMPLE_LIMIT}).mappings()
+        waiters = []
+        for record in islice(rows, LOCK_SAMPLE_LIMIT):
+            waiter = _safe_activity(record)
+            pids = [pid for pid in (record.get('blocking_pids') or [])
+                    if type(pid) is int and pid >= 0][:LOCK_SAMPLE_LIMIT]
+            count = record.get('blocking_pid_count')
+            waiter.update(blocking_pids=pids,
+                blocking_pids_not_shown=max(0, count - len(pids)) if type(count) is int else None)
+            waiters.append(waiter)
+        referenced = sorted({pid for waiter in waiters for pid in waiter['blocking_pids']})
+        chosen = referenced[:LOCK_SAMPLE_LIMIT]
+        blockers = []
+        if chosen:
+            query = text(f'''SELECT {activity} FROM pg_stat_activity a
+                WHERE {database} AND a.pid IN :pids ORDER BY a.pid LIMIT :sample_limit''').bindparams(
+                    bindparam('pids', expanding=True))
+            present = {}
+            for record in islice(connection.execute(query,
+                    {'pids': chosen, 'sample_limit': LOCK_SAMPLE_LIMIT}).mappings(), LOCK_SAMPLE_LIMIT):
+                activity_row = _safe_activity(dict(record))
+                present[activity_row['pid']] = activity_row
+            blockers = [{**present.get(pid, dict(pid=pid)), 'activity_visible': pid in present} for pid in chosen]
+    return dict(status='available', sample_limit=LOCK_SAMPLE_LIMIT, waiters=waiters,
+        waiter_limit_reached=len(waiters) == LOCK_SAMPLE_LIMIT, blockers=blockers,
+        referenced_blocker_summaries_not_shown=max(0, len(referenced) - len(chosen)))
+
+
+def _print_lock_waits(engine):
+    try:
+        report = lock_wait_report(engine)
+        if report['status'] == 'not_applicable':
+            print('PostgreSQL lock diagnostics: not applicable to this database.', file=sys.stderr)
+            return
+        print(f"PostgreSQL lock diagnostics: {len(report['waiters'])} waiters shown; at most {report['sample_limit']} waiters and blocker summaries. This sample does not establish that work is abandoned.", file=sys.stderr)
+        print('  ' + json.dumps(report, sort_keys=True), file=sys.stderr)
+    except Exception as error:
+        # Keep the original active-work counts and release decision even when
+        # optional permissions/timeout diagnostics are unavailable.
+        print(f'PostgreSQL lock diagnostics unavailable ({type(error).__name__}); release remains deferred.', file=sys.stderr)
+
+
 def main():
     try:
-        report = active_work_report(_get_engine())
+        engine = _get_engine()
+        report = active_work_report(engine)
         if report['total']:
             print(f"Release deferred: {report['total']} ingestion, recovery or upload records are queued or running. No further services will be replaced by this release attempt.", file=sys.stderr)
             print(f"Ingestion gate diagnostics at {report['observed_at']}: at most {report['sample_limit']} references per category; counts and samples may change while work runs.", file=sys.stderr)
@@ -160,6 +256,7 @@ def main():
                 print(f"  {category['category']}: {category['count']} blocking records; {len(category['records'])} shown; {category['omitted']} not shown.", file=sys.stderr)
                 for record in category['records']:
                     print('    ' + json.dumps(record, default=str, sort_keys=True), file=sys.stderr)
+            _print_lock_waits(engine)
             return 75
         print('Ingestion gate: no queued or running ingestion, recovery or uploads.')
         return 0

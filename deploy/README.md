@@ -99,6 +99,21 @@ work is abandoned. The diagnostic does not pause, expire, retry or change any
 record. A diagnostic query failure still defers the release with code 75 and
 prints only the exception type, without connection details or query parameters.
 
+An already-deferred release also samples PostgreSQL lock waits in the current
+database. It shows at most 10 waiting backend PIDs, their state, wait event/type
+and transaction age in seconds, with at most 10 blocking PIDs per waiter and
+10 distinct blocker activity summaries. Omitted blocker references are counted;
+reaching the waiter limit means the sample may be incomplete. A blocker whose
+activity is unavailable remains identified only by PID and `activity_visible:
+false`; PID 0 can refer to a prepared transaction. This is a transient sample,
+not proof of why an ingestion stopped or permission to terminate a backend.
+It never reads or logs SQL text, database usernames, client addresses, connection
+strings or evidence. Local two-second statement and half-second lock timeouts
+apply only to the diagnostic connection. SQLite skips this PostgreSQL-only
+sample. Permission, timeout or diagnostic errors retain the original blocking
+counts and exit code 75; they print only the exception type. The sample does not
+alter the release predicates, pause work, cancel statements or release locks.
+
 Docker images are built before a fresh idle check permits container replacement.
 Another check runs before the backend restarts. The check is retained in memory
 across checkout changes, including automatic and standalone rollback. Rollback

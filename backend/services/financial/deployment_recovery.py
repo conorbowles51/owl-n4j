@@ -416,12 +416,31 @@ def control(session, case_id, action, run_id=None):
     return dict(status=run.status)
 
 
+def next_recovery_items(session, after=None):
+    """Rotate through durable pending units even when a busy case is skipped.
+
+    A skipped Case lock does not change an item's saved timestamp. Selecting
+    only the oldest timestamps repeatedly lets two locked units occupy every
+    turn. Stable IDs provide a bounded cursor without modifying work or leases.
+    Restarting the cursor is safe because each unit rechecks its durable state.
+    """
+    query = select(Item.id).join(Run, Item.run_id == Run.id).where(
+        Run.release.in_([campaign.release for campaign in CAMPAIGNS]),
+        Run.status == 'running', Item.status.in_(PENDING)).order_by(Item.id).limit(2)
+    if after is not None:
+        following = list(session.scalars(query.where(Item.id > after)))
+        if following:
+            return following
+    return list(session.scalars(query))
+
+
 async def run_recovery_forever():
     from postgres.session import _get_session_local
     from routers.evidence import _resolve_stored_path
     from services.evidence_processing_service import process_db_files
     from services.financial.import_batches import _finish_atomic
     initialized = False
+    after = None
     while True:
         try:
             factory = _get_session_local()
@@ -438,9 +457,9 @@ async def run_recovery_forever():
                         results.append(await _finish_atomic(initialize_case, case_id))
                 initialized = all(results)
             with factory() as db:
-                ids = list(db.scalars(select(Item.id).join(Run, Item.run_id == Run.id).where(
-                    Run.release.in_([campaign.release for campaign in CAMPAIGNS]), Run.status == 'running', Item.status.in_(PENDING)).order_by(Item.updated_at, Item.id).limit(2)))
+                ids = next_recovery_items(db, after)
             for item_id in ids:
+                after = item_id
                 try:
                     pending = await _finish_atomic(recover_one, factory, item_id, _resolve_stored_path)
                     if pending:

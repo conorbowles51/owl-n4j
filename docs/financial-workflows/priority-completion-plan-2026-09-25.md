@@ -688,3 +688,17 @@ blocking predicate and adds bounded UUID/status/time references so the next
 automatic attempt can identify the work without inspecting evidence or changing
 its state. Forty focused diagnostic and deployment/rollback checks passed, with
 independent review. The test-case recovery remains paused pending this transition.
+
+The diagnostic follow-up `1665a10a` was pushed. The automatic attempt at 05:10 UTC
+identified all three blockers as waiting items in one automatic recovery campaign,
+with no active engine jobs, upload records, financial imports or batch leases.
+Its supported Pause action remained pending rather than confirming a safe pause.
+No forced interruption was attempted. Further bounded diagnostics inspect only
+PostgreSQL lock PID/state/wait/age metadata, preserving the existing gate decision;
+50 gate and real deployment/rollback script checks passed.
+
+A synthetic worker reproduction also established that two skipped case locks
+could occupy every recovery poll and starve unrelated cases. The rotating
+selection repair passed 81 connected checks and independent review, preserving
+saved receipts, pause, eligibility and graceful shutdown. This is a demonstrated
+code defect, not proof of the unresolved live lock's cause.
