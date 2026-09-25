@@ -10,6 +10,7 @@ import json
 import logging
 from threading import Event
 from uuid import UUID
+from neo4j import Query
 from sqlalchemy import select
 from postgres.models.case import Case
 from postgres.models.financial import FinancialAccount, FinancialTransaction, AdjudicationEvent
@@ -19,6 +20,8 @@ from services.financial.projection import account_key
 log = logging.getLogger(__name__)
 RELATIONSHIPS = {'holder': 'HOLDS_ACCOUNT', 'controller': 'CONTROLS_ACCOUNT',
     'signatory': 'SIGNATORY_FOR', 'analysis_group': 'GROUPS_ACCOUNT'}
+GRAPH_TRANSACTION_TIMEOUT = 20
+GRAPH_CONNECTION_TIMEOUT = 20
 
 
 def identity_graph_plan(db, case_id):
@@ -83,12 +86,27 @@ def validate_graph_targets(tx, plan):
             raise ValueError('An account identity key conflicts with an existing case entity. No graph connections were changed.')
 
 
-def apply_identity_graph(graph_session, plan):
+def apply_identity_graph(graph_session, plan, *, is_current=None):
     case_id, revision = plan['case_id'], plan['revision']
-    with graph_session.begin_transaction(timeout=20) as tx:
+    # A unique marker supplies the graph-side mutex even on a case's first
+    # projection. Existing conflicting markers fail closed; no nodes are
+    # deleted to install this constraint.
+    graph_session.run(Query('''CREATE CONSTRAINT financial_identity_sync_case IF NOT EXISTS
+        FOR (m:FinancialIdentitySync) REQUIRE m.case_id IS UNIQUE''',
+        timeout=GRAPH_TRANSACTION_TIMEOUT)).consume()
+    with graph_session.begin_transaction(timeout=GRAPH_TRANSACTION_TIMEOUT) as tx:
+        marker = tx.run('''MERGE (m:FinancialIdentitySync {case_id:$case})
+            SET m.system_node=true, m.projection_lock=coalesce(m.projection_lock,0)+1
+            RETURN m.revision AS revision''', case=case_id).single()
+        # Revalidate only after acquiring the graph marker lock. Otherwise an
+        # older snapshot could wait behind a newer writer and overwrite it.
+        # The callback closes its short SQL snapshot before graph work resumes.
+        if is_current is not None and not is_current():
+            tx.rollback()
+            return False
         validate_graph_targets(tx, plan)
-        marker = tx.run('MATCH (m:FinancialIdentitySync {case_id:$case}) RETURN m.revision AS revision', case=case_id).single()
         if marker and marker['revision'] == revision:
+            tx.rollback()
             return False
         for label, rows in [('FinancialAccount', plan['accounts']), ('FinancialParty', plan['parties'])]:
             # All labels and relation types come from this module, never user text.
@@ -150,15 +168,27 @@ def apply_identity_graph(graph_session, plan):
         return True
 
 
-def synchronize_case(case_id):
+def _identity_snapshot(case_id):
     from postgres.session import get_background_session
-    from services.neo4j_service import neo4j_service
     with get_background_session() as db:
         if db.scalar(select(Case.id).where(Case.id == case_id).with_for_update(skip_locked=True)) is None:
-            return False
-        plan = identity_graph_plan(db, case_id)
-        with neo4j_service.session() as graph:
-            return apply_identity_graph(graph, plan)
+            return None
+        return identity_graph_plan(db, case_id)
+
+
+def synchronize_case(case_id):
+    plan = _identity_snapshot(case_id)
+    if plan is None:
+        return False
+    # No SQL transaction or Case lock may span connection acquisition, graph
+    # validation or projection. An unavailable graph must not block edits or
+    # recovery controls in Financial.
+    from services.neo4j_service import neo4j_service
+    def is_current():
+        current = _identity_snapshot(case_id)
+        return current is not None and current['revision'] == plan['revision']
+    with neo4j_service.session(connection_acquisition_timeout=GRAPH_CONNECTION_TIMEOUT) as graph:
+        return apply_identity_graph(graph, plan, is_current=is_current)
 
 
 def identity_graph_status(db, case_id):

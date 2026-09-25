@@ -165,3 +165,29 @@ terminal exclusions, and draining the current shielded unit on shutdown. They do
 not prove the cause of an observed live waiting campaign. A long running unit or
 an externally held database lock can still delay work; this selection fix does
 not cancel that work, release locks, or bypass the deployment gate.
+
+## Identity graph projection and case controls
+
+The reviewed-identity graph worker takes a short, consistent SQL snapshot and
+releases the Case lock and SQL session before opening a Neo4j session. A unique
+per-case graph marker serializes projectors. After acquiring that graph write
+lock, the worker checks a fresh SQL snapshot; a busy Case or changed revision
+leaves the graph unchanged and is retried on the next sweep. The second SQL
+snapshot also closes before any further graph I/O. An older queued snapshot
+therefore cannot overwrite a newer graph projection.
+
+Source edits arriving after revalidation remain visible through the exact
+applied revision: the graph status stays pending until the next sweep projects
+the newer source. Missing payment nodes likewise do not receive a completed
+identity revision. Notes, source facts and relationships not owned by this
+projector remain intact. Existing duplicate graph markers cause constraint
+creation to fail rather than being deleted or merged automatically.
+
+Graph connection acquisition and server transactions each have explicit
+20-second timeouts. These are not a hard client socket-read deadline. Graceful
+shutdown still drains the current projection before closing graph clients; no
+SQL Case lock is retained during that wait. Tests cover SQL session boundaries,
+stale/busy snapshots, source changes during projection, and real isolated Neo4j
+concurrent-writer ordering and investigator-note preservation. This repair
+removes a concrete long-lock path; it does not establish the owning code path
+of an earlier observed live idle transaction or terminate that transaction.

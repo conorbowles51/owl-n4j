@@ -11,7 +11,7 @@ from collections import Counter
 from datetime import datetime, timezone
 from uuid import UUID, NAMESPACE_URL, uuid5
 from sqlalchemy import select, func
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import DBAPIError, IntegrityError
 from postgres.models.case import Case
 from postgres.models.evidence import EvidenceFile, IngestionLog
 from postgres.models.financial import FinancialSourceDocument, FinancialTransaction
@@ -380,12 +380,12 @@ async def start_reading(factory, request, resolve_path, process_files):
                 preparation_mode='pdf_review', requested_by_user_id=None)
 
 
-def _case_run(session, case_id, run_id=None, lock=False):
+def _case_run(session, case_id, run_id=None, lock=False, nowait=False):
     query = select(Run).where(Run.case_id == case_id)
     if run_id is not None:
         query = query.where(Run.id == run_id)
     query = query.order_by(Run.created_at.desc(), Run.release.desc()).limit(1)
-    return session.scalar(query.with_for_update() if lock else query)
+    return session.scalar(query.with_for_update(nowait=nowait) if lock else query)
 
 
 def status(session, case_id, *, offset=0, limit=50, run_id=None):
@@ -406,8 +406,19 @@ def status(session, case_id, *, offset=0, limit=50, run_id=None):
 
 
 def control(session, case_id, action, run_id=None):
-    session.execute(select(Case.id).where(Case.id == case_id).with_for_update()).all()
-    run = _case_run(session, case_id, run_id, lock=True)
+    try:
+        # Pause/Resume is a user control, not a queued write. Report a busy
+        # case promptly rather than leaving the button saving behind a worker.
+        session.execute(select(Case.id).where(Case.id == case_id).with_for_update(nowait=True)).all()
+        run = _case_run(session, case_id, run_id, lock=True, nowait=True)
+    except DBAPIError as error:
+        if (getattr(error.orig, 'sqlstate', None) or getattr(error.orig, 'pgcode', None)) != '55P03':
+            raise
+        session.rollback()
+        verb = 'pause' if action == 'pause' else 'resume'
+        raise PdfMappingError(
+            f'This request did not {verb} recovery. Another operation is updating this case. '
+            f'Wait for it to finish, then try {verb.title()} recovery again. Existing work was not interrupted.', 409) from error
     if not run:
         raise PdfMappingError('No recovery run exists for this case.', 404)
     if run.status != 'complete':

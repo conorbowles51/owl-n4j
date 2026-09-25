@@ -5,6 +5,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from postgres.models.evidence import EvidenceFile
@@ -55,6 +56,21 @@ def _serialize_profile_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _financial_processing_files(db: Session, case_id: uuid.UUID, file_ids: list[uuid.UUID]):
+    """Recheck the source choice atomically with the later processing handoff."""
+    from postgres.models.case import Case
+    from services.financial.file_visibility import require_financial_file
+    db.execute(select(Case.id).where(Case.id == case_id).with_for_update()).all()
+    files = list(db.scalars(select(EvidenceFile).where(
+        EvidenceFile.id.in_(file_ids)).order_by(EvidenceFile.id).with_for_update()
+        .execution_options(populate_existing=True)))
+    for file in files:
+        if file.case_id != case_id:
+            raise ValueError("Evidence file does not belong to this case")
+        require_financial_file(file)
+    return files
+
+
 async def process_db_files(
     db: Session,
     *,
@@ -66,10 +82,19 @@ async def process_db_files(
 ) -> dict[str, Any]:
     if preparation_mode not in ("full", "pdf_review"):
         raise ValueError("Unknown document preparation mode")
+    if preparation_mode == "pdf_review":
+        # Financial callers may retain the Case/Evidence locks from selecting
+        # or restoring a reading, including an idempotent reprocessing request.
+        # Persist that choice before the network wait. Visibility is checked
+        # again under lock below before a processing request can be committed.
+        db.commit()
     await reconcile_case_jobs(db, str(case_id))
     ingestion_request_id = str(uuid.uuid4())
 
-    files = EvidenceDBStorage.get_files_by_ids(db, file_ids)
+    if preparation_mode == "pdf_review":
+        files = _financial_processing_files(db, case_id, file_ids)
+    else:
+        files = EvidenceDBStorage.get_files_by_ids(db, file_ids)
     files_by_id = {f.id: f for f in files}
 
     candidates: list[EvidenceFile] = []

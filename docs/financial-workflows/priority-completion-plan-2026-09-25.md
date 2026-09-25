@@ -702,3 +702,32 @@ could occupy every recovery poll and starve unrelated cases. The rotating
 selection repair passed 81 connected checks and independent review, preserving
 saved receipts, pause, eligibility and graceful shutdown. This is a demonstrated
 code defect, not proof of the unresolved live lock's cause.
+
+`3a57a3c5` was pushed. Its automatic attempt at 05:30 UTC remained safely deferred.
+PostgreSQL diagnostics established an idle open transaction approximately
+56 minutes old, blocking a recovery control request. The owning application path
+is not established. Working server maintenance access was requested after the
+existing SSH key was refused; no transaction was terminated or gate bypassed.
+
+Independent tracing found two concrete paths that could retain a Case lock across
+network work. Financial preparation now commits its source selection before the
+authoritative engine status check, then reloads/locks the source and revalidates
+visibility before saving a processing request. This retains the removal race and
+duplicate-job protections; 170 tests and 15 subtests passed. Identity projection
+now closes its SQL snapshot before graph work and uses a graph-side lock with
+source revision revalidation. Stale or unchanged projections explicitly roll back.
+Its 192 tests and 276 subtests include four real isolated Neo4j tests. Counts
+overlap rather than forming a combined total. Independent reviews signed off.
+
+Recovery Pause/Resume now refuses occupied Case or Run locks promptly with an
+actionable conflict, leaving recovery unchanged. Only PostgreSQL lock-contention
+SQLSTATE 55P03 is translated; other database failures remain errors. Forty-three
+focused checks passed. A separate real local PostgreSQL probe refused Case and
+Run contention in 0.268s and 0.004s, then persisted pause/resume after the test
+locks were released. Its temporary synthetic schema was removed afterward.
+
+These repairs prevent the verified long-lock paths and unclear control behavior;
+they do not release the existing live transaction. The authorized test campaign
+still needs resume/observation, and the restored-source campaign, replacement
+checks, removed-source navigation and full month labels require post-deployment
+verification once the automatic release can proceed.

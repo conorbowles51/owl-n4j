@@ -86,6 +86,7 @@ async def test_process_files_recovers_jobs_when_upload_response_fails_after_acce
         "get_files_by_ids",
         lambda db, file_ids: [evidence_file],
     )
+    monkeypatch.setattr(processing, "_financial_processing_files", lambda db, case_id, file_ids: [evidence_file])
     monkeypatch.setattr(processing.EvidenceDBStorage, "mark_processing", mark_processing)
     monkeypatch.setattr(
         processing.EvidenceDBStorage,
