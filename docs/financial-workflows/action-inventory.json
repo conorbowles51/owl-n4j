@@ -1,6 +1,6 @@
 {
   "scope": "Financial TSX controls, including conditional and legacy controls. Templates describe actions; they are not proof that every runtime branch works. Shared PDF, table and dialog controls are covered in the workflow reference.",
-  "count": 1739,
+  "count": 1740,
   "actions": [
     {
       "component": "AccountConsolidation",
@@ -4034,7 +4034,7 @@
     {
       "component": "DuplicateCandidatesCasePanel",
       "file": "frontend_v2/src/features/financial/components/DuplicateCandidatesPanel.tsx",
-      "line": 101,
+      "line": 102,
       "control": "Button",
       "label": "{opened ? \"Refresh comparison\" : \"Compare documents\"}",
       "disabled": "{isFetching}",
@@ -4046,7 +4046,7 @@
     {
       "component": "DuplicateCandidatesCasePanel",
       "file": "frontend_v2/src/features/financial/components/DuplicateCandidatesPanel.tsx",
-      "line": 153,
+      "line": 154,
       "control": "summary",
       "label": "What was compared",
       "disabled": null,
@@ -4056,9 +4056,9 @@
     {
       "component": "DuplicateCandidatesCasePanel",
       "file": "frontend_v2/src/features/financial/components/DuplicateCandidatesPanel.tsx",
-      "line": 173,
+      "line": 179,
       "control": "summary",
-      "label": "{group.members.length} documents · {\" \"} {group.sha256_at_ingestion.slice(0, 12)} …",
+      "label": "Original file group {visibleHashPage * 10 + index + 1} {\" \"} · {group.members.length} documents",
       "disabled": null,
       "destination": null,
       "events": {}
@@ -4066,7 +4066,17 @@
     {
       "component": "DuplicateCandidatesCasePanel",
       "file": "frontend_v2/src/features/financial/components/DuplicateCandidatesPanel.tsx",
-      "line": 198,
+      "line": 185,
+      "control": "summary",
+      "label": "File matching details",
+      "disabled": null,
+      "destination": null,
+      "events": {}
+    },
+    {
+      "component": "DuplicateCandidatesCasePanel",
+      "file": "frontend_v2/src/features/financial/components/DuplicateCandidatesPanel.tsx",
+      "line": 207,
       "control": "Button",
       "label": "Inspect source for document {\" \"} {row.document_id.slice(0, 8)}",
       "disabled": null,
@@ -4078,7 +4088,7 @@
     {
       "component": "DuplicateCandidatesCasePanel",
       "file": "frontend_v2/src/features/financial/components/DuplicateCandidatesPanel.tsx",
-      "line": 214,
+      "line": 223,
       "control": "Button",
       "label": "Previous source matches",
       "disabled": "{!visibleHashPage}",
@@ -4090,7 +4100,7 @@
     {
       "component": "DuplicateCandidatesCasePanel",
       "file": "frontend_v2/src/features/financial/components/DuplicateCandidatesPanel.tsx",
-      "line": 228,
+      "line": 237,
       "control": "Button",
       "label": "Next source matches",
       "disabled": "{ (visibleHashPage + 1) * 10 >= data.source_hash_groups.length }",
@@ -4102,7 +4112,7 @@
     {
       "component": "DuplicateCandidatesCasePanel",
       "file": "frontend_v2/src/features/financial/components/DuplicateCandidatesPanel.tsx",
-      "line": 251,
+      "line": 260,
       "control": "summary",
       "label": "Candidate group {visibleGroupPage * 10 + index + 1} · {\" \"} {group.members.length} documents",
       "disabled": null,
@@ -4112,7 +4122,7 @@
     {
       "component": "DuplicateCandidatesCasePanel",
       "file": "frontend_v2/src/features/financial/components/DuplicateCandidatesPanel.tsx",
-      "line": 269,
+      "line": 278,
       "control": "Button",
       "label": "{`View source for ${row.filename}`}",
       "disabled": null,
@@ -4124,7 +4134,7 @@
     {
       "component": "DuplicateCandidatesCasePanel",
       "file": "frontend_v2/src/features/financial/components/DuplicateCandidatesPanel.tsx",
-      "line": 305,
+      "line": 314,
       "control": "summary",
       "label": "Document identifiers",
       "disabled": null,
@@ -4134,7 +4144,7 @@
     {
       "component": "DuplicateCandidatesCasePanel",
       "file": "frontend_v2/src/features/financial/components/DuplicateCandidatesPanel.tsx",
-      "line": 324,
+      "line": 333,
       "control": "Button",
       "label": "Exclude this copy; retain {primary.filename}",
       "disabled": "{!!selection || isFetching}",
@@ -4146,7 +4156,7 @@
     {
       "component": "DuplicateCandidatesCasePanel",
       "file": "frontend_v2/src/features/financial/components/DuplicateCandidatesPanel.tsx",
-      "line": 351,
+      "line": 360,
       "control": "Button",
       "label": "Previous reading groups",
       "disabled": "{!visibleGroupPage}",
@@ -4158,7 +4168,7 @@
     {
       "component": "DuplicateCandidatesCasePanel",
       "file": "frontend_v2/src/features/financial/components/DuplicateCandidatesPanel.tsx",
-      "line": 362,
+      "line": 371,
       "control": "Button",
       "label": "Next reading groups",
       "disabled": "{(visibleGroupPage + 1) * 10 >= data.groups.length}",
@@ -4170,7 +4180,7 @@
     {
       "component": "DuplicateCandidatesCasePanel",
       "file": "frontend_v2/src/features/financial/components/DuplicateCandidatesPanel.tsx",
-      "line": 372,
+      "line": 381,
       "control": "summary",
       "label": "Excluded documents ( {data.excluded_documents.length} )",
       "disabled": null,
@@ -4180,7 +4190,7 @@
     {
       "component": "DuplicateCandidatesCasePanel",
       "file": "frontend_v2/src/features/financial/components/DuplicateCandidatesPanel.tsx",
-      "line": 389,
+      "line": 398,
       "control": "Button",
       "label": "Restore {row.filename}",
       "disabled": "{!!selection || isFetching}",
@@ -4192,7 +4202,7 @@
     {
       "component": "DuplicateCandidatesCasePanel",
       "file": "frontend_v2/src/features/financial/components/DuplicateCandidatesPanel.tsx",
-      "line": 410,
+      "line": 419,
       "control": "summary",
       "label": "Documents not compared ( {data.skipped.length} )",
       "disabled": null,
@@ -4248,7 +4258,7 @@
     {
       "component": "DuplicateDocumentContext",
       "file": "frontend_v2/src/features/financial/components/DuplicateDocumentContext.tsx",
-      "line": 62,
+      "line": 63,
       "control": "Button",
       "label": "Open original file",
       "disabled": null,
@@ -4260,7 +4270,7 @@
     {
       "component": "DuplicateDocumentContext",
       "file": "frontend_v2/src/features/financial/components/DuplicateDocumentContext.tsx",
-      "line": 74,
+      "line": 75,
       "control": "DocumentViewer",
       "label": "(label supplied by parent)",
       "disabled": null,

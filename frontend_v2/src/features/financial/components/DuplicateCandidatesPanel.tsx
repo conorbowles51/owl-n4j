@@ -45,11 +45,12 @@ function DuplicateCandidatesCasePanel({
   useEffect(() => {
     if (selection || !selectionOrigin.current) return
     const { button, group } = selectionOrigin.current
-    const target = button.isConnected && !button.matches(":disabled")
-      ? button
-      : group?.isConnected
-        ? group
-        : heading.current
+    const target =
+      button.isConnected && !button.matches(":disabled")
+        ? button
+        : group?.isConnected
+          ? group
+          : heading.current
     target?.focus({ preventScroll: true })
     target?.scrollIntoView({ block: "center" })
     selectionOrigin.current = null
@@ -162,23 +163,31 @@ function DuplicateCandidatesCasePanel({
                 )}
               </details>
               {data.source_hash_groups.length > 0 && (
-                <section aria-label="Matching source hashes across coverage">
+                <section aria-label="Matching original files across recorded periods">
                   <h3 className="font-medium">
-                    Same source hash, different or missing recorded coverage
+                    Same original file, different statement details
                   </h3>
+                  <p className="text-xs text-muted-foreground">
+                    These copies have different or missing recorded accounts or
+                    statement periods. Open a group to compare the saved details
+                    and sources.
+                  </p>
                   {data.source_hash_groups
                     .slice(visibleHashPage * 10, visibleHashPage * 10 + 10)
-                    .map((group) => (
+                    .map((group, index) => (
                       <details key={group.sha256_at_ingestion}>
                         <summary>
-                          {group.members.length} documents ·{" "}
-                          {group.sha256_at_ingestion.slice(0, 12)}…
+                          Original file group {visibleHashPage * 10 + index + 1}{" "}
+                          · {group.members.length} documents
                           <DuplicateGroupContext documents={group.members} />
                         </summary>
-                        <p>{group.limitation}</p>
-                        <p className="break-all">
-                          Recorded SHA-256: {group.sha256_at_ingestion}
-                        </p>
+                        <details className="my-2 text-xs text-muted-foreground">
+                          <summary>File matching details</summary>
+                          <p>{group.limitation}</p>
+                          <p className="break-all">
+                            Recorded SHA-256: {group.sha256_at_ingestion}
+                          </p>
+                        </details>
                         <ul>
                           {group.members.map((row) => (
                             <li

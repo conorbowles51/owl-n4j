@@ -390,3 +390,155 @@ for (const action of ["exclude", "restore"] as const) {
     client.clear()
   })
 }
+
+for (const width of [1280, 390]) {
+  it(`keeps a 52-period original-file group compact and preserves every exact source at ${width}px`, async () => {
+    await page.viewport(width, 900)
+    const data = duplicateContextCandidates(2)
+    const members = data.groups[1].members
+    for (const [copy, member] of members.entries()) {
+      member.statement_context = Array.from({ length: 52 }, (_, index) => {
+        const account = Math.floor(index / 24)
+        return {
+          period_id: `large-period-${copy}-${index}`,
+          account_id: `large-account-${account}`,
+          bank: "Example · Bank",
+          account_holder: "Synthetic · company",
+          account_number: `000${account + 1}`,
+          currency: account === 2 ? "EUR" : "USD",
+          period_start: new Date(Date.UTC(2020, index, 1))
+            .toISOString()
+            .slice(0, 10),
+          period_end:
+            copy === 1 && index === 1
+              ? null
+              : new Date(Date.UTC(2020, index + 1, 0))
+                  .toISOString()
+                  .slice(0, 10),
+        }
+      })
+    }
+    data.groups = [data.groups[0]]
+    data.source_hash_groups = [
+      {
+        sha256_at_ingestion: "d".repeat(64),
+        members,
+        limitation:
+          "Same recorded file checksum; saved statement details differ. This does not establish duplicate payments.",
+      },
+    ]
+    const last = members[1].statement_context[51]
+    const reads: string[] = []
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url, options) => {
+      expect(options?.method || "GET").toBe("GET")
+      const path = String(url)
+      reads.push(path)
+      if (path === "/api/financial/duplicates?case_id=case-1")
+        return new Response(JSON.stringify(data))
+      if (
+        path ===
+        `/api/financial/statement-periods/${last.period_id}/source?case_id=case-1`
+      )
+        return new Response(
+          JSON.stringify({
+            case_id: "case-1",
+            period_id: last.period_id,
+            source_document_id: members[1].document_id,
+            evidence_file_id: members[1].evidence_file_id,
+            filename: members[1].filename,
+            recorded_digest_matches: true,
+            file_bytes_verified: false,
+            limitation: "Original file retained; exact page not established.",
+          })
+        )
+      throw Error(`Unexpected read ${path}`)
+    })
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    const view = render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter>
+          <main className="p-4">
+            <DuplicateCandidatesPanel caseId="case-1" showCrossCase={false} />
+          </main>
+        </MemoryRouter>
+      </QueryClientProvider>
+    )
+    await act(async () => {
+      await page
+        .getByRole("button", { name: "Compare documents", exact: true })
+        .click()
+    })
+    const heading = await screen.findByRole("heading", {
+      name: "Same original file, different statement details",
+    })
+    const section = heading.closest("section")!
+    const summary = within(section).getByText(/Original file group 1 ·/)
+    expect(summary).toHaveTextContent(
+      "104 saved periods across 2 copies · 3 recorded account/currency combinations"
+    )
+    expect(summary).toHaveTextContent(
+      "Example · Bank · Synthetic · company · Account 0001 · USD"
+    )
+    expect(summary).toHaveTextContent("1 with missing dates")
+    expect(summary).toHaveTextContent("1 more account/currency combinations")
+    expect(summary).toHaveTextContent(
+      "Open group for all 104 saved periods and their sources. Date spans may contain gaps."
+    )
+    expect(summary.textContent).not.toContain("2024-04-30")
+    expect(summary.getBoundingClientRect().height).toBeLessThan(
+      width === 1280 ? 200 : 370
+    )
+    expect(section.getBoundingClientRect().height).toBeLessThan(
+      width === 1280 ? 260 : 470
+    )
+    const candidate = screen.getByText(/Candidate group 1 ·/)
+    expect(candidate.getBoundingClientRect().bottom).toBeLessThan(900)
+    expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(width)
+    await page.screenshot({
+      element: screen.getByRole("main"),
+      path: `/tmp/loupe-duplicate-52-periods-${width}-collapsed.png`,
+    })
+    await act(async () => {
+      summary.click()
+    })
+    const lists = within(section).getAllByRole("list", {
+      name: "Saved statement periods",
+    })
+    expect(lists).toHaveLength(2)
+    expect(
+      within(lists[1]).getAllByRole("button", {
+        name: /Inspect statement source/,
+      })
+    ).toHaveLength(52)
+    const trigger = within(lists[1]).getByRole("button", {
+      name: "Inspect statement source · 2024-04-01 to 2024-04-30 · EUR",
+    })
+    trigger.scrollIntoView({ block: "center" })
+    await act(async () => {
+      trigger.click()
+    })
+    const dialog = await screen.findByRole("dialog")
+    expect(dialog).toHaveTextContent(
+      "Account 0003 · EUR · 2024-04-01 to 2024-04-30"
+    )
+    await within(dialog).findByRole("button", { name: "Open statement file" })
+    await act(async () => {
+      await page
+        .getByRole("button", {
+          name: "Back to duplicate comparison",
+          exact: true,
+        })
+        .click()
+    })
+    await waitFor(() => expect(trigger).toHaveFocus())
+    expect(summary.closest("details")).toHaveAttribute("open")
+    expect(reads).toEqual([
+      "/api/financial/duplicates?case_id=case-1",
+      `/api/financial/statement-periods/${last.period_id}/source?case_id=case-1`,
+    ])
+    view.unmount()
+    client.clear()
+  })
+}

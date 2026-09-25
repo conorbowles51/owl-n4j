@@ -778,3 +778,36 @@ The existing database transaction still requires maintenance inspection. An
 authorized ten-minute heartbeat will check for meaningful changes and resume the
 remaining live verification after a safe release; it does not bypass the gate or
 terminate database sessions.
+
+## Successful release and live acceptance — 25 September, follow-up
+
+Automatic release `12300095` completed successfully. The captured deployment log
+started at 07:14:22 UTC and completed in 196 seconds. Every ingestion gate was
+clear before service changes; migrations, backend, frontend, PostgreSQL, Neo4j
+and evidence-engine health passed. The previous release deferral and maintenance
+access dependency are superseded. No forced transaction termination was performed
+by this verification. The browser was reloaded into the new bundle.
+
+Live duplicate comparison now shows saved account/currency/period context. A
+selected card period opened its correct PDF page and highlighted opening balance.
+A zero-row saved statement opened its source citation and whole original file
+with unknown dates kept explicit, then returned to the same comparison. Exclusion
+preview showed both selected and retained copies; cancellation returned without
+changing records. Historical duplicate exclusion decisions remain unmade.
+
+This live check exposed excessive collapsed context for large same-file groups.
+The bounded follow-up keeps two account previews, period/remaining-account counts,
+date extents and missing-date counts in summaries; every period/source stays in
+the expanded group. Technical file hashes move below file-matching details.
+Forty unit and nine Chromium tests pass, including two 52-period copies at
+1280px and 390px and the final period citation/return. Independent review, scoped
+ESLint, production build and diff checks pass; screenshots were inspected. The
+action inventory now records 1,740 controls across 179 files. Publication and
+live verification of this compact-summary follow-up are recorded separately.
+
+The explicitly paused test campaign and the client campaign paused during the
+earlier release diagnosis were resumed through their supported controls. Their
+final outcomes remain under observation. The restored-source follow-up is now
+active and reports its scheduled/protected/out-of-scope counts, with specific
+review reasons. Checking a source does not certify reconciliation or import it
+unconditionally. Private case identifiers and detailed counts remain outside Git.

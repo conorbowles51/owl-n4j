@@ -70,9 +70,7 @@ export type DuplicateCandidates = z.infer<typeof schema>
 export type DuplicateDocument = z.infer<typeof document>
 export type DuplicateStatementContext = z.infer<typeof statementContext>
 
-export function duplicateStatementLabel(
-  row: DuplicateStatementContext
-): string {
+export function duplicateAccountLabel(row: DuplicateStatementContext): string {
   return [
     row.bank?.trim() || "Bank not recorded",
     row.account_holder?.trim() || "Account holder not recorded",
@@ -80,8 +78,13 @@ export function duplicateStatementLabel(
       ? `Account ${row.account_number}`
       : "Account number not recorded",
     row.currency?.trim() || "Currency not recorded",
-    `${row.period_start || "Start date not recorded"} to ${row.period_end || "End date not recorded"}`,
   ].join(" · ")
+}
+
+export function duplicateStatementLabel(
+  row: DuplicateStatementContext
+): string {
+  return `${duplicateAccountLabel(row)} · ${row.period_start || "Start date not recorded"} to ${row.period_end || "End date not recorded"}`
 }
 
 export function duplicateRowsLabel(

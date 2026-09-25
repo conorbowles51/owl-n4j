@@ -224,3 +224,15 @@ balance controls that appeared unavailable after correction. It also distinguish
 saved corrections from a new PDF reading and makes Updates understandable without
 raw server diagnostics. Its publication/live results and any remaining source
 review requirements are tracked in the checkpoint rather than assumed complete.
+
+## 25 September: successful follow-up release
+
+Automatic release `12300095` succeeded with idle ingestion gates and healthy
+services. Earlier statements that the release is blocked by maintenance are
+superseded. Live comparison verified saved-period context, a highlighted original
+balance, source access for zero-row statements, and confirmation/cancel/return.
+The resumed recovery runs and remaining live journeys are tracked in the
+[completion plan](financial-workflows/priority-completion-plan-2026-09-25.md#successful-release-and-live-acceptance--25-september-follow-up).
+A further compact-summary correction addresses large collections without losing
+any expanded period/source action. Historical copy exclusions and uncertain
+source/account/value decisions still require investigator review.

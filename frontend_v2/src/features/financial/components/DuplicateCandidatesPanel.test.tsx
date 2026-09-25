@@ -103,7 +103,7 @@ it("shows hash-only matches separately without offering exclusions for those mat
   fireEvent.click(screen.getByRole("button", { name: "Compare documents" }))
   expect(
     await screen.findByRole("region", {
-      name: "Matching source hashes across coverage",
+      name: "Matching original files across recorded periods",
     })
   ).toBeInTheDocument()
   expect(
@@ -291,7 +291,7 @@ it("shows saved context for excluded and hash members and keeps unavailable deta
   mount()
   fireEvent.click(screen.getByRole("button", { name: "Compare documents" }))
   const hashes = await screen.findByRole("region", {
-    name: "Matching source hashes across coverage",
+    name: "Matching original files across recorded periods",
   })
   expect(hashes).toHaveTextContent("Account 00120000")
   fireEvent.click(screen.getByText("Excluded documents (1)"))
