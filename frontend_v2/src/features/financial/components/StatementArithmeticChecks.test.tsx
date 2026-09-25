@@ -52,3 +52,30 @@ it("explains an interest difference and opens its total or contributing charge",
     screen.queryByRole("button", { name: "Check charge 1" })
   ).not.toBeInTheDocument()
 })
+
+it("names editable credit and debit totals while retaining exact source row actions", () => {
+  const inspect = vi.fn()
+  render(
+    <StatementArithmeticChecks
+      editable
+      format={(value) => value}
+      onInspect={inspect}
+      checks={(["credit", "debit"] as const).map((direction) => ({
+        kind: `${direction}_total` as const,
+        status: "difference",
+        row_id: direction,
+        expected_minor: "42700",
+        printed_minor: "0",
+        difference_minor: "42700",
+      }))}
+    />
+  )
+  fireEvent.click(
+    screen.getByRole("button", { name: "Review printed credit total" })
+  )
+  expect(inspect).toHaveBeenLastCalledWith("credit")
+  fireEvent.click(
+    screen.getByRole("button", { name: "Review printed debit total" })
+  )
+  expect(inspect).toHaveBeenLastCalledWith("debit")
+})

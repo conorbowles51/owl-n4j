@@ -263,3 +263,12 @@ Live verification confirmed grouped review reasons, compact duplicate comparison
 with source/return, and saved quiet-account metadata/balances with source/return.
 No active client run was restarted merely to repeat the isolated PostgreSQL Pause
 tests. The current checkpoint retains fixture limits and investigator decisions.
+
+## 25 September evening: matching balance with conflicting printed totals
+
+The new [printed-total correction record](financial-workflows/printed-total-correction-2026-09-25.md)
+tracks Alex's blocked import and the repair that makes every total-review action
+open its exact source-bound editor. Strict reconciliation is preserved. The two
+recorded zero totals require comparison with the original; the screenshot alone
+does not establish whether they were misread or belong to another section.
+Synthetic and live/source-specific acceptance remain separate.

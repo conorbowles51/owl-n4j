@@ -98,6 +98,45 @@ def create_app():
             identifier=import_batches.create_batch(db,case_id=fixture.case.id,request_id=uuid4(),file_ids=[fixture.file.id],folder_ids=[],actor=fixture.actor)
         await import_batches.advance_batch(fixture.SessionLocal,identifier,Path,AsyncMock(side_effect=AssertionError('Retained reading expected')))
         return {'batch_id':str(identifier)}
+    @app.post('/__fixture/printed-total-corrections')
+    def printed_total_corrections():
+        """A real synthetic PDF with two deliberately incorrect OCR controls."""
+        from copy import deepcopy
+        from hashlib import sha256
+        import fitz
+        from postgres.models.evidence import EvidenceTableGeometry
+        from tests.financial_reconciled_fixture import install_reconciled_source
+        from tests.test_financial_pdf_geometry_candidates import rectangle
+        install_reconciled_source(fixture)
+        geometry = fixture.db.get(EvidenceTableGeometry, (fixture.file.id, 1))
+        payload = deepcopy(geometry.payload)
+        cells = payload[0]['table']['values']
+        first = max(cell['row'] for cell in cells) + 1
+        printed = {}
+        for offset, (label, column, actual) in enumerate((
+                ('Total credits', 2, '1,035,000.00'), ('Total debits', 3, '1,000,000.00'))):
+            for col, value in ((1, label), (column, '0.00')):
+                cells.append(dict(row=first + offset, column=col, text=value,
+                    locator=rectangle(440 + offset * 20, x=20 + col * 100, width=90, height=15)))
+            printed[(first + offset, column)] = actual
+        geometry.payload = payload
+        # Keep the real PDF accurate while the retained reading models an OCR
+        # error. No parser/assessment/writer is mocked in the browser journey.
+        pdf = fitz.open()
+        page = pdf.new_page(width=600, height=800)
+        page.insert_text((20, 15), 'Synthetic Company - TEST123 - EUR - January to December 2023', fontsize=9)
+        for cell in cells:
+            x, y, _, _ = cell['locator']['rect']
+            value = printed.get((cell['row'], cell['column']), cell['text']).replace('€', '')
+            page.insert_text((x / 1000 + 1, y / 1000 + 10), value, fontsize=8)
+        pdf.save(str(fixture.path))
+        pdf.close()
+        fixture.file.sha256 = sha256(fixture.path.read_bytes()).hexdigest()
+        fixture.db.commit()
+        controls = {row['fields']['total_direction']: row['id'] for row in fixture.preview()['rows']
+            if row['kind'] == 'statement_total'}
+        return dict(synthetic=True, credit_row_id=controls['credit'], debit_row_id=controls['debit'],
+            credit_minor='103500000', debit_minor='100000000', currency='EUR', transaction_count=12)
     @app.post('/__fixture/account-history')
     def history_fixture():
         from copy import deepcopy

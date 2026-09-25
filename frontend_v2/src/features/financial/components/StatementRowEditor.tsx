@@ -9,6 +9,7 @@ export function StatementRowEditor({
   kind,
   statementEnd,
   additionalPrintedDate,
+  controlContext,
   problems,
   update,
   amount,
@@ -21,6 +22,13 @@ export function StatementRowEditor({
   kind: string
   statementEnd?: string
   additionalPrintedDate?: string
+  controlContext?: {
+    label: string
+    originalValue: string
+    currency: string
+    page: number
+    row: number
+  }
   problems: string[]
   update: (patch: Partial<Edit>) => void
   amount: (direction: "credit" | "debit", value: string) => void
@@ -29,6 +37,9 @@ export function StatementRowEditor({
   close: () => void
 }) {
   const control = kind === "balance" || kind === "statement_total"
+  const controlLabel =
+    controlContext?.label ||
+    (kind === "statement_total" ? "Printed total" : "Printed balance")
   const fieldClass =
     "mt-1 block w-full rounded border bg-background p-2 text-sm"
   return (
@@ -37,7 +48,11 @@ export function StatementRowEditor({
       className="rounded border border-primary/30 bg-background p-3 space-y-3 text-sm font-sans"
     >
       <div className="flex flex-wrap justify-between items-center gap-2">
-        <h5 className="font-semibold">Correct this reading</h5>
+        <h5 className="font-semibold">
+          {kind === "statement_total"
+            ? `Correct ${controlLabel.toLowerCase()}`
+            : "Correct this reading"}
+        </h5>
         <Button size="sm" variant="outline" onClick={close}>
           Done editing this row
         </Button>
@@ -46,6 +61,20 @@ export function StatementRowEditor({
         The printed row above is retained. Your corrected values will be used
         for the import.
       </p>
+      {kind === "statement_total" && controlContext && (
+        <div className="rounded border bg-muted/30 p-2 space-y-1">
+          <p>
+            PDF page {controlContext.page}, extracted row {controlContext.row}.
+            Original reading: {controlContext.originalValue}{" "}
+            {controlContext.currency}.
+          </p>
+          <p>
+            Enter the total printed in the source. This checks the statement
+            total; it does not change a balance or add a payment. The
+            reconciliation checks update as you edit.
+          </p>
+        </div>
+      )}
       {!control && (
         <label className="flex items-center gap-2">
           <input
@@ -174,13 +203,10 @@ export function StatementRowEditor({
         </div>
       )}
       <label className="block">
-        {kind === "statement_total" ? "Printed total" : "Printed balance"}
+        {controlLabel}
+        {controlContext?.currency ? ` ${controlContext.currency}` : ""}
         <input
-          aria-label={
-            kind === "statement_total"
-              ? "Corrected printed total"
-              : "Corrected printed balance"
-          }
+          aria-label={`Corrected ${controlLabel.toLowerCase()}`}
           className={fieldClass}
           inputMode="decimal"
           value={text("balance")}

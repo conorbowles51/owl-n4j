@@ -5,8 +5,8 @@ import { arithmeticCheck } from "../hooks/use-statement-checks"
 const names = {
   closing_balance: "Opening and closing balance",
   running_balance: "Balances between payments",
-  credit_total: "Printed money-in total",
-  debit_total: "Printed money-out total",
+  credit_total: "Printed credit total",
+  debit_total: "Printed debit total",
   fee_total: "Fees against printed total",
   interest_total: "Interest charges against printed total",
 }
@@ -14,10 +14,12 @@ export function StatementArithmeticChecks({
   checks,
   format,
   onInspect,
+  editable = false,
 }: {
   checks: z.infer<typeof arithmeticCheck>[]
   format: (value: string) => string
   onInspect: (id: string) => void
+  editable?: boolean
 }) {
   const available = checks.filter((check) => check.status !== "unavailable")
   const unavailable = checks.filter((check) => check.status === "unavailable")
@@ -81,7 +83,9 @@ export function StatementArithmeticChecks({
                   variant="outline"
                   onClick={() => onInspect(check.row_id!)}
                 >
-                  View printed value
+                  {editable && check.kind !== "closing_balance"
+                    ? `Review printed ${check.kind.replace("_total", "")} total`
+                    : "View printed value"}
                 </Button>
               )}
               {check.status === "difference" &&

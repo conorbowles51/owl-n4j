@@ -1,5 +1,7 @@
 # Loupe financial investigator workflow reference
 
+**25 September evening — matching balance, blocked import:** [Correct printed totals before import](printed-total-correction-2026-09-25.md) records separate credit/debit control checks, the unified source-bound correction journey and the still-unidentified source in Alex's screenshot. Matching closing balances alone must not override conflicting printed totals.
+
 **25 September renewed live feedback:** [Retry, missing EUR context and slow review](retry-currency-review-performance-2026-09-25.md) reopens acceptance for initial failed batches, the misleading missing-statement error, currency discovery and slow loading/saving. Earlier release verification does not close these new reports. The work preserves investigator corrections and active jobs; zero-payment accounts must remain discoverable without creating transaction rows or claiming that unread statements have no activity.
 
 **25 September verified release:** automatic deployment of `3805d3fe` succeeded with idle ingestion gates and healthy services. [Final live checks](priority-completion-plan-2026-09-25.md#successful-release-and-final-live-checks) confirmed compact duplicate summaries, grouped recovery reasons and saved quiet-account profiles. [Large background rechecks](priority-completion-plan-2026-09-25.md#pause-large-background-rechecks-safely--25-september-afternoon) records the released safe-pause repair and real PostgreSQL concurrency tests. The last campaign finished naturally; remaining overlap decisions require investigator review.

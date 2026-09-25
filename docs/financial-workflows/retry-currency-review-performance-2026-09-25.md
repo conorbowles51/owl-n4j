@@ -169,3 +169,39 @@ investigator edits, removal before/after admission, and replay after process exi
 following a committed import. No live jobs or database records were changed for
 these tests. The prevention repair and the live incident's precise cause remain
 separate findings.
+
+## Deployed and live checks — 25 September evening
+
+The automatic deployment of `902ec945` (including `6f773e02`) succeeded. Its
+recorded run started at 17:36:17 UTC and completed in 184 seconds; the final
+health checks passed. All ingestion gates were idle before replacement. The
+release nevertheless restarted the frontend and backend, overlapping Alex's
+report that controls stopped responding during reconciliation at approximately
+18:37 Dublin time. Safe ingestion transition does not mean uninterrupted access
+for an investigator editing a statement. The user was advised to preserve the
+existing tab and save its progress before reloading; no claim is made that every
+unsaved edit in Alex's separate browser has been recovered.
+
+Read-only live Transactions checks verified the known-account EUR summary,
+currency filtering, complete account list, account-history navigation and return,
+and clearing the payment filters. EUR accounts with no imported payments show
+zero totals and account counts without creating payment rows or claiming the
+statements are fully processed. A directory currency label does not change the
+currency of independently saved statement periods in account history.
+
+In the authorized test case, saving a statement's existing account, dates,
+currency and balances returned the saved confirmation; reopening retained those
+values. No client-case records were changed. The live “Read the statement again”
+entry point exposes the reading method and explains that a new reading requires
+review while existing transactions remain until a replacement is confirmed.
+The inspected test batch has seven completed readings and no failed source
+eligible for a fresh failure-to-Retry test. The actual FastAPI/Chromium Retry
+journey passed locally, but a new Retry of Alex's failed client records on this
+release remains unverified. Do not manufacture a failure or reprocess a client
+file solely to demonstrate the control.
+
+Remaining live evidence: confirm Alex's failed-file Retry result and representative
+large-review save latency after the update. The successful test-case save is not
+a measurement proving that all previously reported 20–25 minute delays are gone.
+These post-release acceptance notes are local documentation; no additional
+service restart is warranted just to publish verification notes.

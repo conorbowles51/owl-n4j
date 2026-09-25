@@ -24,6 +24,92 @@ class StatementProgressTests(TestCase):
             return save_progress(db, case_id=case_id or self.f.case.id, evidence_file_id=self.f.file.id,
                 request=StatementReviewDraft.model_validate(raw), expected_review_revision=revision, actor=self.f.actor)
 
+    def test_printed_total_corrections_reconcile_save_reopen_and_import_once(self):
+        """Matching endpoints cannot hide contradictory direction controls.
+
+        Synthetic extraction retained zero for two control cells. The
+        investigator corrects those readings; the original cells remain sealed.
+        No balance exception or admission-policy override is involved.
+        """
+        from uuid import UUID
+        from postgres.models.evidence import EvidenceTableGeometry
+        from postgres.models.financial import FinancialSourceDocument
+        from services.financial.statement_admission import assess_admission
+        from tests.test_financial_pdf_geometry_candidates import rectangle
+
+        with self.f.SessionLocal() as db:
+            geometry = db.get(EvidenceTableGeometry, (self.f.file.id, 1))
+            payload = deepcopy(geometry.payload)
+            cells = payload[0]['table']['values']
+            first = max(cell['row'] for cell in cells) + 1
+            for offset, (label, column) in enumerate((('Total credits', 2), ('Total debits', 3))):
+                for col, text in ((1, label), (column, '0.00')):
+                    cells.append(dict(row=first + offset, column=col, text=text,
+                        locator=rectangle(440 + offset * 20, x=20 + col * 100, width=90, height=15)))
+            geometry.payload = payload
+            db.commit()
+        original = self.f.preview()
+        controls = {row['fields']['total_direction']: row for row in original['rows']
+            if row['kind'] == 'statement_total'}
+        self.assertEqual({role: row['fields']['balance'] for role, row in controls.items()},
+            {'credit': '0', 'debit': '0'})
+        raw = self.f.request()
+
+        def checked(body):
+            return assess_admission(self.f.preview(), StatementImportRequest.model_validate(body))
+
+        def blocked(body, expected_checks):
+            result = checked(body)
+            self.assertFalse(result['can_import'])
+            self.assertEqual({blocker['check'] for blocker in result['blockers']}, expected_checks)
+            self.assertEqual(next(check['status'] for check in result['checks']
+                if check['kind'] == 'closing_balance'), 'matches')
+            with self.assertRaisesRegex(PdfMappingError, 'Statement remains in review'):
+                self.f.confirm(body)
+            with self.f.SessionLocal() as db:
+                self.assertEqual(list(db.scalars(select(FinancialTransaction))), [])
+
+        blocked(raw, {'credit_total', 'debit_total'})
+        saved = self.save(raw)
+        reopened = self.f.preview()['saved_review']
+        self.assertEqual(reopened['request'], saved['request'])
+        corrected = deepcopy(reopened['request'])
+        edits = {row['id']: row for row in corrected['rows']}
+        # Independently specified totals of the synthetic source fixture.
+        # Payments and endpoint balances are never changed to make them fit.
+        edits[controls['credit']['id']].update(balance_minor='103500000',
+            reason='Synthetic source comparison: corrected total credits reading.')
+        blocked(corrected, {'debit_total'})
+        cleared = deepcopy(corrected)
+        for row in cleared['rows']:
+            if row['id'] in {control['id'] for control in controls.values()}:
+                row.update(balance_minor=None, reason='Synthetic check: blank is not a resolved printed total.')
+        blocked(cleared, {'credit_total', 'debit_total'})
+        edits[controls['debit']['id']].update(balance_minor='100000000',
+            reason='Synthetic source comparison: corrected total debits reading.')
+        self.assertTrue(checked(corrected)['can_import'])
+        saved = self.save(corrected, saved['review_revision'])
+        reopened = self.f.preview()
+        self.assertEqual(reopened['saved_review']['request'], saved['request'])
+        self.assertEqual(reopened['saved_review']['saved_by']['user_id'], str(self.f.actor.user_id))
+        self.assertEqual(reopened['rows'], original['rows'])
+        first = self.f.confirm(reopened['saved_review']['request'])
+        self.assertEqual(first['transaction_count'], 12)
+        with self.f.SessionLocal() as db:
+            payment_ids = set(db.scalars(select(FinancialTransaction.id)))
+            document = db.get(FinancialSourceDocument, UUID(first['source_document_id']))
+            self.assertEqual(document.metadata_['statement_import_original']['rows'], original['rows'])
+            self.assertEqual(document.metadata_['statement_import_request'], saved['request'])
+            self.assertEqual(db.get(EvidenceTableGeometry, (self.f.file.id, 1)).payload, payload)
+        current = self.f.preview()['current_import']
+        self.assertEqual({row['description']: row['reason'] for row in current['review_decisions']},
+            {row['description']: row['reason'] for row in corrected['rows'] if row['reason']})
+        again = self.f.confirm(reopened['saved_review']['request'])
+        self.assertFalse(again['created'])
+        self.assertEqual(again['source_document_id'], first['source_document_id'])
+        with self.f.SessionLocal() as db:
+            self.assertEqual(set(db.scalars(select(FinancialTransaction.id))), payment_ids)
+
     def test_incomplete_progress_reopens_without_import_and_detects_concurrent_save(self):
         raw = self.f.request()
         payment = next(row for row in raw['rows'] if not row['excluded'])

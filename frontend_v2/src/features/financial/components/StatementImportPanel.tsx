@@ -48,6 +48,10 @@ import { PdfReviewIntake } from "./PdfReviewIntake"
 import { TransactionSourceHighlight } from "./TransactionSourceHighlight"
 import { StatementSourceTools } from "./StatementSourceTools"
 import { StatementRowEditor } from "./StatementRowEditor"
+import {
+  statementControlLabel,
+  statementControlInputLabel,
+} from "../lib/statement-control-label"
 import { ManualTransactionPosition } from "./ManualTransactionPosition"
 import { StatementCurrencyControl } from "./StatementCurrencyControl"
 import { StatementBulkCorrections } from "./StatementBulkCorrections"
@@ -1555,7 +1559,9 @@ function EditableStatement({
         BigInt(r.balance_minor) > 9223372036854775807n)
     )
       problems.push(
-        "Enter a valid printed balance, or clear it if none is printed."
+        originals.get(r.id)?.kind === "statement_total"
+          ? `Enter a valid ${statementControlLabel("statement_total", originals.get(r.id)?.fields).toLowerCase()} from the source. Clearing an identified total does not resolve its check.`
+          : "Enter a valid printed balance, or clear it if none is printed."
       )
     if (!r.excluded) {
       if (r.date_unprinted) {
@@ -2127,7 +2133,10 @@ function EditableStatement({
         originals.get(row.id)?.kind === "balance"
     )
     setCorrectionPage(
-      Math.floor(balanceRows.findIndex((row) => row.id === id) / 50)
+      Math.max(
+        0,
+        Math.floor(balanceRows.findIndex((row) => row.id === id) / 50)
+      )
     )
     setFocus({ rowId: id, locator: balanceLocator(original) })
     setCorrectionsOpen(true)
@@ -2142,6 +2151,10 @@ function EditableStatement({
   const reviewRow = (id: string) => {
     const original = originals.get(id)
     if (!original) return
+    if (original.kind === "statement_total") {
+      openInlineRow(id)
+      return
+    }
     keepRowVisible(id)
     setCorrectionPage(Math.floor(rows.findIndex((row) => row.id === id) / 50))
     setFocus({
@@ -2168,14 +2181,21 @@ function EditableStatement({
   const openInlineRow = (id: string) => {
     const original = originals.get(id)
     if (!original) return
-    if (!original.source_cells.length && !original.id.startsWith("manual:")) {
+    if (
+      !original.source_cells.length &&
+      !original.id.startsWith("manual:") &&
+      original.kind !== "statement_total"
+    ) {
       reviewRow(id)
       return
     }
     setSourcePage(original.page_number)
     setFocus({
       rowId: id,
-      locator: statementRowLocator(original, original.page_number),
+      locator:
+        original.kind === "statement_total"
+          ? balanceLocator(original)
+          : statementRowLocator(original, original.page_number),
     })
     setInlineRowId(id)
     requestAnimationFrame(() => {
@@ -2183,6 +2203,13 @@ function EditableStatement({
         '[aria-label="Edit selected statement row"]'
       )
       editor?.scrollIntoView({ block: "nearest", behavior: "smooth" })
+      if (original.kind === "statement_total") {
+        const name = statementControlInputLabel(original.kind, original.fields)
+        const input = Array.from(
+          editor?.querySelectorAll<HTMLInputElement>("input") ?? []
+        ).find((node) => node.getAttribute("aria-label") === name)
+        input?.focus({ preventScroll: true })
+      }
     })
   }
   const problemIds = [
@@ -2205,7 +2232,8 @@ function EditableStatement({
     const target = problem.target
     const id = target?.row_id || problem.row_id
     if (id) {
-      if (target?.kind === "balance") editBalance(id)
+      if (originals.get(id)?.kind === "statement_total") openInlineRow(id)
+      else if (target?.kind === "balance") editBalance(id)
       else {
         openInlineRow(id)
         const field = target?.field || problem.field
@@ -2214,8 +2242,14 @@ function EditableStatement({
             date: "Corrected transaction date",
             description: "Corrected description",
             counterparty: "Corrected paid by or paid to",
-            balance_minor: "Corrected printed balance",
-            balance: "Corrected printed balance",
+            balance_minor: statementControlInputLabel(
+              originals.get(id)?.kind || "",
+              originals.get(id)?.fields
+            ),
+            balance: statementControlInputLabel(
+              originals.get(id)?.kind || "",
+              originals.get(id)?.fields
+            ),
             amount:
               editsById.get(id)?.direction === "credit"
                 ? "Corrected credit"
@@ -2335,6 +2369,19 @@ function EditableStatement({
           statementEnd={periodEnd}
           additionalPrintedDate={original.fields.additional_printed_date}
           kind={original.kind}
+          controlContext={
+            original.kind === "statement_total"
+              ? {
+                  label: statementControlLabel(original.kind, original.fields),
+                  originalValue: /^-?\d+$/.test(original.fields.balance || "")
+                    ? displayAmount(original.fields.balance, digits)
+                    : original.fields.balance || "Not read",
+                  currency: data.currency,
+                  page: original.page_number,
+                  row: original.row_index + 1,
+                }
+              : undefined
+          }
           problems={rowProblems(edit)}
           update={(patch) => update(id, patch)}
           close={() => {
@@ -2864,7 +2911,11 @@ function EditableStatement({
                         variant="outline"
                         onClick={() => inspectBlocker(problem)}
                       >
-                        Review {problem.row_id ? "row" : "statement details"}
+                        {originals.get(
+                          problem.target?.row_id || problem.row_id || ""
+                        )?.kind === "statement_total"
+                          ? `Review ${statementControlLabel("statement_total", originals.get(problem.target?.row_id || problem.row_id || "")?.fields).toLowerCase()}`
+                          : `Review ${problem.row_id ? "row" : "statement details"}`}
                       </Button>
                     </div>
                   ))}
@@ -2900,6 +2951,7 @@ function EditableStatement({
                   `${displayAmount(value, digits)} ${data.currency}`
                 }
                 onInspect={openInlineRow}
+                editable={canEdit && (!data.current_import || replacePrevious)}
               />
               {balanceMismatch && (
                 <div className="mt-3 space-y-2 rounded border p-3">
@@ -3497,7 +3549,7 @@ function EditableStatement({
                         "Description",
                         "Credit",
                         "Debit",
-                        "Printed balance",
+                        "Printed balance / total",
                         "Actions",
                       ].map((s) => (
                         <th
@@ -3872,11 +3924,19 @@ function EditableStatement({
                               htmlFor={`review-balance-${r.id}`}
                               className="block text-xs mb-1"
                             >
-                              Printed balance {data.currency}
+                              {statementControlLabel(
+                                original.kind,
+                                original.fields
+                              )}{" "}
+                              {data.currency}
                             </label>
                             <input
                               id={`review-balance-${r.id}`}
-                              aria-label={`Balance ${r.id}`}
+                              aria-label={
+                                original.kind === "statement_total"
+                                  ? `${statementControlLabel(original.kind, original.fields)} ${r.id}`
+                                  : `Balance ${r.id}`
+                              }
                               className="border rounded p-1 bg-background w-28"
                               inputMode="decimal"
                               value={

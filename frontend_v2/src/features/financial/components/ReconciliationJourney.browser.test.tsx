@@ -170,6 +170,115 @@ run(
 )
 
 run(
+  "corrects both misread printed totals beside the source, saves, reopens and imports once through the real service",
+  async () => {
+    const { case_id: caseId, file_id: fileId } = await setup()
+    const totals = await service("/__fixture/printed-total-corrections", {
+      method: "POST",
+    })
+    const imported = vi.fn()
+    mount(<StatementImportPanel caseId={caseId} onImported={imported} />)
+    const confirm = await screen.findByRole("button", {
+      name: "Confirm import of 12 transactions",
+    })
+    await screen.findAllByText(/Closing balance matches/)
+    expect(confirm).toBeDisabled()
+    expect((await service("/__fixture/payments")).payments).toHaveLength(0)
+    // The blocker and detailed arithmetic check must lead to the same editor,
+    // including when excluded source controls are not in the correction list.
+    await page
+      .getByRole("button", { name: "Review printed credit total", exact: true })
+      .first()
+      .click()
+    const credit = await screen.findByLabelText(
+      "Corrected printed credit total"
+    )
+    expect(Number((credit as HTMLInputElement).value)).toBe(0)
+    await page
+      .getByLabelText("Corrected printed credit total", { exact: true })
+      .fill(String(Number(totals.credit_minor) / 100))
+    await waitFor(() => expect(confirm).toBeDisabled())
+    await page
+      .getByRole("button", { name: "Review printed debit total", exact: true })
+      .last()
+      .click()
+    await page
+      .getByLabelText("Corrected printed debit total", { exact: true })
+      .fill(String(Number(totals.debit_minor) / 100))
+    await waitFor(() => expect(confirm).toBeEnabled())
+    await page.screenshot({
+      path: "/private/tmp/loupe-correct-printed-totals.png",
+    })
+    await page
+      .getByRole("button", { name: "Save progress", exact: true })
+      .click()
+    await screen.findByText(
+      "Progress saved to the case. You can reopen this statement on another device."
+    )
+    cleanup()
+    // Remove tab-local drafts so reopening verifies the saved server review.
+    useFinancialDraftStore.setState({ drafts: {} })
+    mount(<StatementImportPanel caseId={caseId} onImported={imported} />)
+    const reopenedConfirm = await screen.findByRole("button", {
+      name: "Confirm import of 12 transactions",
+    })
+    await waitFor(() => expect(reopenedConfirm).toBeEnabled())
+    await page
+      .getByRole("button", { name: "Review printed credit total", exact: true })
+      .first()
+      .click()
+    expect(
+      Number(
+        (
+          (await screen.findByLabelText(
+            "Corrected printed credit total"
+          )) as HTMLInputElement
+        ).value
+      )
+    ).toBe(Number(totals.credit_minor) / 100)
+    await page
+      .getByRole("button", { name: "Review printed debit total", exact: true })
+      .first()
+      .click()
+    expect(
+      Number(
+        (
+          (await screen.findByLabelText(
+            "Corrected printed debit total"
+          )) as HTMLInputElement
+        ).value
+      )
+    ).toBe(Number(totals.debit_minor) / 100)
+    await page
+      .getByRole("button", {
+        name: "Confirm import of 12 transactions",
+        exact: true,
+      })
+      .click()
+    await waitFor(() => expect(imported).toHaveBeenCalledTimes(1))
+    const payments = (await service("/__fixture/payments")).payments
+    expect(payments).toHaveLength(totals.transaction_count)
+    cleanup()
+    useFinancialDraftStore.setState({ drafts: {} })
+    useStatementWorkspace.getState().select(`anonymous:${caseId}`, fileId)
+    mount(<StatementImportPanel caseId={caseId} onImported={imported} />)
+    await screen.findByText(/Already imported: 12 payments from this period/)
+    expect((await service("/__fixture/payments")).payments).toEqual(payments)
+    expect(
+      vi
+        .mocked(fetchAPI)
+        .mock.calls.filter(
+          ([url, options]) =>
+            url.includes(`/statement-import/${fileId}/confirm`) &&
+            options?.method === "POST"
+        )
+    ).toHaveLength(1)
+    cleanup()
+  },
+  60000
+)
+
+run(
   "holds a mismatched statement, preserves the draft, then imports exactly once after correction",
   async () => {
     const { case_id: caseId } = await setup()
