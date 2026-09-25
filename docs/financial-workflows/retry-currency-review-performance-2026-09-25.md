@@ -119,3 +119,53 @@ entire observed production delay has been measured or eliminated before that
 verification, or that every historical missing-statement error has the same cause.
 Client originals, screenshots, extracted records and credentials are excluded
 from publication. Active case jobs must not be cancelled or force-restarted.
+
+## Published release and subsequent import progress
+
+The verified code-only package was pushed as `6f773e02`. The automatic release
+attempt at 16:47 UTC deferred before service replacement because one batch had
+two accepted imports and an active worker lease. No active work was cancelled,
+paused, force-released or restarted to pass the gate.
+
+At the later read-only check, the same batch opened and its saved receipt showed
+all 12 accepted statements imported, zero pending and 137 saved transactions.
+Its separate file-preparation list still contained older failed readings; a
+completed import receipt does not mean that every source file has been read.
+The earlier generic batch error no longer reproduced at that check. The last
+captured deployment log still described the deferred attempt, so successful
+rollout of `6f773e02` and the affected live journeys remained unverified.
+
+## Concurrent import and save — reproduced follow-up
+
+An isolated PostgreSQL test reproduced an application-level deadlock: the batch
+worker retained its item row lock while calling the strict import service through
+a second database session. A concurrent review save could hold the Evidence row
+while waiting for the item. The import service then waited for that Evidence row,
+while the worker waited for the service in Python. Because the complete cycle
+crossed database sessions and a Python wait, PostgreSQL could not detect it as
+one ordinary database deadlock. The bounded probe used a local lock timeout to
+release the test and confirmed the import could then complete once.
+
+Independent review identified the same central lock-order risk with other
+writers, so a pre-check in the Save form alone is insufficient. The repair must
+release the worker's snapshot transaction before strict import confirmation and
+guard its later receipt update against changed, removed or already completed
+work. Reconciliation, exact-request idempotency, removal decisions and saved
+edits must remain protected. This reproduced code defect is not proof that the
+now-completed live batch experienced that exact lock sequence.
+
+The central repair is implemented and independently reviewed. A successful
+concurrent result can resolve only the exact failure projection of the unchanged
+accepted request; it cannot overwrite later edits, removal or another accepted
+request. A late failure cannot reset an already successful result. The existing
+strict writer continues to serialize admission and exact-request reuse.
+
+Validation: 99 connected batch/save/import/removal tests passed, and three real
+PostgreSQL tests passed in disposable synthetic schemas. They reproduce the
+concurrent Save/import ordering, verify two workers create one set of 12 payments,
+and confirm that removal after admission cannot be undone by delayed finalization.
+Seven finalization regressions cover both success/failure arrival orders, later
+investigator edits, removal before/after admission, and replay after process exit
+following a committed import. No live jobs or database records were changed for
+these tests. The prevention repair and the live incident's precise cause remain
+separate findings.

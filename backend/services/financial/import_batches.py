@@ -965,28 +965,74 @@ def _review_file(factory,batch_id,case_id,file):
             db.commit()
 
 
+def _accepted_import_snapshot(item):
+    return dict(file_id=item.file_id, statement_key=item.statement_key,
+        summary=deepcopy(item.summary), request=deepcopy(item.review_request))
+
+
+def _failed_import_summary(summary, message):
+    return {**summary, 'can_import': False, 'import_failed': True, 'problem_count': 1,
+        'problems': [dict(message=message, row_id=None)]}
+
+
+def _same_failed_import(item, accepted):
+    """Allow a successful concurrent receipt to resolve only this failed attempt."""
+    problems = item.summary.get('problems', [])
+    if item.status != 'attention' or len(problems) != 1:
+        return False
+    failed = {**accepted, 'summary': _failed_import_summary(accepted['summary'], problems[0].get('message'))}
+    return _accepted_import_snapshot(item) == failed
+
+
 def _import_item(factory,case_id,batch_id,item_id,resolve_path):
     from services.financial.import_operations import record_outcome
+    # Never retain an Item lock while a second session confirms the import.
+    # Save/removal can own Evidence/Case before waiting for this Item, forming
+    # an application-level cycle that PostgreSQL cannot detect as a deadlock.
     with factory() as db:
         item=db.scalar(select(Item).join(Batch, Item.batch_id == Batch.id).where(Item.id==item_id,Item.batch_id==batch_id,
-            Batch.case_id == case_id).with_for_update(of=Item))
+            Batch.case_id == case_id).with_for_update(of=Item, skip_locked=True))
         if not item or item.status!='pending_import': return
-        try:
-            proposal=read_statement_import(db,case_id=case_id,evidence_file_id=item.file_id,currency=item.summary.get('currency'),statement_id=item.statement_key or None)
-            raw=item.review_request or initial_request(proposal)
-            if raw['expected_revision']!=item.summary['revision'] or proposal['revision']!=item.summary['revision']:
+        accepted = _accepted_import_snapshot(item)
+        db.commit()
+    receipt, error_message = None, None
+    try:
+        with factory() as db:
+            proposal=read_statement_import(db,case_id=case_id,evidence_file_id=accepted['file_id'],
+                currency=accepted['summary'].get('currency'),statement_id=accepted['statement_key'] or None)
+            raw=accepted['request'] or initial_request(proposal)
+            if raw['expected_revision']!=accepted['summary']['revision'] or proposal['revision']!=accepted['summary']['revision']:
                 raise PdfMappingError('The statement changed after the batch was checked. Open it and review the new reading.',409)
             request=StatementImportRequest.model_validate(raw)
-            actor=item.summary['import_actor'];actor=Actor(**{**actor,'user_id':UUID(actor['user_id'])})
-            receipt=confirm_statement_import(session_factory=factory,case_id=case_id,evidence_file_id=item.file_id,request=request,actor=actor,resolve_path=resolve_path)
-            if receipt.get('outcome') == 'duplicate_ignored':
-                item.status = 'duplicate_ignored'
-                item.summary = {**item.summary, 'duplicate_disposition': receipt['duplicate_disposition'],
-                    'can_import': False, 'problems': [], 'problem_count': 0}
-                record_outcome(db, case_id, item, 'duplicate_ignored', transaction_count=0,
-                    duplicate_disposition=receipt['duplicate_disposition'])
-                db.commit()
-                return
+            actor=accepted['summary']['import_actor'];actor=Actor(**{**actor,'user_id':UUID(actor['user_id'])})
+        # The strict writer rechecks the current source, removal, reading,
+        # duplicate and reconciliation state under its Case/Evidence locks.
+        # Concurrent retries of this same accepted request reuse its receipt.
+        receipt=confirm_statement_import(session_factory=factory,case_id=case_id,evidence_file_id=accepted['file_id'],
+            request=request,actor=actor,resolve_path=resolve_path)
+    except Exception as error:
+        log.exception('Financial batch import failed')
+        error_message = str(error) if isinstance(error,PdfMappingError) else 'Import could not be confirmed. Open this statement to check its current import before retrying.'
+    with factory() as db:
+        batch = db.scalar(select(Batch).where(Batch.id == batch_id, Batch.case_id == case_id).with_for_update())
+        item = db.scalar(select(Item).where(Item.id == item_id, Item.batch_id == batch_id).with_for_update())
+        # A later removal, review, accepted request or completed receipt wins.
+        # In particular a late failure must not reset another worker's success.
+        if batch is None or batch.status == 'removed' or item is None:
+            return
+        same_pending = item.status == 'pending_import' and _accepted_import_snapshot(item) == accepted
+        if not same_pending and not (receipt and _same_failed_import(item, accepted)):
+            return
+        if receipt:
+            item.summary = deepcopy(accepted['summary'])
+        resolved_failure = {} if same_pending else {'message': ''}
+        if receipt and receipt.get('outcome') == 'duplicate_ignored':
+            item.status = 'duplicate_ignored'
+            item.summary = {**item.summary, 'duplicate_disposition': receipt['duplicate_disposition'],
+                'can_import': False, 'problems': [], 'problem_count': 0}
+            record_outcome(db, case_id, item, 'duplicate_ignored', transaction_count=0,
+                duplicate_disposition=receipt['duplicate_disposition'], **resolved_failure)
+        elif receipt:
             retained = receipt.get('issues', item.summary.get('problems', []))
             item.status='imported';item.summary={**item.summary,'transaction_count':receipt['transaction_count'],
                 'record_count':receipt.get('record_count', receipt['transaction_count']),
@@ -994,10 +1040,9 @@ def _import_item(factory,case_id,batch_id,item_id,resolve_path):
                 'source_document_id':receipt['source_document_id'],'account_id':receipt['account_id']}
             record_outcome(db, case_id, item, 'imported' if receipt.get('created', True) else 'already_present',
                 source_document_id=receipt['source_document_id'], transaction_count=receipt['transaction_count'],
-                incomplete_count=receipt.get('incomplete_count', 0))
-        except Exception as error:
-            log.exception('Financial batch import failed')
-            item.status='attention';item.summary={**item.summary,'can_import':False, 'import_failed':True, 'problem_count':1, 'problems':[dict(message=str(error) if isinstance(error,PdfMappingError) else 'Import could not be confirmed. Open this statement to check its current import before retrying.',row_id=None)]}
+                incomplete_count=receipt.get('incomplete_count', 0), **resolved_failure)
+        else:
+            item.status='attention';item.summary=_failed_import_summary(item.summary, error_message)
             record_outcome(db, case_id, item, 'failed', message=item.summary['problems'][0]['message'])
         db.commit()
 
