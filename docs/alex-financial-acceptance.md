@@ -249,4 +249,8 @@ records preparation outside case locks, unchanged admission safeguards and
 verified Pause/Resume, edited-input and competing-worker behavior in isolated
 PostgreSQL tests. All previously observed recovery campaigns have now finished
 their background checks; overlap decisions still require investigator review.
-Publication and live acceptance of the prevention fix are tracked separately.
+Automatic release `3805d3fe` subsequently passed its ingestion and health checks.
+Live verification confirmed grouped review reasons, compact duplicate comparison
+with source/return, and saved quiet-account metadata/balances with source/return.
+No active client run was restarted merely to repeat the isolated PostgreSQL Pause
+tests. The current checkpoint retains fixture limits and investigator decisions.

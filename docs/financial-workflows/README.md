@@ -1,6 +1,6 @@
 # Loupe financial investigator workflow reference
 
-**25 September safe-pause follow-up:** [large background rechecks](priority-completion-plan-2026-09-25.md#pause-large-background-rechecks-safely--25-september-afternoon) records unlocked reading preparation, guarded additive saving and real PostgreSQL concurrency checks. The previously outstanding campaign finished naturally; review outcomes and subsequent automatic deployment remain separate.
+**25 September verified release:** automatic deployment of `3805d3fe` succeeded with idle ingestion gates and healthy services. [Final live checks](priority-completion-plan-2026-09-25.md#successful-release-and-final-live-checks) confirmed compact duplicate summaries, grouped recovery reasons and saved quiet-account profiles. [Large background rechecks](priority-completion-plan-2026-09-25.md#pause-large-background-rechecks-safely--25-september-afternoon) records the released safe-pause repair and real PostgreSQL concurrency tests. The last campaign finished naturally; remaining overlap decisions require investigator review.
 
 **Latest follow-up — 25 September:** [quiet accounts and live verification](priority-completion-plan-2026-09-25.md#quiet-accounts-and-continued-live-verification--25-september) records saved account/source/currency/date context in People & businesses, independent of payment activity, plus the observed source-return and chart-month journeys. Recovery completion and latest-release verification remain separately tracked.
 

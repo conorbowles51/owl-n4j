@@ -12,11 +12,10 @@ audit remain separate acceptance steps.
 This section supersedes historical “uncommitted”, “not pushed”, source-audit and
 maintenance-blocker statements in the dated record below.
 
-- **Published:** verified code and regression coverage through `3d699d94`.
-  The last independently confirmed successful automatic release is `12300095`.
-  The latest captured attempt at 10:17:51 UTC deferred safely for one remaining
-  recovery item. Its completion below does not establish a subsequent successful
-  release. Checkout version alone is not deployment evidence.
+- **Published and deployed:** verified code and regression coverage through
+  `3805d3fe`. Its automatic deployment started at 13:07:29 UTC and completed
+  successfully in 147 seconds, with idle ingestion gates and healthy backend,
+  evidence services and compiled frontend. The earlier deferral is superseded.
 - **Recovery:** the larger restored-source campaign and authorized test campaign
   have finished. At 12:32 UTC the remaining campaign also showed **12 of 12
   scheduled sources checked**, all requiring review. The last source added no
@@ -33,9 +32,13 @@ maintenance-blocker statements in the dated record below.
   duplicate period/source/preview/cancel, represented-month charts, combined
   transaction filters and complete filtered CSV contents have been observed.
   Detailed evidence and limitations are retained in the dated entries below.
-- **Remaining independent acceptance:** compact duplicate summaries and quiet
-  account profiles and grouped recovery reasons after their actual release; a typed
-  identity save/reopen and confirmed multi-account owner journey where an
+- **Post-release checks passed:** compact duplicate summaries expand to retained
+  periods and open the correct source, then return to comparison; grouped recovery
+  reasons retain distinct explanations and source/review/return; quiet account
+  profiles show saved sources, currency, dates and confirmed balances separately
+  from payment totals. No client records were changed for these checks.
+- **Remaining fixture limits:** a typed identity save/reopen and confirmed
+  multi-account owner journey where an
   appropriate authorized fixture exists. The test case currently has no matching
   existing sender identity and no confirmed owner; these are fixture limits, not
   demonstrated product failures. Both journeys have local browser/service
@@ -45,13 +48,16 @@ maintenance-blocker statements in the dated record below.
   reasons with accurate section counts. Distinct explanations and the existing
   review/retry actions remain available. Eight unit and four Chromium checks,
   forced TypeScript, lint, production build and independent review pass.
-  Published in `3d699d94`; live verification is pending its actual release.
+  Published in `3d699d94`, included in successful release `3805d3fe` and live
+  verified after that release.
 - **Safe-pause prevention:** large retained-reading reconstruction previously
   held Case/Run locks throughout parsing. The verified repair prepares readings
   outside those locks, rechecks current saved inputs before additive writes, and
-  respects Pause. Publication and live acceptance remain separate. The release
-  gates remain unchanged. This did not cause the already running old worker to
-  finish. Details and concurrency evidence appear in the follow-up below.
+  respects Pause. Released in `3805d3fe`; concurrency is verified in the isolated
+  PostgreSQL suite. No suitable active live test run remained, so client recovery
+  was not restarted just to reproduce Pause. The release gates remain unchanged.
+  This did not cause the already running old worker to finish. Details and
+  concurrency evidence appear in the follow-up below.
 
 Historical duplicate decisions, unread/ambiguous source values and uncertain
 content still require investigator review. Do not blanket-import them or equate
@@ -1023,3 +1029,34 @@ No release gate was weakened, no deployment hold state was introduced, and no
 live transaction was terminated. A deferred automatic attempt is not successful
 deployment; verify the subsequent automatic release and affected live journeys.
 Do not start new recovery against client records just to demonstrate Pause.
+
+### Successful release and final live checks
+
+Automatic deployment of `3805d3fe` began at 13:07:29 UTC and completed successfully
+in 147 seconds. Captured deployment output confirmed every ingestion gate idle,
+current migrations, healthy backend/database/evidence services and the compiled
+frontend served on port 5174. The site was subsequently opened in a fresh browser
+tab to verify the deployed interface. This supersedes the 10:17 deferral.
+
+The completed recovery list now groups 52 repeated overlap explanations into one
+reason with the correct section count; a different file retains three distinct
+reasons across 42 sections. Opening a result selects its retained source, and
+returning preserves the completed recovery totals. No Retry was started.
+Duplicate comparison now shows compact bank/account/currency/date summaries for
+large collections, explicitly noting gaps and missing dates. Expanding a 52-copy
+group retains its individual periods and source actions. A selected period opened
+with its matching account, date range and saved controls; Back to duplicate
+comparison returned correctly. No exclusion decision was recorded.
+
+In the authorized test case, a quiet EUR account displayed one bank, one source
+and the saved January period despite having no payments. Its profile retained
+the same metadata and showed the confirmed quiet period with matching opening
+and closing balances. Open statement displayed that exact source and saved
+reconciliation; closing and returning preserved the profile. Test-view filters
+were restored, and the browser returned to the investigator's working case.
+
+The remaining limits are fixture-dependent typed-identity/confirmed-owner/legacy
+replacement verification, already covered locally, plus investigator decisions
+about existing overlapping sources and uncertain values. These are not unfinished
+background recovery or failed deployment. No further automatic source retries,
+client record edits or blanket imports are authorized by this verification.
