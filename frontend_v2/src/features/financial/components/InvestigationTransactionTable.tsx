@@ -1,10 +1,14 @@
 import { paymentInventory } from "../lib/payment-inventory"
+import { knownAccountGroup, type KnownPaymentAccount } from "../lib/known-payment-accounts"
 import { openPaymentParty } from "../lib/payment-party-navigation"
 import { paymentGroup } from "../lib/investigator-workspace"
 import { amountGroupName, amountOf } from "../lib/transaction-analysis"
 import type { LedgerTransaction } from "../api"
 import { formatLedgerAmount } from "../lib/ledger-format"
 import { Button } from "@/components/ui/button"
+import { useRef, useState } from "react"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { AccountHistory } from "./AccountHistory"
 import { PaymentLabelOrigin } from "./PaymentLabelOrigin"
 import {
   absentPaymentBalance,
@@ -15,12 +19,16 @@ export function PaymentTotals({
   rows,
   label,
   expandAccounts = true,
+  knownAccounts = [],
+  caseId,
 }: {
   rows: LedgerTransaction[]
   label: string
   expandAccounts?: boolean
+  knownAccounts?: KnownPaymentAccount[]
+  caseId?: string
 }) {
-  const inventory = paymentInventory(rows)
+  const inventory = paymentInventory(rows, knownAccounts)
   const totals = new Map<
     string,
     {
@@ -53,6 +61,21 @@ export function PaymentTotals({
       total.labels.add(row.canonical_account_label || row.account_label!)
     totals.set(group, total)
   }
+  for (const account of knownAccounts) {
+    if (!account.currency) continue
+    // A directory alias never creates a second payment group for an account
+    // whose actual rows already establish its currency/type in this scope.
+    const observed = [...totals].find(([group, total]) => group.startsWith(`${account.currency}:`) && total.accounts.has(account.id))?.[0]
+    const group = observed || knownAccountGroup(account)
+    const total = totals.get(group) ?? { credit: 0n, debit: 0n, count: 0, accounts: new Set<string>(), labels: new Set<string>() }
+    total.accounts.add(account.id)
+    total.labels.add(account.label)
+    totals.set(group, total)
+  }
+  const groupName = (group: string) => group.endsWith(":unknown")
+    ? `${group.split(":")[0]} · Account type not recorded`
+    : amountGroupName(group)
+  const unknownCurrencyCount = new Set(knownAccounts.filter((account) => !account.currency).map((account) => account.id)).size
   return (
     <section
       aria-label={label}
@@ -63,7 +86,7 @@ export function PaymentTotals({
         {inventory.accounts.length} accounts · {inventory.banks.length} banks
       </h3>
       <p className="text-xs text-muted-foreground">
-        Currencies: {inventory.currencies.join(", ") || "None"}. Dated payments:{" "}
+        Currencies: {inventory.currencies.join(", ") || (unknownCurrencyCount ? "Not recorded" : "None")}. Dated payments:{" "}
         {inventory.first
           ? `${inventory.first} to ${inventory.last}`
           : "No printed dates available"}
@@ -75,6 +98,17 @@ export function PaymentTotals({
         {inventory.unidentifiedCounterparties > 0 &&
           ` ${inventory.unidentifiedCounterparties} payments with counterparty not identified.`}
       </p>
+      {knownAccounts.length > 0 && (
+        <p className="text-xs text-muted-foreground">
+          Account counts include known accounts in this account/date scope, even when no payments match your filters.
+          Amounts come only from matching imported payments; zero does not confirm no activity or completed processing.
+        </p>
+      )}
+      {unknownCurrencyCount > 0 && (
+        <p className="text-xs" aria-label="Accounts with currency not recorded">
+          Currency is not recorded for {unknownCurrencyCount} known {unknownCurrencyCount === 1 ? "account" : "accounts"}. These accounts are included in the account and bank counts; no zero amount or currency has been assumed.
+        </p>
+      )}
       {expandAccounts && inventory.accounts.length > 0 && (
         <details className="text-xs">
           <summary className="cursor-pointer">
@@ -87,7 +121,10 @@ export function PaymentTotals({
           <ul className="max-h-48 overflow-auto mt-2 space-y-1">
             {inventory.accounts.map((account) => (
               <li key={account.id}>
-                {account.label} · {[...account.currencies].sort().join(", ")}
+                {account.label} · {[...account.currencies].sort().join(", ") || "Currency not recorded"}
+                {caseId && knownAccounts.some((known) => known.id === account.id) && (
+                  <KnownAccountHistory key={`${caseId}:${account.id}`} caseId={caseId} accountId={account.id} label={account.label} />
+                )}
               </li>
             ))}
           </ul>
@@ -96,17 +133,18 @@ export function PaymentTotals({
       {[...totals].map(([group, total]) => {
         const [currency, kind] = group.split(":")
         const card = kind === "card"
+        const unknown = kind === "unknown"
         const net = card
           ? total.debit - total.credit
           : total.credit - total.debit
         return (
           <section
             key={group}
-            aria-label={amountGroupName(group)}
+            aria-label={groupName(group)}
             className="space-y-1"
           >
             <div className="flex flex-wrap items-center gap-x-3 text-xs">
-              <h4 className="font-semibold">{amountGroupName(group)}</h4>
+              <h4 className="font-semibold">{groupName(group)}</h4>
               <span className="text-muted-foreground">
                 {total.count.toLocaleString()} transactions ·{" "}
                 {total.accounts.size}{" "}
@@ -116,19 +154,19 @@ export function PaymentTotals({
             <dl className="grid grid-cols-3 gap-2 text-sm">
               {[
                 [
-                  card ? "Card credits" : "Money in",
+                  card ? "Card credits" : unknown ? "Credits" : "Money in",
                   total.credit,
-                  card ? "Reduce card debt" : "Received by these accounts",
+                  card ? "Reduce card debt" : unknown ? "Recorded credits" : "Received by these accounts",
                 ],
                 [
-                  card ? "Card charges" : "Money out",
+                  card ? "Card charges" : unknown ? "Debits" : "Money out",
                   total.debit,
-                  card ? "Increase card debt" : "Paid from these accounts",
+                  card ? "Increase card debt" : unknown ? "Recorded debits" : "Paid from these accounts",
                 ],
                 [
-                  card ? "Change in card debt" : "Net movement",
+                  card ? "Change in card debt" : unknown ? "Net credits" : "Net movement",
                   net,
-                  card ? "Charges minus credits" : "Money in minus money out",
+                  card ? "Charges minus credits" : unknown ? "Credits minus debits" : "Money in minus money out",
                 ],
               ].map(([title, amount, help], index) => (
                 <div
@@ -151,6 +189,13 @@ export function PaymentTotals({
                 </div>
               ))}
             </dl>
+            {total.count === 0 && (
+              <p className="text-xs text-muted-foreground">
+                No matching imported payments. {knownAccounts.some((account) => total.accounts.has(account.id) && account.currency === currency && account.periods.length)
+                  ? "Saved statements are available. Review account history to check their balances, dates and no-activity confirmation."
+                  : "No saved statement period is recorded for these accounts in this scope. Check Statements & accounts for pending reading or review."}
+              </p>
+            )}
           </section>
         )
       })}
@@ -168,6 +213,23 @@ export function PaymentTotals({
       )}
     </section>
   )
+}
+
+function KnownAccountHistory({ caseId, accountId, label }: { caseId: string; accountId: string; label: string }) {
+  const [open, setOpen] = useState(false)
+  const trigger = useRef<HTMLButtonElement>(null)
+  return <>
+    <Button ref={trigger} size="sm" variant="link" aria-label={`View account history for ${label}`} onClick={() => setOpen(true)}>View account history</Button>
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogContent className="max-w-5xl max-h-[90vh] overflow-auto" onCloseAutoFocus={(event) => { event.preventDefault(); trigger.current?.focus({ preventScroll: true }) }}>
+        <DialogHeader>
+          <DialogTitle>{label}</DialogTitle>
+          <DialogDescription>Saved statements, balance observations and activity checks for this account. Close to return to the same transaction filters.</DialogDescription>
+        </DialogHeader>
+        {open && <AccountHistory caseId={caseId} accountId={accountId} />}
+      </DialogContent>
+    </Dialog>
+  </>
 }
 
 export function InvestigationTransactionTable({

@@ -25,6 +25,7 @@ import { paymentFixture } from "../lib/payment-fixture.test-support"
 import type { LedgerTransaction } from "../api"
 
 const requests: URLSearchParams[] = []
+let currencyScopeFixture = false
 const caseId = "date-scope-case"
 const transactions: LedgerTransaction[] = [
   "2021-01-03",
@@ -88,7 +89,14 @@ vi.mock("@/lib/api-client", async (original) => ({
       requests.push(params)
       const start = params.get("start_date"),
         end = params.get("end_date")
-      const matches = transactions.filter(
+      const sourceRows = currencyScopeFixture
+        ? transactions.map((row) =>
+            row.ordering_date.startsWith("2021-02")
+              ? { ...row, currency: "EUR" }
+              : row
+          )
+        : transactions
+      const matches = sourceRows.filter(
         (row) =>
           (!start || row.ordering_date >= start) &&
           (!end || row.ordering_date <= end)
@@ -149,6 +157,63 @@ afterEach(() => {
   useInvestigationScopeStore.getState().reset()
   useFinancialDraftStore.setState({ drafts: {} })
   requests.length = 0
+  currencyScopeFixture = false
+})
+
+it("shows the retained currency when a new date scope contains only EUR and clears it without losing the dates", async () => {
+  currencyScopeFixture = true
+  await page.viewport(1280, 900)
+  render(
+    <QueryClientProvider
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
+    >
+      <MemoryRouter>
+        <Workspace />
+      </MemoryRouter>
+    </QueryClientProvider>
+  )
+  await screen.findByText("10 of 10 imported transactions")
+  await page.getByText("Filters", { exact: true }).click()
+  await page
+    .getByRole("combobox", { name: "Currency", exact: true })
+    .selectOptions("USD")
+  await page.getByText(/^Date range/).click()
+  await page
+    .getByLabelText("Transactions from", { exact: true })
+    .fill("2021-02-01")
+  await page
+    .getByLabelText("Transactions to", { exact: true })
+    .fill("2021-02-28")
+  await page.getByRole("button", { name: "Apply", exact: true }).click()
+  await screen.findByText("0 of 2 imported transactions")
+  expect(screen.getByLabelText("Currency")).toHaveValue("USD")
+  expect(
+    screen.getByRole("option", {
+      name: "USD · not in current account/date scope",
+    })
+  ).toBeInTheDocument()
+  await page
+    .getByRole("button", { name: "Go to findings", exact: true })
+    .click()
+  await page
+    .getByRole("button", { name: "Return to transactions", exact: true })
+    .click()
+  await screen.findByText("0 of 2 imported transactions")
+  expect(screen.getByLabelText("Currency")).toHaveValue("USD")
+  await page.getByText("Filters (1)", { exact: true }).click()
+  await page
+    .getByRole("button", { name: "Clear payment filters", exact: true })
+    .click()
+  await screen.findByText("2 of 2 imported transactions")
+  expect(
+    screen.getByRole("region", { name: "Payments matching your filters" })
+  ).toHaveTextContent("Currencies: EUR")
+  expect(screen.getByText(/^Date range/)).toHaveTextContent(
+    "2021-02-01 to 2021-02-28"
+  )
+  expect(screen.getByLabelText("Currency")).toHaveValue("")
 })
 
 it("applies native date inputs alongside bank, account, category and currency, retains them on return, and clears only dates", async () => {

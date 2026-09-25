@@ -24,6 +24,8 @@ import {
 import { PaymentEditsEditor } from "./PaymentEditsEditor"
 import { PaymentCategoryManager } from "./PaymentCategoryManager"
 import { TransactionAccountFilters } from "./TransactionAccountFilters"
+import { useLedgerAccountDirectory } from "../hooks/use-ledger-account-directory"
+import { knownAccountGroup, knownPaymentAccounts } from "../lib/known-payment-accounts"
 import {
   usePaymentCategory,
   categoryName,
@@ -75,6 +77,9 @@ export function LedgerRowBrowser({
     exportContext?.caseId
   )
   const { canEdit } = useFinancialAccess()
+  const accountDirectory = useLedgerAccountDirectory(
+    investigation && !exportContext?.profile ? exportContext?.caseId : undefined
+  )
   const trails = useMoneyTrails(
     investigation ? exportContext?.caseId : undefined
   )
@@ -146,6 +151,23 @@ export function LedgerRowBrowser({
     maxMinor === null ||
     (!!minMinor && !!maxMinor && BigInt(minMinor) > BigInt(maxMinor))
   const batchSources = new Set(importSourceIds)
+  const knownScope = knownPaymentAccounts(
+    accountDirectory.isError ? [] : (accountDirectory.data?.items ?? []),
+    { ...exportContext?.params, ...accountScope },
+    sourceDocumentId ? [sourceDocumentId] : importBatchId ? importSourceIds : undefined
+  )
+  const knownAccounts = knownScope.accounts.filter((account) =>
+    (!currency || account.currency === currency) &&
+    (!view.analysisGroup || knownAccountGroup(account) === view.analysisGroup) &&
+    (!view.analysisPeriod || (view.analysisPeriod !== "undated" && account.periods.some((period) =>
+      period.start && period.end && period.start.slice(0, 7) <= view.analysisPeriod && period.end.slice(0, 7) >= view.analysisPeriod
+    )))
+  )
+  const currencyOptions = [...new Set([
+    ...transactions.map((row) => row.currency),
+    ...knownScope.accounts.map((account) => account.currency),
+  ].filter(Boolean))].sort()
+  const unknownDateCount = knownScope.unknownDateAccounts.filter((account) => !currency || account.currencies.includes(currency)).length
   const internal = internalActivity(
     transactions.filter((row) => matchesAccountSelection(row, accountScope)),
     trails.data?.trails ?? []
@@ -352,9 +374,13 @@ export function LedgerRowBrowser({
                 }}
               >
                 <option value="">All currencies</option>
-                {[...new Set(transactions.map((r) => r.currency))]
-                  .sort()
-                  .map((c) => (
+                {currency &&
+                  !currencyOptions.includes(currency) && (
+                    <option value={currency}>
+                      {currency} · not in current account/date scope
+                    </option>
+                  )}
+                {currencyOptions.map((c) => (
                     <option key={c}>{c}</option>
                   ))}
               </select>
@@ -645,12 +671,24 @@ export function LedgerRowBrowser({
           <AnalysisFilterChips filters={view} onChange={changeView} />
           <PaymentTotals
             rows={analysisAmounts(rows)}
+            knownAccounts={knownAccounts}
+            caseId={exportContext.caseId}
             label={
               view.activity === "all"
                 ? "Payments matching your filters"
                 : "Assigned amounts matching your activity filter"
             }
           />
+          {accountDirectory.isError && !exportContext.profile && (
+            <p role="alert" className="text-xs">
+              Known account details could not be loaded. These totals currently show accounts with matching imported payments only.
+            </p>
+          )}
+          {unknownDateCount > 0 && (
+            <p className="text-xs text-muted-foreground">
+              {unknownDateCount} known accounts have no usable saved statement dates for this range. Their matching payments, if any, are still counted. Clear the date range to include their account context.
+            </p>
+          )}
           {view.activity !== "all" && (
             <p className="text-xs text-muted-foreground">
               Totals and charts show{" "}

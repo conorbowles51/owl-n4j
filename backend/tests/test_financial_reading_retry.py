@@ -58,6 +58,55 @@ def test_failed_retained_version_retries_that_version_not_successful_original(fi
     assert shown['recovery']['stage'] == 'reading'
 
 
+@pytest.mark.parametrize('checked', [False, True])
+def test_failed_financial_version_retries_while_original_ai_job_remains_running(fixture, checked):
+    from uuid import uuid4
+    from copy import deepcopy
+    from services.financial.statement_reprocessing import create_statement_version
+    f = fixture.f
+    batch = fixture.create()
+    fixture.advance(batch)
+    with f.SessionLocal() as db:
+        version = create_statement_version(db, case_id=f.case.id, evidence_file_id=f.file.id,
+            request_id=uuid4(), actor=f.actor, resolve_path=Path)
+        version.status = 'failed'
+        version.last_error = 'Synthetic failed Financial reading'
+        version_id = version.id
+        original = db.get(EvidenceFile, f.file.id)
+        original.status = 'processing'
+        original.engine_job_id = 'independent-ai-job'
+        original.last_processed_profile_snapshot = dict(ingestion_request_id='independent-ai-request', preparation_mode='full')
+        record = db.get(Batch, batch)
+        record.files = [{**record.files[0], 'file_id': str(version_id), 'status': 'error', 'error': version.last_error}]
+        item = db.scalar(select(Item).where(Item.batch_id == batch))
+        item.review_request = {'holder': 'Preserve the original review'}
+        original_state = (original.status, original.engine_job_id, deepcopy(original.last_processed_profile_snapshot), deepcopy(original.metadata_))
+        db.commit()
+    ai_job = dict(id='independent-ai-job', case_id=str(f.case.id), source_evidence_file_id=str(f.file.id),
+        status='extracting_entities', pipeline_state=dict(ingestion_request_id='independent-ai-request'))
+    engine = AsyncMock(return_value=ai_job)
+    with patch('services.evidence_engine_client.get_job', engine):
+        accepted = checked_retry(fixture, batch) if checked else retry(fixture, batch)
+        repeated = checked_retry(fixture, batch) if checked else retry(fixture, batch)
+    assert accepted['queued'] and accepted['action'] == 'retry_reading'
+    assert accepted['reading_file_id'] == str(version_id)
+    assert not repeated['queued'] and repeated['attempt_id'] == accepted['attempt_id']
+    engine.assert_not_awaited()
+    async def process(db, **kwargs):
+        assert kwargs['file_ids'] == [version_id]
+        db.get(EvidenceFile, version_id).status = 'processing'
+        db.commit()
+        return {'job_ids': ['new-financial-job']}
+    worker = AsyncMock(side_effect=process)
+    asyncio.run(service.advance_batch(f.SessionLocal, batch, Path, worker))
+    worker.assert_awaited_once()
+    with f.SessionLocal() as db:
+        original = db.get(EvidenceFile, f.file.id)
+        assert (original.status, original.engine_job_id, original.last_processed_profile_snapshot, original.metadata_) == original_state
+        assert db.scalar(select(Item).where(Item.batch_id == batch)).review_request == {'holder': 'Preserve the original review'}
+        assert db.get(EvidenceFile, version_id).status == 'processing'
+
+
 def test_reconciliation_issue_returns_actionable_review_without_queuing(fixture):
     batch = fixture.create()
     fixture.advance(batch)
@@ -124,6 +173,54 @@ def test_stale_error_retry_keeps_paused_batch_unchanged(fixture):
     state = fixture.status(batch)
     assert state['status'] == 'paused' and state['files'][0]['status'] == 'error'
     assert not state['files'][0].get('recovery')
+
+
+@pytest.mark.parametrize('original_has_geometry', [False, True])
+def test_old_missing_prepared_pointer_recovers_with_retained_intake_version_without_new_job(fixture, original_has_geometry):
+    from copy import deepcopy
+    from uuid import NAMESPACE_URL, uuid4, uuid5
+    from postgres.models.evidence import EvidenceDocumentText, EvidenceTableGeometry
+    from services.financial.statement_reprocessing import create_statement_version
+    f = fixture.f
+    batch = fixture.create()
+    fixture.advance(batch)
+    with f.SessionLocal() as db:
+        version = create_statement_version(db, case_id=f.case.id, evidence_file_id=f.file.id,
+            request_id=uuid5(NAMESPACE_URL, f'loupe-financial-intake:{f.case.id}:{f.file.id}'),
+            actor=f.actor, resolve_path=Path)
+        version.status = 'processed'
+        version.metadata_ = {**version.metadata_, 'investigator_note': 'Retain this saved reading'}
+        version_id = version.id
+        original_text = db.get(EvidenceDocumentText, f.file.id)
+        db.add(EvidenceDocumentText(evidence_file_id=version_id, engine_job_id=original_text.engine_job_id,
+            content=original_text.content, content_sha256=original_text.content_sha256,
+            character_count=original_text.character_count, source_locations=deepcopy(original_text.source_locations)))
+        for geometry in db.scalars(select(EvidenceTableGeometry).where(EvidenceTableGeometry.evidence_file_id == f.file.id)):
+            db.add(EvidenceTableGeometry(evidence_file_id=version_id, page_number=geometry.page_number,
+                engine_job_id=geometry.engine_job_id, payload=deepcopy(geometry.payload)))
+            if not original_has_geometry:
+                db.delete(geometry)
+        old_item = db.scalar(select(Item).where(Item.batch_id == batch))
+        old_item.review_request = {'holder': 'Keep the initial batch correction'}
+        old_item_id = old_item.id
+        record = db.get(Batch, batch)
+        record.files = [{**record.files[0], 'file_id': str(uuid4()), 'status': 'error',
+            'error': 'Statement not found in this case.'}]
+        record.status = 'review'
+        db.commit()
+        ids = set(db.scalars(select(EvidenceFile.id)))
+    accepted = checked_retry(fixture, batch)
+    assert accepted['queued']
+    worker = AsyncMock()
+    asyncio.run(service.advance_batch(f.SessionLocal, batch, Path, worker))
+    worker.assert_not_awaited()
+    with f.SessionLocal() as db:
+        entry = db.get(Batch, batch).files[0]
+        assert entry['status'] == 'checked' and entry['recovery']['stage'] == 'complete'
+        assert entry['file_id'] == str(f.file.id if original_has_geometry else version_id)
+        assert set(db.scalars(select(EvidenceFile.id))) == ids
+        assert db.get(Item, old_item_id).review_request == {'holder': 'Keep the initial batch correction'}
+        assert db.get(EvidenceFile, version_id).metadata_['investigator_note'] == 'Retain this saved reading'
 
 
 def test_stale_error_does_not_reopen_an_import_removal_as_preparation(fixture):
@@ -377,6 +474,80 @@ def test_completed_engine_attempt_reopens_stale_error_batch_for_review(fixture):
     assert result['stage'] == 'checking_statements'
     fixture.advance(batch)
     assert fixture.status(batch)['files'][0]['status'] == 'checked'
+
+
+@pytest.mark.parametrize('prepared_pointer', ['same', 'missing', 'absent'])
+def test_verified_active_retry_resumes_error_batch_observation_without_second_job(fixture, prepared_pointer):
+    from uuid import uuid4
+    batch, payload = active_attempt(fixture)
+    with fixture.f.SessionLocal() as db:
+        record = db.get(Batch, batch)
+        record.status = 'review'
+        entry = {**record.files[0], 'status': 'error', 'error': 'Earlier preparation failed'}
+        if prepared_pointer != 'same':
+            entry['file_id'] = str(uuid4()) if prepared_pointer == 'missing' else None
+        record.files = [entry]
+        db.commit()
+    engine = AsyncMock(return_value=payload)
+    with patch('services.evidence_engine_client.get_job', engine):
+        result = checked_retry(fixture, batch)
+        repeated = checked_retry(fixture, batch)
+    assert not result['queued'] and result['action'] == 'already_running'
+    assert repeated['attempt_id'] == result['attempt_id']
+    with fixture.f.SessionLocal() as db:
+        record = db.get(Batch, batch)
+        assert record.status == 'preparing'
+        assert record.files[0]['status'] == 'processing'
+        assert record.files[0]['file_id'] == str(fixture.f.file.id)
+        assert 'error' not in record.files[0]
+        current = db.get(EvidenceFile, fixture.f.file.id)
+        assert current.status == 'processing' and current.engine_job_id == payload['id']
+        current.status = 'processed'
+        db.commit()
+    worker = AsyncMock()
+    asyncio.run(service.advance_batch(fixture.f.SessionLocal, batch, Path, worker))
+    worker.assert_not_awaited()
+    assert fixture.status(batch)['files'][0]['status'] == 'checked'
+
+
+def test_active_retained_financial_job_remains_the_only_attempt(fixture):
+    from uuid import uuid4
+    from services.financial.statement_reprocessing import create_statement_version
+    f = fixture.f
+    batch = fixture.create()
+    with f.SessionLocal() as db:
+        version = create_statement_version(db, case_id=f.case.id, evidence_file_id=f.file.id,
+            request_id=uuid4(), actor=f.actor, resolve_path=Path)
+        version_id = version.id
+        version.status = 'processing'
+        version.engine_job_id = 'retained-financial-job'
+        version.last_processed_profile_snapshot = dict(ingestion_request_id='retained-request', preparation_mode='pdf_review')
+        original = db.get(EvidenceFile, f.file.id)
+        original.status = 'processing'
+        original.engine_job_id = 'independent-ai-job'
+        original.last_processed_profile_snapshot = dict(ingestion_request_id='independent-request', preparation_mode='full')
+        record = db.get(Batch, batch)
+        record.status = 'review'
+        record.files = [{**record.files[0], 'file_id': str(version_id), 'status': 'error'}]
+        ids = set(db.scalars(select(EvidenceFile.id)))
+        db.commit()
+    payload = dict(id='retained-financial-job', case_id=str(f.case.id), source_evidence_file_id=str(version_id),
+        status='extracting_text', pipeline_state=dict(ingestion_request_id='retained-request'))
+    engine = AsyncMock(return_value=payload)
+    with patch('services.evidence_engine_client.get_job', engine):
+        result = checked_retry(fixture, batch)
+        repeated = checked_retry(fixture, batch)
+    assert not result['queued'] and not repeated['queued']
+    assert result['attempt_id'] == repeated['attempt_id']
+    assert result['reading_file_id'] == str(version_id)
+    assert all(call.args == ('retained-financial-job',) for call in engine.await_args_list)
+    worker = AsyncMock()
+    asyncio.run(service.advance_batch(f.SessionLocal, batch, Path, worker))
+    worker.assert_not_awaited()
+    with f.SessionLocal() as db:
+        assert set(db.scalars(select(EvidenceFile.id))) == ids
+        assert db.get(EvidenceFile, f.file.id).engine_job_id == 'independent-ai-job'
+        assert db.get(EvidenceFile, version_id).engine_job_id == 'retained-financial-job'
 
 
 def test_engine_unavailable_is_not_permission_to_start_duplicate_job(fixture):

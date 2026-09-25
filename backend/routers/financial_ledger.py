@@ -585,7 +585,8 @@ async def get_account_history(case_id: UUID = Query(...), account_id: UUID | Non
 async def get_candidate_accounts(case_id: UUID = Query(...), search: str = Query("", max_length=128), offset: int = 0,
                                   db: Session = Depends(get_db)):
     try:
-        return list_candidate_accounts(db, case_id=case_id, search=search, offset=offset, include_pending=True)
+        return list_candidate_accounts(db, case_id=case_id, search=search, offset=offset,
+            include_pending=True, include_statement_periods=True)
     except CandidateStoreError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
     except Exception:
@@ -760,7 +761,10 @@ async def get_ledger_transactions(
         raise HTTPException(status_code=500, detail=str(e))
 
     parties = {a['id']: a for a in _account_party_state(db, case_id=case_id)['accounts']}
-    transactions = [to_view(row, account=row.account, account_parties=parties).to_json() for row in rows]
+    from services.financial.transaction_query import account_label_index
+    labels = account_label_index(parties)
+    transactions = [to_view(row, account=row.account, account_parties=parties,
+        canonical_account_labels=labels).to_json() for row in rows]
     return {
         "case_id": str(case_id),
         "transactions": transactions,

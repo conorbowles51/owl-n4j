@@ -17,10 +17,12 @@ export function FinancialAccounts({
   caseId,
   onOpenAccount,
   onReviewStatement,
+  active = true,
 }: {
   caseId: string | undefined
   onOpenAccount: (accountId: string, dates?: AccountReviewDates) => void
   onReviewStatement?: (fileId: string) => void
+  active?: boolean
 }) {
   const [reviewAccount, setReviewAccount] = useState<
     z.infer<typeof candidateAccounts>["items"][number] | null
@@ -35,7 +37,7 @@ export function FinancialAccounts({
   const [search, setSearch] = useState("")
   const query = useQuery({
     queryKey: ["financial-ledger", caseId, "filter-accounts", search],
-    enabled: !!caseId,
+    enabled: !!caseId && active,
     retry: false,
     queryFn: async () => {
       const result = candidateAccounts.parse(

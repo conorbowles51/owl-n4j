@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react"
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { MemoryRouter, useLocation } from "react-router-dom"
 import { beforeEach, expect, it, vi } from "vitest"
@@ -171,7 +177,16 @@ it("explains an unavailable source and opens Evidence without an endless Retry p
 it("keeps a blocked statement reviewable when no admission calculation is available", async () => {
   vi.mocked(fetchAPI).mockResolvedValue({
     ...batch,
-    items: [{ ...item, admission: null, can_import: false, problems: [{ message: "Choose the printed currency.", field: "currency" }] }],
+    items: [
+      {
+        ...item,
+        admission: null,
+        can_import: false,
+        problems: [
+          { message: "Choose the printed currency.", field: "currency" },
+        ],
+      },
+    ],
   } as never)
   mount()
   expect(await screen.findByText("Choose the printed currency.")).toBeVisible()
@@ -847,4 +862,146 @@ it("reports an unavailable reading status without claiming a retry was queued", 
   expect(
     screen.queryByText(/already queued or being read/)
   ).not.toBeInTheDocument()
+})
+
+const failedReadingJob = {
+  id: "failed-reading-job",
+  case_id: "case",
+  batch_id: null,
+  evidence_file_id: "retained-version",
+  file_name: "Checking.pdf",
+  job_type: "pdf_review",
+  status: "failed",
+  resumable: false,
+  progress: 0,
+  error_message: "Reading failed",
+  file_size: 100,
+  mime_type: "application/pdf",
+  created_at: "2026-09-25T10:00:00Z",
+  updated_at: "2026-09-25T10:00:01Z",
+}
+
+it.each(["unrelated", "ambiguous", "other-case"])(
+  "does not offer a reading Retry with an %s source association",
+  async (kind) => {
+    vi.mocked(fetchAPI).mockImplementation(async (url) => {
+      if (url.startsWith("/api/evidence/engine/jobs?"))
+        return [
+          {
+            ...failedReadingJob,
+            ...(kind === "other-case" ? { case_id: "another-case" } : {}),
+          },
+        ] as never
+      return {
+        ...batch,
+        reading_job_ids: [failedReadingJob.id],
+        files: [
+          {
+            ...batch.files[0],
+            file_id:
+              kind === "unrelated" ? "another-reading" : "retained-version",
+          },
+          ...(kind === "ambiguous"
+            ? [
+                {
+                  ...batch.files[0],
+                  source_id: "another-original",
+                  file_id: "retained-version",
+                },
+              ]
+            : []),
+        ],
+      } as never
+    })
+    mount()
+    fireEvent.click(
+      await screen.findByText("PDF reading jobs · pause or resume a reading")
+    )
+    const reading = await screen.findByRole("group", {
+      name: "Financial statement reading: Checking.pdf",
+    })
+    expect(
+      within(reading).queryByRole("button", { name: "Retry" })
+    ).not.toBeInTheDocument()
+    expect(
+      within(reading).queryByRole("button", { name: "Clear" })
+    ).not.toBeInTheDocument()
+    expect(
+      screen.getByText(/not linked to a current file in this batch/)
+    ).toBeVisible()
+    expect(
+      vi.mocked(fetchAPI).mock.calls.every(([, options]) => !options?.method)
+    ).toBe(true)
+  }
+)
+
+it("keeps a paused batch reading Retry disabled with a visible explanation", async () => {
+  vi.mocked(fetchAPI).mockImplementation(async (url) => {
+    if (url.startsWith("/api/evidence/engine/jobs?"))
+      return [failedReadingJob] as never
+    return {
+      ...batch,
+      status: "paused",
+      reading_job_ids: [failedReadingJob.id],
+      files: [{ ...batch.files[0], file_id: "retained-version" }],
+    } as never
+  })
+  mount()
+  fireEvent.click(
+    await screen.findByText("PDF reading jobs · pause or resume a reading")
+  )
+  const reading = await screen.findByRole("group", {
+    name: "Financial statement reading: Checking.pdf",
+  })
+  expect(within(reading).getByRole("button", { name: "Retry" })).toBeDisabled()
+  expect(
+    screen.getByText("Resume batch preparation before retrying a file.")
+  ).toBeVisible()
+})
+
+it("shows a reading Retry error beside its control and refreshes a possibly saved receipt", async () => {
+  let jobReads = 0,
+    batchReads = 0
+  vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
+    if (options?.method === "POST")
+      throw Error(
+        "Retry outcome could not be confirmed. Check the current reading."
+      )
+    if (url.startsWith("/api/evidence/engine/jobs?")) {
+      jobReads++
+      return [failedReadingJob] as never
+    }
+    batchReads++
+    return {
+      ...batch,
+      reading_job_ids: [failedReadingJob.id],
+      files: [{ ...batch.files[0], file_id: "retained-version" }],
+    } as never
+  })
+  mount()
+  const summary = await screen.findByText(
+    "PDF reading jobs · pause or resume a reading"
+  )
+  fireEvent.click(summary)
+  const reading = await screen.findByRole("group", {
+    name: "Financial statement reading: Checking.pdf",
+  })
+  fireEvent.click(within(reading).getByRole("button", { name: "Retry" }))
+  expect(
+    await within(summary.closest("details")!).findByRole("alert")
+  ).toHaveTextContent("Retry outcome could not be confirmed")
+  await waitFor(() => {
+    expect(jobReads).toBeGreaterThan(1)
+    expect(batchReads).toBeGreaterThan(1)
+  })
+  expect(fetchAPI).toHaveBeenCalledWith(
+    "/api/financial/statement-import/batches/batch/files/file/retry?case_id=case",
+    { method: "POST" }
+  )
+  expect(
+    vi
+      .mocked(fetchAPI)
+      .mock.calls.filter(([, options]) => options?.method === "POST")
+  ).toHaveLength(1)
+  expect(within(reading).getByRole("button", { name: "Retry" })).toBeEnabled()
 })

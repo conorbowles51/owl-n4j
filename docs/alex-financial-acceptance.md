@@ -2,6 +2,15 @@
 
 # Alex's financial workflow acceptance
 
+**25 September renewed feedback:** [initial-batch Retry, EUR account visibility
+and responsive review](financial-workflows/retry-currency-review-performance-2026-09-25.md)
+reopens the affected journeys after the earlier deployment. It records measured
+save/read and polling defects, blank legacy metadata failures, durable Retry
+repairs and zero-payment account/currency summaries. Pre-publication local
+evidence includes two real-service Chromium journeys; release and exact client
+incident acceptance remain distinct. The investigator does not need to repeat
+the agreed requirement that all accounts and currencies remain discoverable.
+
 **25 September priority and continuity:** [consolidated parallel completion plan](financial-workflows/priority-completion-plan-2026-09-25.md) records Alex's latest processing/retry, duplicate, reconciliation, row-reason, complete-data, filter, ownership and represented-month requirements. Three code reviews distinguish existing foundations from concrete gaps. It explicitly carries forward the paused R01–R06 live verification, uncommitted saved-check/discard fixes and outstanding existing-data cleanup. The plan now includes a dated implementation checkpoint: the core connected changes are locally implemented and tested; final safeguards, publication, live acceptance and the content/provenance audit remain explicitly tracked.
 
 **25 September audit follow-up:** The [current audit and release record](financial-workflows/priority-completion-plan-2026-09-25.md#existing-source-audit-and-duplicate-review-follow-up--25-september) supersedes the earlier pending source-inventory status. Current Financial sources across all visible cases were inspected by content/provenance; two contextual uncertainties remain retained, and no records were removed. Historical duplicate comparison still requires reviewed decisions before changing totals. Exact-period context/source access and decision return are now implemented and locally browser-tested. Release and post-release acceptance remain blocked by the existing database transaction, independently of the completed relevance audit.

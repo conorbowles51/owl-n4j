@@ -151,12 +151,14 @@ export function useStatementRegister(
   caseId: string,
   uploading = false,
   queuedIds: string[] = [],
-  includeRemoved = false
+  includeRemoved = false,
+  active = true
 ) {
-  const files = useStatementFiles(caseId, uploading, queuedIds, includeRemoved)
+  const files = useStatementFiles(caseId, uploading, queuedIds, includeRemoved, active)
   const imports = useQuery({
     queryKey: ["statement-import-status", caseId],
-    refetchInterval: 5000,
+    enabled: active,
+    refetchInterval: active ? 5000 : false,
     queryFn: async () => {
       const result = importStates.parse(
         await fetchAPI(

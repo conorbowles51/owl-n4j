@@ -53,7 +53,7 @@ def summary_request(summary):
         period_start=summary.get('period_start', ''), period_end=summary.get('period_end', ''))
 
 
-def comparison_sources(session, case_id, pending=None):
+def comparison_sources(session, case_id, pending=None, *, read_pending=None):
     """Load a case once per batch check, without loading imported PDF readings."""
     imported = session.execute(select(
         FinancialAccount.identity_key, FinancialStatementPeriod.currency,
@@ -83,6 +83,14 @@ def comparison_sources(session, case_id, pending=None):
     current_ids = {str(current_version(versions).id) for versions in groups.values()}
     entries, prepared, cache = ComparisonSources(), {}, {}
     entries.families = families
+    def reading(item, *, include_duplicate_disposition=True):
+        if read_pending is not None:
+            return read_pending(item, include_duplicate_disposition=include_duplicate_disposition)
+        from services.financial.statement_import import read_statement_import
+        return read_statement_import(session, case_id=case_id, evidence_file_id=item.file_id,
+            currency=item.summary.get('currency'), statement_id=item.statement_key or None,
+            _cache=cache, _include_period_checks=False,
+            _include_duplicate_disposition=include_duplicate_disposition)
     def add(identity, currency, value):
         entries.setdefault((identity, currency), []).append(value)
     for identity, currency, start, end, document_id, statement_id, page_number, file_id, filename, root, bank, account, holder, account_type in imported:
@@ -101,11 +109,8 @@ def comparison_sources(session, case_id, pending=None):
         # Source geometry/catalogue is cached per PDF.
         missing_bank = not item.review_request and 'institution' not in item.summary
         if missing_bank or 'account_type' not in item.summary:
-            from services.financial.statement_import import read_statement_import
             try:
-                proposal = read_statement_import(session, case_id=case_id, evidence_file_id=file.id,
-                    currency=item.summary.get('currency'), statement_id=item.statement_key or None,
-                    _cache=cache, _include_period_checks=False)
+                proposal = reading(item)
                 if missing_bank:
                     raw = {**raw, 'institution': proposal['metadata'].get('institution', '')}
                 if 'account_type' not in item.summary:
@@ -116,11 +121,8 @@ def comparison_sources(session, case_id, pending=None):
         from services.financial.pending_statement_duplicates import METADATA_KEY, read_duplicate_disposition
         decision = (file.metadata_ or {}).get(METADATA_KEY, {}).get(item.statement_key or '')
         if decision and decision.get('status') == 'ignored':
-            from services.financial.statement_import import read_statement_import
             try:
-                proposal = read_statement_import(session, case_id=case_id, evidence_file_id=file.id,
-                    currency=item.summary.get('currency'), statement_id=item.statement_key or None,
-                    _cache=cache, _include_period_checks=False, _include_duplicate_disposition=False)
+                proposal = reading(item, include_duplicate_disposition=False)
                 current_decision = read_duplicate_disposition(session, file, proposal, item.review_request)
                 if current_decision and current_decision.get('current') and current_decision['status'] == 'ignored':
                     continue

@@ -11,11 +11,13 @@ export function StatementRegister({
   children,
   mode = "files",
   onBackToFiles,
+  active = true,
 }: {
   caseId: string
   children: ReactNode
   mode?: "files" | "batches" | "remove"
   onBackToFiles?: () => void
+  active?: boolean
 }) {
   const [params] = useSearchParams()
   const owner = useAuthStore(
@@ -38,6 +40,7 @@ export function StatementRegister({
         <StatementFilesPanel
           caseId={caseId}
           register
+          active={active && !batches && (!open || mode === "remove")}
           removalMode={mode === "remove"}
           onFinishRemoval={onBackToFiles}
         />

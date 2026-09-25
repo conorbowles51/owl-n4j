@@ -246,12 +246,14 @@ function UploadRow({ upload }: { upload: UploadSession }) {
 export function ResumableUploadsPanel({
   caseId,
   financialContext = false,
+  active = true,
 }: {
   caseId: string
   financialContext?: boolean
+  active?: boolean
 }) {
-  const { data } = useResumableUploads(caseId)
-  const { data: groups } = useResumableUploadGroups(caseId)
+  const { data } = useResumableUploads(caseId, active)
+  const { data: groups } = useResumableUploadGroups(caseId, active)
   return (
     <>
       {financialContext && (!!groups?.length || !!data?.length) && (

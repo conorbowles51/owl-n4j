@@ -214,6 +214,31 @@ class LedgerQueryTestCase(unittest.TestCase):
 
 
 class ListTransactionsTests(LedgerQueryTestCase):
+    def test_eur_is_returned_with_mxn_and_usd_until_account_or_date_scope_excludes_it(self):
+        accounts = {}
+        for index, currency in enumerate(('MXN', 'USD', 'EUR')):
+            account = self.account()
+            account.currency = currency
+            accounts[currency] = account
+            self.write([self.draft(account_id=account.id, row_index=index,
+                reading=reading(currency=currency, posted_date=FEBRUARY if currency == 'EUR' else JANUARY))])
+        self.db.commit()
+
+        rows = list_transactions(self.db, self.case.id)
+        self.assertEqual({row.currency for row in rows}, {'EUR', 'MXN', 'USD'})
+        payload = [to_view(row, account=row.account).to_json() for row in rows]
+        self.assertEqual({row['currency'] for row in payload}, {'EUR', 'MXN', 'USD'})
+        self.assertTrue(all(row['amount_minor'] == '1250' for row in payload))
+
+        euro_rows = list_transactions(self.db, self.case.id, account_id=accounts['EUR'].id)
+        self.assertEqual([row.currency for row in euro_rows], ['EUR'])
+        scoped = list_transactions(self.db, self.case.id,
+            account_ids=[accounts['MXN'].id, accounts['USD'].id])
+        self.assertEqual({row.currency for row in scoped}, {'MXN', 'USD'})
+        january = list_transactions(self.db, self.case.id, start_date=date(2024, 1, 1), end_date=date(2024, 1, 31))
+        self.assertEqual({row.currency for row in january}, {'MXN', 'USD'})
+        self.assertEqual(len(list_transactions(self.db, self.case.id)), 3)
+
     def test_defaults_to_admitted_rows_only(self):
         (admitted,) = self.write([self.draft()])
         (to_quarantine,) = self.write(
@@ -333,6 +358,37 @@ class ListTransactionsTests(LedgerQueryTestCase):
 
 
 class ToViewTests(LedgerQueryTestCase):
+    def test_bulk_alias_labels_use_current_case_directory_without_per_payment_queries(self):
+        from services.financial.account_parties import _account_party_state
+        from services.financial.transaction_query import account_label_index
+        canonical = self.account()
+        canonical.holder_name = 'Reviewed synthetic holder'
+        canonical_id = str(canonical.id)
+        self.acct.metadata_ = {'canonical_account_id': canonical_id}
+        self.write([self.draft(row_index=index, reading=reading(amount_minor=1000 + index))
+            for index in range(40)])
+        self.db.commit()
+        with self.SessionLocal() as db:
+            rows = list_transactions(db, self.case.id)
+            accounts = {item['id']: item for item in _account_party_state(db, case_id=self.case.id)['accounts']}
+            labels = account_label_index(accounts)
+            queries = []
+            def executed(_connection, _cursor, statement, *_args):
+                queries.append(statement)
+            event.listen(self.engine, 'before_cursor_execute', executed)
+            try:
+                views = [to_view(row, account=row.account, account_parties=accounts,
+                    canonical_account_labels=labels).to_json() for row in rows]
+            finally:
+                event.remove(self.engine, 'before_cursor_execute', executed)
+            self.assertEqual(queries, [])
+            self.assertEqual({item['canonical_account_label'] for item in views}, {labels[canonical_id]})
+            self.assertIn('Reviewed synthetic holder', labels[canonical_id])
+            # An explicit directory missing the target never falls back to a
+            # lookup outside that case-scoped snapshot.
+            self.assertIsNone(to_view(rows[0], account=rows[0].account,
+                canonical_account_labels={}).canonical_account_label)
+
     def test_recorded_holder_is_separate_from_bank_label_and_case_scoped(self):
         (row,) = self.write([self.draft()])
         self.acct.holder_name = 'Example Company'

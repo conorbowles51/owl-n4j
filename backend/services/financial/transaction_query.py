@@ -218,7 +218,14 @@ def _isoformat(value: Optional[date]) -> Optional[str]:
     return value.isoformat() if value is not None else None
 
 
-def to_view(row: FinancialTransaction, *, account=None, account_parties=None) -> TransactionView:
+def account_label_index(accounts):
+    """Labels from the caller's already case-scoped account directory."""
+    return {identifier: ' · '.join(value for value in (
+        account.get('holder_as_recorded'), account.get('institution'), account.get('identifier_as_printed')) if value)
+        for identifier, account in accounts.items()}
+
+
+def to_view(row: FinancialTransaction, *, account=None, account_parties=None, canonical_account_labels=None) -> TransactionView:
     """Convert one stored row into its read shape.
 
     Reads every closed-vocabulary column as the plain string or int
@@ -233,7 +240,11 @@ def to_view(row: FinancialTransaction, *, account=None, account_parties=None) ->
     identity = (account_parties or {}).get(str(row.account_id), {})
     canonical_id = (account.metadata_ or {}).get('canonical_account_id') if account is not None else None
     canonical_label = None
-    if canonical_id:
+    if canonical_id and canonical_account_labels is not None:
+        # A case directory is authoritative even when the target is absent.
+        # Avoid a per-payment lookup, and never resolve a foreign account label.
+        canonical_label = canonical_account_labels.get(canonical_id)
+    elif canonical_id:
         from sqlalchemy.orm import object_session
         from postgres.models.financial import FinancialAccount
         db = object_session(account)

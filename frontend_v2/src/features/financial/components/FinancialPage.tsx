@@ -720,7 +720,7 @@ function FinancialPageContent() {
           className="min-h-0 flex-1 overflow-auto"
         >
           <ErrorBoundary level="section">
-            {caseId && <InvestigatorOverview caseId={caseId} />}
+            {caseId && <InvestigatorOverview caseId={caseId} active={store.mainView === "overview"} />}
           </ErrorBoundary>
         </RetainedFinancialTab>
         <RetainedFinancialTab
@@ -856,6 +856,7 @@ function FinancialPageContent() {
               {caseId && (
                 <StatementRegisterChecks
                   caseId={caseId}
+                  active={store.mainView === "statements" && reviewingAccounts}
                   onReviewStatement={reviewStatement}
                   onOpenTransactions={(accountId, dates) => {
                     const scope = { accountId, ...dates }
@@ -872,6 +873,7 @@ function FinancialPageContent() {
                 </summary>
                 <ErrorBoundary level="section">
                   <FinancialAccounts
+                    active={store.mainView === "statements" && reviewingAccounts}
                     onReviewStatement={reviewStatement}
                     key={caseId}
                     caseId={caseId}
@@ -894,6 +896,7 @@ function FinancialPageContent() {
               )}
               {caseId && (
                 <StatementRegister
+                  active={store.mainView === "statements" && !reviewingAccounts}
                   mode={
                     section === "batches"
                       ? "batches"
@@ -1357,7 +1360,7 @@ function FinancialPageContent() {
           {isTransactionsMode ? (
             <div className="min-h-0 flex-1 overflow-auto">
               <ErrorBoundary level="section">
-                {caseId && <InvestigatorTrends key={caseId} caseId={caseId} />}
+                {caseId && <InvestigatorTrends key={caseId} caseId={caseId} active={store.mainView === "trends"} />}
               </ErrorBoundary>
             </div>
           ) : (

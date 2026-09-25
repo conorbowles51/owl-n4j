@@ -1,7 +1,7 @@
 import "@/styles/globals.css"
 import { page } from "vitest/browser"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from "react-router-dom"
 import { afterEach, beforeEach, expect, it, vi } from "vitest"
 import { TooltipProvider } from "@/components/ui/tooltip"
@@ -98,6 +98,130 @@ beforeEach(async () => {
   await page.viewport(1360, 1000)
 })
 afterEach(cleanup)
+
+it("retries the exact retained reading from its job card, shows progress and returns from its source to the same batch", async () => {
+  let retryResolve: (value: unknown) => void = () => {}
+  let retried = false,
+    completed = false,
+    jobReads = 0
+  const posts: string[] = []
+  const original = vi.mocked(fetchAPI).getMockImplementation()!
+  const receipt = {
+    queued: true,
+    status: "waiting",
+    action: "retry_reading",
+    stage: "queued",
+    message:
+      "Retry accepted for the retained reading. Saved work is unchanged.",
+    reading_file_id: file.id,
+    review_file_id: file.id,
+  }
+  vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
+    if (options?.method === "POST") {
+      posts.push(url)
+      if (
+        url !==
+        `/api/financial/statement-import/batches/${batch.id}/files/older-reading/retry?case_id=case`
+      )
+        throw Error(
+          "Retry must use the original batch source, never a filename or retained reading ID."
+        )
+      return new Promise((resolve) => {
+        retryResolve = resolve
+      })
+    }
+    if (url.startsWith("/api/evidence/engine/jobs?")) {
+      jobReads++
+      return [
+        {
+          id: "failed-reading-job",
+          case_id: "case",
+          batch_id: null,
+          evidence_file_id: file.id,
+          file_name: file.original_filename,
+          job_type: "pdf_review",
+          resumable: false,
+          status: retried ? "extracting_text" : "failed",
+          progress: retried ? 0.4 : 0,
+          error_message: retried ? null : "Synthetic reading failure",
+          file_size: 100,
+          created_at: "2026-09-25T10:00:00Z",
+          updated_at: "2026-09-25T10:00:01Z",
+        },
+      ]
+    }
+    if (url.includes(`/batches/${batch.id}?`))
+      return {
+        ...batch,
+        status: retried && !completed ? "preparing" : "review",
+        reading_job_ids: ["failed-reading-job"],
+        files: [
+          {
+            ...batch.files[0],
+            file_id: file.id,
+            status: completed ? "checked" : retried ? "processing" : "error",
+            error: retried ? undefined : "Synthetic reading failure",
+            recovery: retried ? receipt : null,
+          },
+        ],
+      }
+    return original(url, options)
+  })
+  mount(`/cases/case/financial?view=statements&batch=${batch.id}`)
+  await page
+    .getByText("PDF reading jobs · pause or resume a reading", { exact: true })
+    .click()
+  const reading = await screen.findByRole("group", {
+    name: `Financial statement reading: ${file.original_filename}`,
+  })
+  const details = reading.closest("details")!
+  expect(
+    within(reading).queryByRole("button", { name: "Clear" })
+  ).not.toBeInTheDocument()
+  await page.getByRole("button", { name: "Retry", exact: true }).click()
+  expect(within(reading).getByRole("button", { name: "Retry" })).toBeDisabled()
+  expect(within(details).getByRole("status")).toHaveTextContent(
+    "Requesting retry"
+  )
+  expect(posts).toHaveLength(1)
+  await act(async () => {
+    retried = true
+    retryResolve(receipt)
+  })
+  expect(
+    await within(details).findByText(
+      `${file.original_filename}: ${receipt.message}`
+    )
+  ).toBeVisible()
+  expect(await within(reading).findByText("Extracting Text")).toBeVisible()
+  expect(jobReads).toBeGreaterThan(1)
+  await page.screenshot({ path: "/private/tmp/loupe-reading-job-retry-wide.png", element: details })
+  completed = true
+  await page.getByRole("button", { name: "Refresh batch", exact: true }).click()
+  await page.getByText("File processing (1)", { exact: true }).click()
+  await page
+    .getByRole("button", { name: "Open file review", exact: true })
+    .click()
+  await waitFor(() => expect(screen.getByText(proposal.reading_failure)).toBeVisible())
+  expect(screen.getByLabelText("Uploaded statement")).toHaveValue(file.id)
+  expect(screen.getByLabelText("Current route")).toHaveTextContent(
+    `reviewFile=${file.id}`
+  )
+  await page
+    .getByRole("button", { name: "Back to processing batch", exact: true })
+    .click()
+  expect(
+    await screen.findByRole("region", { name: "Financial processing batch" })
+  ).toBeVisible()
+  expect(screen.getByLabelText("Current route")).toHaveTextContent(
+    `batch=${batch.id}`
+  )
+  await page.getByText("File processing (1)", { exact: true }).click()
+  expect(screen.getByText(receipt.message)).toBeVisible()
+  expect(posts).toEqual([
+    `/api/financial/statement-import/batches/${batch.id}/files/older-reading/retry?case_id=case`,
+  ])
+})
 
 for (const sourceState of ["removed", "missing"] as const) {
   it(`retains the exact ${sourceState} failed source and return path with the full file register already loaded`, async () => {

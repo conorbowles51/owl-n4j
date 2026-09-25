@@ -27,6 +27,7 @@ import { resetPaymentTableView } from "../lib/payment-table-draft"
 import { useInvestigationScopeStore } from "../stores/investigation-scope"
 import { useFinancialStore } from "../stores/financial.store"
 import { useFinancialDraft } from "../stores/financial-drafts"
+import type { EvidenceJob } from "@/types/evidence.types"
 const recoveryReceipt = z.object({
   attempt_id: z.string().optional(),
   action: z.string().optional(),
@@ -196,6 +197,8 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
   )
   const [retryingFile, setRetryingFile] = useState<string | null>(null)
   const [retryMessage, setRetryMessage] = useState("")
+  const [retryError, setRetryError] = useState("")
+  const retryInFlight = useRef(false)
   const prefix = `/api/financial/statement-import/batches`
   const query = useQuery({
     queryKey: [
@@ -349,6 +352,59 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
     onSettled: refresh,
   })
   const paused = ["paused", "pausing"].includes(batchState ?? "")
+  const retryFile = async (
+    file: z.infer<typeof batchSchema>["files"][number]
+  ) => {
+    if (!canEdit || !canUpload || paused || retryInFlight.current) return
+    retryInFlight.current = true
+    setError("")
+    setRetryError("")
+    setRetryMessage("")
+    setRetryingFile(file.source_id)
+    try {
+      const result = z
+        .object({ queued: z.boolean(), status: z.string() })
+        .merge(recoveryReceipt)
+        .parse(
+          await fetchAPI(
+            `${prefix}/${batchId}/files/${file.source_id}/retry?case_id=${caseId}`,
+            { method: "POST" }
+          )
+        )
+      setRetryMessage(
+        result.message
+          ? `${file.filename}: ${result.message}`
+          : result.queued
+            ? `Retry accepted for ${file.filename}. Its progress will appear here.`
+            : result.status === "checked"
+              ? `${file.filename} has already been read. Open its statement review below.`
+              : `${file.filename} is already queued or being read. Its progress will appear here.`
+      )
+    } catch (failure) {
+      setRetryError(
+        failure instanceof Error
+          ? failure.message
+          : "The file could not be retried."
+      )
+    } finally {
+      // A lost response can follow a saved server receipt; reread both the
+      // batch and its engine jobs before the investigator decides to retry.
+      refresh()
+      void client.invalidateQueries({ queryKey: ["evidence-jobs", caseId] })
+      retryInFlight.current = false
+      setRetryingFile(null)
+    }
+  }
+  const retrySource = (job: EvidenceJob) => {
+    if (job.case_id !== caseId || !job.evidence_file_id) return undefined
+    const matches =
+      query.data?.files.filter((file) =>
+        [file.source_id, file.file_id, file.recovery?.reading_file_id].includes(
+          job.evidence_file_id!
+        )
+      ) ?? []
+    return matches.length === 1 ? matches[0] : undefined
+  }
   const checkImport = useMutation({
     retry: false,
     mutationFn: async () => {
@@ -701,6 +757,27 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
           caseId={caseId}
           jobIds={batch.reading_job_ids}
           canEdit={canEdit}
+          canRetryJob={(job) => !!retrySource(job)}
+          onRetry={
+            canUpload
+              ? (job) => {
+                  const source = retrySource(job)
+                  if (source) void retryFile(source)
+                  else
+                    setRetryError(
+                      "This reading is no longer linked to one file in this batch. Refresh the batch before retrying."
+                    )
+                }
+              : undefined
+          }
+          retrying={!!retryingFile}
+          retryDisabledReason={
+            paused
+              ? "Resume batch preparation before retrying a file."
+              : undefined
+          }
+          retryMessage={retryMessage}
+          retryError={retryError}
         />
       </div>
       {openImported.isError && <p role="alert">{openImported.error.message}</p>}
@@ -1006,43 +1083,7 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
                       variant="outline"
                       size="sm"
                       disabled={!!retryingFile || paused}
-                      onClick={async () => {
-                        setError("")
-                        setRetryMessage("")
-                        setRetryingFile(file.source_id)
-                        try {
-                          const result = z
-                            .object({
-                              queued: z.boolean(),
-                              status: z.string(),
-                            })
-                            .merge(recoveryReceipt)
-                            .parse(
-                              await fetchAPI(
-                                `${prefix}/${batchId}/files/${file.source_id}/retry?case_id=${caseId}`,
-                                { method: "POST" }
-                              )
-                            )
-                          refresh()
-                          setRetryMessage(
-                            result.message
-                              ? `${file.filename}: ${result.message}`
-                              : result.queued
-                                ? `Retry accepted for ${file.filename}. Its progress will appear here.`
-                                : result.status === "checked"
-                                  ? `${file.filename} has already been read. Open its statement review below.`
-                                  : `${file.filename} is already queued or being read. Its progress will appear here.`
-                          )
-                        } catch (error) {
-                          setError(
-                            error instanceof Error
-                              ? error.message
-                              : "The file could not be retried."
-                          )
-                        } finally {
-                          setRetryingFile(null)
-                        }
-                      }}
+                      onClick={() => void retryFile(file)}
                     >
                       {retryingFile === file.source_id
                         ? "Requesting retry…"
@@ -1087,6 +1128,7 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
           ))}
         </ul>
         {retryMessage && <p role="status">{retryMessage}</p>}
+        {retryError && <p role="alert">{retryError}</p>}
         {paused && (
           <p className="text-sm">Resume PDF reading before retrying a file.</p>
         )}

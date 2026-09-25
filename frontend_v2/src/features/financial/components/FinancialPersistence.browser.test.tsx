@@ -22,6 +22,7 @@ import { BulkStatementDetails } from "./BulkStatementDetails"
 import { StatementFilesPanel } from "./StatementFilesPanel"
 import { StatementRegister } from "./StatementRegister"
 import { FinancialBatchPanel } from "./FinancialBatchPanel"
+import { LedgerPanel } from "./LedgerPanel"
 import { InvestigationTransactionTable } from "./InvestigationTransactionTable"
 import { useFinancialDraftStore } from "../stores/financial-drafts"
 import { useStatementWorkspace } from "../stores/statement-workspace"
@@ -67,6 +68,37 @@ async function service(
   return result
 }
 const run = import.meta.env.VITE_FINANCIAL_REAL_SERVICE === "1" ? it : it.skip
+run(
+  "shows saved EUR accounts with zero payments through the real account directory",
+  async () => {
+    await service("/__fixture/reset", { method: "POST" })
+    await service("/__fixture/account-history", { method: "POST" })
+    const { case_id: caseId } = await service("/__fixture")
+    vi.mocked(fetchAPI).mockClear().mockImplementation((url, options) => service(url, options))
+    useFinancialDraftStore.setState({ drafts: {} })
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    await page.viewport(1360, 900)
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter>
+          <main className="p-5"><LedgerPanel caseId={caseId} params={{}} investigation /></main>
+        </MemoryRouter>
+      </QueryClientProvider>
+    )
+    await screen.findByRole("heading", { name: "Payments matching your filters · 0 transactions · 5 accounts · 2 banks" })
+    await page.getByText("Filters", { exact: true }).click()
+    await page.getByRole("combobox", { name: "Currency", exact: true }).selectOptions("EUR")
+    await screen.findByRole("heading", { name: "Payments matching your filters · 0 transactions · 2 accounts · 1 banks" })
+    const eur = screen.getByRole("region", { name: "EUR · Account type not recorded" })
+    expect(within(eur).getAllByText("0.00 EUR")).toHaveLength(3)
+    expect(eur).toHaveTextContent("Saved statements are available")
+    expect(screen.getByRole("button", { name: "Download CSV (0)" })).toBeDisabled()
+    expect((await service("/__fixture/payments")).payments).toHaveLength(0)
+    cleanup()
+    client.clear()
+  },
+  30000
+)
 run(
   "holds duplicate statements, retains the investigator's choice and resumes the same completed batch",
   async () => {
@@ -567,6 +599,7 @@ run(
   "retries a missing prepared reading from the batch and imports once through real persistence",
   async () => {
     await service("/__fixture/reset", { method: "POST" })
+    await service("/__fixture/reconciled", { method: "POST" })
     const { case_id: caseId, file_id: fileId } = await service("/__fixture")
     const { batch_id: batchId } = await service(
       "/__fixture/missing-reading-batch",
@@ -599,14 +632,14 @@ run(
     await page
       .getByRole("button", { name: "Retry this file", exact: true })
       .click()
-    await screen.findByText(/Retry accepted for/)
+    await screen.findAllByText(/Retry accepted\./)
     await screen.findByText(/Waiting to process/)
     const prefix = `/api/financial/statement-import/batches/${batchId}`
     expect(
       await service(`${prefix}/files/${fileId}/retry?case_id=${caseId}`, {
         method: "POST",
       })
-    ).toEqual({ queued: false, status: "waiting" })
+    ).toEqual(expect.objectContaining({ queued: false, status: "waiting", action: "already_running" }))
     await service(`/__fixture/advance-batch/${batchId}`, { method: "POST" })
     fireEvent.click(screen.getByRole("button", { name: "Refresh batch" }))
     await waitFor(() =>

@@ -96,9 +96,11 @@ function RecoveryReviewReasons({
 export function StatementRecoveryPanel({
   caseId,
   onReview,
+  active = true,
 }: {
   caseId: string
   onReview: (fileId: string) => void
+  active?: boolean
 }) {
   const { canEdit } = useFinancialAccess()
   const client = useQueryClient()
@@ -107,6 +109,7 @@ export function StatementRecoveryPanel({
   const [error, setError] = useState("")
   const query = useQuery({
     queryKey: ["financial-deployment-recovery", caseId, offset],
+    enabled: active,
     queryFn: async () =>
       recoverySchema.parse(
         await fetchAPI(
@@ -114,7 +117,7 @@ export function StatementRecoveryPanel({
         )
       ),
     refetchInterval: (query) =>
-      !query.state.data?.run || query.state.data.run.status === "running"
+      active && (!query.state.data?.run || query.state.data.run.status === "running")
         ? 5000
         : false,
   })

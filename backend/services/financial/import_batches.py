@@ -251,6 +251,15 @@ def ready_revision(items):
                           (i.summary.get('coverage_review') or {}).get('revision')) for i in items if import_available(i)))
 
 
+def _sort_statements(session, case_id, items):
+    missing = {item.file_id for item in items if item.summary.get('filename') is None}
+    names = dict(session.execute(select(EvidenceFile.id, EvidenceFile.original_filename).where(
+        EvidenceFile.case_id == case_id, EvidenceFile.id.in_(missing))).all()) if missing else {}
+    items.sort(key=lambda item: (
+        item.summary.get('filename') if item.summary.get('filename') is not None else names.get(item.file_id, 'Source unavailable'),
+        item.summary.get('account') or '', item.summary.get('period_start') or '', str(item.id)))
+
+
 def checked_batch_items(session, case_id, items):
     """Project current coverage concerns without making a GET write changes."""
     items = [item for item in items if item.status not in ('removed', 'superseded_reading')]
@@ -258,8 +267,27 @@ def checked_batch_items(session, case_id, items):
     pending = session.execute(select(Item, EvidenceFile).join(Batch, Batch.id == Item.batch_id)
         .join(EvidenceFile, EvidenceFile.id == Item.file_id).where(Batch.case_id == case_id,
         EvidenceFile.case_id == case_id, Batch.status != 'removed', Item.status.in_(('ready','attention','pending_import')))).all()
-    sources, prepared = comparison_sources(session, case_id, pending)
-    cache = {}
+    cache, proposals = {}, {}
+    target_ids = {item.id for item in items}
+    def read_pending(item, *, include_duplicate_disposition=True):
+        # This read owns one fresh projection. Legacy coverage hydration and
+        # current batch assessment must not reconstruct the same statement
+        # twice; no result survives this request or replaces an import check.
+        full_review = item.id in target_ids
+        currency = item.summary.get('currency') or None
+        key = (item.file_id, currency, item.statement_key, full_review, include_duplicate_disposition)
+        if key not in proposals:
+            try:
+                proposals[key] = read_statement_import(session, case_id=case_id, evidence_file_id=item.file_id,
+                    currency=currency, statement_id=item.statement_key or None, _cache=cache,
+                    _include_period_checks=full_review, _include_duplicate_disposition=include_duplicate_disposition)
+            except PdfMappingError as error:
+                proposals[key] = error
+        result = proposals[key]
+        if isinstance(result, PdfMappingError):
+            raise result
+        return result
+    sources, prepared = comparison_sources(session, case_id, pending, read_pending=read_pending)
     from postgres.models.financial import FinancialSourceDocument
     saved_files = set(session.scalars(select(FinancialSourceDocument.evidence_file_id).where(
         FinancialSourceDocument.case_id == case_id, FinancialSourceDocument.status == 'admitted',
@@ -277,8 +305,7 @@ def checked_batch_items(session, case_id, items):
         if state in ('ready', 'attention', 'duplicate_ignored') and (state == 'duplicate_ignored' or
                 (stored_duplicate or {}).get('status') in ('ignored', 'restored')):
             try:
-                proposal = read_statement_import(session, case_id=case_id, evidence_file_id=item.file_id,
-                    currency=summary.get('currency') or None, statement_id=item.statement_key or None, _cache=cache)
+                proposal = read_pending(item)
                 duplicate = read_duplicate_disposition(session, file, proposal, projected_request)
                 summary['duplicate_disposition'] = duplicate
                 if duplicate and duplicate.get('current') and duplicate['status'] == 'ignored':
@@ -293,8 +320,7 @@ def checked_batch_items(session, case_id, items):
         if state in ('ready', 'attention'):
             if item.file_id in saved_files or 'can_import' not in summary or summary.get('review_model') != REVIEW_MODEL:
                 try:
-                    proposal = read_statement_import(session, case_id=case_id, evidence_file_id=item.file_id,
-                        currency=summary.get('currency') or None, statement_id=item.statement_key or None, _cache=cache)
+                    proposal = read_pending(item)
                     from services.financial.review_upgrade import upgrade_request
                     projected_request = upgrade_request(item.review_request, proposal) or item.review_request
                     state, assessment = assess(proposal, None if proposal.get('current_import') else projected_request)
@@ -346,6 +372,15 @@ def checked_batch_items(session, case_id, items):
         summary['currency_revision'] = currency_revision(item, summary)
         from services.financial.batch_review_summary import tagged_problems
         summary['problems'] = tagged_problems(summary)
+        # Older saved summaries can contain explicit JSON nulls for unknown
+        # header fields. Keep the stored reading untouched, but do not let
+        # comparing None with strings break the batch and its Next navigation.
+        if summary.get('filename') is None:
+            source = duplicate_files.get(item.file_id)
+            summary['filename'] = source.original_filename if source else 'Source unavailable'
+        for key in ('currency', 'holder', 'account', 'institution', 'account_type', 'period_start', 'period_end'):
+            if key in summary and summary[key] is None:
+                summary[key] = ''
         result.append(SimpleNamespace(id=item.id, file_id=item.file_id, statement_key=item.statement_key,
             status=state, summary=summary, review_request=projected_request,
             review_revision=_digest(item.review_request or {})))
@@ -472,7 +507,7 @@ def next_problem(session, *, case_id, batch_id, item_id, direction="next", revie
     validate_group(review_group)
     batch_for(session, case_id, batch_id)
     items = checked_batch_items(session, case_id, list(session.scalars(select(Item).where(Item.batch_id == batch_id))))
-    items.sort(key=lambda i: (i.summary.get('filename',''), i.summary.get('account',''), i.summary.get('period_start',''), str(i.id)))
+    _sort_statements(session, case_id, items)
     index = next((n for n, item in enumerate(items) if item.id == item_id), None)
     if index is None:
         raise PdfMappingError('Statement not found in this batch.', 404)
@@ -497,8 +532,7 @@ def next_statement(session, *, case_id, batch_id, item_id, direction="next", rev
         Item.status.notin_(('removed', 'superseded_reading')))))
     if review_group:
         items = checked_batch_items(session, case_id, items)
-    items.sort(key=lambda i: (i.summary.get('filename', ''), i.summary.get('account', ''),
-                             i.summary.get('period_start', ''), str(i.id)))
+    _sort_statements(session, case_id, items)
     index = next((n for n, item in enumerate(items) if item.id == item_id), None)
     if index is None:
         raise PdfMappingError('Statement not found in this batch.', 404)
@@ -545,7 +579,7 @@ def batch_status(session, *, case_id, batch_id, offset=0, limit=100, only_proble
     batch = batch_for(session,case_id,batch_id)
     items=list(session.scalars(select(Item).where(Item.batch_id==batch.id).order_by(Item.file_id,Item.statement_key)))
     items=checked_batch_items(session, case_id, items)
-    items.sort(key=lambda i: (i.summary.get('filename',''),i.summary.get('account',''),i.summary.get('period_start',''),str(i.id)))
+    _sort_statements(session, case_id, items)
     shown=[i for i in items if matches_group(i, review_group) and (not only_problems or i.summary.get('problem_count', 0))]
     counts={state:sum(i.status==state for i in items) for state in ('ready','attention','pending_import','imported','skipped','assigned','duplicate_ignored')}
     file_ids = {UUID(f['file_id']) for f in batch.files if f.get('file_id')}
@@ -566,6 +600,11 @@ def batch_status(session, *, case_id, batch_id, offset=0, limit=100, only_proble
 
 
 def save_review(session, *, case_id, batch_id, item_id, request, expected_review_revision):
+    """Persist the selected draft and return its local assessment.
+
+    Current batch reads and import admission separately check competing sources.
+    Saving progress must not parse all pending case statements under these locks.
+    """
     batch=batch_for(session,case_id,batch_id,True)
     file_id = session.scalar(select(Item.file_id).where(Item.id == item_id, Item.batch_id == batch.id))
     if file_id is not None:
@@ -591,9 +630,8 @@ def save_review(session, *, case_id, batch_id, item_id, request, expected_review
     for key in ('import_decision','import_decision_history'):
         if key in item.summary: summary[key] = item.summary[key]
     item.status=status;item.summary=summary;item.review_request=request.model_dump(mode='json')
-    checked = checked_batch_items(session, case_id, [item])[0]
     session.commit()
-    return dict(status=checked.status, review_revision=_digest(item.review_request))
+    return dict(status=item.status, review_revision=_digest(item.review_request))
 
 
 def confirm_review(*, session_factory, case_id, batch_id, item_id, request,
@@ -1026,7 +1064,7 @@ def retry_file(session, *, case_id, batch_id, source_id, _commit=True, _prepared
         session.commit() if _commit else session.flush()
         return dict(queued=queued, status=target['status'], **result)
 
-    if target['status'] in ('waiting', 'processing') or (prepared and prepared.status == 'processing') or source.status == 'processing':
+    if target['status'] in ('waiting', 'processing') or (prepared or source).status == 'processing':
         if previous:
             return {**previous, 'queued': False, 'status': target['status'], 'action': 'already_running',
                 'message': 'This reading is already queued or running. Its existing attempt has been retained; no second job was started.'}

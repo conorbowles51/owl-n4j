@@ -1,9 +1,10 @@
 import type { LedgerTransaction } from "../api"
 import { bankKey } from "./account-selection"
 import { paymentDay } from "./investigator-workspace"
+import type { KnownPaymentAccount } from "./known-payment-accounts"
 
 /** Complete matching rows, never the visible table page. */
-export function paymentInventory(rows: LedgerTransaction[]) {
+export function paymentInventory(rows: LedgerTransaction[], knownAccounts: KnownPaymentAccount[] = []) {
   const accounts = new Map<
     string,
     { id: string; label: string; currencies: Set<string> }
@@ -37,6 +38,18 @@ export function paymentInventory(rows: LedgerTransaction[]) {
       (row.direction === "credit" ? row.from_name : row.to_name) ??
       row.counterparty_raw
     if (!name?.trim()) unidentifiedCounterparties++
+  }
+  for (const known of knownAccounts) {
+    const account = accounts.get(known.id) ?? { id: known.id, label: known.label, currencies: new Set<string>() }
+    if (known.currency) account.currencies.add(known.currency)
+    accounts.set(known.id, account)
+    if (known.currency) currencies.add(known.currency)
+    if (known.institution?.trim()) {
+      banks.set(bankKey(known.institution), known.institution.trim())
+      unknownBanks.delete(known.id)
+    } else if (!rows.some((row) => (row.canonical_account_id || row.account_id) === known.id && row.account_institution?.trim())) {
+      unknownBanks.add(known.id)
+    }
   }
   dates.sort()
   return {

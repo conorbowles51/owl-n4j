@@ -35,12 +35,14 @@ export function StatementFilesPanel({
   onOpen,
   removalMode = false,
   onFinishRemoval,
+  active = true,
 }: {
   caseId: string
   register?: boolean
   onOpen?: () => void
   removalMode?: boolean
   onFinishRemoval?: () => void
+  active?: boolean
 }) {
   const { canUpload, canEdit } = useFinancialAccess()
   const navigate = useNavigate()
@@ -121,7 +123,8 @@ export function StatementFilesPanel({
     queue?.items.flatMap((item) =>
       item.status === "Reading queued" && item.fileId ? [item.fileId] : []
     ) ?? [],
-    true
+    true,
+    active
   )
   const refresh = () => {
     void client.invalidateQueries({
@@ -287,6 +290,7 @@ export function StatementFilesPanel({
         <StatementRecoveryPanel
           key={caseId}
           caseId={caseId}
+          active={active}
           onReview={(fileId) => {
             useStatementWorkspace.getState().select(scope, fileId)
             useFinancialStore.getState().setMainView("statements")
@@ -436,7 +440,7 @@ export function StatementFilesPanel({
           use Choose from Evidence to send the retained PDF for review.
         </p>
       )}
-      {canUpload && <ResumableUploadsPanel caseId={caseId} financialContext />}
+      {canUpload && <ResumableUploadsPanel caseId={caseId} financialContext active={active} />}
       {error && <p role="alert">{error}</p>}
       {queue && (
         <div aria-live="polite" className="space-y-2">

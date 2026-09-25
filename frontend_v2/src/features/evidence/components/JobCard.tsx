@@ -20,6 +20,7 @@ interface JobCardProps {
   onRetry?: (job: EvidenceJob) => void
   onClear?: (job: EvidenceJob) => void
   retrying?: boolean
+  retryDisabled?: boolean
   clearing?: boolean
   onPause?: (job: EvidenceJob) => void
   onResume?: (job: EvidenceJob) => void
@@ -84,6 +85,7 @@ export function JobCard({
   controlScope,
   controlling = false,
   retrying = false,
+  retryDisabled = false,
   clearing = false,
 }: JobCardProps) {
   const isActive = job.status !== "completed" && job.status !== "failed"
@@ -91,8 +93,9 @@ export function JobCard({
   const isCompleted = job.status === "completed"
   const isStatementReading = job.job_type === "pdf_review"
   const canResume = !!job.resumable && (job.paused || isFailed)
-  const canRetry = isFailed && !!job.evidence_file_id && !canResume
-  const canClear = isFailed || isCompleted
+  const canRetry = isFailed && !!job.evidence_file_id && !canResume && !!onRetry
+  const canClear = (isFailed || isCompleted) && !!onClear
+  const canControl = canResume ? !!onResume : !!onPause
 
   const duration = useMemo(
     () => formatDuration(job.created_at, isActive ? undefined : job.updated_at),
@@ -223,7 +226,7 @@ export function JobCard({
             : "Pausing after the active work unit finishes. Completed work will be kept."}
         </p>
       )}
-      {job.resumable && (isActive || isFailed) && (
+      {job.resumable && (isActive || isFailed) && canControl && (
         <div className="mt-3 space-y-1">
           {canResume ? (
             <Button
@@ -265,7 +268,7 @@ export function JobCard({
               size="sm"
               className="h-7 text-[10px]"
               onClick={() => onRetry?.(job)}
-              disabled={retrying}
+              disabled={retrying || retryDisabled}
             >
               {retrying ? (
                 <Loader2 className="size-3 animate-spin" />

@@ -50,9 +50,12 @@ async def retry_file_checked(session, *, case_id, batch_id, source_id):
     if retry_reference_problem(session, case_id=case_id, source_id=source_id,
             source=records.get(source_id), prepared=records.get(UUID(entry['file_id'])) if entry.get('file_id') else None):
         return retry_file(session, case_id=case_id, batch_id=batch_id, source_id=source_id)
-    active = next((records[identifier] for identifier in candidates
-                   if identifier in records and records[identifier].status == 'processing'), None)
-    if active is None:
+    # An original may have its own general-AI job while this batch uses a
+    # separate retained Financial reading. Only the chosen reading's attempt
+    # can make this Retry already running.
+    active = records.get(UUID(entry['file_id'])) if entry.get('file_id') else None
+    active = active or records.get(source_id)
+    if active is None or active.status != 'processing':
         return retry_file(session, case_id=case_id, batch_id=batch_id, source_id=source_id)
     identity = _identity(active)
     expected_reading_id = entry.get('file_id')
@@ -113,8 +116,8 @@ async def retry_file_checked(session, *, case_id, batch_id, source_id):
     elif job and job.get('status') == 'completed':
         _sync_db_record_from_job(current, job)
         if str(current.id) != entry.get('file_id'):
-            # The original's independent AI job ended while a retained
-            # financial reading failed. Retry the retained financial attempt.
+            # A missing prepared reference was checked through its original.
+            # Re-enter normal preparation after the original's job completes.
             session.commit()
             return retry_file(session, case_id=case_id, batch_id=batch_id, source_id=source_id)
         entry['status'] = 'processing'
@@ -123,8 +126,15 @@ async def retry_file_checked(session, *, case_id, batch_id, source_id):
         return remember('already_running', 'checking_statements',
             'The reading has completed. The batch will now prepare its statement reviews; no new reading was started.')
     else:
+        if job:
+            # A prior file-level error can have left its batch terminal even
+            # though the verified reading is active. Resume observing that
+            # attempt so completion reaches review without another click.
+            entry.update(file_id=str(current.id), status='processing')
+            entry.pop('error', None)
+            batch.status = 'preparing'
         return remember('already_running', 'reading' if job else 'awaiting_dispatch',
-            'The existing reading is still active. Its attempt is retained; no duplicate job was started.' if job else
+            'The existing reading is still active. The batch will follow this attempt and prepare its reviews when reading finishes; no duplicate job was started.' if job else
             'The original reading request is still awaiting a confirmed job. Its handoff has not been restarted; check its status again.')
     batch.files = files
     session.commit()

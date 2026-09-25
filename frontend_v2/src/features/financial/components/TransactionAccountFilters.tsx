@@ -1,17 +1,11 @@
 import { useFinancialStore } from "../stores/financial.store"
-import { useQuery } from "@tanstack/react-query"
-import { fetchAPI } from "@/lib/api-client"
+import { useLedgerAccountDirectory } from "../hooks/use-ledger-account-directory"
 import { holderKey } from "../lib/account-holder"
 import {
   selectedAccountIds,
   bankKey,
   type AccountSelection,
 } from "../lib/account-selection"
-import {
-  candidateAccounts,
-  candidateUrl,
-  assertCandidateScope,
-} from "../lib/candidate-contract"
 import { AccountMultiSelect } from "./AccountMultiSelect"
 import { AccountOwnershipReview } from "./AccountOwnershipReview"
 import { Button } from "@/components/ui/button"
@@ -25,32 +19,7 @@ export function TransactionAccountFilters({
   selection: AccountSelection
   onChange: (values: AccountSelection) => void
 }) {
-  const query = useQuery({
-    queryKey: ["financial-ledger", caseId, "account-filter-directory"],
-    queryFn: async () => {
-      const items = []
-      let offset = 0
-      let pending: { name: string; count: number }[] = []
-      let pendingTruncated = false
-      for (;;) {
-        const data = candidateAccounts.parse(
-          await fetchAPI(
-            `${candidateUrl("ledger-accounts", caseId)}&offset=${offset}`
-          )
-        )
-        assertCandidateScope(data, caseId)
-        items.push(...data.items)
-        if (offset === 0) {
-          pending = data.pending_holders
-          pendingTruncated = data.pending_directory_truncated
-        }
-        if (!data.has_more) return { items, pending, pendingTruncated }
-        if (!data.items.length)
-          throw Error("The account list could not be fully loaded.")
-        offset += data.items.length
-      }
-    },
-  })
+  const query = useLedgerAccountDirectory(caseId)
   const holders = new Map<string, string>()
   const accounts = new Map<string, string>()
   const banks = new Map<string, string>()

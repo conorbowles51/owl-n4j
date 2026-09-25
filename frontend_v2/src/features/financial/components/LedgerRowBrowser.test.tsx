@@ -152,6 +152,33 @@ it("filters inclusive exact ranges, rejects invalid precision and resets on curr
   expect(screen.getByRole("button", { name: "smaller" })).toBeInTheDocument()
 })
 
+it("keeps a retained currency filter visible when account or date scope no longer contains that currency", () => {
+  const eur = row("EUR payment", { currency: "EUR" })
+  const view = render(
+    <LedgerRowBrowser
+      transactions={[row("USD payment", { currency: "USD" }), eur]}
+    />
+  )
+  fireEvent.change(screen.getByLabelText("Currency"), {
+    target: { value: "USD" },
+  })
+  view.rerender(<LedgerRowBrowser transactions={[eur]} />)
+  expect(screen.getByLabelText("Currency")).toHaveValue("USD")
+  expect(
+    screen.getByRole("option", {
+      name: /USD.*not in current account\/date scope/,
+    })
+  ).toBeInTheDocument()
+  expect(
+    screen.queryByRole("button", { name: "EUR payment" })
+  ).not.toBeInTheDocument()
+  fireEvent.click(screen.getByRole("button", { name: "Clear payment filters" }))
+  expect(screen.getByLabelText("Currency")).toHaveValue("")
+  expect(
+    screen.getByRole("button", { name: "EUR payment" })
+  ).toBeInTheDocument()
+})
+
 vi.mock("./LedgerExportButton", () => ({
   LedgerExportButton: ({
     tableView,

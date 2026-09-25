@@ -16,9 +16,9 @@ import { Button } from "@/components/ui/button"
 import { paymentTableDraftName } from "../lib/payment-table-draft"
 import { AccountHistory } from "./AccountHistory"
 
-export function InvestigatorTrends({ caseId }: { caseId: string }) {
+export function InvestigatorTrends({ caseId, active = true }: { caseId: string; active?: boolean }) {
   const data = useInvestigatorPayments(caseId)
-  const register = useStatementRegister(caseId)
+  const register = useStatementRegister(caseId, false, [], false, active)
   const coverage = useMemo(
     () => ({
       available: !!register.imports.data && !register.imports.isError,

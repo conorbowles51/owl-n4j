@@ -38,10 +38,12 @@ export function StatementRegisterChecks({
   caseId,
   onOpenTransactions,
   onReviewStatement,
+  active = true,
 }: {
   caseId: string
   onOpenTransactions: (accountId: string, dates?: AccountReviewDates) => void
   onReviewStatement?: (fileId: string) => void
+  active?: boolean
 }) {
   const [offset, setOffset] = useState(0)
   const [selected, setSelected] = useState<StatementCoverageAccount | null>(
@@ -51,6 +53,7 @@ export function StatementRegisterChecks({
   const query = useQuery({
     queryKey: ["financial-ledger", caseId, "coverage", undefined, offset],
     retry: false,
+    enabled: active,
     queryFn: async () => {
       const data = statementCoverage.parse(
         await fetchAPI(

@@ -13,6 +13,7 @@ from postgres.models.case_membership import CaseMembership
 from postgres.models.enums import CaseMembershipRole
 from postgres.models.user import User
 from postgres.models.financial import FinancialTransaction
+from postgres.models.financial_money_trails import FinancialMoneyTrail
 from postgres.models.financial_recovery import FinancialRecoveryRelease, FinancialRecoveryRun, FinancialRecoveryItem
 from postgres.models.evidence import IngestionLog
 from postgres.models.financial_candidates import FinancialCandidateMapping, FinancialStatementReviewDraft
@@ -24,7 +25,7 @@ from tests.test_financial_statement_import import StatementImportTests
 
 def new_fixture():
     fixture = StatementImportTests(); fixture.setUp()
-    Base.metadata.create_all(fixture.engine, tables=[CaseMembership.__table__, IngestionLog.__table__,
+    Base.metadata.create_all(fixture.engine, tables=[CaseMembership.__table__, IngestionLog.__table__, FinancialMoneyTrail.__table__,
         FinancialCandidateMapping.__table__, FinancialStatementReviewDraft.__table__,
         WorkspaceEntry.__table__, WorkspaceEntryLink.__table__, FinancialRecoveryRelease.__table__, FinancialRecoveryRun.__table__, FinancialRecoveryItem.__table__])
     from services.financial.file_scope import mark_financial_workspace

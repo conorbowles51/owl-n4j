@@ -80,7 +80,8 @@ class GetLedgerTransactionsTests(unittest.IsolatedAsyncioTestCase):
             start_date=None,
             end_date=None,
         )
-        to_view_call.assert_called_once_with(fake_row, account=fake_row.account, account_parties={})
+        to_view_call.assert_called_once_with(fake_row, account=fake_row.account,
+            account_parties={}, canonical_account_labels={})
 
     async def test_an_explicit_ledger_status_is_parsed_and_passed_through(self):
         case_id = uuid.uuid4()

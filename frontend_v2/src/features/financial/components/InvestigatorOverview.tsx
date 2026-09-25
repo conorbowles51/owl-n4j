@@ -17,9 +17,9 @@ import { PaymentComparison } from "./PaymentComparison"
 import { InvestigatorFindingEditor } from "./InvestigatorFindingEditor"
 import { useFinancialAccess } from "../hooks/use-financial-access"
 
-export function InvestigatorOverview({ caseId }: { caseId: string }) {
+export function InvestigatorOverview({ caseId, active = true }: { caseId: string; active?: boolean }) {
   const data = useInvestigatorPayments(caseId)
-  const register = useStatementRegister(caseId)
+  const register = useStatementRegister(caseId, false, [], false, active)
   const findings = useCaseworkEntries(caseId, {
     tag: "financial",
     limit: 4,

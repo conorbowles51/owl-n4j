@@ -11,7 +11,7 @@ from sqlalchemy import or_, select
 
 from postgres.models.evidence import EvidenceDocumentText, EvidenceFile, EvidenceTableGeometry
 from postgres.models.financial_candidates import FinancialCandidateMapping, FinancialExtractionCandidate, FinancialCandidateReview, FinancialCandidateFinalization
-from postgres.models.financial import FinancialAccount
+from postgres.models.financial import FinancialAccount, FinancialSourceDocument, FinancialStatementPeriod
 from services.financial.decisions import Actor
 from services.financial.pdf_candidates import PdfMappingError, PdfMappingProposal, _digest, bind_pdf_mapping
 from services.financial.pdf_geometry_candidates import PdfGridMapping, bind_pdf_grid_mapping
@@ -21,6 +21,43 @@ class CandidateStoreError(ValueError):
     def __init__(self, message, status_code=409):
         super().__init__(message)
         self.status_code = status_code
+
+
+MAX_ACCOUNT_DIRECTORY_PERIODS = 10000
+
+
+def _account_statement_periods(session, *, case_id, account_ids):
+    """Read registered source coverage, without interpreting it as inactivity.
+
+    Only scalar context is selected: original readings and current admission
+    calculations are unnecessary for the account filter's source/date labels.
+    Periods belong to actual account IDs; callers may group canonical aliases.
+    """
+    result = {account_id: [] for account_id in account_ids}
+    if not result:
+        return result
+    period, source = FinancialStatementPeriod, FinancialSourceDocument
+    rows = list(session.execute(select(period.id, period.account_id,
+            period.source_document_id, period.period_start, period.period_end,
+            period.currency, source.metadata_['financial_import_removal'].label('removal'))
+        .join(FinancialAccount, period.account_id == FinancialAccount.id)
+        .join(source, period.source_document_id == source.id)
+        .outerjoin(EvidenceFile, source.evidence_file_id == EvidenceFile.id)
+        .where(period.case_id == case_id, FinancialAccount.case_id == case_id,
+            period.account_id.in_(account_ids), source.case_id == case_id,
+            source.status == 'admitted', source.superseded_by_id.is_(None),
+            or_(source.evidence_file_id.is_(None), EvidenceFile.case_id == case_id))
+        .order_by(period.period_start, period.period_end, period.id)
+        .limit(MAX_ACCOUNT_DIRECTORY_PERIODS + 1)))
+    if len(rows) > MAX_ACCOUNT_DIRECTORY_PERIODS:
+        raise CandidateStoreError(f'More than {MAX_ACCOUNT_DIRECTORY_PERIODS:,} saved statement periods in this account page; no incomplete coverage was returned.', 422)
+    for row in rows:
+        if row.removal:
+            continue
+        result[row.account_id].append(dict(id=str(row.id), source_document_id=str(row.source_document_id),
+            start=row.period_start.isoformat() if row.period_start else None,
+            end=row.period_end.isoformat() if row.period_end else None, currency=row.currency))
+    return result
 
 
 def list_candidate_mappings(session, *, case_id, limit=25, offset=0):
@@ -36,7 +73,8 @@ def list_candidate_mappings(session, *, case_id, limit=25, offset=0):
             candidate_count=row.candidate_count, created_at=row.created_at.isoformat()) for row, filename in rows[:limit]])
 
 
-def list_candidate_accounts(session, *, case_id, search="", limit=100, offset=0, include_pending=False):
+def list_candidate_accounts(session, *, case_id, search="", limit=100, offset=0, include_pending=False,
+        include_statement_periods=False):
     if not isinstance(search, str) or len(search)>128 or type(limit) is not int or not 1 <= limit <= 100 or type(offset) is not int or offset < 0:
         raise CandidateStoreError("Invalid account search.", 422)
     query = select(FinancialAccount).where(FinancialAccount.case_id == case_id)
@@ -45,6 +83,8 @@ def list_candidate_accounts(session, *, case_id, search="", limit=100, offset=0,
             FinancialAccount.identifier_as_printed, FinancialAccount.holder_name, FinancialAccount.institution_name,
             FinancialAccount.metadata_["display_label"].as_string()))))
     rows = list(session.scalars(query.order_by(FinancialAccount.id).offset(offset).limit(limit+1)))
+    periods = _account_statement_periods(session, case_id=case_id,
+        account_ids=[row.id for row in rows[:limit]]) if include_statement_periods else None
     from services.financial.account_parties import _account_party_state
     parties = {a['id']: a for a in _account_party_state(session, case_id=case_id)['accounts']}
     from postgres.models.financial_import_batches import FinancialImportBatch, FinancialImportBatchItem
@@ -64,7 +104,9 @@ def list_candidate_accounts(session, *, case_id, search="", limit=100, offset=0,
             record['count'] += 1
     return dict(case_id=str(case_id), has_more=len(rows)>limit, pending_holders=list(pending_holders.values()), pending_directory_truncated=len(pending)>20000,
         items=[dict(id=str(row.id), canonical_id=(row.metadata_ or {}).get('canonical_account_id') or str(row.id), identifier=row.identifier_as_printed, holder=row.holder_name,
-                    institution=row.institution_name, currency=row.currency, party=parties.get(str(row.id), {}).get('party'),
+                    institution=row.institution_name, currency=row.currency, account_type=row.account_type,
+                    **(dict(statement_periods=periods[row.id]) if periods is not None else {}),
+                    party=parties.get(str(row.id), {}).get('party'),
                     holder_parties=parties.get(str(row.id), {}).get('holder_parties', []),
                     display_label=(row.metadata_ or {}).get("display_label"),
                     source_file_id=(row.metadata_ or {}).get("candidate_account_source_file_id"),
