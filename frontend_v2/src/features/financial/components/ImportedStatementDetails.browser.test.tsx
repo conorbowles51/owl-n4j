@@ -55,6 +55,15 @@ it("keeps the statement and correction fields together, then reopens saved value
         currency: body.currency,
         details: { ...initial.details, account_number: body.account_number, period_start: body.period_start, period_end: body.period_end },
         balances: { opening: body.opening, closing: body.closing },
+        admission: {
+          can_import: false, status: "needs_review",
+          blockers: [{ message: "Review the unread source row before confirming these checks." }],
+          calculation: {
+            available: true, currency: "MXN", balance_convention: "asset_balance",
+            opening_minor: "6000", credit_minor: "0", debit_minor: "3480",
+            calculated_closing_minor: "2520", printed_closing_minor: "2520", difference_minor: "0",
+          },
+        },
       }
     }
     return stored as never
@@ -107,6 +116,12 @@ it("keeps the statement and correction fields together, then reopens saved value
   await page.screenshot({ path: "/tmp/imported-statement-edit-light.png" })
   fireEvent.click(screen.getByRole("button", { name: "Save changes" }))
   await screen.findByText(/Changes saved/)
+  const checks = screen.getByLabelText("Saved statement checks")
+  expect(checks).toHaveTextContent("Saved opening balance60.00 MXN")
+  expect(checks).toHaveTextContent("Saved closing balance25.20 MXN")
+  expect(checks).toHaveTextContent("Money in0.00 MXN")
+  expect(checks).not.toHaveTextContent("MXN MXN")
+  expect(checks).toHaveTextContent("Review the unread source row before confirming these checks.")
   fireEvent.click(
     screen.getByRole("button", { name: "Edit account, dates, currency and balances" })
   )

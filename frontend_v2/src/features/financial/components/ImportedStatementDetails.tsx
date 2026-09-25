@@ -142,8 +142,9 @@ export function ImportedStatementDetails({
               </p>
               <StatementReconciliationSummary
                 calculation={query.data.admission.calculation}
+                controlBasis="saved"
                 format={(value) =>
-                  `${correctionMoney(value, query.data!.currency || "")} ${query.data!.currency || ""}`
+                  correctionMoney(value, query.data!.currency || "")
                 }
               />
               {!query.data.admission.can_import && (

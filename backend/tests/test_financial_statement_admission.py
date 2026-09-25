@@ -213,6 +213,65 @@ class StatementAdmissionTests(TestCase):
             self.assertFalse(changed['admission']['no_activity_confirmed'])
             self.assertFalse(list(db.scalars(select(FinancialTransaction))))
 
+    def test_saved_quiet_controls_resolve_repeated_legacy_balances_through_currency_changes(self):
+        from services.financial.statement_details import read_statement_details, update_statement_details, StatementDetailsRequest
+        from services.financial.pdf_candidates import _digest
+        install_reconciled_source(self.f, quiet=True)
+        receipt = self.f.confirm(self.request().model_dump())
+        source_id = UUID(receipt['source_document_id'])
+        with self.f.SessionLocal() as db:
+            document = db.get(FinancialSourceDocument, source_id)
+            metadata = deepcopy(document.metadata_)
+            # Historical imports can retain competing controls on several pages.
+            # The investigator selects the source-backed control after import.
+            proposal = metadata['statement_import_original']
+            raw = metadata['statement_import_request']
+            proposal['page_numbers'] = [1, 2]
+            proposal['statement_page_numbers'] = [1, 2]
+            for original in list(proposal['rows']):
+                if original['kind'] != 'balance':
+                    continue
+                duplicate = deepcopy(original)
+                duplicate.update(id=original['id'] + '-legacy-copy', page_number=2)
+                duplicate['fields']['balance'] = '99999'
+                proposal['rows'].append(duplicate)
+                edit = deepcopy(next(row for row in raw['rows'] if row['id'] == original['id']))
+                edit.update(id=duplicate['id'], balance_minor='99999')
+                raw['rows'].append(edit)
+            metadata['statement_import_original_sha256'] = _digest(proposal)
+            metadata['statement_import_request_sha256'] = _digest(raw)
+            document.metadata_ = metadata
+            db.commit()
+            originals = deepcopy(proposal), deepcopy(raw)
+            before = read_statement_details(db, case_id=self.f.case.id, source_id=source_id)
+            self.assertFalse(before['admission']['calculation']['available'])
+            for currency, confirm in (('USD', False), ('EUR', True), ('KWD', False)):
+                view = read_statement_details(db, case_id=self.f.case.id, source_id=source_id)
+                amount = '7205000' if currency == 'KWD' else '720500'
+                saved = update_statement_details(db, case_id=self.f.case.id, source_id=source_id, actor=self.f.actor,
+                    request=StatementDetailsRequest(expected_revision=view['revision'], currency=currency,
+                        no_activity_confirmed=confirm,
+                        **(dict(opening=dict(amount_minor=amount, page=1), closing=dict(amount_minor=amount, page=1)) if currency == 'USD' else {}),
+                        **{key: view['details'][key] for key in ('holder', 'account_number', 'institution')}))
+                reopened = read_statement_details(db, case_id=self.f.case.id, source_id=source_id)
+                self.assertEqual(saved, reopened)
+                calculation = saved['admission']['calculation']
+                self.assertTrue(calculation['available'])
+                self.assertEqual(calculation['currency'], currency)
+                self.assertEqual([calculation[key] for key in ('opening_minor', 'printed_closing_minor', 'calculated_closing_minor')], [amount] * 3)
+                self.assertEqual(calculation['difference_minor'], '0')
+                self.assertEqual(saved['admission']['can_import'], confirm)
+                if not confirm:
+                    self.assertIn('no_activity', {p['kind'] for p in saved['admission']['blockers']})
+                self.assertEqual((document.metadata_['statement_import_original'], document.metadata_['statement_import_request']), originals)
+                self.assertFalse(list(db.scalars(select(FinancialTransaction))))
+            view = reopened
+            cleared = update_statement_details(db, case_id=self.f.case.id, source_id=source_id, actor=self.f.actor,
+                request=StatementDetailsRequest(expected_revision=view['revision'], closing=dict(amount_minor=None),
+                    **{key: view['details'][key] for key in ('holder', 'account_number', 'institution')}))
+            self.assertIsNone(cleared['admission']['calculation']['printed_closing_minor'])
+            self.assertFalse(cleared['admission']['can_import'])
+
     def test_legacy_corrections_are_saved_then_promoted_together_after_reconciliation(self):
         from services.financial.imported_records import complete_record, CompleteImportedRecord, imported_records
         from services.financial.pdf_candidates import _digest

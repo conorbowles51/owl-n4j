@@ -201,3 +201,24 @@ prevents independent live verification.
 ## 24 September: explain the batch before individual review
 
 The report that almost every statement appears problematic adds an explicit acceptance requirement: show the reasons and import consequences at batch level, then retain the selected reason through review, correction, next/previous and return. This workflow is implemented and locally verified in the [connected release record](financial-workflows/next-release-2026-09-24.md#follow-up-understand-and-work-through-batch-checks), together with the missing-reading Retry repair and the earlier source-selection, compact saved-work and background-recovery work. Counts span all pages; absent balance inputs do not become false differences; correcting a shared missing holder updates the group without importing or changing payments. Exact causes in the reported live batch and the three unresolved file failures are not established by the synthetic tests. Publication/live access remain blocked as recorded there.
+
+## 25 September: deployment and live follow-up
+
+The earlier access/publication restriction above is historical. The user authorized
+live verification and code publication. Release `d9a04e8a` was pushed and its
+automatic deployment completed successfully; the actual deployment log, worker
+gates and health checks were inspected. The optional manual updater's setup error
+does not establish a failed automatic release.
+
+The [current acceptance checkpoint](financial-workflows/priority-completion-plan-2026-09-25.md#publication-and-live-verification)
+records the deployed source audit, saved currency reopening and stable manual-row
+entry/discard. All 258 visible source families in the reported case were inspected
+for content/provenance: 257 were recognizably financial, and one uncertain general
+conversation remains retained pending clarification. No client records were
+changed by that audit. Source relevance is not a certification of all transactions.
+
+A verified follow-up closes the completed-campaign recovery gap and fixes saved
+balance controls that appeared unavailable after correction. It also distinguishes
+saved corrections from a new PDF reading and makes Updates understandable without
+raw server diagnostics. Its publication/live results and any remaining source
+review requirements are tracked in the checkpoint rather than assumed complete.

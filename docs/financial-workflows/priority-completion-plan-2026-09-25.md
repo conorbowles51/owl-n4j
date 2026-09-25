@@ -551,7 +551,58 @@ campaigns remain distinct. Audit/intake/scope checks pass **48 tests and 21
 subtests** after the fix. Review counts now explicitly count storage records,
 with the interface showing review presence rather than an inflated review total.
 
-Publication and live verification remain the next steps. The live admin updater
-is not configured; it is separate from the confirmed automatic push deployment.
-The previous successful release log identifies the built revision and healthy
-services. Do not use its checkout label alone as evidence for this new release.
+### Publication and live verification
+
+The code-only release was committed and pushed as `d9a04e8a`. The automatic
+deployment log records a successful build and deployment of that revision on
+25 September 2026, beginning at 02:07:17 UTC and completing in 195 seconds.
+The release gates found no queued or running ingestion, recovery or uploads;
+the log records healthy workers, active application services and connected
+backend dependencies. The separate optional admin updater remains unconfigured;
+that does not mean this automatic deployment failed.
+
+The authorized content/provenance pass inspected all 258 currently visible source
+families in the reported case, using their recorded work and one retained excerpt
+of up to 4,000 characters each. 257 were recognizably financial and retained. One
+general conversation export remains uncertain; the user was asked whether its
+Financial inclusion was intentional. No membership changes were made, and no
+historical removed-file count is attributed to this pass. This establishes source
+relevance, not every page's completeness or payment accuracy.
+
+In the authorized test case, saved currency changes persisted after leaving and
+reopening, and were restored to the original currency. A new manual row stayed
+visible while its date, description and debit were entered with the problems-only
+filter enabled. Excluded rows stayed hidden. Explicit discard removed the draft;
+it was never saved or imported. An older session-only draft was already absent
+when the review was reopened. These checks did not add any ledger payments.
+
+### Follow-up from live acceptance
+
+A completed first recovery campaign does not automatically revisit unresolved
+entries after a reader update. The [bounded follow-up campaign](recovery-followup-2026-09-25.md)
+now selects eligible earlier review results and failed batch entries, preserves
+the original history, and excludes unrelated Evidence and protected work. New
+statements remain subject to investigator review and strict admission. Its banner
+separates scheduled work from protected, out-of-scope and unconfirmed sources;
+completion of attempts does not claim all statements reconciled.
+
+Live testing also found that a valid saved balance was projected onto several
+legacy readings, making reconciliation report it unavailable. Saved page-cited
+controls now resolve those alternatives without altering originals. Currency-only
+changes preserve/rescale saved controls, and explicitly clearing a control cannot
+resurrect an old reading. Saved calculation labels distinguish those controls from
+the separate current PDF reading, including their currencies. Quiet statements
+still require confirmation and all relevant admission checks.
+
+The Updates page now explains automatic releases and the optional manual updater
+separately. Raw setup errors, revisions and logs are under Technical details;
+the checkout revision is not misrepresented as proof of the running deployment.
+No manual update or service restart was started during this work.
+
+Follow-up verification passes 208 recovery/retry tests with 14 subtests, 85 saved
+admission tests with seven subtests, 52 statement-review unit tests, and the
+affected admin, saved-details and recovery-banner unit/browser checks. Forced
+TypeScript checking, production build, affected lint and diff checks pass. Counts
+overlap; they are not an aggregate total. Publication and live verification of
+this follow-up, including actual recovery outcomes, are still pending at this
+checkpoint. Existing source uncertainties remain investigator review items.

@@ -111,6 +111,45 @@ it("explains a saved but unconfirmed quiet period instead of implying the checks
     screen.queryByText(/No activity confirmed at the last save/)
   ).not.toBeInTheDocument()
 })
+it("shows saved denomination once and keeps a quiet confirmation blocker after currency correction", async () => {
+  const admission = {
+    can_import: false,
+    status: "needs_review",
+    blockers: [{ message: "Confirm that every page has no transactions." }],
+    calculation: {
+      available: true, currency: "USD", balance_convention: "asset_balance",
+      opening_minor: "720500", credit_minor: "0", debit_minor: "0",
+      calculated_closing_minor: "720500", printed_closing_minor: "720500", difference_minor: "0",
+    },
+  }
+  let stored = { ...initial(), has_payment_readings: false, admission: {
+    ...admission, calculation: { ...admission.calculation, currency: "EUR" },
+  },
+    balances: { opening: { amount_minor: "720500", page: 2 }, closing: { amount_minor: "720500", page: 2 } } }
+  vi.mocked(fetchAPI).mockImplementation(async (_url, options) => {
+    if (options?.method === "PUT") {
+      expect(options.body).toMatchObject({ currency: "USD" })
+      expect(options.body).not.toHaveProperty("no_activity_confirmed", true)
+      stored = { ...stored, currency: "USD", admission, revision: "b".repeat(64) }
+    }
+    return stored as never
+  })
+  mount()
+  fireEvent.click(screen.getByRole("button", { name: "Edit account, dates, currency and balances" }))
+  fireEvent.change(await screen.findByLabelText("Saved statement currency"), { target: { value: "USD" } })
+  fireEvent.click(screen.getByRole("button", { name: "Save changes" }))
+  await screen.findByText(/Changes saved/)
+  const checks = screen.getByLabelText("Saved statement checks")
+  expect(checks).toHaveTextContent("Saved opening balance7205.00 USD")
+  expect(checks).toHaveTextContent("Saved closing balance7205.00 USD")
+  expect(checks).toHaveTextContent("Money in0.00 USD")
+  expect(checks).not.toHaveTextContent("USD USD")
+  expect(checks).not.toHaveTextContent("Printed opening balance")
+  expect(checks).toHaveTextContent(admission.blockers[0].message)
+  cleanup()
+  mount()
+  expect(await screen.findByLabelText("Saved statement checks")).toHaveTextContent("7205.00 USD")
+})
 it("edits account and balances beside the PDF, saves and reopens without losing leading zeros", async () => {
   useInvestigationScopeStore
     .getState()

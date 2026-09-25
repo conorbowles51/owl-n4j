@@ -2239,8 +2239,12 @@ function EditableStatement({
           />
         </label>
         <div>
-          <p>Statement currency</p>
-          <strong>{data.current_import?.currency || data.currency}</strong>
+          <p>
+            {data.current_import
+              ? "Currency in this reading"
+              : "Statement currency"}
+          </p>
+          <strong>{data.currency}</strong>
           <p className="text-sm">{data.metadata.period}</p>
         </div>
       </div>
@@ -3025,6 +3029,18 @@ function EditableStatement({
           >
             {!importedHere && (
               <div className="sticky top-0 z-10 bg-background pb-2">
+                {data.current_import && (
+                  <div className="mb-2 text-sm">
+                    <h4 className="font-semibold">
+                      Current PDF reading · {data.currency}
+                    </h4>
+                    <p>
+                      This reading has not replaced the saved statement. Its
+                      values and currency may differ from your saved
+                      corrections.
+                    </p>
+                  </div>
+                )}
                 <StatementReconciliationSummary
                   calculation={serverChecks.admission?.calculation}
                   pending={serverChecks.pending}

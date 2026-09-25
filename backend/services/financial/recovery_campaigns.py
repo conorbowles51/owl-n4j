@@ -1,8 +1,8 @@
 """Explicit reader repair manifests; deployment alone is not a reread request.
 
-Add a campaign only with a demonstrated reader fix and the exact earlier reader
-revisions it repairs. Successful, removed, skipped and unidentified readings are
-not swept back into processing by a generic version bump.
+Reader-specific campaigns identify demonstrated fixes and exact earlier reader
+revisions. The authorized unresolved-work follow-up has its own content and
+disposition eligibility policy; it is not a generic parser-version sweep.
 """
 from dataclasses import dataclass, field
 
@@ -14,11 +14,12 @@ class RecoveryCampaign:
     eligible_outcomes: tuple[str, ...] = ('review',)
     initial_snapshot: bool = False
     source_probe: str | None = None
+    unresolved_followup: bool = False
 
     def __post_init__(self):
         if not self.release or len(self.release) > 64:
             raise ValueError('Recovery campaigns require a stable release identifier of at most 64 characters.')
-        if not self.initial_snapshot and not self.affected_readers:
+        if not self.initial_snapshot and not self.affected_readers and not self.unresolved_followup:
             raise ValueError('A selective recovery campaign must identify its affected readers and prior revisions.')
         if any(not versions or any(not isinstance(version, str) or not version for version in versions)
                for versions in self.affected_readers.values()):
@@ -35,8 +36,10 @@ class RecoveryCampaign:
 
 
 INITIAL_RELEASE = 'statement-recovery-2026-09-24-v1'
+FOLLOWUP_RELEASE = 'statement-recovery-2026-09-25-unresolved-v1'
 ANDREWS_BALANCE_RELEASE = 'statement-recovery-2026-09-25-andrews-balances-v1'
-CAMPAIGNS = (RecoveryCampaign(INITIAL_RELEASE, initial_snapshot=True),)
+CAMPAIGNS = (RecoveryCampaign(INITIAL_RELEASE, initial_snapshot=True),
+    RecoveryCampaign(FOLLOWUP_RELEASE, unresolved_followup=True))
 # Retain the measured diagnosis without automatically scheduling a new campaign:
 # the current Andrews sample has not demonstrated an additional admitted period.
 REGISTERED_CAMPAIGNS = (*CAMPAIGNS,

@@ -1,4 +1,4 @@
-"""One release, one retained snapshot, resumable per-file recovery.
+"""One retained snapshot per release, resumable per-file recovery.
 
 This worker never retries the team's AI jobs or replaces an imported ledger.
 It revisits the current statement reader against retained evidence, queues a
@@ -53,10 +53,12 @@ def snapshot_case(session, case_id, cutoff, campaign=None):
     ids = financial_file_ids(session, case_id=case_id)
     files = list(session.scalars(select(EvidenceFile).where(EvidenceFile.case_id == case_id,
         EvidenceFile.id.in_(ids), EvidenceFile.created_at <= cutoff))) if ids else []
-    if not files:
+    if not files and campaign.initial_snapshot:
         return True
     versions_by_root = lineage_groups(files)
     selected = []
+    from services.financial import recovery_followup
+    followup = recovery_followup.eligibility_context(session, case_id, cutoff) if campaign.unresolved_followup else None
     previous = list(session.scalars(select(Item).join(Run, Item.run_id == Run.id).where(
         Run.case_id == case_id, Run.release != campaign.release)
         .order_by(Item.updated_at.desc(), Item.id))) if not campaign.initial_snapshot else []
@@ -69,14 +71,18 @@ def snapshot_case(session, case_id, cutoff, campaign=None):
             if latest is None or latest.status not in campaign.eligible_outcomes:
                 continue
             observed = source_reader_evidence(session, current_version(versions), campaign)
-        if campaign.eligible(latest, observed):
-            selected.append((versions, latest))
+        if campaign.unresolved_followup:
+            qualification = recovery_followup.qualify(session, versions, latest, followup)
+            if qualification:
+                selected.append((versions, latest, qualification))
+        elif campaign.eligible(latest, observed):
+            selected.append((versions, latest, {}))
     # Record an empty selective snapshot too: a later file cannot silently enter
     # an already-completed campaign after its durable cutoff was established.
     run = Run(id=run_id, case_id=case_id, release=campaign.release, status='running' if selected else 'complete')
     session.add(run)
     session.flush()
-    for versions, prior in selected:
+    for versions, prior, qualification in selected:
         file = current_version(versions)
         session.add(Item(id=uuid5(run_id, str(file.id)), run_id=run_id, file_id=file.id,
             status='pending', result=dict(filename=file.original_filename,
@@ -84,7 +90,17 @@ def snapshot_case(session, case_id, cutoff, campaign=None):
                 lineage_ids=[str(f.id) for f in versions], added=0,
                 previous_item_id=str(prior.id) if prior else None,
                 fresh_reading=bool(campaign.source_probe), source_probe=campaign.source_probe,
-                readers=(prior.result or {}).get('readers', {}) if prior else {})))
+                readers=(prior.result or {}).get('readers', {}) if prior else {}, **qualification)))
+    if campaign.unresolved_followup:
+        scope = dict(considered=len(versions_by_root), scheduled=len(selected),
+            **{key: followup['excluded'][key] for key in ('protected', 'no_unresolved_work', 'unconfirmed_content')})
+        session.add(IngestionLog(case_id=case_id, level='info',
+            message=f"Follow-up recovery scheduled {len(selected)} unresolved financial sources. "
+                f"{followup['excluded']['unconfirmed_content']} unresolved sources need content confirmation; "
+                f"{followup['excluded']['protected']} protected sources and "
+                f"{followup['excluded']['no_unresolved_work']} sources without unresolved work were left unchanged.",
+            extra=dict(operation='statement_recovery_followup_snapshot', release=campaign.release,
+                run_id=str(run.id), scope=scope)))
     session.commit()
     return True
 
@@ -104,6 +120,9 @@ def _guard(session, item, file):
         return 'kept', 'The investigator removed this source or its imports. Recovery left it unchanged.'
     if visibility['financial_visibility_revision'] != item.result['visibility_revision']:
         return 'review', 'The Financial file choice changed after recovery was scheduled. Review the source before retrying.'
+    from services.financial.recovery_followup import guard
+    if followup_guard := guard(session, item, file):
+        return followup_guard
     ids = [UUID(value) for value in item.result['lineage_ids']]
     lineage_ids = {str(value) for value in ids}
     own_reading_request = str(uuid5(item.id, 'recovery-reading'))
@@ -202,14 +221,25 @@ def recover_one(factory, item_id, resolve_path):
                 _outcome(db, item, file, *guard)
                 db.commit()
                 return
+            from services.financial.recovery_followup import retry_failed_batches
+            if retry_outcome := retry_failed_batches(db, item, file):
+                _outcome(db, item, file, *retry_outcome)
+                db.commit()
+                return
             ids = [UUID(value) for value in item.result['lineage_ids']]
             documents = list(db.scalars(select(FinancialSourceDocument).where(
                 FinancialSourceDocument.case_id == case_id, FinancialSourceDocument.evidence_file_id.in_(ids),
                 FinancialSourceDocument.status != 'superseded').with_for_update()))
+            from services.financial.recovery_followup import pending_saved_work
+            if documents and pending_saved_work(db, item, file):
+                _outcome(db, item, file, 'review', 'Saved batch corrections remain to be reviewed. Compare them with the existing import before adding payments; the corrections and imported payments were kept.')
+                db.commit()
+                return
             marker = (file.metadata_ or {}).get('financial_workspace') or {}
             explicitly_batched = any(any(entry.get('source_id') in {str(value) for value in ids} for entry in batch.files)
                 for batch in db.scalars(select(Batch).where(Batch.case_id == case_id, Batch.status != 'removed')))
-            if not documents and not marker.get('selected_by') and not explicitly_batched:
+            recognized = item.result.get('eligibility_basis') == 'recognized_statement_content'
+            if not documents and not marker.get('selected_by') and not explicitly_batched and not recognized:
                 _outcome(db, item, file, 'review', 'Financial relevance needs a content check before automatic reading. The Evidence original is retained.')
                 db.commit()
                 return
@@ -363,7 +393,11 @@ def status(session, case_id, *, offset=0, limit=50, run_id=None):
     added = session.scalar(select(func.coalesce(func.sum(Item.result['added'].as_integer()), 0)).where(Item.run_id == run.id))
     history = [dict(id=str(prior.id), release=prior.release, status=prior.status) for prior in session.scalars(
         select(Run).where(Run.case_id == case_id, Run.id != run.id).order_by(Run.created_at.desc(), Run.release.desc()))]
-    return dict(run=dict(id=str(run.id), release=run.release, status=run.status), previous_runs=history, counts=counts, added=added,
+    snapshot = session.scalar(select(IngestionLog.extra).where(IngestionLog.case_id == case_id,
+        IngestionLog.extra['operation'].as_string() == 'statement_recovery_followup_snapshot',
+        IngestionLog.extra['run_id'].as_string() == str(run.id)).limit(1))
+    return dict(run=dict(id=str(run.id), release=run.release, status=run.status), previous_runs=history,
+        scope=snapshot.get('scope') if snapshot else None, counts=counts, added=added,
         total=sum(counts.values()), items=[dict(id=str(item.id), file_id=str(item.file_id), status=item.status, **item.result) for item in rows])
 
 

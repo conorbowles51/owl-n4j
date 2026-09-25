@@ -49,7 +49,7 @@ def retry_reference_problem(session, *, case_id, source_id, source, prepared=Non
     return None
 
 
-def persist_unavailable_retry(session, *, batch, files, target, problem):
+def persist_unavailable_retry(session, *, batch, files, target, problem, commit=True):
     from datetime import datetime, timezone
     from uuid import uuid4
     previous = target.get('recovery') or {}
@@ -59,7 +59,7 @@ def persist_unavailable_retry(session, *, batch, files, target, problem):
         fresh_reading=False, updated_at=datetime.now(timezone.utc).isoformat())
     target.update(status='error', error=problem['message'], recovery=receipt)
     batch.files = files
-    session.commit()
+    session.commit() if commit else session.flush()
     return dict(queued=False, status='error', **receipt)
 
 

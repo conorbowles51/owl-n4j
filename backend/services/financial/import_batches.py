@@ -988,7 +988,7 @@ async def run_batches_forever():
         await asyncio.sleep(5)
 
 
-def retry_file(session, *, case_id, batch_id, source_id):
+def retry_file(session, *, case_id, batch_id, source_id, _commit=True):
     from services.financial.file_visibility import financial_file_visibility
     from services.financial.reading_recovery import inspect_completed_reading, retry_reference_problem, persist_unavailable_retry
     batch=batch_for(session,case_id,batch_id,True)
@@ -1001,7 +1001,7 @@ def retry_file(session, *, case_id, batch_id, source_id):
     source=session.scalar(select(EvidenceFile).where(EvidenceFile.id==source_id,EvidenceFile.case_id==case_id))
     problem = retry_reference_problem(session, case_id=case_id, source_id=source_id, source=source, prepared=prepared)
     if problem:
-        return persist_unavailable_retry(session, batch=batch, files=files, target=target, problem=problem)
+        return persist_unavailable_retry(session, batch=batch, files=files, target=target, problem=problem, commit=_commit)
     previous = target.get('recovery') or {}
 
     def receipt(action, stage, message, *, queued=False, fresh_reading=False, read_from=None, check_only=False):
@@ -1023,7 +1023,7 @@ def retry_file(session, *, case_id, batch_id, source_id):
             target.update(status='processing' if check_only else 'waiting', expected_revision=financial_file_visibility(source)['financial_visibility_revision'])
             target.pop('error', None)
             batch.status = 'preparing'
-        session.commit()
+        session.commit() if _commit else session.flush()
         return dict(queued=queued, status=target['status'], **result)
 
     if target['status'] in ('waiting', 'processing') or (prepared and prepared.status == 'processing') or source.status == 'processing':

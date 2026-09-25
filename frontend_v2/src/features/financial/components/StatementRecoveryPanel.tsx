@@ -12,6 +12,15 @@ const recoverySchema = z.object({
   total: z.number(),
   added: z.number().default(0),
   counts: z.record(z.string(), z.number()),
+  scope: z
+    .object({
+      considered: z.number().int().nonnegative(),
+      scheduled: z.number().int().nonnegative(),
+      protected: z.number().int().nonnegative(),
+      no_unresolved_work: z.number().int().nonnegative(),
+      unconfirmed_content: z.number().int().nonnegative(),
+    })
+    .nullish(),
   items: z.array(
     z.object({
       id: z.string(),
@@ -113,10 +122,14 @@ export function StatementRecoveryPanel({
     (data.counts.reading ?? 0)
   const label =
     data.run.status === "complete"
-      ? "Finished checking"
+      ? data.scope
+        ? "Follow-up finished"
+        : "Finished checking"
       : data.run.status === "paused"
         ? "Paused"
-        : "Checking previous statements"
+        : data.scope
+          ? "Checking scheduled sources"
+          : "Checking previous statements"
   return (
     <section
       aria-label="Recovery of previous statements"
@@ -142,13 +155,40 @@ export function StatementRecoveryPanel({
         )}
       </div>
       <p role="status" className="text-sm">
-        {label} · {data.total - pending} of {data.total} files checked ·{" "}
+        {label} · {data.total - pending} of {data.total}{" "}
+        {data.scope ? "scheduled sources checked" : "files checked"} ·{" "}
         {data.counts.review ?? 0} need review
       </p>
+      {data.scope && (
+        <div className="space-y-1 text-sm" aria-label="Follow-up scope">
+          <p>
+            This follow-up considered {data.scope.considered} retained sources
+            and scheduled {data.scope.scheduled} with unresolved work. Each
+            source is counted once, including its retained reading versions.
+            These are source counts, not statement periods or transactions.
+          </p>
+          <ul className="list-disc pl-5 text-muted-foreground">
+            <li>
+              {data.scope.protected} protected sources left unchanged, including
+              decisions to ignore duplicates or remove statements.
+            </li>
+            <li>
+              {data.scope.no_unresolved_work} sources outside this pass: no
+              matching earlier recovery or file-processing failure. Existing
+              statement review checks may still remain.
+            </li>
+            <li>
+              {data.scope.unconfirmed_content} sources not processed because
+              their financial content needs confirmation. Unknown content does
+              not mean a source is non-financial.
+            </li>
+          </ul>
+        </div>
+      )}
       <p className="text-sm text-muted-foreground">
-        This one-time check uses the improved statement reader. Verified missing
-        payments are added to existing imports. Your saved payments, edits and
-        notes stay in place. New imports and uncertain matches need your review.
+        {data.scope
+          ? "This follow-up rechecks scheduled unresolved work using retained readings. Verified missing payments may be added to existing imports. New statements and uncertain results need review; saved edits, notes and originals stay in place."
+          : "This one-time check uses the improved statement reader. Verified missing payments are added to existing imports. Your saved payments, edits and notes stay in place. New imports and uncertain matches need your review."}
       </p>
       {error && <p role="alert">{error}</p>}
       {recovered > 0 && (
@@ -165,7 +205,7 @@ export function StatementRecoveryPanel({
         <ul className="divide-y mt-2">
           {data.items.map((item) => (
             <li key={item.id} className="py-3 space-y-2">
-              <div className="flex flex-wrap gap-2 items-start justify-between">
+              <div className="flex flex-col sm:flex-row sm:flex-wrap gap-2 items-start justify-between">
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium break-words">
                     {item.filename}

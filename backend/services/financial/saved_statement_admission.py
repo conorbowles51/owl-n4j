@@ -30,18 +30,7 @@ def assess_saved_additions(session, document, period, metadata, currency, *, no_
     current = {(t.provenance or {}).get('statement_import_original', {}).get('id'):t for t in rows}
     originals = {r['id']:r for r in proposal['rows']}
     sign = -1 if proposal['metadata'].get('balance_convention') == 'liability_owed' else 1
-    # Balances entered after an older import have explicit page provenance;
-    # include those controls even when the original reader missed them entirely.
-    for role, balance in metadata.get('statement_details_review', {}).get('balances', {}).items():
-        if role not in ('opening', 'closing') or balance.get('amount_minor') is None:
-            continue
-        if any(r.get('kind') == 'balance' and r.get('fields', {}).get('description', '').strip().lower() == role + ' balance' for r in proposal['rows']):
-            continue
-        if balance.get('page') not in proposal.get('page_numbers', []):
-            continue
-        raw['rows'] = [row for row in raw['rows'] if row['id'] != 'manual:' + role + '-balance']
-        raw['rows'].append(dict(id='manual:' + role + '-balance', excluded=True, manual_page=balance['page'],
-            date='', description=role + ' balance', amount_minor='0', direction=None, balance_minor=balance['amount_minor'], reason='Saved statement balance correction.'))
+    controls = metadata.get('statement_details_review', {}).get('balances', {})
     for i, row in enumerate(raw['rows']):
         row = deepcopy(corrections.get(row['id'],row)); raw['rows'][i]=row
         tx=current.get(row['id'])
@@ -55,7 +44,23 @@ def assess_saved_additions(session, document, period, metadata, currency, *, no_
         if period and original.get('kind')=='balance':
             role=original.get('fields',{}).get('description','').strip().lower()
             value=period.opening_balance_minor if role=='opening balance' else period.closing_balance_minor if role=='closing balance' else None
-            if role in ('opening balance','closing balance'):row['balance_minor']=str(sign*value) if value is not None else None
+            if role in ('opening balance','closing balance'):
+                # A page-cited saved correction chooses one authoritative
+                # control, even when the retained reading has several competing
+                # balances. Do not turn every old candidate into that control.
+                row['balance_minor'] = None if role.removesuffix(' balance') in controls else str(sign*value) if value is not None else None
+    pages = proposal.get('statement_page_numbers') or sorted({source['page_number'] for source in proposal.get('sources', [])}) or proposal.get('page_numbers', [])
+    for role, balance in controls.items():
+        if role not in ('opening', 'closing'):
+            continue
+        # An explicit clear must also clear an earlier manual control. Original
+        # source rows and the original import request remain sealed and intact.
+        raw['rows'] = [row for row in raw['rows'] if row['id'] != 'manual:' + role + '-balance']
+        if balance.get('amount_minor') is None or balance.get('page') not in pages:
+            continue
+        raw['rows'].append(dict(id='manual:' + role + '-balance', excluded=True, manual_page=balance['page'],
+            date='', description=role + ' balance', amount_minor='0', direction=None,
+            balance_minor=balance['amount_minor'], reason='Saved statement balance correction.'))
     request=StatementImportRequest.model_validate(raw)
     result=assess_admission(proposal,request)
     if no_activity_confirmed:

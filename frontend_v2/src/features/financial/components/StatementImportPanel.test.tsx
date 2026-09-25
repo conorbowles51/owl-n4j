@@ -1346,6 +1346,35 @@ it("keeps edits after a failed confirmation", async () => {
   )
 })
 
+it("distinguishes a new reading's currency from saved corrections", async () => {
+  const base = vi.mocked(fetchAPI).getMockImplementation()!
+  vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
+    if (String(url).includes("/statement-import/") && !options?.method)
+      return {
+        ...data,
+        current_import: {
+          source_document_id: "previous",
+          evidence_file_id: "older-file",
+          revision: "b".repeat(64),
+          transaction_count: 1,
+          currency: "USD",
+        },
+      } as never
+    return base(url, options)
+  })
+  mount()
+  await open(false)
+  expect(
+    screen.getByRole("heading", { name: "Current PDF reading · EUR" })
+  ).toBeVisible()
+  const details = screen.getByRole("region", { name: "Statement details" })
+  expect(details).toHaveTextContent("Currency in this readingEUR")
+  expect(details).not.toHaveTextContent("USD")
+  expect(
+    screen.getByRole("button", { name: "Confirm import of 1 transactions" })
+  ).toBeDisabled()
+})
+
 it("requires an explicit replacement decision and reason for an existing import", async () => {
   const base = vi.mocked(fetchAPI).getMockImplementation()!
   vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
