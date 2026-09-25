@@ -93,6 +93,19 @@ reloads this service configuration without restarting a running job. This is a
 bounded graceful transition, not a guarantee for work that exceeds that window
 or for a host forced shutdown.
 
+The shutdown drop-in is installed from a regular temporary file and atomically
+renamed before `daemon-reload`. It does not depend on `/dev/stdin`, which may be
+absent in a service runner. A failed installation stops the release before the
+backend restart; it never downgrades the ingestion gates or continues without
+the configured grace. `bash deploy/tests/test-ingestion-shutdown.sh` exercises
+real `install`/`mv` commands in a temporary directory with closed stdin,
+permissions, repeated installation and destination failure. The same test was
+validated on Linux with GNU coreutils and no `/dev/stdin` symlink.
+
+If a release fails after building the frontend, its recovery trap restarts the
+frontend using the bundle currently on disk. That bundle may already be new;
+the restart does not prove that the backend or the whole release was updated.
+
 ## Admin-Triggered Updates
 
 To allow admins to update the platform from the OWL admin UI:

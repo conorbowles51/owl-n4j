@@ -99,7 +99,7 @@ restore_frontend_on_exit() {
         $SYSTEMCTL start owl-frontend-v2 || true
         sleep 3
         if $SYSTEMCTL is-active --quiet owl-frontend-v2; then
-            warn "owl-frontend-v2 restarted (serving the previous build)"
+            warn "owl-frontend-v2 restarted (serving the bundle currently on disk; the release is not confirmed complete)"
         else
             fail "owl-frontend-v2 DID NOT COME BACK - start it manually: systemctl start owl-frontend-v2"
         fi

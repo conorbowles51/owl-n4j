@@ -24,6 +24,10 @@ def release_sandbox(tmp_path):
         (project / directory).mkdir(parents=True)
     for name in ('deploy.sh', 'rollback.sh', 'ingestion-safety.sh', 'check_ingestion_idle.py'):
         shutil.copy(DEPLOY / name, project / 'deploy' / name)
+    # Exercise real install/mv commands, but target a synthetic unit directory.
+    helper = project / 'deploy/ingestion-safety.sh'
+    helper.write_text(helper.read_text().replace('/etc/systemd/system/owl-backend-v2.service.d',
+        str(project / 'units/owl-backend-v2.service.d')))
     # The desktop sandbox disallows bash's /dev/fd process-substitution log
     # sink. Capture stdout directly; leave all release control flow intact.
     deploy_script = project / 'deploy/deploy.sh'
@@ -41,8 +45,9 @@ def release_sandbox(tmp_path):
     database = project / 'jobs.sqlite'
     with sqlite3.connect(database) as db:
         db.execute('CREATE TABLE jobs (status TEXT NOT NULL, paused BOOLEAN NOT NULL)')
-    # All host-changing commands are inert. A command may register a new job or
-    # replace the on-disk checker, as a real checkout/build could do mid-release.
+    # Service/Git commands are inert. File installs run against the redirected
+    # fixture directory. A stub may register a new job or replace the on-disk
+    # checker, as a real checkout/build could do mid-release.
     stub = project / 'commands/stub'
     stub.write_text(f'#!{sys.executable}\n' + '''
 import json, os, pathlib, sqlite3, sys
@@ -77,8 +82,6 @@ elif name == 'whoami':
     print('release-test')
 elif name == 'docker' and args[0] == 'ps':
     print('owl-v2-n4j\\nowl-v2-pg')
-elif name == 'install':
-    (root / 'shutdown-unit.conf').write_text(sys.stdin.read())
 elif name == 'curl':
     if os.environ.get('FORCE_HEALTH_FAILURE'):
         print('{}')
@@ -90,7 +93,7 @@ elif name == 'seq':
     print('1')
 ''')
     stub.chmod(0o755)
-    for name in ('git', 'id', 'whoami', 'sudo', 'docker', 'npm', 'systemctl', 'install', 'curl', 'sleep', 'seq', 'flock'):
+    for name in ('git', 'id', 'whoami', 'sudo', 'docker', 'npm', 'systemctl', 'curl', 'sleep', 'seq', 'flock'):
         (project / 'commands' / name).symlink_to(stub)
     for name in ('python', 'pip', 'alembic'):
         (project / '.venv/bin' / name).symlink_to(stub)
@@ -135,6 +138,9 @@ def test_work_arriving_during_image_build_blocks_container_replacement(release_s
     assert result.returncode == 75, result.stdout + result.stderr
     assert 'docker compose build' in events
     assert not any(event.startswith(('docker compose up', 'systemctl restart owl-backend')) for event in events)
+    if script == 'deploy.sh':
+        assert 'serving the bundle currently on disk; the release is not confirmed complete' in result.stdout
+        assert 'serving the previous build' not in result.stdout
 
 
 @pytest.mark.parametrize('script', ['deploy.sh', 'rollback.sh'])
@@ -143,7 +149,7 @@ def test_work_arriving_during_container_change_blocks_backend_restart(release_sa
     assert result.returncode == 75, result.stdout + result.stderr
     assert any(event.startswith('docker compose up -d --no-build') for event in events)
     assert 'systemctl restart owl-backend-v2' not in events
-    assert (release_sandbox / 'shutdown-unit.conf').read_text() == '[Service]\nTimeoutStopSec=14500\n'
+    assert (release_sandbox / 'units/owl-backend-v2.service.d/ingestion-shutdown.conf').read_text() == '[Service]\nTimeoutStopSec=14500\n'
     assert 'systemctl daemon-reload' in events
 
 
@@ -160,4 +166,13 @@ def test_idle_release_still_completes_with_bounded_graceful_shutdown(release_san
     result, events = run_release(release_sandbox, script)
     assert result.returncode == 0, result.stdout + result.stderr
     assert 'systemctl restart owl-backend-v2' in events
-    assert (release_sandbox / 'shutdown-unit.conf').read_text() == '[Service]\nTimeoutStopSec=14500\n'
+    unit = release_sandbox / 'units/owl-backend-v2.service.d/ingestion-shutdown.conf'
+    assert unit.read_text() == '[Service]\nTimeoutStopSec=14500\n'
+    assert unit.stat().st_mode & 0o777 == 0o644
+
+
+def test_shutdown_dropin_installer_uses_real_files_and_fails_before_reload():
+    result = subprocess.run(['bash', str(DEPLOY / 'tests/test-ingestion-shutdown.sh')],
+        capture_output=True, text=True, timeout=15)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert 'real install checks passed' in result.stdout
