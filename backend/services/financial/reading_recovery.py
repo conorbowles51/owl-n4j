@@ -32,7 +32,14 @@ def retry_reference_problem(session, *, case_id, source_id, source, prepared=Non
         message += ('Its explicitly linked saved reading is retained; open that review to inspect existing work. ' if retained else '')
         message += 'Restore the original in Evidence, or select the correct evidence file to start a new preparation. Saved payments and corrections were not changed.'
         return dict(message=message, review_file_id=str(prepared.id) if retained else None)
-    for file in (source, prepared):
+    recovered = bool(prepared and prepared.case_id == case_id and prepared.sha256 == source.sha256
+        and (prepared.metadata_ or {}).get('statement_version_request')
+        and (prepared.metadata_ or {}).get('statement_version_actor', {}).get('user_id')
+        and (prepared.metadata_ or {}).get('statement_parent_evidence_id') == str(source.id)
+        and (prepared.metadata_ or {}).get('statement_reset_revision')
+        and (prepared.metadata_ or {}).get('statement_reset_revision') ==
+            (source.metadata_ or {}).get('financial_import_removal', {}).get('id'))
+    for file in ((prepared,) if recovered else (source, prepared)):
         reset = (file.metadata_ or {}).get('financial_import_removal') if file else None
         if not reset:
             continue
@@ -45,7 +52,10 @@ def retry_reference_problem(session, *, case_id, source_id, source, prepared=Non
         if (restart is None or restart.sha256 != file.sha256 or not reset.get('id')
                 or (restart.metadata_ or {}).get('financial_import_removal', {}).get('id') != reset['id']):
             return dict(message='The source recorded for restarting this removed import is unavailable or no longer matches this evidence. Restore that source in Evidence, or select the correct evidence file for a new preparation. The previous removal and all saved history remain unchanged.',
-                review_file_id=None)
+                review_file_id=None, retained_source_revision=(
+                    financial_file_visibility(source)['financial_visibility_revision']
+                    if (source.metadata_ or {}).get('financial_import_removal', {}).get('id')
+                    and source.status != 'processing' else None))
     return None
 
 
@@ -56,7 +66,7 @@ def persist_unavailable_retry(session, *, batch, files, target, problem, commit=
     receipt = dict(attempt_id=previous.get('attempt_id') or str(uuid4()),
         action='source_unavailable', stage='source_unavailable', message=problem['message'],
         review_file_id=problem['review_file_id'], reading_file_id=problem['review_file_id'],
-        fresh_reading=False, updated_at=datetime.now(timezone.utc).isoformat())
+        fresh_reading=False, retained_source_revision=problem.get('retained_source_revision'), updated_at=datetime.now(timezone.utc).isoformat())
     target.update(status='error', error=problem['message'], recovery=receipt)
     batch.files = files
     session.commit() if commit else session.flush()

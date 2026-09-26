@@ -149,3 +149,49 @@ it("keeps the duplicate decision, source and restore action usable at wide and n
   ).toBeVisible()
   expect(fetchAPI).toHaveBeenCalledTimes(1)
 })
+
+it("leaves a possible duplicate unimported and restores it without losing the source", async () => {
+  await page.viewport(1280, 800)
+  vi.mocked(fetchAPI).mockImplementation(async (_url, options) => {
+    const action = (options?.body as { action: string }).action
+    return {
+      case_id: caseId,
+      evidence_file_id: fileId,
+      statement_id: null,
+      duplicate_disposition: {
+        ...initial,
+        basis: "investigator_decision",
+        revision: action === "ignore" ? "b".repeat(64) : "c".repeat(64),
+        status: action === "ignore" ? "ignored" : "restored",
+      },
+    } as never
+  })
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <StatementDuplicateDecision
+        caseId={caseId}
+        fileId={fileId}
+        readingRevision={revision}
+        decision={{ ...initial, status: "needs_comparison", basis: null }}
+        canEdit
+        onDecision={vi.fn()}
+      />
+    </QueryClientProvider>
+  )
+  await page
+    .getByRole("button", { name: "Don’t import this duplicate" })
+    .click()
+  await screen.findByRole("heading", { name: "Duplicate — left unimported" })
+  expect(
+    screen.getByRole("button", { name: "Open retained original" })
+  ).toBeEnabled()
+  await page.getByRole("button", { name: "Restore for comparison" }).click()
+  await screen.findByText(
+    "Restored for comparison. No transactions were imported."
+  )
+  expect(
+    vi
+      .mocked(fetchAPI)
+      .mock.calls.map(([, o]) => (o?.body as { action: string }).action)
+  ).toEqual(["ignore", "restore"])
+})

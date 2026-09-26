@@ -45,11 +45,12 @@ def current_scope(session, versions):
         parent = by_id.get(data.get('statement_parent_evidence_id'))
         removal = (parent.metadata_ or {}).get('financial_import_removal') if parent else None
         actor = _investigator((data.get('statement_version_actor') or {}).get('user_id'))
-        if not removal or not removal.get('id') or not actor or str(removal.get('restart_file_id')) != str(parent.id):
+        explicit_reset = bool(removal and data.get('statement_version_request') and data.get('statement_reset_revision') == removal.get('id') and version.sha256 == parent.sha256)
+        if not removal or not removal.get('id') or not actor or (str(removal.get('restart_file_id')) != str(parent.id) and not explicit_reset):
             continue
         request = str(uuid5(NAMESPACE_URL,
             f"loupe-financial-reset:{current.case_id}:{removal['id']}:{current.sha256}"))
-        if data.get('statement_version_request') != request:
+        if data.get('statement_version_request') != request and not explicit_reset:
             continue
         boundary = str(version.id)
         def descends(candidate):
@@ -61,7 +62,7 @@ def current_scope(session, versions):
                 candidate = by_id.get((candidate.metadata_ or {}).get('statement_parent_evidence_id'))
             return False
         return [candidate for candidate in versions if descends(candidate)], dict(
-            kind='explicit_reset', boundary_file_id=boundary, request_id=request,
+            kind='explicit_reset', boundary_file_id=boundary, request_id=data['statement_version_request'],
             removal_id=removal['id'], actor_id=actor)
     visibility = (current.metadata_ or {}).get('financial_file_visibility') or {}
     actor = _investigator((visibility.get('actor') or {}).get('user_id'))

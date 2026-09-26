@@ -9,6 +9,7 @@ export const batchStatementSummary = z.object({
   imported: z.number().int().nonnegative(),
   pending_import: z.number().int().nonnegative(),
   skipped: z.number().int().nonnegative(),
+  possible_duplicates: z.number().int().nonnegative().default(0),
   duplicate_ignored: z.number().int().nonnegative(),
   assigned: z.number().int().nonnegative(),
   other: z.number().int().nonnegative(),

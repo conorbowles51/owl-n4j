@@ -18,6 +18,24 @@ def statement():
 
 
 class AutomaticStatementProposalTests(unittest.TestCase):
+    def test_pdf_spacing_beside_grouping_commas_preserves_digits_and_source(self):
+        for value in ('12,345 ,678.90', '12, 345,678.90', '12,345\u00a0,678.90', '12,345\u202f,678.90'):
+            with self.subTest(value=value):
+                self.assertEqual(exact_amount(value, 'MXN'), '1234567890')
+        for value in ('12, 34.56', '12,345.67 890.12', '12 345.67', '12,345\n,678.90'):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                exact_amount(value, 'MXN')
+        original = source([['Date', 'Description', 'Credit', 'Debit', 'Balance'],
+            ['2026-04-01', 'Synthetic payment', '12,345 ,678.90', '', '12,345 ,678.90']])
+        before = deepcopy(original)
+        result = propose_table(original, 'MXN')
+        self.assertEqual(result['transaction_count'], 1)
+        self.assertEqual(result['needs_attention'], 0)
+        self.assertEqual(result['rows'][1]['fields']['amount_minor'], '1234567890')
+        self.assertEqual(result['rows'][1]['fields']['balance'], '1234567890')
+        self.assertEqual(result['rows'][1]['source_cells'], original['rows'][1]['cells'])
+        self.assertEqual(original, before)
+
     def test_standalone_balances_keep_sources_and_do_not_consume_other_summary_values(self):
         data = source([['Account Name: Example'], ['Saldo inicial', '0,00 EUR'],
                        ['Saldo final: 1.234,56 EUR'], ['Available credit', '2,000.00'],

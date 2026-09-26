@@ -18,6 +18,7 @@ export interface StatementDuplicateDecisionProps {
   readingRevision: string
   decision?: StatementDuplicateDisposition | null
   canEdit: boolean
+  matchingStatement?: boolean
   canCheck?: boolean
   checkDisabledReason?: string
   onDecision: (updated: StatementDuplicateDisposition) => void
@@ -52,6 +53,7 @@ function StatementDuplicateDecisionView({
   decision,
   canEdit,
   canCheck = true,
+  matchingStatement = false,
   checkDisabledReason,
   onDecision,
   onBusy,
@@ -74,7 +76,7 @@ function StatementDuplicateDecisionView({
   )
   const mutation = useMutation({
     retry: false,
-    mutationFn: async (action: "check" | "restore") => {
+    mutationFn: async (action: "check" | "restore" | "ignore") => {
       const response = await fetchAPI<unknown>(
         `/api/financial/statement-import/${encodeURIComponent(fileId)}/duplicate-disposition?${new URLSearchParams({ case_id: caseId })}`,
         {
@@ -123,9 +125,9 @@ function StatementDuplicateDecisionView({
     ["needs_comparison", "not_duplicate"].includes(current.status) ||
     mutation.isError
 
-  function act(action: "check" | "restore") {
+  function act(action: "check" | "restore" | "ignore") {
     if (lock.current || !canEdit || requiresReopen) return
-    if (action === "check" && !canCheck) return
+    if ((action === "check" || action === "ignore") && !canCheck) return
     if (action === "restore" && !ignored) return
     lock.current = true
     releaseBusy.current = () => onBusy?.(false)
@@ -155,7 +157,10 @@ function StatementDuplicateDecisionView({
         {stale
           ? titles.needs_comparison
           : current
-            ? titles[current.status]
+            ? current.basis === "investigator_decision" &&
+              current.status === "ignored"
+              ? "Duplicate — left unimported"
+              : titles[current.status]
             : "Check for a duplicate statement"}
       </h3>
       <p>
@@ -258,6 +263,24 @@ function StatementDuplicateDecisionView({
           </Button>
         </div>
       )}
+      {canEdit && !ignored && (matchingStatement || (current?.status === "needs_comparison" && retained)) && (
+        <div className="space-y-2">
+          <Button
+            type="button"
+            variant="outline"
+            disabled={!canCheck || mutation.isPending || requiresReopen}
+            onClick={() => act("ignore")}
+          >
+            {mutation.isPending && mutation.variables === "ignore"
+              ? "Saving decision…"
+              : "Don’t import this duplicate"}
+          </Button>
+          <p>
+            The file and saved corrections stay available. You can restore this
+            statement for comparison later.
+          </p>
+        </div>
+      )}
       {canEdit && checkable && (
         <div className="space-y-2">
           <Button
@@ -284,7 +307,9 @@ function StatementDuplicateDecisionView({
         <p role="status">
           {mutation.variables === "restore"
             ? "Restored for comparison. No transactions were imported."
-            : "Duplicate check saved."}
+            : mutation.variables === "ignore"
+              ? "Left unimported. You can restore it for comparison here."
+              : "Duplicate check saved."}
         </p>
       )}
       {mutation.isError && (

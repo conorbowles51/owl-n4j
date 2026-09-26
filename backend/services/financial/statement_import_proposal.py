@@ -90,6 +90,9 @@ def exact_amount(text, currency):
     if currency in symbols:
         prefix += '|' + re.escape(symbols[currency])
     value = re.sub(r'^(?:' + prefix + r')\s*', '', value)
+    # PDF text positioning can leave spaces beside a grouping comma. Keep
+    # every digit and separator; the complete grouping pattern is checked below.
+    value = re.sub(r'(?<=\d)[ \t\u202f]*,[ \t\u202f]*(?=\d)', ',', value)
     negative = value.startswith('(') and value.endswith(')')
     if negative:
         value = value[1:-1]

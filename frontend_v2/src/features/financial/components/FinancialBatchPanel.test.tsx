@@ -360,7 +360,7 @@ it("filters by the whole-batch reason, focuses the right detail, and retains the
     await screen.findByRole("button", { name: "Clear reason filter" })
   )
   await screen.findByRole("heading", { name: "Statements in this batch" })
-  expect(screen.getByLabelText("Location").textContent).not.toContain(
+  expect(screen.getByLabelText("Location").textContent).toContain(
     "batchCheck="
   )
   expect(
@@ -491,6 +491,9 @@ it("distinguishes repeated file runs and opens the selected saved batch", async 
             created_by: "Alex",
             checked_files: 587,
             failed_files: 1,
+            statement_summary: {total: 0, available: 0, blocked: 0, imported: 0,
+              pending_import: 0, skipped: 0, duplicate_ignored: 0, assigned: 0, other: 0,
+              available_with_payments: 0, available_no_activity: 0, available_other: 0},
             filenames: ["Checking EUR.pdf"],
           },
           {
@@ -513,6 +516,8 @@ it("distinguishes repeated file runs and opens the selected saved batch", async 
   expect(
     screen.getByText(/587 of 588 files checked.*1 files could not be read/)
   ).toBeVisible()
+  expect(screen.getByText(/1 files still need reading or preparation/)).toBeVisible()
+  expect(screen.getByText(/0 prepared reviews unfinished/)).toBeVisible()
   expect(screen.getByText(/Checking USD.pdf/)).toBeVisible()
   fireEvent.click(screen.getByRole("button", { name: "Open batch earlier-" }))
   await waitFor(() =>

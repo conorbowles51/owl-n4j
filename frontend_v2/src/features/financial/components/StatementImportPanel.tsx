@@ -750,6 +750,7 @@ function StatementReview({
           )}
       </section>
       {query.data.current_import &&
+      query.data.current_import.evidence_file_id === fileId &&
       !query.data.current_import.excluded_as_duplicate &&
       canEdit &&
       !batchReview?.readOnly ? (
@@ -1321,11 +1322,7 @@ function EditableStatement({
     ? data.current_import?.details
     : undefined
   const canEdit =
-    caseCanEdit &&
-    !excludedCopy &&
-    !importedHere &&
-    !batchReview?.readOnly &&
-    !(batchReview && data.current_import)
+    caseCanEdit && !excludedCopy && !importedHere && !batchReview?.readOnly
   useEffect(() => {
     const navigation = batchReview?.beforeNavigate
     if (!navigation) return
@@ -1793,6 +1790,14 @@ function EditableStatement({
       field: "Statement balances",
     })
   const focusDetail = (field: string) => {
+    if (field === "Replace the previous import") {
+      const control = statementControls.current?.querySelector<HTMLElement>(
+        '[aria-label="Replace the previous import"]'
+      )
+      control?.focus({ preventScroll: true })
+      control?.scrollIntoView({ block: "center", behavior: "smooth" })
+      return
+    }
     if (importedHere) {
       const panel = document.getElementById("saved-statement-details")
       const label = `Saved ${field.toLowerCase()}`
@@ -2406,7 +2411,13 @@ function EditableStatement({
   const rowTools = (id: string) => {
     if (data.current_import && !replacePrevious) {
       const original = originals.get(id)
-      if (!original || excludedCopy || (!original.issues.length && original.kind !== "unresolved" && focus?.rowId !== id))
+      if (
+        !original ||
+        excludedCopy ||
+        (!original.issues.length &&
+          original.kind !== "unresolved" &&
+          focus?.rowId !== id)
+      )
         return null
       return (
         <ImportedStatementRowReview
@@ -2416,10 +2427,12 @@ function EditableStatement({
           hasIncomplete={!!data.current_import.incomplete_count}
           page={original.page_number}
           issues={original.issues}
-          onShowSource={() => setFocus({
-            rowId: id,
-            locator: statementRowLocator(original, original.page_number),
-          })}
+          onShowSource={() =>
+            setFocus({
+              rowId: id,
+              locator: statementRowLocator(original, original.page_number),
+            })
+          }
         />
       )
     }
@@ -2795,6 +2808,44 @@ function EditableStatement({
   )
   return (
     <div ref={statementControls} className="space-y-4 pt-4">
+      {data.current_import && !importedHere && !excludedCopy && (
+        <section
+          aria-label="Use the re-read statement"
+          className="rounded border p-4 space-y-3"
+        >
+          <h3 className="font-semibold">Use the re-read statement</h3>
+          <p>
+            The earlier import contributes{" "}
+            {data.current_import.transaction_count} transactions. This reading
+            contains {data.transaction_count}. Confirming replaces the earlier
+            import and keeps its records and your corrections in history.
+          </p>
+          <label className="flex gap-2">
+            <input
+              type="checkbox"
+              aria-label="Replace the previous import"
+              disabled={!canEdit}
+              checked={replacePrevious}
+              onChange={(event) => {
+                setReplacePrevious(event.target.checked)
+                if (
+                  event.target.checked &&
+                  data.current_import?.transaction_count === 0 &&
+                  !detailsReason.trim()
+                )
+                  setDetailsReason(
+                    "Use the re-read statement to recover payments missing from the earlier empty import."
+                  )
+              }}
+            />
+            Use this reading to replace the previous import when I confirm
+          </label>
+          <p className="text-sm text-muted-foreground">
+            Review the statement totals and any unresolved values, then confirm
+            once. You do not need to mark each correct payment as reviewed.
+          </p>
+        </section>
+      )}
       {!data.current_import &&
         (duplicateDecision || coverage.data?.matching_statement) && (
           <StatementDuplicateDecision
@@ -2804,6 +2855,7 @@ function EditableStatement({
             currency={data.currency}
             readingRevision={data.revision}
             decision={duplicateDecision}
+            matchingStatement={coverage.data?.matching_statement}
             canEdit={caseCanEdit && !duplicateCheck.isPending}
             canCheck={!duplicateCheckDirty}
             checkDisabledReason="Save your current corrections with Save progress before checking duplicates. Your unfinished edits stay here."
@@ -3321,7 +3373,7 @@ function EditableStatement({
       {problemIds.length > 0 && (
         <div
           role="group"
-          aria-label="Problem navigation"
+          aria-label={importedHere ? "Original extraction flag navigation" : "Problem navigation"}
           className="flex flex-wrap items-center gap-2 rounded border border-amber-500/30 bg-amber-50/40 dark:bg-amber-950/10 p-2"
         >
           <Button
@@ -3330,12 +3382,12 @@ function EditableStatement({
             disabled={problemIndex <= 0}
             onClick={() => openInlineRow(problemIds[problemIndex - 1])}
           >
-            Previous problem
+            {importedHere ? "Previous original flag" : "Previous problem"}
           </Button>
           <span className="text-sm">
             {problemIndex < 0
-              ? `${problemIds.length} rows need attention`
-              : `Problem ${problemIndex + 1} of ${problemIds.length}`}
+              ? importedHere ? `${problemIds.length} original extraction flags` : `${problemIds.length} rows need attention`
+              : `${importedHere ? "Original flag" : "Problem"} ${problemIndex + 1} of ${problemIds.length}`}
           </span>
           <Button
             size="sm"
@@ -3343,7 +3395,7 @@ function EditableStatement({
             disabled={problemIndex >= problemIds.length - 1}
             onClick={() => openInlineRow(problemIds[problemIndex + 1])}
           >
-            {problemIndex < 0 ? "First problem" : "Next problem"}
+            {importedHere ? (problemIndex < 0 ? "First original flag" : "Next original flag") : (problemIndex < 0 ? "First problem" : "Next problem")}
           </Button>
         </div>
       )}
@@ -4301,17 +4353,10 @@ function EditableStatement({
                       : "The saved account, balances and original PDF remain available in this statement."}
               </p>
             ) : (
-              <label className="flex gap-2">
-                <input
-                  type="checkbox"
-                  disabled={!canEdit}
-                  aria-label="Replace the previous import"
-                  checked={replacePrevious}
-                  onChange={(e) => setReplacePrevious(e.target.checked)}
-                />
-                Replace the previous import when I confirm. Its original records
-                and source remain in the history.
-              </label>
+              <p>
+                Use the replacement choice at the start of this review, then
+                confirm the reconciled statement once.
+              </p>
             )}
           </div>
         )}
@@ -4383,8 +4428,9 @@ function EditableStatement({
             className="text-sm text-amber-700 dark:text-amber-400"
             role="status"
           >
-            Totals are incomplete. Check the flagged rows and enter each amount
-            under Credit or Debit before importing.
+            {importedHere
+              ? "These original extraction totals are incomplete. The saved payments may already be corrected; use Open imported transactions to inspect their current totals."
+              : "Totals are incomplete. Check the flagged rows and enter each amount under Credit or Debit before importing."}
           </p>
         )}
         {data.balance_basis && (

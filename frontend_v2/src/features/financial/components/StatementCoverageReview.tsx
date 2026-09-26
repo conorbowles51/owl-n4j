@@ -68,11 +68,16 @@ export function StatementCoverageReview({
       <p>
         {inBatch ? (
           <>
-            If this is a copy, return to the batch and choose{" "}
-            <strong>Leave unimported</strong>.
+            If this is a copy, choose{" "}
+            <strong>Don’t import this duplicate</strong> above or{" "}
+            <strong>Leave unimported</strong> in the batch.
           </>
         ) : (
-          <>If this is a copy, close this review without importing it.</>
+          <>
+            If this is a copy, choose{" "}
+            <strong>Don’t import this duplicate</strong> in the duplicate
+            decision above.
+          </>
         )}{" "}
         The file stays in Evidence. If it contains additional records, explain
         below why you need both statements.

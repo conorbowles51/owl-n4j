@@ -26,7 +26,13 @@ export const statementDuplicateDisposition = z
     reason: z.string(),
     current: z.boolean(),
     matched_fields: z.array(z.string()).default([]),
-    basis: z.enum(["identical_bytes", "identical_financial_reading"]).nullish(),
+    basis: z
+      .enum([
+        "identical_bytes",
+        "identical_financial_reading",
+        "investigator_decision",
+      ])
+      .nullish(),
     retained: retainedStatement.nullish(),
   })
   .passthrough()

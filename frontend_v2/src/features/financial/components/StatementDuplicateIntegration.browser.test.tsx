@@ -465,3 +465,64 @@ it.each([
     await waitFor(() => expect(screen.getByLabelText(label)).toHaveFocus())
   }
 )
+
+it("replaces an empty earlier import from a batch with one statement decision and no row edits", async () => {
+  const { BatchReviewContext } = await import("../lib/batch-review-context")
+  const base = vi.mocked(fetchAPI).getMockImplementation()!
+  vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
+    if (url.includes("/statement-import/") && !options?.method)
+      return {
+        ...reading,
+        current_import: {
+          source_document_id: "10000000-0000-4000-8000-000000000010",
+          evidence_file_id: "10000000-0000-4000-8000-000000000011",
+          revision: "f".repeat(64),
+          transaction_count: 0,
+        },
+      } as never
+    return base(url, options)
+  })
+  const confirm = vi
+    .fn()
+    .mockResolvedValue({
+      case_id: caseId,
+      evidence_file_id: fileId,
+      source_document_id: "10000000-0000-4000-8000-000000000012",
+      transaction_count: 1,
+      incomplete_count: 0,
+      applied: true,
+      created: true,
+      issues: [],
+    })
+  render(
+    <QueryClientProvider client={client}>
+      <BatchReviewContext.Provider
+        value={{ save: vi.fn(), saved: vi.fn(), confirm }}
+      >
+        <StatementImportPanel caseId={caseId} onImported={vi.fn()} />
+      </BatchReviewContext.Provider>
+    </QueryClientProvider>
+  )
+  await screen.findByText(`Review ${reading.filename}`)
+  const choice = screen.getByRole("checkbox", {
+    name: "Replace the previous import",
+  })
+  expect(choice).toBeEnabled()
+  await page
+    .getByRole("checkbox", { name: "Replace the previous import" })
+    .click()
+  expect(screen.getByLabelText("Reason for detail corrections")).toHaveValue(
+    "Use the re-read statement to recover payments missing from the earlier empty import."
+  )
+  const button = screen.getByRole("button", {
+    name: /Import 1 payments and view Transactions/,
+  })
+  expect(button).toBeEnabled()
+  await page.screenshot({ path: "/private/tmp/loupe-reread-choice.png" })
+  fireEvent.click(button)
+  await waitFor(() => expect(confirm).toHaveBeenCalledTimes(1))
+  expect(confirm.mock.calls[0][0]).toMatchObject({
+    replaces_source_document_id: "10000000-0000-4000-8000-000000000010",
+    replacement_revision: "f".repeat(64),
+  })
+})

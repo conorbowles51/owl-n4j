@@ -263,6 +263,10 @@ def _sort_statements(session, case_id, items):
 def checked_batch_items(session, case_id, items):
     """Project current coverage concerns without making a GET write changes."""
     items = [item for item in items if item.status not in ('removed', 'superseded_reading')]
+    # Failed/queued files have no statement reviews to compare. Do not rebuild
+    # unrelated case statements while the investigator opens their recovery.
+    if not items:
+        return []
     from services.financial.statement_import_overlap import coverage_review, summary_request, requires_decision, comparison_sources, duplicate_hold
     pending = session.execute(select(Item, EvidenceFile).join(Batch, Batch.id == Item.batch_id)
         .join(EvidenceFile, EvidenceFile.id == Item.file_id).where(Batch.case_id == case_id,
@@ -826,18 +830,22 @@ async def _prepare_retry(session, *, case_id, file, actor, resolve_path, process
     if original is None or financial_file_visibility(original)['financial_visibility_revision'] != file['expected_revision']:
         raise PdfMappingError('The source choice changed after Retry was requested. Open its history before retrying; saved work is unchanged.', 409)
     recovery = file.get('recovery') or {}
+    if recovery.get('requested_by'):
+        actor = Actor(**{**recovery['requested_by'], 'user_id': UUID(recovery['requested_by']['user_id'])})
     identifier = UUID(recovery.get('read_from_file_id') or file['source_id'])
     if recovery.get('fresh_reading'):
         reviewed = any(item.review_request or item.status in ('pending_import', 'skipped', 'duplicate_ignored') for item in session.scalars(
             select(Item).join(Batch, Item.batch_id == Batch.id).where(
                 Batch.case_id == case_id, Batch.status != 'removed', Item.file_id == identifier)))
         prior = session.get(EvidenceFile, identifier)
-        if reviewed or (prior and (prior.metadata_ or {}).get('financial_review_progress')):
+        if not recovery.get('reset_revision') and (reviewed or (prior and (prior.metadata_ or {}).get('financial_review_progress'))):
             raise PdfMappingError('A review decision was saved after Retry was requested. Open the statement to compare it before starting a new reading.', 409)
         from services.financial.statement_reprocessing import create_statement_version
         version = create_statement_version(session, case_id=case_id, evidence_file_id=identifier,
             request_id=UUID(recovery['attempt_id']), actor=actor, resolve_path=resolve_path,
-            reading_mode=recovery.get('reading_mode', 'automatic'))
+            reading_mode=recovery.get('reading_mode', 'automatic'),
+            reset_revision=recovery.get('reset_revision'),
+            retained_source_recovery=recovery.get('action') == 'recover_retained_source')
         identifier = version.id
     target = session.scalar(select(EvidenceFile).where(EvidenceFile.id == identifier,
         EvidenceFile.case_id == case_id))
@@ -1151,6 +1159,42 @@ def retry_file(session, *, case_id, batch_id, source_id, _commit=True, _prepared
         'Retry accepted. The failed or missing reading will be prepared again; saved payments and reviews are retained.',
         queued=True, read_from=read_from)
     return result
+
+
+def recover_retained_source(session, *, case_id, batch_id, source_id, expected_revision, actor):
+    """Explicitly start a new reading from the selected PDF, not a stale pointer."""
+    from services.financial.file_visibility import financial_file_visibility
+    from services.financial.reading_recovery import retry_reference_problem
+    batch = batch_for(session, case_id, batch_id, True)
+    require_running(batch)
+    files = deepcopy(batch.files)
+    target = next((f for f in files if f['source_id'] == str(source_id)), None)
+    source = session.scalar(select(EvidenceFile).where(EvidenceFile.id == source_id,
+        EvidenceFile.case_id == case_id).with_for_update())
+    if target is None or source is None:
+        raise PdfMappingError('The selected source is unavailable in this case.', 404)
+    previous = target.get('recovery') or {}
+    if previous.get('action') == 'recover_retained_source' and target['status'] in ('waiting', 'processing', 'checked'):
+        return dict(queued=False, status=target['status'], **previous)
+    reset = (source.metadata_ or {}).get('financial_import_removal') or {}
+    if (source.status == 'processing' or target['status'] != 'error' or not reset.get('id')
+            or financial_file_visibility(source)['financial_visibility_revision'] != expected_revision):
+        raise PdfMappingError('The source changed or is already processing. Refresh this batch before preparing it again.', 409)
+    prepared = session.scalar(select(EvidenceFile).where(EvidenceFile.id == UUID(target['file_id']),
+        EvidenceFile.case_id == case_id)) if target.get('file_id') else None
+    if not retry_reference_problem(session, case_id=case_id, source_id=source_id, source=source, prepared=prepared):
+        raise PdfMappingError('The source link is available again. Use Retry this file to resume its existing work.', 409)
+    result = dict(attempt_id=str(uuid4()), action='recover_retained_source', stage='queued',
+        message='Preparing a new reading from this retained PDF. Its bytes will be verified before reading; earlier removals and reviews remain in history.',
+        fresh_reading=True, read_from_file_id=str(source.id), reading_file_id=str(source.id),
+        review_file_id=None, reading_mode='automatic', reset_revision=reset['id'],
+        requested_by=dict(name=actor.name, email=actor.email, user_id=str(actor.user_id)))
+    target.update(status='waiting', expected_revision=expected_revision, recovery=result)
+    target.pop('error', None)
+    batch.files = files
+    batch.status = 'preparing'
+    session.commit()
+    return dict(queued=True, status='waiting', **result)
 
 
 def refresh_statement_list(session, *, case_id, batch_id):

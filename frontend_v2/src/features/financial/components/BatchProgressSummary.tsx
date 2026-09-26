@@ -30,12 +30,14 @@ export function BatchProgressSummary({
     ["Saved to Financial", summary?.imported ?? imported],
     ["Save in progress", summary?.pending_import ?? pending],
     ["Left unimported", summary?.skipped ?? skipped],
+    ["Possible duplicates", summary?.possible_duplicates],
     ["Duplicate copies ignored", summary?.duplicate_ignored ?? duplicates],
     ["Assignments completed", summary?.assigned ?? assigned],
     ["Other reviews", summary?.other],
   ]
   const read = files.filter((file) => file.status === "checked").length
   const failed = files.filter((file) => file.status === "error").length
+  const unread = files.length - read
   return (
     <section
       aria-label="Batch progress"
@@ -46,7 +48,9 @@ export function BatchProgressSummary({
           <h3 className="font-semibold">Your progress through this batch</h3>
           <p role="status">
             {summary.imported} saved to Financial ·{" "}
-            {summary.available + summary.blocked} still to finish
+            {summary.available + summary.blocked} prepared reviews still to
+            finish
+            {unread > 0 && ` · ${unread} files still need reading`}
           </p>
           <p className="text-sm text-muted-foreground">
             {summary.available} ready to save · {summary.blocked} need
@@ -70,12 +74,25 @@ export function BatchProgressSummary({
               >
                 Show ready to save
               </Button>
+              <Button variant="outline" onClick={() => onSelect("duplicates")}>
+                Review duplicates (
+                {(summary.possible_duplicates ?? 0) + summary.duplicate_ignored}
+                )
+              </Button>
               <Button variant="outline" onClick={() => onSelect("saved")}>
                 Show already saved
               </Button>
             </div>
           )}
         </div>
+      )}
+      {unread > 0 && (
+        <p role="status" className="rounded border border-amber-400 p-3">
+          {failed > 0
+            ? `${failed} files failed before statement review. Open File processing below for the error and recovery action.`
+            : `${unread} files have not finished reading.`}{" "}
+          Zero prepared reviews does not mean this batch is finished.
+        </p>
       )}
       <div>
         <h3 className="font-semibold">PDF files</h3>

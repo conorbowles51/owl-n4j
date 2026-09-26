@@ -85,3 +85,18 @@ class BatchReviewSummaryTests(TestCase):
         self.assertEqual(before['blocked'] - after['blocked'], 1)
         self.assertEqual(after['imported'] - before['imported'], 1)
         self.assertEqual([r.status for r in readings if matches_group(r, 'unfinished')], ['ready'])
+
+    def test_duplicates_have_separate_progress_and_navigation(self):
+        from services.financial.batch_review_summary import statement_summary
+        duplicate = item(dict(kind='coverage', matching_statement=True), status='attention', can_import=False)
+        normal = item(status='attention', can_import=False)
+        ignored = item(status='duplicate_ignored')
+        skipped = item(dict(kind='coverage', matching_statement=True), status='skipped')
+        self.assertFalse(matches_group(duplicate, 'unfinished'))
+        self.assertTrue(matches_group(normal, 'unfinished'))
+        self.assertTrue(all(matches_group(i, 'duplicates') for i in (duplicate, ignored, skipped)))
+        summary = statement_summary([normal, duplicate, ignored, skipped])
+        self.assertEqual(summary['blocked'], 1)
+        self.assertEqual(summary['possible_duplicates'], 1)
+        self.assertEqual(summary['total'], 4)
+        validate_group('duplicates')

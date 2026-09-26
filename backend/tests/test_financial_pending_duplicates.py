@@ -31,6 +31,35 @@ class PendingDuplicateTests(TestCase):
                 action=action, expected_reading_revision=proposal['revision'], currency=proposal['currency'],
                 statement_id=proposal.get('statement_id'), actor=self.f.actor, **kwargs)['duplicate_disposition']
 
+    def test_investigator_can_leave_matching_copy_unimported_and_restore(self):
+        self.f.confirm()
+        other = self.fixture.copy_file()
+        with self.f.SessionLocal() as db:
+            geometry = db.get(EvidenceTableGeometry, (other.id, 1))
+            payload = deepcopy(geometry.payload)
+            value = next(v for v in payload[0]['table']['values'] if v['row'] == 2 and v['column'] == 1)
+            value['text'] = 'Different retained reading description'
+            geometry.payload = payload
+            db.commit()
+        self.assertEqual(self.decision(other)['status'], 'needs_comparison')
+        before = self.f.preview()['transaction_count']
+        ignored = self.decision(other, 'ignore')
+        self.assertEqual(ignored['basis'], 'investigator_decision')
+        self.assertEqual(ignored['status'], 'ignored')
+        self.assertTrue(ignored['current'])
+        self.assertEqual(self.decision(other)['revision'], ignored['revision'])
+        self.f.file = other
+        self.assertEqual(self.f.confirm()['outcome'], 'duplicate_ignored')
+        restored = self.decision(other, 'restore', expected_decision_revision=ignored['revision'])
+        self.assertEqual(restored['status'], 'restored')
+        with self.f.SessionLocal() as db:
+            self.assertEqual(len(list(db.scalars(select(FinancialTransaction)))), before)
+            self.assertIsNotNone(db.get(EvidenceFile, other.id))
+
+    def test_ignore_requires_a_current_matching_statement(self):
+        with self.assertRaises(PdfMappingError):
+            self.decision(self.primary, 'ignore')
+
     def test_identical_reading_ignored_at_import_and_reopening_is_idempotent(self):
         first = self.f.confirm()
         other = self.fixture.copy_file()

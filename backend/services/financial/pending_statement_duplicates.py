@@ -208,7 +208,8 @@ def apply_duplicate_disposition(session, *, case_id, file, proposal, request=Non
     """
     request = _raw(proposal, request)
     previous = read_duplicate_disposition(session, file, proposal, request)
-    if previous and previous['current'] and previous['status'] == 'restored':
+    if previous and previous['current'] and (previous['status'] == 'restored' or
+            (previous['status'] == 'ignored' and previous.get('basis') == 'investigator_decision')):
         return previous
     own = scope({**request, 'account_type': proposal.get('metadata', {}).get('account_type') or ''})
     current = proposal.get('current_import') or {}
@@ -307,7 +308,25 @@ def decide_duplicate_disposition(session, *, case_id, evidence_file_id, action, 
         _include_duplicate_disposition=False)
     if proposal['revision'] != expected_reading_revision:
         raise PdfMappingError('The statement reading changed. Reopen this period before comparing copies.', 409)
-    if action == 'restore':
+    if action == 'ignore':
+        if proposal.get('current_import'):
+            raise PdfMappingError('This statement already has an import. Review its saved records before excluding them.', 409)
+        if _requires_review_comparison(proposal):
+            raise PdfMappingError('Save your compared review before deciding to leave this copy unimported.', 409)
+        request = _raw(proposal)
+        from services.financial.statement_import_overlap import coverage_review
+        review = coverage_review(session, case_id=case_id, file_id=file.id, request=request)
+        candidates = [c for c in review['candidates'] if c.get('matching_statement')]
+        if not candidates:
+            raise PdfMappingError('No matching statement remains. Reopen this review to check its current status.', 409)
+        retained = sorted(candidates, key=lambda c: (c['status'] != 'imported', c['file_id']))[0]
+        link = dict(evidence_file_id=retained['file_id'], statement_id=retained.get('statement_id'),
+            source_document_id=retained.get('source_document_id'), filename=retained['filename'],
+            page_number=retained.get('page_number', 1))
+        result = _persist(file, proposal, request, dict(status='ignored', label='Duplicate - Left unimported by investigator',
+            basis='investigator_decision', retained=link,
+            reason=reason.strip() or 'Investigator chose not to import this matching statement. Evidence and saved corrections are retained.'), actor)
+    elif action == 'restore':
         previous = read_duplicate_disposition(session, file, proposal)
         history = (_stored(file, proposal.get('statement_id')) or {}).get('history', [])
         replayed_restore = bool(previous and previous['status'] == 'restored' and history

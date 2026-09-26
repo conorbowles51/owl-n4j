@@ -116,6 +116,8 @@ it("shows an ignored file, exposes its retained source and opens its exact perio
   )
   mount(true)
   const choice = await screen.findByLabelText("Show files")
+  expect(choice).toHaveValue("work")
+  expect(screen.queryByRole("button", { name: "Review duplicate decision" })).not.toBeInTheDocument()
   fireEvent.change(choice, { target: { value: "duplicates" } })
   expect(
     screen.getByText("Duplicate decisions · evidence retained")

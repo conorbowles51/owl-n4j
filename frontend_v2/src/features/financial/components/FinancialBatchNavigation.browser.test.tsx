@@ -498,3 +498,33 @@ it.each([1280, 390])("saves ready balance-only reviews above warnings, opens Acc
   expect(screen.getByLabelText("Current route")).toHaveTextContent("batchCheck=reason-0")
   expect(posts).toHaveLength(1)
 })
+
+it("offers a fresh retained-source reading for a broken removal link and shows the queued receipt", async () => {
+  const original = vi.mocked(fetchAPI).getMockImplementation()!
+  let queued = false
+  const receipt = {attempt_id: "synthetic-attempt", action: "recover_retained_source", stage: "queued",
+    message: "Preparing a new reading from this retained PDF. Earlier removals and reviews remain in history.",
+    reading_file_id: "older-reading", review_file_id: null, fresh_reading: true}
+  vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
+    if (url.includes("/recover-source?")) {
+      expect(options).toEqual({method: "POST", body: {expected_revision: "synthetic-removal-revision"}})
+      queued = true
+      return {...receipt, queued: true, status: "waiting"} as never
+    }
+    if (url.includes(`/batches/${batch.id}?`)) return {...batch, files: [{...batch.files[0],
+      status: queued ? "waiting" : "error", error: queued ? undefined : "The old restart source is unavailable.",
+      recovery: queued ? receipt : {attempt_id: "blocked", action: "source_unavailable", stage: "source_unavailable",
+        message: "The old restart source is unavailable.", retained_source_revision: "synthetic-removal-revision",
+        reading_file_id: null, review_file_id: null, fresh_reading: false}}]} as never
+    return original(url, options)
+  })
+  mount(`/cases/case/financial?view=statements&statementMode=batches&batch=${batch.id}`)
+  await screen.findByRole("region", {name: "Financial processing batch"})
+  const processing = screen.getByText("File processing (1)").closest("details")!
+  if (!processing.open) await page.getByText("File processing (1)", {exact:true}).click()
+  await page.screenshot({path: "/private/tmp/loupe-retained-source-action.png", element: processing})
+  await page.getByRole("button", {name: "Read this retained PDF afresh", exact:true}).click()
+  expect(await screen.findByText(receipt.message)).toBeVisible()
+  expect(screen.queryByRole("button", {name: "Read this retained PDF afresh"})).toBeNull()
+  await page.screenshot({path: "/private/tmp/loupe-retained-source-recovery.png"})
+})

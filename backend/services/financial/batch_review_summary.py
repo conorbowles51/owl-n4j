@@ -76,13 +76,20 @@ def is_blocked(item):
     return item.status in ('ready', 'attention') and not item.summary.get('can_import', item.status == 'ready')
 
 
+def is_duplicate_review(item):
+    return item.status == 'duplicate_ignored' or (item.status in ('ready', 'attention', 'skipped') and any(
+        reason(p) == 'duplicate' for p in item.summary.get('problems', [])))
+
+
 def matches_group(item, group):
     if not group:
         return True
     if group == 'blocked':
         return is_blocked(item)
+    if group == 'duplicates':
+        return is_duplicate_review(item)
     if group == 'unfinished':
-        return item.status in ('ready', 'attention')
+        return item.status in ('ready', 'attention') and not is_duplicate_review(item)
     if group == 'saved':
         return item.status == 'imported'
     if group == 'ready_to_save':
@@ -91,12 +98,14 @@ def matches_group(item, group):
 
 
 def validate_group(group):
-    if group and group not in {*REASONS, 'blocked', 'unfinished', 'saved', 'ready_to_save'}:
+    if group and group not in {*REASONS, 'blocked', 'unfinished', 'saved', 'ready_to_save', 'duplicates'}:
         from services.financial.pdf_candidates import PdfMappingError
         raise PdfMappingError('Choose a review reason from this batch.', 422)
 
 
 def group_label(group):
+    if group == 'duplicates':
+        return 'Duplicates and copies left unimported'
     if group in ('unfinished', 'saved', 'ready_to_save'):
         return {'unfinished': 'Unfinished statements', 'saved': 'Already saved to Financial',
                 'ready_to_save': 'Ready to save'}[group]
@@ -119,12 +128,15 @@ def statement_summary(items):
     """
     result = dict(total=0, available=0, blocked=0, imported=0, pending_import=0,
         skipped=0, duplicate_ignored=0, assigned=0, other=0,
-        available_with_payments=0, available_no_activity=0, available_other=0)
+        possible_duplicates=0, available_with_payments=0, available_no_activity=0, available_other=0)
     for item in items:
         if item.status in ('removed', 'superseded_reading'):
             continue
         result['total'] += 1
         if item.status in ('ready', 'attention'):
+            if is_duplicate_review(item):
+                result['possible_duplicates'] += 1
+                continue
             if is_blocked(item):
                 result['blocked'] += 1
                 continue

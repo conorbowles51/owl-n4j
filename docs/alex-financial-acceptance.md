@@ -1,5 +1,7 @@
 **24 September reconciliation and account history follow-up:** R01–R06 are implemented and locally verified in the [connected acceptance record](financial-workflows/reconciliation-and-account-history-plan-2026-09-24.md#implementation-and-local-acceptance--24-september-2026). Reconciliation now gates new statement payments, including batch/recovery and saved-record/manual additions. Balance-only observations remain saveable; confirmed quiet periods are distinct. Bulk dates, currency retry feedback, copyable source access and account history are connected to existing screens. This supersedes historical statements below that unresolved payments may be imported immediately. Live verification and the prior production cleanup audit are not claimed complete.
 
+**26 September later retry feedback:** [Retained-source recovery, honest unfinished counts and historical flag labels](financial-workflows/reread-and-duplicate-decisions-2026-09-26.md#later-feedback-removed-source-retry-dead-end) is implemented and tested locally. The specific live files remain unverified; publication is still blocked by the recorded release authorization requirement.
+
 # Alex's financial workflow acceptance
 
 **25 September renewed feedback:** [initial-batch Retry, EUR account visibility
@@ -294,3 +296,17 @@ Local tests, publication and live provider/source acceptance remain distinct.
 ## 26 September: actionable imported flags and visible progress
 
 The [connected correction and progress record](financial-workflows/flagged-imports-and-review-progress-2026-09-26.md) tracks the supplied screenshots: imported source warnings now lead to saved-record review beside the source, while batches show saved/unfinished work and retain an unfinished-only navigation scope. Original flags are comparison history; the background recovery count is not investigator progress. Correction, failed-save recovery, reopening and batch return have local Chromium coverage. The exact saved record and live behavior remain unverified because browser access was declined. No client record was changed to demonstrate the controls.
+# 26 September: re-read imports and duplicate work queues
+
+The [connected follow-up](financial-workflows/reread-and-duplicate-decisions-2026-09-26.md)
+addresses replacement of empty earlier imports without row-by-row acknowledgement,
+reachable statement-level choices, and separate reversible duplicate review.
+This reopens acceptance for the reported live journeys; local tests and release
+status must not be presented as live case verification.
+
+Authenticated read-only access is now established, superseding the earlier access
+limitation. The [throughput and source-reading audit](financial-workflows/import-throughput-audit-2026-09-26.md)
+records current saved-state verification, the reproduced amount-spacing defect,
+and the empty-batch loading fix. The user explicitly authorized the code-only
+release. Local verification passes; deployed revision and affected live controls
+remain separate acceptance steps. No client records were changed for testing.

@@ -582,3 +582,74 @@ def test_newer_attempt_wins_race_during_engine_status_check(fixture):
     with fixture.f.SessionLocal() as db:
         current = db.get(EvidenceFile, fixture.f.file.id)
         assert current.status == 'processing' and current.engine_job_id == 'new-job'
+
+
+@pytest.mark.parametrize('changed_bytes', [False, True])
+def test_explicit_retained_source_recovery_verifies_bytes_and_preserves_old_work(fixture, changed_bytes):
+    from uuid import uuid4
+    from copy import deepcopy
+    from services.financial.reading_recovery import retry_reference_problem
+    from services.financial.pdf_candidates import PdfMappingError
+    f = fixture.f
+    batch = fixture.create()
+    fixture.advance(batch)
+    with f.SessionLocal() as db:
+        source = db.get(EvidenceFile, f.file.id)
+        source.metadata_ = {**source.metadata_, 'financial_import_removal': {
+            'id': 'synthetic-removal', 'restart_file_id': str(uuid4())}}
+        original_metadata = deepcopy(source.metadata_)
+        record = db.get(Batch, batch)
+        record.files = [{**record.files[0], 'status': 'error'}]
+        item = db.scalar(select(Item).where(Item.batch_id == batch))
+        item.review_request = {'holder': 'Preserve investigator correction'}
+        item_id = item.id
+        db.commit()
+        problem = service.retry_file(db, case_id=f.case.id, batch_id=batch, source_id=f.file.id)
+        assert problem['retained_source_revision']
+        with pytest.raises(PdfMappingError, match='source changed'):
+            service.recover_retained_source(db, case_id=f.case.id, batch_id=batch,
+                source_id=f.file.id, expected_revision='stale', actor=f.actor)
+        db.rollback()
+        accepted = service.recover_retained_source(db, case_id=f.case.id, batch_id=batch,
+            source_id=f.file.id, expected_revision=problem['retained_source_revision'], actor=f.actor)
+        repeated = service.recover_retained_source(db, case_id=f.case.id, batch_id=batch,
+            source_id=f.file.id, expected_revision=problem['retained_source_revision'], actor=f.actor)
+        assert accepted['queued'] and not repeated['queued']
+        assert accepted['attempt_id'] == repeated['attempt_id']
+        before_ids = set(db.scalars(select(EvidenceFile.id)))
+    if changed_bytes:
+        f.path.write_bytes(b'changed synthetic source')
+    async def process(db, **kwargs):
+        version = db.get(EvidenceFile, kwargs['file_ids'][0])
+        assert version.id != f.file.id
+        assert version.sha256 == f.file.sha256
+        assert version.metadata_['statement_reset_revision'] == 'synthetic-removal'
+        assert version.metadata_['statement_version_actor']['user_id'] == str(f.actor.user_id)
+        assert Path(version.stored_path).read_bytes() == f.path.read_bytes()
+        version.status = 'processing'
+        db.commit()
+        return {'job_ids': ['synthetic-new-reading']}
+    worker = AsyncMock(side_effect=process)
+    asyncio.run(service.advance_batch(f.SessionLocal, batch, Path, worker))
+    with f.SessionLocal() as db:
+        source = db.get(EvidenceFile, f.file.id)
+        assert source.metadata_ == original_metadata
+        assert db.get(Item, item_id).review_request == {'holder': 'Preserve investigator correction'}
+        entry = db.get(Batch, batch).files[0]
+        if changed_bytes:
+            worker.assert_not_awaited()
+            assert entry['status'] == 'error'
+            assert 'bytes no longer match' in entry['error']
+            assert set(db.scalars(select(EvidenceFile.id))) == before_ids
+        else:
+            worker.assert_awaited_once()
+            assert entry['status'] == 'processing'
+            from uuid import UUID
+            version = db.get(EvidenceFile, UUID(entry['file_id']))
+            assert retry_reference_problem(db, case_id=f.case.id, source_id=f.file.id,
+                source=source, prepared=version) is None
+            assert len(set(db.scalars(select(EvidenceFile.id))) - before_ids) == 1
+            from services.financial.recovery_followup import current_scope
+            scope, reopening = current_scope(db, [source, version])
+            assert [record.id for record in scope] == [version.id]
+            assert reopening['request_id'] == accepted['attempt_id']

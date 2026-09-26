@@ -33,6 +33,7 @@ import { useFinancialStore } from "../stores/financial.store"
 import { useFinancialDraft } from "../stores/financial-drafts"
 import type { EvidenceJob } from "@/types/evidence.types"
 const recoveryReceipt = z.object({
+  retained_source_revision: z.string().nullish(),
   attempt_id: z.string().optional(),
   action: z.string().optional(),
   stage: z.string().optional(),
@@ -179,7 +180,7 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
   const [params, setParams] = useSearchParams()
   const batchId = params.get("batch"),
     itemId = params.get("batchItem")
-  const reviewGroup = params.get("batchCheck") || ""
+  const reviewGroup = params.get("batchCheck") ?? "unfinished"
   const statementList = useRef<HTMLHeadingElement>(null)
   const readingJobs = useRef<HTMLDivElement>(null)
   const focusStatementList = useRef(false)
@@ -280,8 +281,7 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
     focusStatementList.current = true
     setParams((current) => {
       const next = new URLSearchParams(current)
-      if (group) next.set("batchCheck", group)
-      else next.delete("batchCheck")
+      next.set("batchCheck", group)
       return next
     })
   }
@@ -351,7 +351,7 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
       if (fileId) {
         next.set("reviewFile", fileId)
         if (batchId) next.set("returnBatch", batchId)
-        if (reviewGroup) next.set("returnBatchCheck", reviewGroup)
+        next.set("returnBatchCheck", reviewGroup)
       }
       return next
     })
@@ -375,7 +375,8 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
   })
   const paused = ["paused", "pausing"].includes(batchState ?? "")
   const retryFile = async (
-    file: z.infer<typeof batchSchema>["files"][number]
+    file: z.infer<typeof batchSchema>["files"][number],
+    recoverSource = false
   ) => {
     if (!canEdit || !canUpload || paused || retryInFlight.current) return
     retryInFlight.current = true
@@ -389,8 +390,18 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
         .merge(recoveryReceipt)
         .parse(
           await fetchAPI(
-            `${prefix}/${batchId}/files/${file.source_id}/retry?case_id=${caseId}`,
-            { method: "POST" }
+            `${prefix}/${batchId}/files/${file.source_id}/${recoverSource ? "recover-source" : "retry"}?case_id=${caseId}`,
+            {
+              method: "POST",
+              ...(recoverSource
+                ? {
+                    body: {
+                      expected_revision:
+                        file.recovery?.retained_source_revision,
+                    },
+                  }
+                : {}),
+            }
           )
         )
       setRetryMessage(
@@ -490,13 +501,12 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
   })
   const openImported = useMutation({
     mutationFn: async (operationId?: string) => {
-      const result = batchSavedAccountsScope
-        .parse(
-          await fetchAPI(
-            `${prefix}/${batchId}/imported-transactions?case_id=${caseId}${operationId ? `&operation_id=${operationId}` : ""}`,
-            { timeout: 60000 }
-          )
+      const result = batchSavedAccountsScope.parse(
+        await fetchAPI(
+          `${prefix}/${batchId}/imported-transactions?case_id=${caseId}${operationId ? `&operation_id=${operationId}` : ""}`,
+          { timeout: 60000 }
         )
+      )
       if (result.case_id !== caseId || result.batch_id !== batchId)
         throw Error("The imported payments belong to another batch.")
       return { ...result, operationId }
@@ -510,7 +520,14 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
       }
       if (result.transaction_count === 0) {
         useFinancialStore.getState().setMainView("statements")
-        setParams({ view: "statements", accounts: "1", returnBatch: batchId!, savedBatch: "1", ...(reviewGroup ? { returnBatchCheck: reviewGroup } : {}), ...(result.operationId ? { savedOperation: result.operationId } : {}) })
+        setParams({
+          view: "statements",
+          accounts: "1",
+          returnBatch: batchId!,
+          savedBatch: "1",
+          ...(reviewGroup ? { returnBatchCheck: reviewGroup } : {}),
+          ...(result.operationId ? { savedOperation: result.operationId } : {}),
+        })
         return
       }
       resetPaymentTableView(caseId, scope, result)
@@ -642,11 +659,20 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
               {batch.statement_summary && (
                 <p className="text-sm font-medium">
                   {batch.statement_summary.imported} saved to Financial ·{" "}
-                  {batch.statement_summary.available + batch.statement_summary.blocked} unfinished ·{" "}
-                  {batch.statement_summary.pending_import} saves in progress
+                  {batch.statement_summary.available +
+                    batch.statement_summary.blocked}{" "}
+                  prepared reviews unfinished · {batch.statement_summary.pending_import} saves in
+                  progress
+                  {batch.checked_files !== undefined && batch.checked_files < batch.file_count && (
+                    <span className="block font-normal">
+                      {batch.file_count - batch.checked_files} files still need reading or preparation.
+                    </span>
+                  )}
                   <span className="block font-normal text-muted-foreground">
-                    {batch.statement_summary.skipped + batch.statement_summary.duplicate_ignored} left unimported or ignored.
-                    {" "}These are saved batch statuses; open the batch for current checks.
+                    {batch.statement_summary.skipped +
+                      batch.statement_summary.duplicate_ignored}{" "}
+                    left unimported or ignored. These are saved batch statuses;
+                    open the batch for current checks.
                   </span>
                 </p>
               )}
@@ -728,7 +754,11 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
       ...item,
       problems: reviewProblems(item, reviewGroup),
     }))
-  const available = batch.statement_summary?.available ?? batch.available_statements ?? batch.counts.ready ?? 0
+  const available =
+    batch.statement_summary?.available ??
+    batch.available_statements ??
+    batch.counts.ready ??
+    0
   const availableRecords = batch.available_records ?? batch.ready_transactions
   const availablePayments = batch.available_transactions ?? availableRecords
   const incompleteRecords = batch.available_incomplete ?? 0
@@ -1070,7 +1100,7 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
               )}
               <>
                 {file.error && <p role="alert">{file.error}</p>}
-                <div className="flex gap-2 mt-2">
+                <div className="flex flex-wrap gap-2 mt-2">
                   <Button
                     variant="outline"
                     size="sm"
@@ -1101,6 +1131,18 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
                           : "Check reading"}
                     </Button>
                   )}
+                  {file.recovery?.retained_source_revision &&
+                    canEdit &&
+                    canUpload && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={!!retryingFile || paused}
+                        onClick={() => void retryFile(file, true)}
+                      >
+                        Read this retained PDF afresh
+                      </Button>
+                    )}
                   {file.recovery?.action === "source_unavailable" && (
                     <Button variant="outline" size="sm" asChild>
                       <Link
@@ -1235,7 +1277,8 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
                     .join(" · ")}
                 </p>
                 <p className="text-sm">
-                  {item.can_import && ["ready", "attention"].includes(item.status)
+                  {item.can_import &&
+                  ["ready", "attention"].includes(item.status)
                     ? "Available to import"
                     : (labels[item.status] ?? item.status)}
                   {!!(item.problem_count ?? item.problems.length) &&
@@ -1533,7 +1576,7 @@ function BatchStatementReview({
   onBack: () => void
 }) {
   const [params, setParams] = useSearchParams()
-  const reviewGroup = params.get("batchCheck") || ""
+  const reviewGroup = params.get("batchCheck") ?? "unfinished"
   const reviewGroupQuery = reviewGroup
     ? `&review_group=${encodeURIComponent(reviewGroup)}`
     : ""
@@ -1573,7 +1616,10 @@ function BatchStatementReview({
   const beforeNavigate = useRef<(() => Promise<unknown>) | null>(null)
   const [navigating, setNavigating] = useState(false)
   const [navigationStatus, setNavigationStatus] = useState("")
-  const adjacentStatement = async (direction: "next" | "previous", group = reviewGroup) => {
+  const adjacentStatement = async (
+    direction: "next" | "previous",
+    group = reviewGroup
+  ) => {
     setNavigating(true)
     setNavigationError("")
     setNavigationStatus("")
@@ -1605,8 +1651,7 @@ function BatchStatementReview({
       setParams((current) => {
         const next = new URLSearchParams(current)
         next.set("batchItem", result.item_id!)
-        if (group) next.set("batchCheck", group)
-        else next.delete("batchCheck")
+        next.set("batchCheck", group)
         next.delete("batchRow")
         return next
       })
@@ -1684,18 +1729,36 @@ function BatchStatementReview({
         aria-label="Review batch statements"
       >
         {item && (
-          <div className="w-full text-sm" aria-label="Current batch statement status">
-            <p className="font-semibold">Batch {batchId.slice(0, 8)} · {item.filename}</p>
-            <p>{[item.holder, item.account, item.currency, item.period_start && `${item.period_start} to ${item.period_end || "unknown"}`].filter(Boolean).join(" · ")}</p>
+          <div
+            className="w-full text-sm"
+            aria-label="Current batch statement status"
+          >
+            <p className="font-semibold">
+              Batch {batchId.slice(0, 8)} · {item.filename}
+            </p>
+            <p>
+              {[
+                item.holder,
+                item.account,
+                item.currency,
+                item.period_start &&
+                  `${item.period_start} to ${item.period_end || "unknown"}`,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+            </p>
             <p>
               {item.status === "imported"
                 ? "Already saved to Financial. Do not import again; use saved-record corrections if needed."
                 : item.status === "pending_import"
                   ? "Save in progress. Wait for its result before taking another import action."
-                  : item.can_import && ["ready", "attention"].includes(item.status)
+                  : item.can_import &&
+                      ["ready", "attention"].includes(item.status)
                     ? "Review ready. Payments are not imported until you confirm saving."
                     : labels[item.status] || item.status}
-              {item.review_request && item.status !== "imported" && " Your previous review draft is saved."}
+              {item.review_request &&
+                item.status !== "imported" &&
+                " Your previous review draft is saved."}
             </p>
           </div>
         )}
@@ -1729,8 +1792,8 @@ function BatchStatementReview({
       </div>
       {reviewGroup && (
         <p className="text-sm">
-          Previous and next stay within the selected filter. Return to
-          the batch to change or clear this filter.
+          Previous and next stay within the selected filter. Return to the batch
+          to change or clear this filter.
         </p>
       )}
       {item?.status === "skipped" && (

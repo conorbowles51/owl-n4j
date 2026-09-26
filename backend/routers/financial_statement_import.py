@@ -177,7 +177,7 @@ class StatementCoverageRequest(_Contract):
 
 
 class DuplicateDispositionRequest(_Contract):
-    action: Literal['check', 'restore'] = 'check'
+    action: Literal['check', 'restore', 'ignore'] = 'check'
     expected_reading_revision: _Digest
     statement_id: _Digest | None = None
     currency: str | None = Field(default=None, pattern=r'^[A-Z]{3}$')
@@ -767,3 +767,16 @@ async def retry_financial_batch_file(batch_id: UUID,source_id: UUID,case_id: UUI
         return await retry_file_checked(db,case_id=case_id,batch_id=batch_id,source_id=source_id)
     except PdfMappingError as exc:
         db.rollback();raise HTTPException(status_code=exc.status_code,detail=str(exc)) from exc
+
+
+@router.post('/batches/{batch_id}/files/{source_id}/recover-source', dependencies=[
+    Depends(case_access_dependency(lambda request,payload: ('case','edit'))),
+    Depends(case_access_dependency(lambda request,payload: ('evidence','upload')))])
+def recover_retained_batch_source(batch_id: UUID, source_id: UUID, body: EvidencePreparationRequest,
+        case_id: UUID=Query(...), user=Depends(get_current_db_user), db: Session=Depends(get_db)):
+    try:
+        return import_batches.recover_retained_source(db, case_id=case_id, batch_id=batch_id,
+            source_id=source_id, expected_revision=body.expected_revision, actor=actor_from_user(user))
+    except PdfMappingError as exc:
+        db.rollback()
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc

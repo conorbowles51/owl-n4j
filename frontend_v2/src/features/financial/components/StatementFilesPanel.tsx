@@ -53,7 +53,7 @@ export function StatementFilesPanel({
   const client = useQueryClient()
   const input = useRef<HTMLInputElement>(null)
   const [search, setSearch] = useState("")
-  const [status, setStatus] = useState("all")
+  const [status, setStatus] = useState("work")
   const resultsHeading = useRef<HTMLHeadingElement>(null)
   const [filterAction, setFilterAction] = useState(0)
   const [removed, setRemoved] = useState(false)
@@ -196,12 +196,28 @@ export function StatementFilesPanel({
         const saved = imports.data?.files.find(
           (item) => item.evidence_file_id === file.id
         )
+        const duplicatePeriods =
+          saved?.duplicate_dispositions.filter(
+            ({ decision }) =>
+              decision.current &&
+              (decision.status === "ignored" ||
+                (decision.status === "needs_comparison" && !!decision.retained))
+          ).length ?? 0
+        const onlyDuplicates =
+          duplicatePeriods > 0 &&
+          !!saved?.prepared_periods &&
+          duplicatePeriods >= saved.prepared_periods &&
+          !saved.available_periods &&
+          !saved.current_transactions &&
+          file.status === "processed"
         return (
           removalMode ||
           removed ||
           status === "all" ||
+          (status === "work" && !onlyDuplicates) ||
           (status === "ready" && !!saved?.available_periods) ||
-          (status === "duplicates" && !!saved?.ignored_periods) ||
+          (status === "duplicates" &&
+            (!!saved?.ignored_periods || duplicatePeriods > 0)) ||
           (status === "checks" &&
             (!!saved?.periods_with_checks || !!saved?.incomplete_count)) ||
           (status === "pending" &&
@@ -440,7 +456,13 @@ export function StatementFilesPanel({
           use Choose from Evidence to send the retained PDF for review.
         </p>
       )}
-      {canUpload && <ResumableUploadsPanel caseId={caseId} financialContext active={active} />}
+      {canUpload && (
+        <ResumableUploadsPanel
+          caseId={caseId}
+          financialContext
+          active={active}
+        />
+      )}
       {error && <p role="alert">{error}</p>}
       {queue && (
         <div aria-live="polite" className="space-y-2">
@@ -481,10 +503,15 @@ export function StatementFilesPanel({
               value={status}
               onChange={(e) => showResults(e.target.value)}
             >
-              <option value="all">All files</option>
+              <option value="work">
+                Statements to process and saved statements
+              </option>
+              <option value="all">All files including duplicates</option>
               <option value="ready">Ready to import</option>
               <option value="checks">Checks to review</option>
-              <option value="duplicates">Ignored duplicates</option>
+              <option value="duplicates">
+                Duplicates to compare or left unimported
+              </option>
               <option value="pending">Reading or importing</option>
               <option value="imported">With imported statements</option>
               <option value="review">Without imported statements</option>
@@ -543,6 +570,12 @@ export function StatementFilesPanel({
                 0
               )}{" "}
               statement imports pending
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => showResults("duplicates", true)}
+            >
+              Review duplicates
             </Button>
             <Button variant="ghost" onClick={() => showResults("all", true)}>
               Show all files
@@ -790,7 +823,7 @@ export function StatementFilesPanel({
                 {removed
                   ? "Removed from Financial"
                   : allPreparedIgnored
-                    ? "Duplicate - Ignored by system"
+                    ? "Duplicate — left unimported"
                     : saved?.wire_review_count
                       ? `${saved.wire_review_count} saved wire ${saved.wire_review_count === 1 ? "review" : "reviews"}`
                       : saved?.incomplete_count
@@ -876,7 +909,9 @@ export function StatementFilesPanel({
                         >
                           <p className="font-medium">
                             {decision.current && decision.status === "ignored"
-                              ? "Duplicate - Ignored by system"
+                              ? decision.basis === "investigator_decision"
+                                ? "Duplicate — left unimported"
+                                : "Duplicate - Ignored by system"
                               : decision.label}
                           </p>
                           <p>{decision.reason}</p>

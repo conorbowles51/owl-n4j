@@ -2805,3 +2805,19 @@ it("saves a single zero closing balance without asking for an opening balance or
     rows: [{ excluded: true, balance_minor: "0" }],
   })
 })
+
+it("labels saved statement extraction flags as historical rather than current problems", async () => {
+  const base = vi.mocked(fetchAPI).getMockImplementation()!
+  vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
+    if (String(url).includes("/statement-import/") && !options?.method)
+      return {...data, rows: data.rows.map(row => row.kind === "transaction" ? {...row, fields: {...row.fields, amount_minor: "bad amount"}, issues: ["Original extraction flag"]} : row),
+        current_import: {source_document_id: "saved", evidence_file_id: "file", revision: "b".repeat(64), transaction_count: 1}} as never
+    return base(url, options)
+  })
+  mount()
+  await open(false)
+  expect(screen.getByRole("button", {name: /Next original flag|First original flag/})).toBeVisible()
+  expect(screen.queryByRole("button", {name: /Next problem|First problem/})).toBeNull()
+  expect(screen.getByText(/These original extraction totals are incomplete/)).toBeVisible()
+  expect(screen.queryByText(/under Credit or Debit before importing/)).toBeNull()
+})

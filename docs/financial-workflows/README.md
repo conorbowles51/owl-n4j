@@ -1,5 +1,7 @@
 # Loupe financial investigator workflow reference
 
+**26 September later retry feedback:** [Retained-source recovery, honest unfinished counts and historical flag labels](reread-and-duplicate-decisions-2026-09-26.md#later-feedback-removed-source-retry-dead-end) is implemented and tested locally. The specific live files remain unverified; publication is still blocked by the recorded release authorization requirement.
+
 **26 September feedback:** [flagged imported rows and review progress](flagged-imports-and-review-progress-2026-09-26.md) connects historical source warnings to saved-record corrections and adds unfinished/saved batch navigation. Current review progress is separate from a completed background recovery run. Local verification and live-access limitations are recorded separately.
 
 **25 September agent and reading follow-up:** [authoritative imported-ledger analysis, actionable row checks and bounded batch loading](agent-analysis-and-reading-follow-up-2026-09-25.md) preserves the full analysis objective alongside the newly supplied Santander continuation failure. It records read-only tools, complete-scope totals, source references, saved-review preservation, private source verification and remaining live acceptance.
@@ -436,3 +438,9 @@ The earlier ready releases `e0bce92c`/`73e9cf45` are live with current database 
 Upload gate: automatic approval review rejected sending the two supplied financial PDFs to live neil finance without explicit file-and-destination authorization. The user has been asked; neither file was uploaded. Local actual-PDF tests and release deployment continue independently.
 
 Deployment verified: `2327d9bb` is live. The version endpoint identifies `2327d9b`; Admin Updates identifies the same deployed/latest revision. Deploy log `deploy-20260922-014132.log` completed in 195 seconds, with current database schema, healthy Postgres/Neo4j/evidence engine, and compiled frontend served on 5174. Read-only live verification in neil finance reopened the existing January 2021 MXN statement with its 137 saved payments intact and the new operation-balance explanation visibly beside its opening/closing controls. A screenshot at 1280×720 confirmed readable placement in dark mode. No supplied PDF was uploaded and no live case records changed: the explicit upload question is still pending. Therefore the two new source PDFs are locally verified, deployed reader/UI is verified, but their full live upload/import journey remains unverified.
+# 26 September follow-up
+
+[Re-read import and separate duplicate review](reread-and-duplicate-decisions-2026-09-26.md)
+tracks the replacement choice, editable batch re-reads, reversible “Don’t import”
+decision and separate duplicate queues. Live acceptance remains distinct from
+local verification.

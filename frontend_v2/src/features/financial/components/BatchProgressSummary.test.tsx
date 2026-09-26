@@ -9,6 +9,7 @@ const summary = {
   imported: 1,
   pending_import: 0,
   skipped: 0,
+  possible_duplicates: 0,
   duplicate_ignored: 0,
   assigned: 0,
   other: 0,
@@ -103,4 +104,35 @@ it("explains a paused save without offering an enabled no-op", () => {
     screen.getByText(/Resume batch preparation before saving/)
   ).toBeVisible()
   expect(props.onConfirm).not.toHaveBeenCalled()
+})
+
+it("keeps failed reading work visible when no statement reviews exist", () => {
+  render(
+    <BatchProgressSummary
+      files={Array.from({ length: 8 }, () => ({ status: "error" }))}
+      summary={{
+        ...summary,
+        total: 0,
+        available: 0,
+        blocked: 0,
+        imported: 0,
+        available_no_activity: 0,
+      }}
+      available={0}
+      imported={0}
+      pending={0}
+      skipped={0}
+      duplicates={0}
+      assigned={0}
+    />
+  )
+  expect(screen.getByText(/8 files still need reading/)).toBeVisible()
+  expect(
+    screen.getByText(/8 files failed before statement review/)
+  ).toBeVisible()
+  expect(
+    screen.getByText(
+      /Zero prepared reviews does not mean this batch is finished/
+    )
+  ).toBeVisible()
 })

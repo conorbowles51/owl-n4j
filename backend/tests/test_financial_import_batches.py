@@ -16,6 +16,16 @@ from tests.test_financial_statement_import import StatementImportTests as Fixtur
 
 
 class BatchImportTests(TestCase):
+    def test_unread_batch_status_does_not_reconstruct_unrelated_case_statements(self):
+        from unittest.mock import patch
+        batch = self.create()
+        with patch('services.financial.statement_import_overlap.comparison_sources',
+                   side_effect=AssertionError('No reviews in this batch require comparison')):
+            state = self.status(batch)
+        self.assertEqual(state['total'], 0)
+        self.assertEqual(len(state['files']), 1)
+        self.assertEqual(state['files'][0]['status'], 'waiting')
+
     def test_choose_unknown_currency_and_repeat_after_lost_response(self):
         from types import SimpleNamespace
         from unittest.mock import patch

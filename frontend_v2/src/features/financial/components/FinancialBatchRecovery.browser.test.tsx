@@ -176,7 +176,7 @@ it("saves before next and previous, blocks navigation on failure and explains th
     .getByRole("button", { name: "Next statement", exact: true })
     .click()
   expect(await screen.findByRole("status")).toHaveTextContent(
-    "last statement (2 of 2)"
+    "No further statements match this filter"
   )
 })
 
@@ -308,7 +308,7 @@ it.each([1280, 390])("keeps imported status explicit, saves before skipping comp
   expect(screen.getByLabelText("Current batch statement status")).toHaveTextContent("Still unfinished.pdf")
   await page.getByRole("button", { name: "Back to bulk import", exact: true }).click()
   expect(await screen.findByText("Statements: Unfinished statements")).toBeVisible()
-  expect(screen.getByLabelText("Your batch progress")).toHaveTextContent("1 saved to Financial · 2 still to finish")
+  expect(screen.getByLabelText("Your batch progress")).toHaveTextContent("1 saved to Financial · 2 prepared reviews still to finish")
   await page.getByRole("button", { name: "Show already saved", exact: true }).click()
   await waitFor(() => expect(vi.mocked(fetchAPI).mock.calls.some(([url]) => url.includes("review_group=saved"))).toBe(true))
   await page.getByRole("button", { name: "Show unfinished statements", exact: true }).click()
