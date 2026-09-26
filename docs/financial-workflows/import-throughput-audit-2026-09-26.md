@@ -82,3 +82,15 @@ instead of calling both active. Paused jobs remain outside both counts. Four
 existing Chromium ingestion/upload journeys pass, including a resumed job that
 is queued while another continues running; the production build and lint pass.
 No worker concurrency or live queue state was changed.
+
+## Requested release retrigger
+
+The user requested a further change and push after the live browser continued
+to identify build `90a01b2`. This documentation-only commit retriggers the normal
+automatic release and includes the fixes in `652f2008` and `1acc6116` through
+their existing commit history. No application behavior or ingestion gate changes.
+
+Acceptance requires a fresh browser load identifying this release or a later
+descendant, followed by the affected workflow checks. A successful push alone
+does not establish deployment. If the old build remains, inspect the automatic
+release log for a deferred ingestion gate or failed step before retrying again.
