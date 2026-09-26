@@ -103,7 +103,7 @@ it("keeps AI visible through a second reading, failure, resume, completion and r
       progress: 0.1,
     })
     await refresh()
-    await screen.findByText("2 active")
+    await screen.findByText("2 running · 0 queued")
     expect(ai().getByText("Extracting Entities")).toBeTruthy()
     expect(pdf().getByText("Financial statement reading")).toBeTruthy()
 
@@ -115,7 +115,7 @@ it("keeps AI visible through a second reading, failure, resume, completion and r
     await refresh()
     await waitFor(() => expect(pdf().getByText("Failed")).toBeTruthy())
     expect(ai().getByText("35%")).toBeTruthy()
-    expect(screen.getByText("1 active")).toBeTruthy()
+    expect(screen.getByText("1 running · 0 queued")).toBeTruthy()
     fireEvent.click(pdf().getByRole("button", { name: "Resume batch" }))
     await waitFor(() =>
       expect(controls).toEqual([
@@ -123,6 +123,7 @@ it("keeps AI visible through a second reading, failure, resume, completion and r
       ])
     )
     await waitFor(() => expect(pdf().getByText("Pending")).toBeTruthy())
+    expect(screen.getByText("1 running · 1 queued")).toBeVisible()
     expect(ai().getByText("Extracting Entities")).toBeTruthy()
 
     jobs = jobs.map((job) =>
@@ -231,7 +232,7 @@ it("pauses a phone report, returns to its saved state and resumes while AI inges
     client.clear()
     mount()
     await screen.findByRole("button", { name: "Resume" })
-    expect(screen.getByText("1 active")).toBeVisible()
+    expect(screen.getByText("1 running · 0 queued")).toBeVisible()
     await page.screenshot({ path: "/tmp/loupe-phone-pause-resume.png" })
     fireEvent.click(card().getByRole("button", { name: "Resume" }))
     await waitFor(() => expect(card().getByText("Pending")).toBeVisible())
@@ -243,7 +244,7 @@ it("pauses a phone report, returns to its saved state and resumes while AI inges
     phone = { ...phone, status: "completed", progress: 1, entity_count: 40 }
     await refresh()
     await waitFor(() => expect(card().getByText("Completed")).toBeVisible())
-    expect(screen.getByText("1 active")).toBeVisible()
+    expect(screen.getByText("1 running · 0 queued")).toBeVisible()
   } finally {
     cleanup()
     client.clear()

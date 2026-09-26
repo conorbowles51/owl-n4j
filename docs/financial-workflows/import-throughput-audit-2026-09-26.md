@@ -68,3 +68,17 @@ The user explicitly authorized committing and pushing these verified code-only
 fixes on 26 September. Automatic deployment retains ingestion-idle checks.
 Publication and deployed revision verification are recorded separately from local
 validation. Original source material and live case observations are not fixtures.
+
+## Publication and processing count clarity
+
+Code-only release `652f2008` was pushed to the automatic deployment branch.
+The live application still reported the previous build at the first post-push
+check. The Updates page explicitly does not expose automatic deployment status;
+GitHub had no check or deployment records for the commit. Server release logs
+were requested. This is not evidence of a failed release or a completed one.
+
+The Processing Jobs header now separates running work from pending queued work
+instead of calling both active. Paused jobs remain outside both counts. Four
+existing Chromium ingestion/upload journeys pass, including a resumed job that
+is queued while another continues running; the production build and lint pass.
+No worker concurrency or live queue state was changed.

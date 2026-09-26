@@ -420,6 +420,9 @@ export function JobsPanel({ caseId }: JobsPanelProps) {
       ).length,
     [backgroundTasks, jobs, visibleUploadActivities]
   )
+  const queuedCount =
+    (jobs?.filter((job) => job.status === "pending" && !job.paused).length ?? 0) +
+    (backgroundTasks?.filter((task) => task.status === "pending").length ?? 0)
 
   const completedJobs = useMemo(
     () =>
@@ -482,13 +485,13 @@ export function JobsPanel({ caseId }: JobsPanelProps) {
       <ProcessHoldDialog gate={gate} />
       {/* Header */}
       <div className="flex items-center justify-between border-b border-border px-4 py-2">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
             Processing Jobs
           </h3>
           {activeCount > 0 && (
             <Badge variant="info" className="px-1.5 py-0 text-[9px] h-4">
-              {activeCount} active
+              {activeCount - queuedCount} running · {queuedCount} queued
             </Badge>
           )}
         </div>
