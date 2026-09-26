@@ -1,4 +1,5 @@
 import type { BatchStatementSummary } from "../lib/batch-statement-summary"
+import { Button } from "@/components/ui/button"
 
 export function BatchProgressSummary({
   files,
@@ -10,6 +11,7 @@ export function BatchProgressSummary({
   skipped,
   duplicates,
   assigned,
+  onSelect,
 }: {
   files: { status: string }[]
   summary?: BatchStatementSummary
@@ -20,6 +22,7 @@ export function BatchProgressSummary({
   skipped: number
   duplicates: number
   assigned: number
+  onSelect?: (group: string) => void
 }) {
   const states: [string, number | undefined][] = [
     ["Ready to save", summary?.available ?? available],
@@ -38,6 +41,42 @@ export function BatchProgressSummary({
       aria-label="Batch progress"
       className="space-y-3 rounded border bg-card p-4"
     >
+      {summary && (
+        <div className="space-y-2" aria-label="Your batch progress">
+          <h3 className="font-semibold">Your progress through this batch</h3>
+          <p role="status">
+            {summary.imported} saved to Financial ·{" "}
+            {summary.available + summary.blocked} still to finish
+          </p>
+          <p className="text-sm text-muted-foreground">
+            {summary.available} ready to save · {summary.blocked} need
+            corrections or a decision. {summary.pending_import} saves in
+            progress. {summary.skipped + summary.duplicate_ignored} left
+            unimported or ignored. {summary.assigned} assigned to another
+            account or period.
+            {summary.other > 0 &&
+              ` ${summary.other} other reviews still require inspection.`}{" "}
+            Saved statements can retain original extraction flags; those flags
+            do not mean you must import them again.
+          </p>
+          {onSelect && (
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" onClick={() => onSelect("unfinished")}>
+                Show unfinished statements
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => onSelect("ready_to_save")}
+              >
+                Show ready to save
+              </Button>
+              <Button variant="outline" onClick={() => onSelect("saved")}>
+                Show already saved
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
       <div>
         <h3 className="font-semibold">PDF files</h3>
         <p>

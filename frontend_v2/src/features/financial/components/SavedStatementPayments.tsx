@@ -14,13 +14,15 @@ export function SavedStatementPayments({
   caseId,
   sourceId,
   hasIncomplete,
+  initiallyOpen = false,
 }: {
   caseId: string
   sourceId: string
   hasIncomplete: boolean
+  initiallyOpen?: boolean
 }) {
   const { canEdit } = useFinancialAccess()
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(initiallyOpen)
   const [correcting, setCorrecting] = useState<LedgerTransaction | null>(null)
   const [source, setSource] = useState<string | null>(null)
   const editor = useRef<HTMLDivElement>(null)
@@ -32,9 +34,10 @@ export function SavedStatementPayments({
   return (
     <section className="space-y-3" aria-label="Review saved statement payments">
       <p className="text-sm">
-        Correct saved payments here, beside their source. The extraction shown
-        further down is a new reading for comparison; editing it would require a
-        reviewed replacement.
+        Review saved payments here, beside their source. Original extraction
+        flags are retained for comparison and do not show whether a saved
+        payment has since been corrected. Choose the matching saved record to
+        inspect its current values.
       </p>
       <Button
         variant="outline"
@@ -83,6 +86,7 @@ export function SavedStatementPayments({
             </div>
           )}
           <LedgerPanel
+            independentFilters
             caseId={caseId}
             params={{ sourceDocumentId: sourceId }}
             onCorrect={canEdit ? setCorrecting : undefined}

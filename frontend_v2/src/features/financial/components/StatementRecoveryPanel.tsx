@@ -211,6 +211,14 @@ export function StatementRecoveryPanel({
         {data.scope ? "scheduled sources checked" : "files checked"} ·{" "}
         {data.counts.review ?? 0} need review
       </p>
+      {data.run.status === "complete" && (
+        <p className="text-sm font-medium">
+          The background check has finished. This is not your review progress:
+          its results describe that recovery run and may include statements you
+          have since reviewed or imported. Use the current statement status and
+          Processing batches to see what is saved and what remains unfinished.
+        </p>
+      )}
       {data.scope && (
         <div className="space-y-1 text-sm" aria-label="Follow-up scope">
           <p>

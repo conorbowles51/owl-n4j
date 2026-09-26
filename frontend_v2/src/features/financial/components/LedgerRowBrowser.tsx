@@ -60,9 +60,11 @@ export function LedgerRowBrowser({
   transactions,
   exportContext,
   investigation = false,
+  independentFilters = false,
   ...actions
 }: ComponentProps<typeof LedgerTable> & {
   investigation?: boolean
+  independentFilters?: boolean
   exportContext?: {
     caseId: string
     params: LedgerQueryParams
@@ -73,9 +75,12 @@ export function LedgerRowBrowser({
     }
   }
 }) {
-  const [accountScope, applyAccountScope] = useInvestigationScope(
+  const [sharedAccountScope, applySharedAccountScope] = useInvestigationScope(
     exportContext?.caseId
   )
+  const [localAccountScope, applyLocalAccountScope] = useState<typeof sharedAccountScope>({})
+  const accountScope = independentFilters ? localAccountScope : sharedAccountScope
+  const applyAccountScope = independentFilters ? applyLocalAccountScope : applySharedAccountScope
   const { canEdit } = useFinancialAccess()
   const accountDirectory = useLedgerAccountDirectory(
     investigation && !exportContext?.profile ? exportContext?.caseId : undefined
@@ -83,9 +88,12 @@ export function LedgerRowBrowser({
   const trails = useMoneyTrails(
     investigation ? exportContext?.caseId : undefined
   )
-  const [category, setCategory] = usePaymentCategory(
+  const [sharedCategory, setSharedCategory] = usePaymentCategory(
     exportContext?.caseId ?? "none"
   )
+  const [localCategory, setLocalCategory] = useState("")
+  const category = independentFilters ? localCategory : sharedCategory
+  const setCategory = independentFilters ? setLocalCategory : setSharedCategory
   const [notesCsv, setNotesCsv] = useState(false)
   const [manageCategories, setManageCategories] = useState(false)
   const [editNames, setEditNames] = useState(false)
@@ -108,8 +116,9 @@ export function LedgerRowBrowser({
         : ""),
     exportContext?.profile ? { ...emptyView, chartsOpen: true } : emptyView
   )
-  const view = { ...emptyView, ...(exportContext ? savedView : localView) }
-  const setView = exportContext ? setSavedView : setLocalView
+  const persistView = exportContext && !independentFilters
+  const view = { ...emptyView, ...(persistView ? savedView : localView) }
+  const setView = persistView ? setSavedView : setLocalView
   const {
     search,
     searchMode = "text",

@@ -6,6 +6,7 @@ import { CurrencyOptions } from "./CurrencyOptions"
 import { currencyMinorUnits } from "../lib/ledger-format"
 import { ImportedStatementDetails } from "./ImportedStatementDetails"
 import { SavedStatementPayments } from "./SavedStatementPayments"
+import { ImportedStatementRowReview } from "./ImportedStatementRowReview"
 import { useStatementCoverageReview } from "../hooks/use-statement-coverage-review"
 import { StatementCoverageReview } from "./StatementCoverageReview"
 import { useBatchReview } from "../lib/batch-review-context"
@@ -2403,7 +2404,26 @@ function EditableStatement({
     return result
   }, [serverChecks.admission?.blockers])
   const rowTools = (id: string) => {
-    if (!canEdit || (data.current_import && !replacePrevious)) return null
+    if (data.current_import && !replacePrevious) {
+      const original = originals.get(id)
+      if (!original || excludedCopy || (!original.issues.length && original.kind !== "unresolved" && focus?.rowId !== id))
+        return null
+      return (
+        <ImportedStatementRowReview
+          key={id}
+          caseId={caseId}
+          sourceId={data.current_import.source_document_id}
+          hasIncomplete={!!data.current_import.incomplete_count}
+          page={original.page_number}
+          issues={original.issues}
+          onShowSource={() => setFocus({
+            rowId: id,
+            locator: statementRowLocator(original, original.page_number),
+          })}
+        />
+      )
+    }
+    if (!canEdit) return null
     const edit = editsById.get(id)
     const original = originals.get(id)
     if (
@@ -3588,6 +3608,7 @@ function EditableStatement({
                 " Select Edit this row to correct a value beside its original."}
             </p>
             <PrintedStatementTable
+              historical={!!data.current_import && !replacePrevious}
               balanceOnly={
                 data.can_import_balances &&
                 data.transaction_count === 0 &&
@@ -3603,7 +3624,9 @@ function EditableStatement({
                 })
               }
               onReviewRow={
-                canEdit && !data.current_import ? openInlineRow : undefined
+                canEdit && (!data.current_import || replacePrevious)
+                  ? openInlineRow
+                  : undefined
               }
               rowTools={rowTools}
             />

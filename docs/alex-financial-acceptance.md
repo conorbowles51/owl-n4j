@@ -289,3 +289,8 @@ manual work when a reading changes. Private source material stays outside Git.
 The latest apparent missing-save report was resolved by refreshing the page;
 the visibility delay remains unconfirmed and is not reported as data loss.
 Local tests, publication and live provider/source acceptance remain distinct.
+
+
+## 26 September: actionable imported flags and visible progress
+
+The [connected correction and progress record](financial-workflows/flagged-imports-and-review-progress-2026-09-26.md) tracks the supplied screenshots: imported source warnings now lead to saved-record review beside the source, while batches show saved/unfinished work and retain an unfinished-only navigation scope. Original flags are comparison history; the background recovery count is not investigator progress. Correction, failed-save recovery, reopening and batch return have local Chromium coverage. The exact saved record and live behavior remain unverified because browser access was declined. No client record was changed to demonstrate the controls.

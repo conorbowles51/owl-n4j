@@ -119,6 +119,33 @@ class BatchImportTests(TestCase):
             self.assertIsNone(service.next_statement(db, case_id=self.f.case.id, batch_id=batch, item_id=second_id)['item_id'])
             self.assertEqual(service.next_statement(db, case_id=self.f.case.id, batch_id=batch, item_id=second_id, direction='previous')['item_id'], str(first_id))
 
+    def test_unfinished_navigation_skips_imported_and_decided_without_wrapping(self):
+        batch = self.create(); self.advance(batch)
+        with self.f.SessionLocal() as db:
+            first = db.scalar(select(Item).where(Item.batch_id == batch))
+            first.summary = {**first.summary, 'filename': 'A.pdf'}
+            following = []
+            for name, status in [('B.pdf', 'imported'), ('C.pdf', 'skipped'),
+                                 ('E.pdf', 'attention')]:
+                extra = Item(id=uuid4(), batch_id=batch, file_id=first.file_id,
+                    statement_key='synthetic-' + name, status=status,
+                    summary={**first.summary, 'filename': name})
+                db.add(extra); following.append(extra)
+            db.commit()
+            result = service.next_statement(db, case_id=self.f.case.id, batch_id=batch,
+                item_id=first.id, review_group='unfinished')
+            self.assertEqual(result['item_id'], str(following[-1].id))
+            self.assertEqual(result['total'], 2)
+            self.assertIsNone(service.next_statement(db, case_id=self.f.case.id, batch_id=batch,
+                item_id=following[-1].id, review_group='unfinished')['item_id'])
+            following[-1].status = 'imported'; db.commit()
+            current = service.batch_status(db, case_id=self.f.case.id, batch_id=batch,
+                review_group='unfinished')
+            self.assertEqual([r['id'] for r in current['items']], [str(first.id)])
+            self.assertEqual(current['statement_summary']['imported'], 2)
+            saved = service.batch_status(db, case_id=self.f.case.id, batch_id=batch, review_group='saved')
+            self.assertEqual(saved['total'], 2)
+
     def test_missing_prepared_reference_recovers_only_from_case_original(self):
         batch = self.create(); self.advance(batch)
         with self.f.SessionLocal() as db:

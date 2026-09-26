@@ -62,3 +62,26 @@ class BatchReviewSummaryTests(TestCase):
         self.assertEqual(reason(dict(kind='coverage_load', message='Could not compare the statement dates.')), 'reading')
         with self.assertRaises(PdfMappingError):
             validate_group('unknown-filter')
+
+    def test_progress_filters_do_not_revisit_saved_or_decided_statements(self):
+        from services.financial.batch_review_summary import statement_summary, group_label
+        readings = [
+            item(status='ready', can_import=True),
+            item(status='attention', can_import=False),
+            item(dict(message='Retained original flag'), status='imported', can_import=True),
+            item(status='pending_import'), item(status='skipped'),
+            item(status='duplicate_ignored'), item(status='assigned'),
+            item(status='removed'), item(status='superseded_reading'),
+        ]
+        for group in ('unfinished', 'saved', 'ready_to_save'):
+            validate_group(group)
+            self.assertTrue(group_label(group))
+        self.assertEqual([r.status for r in readings if matches_group(r, 'unfinished')], ['ready', 'attention'])
+        self.assertEqual([r.status for r in readings if matches_group(r, 'saved')], ['imported'])
+        self.assertEqual([r.status for r in readings if matches_group(r, 'ready_to_save')], ['ready'])
+        before = statement_summary(readings)
+        readings[1].status = 'imported'
+        after = statement_summary(readings)
+        self.assertEqual(before['blocked'] - after['blocked'], 1)
+        self.assertEqual(after['imported'] - before['imported'], 1)
+        self.assertEqual([r.status for r in readings if matches_group(r, 'unfinished')], ['ready'])

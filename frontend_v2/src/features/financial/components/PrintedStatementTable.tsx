@@ -13,6 +13,7 @@ export function PrintedStatementTable({
   selectedRowId,
   rowTools,
   balanceOnly = false,
+  historical = false,
 }: {
   rows: PrintedRow[]
   selectedRowId?: string
@@ -20,6 +21,7 @@ export function PrintedStatementTable({
   onReviewRow?: (rowId: string) => void
   rowTools?: (rowId: string) => ReactNode
   balanceOnly?: boolean
+  historical?: boolean
 }) {
   const positioned = rows.filter(
     (row) => row.fields?.statement_layout === "andrews-share-statement"
@@ -151,14 +153,25 @@ export function PrintedStatementTable({
         </section>
       )}
       {unresolved.length > 0 && (
-        <section className="rounded border border-amber-500 p-3 space-y-2">
+        <section
+          className={`rounded border p-3 space-y-2 ${historical ? "border-border" : "border-amber-500"}`}
+        >
           <h5 className="font-semibold">
-            Original readings with extraction flags
+            {historical
+              ? "Original extraction flags · comparison only"
+              : "Original readings with extraction flags"}
           </h5>
           <p className="text-sm">
-            These source readings were flagged during extraction. The original
-            text stays unchanged; compare the reviewed values and current checks
-            beside each row to see what still needs attention.
+            {historical ? (
+              "This statement has already been imported. These flags describe the original extraction, not the current saved payments. Use the saved-record review beside each row to inspect or correct the current values."
+            ) : (
+              <>
+                These source readings were flagged during extraction. The
+                original text stays unchanged; compare the reviewed values and
+                current checks beside each row to see what still needs
+                attention.
+              </>
+            )}
           </p>
           {unresolved.map((row) => (
             <div

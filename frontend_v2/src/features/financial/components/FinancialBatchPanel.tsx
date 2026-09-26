@@ -160,6 +160,7 @@ const listSchema = z.object({
       completed: z.boolean().default(false),
       available_statements: z.number().optional(),
       statements_with_checks: z.number().optional(),
+      statement_summary: batchStatementSummary.optional(),
     })
   ),
 })
@@ -638,6 +639,17 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
                     : ""}
                 </p>
               )}
+              {batch.statement_summary && (
+                <p className="text-sm font-medium">
+                  {batch.statement_summary.imported} saved to Financial ·{" "}
+                  {batch.statement_summary.available + batch.statement_summary.blocked} unfinished ·{" "}
+                  {batch.statement_summary.pending_import} saves in progress
+                  <span className="block font-normal text-muted-foreground">
+                    {batch.statement_summary.skipped + batch.statement_summary.duplicate_ignored} left unimported or ignored.
+                    {" "}These are saved batch statuses; open the batch for current checks.
+                  </span>
+                </p>
+              )}
               {!!batch.filenames?.length && (
                 <p className="max-w-3xl break-words text-xs text-muted-foreground">
                   {batch.filenames.join(" · ")}
@@ -833,6 +845,7 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
         skipped={batch.counts.skipped || 0}
         duplicates={batch.counts.duplicate_ignored || 0}
         assigned={batch.counts.assigned || 0}
+        onSelect={selectReviewGroup}
       />
       {(confirm.isError || error) && (
         <div role="alert">
@@ -1222,7 +1235,7 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
                     .join(" · ")}
                 </p>
                 <p className="text-sm">
-                  {item.can_import
+                  {item.can_import && ["ready", "attention"].includes(item.status)
                     ? "Available to import"
                     : (labels[item.status] ?? item.status)}
                   {!!(item.problem_count ?? item.problems.length) &&
@@ -1560,7 +1573,7 @@ function BatchStatementReview({
   const beforeNavigate = useRef<(() => Promise<unknown>) | null>(null)
   const [navigating, setNavigating] = useState(false)
   const [navigationStatus, setNavigationStatus] = useState("")
-  const adjacentStatement = async (direction: "next" | "previous") => {
+  const adjacentStatement = async (direction: "next" | "previous", group = reviewGroup) => {
     setNavigating(true)
     setNavigationError("")
     setNavigationStatus("")
@@ -1576,15 +1589,15 @@ function BatchStatementReview({
         })
         .parse(
           await fetchAPI(
-            `/api/financial/statement-import/batches/${batchId}/items/${itemId}/next-statement?case_id=${caseId}&direction=${direction}${reviewGroupQuery}`
+            `/api/financial/statement-import/batches/${batchId}/items/${itemId}/next-statement?case_id=${caseId}&direction=${direction}${group ? `&review_group=${encodeURIComponent(group)}` : ""}`
           )
         )
       if (result.case_id !== caseId || result.batch_id !== batchId)
         throw Error("The statement belongs to another batch.")
       if (!result.item_id) {
         setNavigationStatus(
-          reviewGroup
-            ? "No further statements match this review reason. Return to the batch to see the updated checks."
+          group
+            ? "No further statements match this filter in this direction. Return to the batch to see all remaining work, including earlier statements."
             : `You are at the ${direction === "next" ? "last" : "first"} statement (${result.position} of ${result.total}).`
         )
         return
@@ -1592,6 +1605,8 @@ function BatchStatementReview({
       setParams((current) => {
         const next = new URLSearchParams(current)
         next.set("batchItem", result.item_id!)
+        if (group) next.set("batchCheck", group)
+        else next.delete("batchCheck")
         next.delete("batchRow")
         return next
       })
@@ -1668,6 +1683,22 @@ function BatchStatementReview({
         className="flex flex-wrap gap-2 items-center sticky top-0 z-10 bg-background p-2 border rounded"
         aria-label="Review batch statements"
       >
+        {item && (
+          <div className="w-full text-sm" aria-label="Current batch statement status">
+            <p className="font-semibold">Batch {batchId.slice(0, 8)} · {item.filename}</p>
+            <p>{[item.holder, item.account, item.currency, item.period_start && `${item.period_start} to ${item.period_end || "unknown"}`].filter(Boolean).join(" · ")}</p>
+            <p>
+              {item.status === "imported"
+                ? "Already saved to Financial. Do not import again; use saved-record corrections if needed."
+                : item.status === "pending_import"
+                  ? "Save in progress. Wait for its result before taking another import action."
+                  : item.can_import && ["ready", "attention"].includes(item.status)
+                    ? "Review ready. Payments are not imported until you confirm saving."
+                    : labels[item.status] || item.status}
+              {item.review_request && item.status !== "imported" && " Your previous review draft is saved."}
+            </p>
+          </div>
+        )}
         <Button
           variant="outline"
           disabled={!item || navigating}
@@ -1682,6 +1713,13 @@ function BatchStatementReview({
         >
           Next statement
         </Button>
+        <Button
+          variant="outline"
+          disabled={!item || navigating}
+          onClick={() => void adjacentStatement("next", "unfinished")}
+        >
+          Next unfinished statement
+        </Button>
         <span className="text-sm">
           {navigating
             ? "Saving review and opening statement…"
@@ -1691,7 +1729,7 @@ function BatchStatementReview({
       </div>
       {reviewGroup && (
         <p className="text-sm">
-          Previous and next stay within the selected review reason. Return to
+          Previous and next stay within the selected filter. Return to
           the batch to change or clear this filter.
         </p>
       )}

@@ -1,5 +1,7 @@
 # Loupe financial investigator workflow reference
 
+**26 September feedback:** [flagged imported rows and review progress](flagged-imports-and-review-progress-2026-09-26.md) connects historical source warnings to saved-record corrections and adds unfinished/saved batch navigation. Current review progress is separate from a completed background recovery run. Local verification and live-access limitations are recorded separately.
+
 **25 September agent and reading follow-up:** [authoritative imported-ledger analysis, actionable row checks and bounded batch loading](agent-analysis-and-reading-follow-up-2026-09-25.md) preserves the full analysis objective alongside the newly supplied Santander continuation failure. It records read-only tools, complete-scope totals, source references, saved-review preservation, private source verification and remaining live acceptance.
 
 **25 September later feedback — apparent balance-save failure:** [Visible row corrections and save status](row-balance-correction-2026-09-25.md) separates retained original readings from reviewed balances, per-row persistence and current reconciliation. The specific source and save outcome in Alex's screenshot remain unconfirmed.

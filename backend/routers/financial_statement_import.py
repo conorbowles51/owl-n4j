@@ -600,6 +600,7 @@ def confirm_financial_removal(body: ConfirmFinancialRemoval, case_id: UUID = Que
 
 @router.get('/batches/list')
 def list_financial_batches(case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    from services.financial.batch_review_summary import statement_summary
     from sqlalchemy import select
     from postgres.models.financial_import_batches import FinancialImportBatch, FinancialImportBatchItem
     batches=list(db.scalars(select(FinancialImportBatch).where(FinancialImportBatch.case_id==case_id, FinancialImportBatch.status != 'removed').order_by(FinancialImportBatch.created_at.desc()).limit(100)))
@@ -614,7 +615,8 @@ def list_financial_batches(case_id: UUID = Query(...), db: Session = Depends(get
         checks = sum(bool(i.summary.get('problem_count', 0)) for i in items if i.status != 'skipped')
         ready = sum(import_batches.import_available(i) for i in items)
         complete = bool(items) and all(f['status'] == 'checked' for f in files_by_batch[batch.id]) and not checks and all(i.status in ('imported', 'skipped', 'assigned') for i in items)
-        return dict(completed=complete, available_statements=ready, statements_with_checks=checks)
+        return dict(completed=complete, available_statements=ready, statements_with_checks=checks,
+                    statement_summary=statement_summary(items))
     return dict(case_id=str(case_id),batches=[dict(id=str(b.id),status=b.status,created_at=b.created_at.isoformat(),file_count=len(b.files), **counts(b),
         created_by=(b.actor or {}).get('name', ''), filenames=[f['filename'] for f in b.files[:3]],
         checked_files=sum(f['status'] == 'checked' for f in files_by_batch[b.id]),

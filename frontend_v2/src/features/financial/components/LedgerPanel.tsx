@@ -50,6 +50,7 @@ export function LedgerPanel({
   onNote,
   splitAmounts = false,
   investigation = false,
+  independentFilters = false,
 }: {
   caseId: string | undefined
   params?: LedgerQueryParams
@@ -66,6 +67,7 @@ export function LedgerPanel({
   onNote?: (transaction: LedgerTransaction) => void
   splitAmounts?: boolean
   investigation?: boolean
+  independentFilters?: boolean
 }) {
   const { data, isPending, isFetching, isError, error } = useLedgerTransactions(
     caseId,
@@ -221,6 +223,7 @@ export function LedgerPanel({
         />
       ) : (
         <LedgerRowBrowser
+          independentFilters={independentFilters}
           key={caseId}
           transactions={rows}
           exportContext={

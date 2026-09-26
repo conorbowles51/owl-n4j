@@ -81,16 +81,25 @@ def matches_group(item, group):
         return True
     if group == 'blocked':
         return is_blocked(item)
+    if group == 'unfinished':
+        return item.status in ('ready', 'attention')
+    if group == 'saved':
+        return item.status == 'imported'
+    if group == 'ready_to_save':
+        return item.status in ('ready', 'attention') and not is_blocked(item)
     return group in item_reasons(item)
 
 
 def validate_group(group):
-    if group and group not in {*REASONS, 'blocked'}:
+    if group and group not in {*REASONS, 'blocked', 'unfinished', 'saved', 'ready_to_save'}:
         from services.financial.pdf_candidates import PdfMappingError
         raise PdfMappingError('Choose a review reason from this batch.', 422)
 
 
 def group_label(group):
+    if group in ('unfinished', 'saved', 'ready_to_save'):
+        return {'unfinished': 'Unfinished statements', 'saved': 'Already saved to Financial',
+                'ready_to_save': 'Ready to save'}[group]
     if group == 'blocked':
         return 'Cannot be imported yet'
     return REASONS[group][0] if group else None
