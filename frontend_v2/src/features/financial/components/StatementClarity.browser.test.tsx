@@ -13,6 +13,7 @@ import { MemoryRouter, useLocation } from "react-router-dom"
 import { fetchAPI } from "@/lib/api-client"
 import { OverviewStatementCoverage } from "./OverviewStatementCoverage"
 import { StatementFilesPanel } from "./StatementFilesPanel"
+import { StatementCurrencySource } from "./StatementCurrencySource"
 import { StatementSourceTools } from "./StatementSourceTools"
 vi.mock("@/lib/api-client", async (original) => ({
   ...(await original<typeof import("@/lib/api-client")>()),
@@ -189,3 +190,51 @@ it("copies source text beside an unfinished correction without leaving the revie
   await waitFor(() => expect(copied).toHaveBeenCalledWith("Example payee"))
   expect(screen.getByLabelText("Correction")).toHaveValue("Unfinished edit")
 })
+
+it.each([1280, 390])(
+  "keeps currency and original page navigation together at %ipx",
+  async (width) => {
+    await page.viewport(width, 900)
+    const requests: string[] = []
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      requests.push(String(input))
+      return new Response(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="500"><text x="20" y="40">Example statement: Currency USD</text></svg>',
+        { headers: { "Content-Type": "image/svg+xml" } }
+      )
+    })
+    mount(
+      <StatementCurrencySource
+        fileId="synthetic-source"
+        filename="Example statement.pdf"
+        pages={[2, 4]}
+      >
+        <label>
+          Statement currency{" "}
+          <select aria-label="Statement currency" defaultValue="">
+            <option value="">Choose currency</option>
+            <option value="USD">USD</option>
+          </select>
+        </label>
+      </StatementCurrencySource>
+    )
+    await screen.findByRole("img", { name: "Page 2 of the source document" })
+    await page.getByRole("button", { name: "Next page", exact: true }).click()
+    await screen.findByRole("img", { name: "Page 4 of the source document" })
+    expect(screen.getByLabelText("Statement currency")).toBeVisible()
+    expect(
+      screen.getByRole("button", { name: "Next page" })
+    ).toBeDisabled()
+    await page
+      .getByRole("button", { name: "Previous page", exact: true })
+      .click()
+    await screen.findByRole("img", { name: "Page 2 of the source document" })
+    expect(
+      requests.some((url) => url.includes("/synthetic-source/page/4/image"))
+    ).toBe(true)
+    expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(width)
+    await page.screenshot({
+      path: `/private/tmp/loupe-currency-source-${width}.png`,
+    })
+  }
+)

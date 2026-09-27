@@ -2810,14 +2810,73 @@ it("labels saved statement extraction flags as historical rather than current pr
   const base = vi.mocked(fetchAPI).getMockImplementation()!
   vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
     if (String(url).includes("/statement-import/") && !options?.method)
-      return {...data, rows: data.rows.map(row => row.kind === "transaction" ? {...row, fields: {...row.fields, amount_minor: "bad amount"}, issues: ["Original extraction flag"]} : row),
-        current_import: {source_document_id: "saved", evidence_file_id: "file", revision: "b".repeat(64), transaction_count: 1}} as never
+      return {
+        ...data,
+        rows: data.rows.map((row) =>
+          row.kind === "transaction"
+            ? {
+                ...row,
+                fields: { ...row.fields, amount_minor: "bad amount" },
+                issues: ["Original extraction flag"],
+              }
+            : row
+        ),
+        current_import: {
+          source_document_id: "saved",
+          evidence_file_id: "file",
+          revision: "b".repeat(64),
+          transaction_count: 1,
+        },
+      } as never
     return base(url, options)
   })
   mount()
   await open(false)
-  expect(screen.getByRole("button", {name: /Next original flag|First original flag/})).toBeVisible()
-  expect(screen.queryByRole("button", {name: /Next problem|First problem/})).toBeNull()
-  expect(screen.getByText(/These original extraction totals are incomplete/)).toBeVisible()
-  expect(screen.queryByText(/under Credit or Debit before importing/)).toBeNull()
+  expect(
+    screen.getByRole("button", {
+      name: /Next original flag|First original flag/,
+    })
+  ).toBeVisible()
+  expect(
+    screen.queryByRole("button", { name: /Next problem|First problem/ })
+  ).toBeNull()
+  expect(
+    screen.getByText(/These original extraction totals are incomplete/)
+  ).toBeVisible()
+  expect(
+    screen.queryByText(/under Credit or Debit before importing/)
+  ).toBeNull()
+})
+
+it("keeps the original navigable until an unknown currency is chosen", async () => {
+  const implementation = vi.mocked(fetchAPI).getMockImplementation()!
+  vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
+    const result = await implementation(url, options)
+    return result === data && !String(url).includes("currency=USD")
+      ? ({ ...data, currency: "", page_numbers: [2, 4] } as never)
+      : result
+  })
+  mount()
+  fireEvent.click(screen.getByRole("button", { name: "Import a statement" }))
+  await screen.findByRole("option", { name: "statement.pdf" })
+  fireEvent.change(screen.getByLabelText("Uploaded statement"), {
+    target: { value: "file" },
+  })
+  await screen.findByRole("region", { name: "Check statement currency" })
+  expect(screen.getByText("Original PDF beside editable values")).toBeVisible()
+  expect(screen.getByRole("button", { name: "Previous page" })).toBeDisabled()
+  fireEvent.click(screen.getByRole("button", { name: "Next page" }))
+  expect(screen.getByLabelText("Currency source page")).toHaveValue("4")
+  expect(screen.getByRole("button", { name: "Next page" })).toBeDisabled()
+  expect(
+    vi.mocked(TransactionSourceHighlight).mock.calls.at(-1)?.[0]
+  ).toMatchObject({
+    sourceDocumentId: "file",
+    locatorPayload: { kind: "page_only", page: 4 },
+  })
+  fireEvent.change(screen.getByLabelText("Statement currency"), {
+    target: { value: "USD" },
+  })
+  await screen.findByText("Review statement.pdf")
+  expect(sent).toHaveLength(0)
 })

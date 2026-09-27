@@ -60,6 +60,7 @@ import {
 } from "../lib/statement-control-label"
 import { ManualTransactionPosition } from "./ManualTransactionPosition"
 import { StatementCurrencyControl } from "./StatementCurrencyControl"
+import { StatementCurrencySource } from "./StatementCurrencySource"
 import { StatementBulkCorrections } from "./StatementBulkCorrections"
 import { StatementRowAssignment } from "./StatementRowAssignment"
 import { SavedReviewConflict } from "./SavedReviewConflict"
@@ -656,11 +657,12 @@ function StatementReview({
     )
   if (!query.data.currency)
     return (
-      <div>
-        <p className="text-sm mt-3">
-          Loupe could not identify the currency confidently. Choose it once for
-          this statement.
-        </p>
+      <StatementCurrencySource
+        key={`${fileId}:${statementId}`}
+        fileId={fileId}
+        filename={query.data.filename}
+        pages={query.data.page_numbers}
+      >
         {!batchReview && query.data.statement_choices.length > 1 && (
           <Button variant="outline" onClick={() => setStatementId("")}>
             {hasReceipts
@@ -680,7 +682,7 @@ function StatementReview({
             <CurrencyOptions />
           </select>
         </label>
-      </div>
+      </StatementCurrencySource>
     )
   return (
     <div className="space-y-3">
@@ -3373,7 +3375,11 @@ function EditableStatement({
       {problemIds.length > 0 && (
         <div
           role="group"
-          aria-label={importedHere ? "Original extraction flag navigation" : "Problem navigation"}
+          aria-label={
+            importedHere
+              ? "Original extraction flag navigation"
+              : "Problem navigation"
+          }
           className="flex flex-wrap items-center gap-2 rounded border border-amber-500/30 bg-amber-50/40 dark:bg-amber-950/10 p-2"
         >
           <Button
@@ -3386,7 +3392,9 @@ function EditableStatement({
           </Button>
           <span className="text-sm">
             {problemIndex < 0
-              ? importedHere ? `${problemIds.length} original extraction flags` : `${problemIds.length} rows need attention`
+              ? importedHere
+                ? `${problemIds.length} original extraction flags`
+                : `${problemIds.length} rows need attention`
               : `${importedHere ? "Original flag" : "Problem"} ${problemIndex + 1} of ${problemIds.length}`}
           </span>
           <Button
@@ -3395,7 +3403,13 @@ function EditableStatement({
             disabled={problemIndex >= problemIds.length - 1}
             onClick={() => openInlineRow(problemIds[problemIndex + 1])}
           >
-            {importedHere ? (problemIndex < 0 ? "First original flag" : "Next original flag") : (problemIndex < 0 ? "First problem" : "Next problem")}
+            {importedHere
+              ? problemIndex < 0
+                ? "First original flag"
+                : "Next original flag"
+              : problemIndex < 0
+                ? "First problem"
+                : "Next problem"}
           </Button>
         </div>
       )}

@@ -19,3 +19,11 @@ Understand what Loupe has saved, what is ready to save and what needs a correcti
 Local verification: 36 unit checks and 15 Chromium journeys pass across the changed statement/recovery/duplicate flows, including 1280px and 390px views. TypeScript and scoped lint pass. Narrow coverage and group-action screenshots were inspected. Production build passes (existing large-bundle advisory remains). Live deployment remains separately gated by ongoing uploads; do not claim these changes live from a commit or build alone. Native PDF text selection also depends on the browser PDF viewer; headless Chromium can test loading and preserved editors but does not establish native selection acceptance.
 
 Related issues: E02/E03 progress clarity, E09 repeated review, E12 duplicate handling, E14 reachable corrections, E16 read-file next actions, U01–U07 usability. Missing-month summaries cover saved usable dates only and do not establish completeness of every supplied source. Import and investigation completion remain open.
+
+## Unknown-currency recovery
+
+When the reader cannot identify a currency, the original PDF now stays available on that same screen. The source filename, previous/next page controls, direct page choice, zoom and native PDF copy tools let the investigator check the printed currency before continuing. Page selection is restricted to the returned source pages; switching source or statement resets the preview. Selecting a currency resumes the existing review request and does not import records.
+
+Validation: all 62 statement-import unit tests pass, including the unknown-currency-to-review journey with non-consecutive source pages. Seven Chromium clarity journeys pass, including source navigation at 1280px and 390px; the narrow screenshot was inspected. TypeScript and scoped lint pass. Production build and release status are recorded separately below; live acceptance remains pending guarded deployment.
+
+Unknown-currency production build passed with the existing bundle-size advisory. This result confirms local compilation only; the live source-choice screen has not yet been verified on the pending release.
