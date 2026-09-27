@@ -608,13 +608,15 @@ def list_financial_batches(case_id: UUID = Query(...), db: Session = Depends(get
     files_by_batch = {b.id: import_batches.project_batch_files(b.files, references) for b in batches}
     by_batch = {b.id: [] for b in batches}
     if by_batch:
-        for item in db.scalars(select(FinancialImportBatchItem).where(FinancialImportBatchItem.batch_id.in_(by_batch), FinancialImportBatchItem.status != 'removed')):
+        from services.financial.batch_import_history import project_individual_receipts
+        items = list(db.scalars(select(FinancialImportBatchItem).where(FinancialImportBatchItem.batch_id.in_(by_batch), FinancialImportBatchItem.status != 'removed')))
+        for item in project_individual_receipts(db, case_id, items):
             by_batch[item.batch_id].append(item)
     def counts(batch):
         items = by_batch[batch.id]
-        checks = sum(bool(i.summary.get('problem_count', 0)) for i in items if i.status != 'skipped')
+        checks = sum(bool(i.summary.get('problem_count', 0)) for i in items if i.status in ('ready', 'attention'))
         ready = sum(import_batches.import_available(i) for i in items)
-        complete = bool(items) and all(f['status'] == 'checked' for f in files_by_batch[batch.id]) and not checks and all(i.status in ('imported', 'skipped', 'assigned') for i in items)
+        complete = bool(items) and all(f['status'] == 'checked' for f in files_by_batch[batch.id]) and all(i.status in ('imported', 'skipped', 'assigned', 'duplicate_ignored', 'superseded_reading') for i in items)
         return dict(completed=complete, available_statements=ready, statements_with_checks=checks,
                     statement_summary=statement_summary(items))
     return dict(case_id=str(case_id),batches=[dict(id=str(b.id),status=b.status,created_at=b.created_at.isoformat(),file_count=len(b.files), **counts(b),

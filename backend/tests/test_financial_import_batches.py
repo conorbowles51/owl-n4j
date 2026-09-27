@@ -447,6 +447,45 @@ class BatchImportTests(TestCase):
             self.assertEqual(scope['transaction_count'], 12)
             self.assertEqual(scope['source_document_ids'], [receipt['source_document_id']])
             self.assertEqual(db.get(Item, UUID(item['id'])).status, 'attention')
+            from routers.financial_statement_import import list_financial_batches
+            from unittest.mock import patch
+            with patch.object(service, 'read_statement_import', side_effect=AssertionError('List must not rebuild OCR reviews')):
+                listed = list_financial_batches(case_id=self.f.case.id, db=db)['batches'][0]
+            self.assertEqual(listed['statement_summary']['imported'], 1)
+            self.assertEqual(listed['available_statements'], 0)
+            self.assertEqual(listed['statements_with_checks'], 0)
+            self.assertTrue(listed['completed'])
+            # Completion means saved, not a claim that saved payments have no
+            # remaining reconciliation checks. Full detail still shows those.
+            self.assertEqual(db.get(Item, UUID(item['id'])).status, 'attention')
+            self.assertFalse(db.dirty)
+
+    def test_batch_list_receipt_requires_same_version_bytes_and_statement(self):
+        from services.financial.batch_import_history import project_individual_receipts
+        from postgres.models.financial import FinancialSourceDocument
+        batch = self.create(); self.advance(batch)
+        receipt = self.f.confirm(service.initial_request(self.f.preview()))
+        with self.f.SessionLocal() as db:
+            item = db.scalar(select(Item).where(Item.batch_id == batch))
+            source = db.get(FinancialSourceDocument, UUID(receipt['source_document_id']))
+            self.assertEqual(project_individual_receipts(db, self.f.case.id, [item])[0].status, 'imported')
+            original = deepcopy(source.metadata_)
+            for change in ({'financial_import_removal': {'reason': 'Synthetic removal'}},
+                           {'statement_import_statement_id': 'different-period'}):
+                source.metadata_ = {**original, **change}; db.flush()
+                self.assertEqual(project_individual_receipts(db, self.f.case.id, [item])[0].status, item.status)
+            source.metadata_ = original
+            digest = source.sha256_at_ingestion
+            source.sha256_at_ingestion = '0' * 64; db.flush()
+            self.assertEqual(project_individual_receipts(db, self.f.case.id, [item])[0].status, item.status)
+            source.sha256_at_ingestion = digest
+            source.status = 'superseded'; db.flush()
+            self.assertEqual(project_individual_receipts(db, self.f.case.id, [item])[0].status, item.status)
+            source.status = 'admitted'; db.flush()
+            self.assertEqual(project_individual_receipts(db, uuid4(), [item])[0].status, item.status)
+            # A duplicate exclusion remains a decision, not another import.
+            item.status = 'duplicate_ignored'; db.flush()
+            self.assertEqual(project_individual_receipts(db, self.f.case.id, [item])[0].status, 'duplicate_ignored')
 
     def test_refresh_statement_list_keeps_saved_review_and_imports(self):
         batch = self.create(); self.advance(batch)

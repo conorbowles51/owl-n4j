@@ -12,6 +12,47 @@ from services.financial.saved_statement_admission import current_saved_assessmen
 from services.financial.statement_details import saved_currency, saved_details
 
 
+def project_individual_receipts(session, case_id, items):
+    """Project exact saved receipts for the lightweight batch list, read-only.
+
+    This is a receipt lookup, not a new readiness or reconciliation assessment.
+    Only an unambiguous admitted receipt for the same evidence version, bytes
+    and statement key can finish an old pending review. Cross-file copies,
+    reread geometry overlaps and replacement chains still belong to the full
+    review; neither filenames nor account labels establish this identity.
+    """
+    from types import SimpleNamespace
+    from postgres.models.evidence import EvidenceFile
+
+    file_ids = {item.file_id for item in items if item.status in ('ready', 'attention')}
+    if not file_ids:
+        return items
+    matches = defaultdict(list)
+    # Select receipt identity only, never the potentially large original OCR
+    # proposal or all payments. One shared query covers every listed batch.
+    query = select(Source.id, Source.evidence_file_id,
+        Source.metadata_['statement_import_statement_id'].as_string(),
+        Source.metadata_['financial_import_removal']).join(
+            EvidenceFile, EvidenceFile.id == Source.evidence_file_id).where(
+        Source.case_id == case_id, EvidenceFile.case_id == case_id,
+        Source.evidence_file_id.in_(file_ids), Source.status == 'admitted',
+        Source.sha256_at_ingestion == EvidenceFile.sha256)
+    for source_id, file_id, statement_key, removal in session.execute(query):
+        if not removal:
+            matches[(file_id, statement_key or '')].append(source_id)
+    result = []
+    for item in items:
+        receipts = matches.get((item.file_id, item.statement_key or ''), [])
+        if item.status not in ('ready', 'attention') or len(receipts) != 1:
+            result.append(item)
+            continue
+        result.append(SimpleNamespace(id=item.id, batch_id=item.batch_id,
+            file_id=item.file_id, statement_key=item.statement_key,
+            status='imported', summary={**item.summary, 'can_import': False,
+                'source_document_id': str(receipts[0])}, review_request=item.review_request))
+    return result
+
+
 def current_imports(session, case_id, source_ids):
     """Load shared source data once, then assess the current saved values.
 
