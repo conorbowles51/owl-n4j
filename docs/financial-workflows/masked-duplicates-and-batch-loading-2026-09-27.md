@@ -21,3 +21,11 @@ A broader run could not execute router-dependent tests because the local environ
 ## Remaining acceptance
 
 Repeat preparation/check against retained readings for the existing affected batch without re-uploading, verify one contribution per duplicate period, and verify large-batch reopening with measured response time. Diagnose preparation failures independently; the optimization is not yet proven to resolve the observed live timeout. Complete unresolved source checks and source-linked coverage, flow, large-transfer and unusual-activity findings. Continue E01–E18 and U01–U07 in the error register.
+
+## Preparation conflict recovery
+
+Server diagnostics subsequently confirmed PostgreSQL deadlock (`40P01`) in the audit trigger while updating a prepared file's metadata. The reading was retained; the prior worker converted this transient database conflict directly into a terminal preparation error.
+
+The worker now retries deadlock/serialization failures on up to three subsequent bounded turns, without restarting the PDF reader. Persistent conflicts end with a specific recoverable message. Explicit Retry resets this retry budget. Ordinary validation errors remain visible and are not retried as database contention. Batch cards now accurately describe reading **or preparation** recovery instead of claiming every failed preparation was an unreadable PDF.
+
+Verification: three new recovery tests plus the duplicate/projection tests pass together (25 tests); 28 batch UI tests and 13 Chromium navigation/recovery tests pass, including 1280px and 390px journeys. Browser tests initially required permission for their local listening port; they then completed successfully. Live recovery and release remain unverified. This handles transient conflicts; it does not claim to eliminate all audit lock-order contention.

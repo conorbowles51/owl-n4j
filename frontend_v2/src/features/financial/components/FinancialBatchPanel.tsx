@@ -652,7 +652,7 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
                 <p className="text-sm">
                   {batch.checked_files} of {batch.file_count} files checked
                   {batch.failed_files
-                    ? ` · ${batch.failed_files} files could not be read`
+                    ? ` · ${batch.failed_files} ${batch.failed_files === 1 ? "file needs" : "files need"} reading or preparation recovery`
                     : ""}
                 </p>
               )}

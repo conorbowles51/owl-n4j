@@ -514,7 +514,7 @@ it("distinguishes repeated file runs and opens the selected saved batch", async 
   expect(await screen.findByText("Latest batch")).toBeVisible()
   expect(screen.getByText(/Started by Alex/)).toBeVisible()
   expect(
-    screen.getByText(/587 of 588 files checked.*1 files could not be read/)
+    screen.getByText(/587 of 588 files checked.*1 file needs reading or preparation recovery/)
   ).toBeVisible()
   expect(screen.getByText(/1 files still need reading or preparation/)).toBeVisible()
   expect(screen.getByText(/0 prepared reviews unfinished/)).toBeVisible()

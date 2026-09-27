@@ -864,6 +864,11 @@ async def _prepare_retry(session, *, case_id, file, actor, resolve_path, process
         actor=actor, resolve_path=resolve_path, process_files=process_files)
 
 
+def _retryable_preparation_error(error):
+    from sqlalchemy.exc import DBAPIError
+    return isinstance(error, DBAPIError) and getattr(error.orig, 'sqlstate', None) in ('40P01', '40001')
+
+
 async def advance_batch(factory,batch_id,resolve_path,process_files):
     token=str(uuid4());now=datetime.now(timezone.utc)
     with factory() as db:
@@ -940,11 +945,25 @@ async def advance_batch(factory,batch_id,resolve_path,process_files):
                 if processed:
                     await _finish_atomic(_review_file,factory,batch_id,case_id,deepcopy(file))
                     file['status']='checked'
+                    file.pop('preparation_retries', None)
+                    file.pop('error', None)
                     _reading_progress(file, 'complete', 'The reading is complete. Open its statement review to check reconciliation before importing.', review_file_id=file['file_id'])
             except Exception as error:
-                log.exception('Financial batch file preparation failed')
-                file['status']='error';file['error']=str(error) if isinstance(error,PdfMappingError) else 'This file could not be prepared. Open it to review the processing error.'
-                _reading_progress(file, 'failed', file['error'])
+                retries = file.get('preparation_retries', 0)
+                if _retryable_preparation_error(error) and retries < 3:
+                    # The failed session has rolled back. Resume retained reading
+                    # on the next bounded worker turn, without re-upload or OCR.
+                    file['preparation_retries'] = retries + 1
+                    file.pop('error', None)
+                    _reading_progress(file, 'checking_statements',
+                        'Another save briefly conflicted with preparing this review. Retrying automatically; your source and saved work are retained.')
+                    log.warning('Financial preparation will retry after database conflict (%s/3)', retries + 1)
+                else:
+                    log.exception('Financial batch file preparation failed')
+                    file['status']='error';file['error']=str(error) if isinstance(error,PdfMappingError) else (
+                        'Preparing this review repeatedly conflicted with another save. Retry this file to resume its retained reading; your saved work is unchanged.'
+                        if _retryable_preparation_error(error) else 'This file could not be prepared. Open it to review the processing error.')
+                    _reading_progress(file, 'failed', file['error'])
             file['last_checked_at'] = datetime.now(timezone.utc).isoformat()
             if file['status'] != previous_status:
                 file['last_progress_at'] = file['last_checked_at']
@@ -1122,6 +1141,7 @@ def retry_file(session, *, case_id, batch_id, source_id, _commit=True, _prepared
         if queued:
             target.update(status='processing' if check_only else 'waiting', expected_revision=financial_file_visibility(source)['financial_visibility_revision'])
             target.pop('error', None)
+            target.pop('preparation_retries', None)
             batch.status = 'preparing'
         session.commit() if _commit else session.flush()
         return dict(queued=queued, status=target['status'], **result)
