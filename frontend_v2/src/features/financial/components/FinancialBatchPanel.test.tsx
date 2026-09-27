@@ -1077,7 +1077,7 @@ it("keeps the last confirmed batch visible after a failed refresh and requires f
   fireEvent.click(screen.getByRole("button", { name: "Refresh batch" }))
   await screen.findByText(/Progress could not be refreshed/)
   expect(screen.getByRole("region", { name: "Batch progress" })).toBeVisible()
-  expect(screen.getByRole("button", { name: "Import 14 transactions", exact: true })).toBeDisabled()
+  expect(screen.getByRole("button", { name: "Import 14 transactions" })).toBeDisabled()
   expect(screen.queryByRole("button", { name: "Check for additional statement periods" })).not.toBeInTheDocument()
   fireEvent.click(screen.getByRole("button", { name: "Retry batch" }))
   await waitFor(() => expect(screen.queryByText(/Progress could not be refreshed/)).not.toBeInTheDocument())

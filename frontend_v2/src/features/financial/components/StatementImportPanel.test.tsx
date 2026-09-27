@@ -5,15 +5,11 @@ vi.mock("../hooks/use-statement-coverage-review", async (original) => ({
   >()),
   useStatementCoverageReview: vi.fn(),
 }))
+const accessState = vi.hoisted(() => ({ canEdit: true, canUpload: true, ready: true, error: false }))
 // This existing workflow fixture has case editing and upload access.
 vi.mock("../hooks/use-financial-access", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../hooks/use-financial-access")>()),
-  useFinancialAccess: () => ({
-    canEdit: true,
-    canUpload: true,
-    ready: true,
-    error: false,
-  }),
+  useFinancialAccess: () => accessState,
 }))
 import { receiptFixture } from "../lib/payment-document.test-support"
 import {
@@ -134,6 +130,7 @@ async function open(corrections = true) {
     )
 }
 beforeEach(() => {
+  Object.assign(accessState, { canEdit: true, canUpload: true, ready: true, error: false })
   useFinancialDraftStore.setState({ drafts: {} })
   vi.mocked(useStatementCoverageReview).mockReturnValue({
     data: { available: true, candidates: [], revision: "d".repeat(64) },
@@ -2879,4 +2876,19 @@ it("keeps the original navigable until an unknown currency is chosen", async () 
   })
   await screen.findByText("Review statement.pdf")
   expect(sent).toHaveLength(0)
+})
+
+
+it.each([
+  { ready: false, error: false, message: "Checking case access before saving. Your review stays open." },
+  { ready: false, error: true, message: "Case access could not be checked. Your review is retained; check access again before saving." },
+  { ready: true, error: false, message: "You need editing access to this case to confirm an import." },
+])("explains access accurately without allowing an unverified import: $message", async ({ ready, error, message }) => {
+  mount()
+  await open(false)
+  Object.assign(accessState, { canEdit: false, ready, error })
+  fireEvent.change(screen.getByLabelText("Account holder"), { target: { value: "Reviewed holder" } })
+  await screen.findByText(message)
+  if (!ready) expect(screen.queryByText("You need editing access to this case to confirm an import.")).not.toBeInTheDocument()
+  expect(screen.getByRole("button", { name: /Confirm import of/ })).toBeDisabled()
 })

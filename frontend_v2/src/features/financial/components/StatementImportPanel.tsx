@@ -1313,7 +1313,7 @@ function EditableStatement({
       else if (mode === "done") batchReview!.saved()
     },
   })
-  const { canEdit: caseCanEdit } = useFinancialAccess()
+  const { canEdit: caseCanEdit, ready: accessReady, error: accessError } = useFinancialAccess()
   const [localDuplicate, setLocalDuplicate] =
     useState<z.infer<typeof statementDuplicateDisposition>>()
   const duplicateDecision = localDuplicate ?? data.duplicate_disposition
@@ -1731,7 +1731,11 @@ function EditableStatement({
     })
   if (!caseCanEdit)
     detailProblems.push({
-      message: "You need editing access to this case to confirm an import.",
+      message: accessError
+        ? "Case access could not be checked. Your review is retained; check access again before saving."
+        : accessReady === false
+          ? "Checking case access before saving. Your review stays open."
+          : "You need editing access to this case to confirm an import.",
     })
   if (!holder.trim())
     detailProblems.push({
