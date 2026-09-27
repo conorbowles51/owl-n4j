@@ -558,6 +558,9 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
           Each batch is a separate preparation run. Open a batch to continue its
           saved review. The most recent run is first.
         </p>
+        {batches.isPending && (
+          <p role="status">Loading your batches and saved progress…</p>
+        )}
         <label className="block text-sm">
           <input
             type="checkbox"
@@ -604,7 +607,22 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
             />
           </div>
         )}
-        {batches.isError && <p role="alert">{batches.error.message}</p>}
+        {batches.isError && (
+          <div role="alert" className="space-y-2">
+            <p>
+              We could not refresh your batch list. This does not mean an
+              import failed. Saved work stays in place.
+            </p>
+            <p className="text-sm">{batches.error.message}</p>
+            <Button
+              variant="outline"
+              disabled={batches.isFetching}
+              onClick={() => void batches.refetch()}
+            >
+              {batches.isFetching ? "Checking batches…" : "Retry batch list"}
+            </Button>
+          </div>
+        )}
         {listedBatches?.slice(0, visibleBatches).map((batch, index) => (
           <div
             key={batch.id}

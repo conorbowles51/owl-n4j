@@ -11,3 +11,7 @@ Deployment and live acceptance remain separate. An existing bulk import must fin
 ## Access-check wording follow-up
 
 A statement no longer reports a confirmed lack of editing permission while the access request is still loading or has failed. These states explain that access is being checked or must be checked again, preserving the open review. A verified read-only response retains its explicit permission message. All three states continue to block import; no permission check is relaxed. Sixty-five statement unit tests pass, including the three distinct access outcomes. Live acceptance remains pending release. This follow-up also corrects an unsupported Testing Library option in the earlier regression assertion.
+
+## Batch list loading and recovery
+
+The batch list itself could appear empty while its first request was pending. It now explicitly says that batches and saved progress are loading. A failed list request explains that the status read failed, not necessarily the import, and offers a read-only retry. A Chromium regression verifies pending, failed, retry and genuinely empty states, and checks that neither request submits an import. All six recovery browser journeys, TypeScript and scoped lint pass. The initial sandboxed browser run could not bind its local server; the permitted rerun passed. This change is local only while live saving continues; deployed acceptance remains open.

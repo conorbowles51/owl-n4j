@@ -90,6 +90,29 @@ beforeEach(async () => {
   await page.viewport(1280, 850)
 })
 
+it("explains a slow batch list and retries a failed read without resubmitting imports", async () => {
+  let rejectRead!: (reason: Error) => void
+  vi.mocked(fetchAPI).mockImplementationOnce(
+    () => new Promise((_, reject) => { rejectRead = reject })
+  ).mockResolvedValue({ case_id: "case", batches: [] } as never)
+  mount("/cases/case/financial?view=statements")
+  expect(await screen.findByRole("status")).toHaveTextContent(
+    "Loading your batches and saved progress"
+  )
+  expect(screen.queryByText(/No active batches/)).not.toBeInTheDocument()
+  rejectRead(new Error("Connection unavailable"))
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "This does not mean an import failed"
+  )
+  await page.getByRole("button", { name: "Retry batch list" }).click()
+  expect(await screen.findByText(/No active batches/)).toBeVisible()
+  expect(fetchAPI).toHaveBeenCalledTimes(2)
+  for (const [url, options] of vi.mocked(fetchAPI).mock.calls) {
+    expect(url).toContain("/batches/list?case_id=case")
+    expect(options?.method).toBeUndefined()
+  }
+})
+
 it("saves before next and previous, blocks navigation on failure and explains the end of the batch", async () => {
   const drafts: Record<string, string> = {
     first: "First company",
