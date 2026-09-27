@@ -187,7 +187,7 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
   const [offset, setOffset] = useState(0),
     [onlyProblems, setOnlyProblems] = useState(false)
   const client = useQueryClient()
-  const { canEdit, canUpload } = useFinancialAccess()
+  const { canEdit: accessCanEdit, canUpload } = useFinancialAccess()
   const user = useAuthStore((state) => state.user)
   const [error, setError] = useState("")
   const [visibleBatches, setVisibleBatches] = useState(8)
@@ -249,6 +249,14 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
         ? 3000
         : false,
   })
+  const refreshFailure = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (query.isError && query.data) {
+      refreshFailure.current?.focus({ preventScroll: true })
+      refreshFailure.current?.scrollIntoView({ block: "start" })
+    }
+  }, [query.isError, query.data])
+  const canEdit = accessCanEdit && !query.isError
   useEffect(() => {
     if (
       query.data &&
@@ -737,7 +745,7 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
         </Button>
       </section>
     )
-  if (query.isError)
+  if (query.isError && !query.data)
     return (
       <div>
         <p role="alert">{query.error.message}</p>
@@ -747,7 +755,7 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
         </Button>
       </div>
     )
-  const batch = query.data
+  const batch = query.data!
   const displayItems = batch.items
     .filter((item) => !["removed", "superseded_reading"].includes(item.status))
     .map((item) => ({
@@ -764,6 +772,16 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
   const incompleteRecords = batch.available_incomplete ?? 0
   return (
     <section aria-label="Financial processing batch" className="space-y-4">
+      {query.isError && (
+        <div ref={refreshFailure} tabIndex={-1} role="alert" className="scroll-mt-32 rounded border p-3 space-y-2">
+          <p>
+            Progress could not be refreshed. The results below are the last
+            confirmed update and may be out of date. Accepted imports continue
+            on the server. Refresh before starting another action.
+          </p>
+          <Button onClick={() => void query.refetch()}>Retry batch</Button>
+        </div>
+      )}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-xl font-semibold">
@@ -859,7 +877,8 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
         incomplete={incompleteRecords}
         summary={batch.statement_summary}
         filtered={!!reviewGroup || onlyProblems}
-        canEdit={canEdit}
+        refreshRequired={query.isError}
+        canEdit={accessCanEdit}
         paused={paused}
         pending={confirm.isPending}
         accepted={confirm.isSuccess}

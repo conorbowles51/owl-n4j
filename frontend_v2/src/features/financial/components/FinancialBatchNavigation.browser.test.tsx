@@ -528,3 +528,27 @@ it("offers a fresh retained-source reading for a broken removal link and shows t
   expect(screen.queryByRole("button", {name: "Read this retained PDF afresh"})).toBeNull()
   await page.screenshot({path: "/private/tmp/loupe-retained-source-recovery.png"})
 })
+
+it("retains confirmed progress through a connection failure and restores actions after retry", async () => {
+  const original = vi.mocked(fetchAPI).getMockImplementation()!
+  let reads = 0
+  vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
+    if (url.includes(`/batches/${batch.id}?`)) {
+      reads++
+      if (reads === 2) throw new TypeError("Failed to fetch")
+      return batch as never
+    }
+    return original(url, options)
+  })
+  mount(`/cases/case/financial?view=statements&statementMode=batches&batch=${batch.id}`)
+  await screen.findByRole("region", {name: "Financial processing batch"})
+  await page.getByRole("button", {name: "Refresh batch", exact:true}).click()
+  await screen.findByText(/Progress could not be refreshed/)
+  expect(screen.getByRole("region", {name: "Batch progress"})).toBeVisible()
+  expect(screen.queryByRole("button", {name: "Check for additional statement periods"})).toBeNull()
+  await page.screenshot({path: "/private/tmp/loupe-batch-refresh-retained.png"})
+  await page.getByRole("button", {name: "Retry batch", exact:true}).click()
+  await waitFor(() => expect(screen.queryByText(/Progress could not be refreshed/)).toBeNull())
+  expect(screen.getByRole("button", {name: "Check for additional statement periods"})).toBeEnabled()
+  expect(vi.mocked(fetchAPI).mock.calls.every(([, options]) => !options?.method)).toBe(true)
+})

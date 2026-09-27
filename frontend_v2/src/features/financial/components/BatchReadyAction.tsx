@@ -11,6 +11,7 @@ export function BatchReadyAction({
   paused,
   pending,
   accepted,
+  refreshRequired = false,
   onConfirm,
 }: {
   available: number
@@ -22,6 +23,7 @@ export function BatchReadyAction({
   paused: boolean
   pending: boolean
   accepted: boolean
+  refreshRequired?: boolean
   onConfirm: () => void
 }) {
   const statements = `${available} ${available === 1 ? "statement" : "statements"}`
@@ -52,7 +54,7 @@ export function BatchReadyAction({
         </div>
         <Button
           className="h-auto whitespace-normal py-2"
-          disabled={!canEdit || !available || pending || paused}
+          disabled={!canEdit || !available || pending || paused || refreshRequired}
           onClick={onConfirm}
         >
           {pending

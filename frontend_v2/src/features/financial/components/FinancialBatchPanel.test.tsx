@@ -1060,3 +1060,27 @@ it("lets the investigator leave a pending batch read and aborts only that GET", 
     vi.mocked(fetchAPI).mock.calls.every(([, options]) => !options?.method)
   ).toBe(true)
 })
+
+
+it("keeps the last confirmed batch visible after a failed refresh and requires fresh data for writes", async () => {
+  let attempts = 0
+  vi.mocked(fetchAPI).mockImplementation(async (url) => {
+    if (url.includes("/batches/batch?")) {
+      attempts++
+      if (attempts === 2) throw new TypeError("Failed to fetch")
+      return batch
+    }
+    return { case_id: "case", batches: [] }
+  })
+  mount()
+  await screen.findByRole("region", { name: "Financial processing batch" })
+  fireEvent.click(screen.getByRole("button", { name: "Refresh batch" }))
+  await screen.findByText(/Progress could not be refreshed/)
+  expect(screen.getByRole("region", { name: "Batch progress" })).toBeVisible()
+  expect(screen.getByRole("button", { name: "Import 14 transactions", exact: true })).toBeDisabled()
+  expect(screen.queryByRole("button", { name: "Check for additional statement periods" })).not.toBeInTheDocument()
+  fireEvent.click(screen.getByRole("button", { name: "Retry batch" }))
+  await waitFor(() => expect(screen.queryByText(/Progress could not be refreshed/)).not.toBeInTheDocument())
+  expect(screen.getByRole("button", { name: "Check for additional statement periods" })).toBeEnabled()
+  expect(vi.mocked(fetchAPI).mock.calls.every(([, options]) => !options?.method)).toBe(true)
+})
