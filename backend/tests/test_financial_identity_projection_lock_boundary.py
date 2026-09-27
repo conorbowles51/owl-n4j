@@ -55,7 +55,7 @@ class Graph:
             self.staged = params['revision']
         elif 'WHERE matches=0' in text:
             return Result(rows=self.missing)
-        elif 'WHERE matches <> 1' in text:
+        elif 'WHERE n.key IN $keys' in text:
             self.after_validation()
         return Result()
 
@@ -182,7 +182,9 @@ def test_source_changes_during_projection_leave_old_revision_detectably_pending(
     graph = Graph()
     current = {'revision': 'old'}
     graph.after_validation = lambda: current.update(revision='new')
-    assert projection.apply_identity_graph(graph, plan('old'),
+    old = plan('old')
+    old['accounts'] = [{'key': 'synthetic-account'}]
+    assert projection.apply_identity_graph(graph, old,
         is_current=lambda: current['revision'] == 'old')
     assert graph.revision == 'old' != current['revision']
     assert projection.apply_identity_graph(graph, plan('new'), is_current=lambda: True)

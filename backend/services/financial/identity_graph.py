@@ -73,16 +73,24 @@ def identity_graph_plan(db, case_id):
 
 
 def validate_graph_targets(tx, plan):
-    missing = tx.run('''UNWIND $keys AS key OPTIONAL MATCH (n {case_id:$case,key:key})
-        WITH key, count(n) AS matches WHERE matches <> 1 RETURN key''',
-        keys=list({link['target'] for link in plan['entity_links']}), case=plan['case_id']).data()
-    if missing:
+    targets = {link['target'] for link in plan['entity_links']}
+    keys = targets | {row['key'] for row in plan['accounts'] + plan['parties']}
+    if not keys:
+        return
+    # Keep the match label-independent: a non-financial entity with the same
+    # key is a collision too. UNWIND + OPTIONAL MATCH performed a whole-graph
+    # scan per key without a common indexed label. Read all requested keys in
+    # one pass, preserving every match so duplicate nodes cannot be hidden.
+    matches = {}
+    for row in tx.run('''MATCH (n {case_id:$case}) WHERE n.key IN $keys
+        RETURN n.key AS key, labels(n) AS labels''',
+        keys=sorted(keys), case=plan['case_id']).data():
+        matches.setdefault(row['key'], []).append(row['labels'])
+    if any(len(matches.get(key, [])) != 1 for key in targets):
         raise ValueError('A connected case entity is missing or ambiguous. Review its financial identity connection.')
     for label, rows in [('FinancialAccount', plan['accounts']), ('FinancialParty', plan['parties'])]:
-        collisions = tx.run('''UNWIND $keys AS key OPTIONAL MATCH (n {case_id:$case,key:key})
-            WITH key, collect(n) AS nodes WHERE size(nodes)>1 OR any(n IN nodes WHERE NOT $label IN labels(n)) RETURN key''',
-            keys=[row['key'] for row in rows], case=plan['case_id'], label=label).data()
-        if collisions:
+        if any(len(matches.get(row['key'], [])) > 1 or
+               any(label not in labels for labels in matches.get(row['key'], [])) for row in rows):
             raise ValueError('An account identity key conflicts with an existing case entity. No graph connections were changed.')
 
 

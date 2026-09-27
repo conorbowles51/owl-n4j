@@ -4,12 +4,35 @@ from uuid import UUID
 import pytest
 from neo4j import GraphDatabase
 from services.financial.account_parties import AccountPartyRequest, account_parties, set_account_party
-from services.financial.identity_graph import apply_identity_graph, identity_graph_plan
+from services.financial.identity_graph import apply_identity_graph, identity_graph_plan, validate_graph_targets
 from tests.test_financial_duplicates import DuplicateTestCase
 
 
 @pytest.mark.skipif(os.getenv('LOUPE_TEST_LOCAL_GRAPH') != '1', reason='Requires isolated local graph')
 class IdentityGraphTests(DuplicateTestCase):
+    def test_target_validation_sees_cross_label_duplicates_but_not_other_cases(self):
+        uri = os.environ['NEO4J_URI']
+        assert uri == 'bolt://127.0.0.1:57687'
+        driver = GraphDatabase.driver(uri, auth=(os.environ['NEO4J_USER'], os.environ['NEO4J_PASSWORD']))
+        case, other = str(self.case.id), str(self.case.id) + '-other'
+        plan = dict(case_id=case, accounts=[{'key': 'account'}], parties=[], entity_links=[{'target': 'entity'}])
+        try:
+            with driver.session() as graph:
+                graph.run('CREATE (:Person {case_id:$case,key:"entity"}), (:Person {case_id:$other,key:"account"})', case=case, other=other).consume()
+                validate_graph_targets(graph, plan)
+                graph.run('CREATE (:FinancialAccount {case_id:$case,key:"account"})', case=case).consume()
+                validate_graph_targets(graph, plan)
+                graph.run('CREATE (:Person {case_id:$case,key:"account"})', case=case).consume()
+                with self.assertRaisesRegex(ValueError, 'conflicts'):
+                    validate_graph_targets(graph, plan)
+                graph.run('CREATE (:Organisation {case_id:$case,key:"entity"})', case=case).consume()
+                with self.assertRaisesRegex(ValueError, 'missing or ambiguous'):
+                    validate_graph_targets(graph, plan)
+        finally:
+            with driver.session() as graph:
+                graph.run('MATCH (n) WHERE n.case_id IN $cases DETACH DELETE n', cases=[case, other]).consume()
+            driver.close()
+
     def test_stale_first_snapshot_does_not_create_a_completion_or_lock_marker(self):
         uri = os.environ['NEO4J_URI']
         assert uri == 'bolt://127.0.0.1:57687'
