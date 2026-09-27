@@ -141,6 +141,31 @@ If a release fails after building the frontend, its recovery trap restarts the
 frontend using the bundle currently on disk. That bundle may already be new;
 the restart does not prove that the backend or the whole release was updated.
 
+## Choosing the correct server checkout
+
+Before running a deployment, identify the checkout used by the live services:
+
+```bash
+systemctl show owl-backend-v2 owl-frontend-v2 -p Id -p WorkingDirectory
+```
+
+On the current investigation-platform host, both services use the repository at
+`/home/conorbowles51/app-v3/owl-n4j`, on `integration/evidence-main-reunion`.
+The older `/home/conorbowles51/app_v2` checkout uses `main` and is not the current
+Loupe deployment. Do not reset or merge that older checkout to deploy this release.
+
+From the confirmed live repository root, run `bash deploy/deploy.sh`. Preserve
+the ingestion checks. A reported ingestion deferral is different from a Git
+conflict; inspect that checkout's `deploy/logs` for the actual release result.
+
+The Git update fetches one explicit branch without writing shared `FETCH_HEAD`,
+then fast-forwards to its resolved commit. This avoids ambiguous multi-head
+`git pull` results and ignores extra pull merge targets in branch configuration.
+It rejects a mismatched checked-out branch and preserves server-only commits
+when the history is ahead or divergent. It never resets the checkout to make a
+deployment pass. Run `bash deploy/tests/test-git-update.sh` for the isolated Git
+regression checks, including ambiguous fetch metadata and divergent history.
+
 ## Admin-Triggered Updates
 
 To allow admins to update the platform from the OWL admin UI:

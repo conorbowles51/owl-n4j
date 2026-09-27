@@ -170,10 +170,11 @@ else
     success "Working directory clean"
 fi
 
-step "Pulling latest from ${CURRENT_BRANCH}"
+step "Fetching and fast-forwarding ${CURRENT_BRANCH}"
 
-if ! git pull origin "${CURRENT_BRANCH}" --ff-only; then
-    fail "git pull failed"
+source "${PROJECT_DIR}/deploy/git-update.sh"
+if ! update_deploy_checkout "${CURRENT_BRANCH}"; then
+    fail "Git update failed; checkout and local commits were not reset. Review the diagnostic above."
     exit 1
 fi
 
