@@ -3,6 +3,7 @@ from copy import deepcopy
 import hashlib
 from pathlib import Path
 from unittest import TestCase
+from unittest.mock import patch
 from uuid import UUID, uuid4
 from sqlalchemy import select
 from postgres.models.evidence import EvidenceDocumentText, EvidenceTableGeometry, EvidenceFile
@@ -29,6 +30,26 @@ class StatementOverlapTests(TestCase):
 
     def tearDown(self):
         self.b.tearDown()
+
+    def test_coverage_reuses_case_files_without_per_period_queries(self):
+        request = dict(institution='Synthetic Bank', account_number='123456789',
+            holder='Synthetic business', currency='USD', period_start='2023-01-01',
+            period_end='2023-12-31')
+        with self.f.SessionLocal() as db:
+            sources, _ = overlap.comparison_sources(db, self.f.case.id)
+            expected = overlap.coverage_review(db, case_id=self.f.case.id,
+                file_id=self.primary.id, request=request, sources=dict(sources))
+            with patch.object(db, 'scalar', side_effect=AssertionError('Repeated source read')):
+                for _ in range(100):
+                    self.assertEqual(overlap.coverage_review(db, case_id=self.f.case.id,
+                        file_id=self.primary.id, request=request, sources=sources), expected)
+                with self.assertRaises(PdfMappingError):
+                    overlap.coverage_review(db, case_id=self.f.case.id,
+                        file_id=uuid4(), request=request, sources=sources)
+            # A context from another case cannot make a foreign file valid.
+            with self.assertRaises(PdfMappingError):
+                overlap.coverage_review(db, case_id=uuid4(), file_id=self.primary.id,
+                    request=request, sources=sources)
 
     def copy_file(self, *, revised=False):
         f = self.f

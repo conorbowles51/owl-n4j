@@ -16,6 +16,8 @@ from services.financial.pdf_candidates import _digest, PdfMappingError
 class ComparisonSources(dict):
     families = None
     duplicate_context = None
+    case_id = None
+    files = None
 
 
 def scope(raw):
@@ -86,6 +88,8 @@ def comparison_sources(session, case_id, pending=None, *, read_pending=None):
     entries.families = families
     from services.financial.pending_duplicate_projection import load_projection_context, cached_disposition
     all_files = [file for versions in groups.values() for file in versions]
+    entries.case_id = str(case_id)
+    entries.files = {str(file.id): file for file in all_files}
     decision_ids = set()
     for file in all_files:
         for decision in (file.metadata_ or {}).get('financial_duplicate_dispositions', {}).values():
@@ -174,7 +178,15 @@ def comparison_sources(session, case_id, pending=None, *, read_pending=None):
 
 
 def coverage_review(session, *, case_id, file_id, request, sources=None):
-    file = session.scalar(select(EvidenceFile).where(EvidenceFile.id == file_id, EvidenceFile.case_id == case_id))
+    # Batch comparison already loaded the case's source lineage. Reuse that
+    # request-local snapshot instead of repeating a SQL read for every period.
+    files = getattr(sources, 'files', None)
+    if files is not None and getattr(sources, 'case_id', None) == str(case_id):
+        file = files.get(str(file_id))
+        if file is not None and str(file.case_id) != str(case_id):
+            file = None
+    else:
+        file = session.scalar(select(EvidenceFile).where(EvidenceFile.id == file_id, EvidenceFile.case_id == case_id))
     if file is None:
         raise PdfMappingError('Statement not found in this case.', 404)
     own = scope(request)

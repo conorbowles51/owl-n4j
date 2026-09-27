@@ -22,6 +22,12 @@ A broader run could not execute router-dependent tests because the local environ
 
 Repeat preparation/check against retained readings for the existing affected batch without re-uploading, verify one contribution per duplicate period, and verify large-batch reopening with measured response time. Diagnose preparation failures independently; the optimization is not yet proven to resolve the observed live timeout. Complete unresolved source checks and source-linked coverage, flow, large-transfer and unusual-activity findings. Continue E01–E18 and U01–U07 in the error register.
 
+### Repeated source lookup follow-up
+
+Coverage checks now reuse the case-scoped source lineage already loaded for the current comparison request. Previously, every period issued another EvidenceFile query, even when many periods belonged to the same PDF. Individual checks without this context still validate the file through the database. Missing and foreign-case files remain rejected; this snapshot is not shared across requests.
+
+44 focused backend tests pass, including 100 repeated coverage evaluations with no additional source reads, unchanged comparison results and rejection of unknown/foreign-case files. Existing duplicate, changed-reading and import-once regressions also pass. This removes a measured code-path cost, but does not establish that the live batch timeout is resolved; deployed browser timing remains open.
+
 ## Preparation conflict recovery
 
 Server diagnostics subsequently confirmed PostgreSQL deadlock (`40P01`) in the audit trigger while updating a prepared file's metadata. The reading was retained; the prior worker converted this transient database conflict directly into a terminal preparation error.
