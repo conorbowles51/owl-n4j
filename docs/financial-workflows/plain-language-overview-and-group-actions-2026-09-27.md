@@ -27,3 +27,9 @@ When the reader cannot identify a currency, the original PDF now stays available
 Validation: all 62 statement-import unit tests pass, including the unknown-currency-to-review journey with non-consecutive source pages. Seven Chromium clarity journeys pass, including source navigation at 1280px and 390px; the narrow screenshot was inspected. TypeScript and scoped lint pass. Production build and release status are recorded separately below; live acceptance remains pending guarded deployment.
 
 Unknown-currency production build passed with the existing bundle-size advisory. This result confirms local compilation only; the live source-choice screen has not yet been verified on the pending release.
+
+## Account and month presentation correction
+
+The overview had used historical display labels, some of which were source PDF filenames, as account headings. It also described every unavailable coverage result as a date problem. Account headings now use recorded holder and account number, with bank/currency shown separately; absent identity is stated explicitly rather than inferred from filenames. Each calculated month is visible as covered, missing or partially covered within the checked range. Saved periods that cannot count expose the actual reason and a direct source-review action. Source filenames appear only as source references. Different ledger account IDs are not silently merged by matching labels.
+
+This presentation does not repair missing historical account identity or promote unverified dates to confirmed coverage. Those corrections remain source-backed investigator work. Local browser verification and release status are recorded separately; the active import prevents publishing the pending code through automatic deployment.

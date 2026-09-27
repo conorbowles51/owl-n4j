@@ -68,7 +68,10 @@ it.each([1280, 390])(
       items: [
         {
           account_id: "account",
-          label: "Example Bank · 1234",
+          label: "old-source-file.pdf",
+          holder: "Example Company",
+          identifier: "1234",
+          institution: "Example Bank",
           available: true,
           reason: null,
           periods: [],
@@ -91,6 +94,12 @@ it.each([1280, 390])(
     })
     mount(<OverviewStatementCoverage caseId="case" active />)
     await screen.findByText("USD · 2 of 24 months missing")
+    expect(
+      screen.getByRole("heading", { name: "Example Company · 1234" })
+    ).toBeVisible()
+    expect(screen.queryByText("old-source-file.pdf")).not.toBeInTheDocument()
+    expect(screen.getByText("Jan 2024 · Covered")).toBeVisible()
+    expect(screen.getByText("Jan 2025 · Missing")).toBeVisible()
     expect(screen.getByText("Missing: Jan 2025, Feb 2025.")).toBeVisible()
     expect(
       screen.getByText(/Earlier and later months have not been checked/)
@@ -222,9 +231,7 @@ it.each([1280, 390])(
     await page.getByRole("button", { name: "Next page", exact: true }).click()
     await screen.findByRole("img", { name: "Page 4 of the source document" })
     expect(screen.getByLabelText("Statement currency")).toBeVisible()
-    expect(
-      screen.getByRole("button", { name: "Next page" })
-    ).toBeDisabled()
+    expect(screen.getByRole("button", { name: "Next page" })).toBeDisabled()
     await page
       .getByRole("button", { name: "Previous page", exact: true })
       .click()
@@ -238,3 +245,27 @@ it.each([1280, 390])(
     })
   }
 )
+
+it("explains unusable dates and opens the source for correction", async () => {
+  await page.viewport(1280, 900)
+  vi.mocked(fetchAPI).mockResolvedValue({
+    case_id: "case", offset: 0, has_more: false, applied: false,
+    limitation: "Printed dates only",
+    items: [{
+      account_id: "unknown", label: "old-file.pdf", available: true, reason: null,
+      currencies: [], periods: [{
+        period_id: "period", source_document_id: "document", evidence_file_id: "source",
+        filename: "original.pdf", currency: "MXN", start: "2025-01-01", end: "2025-01-31",
+        included: false, exclusion_reason: "dates_not_printed",
+      }],
+    }],
+  })
+  mount(<OverviewStatementCoverage caseId="case" active />)
+  await screen.findByRole("heading", { name: "Account details not recorded" })
+  expect(screen.queryByText("old-file.pdf")).not.toBeInTheDocument()
+  fireEvent.click(screen.getByText("1 saved statement periods need checking"))
+  expect(screen.getByText("Check the saved dates against the original statement before counting these months.")).toBeVisible()
+  expect(screen.queryByText(/months missing/)).not.toBeInTheDocument()
+  fireEvent.click(screen.getByRole("button", { name: "Review statement dates" }))
+  expect(screen.getByLabelText("Destination")).toHaveTextContent("reviewFile=source")
+})

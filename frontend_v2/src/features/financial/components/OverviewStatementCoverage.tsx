@@ -76,10 +76,22 @@ export function OverviewStatementCoverage({
               className="border-t pt-3 space-y-2 text-sm"
               key={account.account_id}
             >
-              <h4 className="font-medium break-words">{account.label}</h4>
+              <h4 className="font-medium break-words">
+                {[account.holder, account.identifier]
+                  .filter(Boolean)
+                  .join(" · ") || "Account details not recorded"}
+              </h4>
+              <p className="text-muted-foreground">
+                {account.institution || "Bank not recorded"}
+                {account.currency ? ` · ${account.currency}` : ""}
+              </p>
               {(!account.available || !account.currencies.length) && (
                 <p>
-                  We cannot check this account yet. Review its statement dates.
+                  {!account.available
+                    ? account.reason || "Statement dates could not be checked."
+                    : account.periods.length === 0
+                      ? "No saved statement periods for this account yet."
+                      : "Saved statements need the checks below before their months can be counted."}
                 </p>
               )}
               {account.currencies.map((group) => {
@@ -109,6 +121,24 @@ export function OverviewStatementCoverage({
                       Range checked: {displayDate(coverage.start)} to{" "}
                       {displayDate(coverage.end)}.
                     </p>
+                    <ul
+                      className="flex flex-wrap gap-2 py-2"
+                      aria-label={`${group.currency} statement months`}
+                    >
+                      {coverage.months.map((month) => (
+                        <li
+                          key={month.month}
+                          className="rounded border px-2 py-1"
+                        >
+                          {displayMonth(month.month)} ·{" "}
+                          {month.status === "covered"
+                            ? "Covered"
+                            : month.status === "partial"
+                              ? "Some dates missing"
+                              : "Missing"}
+                        </li>
+                      ))}
+                    </ul>
                     {missing.length > 0 && (
                       <p>
                         Missing:{" "}
@@ -130,6 +160,60 @@ export function OverviewStatementCoverage({
                   </div>
                 )
               })}
+              {account.periods.some((period) => !period.included) && (
+                <details className="rounded border p-3">
+                  <summary className="cursor-pointer font-medium">
+                    {
+                      account.periods.filter((period) => !period.included)
+                        .length
+                    }{" "}
+                    saved statement periods need checking
+                  </summary>
+                  {account.periods
+                    .filter((period) => !period.included)
+                    .map((period) => (
+                      <div key={period.period_id} className="mt-3 space-y-1">
+                        <p>
+                          {period.currency} ·{" "}
+                          {period.start && period.end
+                            ? `${displayDate(period.start)} to ${displayDate(period.end)}`
+                            : "Statement dates not recorded"}
+                        </p>
+                        <p>
+                          {
+                            {
+                              source_not_admitted:
+                                "This statement is excluded from the saved payments and month counts.",
+                              missing_dates:
+                                "Add the start and end dates printed on the statement.",
+                              dates_not_printed:
+                                "Check the saved dates against the original statement before counting these months.",
+                              invalid_date_range:
+                                "The saved end date is before the start date. Correct the dates from the original.",
+                            }[period.exclusion_reason || "missing_dates"]
+                          }
+                        </p>
+                        {period.evidence_file_id && (
+                          <Button
+                            variant="outline"
+                            onClick={() =>
+                              navigate(
+                                `/cases/${caseId}/financial?view=statements&files=1&reviewFile=${encodeURIComponent(period.evidence_file_id!)}`
+                              )
+                            }
+                          >
+                            Review statement dates
+                          </Button>
+                        )}
+                        {period.filename && (
+                          <p className="text-xs text-muted-foreground">
+                            Source: {period.filename}
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                </details>
+              )}
             </div>
           ))}
           <p className="text-xs text-muted-foreground">
