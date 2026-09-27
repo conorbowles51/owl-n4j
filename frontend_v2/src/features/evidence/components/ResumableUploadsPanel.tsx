@@ -68,8 +68,19 @@ function GroupRow({ group }: { group: UploadGroup }) {
                 ? "Uploading selection"
                 : allSaved
                   ? "Files received — finish registration"
-                  : "Upload interrupted — reselect to resume"}
+                  : "Upload open — check the original upload tab"}
       </p>
+      {!attached &&
+        !completing &&
+        !allSaved &&
+        group.status === "uploading" && (
+          <p className="text-xs text-muted-foreground">
+            This tab does not have the original files. The upload may still be
+            running in another tab or device. Check there before reselecting
+            files; resume here only if it has stopped. Saved progress updates
+            here automatically.
+          </p>
+        )}
       <Progress
         value={group.size ? (group.received_bytes / group.size) * 100 : 100}
       />
@@ -191,8 +202,16 @@ function UploadRow({ upload }: { upload: UploadSession }) {
           ? "Upload paused"
           : attached
             ? "Uploading"
-            : "Upload interrupted — reselect the file to resume"}
+            : "Upload open — check the original upload tab"}
       </p>
+      {!attached && upload.status === "uploading" && (
+        <p className="text-xs text-muted-foreground">
+          This tab does not have the original file. The upload may still be
+          running in another tab or device. Check there before reselecting the
+          file; resume here only if it has stopped. Saved progress updates here
+          automatically.
+        </p>
+      )}
       <Progress value={upload.size ? (received / upload.size) * 100 : 100} />
       <p className="text-xs text-muted-foreground">
         {(received / 1048576).toFixed(1)} of{" "}

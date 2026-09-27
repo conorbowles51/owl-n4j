@@ -29,3 +29,9 @@ Server diagnostics subsequently confirmed PostgreSQL deadlock (`40P01`) in the a
 The worker now retries deadlock/serialization failures on up to three subsequent bounded turns, without restarting the PDF reader. Persistent conflicts end with a specific recoverable message. Explicit Retry resets this retry budget. Ordinary validation errors remain visible and are not retried as database contention. Batch cards now accurately describe reading **or preparation** recovery instead of claiming every failed preparation was an unreadable PDF.
 
 Verification: three new recovery tests plus the duplicate/projection tests pass together (25 tests); 28 batch UI tests and 13 Chromium navigation/recovery tests pass, including 1280px and 390px journeys. Browser tests initially required permission for their local listening port; they then completed successfully. Live recovery and release remain unverified. This handles transient conflicts; it does not claim to eliminate all audit lock-order contention.
+
+## Upload observation from another tab
+
+E03's interruption label was inferred solely from the absence of local file handles. Another tab or device does not share those handles, so it could label a still-running upload interrupted. Both single-file and selection cards now explain that the original upload tab must be checked before resuming; they do not assert that an upload is stopped. Server-reported paused state and resumable recovery remain available.
+
+Chromium coverage observes increasing server progress and disappearance after completion without reselecting or issuing writes, for both single files and selections at a narrow viewport. Existing pause, reopen, changed-byte rejection and lost-acknowledgement recovery journeys are retained. This corrects misleading interruption advice; it does not establish cross-device ownership or repair a genuinely stale server upload record. Live acceptance remains pending deployment.

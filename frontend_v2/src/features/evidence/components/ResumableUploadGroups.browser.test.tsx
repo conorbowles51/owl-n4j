@@ -41,6 +41,81 @@ vi.mock(
 )
 afterEach(cleanup)
 const CHUNK = 4 * 1024 * 1024
+
+it.each(["selection", "file"] as const)(
+  "observes a %s uploaded elsewhere without falsely reporting interruption",
+  async (kind) => {
+    await page.viewport(390, 844)
+    let finished = false
+    let received = 1
+    vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
+      expect(options?.method ?? "GET").toBe("GET")
+      if (url.startsWith("/api/evidence-upload-sessions?"))
+        return finished || kind !== "file"
+          ? []
+          : [
+              {
+                id: "remote-file",
+                case_id: "case",
+                filename: "Remote.pdf",
+                size: CHUNK * 3,
+                chunk_size: CHUNK,
+                received: Array.from({ length: received }, (_, index) => index),
+                status: "uploading",
+              },
+            ]
+      if (url.startsWith("/api/evidence-upload-groups?"))
+        return finished || kind !== "selection"
+          ? []
+          : [
+              {
+                id: "remote-selection",
+                case_id: "case",
+                name: "Remote selection",
+                kind: "files",
+                status: "uploading",
+                file_count: 3,
+                staged_count: received,
+                size: CHUNK * 3,
+                received_bytes: CHUNK * received,
+              },
+            ]
+      throw Error(`Unexpected request: ${url}`)
+    })
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    try {
+      mount(client)
+      await screen.findByText("Upload open — check the original upload tab")
+      expect(screen.queryByText(/Upload interrupted/)).not.toBeInTheDocument()
+      expect(
+        screen.getByText(/resume here only if it has stopped/)
+      ).toBeVisible()
+      await screen.findByText(/4.0 of 12.0 MB saved/)
+      received = 2
+      // Polling follows server progress without a refresh or reselect action.
+      await screen.findByText(/8.0 of 12.0 MB saved/, {}, { timeout: 5000 })
+      const recovery = screen.getByRole("button", {
+        name: /Reselect.*to resume/,
+      })
+      expect(recovery).toBeEnabled()
+      expect(recovery.getBoundingClientRect().right).toBeLessThanOrEqual(390)
+      finished = true
+      await waitFor(
+        () =>
+          expect(
+            screen.queryByText("Upload open — check the original upload tab")
+          ).not.toBeInTheDocument(),
+        { timeout: 5000 }
+      )
+    } finally {
+      cleanup()
+      client.clear()
+    }
+  }
+)
+
 function file(path: string, size: number, value = 42) {
   const result = new File(
     [new Uint8Array(size).fill(value)],
@@ -243,7 +318,7 @@ it.each(["folder", "statements"] as const)(
             .queues["anonymous:case"].items.map((item) => item.status)
         ).toEqual(["Reading queued", "Reading queued"])
         await screen.findByText(
-          "2 PDFs in Financial · 0 with imported statements"
+          "2 files in Financial · 0 with imported statements"
         )
         await page.screenshot({
           path: "/tmp/loupe-financial-upload-resumed.png",
