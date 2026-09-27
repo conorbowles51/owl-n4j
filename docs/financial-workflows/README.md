@@ -1,6 +1,8 @@
 # Loupe financial investigator workflow reference
 
-**26 September later retry feedback:** [Retained-source recovery, honest unfinished counts and historical flag labels](reread-and-duplicate-decisions-2026-09-26.md#later-feedback-removed-source-retry-dead-end) is implemented and tested locally. The specific live files remain unverified; publication is still blocked by the recorded release authorization requirement.
+**27 September saved statement PDF navigation:** the account-and-balances editor now has Previous page and Next page beside its existing page selector. Both use the available source-page sequence, disable at boundaries and preserve unsaved corrections. The existing correction/save/reopen Chromium journey covers desktop and narrow layouts, including nonconsecutive source pages. Nine account-details unit checks also pass. Deployment of this follow-up remains separate from the preceding release.
+
+**26 September later retry feedback:** [Retained-source recovery, honest unfinished counts and historical flag labels](reread-and-duplicate-decisions-2026-09-26.md#later-feedback-removed-source-retry-dead-end) is implemented and tested locally. Release `abb5524f` was deployed and browser-verified on 27 September. Mutating source-specific journeys remain separately unverified.
 
 **26 September feedback:** [flagged imported rows and review progress](flagged-imports-and-review-progress-2026-09-26.md) connects historical source warnings to saved-record corrections and adds unfinished/saved batch navigation. Current review progress is separate from a completed background recovery run. Local verification and live-access limitations are recorded separately.
 

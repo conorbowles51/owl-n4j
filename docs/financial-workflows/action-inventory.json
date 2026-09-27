@@ -1,6 +1,6 @@
 {
   "scope": "Financial TSX controls, including conditional and legacy controls. Templates describe actions; they are not proof that every runtime branch works. Shared PDF, table and dialog controls are covered in the workflow reference.",
-  "count": 1763,
+  "count": 1765,
   "actions": [
     {
       "component": "AccountConsolidation",
@@ -7755,7 +7755,19 @@
     {
       "component": "DetailsForm",
       "file": "frontend_v2/src/features/financial/components/ImportedStatementDetails.tsx",
-      "line": 349,
+      "line": 352,
+      "control": "Button",
+      "label": "Previous page",
+      "disabled": "{pageIndex <= 0}",
+      "destination": null,
+      "events": {
+        "onClick": "{() => setPage(data.pages[pageIndex - 1])}"
+      }
+    },
+    {
+      "component": "DetailsForm",
+      "file": "frontend_v2/src/features/financial/components/ImportedStatementDetails.tsx",
+      "line": 363,
       "control": "select",
       "label": "\"Details PDF page\"",
       "disabled": null,
@@ -7767,7 +7779,19 @@
     {
       "component": "DetailsForm",
       "file": "frontend_v2/src/features/financial/components/ImportedStatementDetails.tsx",
-      "line": 369,
+      "line": 376,
+      "control": "Button",
+      "label": "Next page",
+      "disabled": "{pageIndex < 0 || pageIndex >= data.pages.length - 1}",
+      "destination": null,
+      "events": {
+        "onClick": "{() => setPage(data.pages[pageIndex + 1])}"
+      }
+    },
+    {
+      "component": "DetailsForm",
+      "file": "frontend_v2/src/features/financial/components/ImportedStatementDetails.tsx",
+      "line": 393,
       "control": "form",
       "label": "Edit this statement's account, dates, currency and balances Changes apply only to this statement period. Save changes to update the imported records; there is no need to import again. {draft.revision !== data.revision && ( <p role=\"alert\"> This statement changed while you were editing. Your draft is retained. Cancel to load the saved details before making a new correction. </p> )} {( [ [\"holder\", \"Account holder\"], [\"account_number\", \"Account number\"], [\"institution\", \"Bank\"], ] as const ).map(([field, label]) => ( <label key={field} className=\"block text-sm\"> {label} <input aria-label={`Saved ${label.toLowerCase()}`} value={details[field]} onChange={(event) => setDetails({ ...details, [field]: event.target.value }) } className=\"block w-full rounded border bg-background p-2\" /> </label> ))} {( [ [\"period_start\", \"Period start\"], [\"period_end\", \"Period end\"], ] as const ).map(([field, label]) => ( <label key={field} className=\"block text-sm\"> {label} <input type=\"date\" aria-label={`Saved ${label.toLowerCase()}`} value={details[field]} onChange={(event) => setDetails({ ...details, [field]: event.target.value }) } className=\"block w-full rounded border bg-background p-2\" /> </label> )",
       "disabled": null,
@@ -7779,7 +7803,7 @@
     {
       "component": "DetailsForm",
       "file": "frontend_v2/src/features/financial/components/ImportedStatementDetails.tsx",
-      "line": 405,
+      "line": 429,
       "control": "input",
       "label": "{`Saved ${label.toLowerCase()}`}",
       "disabled": null,
@@ -7791,7 +7815,7 @@
     {
       "component": "DetailsForm",
       "file": "frontend_v2/src/features/financial/components/ImportedStatementDetails.tsx",
-      "line": 424,
+      "line": 448,
       "control": "input",
       "label": "{`Saved ${label.toLowerCase()}`}",
       "disabled": null,
@@ -7803,7 +7827,7 @@
     {
       "component": "DetailsForm",
       "file": "frontend_v2/src/features/financial/components/ImportedStatementDetails.tsx",
-      "line": 438,
+      "line": 462,
       "control": "input",
       "label": "\"checkbox\"",
       "disabled": null,
@@ -7815,7 +7839,7 @@
     {
       "component": "DetailsForm",
       "file": "frontend_v2/src/features/financial/components/ImportedStatementDetails.tsx",
-      "line": 455,
+      "line": 479,
       "control": "select",
       "label": "\"Saved statement currency\"",
       "disabled": null,
@@ -7827,7 +7851,7 @@
     {
       "component": "DetailsForm",
       "file": "frontend_v2/src/features/financial/components/ImportedStatementDetails.tsx",
-      "line": 484,
+      "line": 508,
       "control": "input",
       "label": "{`Saved ${role} balance`}",
       "disabled": null,
@@ -7839,7 +7863,7 @@
     {
       "component": "DetailsForm",
       "file": "frontend_v2/src/features/financial/components/ImportedStatementDetails.tsx",
-      "line": 496,
+      "line": 520,
       "control": "select",
       "label": "{`${role} balance page`}",
       "disabled": null,
@@ -7851,7 +7875,7 @@
     {
       "component": "DetailsForm",
       "file": "frontend_v2/src/features/financial/components/ImportedStatementDetails.tsx",
-      "line": 523,
+      "line": 547,
       "control": "Button",
       "label": "{save.isPending ? \"Saving…\" : \"Save changes\"}",
       "disabled": null,
@@ -7861,7 +7885,7 @@
     {
       "component": "DetailsForm",
       "file": "frontend_v2/src/features/financial/components/ImportedStatementDetails.tsx",
-      "line": 526,
+      "line": 550,
       "control": "Button",
       "label": "Cancel",
       "disabled": null,

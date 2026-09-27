@@ -310,3 +310,13 @@ records current saved-state verification, the reproduced amount-spacing defect,
 and the empty-batch loading fix. The user explicitly authorized the code-only
 release. Local verification passes; deployed revision and affected live controls
 remain separate acceptance steps. No client records were changed for testing.
+
+## 27 September: saved details source navigation
+
+The saved account-and-balances editor used a separate page selector without
+adjacent navigation. Previous page and Next page now sit beside that selector,
+follow available source pages and disable at either boundary. Page changes
+preserve unsaved fields and do not save or import records. The existing Chromium
+correction/save/reopen journey passes at desktop and narrow widths, including
+nonconsecutive pages; nine unit checks pass. This follow-up's publication and live
+verification remain distinct from the confirmed `abb5524f` deployment.

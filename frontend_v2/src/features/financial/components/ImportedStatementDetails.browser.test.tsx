@@ -8,9 +8,10 @@ import { ImportedStatementDetails } from "./ImportedStatementDetails"
 
 vi.mock("@/lib/api-client", () => ({ fetchAPI: vi.fn() }))
 vi.mock("./TransactionSourceHighlight", () => ({
-  TransactionSourceHighlight: () => (
+  TransactionSourceHighlight: ({ locatorPayload }: { locatorPayload: { page: number } }) => (
     <div className="min-h-[450px] bg-white border p-8 space-y-6 text-slate-800">
       <h2 className="text-xl font-bold">Example statement</h2>
+      <p>Original PDF page {locatorPayload.page}</p>
       <p>Synthetic PDF placeholder for testing the editing layout.</p>
       <p>Opening balance: EUR 60.00</p>
       <p>Fee: EUR 30.00 · Tax: EUR 4.80</p>
@@ -34,7 +35,7 @@ it("keeps the statement and correction fields together, then reopens saved value
       account_number: "",
       institution: "Example bank",
     },
-    pages: [1, 2],
+    pages: [1, 4],
     balances: {
       opening: { amount_minor: null, page: null },
       closing: { amount_minor: null, page: null },
@@ -91,6 +92,19 @@ it("keeps the statement and correction fields together, then reopens saved value
   fireEvent.change(screen.getByLabelText("Saved account number"), {
     target: { value: "00123456789" },
   })
+  expect(screen.getByRole("button", { name: "Previous page" })).toBeDisabled()
+  await page.getByRole("button", { name: "Next page" }).click()
+  expect(screen.getByText("Original PDF page 4")).toBeVisible()
+  expect(screen.getByLabelText("Details PDF page")).toHaveValue("4")
+  expect(screen.getByRole("button", { name: "Next page" })).toBeDisabled()
+  expect(screen.getByLabelText("Saved account number")).toHaveValue("00123456789")
+  await page.viewport(390, 844)
+  await page.screenshot({ path: "/private/tmp/loupe-details-page-navigation-narrow.png" })
+  await page.getByRole("button", { name: "Previous page" }).click()
+  expect(screen.getByText("Original PDF page 1")).toBeVisible()
+  expect(screen.getByRole("button", { name: "Previous page" })).toBeDisabled()
+  expect(vi.mocked(fetchAPI).mock.calls.some(([, options]) => options?.method === "PUT")).toBe(false)
+  await page.viewport(1200, 820)
   for (const [role, value] of [
     ["opening", "60.00"],
     ["closing", "25.20"],

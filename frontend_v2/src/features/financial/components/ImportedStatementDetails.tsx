@@ -260,6 +260,7 @@ function DetailsForm({
     setDraft({ ...draft, amounts })
   const setPages = (pages: typeof draft.pages) => setDraft({ ...draft, pages })
   const [page, setPage] = useState(data.pages[0] || 1)
+  const pageIndex = data.pages.indexOf(page)
   const [error, setError] = useState("")
   const save = useMutation({
     retry: false,
@@ -344,21 +345,44 @@ function DetailsForm({
     <div className={withSource ? "grid gap-4 lg:grid-cols-2" : "space-y-3"}>
       {withSource && (
         <div className="lg:sticky lg:top-3 lg:self-start">
-          <label className="text-sm">
-            PDF page{" "}
-            <select
-              aria-label="Details PDF page"
-              value={page}
-              onChange={(event) => setPage(Number(event.target.value))}
-              className="border rounded bg-background p-2"
+          <nav
+            aria-label="Saved statement PDF pages"
+            className="flex flex-wrap items-center gap-2 mb-2"
+          >
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={pageIndex <= 0}
+              onClick={() => setPage(data.pages[pageIndex - 1])}
             >
-              {data.pages.map((number) => (
-                <option key={number} value={number}>
-                  {number}
-                </option>
-              ))}
-            </select>
-          </label>
+              Previous page
+            </Button>
+            <label className="text-sm">
+              PDF page{" "}
+              <select
+                aria-label="Details PDF page"
+                value={page}
+                onChange={(event) => setPage(Number(event.target.value))}
+                className="border rounded bg-background p-2"
+              >
+                {data.pages.map((number) => (
+                  <option key={number} value={number}>
+                    {number}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={pageIndex < 0 || pageIndex >= data.pages.length - 1}
+              onClick={() => setPage(data.pages[pageIndex + 1])}
+            >
+              Next page
+            </Button>
+          </nav>
           <TransactionSourceHighlight
             sourceDocumentId={data.evidence_file_id}
             locatorPayload={{ kind: "page_only", page }}
