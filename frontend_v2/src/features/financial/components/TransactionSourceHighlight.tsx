@@ -95,6 +95,7 @@ export function TransactionSourceHighlight({
       objectUrl={objectUrl}
       valueLabel={valueLabel}
       wholePage={wholePage}
+      sourceDocumentId={sourceDocumentId}
     />
   )
 }
@@ -104,13 +105,20 @@ function ZoomableSource({
   objectUrl,
   valueLabel,
   wholePage,
+  sourceDocumentId,
 }: {
   locatorPayload: unknown
   objectUrl: string | null
   valueLabel?: string
   wholePage?: boolean
+  sourceDocumentId?: string | null
 }) {
   const [zoom, setZoom] = useState(100)
+  const [copyView, setCopyView] = useState(false)
+  const original = useProtectedObjectUrl(
+    sourceDocumentId ? evidenceAPI.getFileUrl(sourceDocumentId) : null,
+    copyView && !!sourceDocumentId
+  )
   const viewport = useRef<HTMLDivElement>(null)
   const reading = readLocator(locatorPayload)
   const rectangle =
@@ -136,56 +144,94 @@ function ZoomableSource({
   }, [zoom, focus, objectUrl])
   return (
     <div className="min-w-0 space-y-2">
-      {objectUrl && (
-        <div
-          className="flex flex-wrap items-center gap-2"
-          role="group"
-          aria-label="Source image zoom"
-        >
+      {sourceDocumentId && pageNeedingImage(locatorPayload) !== null && (
+        <div className="space-y-2">
           <Button
-            size="sm"
             variant="outline"
-            disabled={zoom === 100}
-            onClick={() => setZoom((z) => Math.max(100, z - 50))}
-            aria-label="Zoom source out"
-          >
-            −
-          </Button>
-          <span aria-live="polite">{zoom}%</span>
-          <Button
             size="sm"
-            variant="outline"
-            disabled={zoom === 400}
-            onClick={() => setZoom((z) => Math.min(400, z + 50))}
-            aria-label="Zoom source in"
+            aria-pressed={copyView}
+            onClick={() => setCopyView(!copyView)}
           >
-            +
+            {copyView
+              ? "Back to highlighted page"
+              : "Select and copy text from PDF"}
           </Button>
-          <Button size="sm" variant="outline" onClick={() => setZoom(100)}>
-            Fit source width
-          </Button>
-          {rectangle && (
-            <Button size="sm" variant="outline" onClick={focus}>
-              Show highlighted value
-            </Button>
+          {copyView && (
+            <>
+              <p className="text-xs">
+                Select text in the PDF below and copy it, then paste into the
+                correction field. Your edits stay open. For a scanned page, use
+                Copy page text when available.
+              </p>
+              {original.loading && <p role="status">Loading selectable PDF…</p>}
+              {original.error && (
+                <p role="alert">
+                  The PDF could not be loaded. Close this view and try again.
+                </p>
+              )}
+              {original.objectUrl && (
+                <iframe
+                  title="Selectable original PDF"
+                  src={`${original.objectUrl}#page=${pageNeedingImage(locatorPayload)}`}
+                  className="w-full h-[560px] rounded border"
+                />
+              )}
+            </>
           )}
         </div>
       )}
-      <div
-        ref={viewport}
-        tabIndex={objectUrl ? 0 : undefined}
-        role={objectUrl ? "region" : undefined}
-        aria-label={objectUrl ? "Scrollable source page" : undefined}
-        className="max-h-[560px] overflow-auto rounded-md"
-        onLoad={focus}
-      >
-        <div style={{ width: `${zoom}%` }}>
-          <SourceHighlight
-            payload={locatorPayload}
-            pageImageUrl={objectUrl}
-            valueLabel={valueLabel}
-            wholePage={wholePage}
-          />
+      <div hidden={copyView}>
+        {objectUrl && (
+          <div
+            className="flex flex-wrap items-center gap-2"
+            role="group"
+            aria-label="Source image zoom"
+          >
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={zoom === 100}
+              onClick={() => setZoom((z) => Math.max(100, z - 50))}
+              aria-label="Zoom source out"
+            >
+              −
+            </Button>
+            <span aria-live="polite">{zoom}%</span>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={zoom === 400}
+              onClick={() => setZoom((z) => Math.min(400, z + 50))}
+              aria-label="Zoom source in"
+            >
+              +
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => setZoom(100)}>
+              Fit source width
+            </Button>
+            {rectangle && (
+              <Button size="sm" variant="outline" onClick={focus}>
+                Show highlighted value
+              </Button>
+            )}
+          </div>
+        )}
+        <div
+          ref={viewport}
+          tabIndex={objectUrl ? 0 : undefined}
+          role={objectUrl ? "region" : undefined}
+          aria-label={objectUrl ? "Scrollable source page" : undefined}
+          className="max-h-[560px] overflow-auto rounded-md"
+          onLoad={focus}
+        >
+          <div style={{ width: `${zoom}%` }}>
+            <SourceHighlight
+              payload={locatorPayload}
+              pageImageUrl={objectUrl}
+              valueLabel={valueLabel}
+              wholePage={wholePage}
+            />
+          </div>
         </div>
       </div>
     </div>

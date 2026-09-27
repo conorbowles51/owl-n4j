@@ -68,12 +68,12 @@ for (const width of [1280, 390]) {
     })
     await expect
       .element(page.getByRole("status"))
-      .toHaveTextContent(
-        "Follow-up finished · 2 of 2 scheduled sources checked"
-      )
-    expect(screen.getByText(/6 sources not processed/)).toBeVisible()
-    expect(screen.getByText(/3 protected sources/)).toBeVisible()
-    expect(screen.getByText(/8 sources outside this pass/)).toBeVisible()
+      .toHaveTextContent("Automatic check finished.")
+    await page.getByText("What this check included", { exact: true }).click()
+    expect(screen.getByText(/2 of 19 uploaded files/)).toBeVisible()
+    expect(screen.getByText(/historical counts/)).toHaveTextContent(
+      "3 files were left unchanged"
+    )
     expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(width)
     await act(async () => {
       await page.getByText("Review recovery results", { exact: true }).click()

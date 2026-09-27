@@ -96,10 +96,12 @@ function RecoveryReviewReasons({
 export function StatementRecoveryPanel({
   caseId,
   onReview,
+  onCurrentWork,
   active = true,
 }: {
   caseId: string
   onReview: (fileId: string) => void
+  onCurrentWork?: () => void
   active?: boolean
 }) {
   const { canEdit } = useFinancialAccess()
@@ -117,7 +119,8 @@ export function StatementRecoveryPanel({
         )
       ),
     refetchInterval: (query) =>
-      active && (!query.state.data?.run || query.state.data.run.status === "running")
+      active &&
+      (!query.state.data?.run || query.state.data.run.status === "running")
         ? 5000
         : false,
   })
@@ -188,7 +191,9 @@ export function StatementRecoveryPanel({
       className="rounded-lg border bg-card p-3 space-y-2"
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="font-semibold">Recovery of previous statements</h3>
+        <h3 className="font-semibold">
+          Checking older uploads for missed payments
+        </h3>
         {canEdit && data.run.status !== "complete" && (
           <Button
             variant="outline"
@@ -207,49 +212,32 @@ export function StatementRecoveryPanel({
         )}
       </div>
       <p role="status" className="text-sm">
-        {label} · {data.total - pending} of {data.total}{" "}
-        {data.scope ? "scheduled sources checked" : "files checked"} ·{" "}
-        {data.counts.review ?? 0} need review
+        {data.run.status === "complete"
+          ? "Automatic check finished."
+          : `${label} · ${data.total - pending} of ${data.total} files checked.`}{" "}
+        Your originals and saved corrections are kept.
       </p>
-      {data.run.status === "complete" && (
-        <p className="text-sm font-medium">
-          The background check has finished. This is not your review progress:
-          its results describe that recovery run and may include statements you
-          have since reviewed or imported. Use the current statement status and
-          Processing batches to see what is saved and what remains unfinished.
-        </p>
+      <p className="text-sm">
+        {data.run.status === "complete"
+          ? "This is a record of an earlier automatic check. The statement list below shows what needs attention now."
+          : "Loupe is checking older uploads for payments it may have missed. You can continue reviewing other statements."}
+      </p>
+      {onCurrentWork && (
+        <Button variant="outline" onClick={onCurrentWork}>
+          See current statement progress
+        </Button>
       )}
       {data.scope && (
-        <div className="space-y-1 text-sm" aria-label="Follow-up scope">
+        <details className="text-sm text-muted-foreground">
+          <summary className="cursor-pointer">What this check included</summary>
           <p>
-            This follow-up considered {data.scope.considered} retained sources
-            and scheduled {data.scope.scheduled} with unresolved work. Each
-            source is counted once, including its retained reading versions.
-            These are source counts, not statement periods or transactions.
+            {data.scope.scheduled} of {data.scope.considered} uploaded files
+            were selected for another check. {data.scope.protected} files were
+            left unchanged to preserve earlier decisions. These are historical
+            counts, not your current to-do list.
           </p>
-          <ul className="list-disc pl-5 text-muted-foreground">
-            <li>
-              {data.scope.protected} protected sources left unchanged, including
-              decisions to ignore duplicates or remove statements.
-            </li>
-            <li>
-              {data.scope.no_unresolved_work} sources outside this pass: no
-              matching earlier recovery or file-processing failure. Existing
-              statement review checks may still remain.
-            </li>
-            <li>
-              {data.scope.unconfirmed_content} sources not processed because
-              their financial content needs confirmation. Unknown content does
-              not mean a source is non-financial.
-            </li>
-          </ul>
-        </div>
+        </details>
       )}
-      <p className="text-sm text-muted-foreground">
-        {data.scope
-          ? "This follow-up rechecks scheduled unresolved work using retained readings. Verified missing payments may be added to existing imports. New statements and uncertain results need review; saved edits, notes and originals stay in place."
-          : "This one-time check uses the improved statement reader. Verified missing payments are added to existing imports. Your saved payments, edits and notes stay in place. New imports and uncertain matches need your review."}
-      </p>
       {error && <p role="alert">{error}</p>}
       {recovered > 0 && (
         <p className="text-sm font-medium">

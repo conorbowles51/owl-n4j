@@ -318,7 +318,7 @@ it.each(["folder", "statements"] as const)(
             .queues["anonymous:case"].items.map((item) => item.status)
         ).toEqual(["Reading queued", "Reading queued"])
         await screen.findByText(
-          "2 files in Financial · 0 with imported statements"
+          "2 files in Financial · 0 files have saved statements"
         )
         await page.screenshot({
           path: "/tmp/loupe-financial-upload-resumed.png",

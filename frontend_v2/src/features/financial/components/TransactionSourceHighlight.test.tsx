@@ -34,6 +34,18 @@ describe("TransactionSourceHighlight", () => {
     vi.restoreAllMocks()
   })
 
+  it("opens a selectable PDF on the same page and returns without losing an editor", async () => {
+    vi.mocked(fetch).mockImplementation(async () => new Response(new Blob(["source"], { type: "application/pdf" })))
+    render(<><input aria-label="Pending correction" defaultValue="Unfinished" /><TransactionSourceHighlight locatorPayload={rectanglePayload(3)} sourceDocumentId="doc-1" /></>)
+    fireEvent.click(await screen.findByRole("button", { name: "Select and copy text from PDF" }))
+    const frame = await screen.findByTitle("Selectable original PDF")
+    expect(frame).toHaveAttribute("src", "blob:mock-page-image#page=3")
+    expect(screen.getByLabelText("Pending correction")).toHaveValue("Unfinished")
+    fireEvent.click(screen.getByRole("button", { name: "Back to highlighted page" }))
+    expect(screen.queryByTitle("Selectable original PDF")).not.toBeInTheDocument()
+    expect(screen.getByLabelText("Pending correction")).toHaveValue("Unfinished")
+  })
+
   it("zooms image and highlight together without fetching another page", async()=>{
     vi.mocked(fetch).mockResolvedValue(new Response(new Blob(["image"],{type:"image/png"})))
     render(<TransactionSourceHighlight locatorPayload={rectanglePayload()} sourceDocumentId="doc-1" />)

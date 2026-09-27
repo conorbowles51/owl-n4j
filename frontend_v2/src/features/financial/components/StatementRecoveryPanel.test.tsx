@@ -55,7 +55,7 @@ it("shows progress, pauses, resumes and opens the retained reading", async () =>
   const open = vi.fn()
   mount(open)
   expect(await screen.findByRole("status")).toHaveTextContent(
-    "1 of 2 files checked · 1 need review"
+    "1 of 2 files checked."
   )
   fireEvent.click(screen.getByRole("button", { name: "Pause recovery" }))
   fireEvent.click(
@@ -80,7 +80,7 @@ it("keeps the outcome visible if retry cannot be confirmed", async () => {
   })
   mount()
   expect(await screen.findByRole("status")).toHaveTextContent(
-    "Finished checking"
+    "Automatic check finished."
   )
   fireEvent.click(screen.getByText("Review recovery results"))
   fireEvent.click(screen.getByRole("button", { name: "Retry recovery" }))
@@ -108,23 +108,16 @@ it("reports only the scheduled follow-up results while explaining protected and 
   })
   mount()
   expect(await screen.findByRole("status")).toHaveTextContent(
-    "Follow-up finished · 2 of 2 scheduled sources checked · 1 need review"
+    "Automatic check finished."
   )
   expect(
     screen.queryByText(/19 files checked|Finished checking/)
   ).not.toBeInTheDocument()
-  expect(screen.getByText(/considered 19 retained sources/)).toHaveTextContent(
-    "scheduled 2 with unresolved work"
+  fireEvent.click(screen.getByText("What this check included"))
+  expect(screen.getByText(/2 of 19 uploaded files/)).toHaveTextContent(
+    "3 files were left unchanged"
   )
-  expect(screen.getByText(/3 protected sources/)).toHaveTextContent(
-    "left unchanged"
-  )
-  expect(screen.getByText(/8 sources outside this pass/)).toHaveTextContent(
-    "Existing statement review checks may still remain"
-  )
-  expect(screen.getByText(/6 sources not processed/)).toHaveTextContent(
-    "Unknown content does not mean a source is non-financial"
-  )
+  expect(screen.getByText(/historical counts/)).toBeVisible()
 })
 
 it("does not present an empty scheduled subset as all sources repaired", async () => {
@@ -143,9 +136,10 @@ it("does not present an empty scheduled subset as all sources repaired", async (
   })
   mount()
   expect(await screen.findByRole("status")).toHaveTextContent(
-    "0 of 0 scheduled sources checked"
+    "Automatic check finished."
   )
-  expect(screen.getByText(/5 sources not processed/)).toBeVisible()
+  fireEvent.click(screen.getByText("What this check included"))
+  expect(screen.getByText(/0 of 10 uploaded files/)).toBeVisible()
   expect(
     screen.queryByRole("button", { name: "Pause recovery" })
   ).not.toBeInTheDocument()
@@ -158,7 +152,7 @@ it("keeps legacy campaign progress compatible when scope is null", async () => {
     "1 of 2 files checked"
   )
   expect(screen.queryByLabelText("Follow-up scope")).not.toBeInTheDocument()
-  expect(screen.getByText(/This one-time check/)).toBeVisible()
+  expect(screen.getByText(/Loupe is checking older uploads/)).toBeVisible()
 })
 
 it("groups identical review reasons within each file without losing distinct reasons or counting other outcomes", async () => {

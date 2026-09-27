@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { evidenceAPI } from "@/features/evidence/api"
 import { openProtectedFile, useProtectedObjectUrl } from "@/lib/protected-file"
@@ -8,14 +8,18 @@ export function StatementSourceTools({
   fileId,
   page,
   text,
+  showPdfSelection = true,
 }: {
   fileId: string
   page: number
   text: string
+  showPdfSelection?: boolean
 }) {
   const [view, setView] = useState<"page" | "pdf" | "text">("page")
   const [error, setError] = useState("")
   const [opening, setOpening] = useState(false)
+  const textArea = useRef<HTMLTextAreaElement>(null)
+  const [copied, setCopied] = useState(false)
   const url = evidenceAPI.getFileUrl(fileId)
   const pdf = useProtectedObjectUrl(url, view === "pdf")
   return (
@@ -43,14 +47,16 @@ export function StatementSourceTools({
         >
           {opening ? "Opening original…" : "Open original in new tab"}
         </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          aria-pressed={view === "pdf"}
-          onClick={() => setView(view === "pdf" ? "page" : "pdf")}
-        >
-          Select text in original PDF
-        </Button>
+        {showPdfSelection && (
+          <Button
+            size="sm"
+            variant="outline"
+            aria-pressed={view === "pdf"}
+            onClick={() => setView(view === "pdf" ? "page" : "pdf")}
+          >
+            Select text in original PDF
+          </Button>
+        )}
         <Button
           size="sm"
           variant="outline"
@@ -102,12 +108,43 @@ export function StatementSourceTools({
             order. Compare it with the original before saving a correction.
           </p>
           <textarea
+            ref={textArea}
             id={`source-text-${fileId}`}
             readOnly
             value={text}
             onFocus={(e) => e.currentTarget.select()}
             className="w-full h-48 border rounded p-2 text-sm"
           />
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={!text}
+            onClick={async () => {
+              setError("")
+              const area = textArea.current
+              const selected =
+                area && area.selectionEnd > area.selectionStart
+                  ? text.slice(area.selectionStart, area.selectionEnd)
+                  : text
+              try {
+                await navigator.clipboard.writeText(selected)
+                setCopied(true)
+              } catch {
+                area?.focus()
+                area?.select()
+                setError(
+                  "Text selected. Press Ctrl+C or Command+C to copy, then paste into your correction."
+                )
+              }
+            }}
+          >
+            Copy selected text or whole page
+          </Button>
+          {copied && (
+            <p role="status">
+              Copied. Paste into the field you want to correct.
+            </p>
+          )}
           {!text && (
             <p role="status">
               No extracted text is available on this page. Open the original to

@@ -3525,6 +3525,7 @@ function EditableStatement({
                 </Button>
               </div>
               <StatementSourceTools
+                showPdfSelection={false}
                 fileId={fileId}
                 page={currentPage}
                 text={data.rows

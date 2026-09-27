@@ -129,7 +129,7 @@ it("shows an ignored file, exposes its retained source and opens its exact perio
   ).toBeGreaterThan(0)
   expect(
     screen.getByRole("button", {
-      name: "Show 0 statement periods ready to import",
+      name: "Show 0 statements ready to save",
     })
   ).toBeVisible()
   fireEvent.click(screen.getByText("Duplicate decisions · evidence retained"))
@@ -195,7 +195,7 @@ it("keeps a different period in a mixed file ready while showing its ignored cop
   mount(true)
   fireEvent.click(
     await screen.findByRole("button", {
-      name: "Show 1 statement period ready to import",
+      name: "Show 1 statement ready to save",
     })
   )
   expect(screen.getByText(/1 duplicate period ignored/)).toBeVisible()
@@ -311,7 +311,7 @@ it("reveals ready periods, clears stale search and opens the exact period withou
   )
   mount(true)
   const ready = await screen.findByRole("button", {
-    name: "Show 1 statement period ready to import",
+    name: "Show 1 statement ready to save",
   })
   fireEvent.change(screen.getByLabelText("Search statement files"), {
     target: { value: "no matching filename" },
@@ -365,7 +365,7 @@ it("keeps the review action available while an older server has only readiness c
   mount(true)
   fireEvent.click(
     await screen.findByRole("button", {
-      name: "Show 1 statement period ready to import",
+      name: "Show 1 statement ready to save",
     })
   )
   fireEvent.click(screen.getByRole("button", { name: "Review and import" }))
@@ -402,14 +402,18 @@ it("prepares all selected files directly, keeps hidden selections and reuses a f
     screen.getByText("3 files selected · 2 hidden by filters")
   ).toBeVisible()
   fireEvent.click(
-    screen.getByRole("button", { name: "Prepare statements from 3 files" })
+    screen.getByRole("button", {
+      name: "Review and save selected files together (3)",
+    })
   )
   expect(await screen.findByRole("alert")).toHaveTextContent(
     "Your selection is kept"
   )
   expect(screen.getByLabelText("Select Statements 1.pdf")).toBeChecked()
   fireEvent.click(
-    screen.getByRole("button", { name: "Prepare statements from 3 files" })
+    screen.getByRole("button", {
+      name: "Review and save selected files together (3)",
+    })
   )
   await waitFor(() =>
     expect(screen.getByLabelText("Location")).toHaveTextContent(
@@ -443,7 +447,9 @@ it("does not navigate to a batch belonging to a different case", async () => {
     await screen.findByRole("button", { name: "Select all 1 shown file" })
   )
   fireEvent.click(
-    screen.getByRole("button", { name: "Prepare statements from 1 file" })
+    screen.getByRole("button", {
+      name: "Review and save selected files together (1)",
+    })
   )
   expect(await screen.findByRole("alert")).toHaveTextContent("another case")
   expect(screen.getByLabelText("Location")).not.toHaveTextContent("wrong-batch")
@@ -667,7 +673,9 @@ it("shows non-PDF financial sources with their original and keeps them out of PD
     screen.getByRole("button", { name: "Select all 1 shown file" })
   )
   expect(
-    screen.getByRole("button", { name: "Prepare statements from 1 file" })
+    screen.getByRole("button", {
+      name: "Review and save selected files together (1)",
+    })
   ).toBeEnabled()
   expect(screen.getByText("1 file selected")).toBeVisible()
   expect(evidenceAPI.preparePdfReview).not.toHaveBeenCalled()

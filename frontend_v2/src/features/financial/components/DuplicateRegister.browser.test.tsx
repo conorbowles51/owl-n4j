@@ -207,7 +207,7 @@ it("opens an ignored period from the register, restores comparison, then returns
   })
   expect(
     screen.getByRole("button", {
-      name: "Show 1 statement period ready to import",
+      name: "Show 1 statement ready to save",
     })
   ).toBeVisible()
   expect(

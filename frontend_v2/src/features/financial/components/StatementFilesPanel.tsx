@@ -234,6 +234,13 @@ export function StatementFilesPanel({
             ["failed", "unprocessed"].includes(file.status))
         )
       }) ?? []
+  const readyFiles = (imports.data?.files ?? []).filter(
+    (item) =>
+      item.available_periods > 0 &&
+      files.data?.some(
+        (file) => file.id === item.evidence_file_id && !file.financial_removed
+      )
+  )
   const readyCount = (imports.data?.files ?? [])
     .filter((item) =>
       files.data?.some(
@@ -317,6 +324,7 @@ export function StatementFilesPanel({
     >
       {!removalMode && register && (
         <StatementRecoveryPanel
+          onCurrentWork={() => showResults("work", true)}
           key={caseId}
           caseId={caseId}
           active={active}
@@ -539,7 +547,7 @@ export function StatementFilesPanel({
                 (file) =>
                   file.current_transactions > 0 || file.periods.length > 0
               ).length ?? "…"}{" "}
-              with imported statements
+              files have saved statements
             </span>
           )}
         </div>
@@ -574,14 +582,48 @@ export function StatementFilesPanel({
               </p>
             </div>
           )}
+          <div className="grid gap-3 sm:grid-cols-2 rounded bg-muted/40 p-4">
+            <div>
+              <h3 className="font-semibold">
+                {readyCount} statements ready to save
+              </h3>
+              <p className="text-sm">
+                Loupe has read these statements and they passed the current
+                checks. Their payments are not saved yet. You can save them
+                together.
+              </p>
+            </div>
+            <div className="space-y-2">
+              {canEdit && canUpload && (
+                <Button
+                  className="h-auto max-w-full whitespace-normal py-2 text-left"
+                  disabled={preparing || !readyCount || imports.data.truncated}
+                  onClick={() =>
+                    void prepareSelected(
+                      readyFiles.map((file) => file.evidence_file_id)
+                    )
+                  }
+                >
+                  {preparing
+                    ? "Opening group review…"
+                    : `Review and save ${readyCount} ready statements together`}
+                </Button>
+              )}
+              <p className="text-sm text-muted-foreground">
+                Opens a group summary for one confirmation. Statements needing
+                corrections and duplicate copies stay out of the ready
+                selection.
+              </p>
+            </div>
+          </div>
           <div className="flex flex-wrap gap-2">
             <Button
               variant="outline"
               aria-pressed={status === "ready"}
               onClick={() => showResults("ready", true)}
             >
-              Show {readyCount} statement{" "}
-              {readyCount === 1 ? "period" : "periods"} ready to import
+              Show {readyCount} {readyCount === 1 ? "statement" : "statements"}{" "}
+              ready to save
             </Button>
             <Button
               variant="outline"
@@ -619,9 +661,9 @@ export function StatementFilesPanel({
             </Button>
           </div>
           <p className="text-sm">
-            Open a matching file below to review its statements or import ready
-            payments. A saved statement can still have checks; reading and
-            importing are separate steps.
+            The buttons above filter the list; they do not save payments. Use
+            the group action to save ready statements together, or open a file
+            to correct a specific problem.
           </p>
           {imports.data.truncated && (
             <p role="status">
@@ -686,7 +728,7 @@ export function StatementFilesPanel({
               >
                 {preparing
                   ? "Preparing statements…"
-                  : `Prepare statements from ${selectedIds.length} ${selectedIds.length === 1 ? "file" : "files"}`}
+                  : `Review and save selected files together (${selectedIds.length})`}
               </Button>
             )}
             {!removalMode && (
@@ -873,14 +915,16 @@ export function StatementFilesPanel({
                                 (saved.current_transactions ||
                                   saved.periods.length)
                               ? `${saved.current_transactions} imported payments · ${saved.periods.length} recorded ${saved.periods.length === 1 ? "period" : "periods"}`
-                              : file.status === "processed"
-                                ? imports.data && !imports.data.truncated
-                                  ? "PDF read · open review to check and import"
-                                  : "Ready to open"
-                                : file.status === "unprocessed" &&
-                                    queuedReadings.has(file.id)
-                                  ? "Reading queued — waiting for progress"
-                                  : file.status}
+                              : saved?.available_periods
+                                ? `${saved.available_periods} statements ready to save · not saved yet`
+                                : file.status === "processed"
+                                  ? imports.data && !imports.data.truncated
+                                    ? "PDF read · open review to check and import"
+                                    : "Ready to open"
+                                  : file.status === "unprocessed" &&
+                                      queuedReadings.has(file.id)
+                                    ? "Reading queued — waiting for progress"
+                                    : file.status}
               </span>
               {saved?.prepared_periods !== undefined && (
                 <span className="block text-sm">

@@ -282,13 +282,13 @@ run(
       </QueryClientProvider>
     )
     await screen.findByRole("button", {
-      name: "Show 3 statement periods ready to import",
+      name: "Show 3 statements ready to save",
     })
     fireEvent.change(screen.getByLabelText("Search statement files"), {
       target: { value: "old search" },
     })
     await page
-      .getByRole("button", { name: "Show 3 statement periods ready to import" })
+      .getByRole("button", { name: "Show 3 statements ready to save" })
       .click()
     const heading = await screen.findByRole("heading", {
       name: "Ready to import · 3 statement periods in 1 file",
@@ -323,7 +323,7 @@ run(
     expect(within(remaining).queryByText(/Credit One Bank/)).toBeNull()
     await page.viewport(390, 844)
     await page
-      .getByRole("button", { name: "Show 2 statement periods ready to import" })
+      .getByRole("button", { name: "Show 2 statements ready to save" })
       .click()
     await waitFor(() =>
       expect(

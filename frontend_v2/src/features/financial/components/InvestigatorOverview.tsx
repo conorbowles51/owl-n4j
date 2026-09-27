@@ -15,9 +15,16 @@ import { useStatementRegister } from "../hooks/use-statement-register"
 import { MoneyConnections } from "./InvestigatorFollowMoney"
 import { PaymentComparison } from "./PaymentComparison"
 import { InvestigatorFindingEditor } from "./InvestigatorFindingEditor"
+import { OverviewStatementCoverage } from "./OverviewStatementCoverage"
 import { useFinancialAccess } from "../hooks/use-financial-access"
 
-export function InvestigatorOverview({ caseId, active = true }: { caseId: string; active?: boolean }) {
+export function InvestigatorOverview({
+  caseId,
+  active = true,
+}: {
+  caseId: string
+  active?: boolean
+}) {
   const data = useInvestigatorPayments(caseId)
   const register = useStatementRegister(caseId, false, [], false, active)
   const findings = useCaseworkEntries(caseId, {
@@ -35,7 +42,9 @@ export function InvestigatorOverview({ caseId, active = true }: { caseId: string
   const files = register.files.data ?? []
   const importedIds = new Set(
     register.imports.data?.files
-      .filter((file) => file.current_transactions > 0)
+      .filter(
+        (file) => file.current_transactions > 0 || file.periods.length > 0
+      )
       .map((file) => file.evidence_file_id)
   )
   const notImported = files.filter((file) => !importedIds.has(file.id))
@@ -88,17 +97,18 @@ export function InvestigatorOverview({ caseId, active = true }: { caseId: string
                 data-finance-tone="review"
               >
                 <p className="finance-eyebrow text-xs font-medium uppercase tracking-wide">
-                  Comparison to investigate
+                  Money in, then money out
                 </p>
                 <h3 className="text-xl font-semibold">
-                  {comparisons.length} receipts followed by an outgoing payment
-                  within 7 days
+                  {comparisons.length} times money arrived and the next payment
+                  left within a week
                 </h3>
                 <p className="text-sm text-muted-foreground">
-                  These pairs are adjacent dated entries in the same bank
-                  account and currency. Open the records to assess whether the
-                  payments are related. Their timing does not establish that the
-                  same money moved onward.
+                  For each example, Loupe found money coming into an account,
+                  followed by its next recorded payment out within seven days.
+                  This is a starting point for review, not evidence of
+                  suspicious activity or proof that the incoming money funded
+                  the payment.
                 </p>
                 <div className="flex flex-wrap gap-2">
                   <Button
@@ -116,13 +126,14 @@ export function InvestigatorOverview({ caseId, active = true }: { caseId: string
                       })
                     }
                   >
-                    Examine supporting payments
+                    View these payments
                   </Button>
                   <Button
                     variant="outline"
                     onClick={() => navigate("follow-money")}
                   >
-                    See each comparison <ArrowRight size={15} />
+                    Compare incoming and outgoing payments{" "}
+                    <ArrowRight size={15} />
                   </Button>
                 </div>
               </section>
@@ -194,7 +205,7 @@ export function InvestigatorOverview({ caseId, active = true }: { caseId: string
             >
               <div className="flex gap-2 items-center">
                 <BookOpenCheck size={19} className="finance-icon" />
-                <h3 className="font-semibold">Records to check</h3>
+                <h3 className="font-semibold">Your statements</h3>
               </div>
               {register.files.isError || register.imports.isError ? (
                 <p role="alert" className="text-sm">
@@ -207,16 +218,34 @@ export function InvestigatorOverview({ caseId, active = true }: { caseId: string
                 <>
                   <dl className="space-y-3 text-sm">
                     <div className="flex justify-between">
-                      <dt>PDFs in Financial</dt>
+                      <dt>Files added for financial review</dt>
                       <dd className="font-semibold">{files.length}</dd>
                     </div>
                     <div className="flex justify-between">
-                      <dt>Files with imported payments</dt>
+                      <dt>Files with saved statements</dt>
                       <dd className="font-semibold">{importedIds.size}</dd>
                     </div>
                     <div className="flex justify-between">
-                      <dt>Without imported payments</dt>
+                      <dt>Files with no saved statements yet</dt>
                       <dd className="font-semibold">{notImported.length}</dd>
+                    </div>
+                    <div className="flex justify-between gap-3">
+                      <dt>Statements ready to save together</dt>
+                      <dd className="font-semibold">
+                        {register.imports.data?.files.reduce(
+                          (sum, file) => sum + file.available_periods,
+                          0
+                        ) ?? 0}
+                      </dd>
+                    </div>
+                    <div className="flex justify-between gap-3">
+                      <dt>Statements needing a check</dt>
+                      <dd className="font-semibold">
+                        {register.imports.data?.files.reduce(
+                          (sum, file) => sum + file.periods_with_checks,
+                          0
+                        ) ?? 0}
+                      </dd>
                     </div>
                   </dl>
                   {register.imports.data?.truncated && (
@@ -226,9 +255,11 @@ export function InvestigatorOverview({ caseId, active = true }: { caseId: string
                     </p>
                   )}
                   <p className="text-xs text-muted-foreground">
-                    A file may contain more than one statement period. Importing
-                    one period does not establish that the whole file is
-                    complete.
+                    These file counts cover the whole case. Saved statements are
+                    available for investigation, including statements with no
+                    transactions. Files not yet saved may be waiting for review,
+                    still being read, or duplicate copies. One file can contain
+                    several statements.
                   </p>
                 </>
               )}
@@ -243,9 +274,10 @@ export function InvestigatorOverview({ caseId, active = true }: { caseId: string
                 variant="outline"
                 onClick={() => navigate("statements")}
               >
-                Check statement files
+                See what needs saving
               </Button>
             </section>
+            <OverviewStatementCoverage caseId={caseId} active={active} />
             <section
               className="finance-panel rounded-xl border p-5 space-y-3"
               data-finance-tone="info"
