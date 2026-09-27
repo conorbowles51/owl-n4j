@@ -117,7 +117,9 @@ it("shows an ignored file, exposes its retained source and opens its exact perio
   mount(true)
   const choice = await screen.findByLabelText("Show files")
   expect(choice).toHaveValue("work")
-  expect(screen.queryByRole("button", { name: "Review duplicate decision" })).not.toBeInTheDocument()
+  expect(
+    screen.queryByRole("button", { name: "Review duplicate decision" })
+  ).not.toBeInTheDocument()
   fireEvent.change(choice, { target: { value: "duplicates" } })
   expect(
     screen.getByText("Duplicate decisions · evidence retained")
@@ -460,7 +462,7 @@ it("reads the existing failed file without uploading another copy", async () => 
   )
   expect(
     await screen.findByRole("button", {
-      name: /statement.pdf.*PDF read.*payments not yet imported/,
+      name: /statement.pdf.*PDF read.*open review to check and import/,
     })
   ).toBeEnabled()
   expect(
@@ -669,4 +671,59 @@ it("shows non-PDF financial sources with their original and keeps them out of PD
   ).toBeEnabled()
   expect(screen.getByText("1 file selected")).toBeVisible()
   expect(evidenceAPI.preparePdfReview).not.toHaveBeenCalled()
+})
+
+it("offers a clear review action and batch review for read files without a prepared status", async () => {
+  responses([{ ...file, status: "processed" }])
+  vi.mocked(fetchAPI).mockImplementation(async (url) => {
+    if (url.includes("/statement-import/batches"))
+      return { id: "batch", case_id: "case" }
+    if (url.includes("/statement-import/files")) return status
+    return { files: [{ ...file, status: "processed" }] }
+  })
+  mount(true)
+  expect(
+    await screen.findByRole("button", { name: "Review and import" })
+  ).toBeVisible()
+  expect(screen.getByText(/not included in the ready counts/)).toBeVisible()
+  fireEvent.click(
+    screen.getByRole("button", { name: "Review 1 read file together" })
+  )
+  await waitFor(() =>
+    expect(screen.getByLabelText("Location")).toHaveTextContent("batch=batch")
+  )
+  expect(fetchAPI).toHaveBeenCalledWith(
+    expect.stringContaining("/statement-import/batches"),
+    expect.objectContaining({
+      body: expect.objectContaining({ file_ids: ["file"] }),
+    })
+  )
+})
+
+it("identifies a saved copy without counting its payments a second time", async () => {
+  vi.mocked(fetchAPI).mockImplementation(async (url) =>
+    url.includes("/statement-import/files")
+      ? {
+          ...status,
+          files: [
+            {
+              evidence_file_id: "file",
+              same_pdf_saved_file_ids: ["earlier"],
+              current_transactions: 0,
+              periods: [],
+            },
+          ],
+        }
+      : { files: [{ ...file, status: "processed" }] }
+  )
+  mount(true)
+  expect(
+    await screen.findByText("Same PDF has saved records · review this copy")
+  ).toBeVisible()
+  fireEvent.click(
+    screen.getByRole("button", { name: "Review reading and saved records" })
+  )
+  expect(
+    Object.values(useStatementWorkspace.getState().selections)
+  ).toContainEqual({ fileId: "file", open: true })
 })

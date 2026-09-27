@@ -262,9 +262,22 @@ export function StatementFilesPanel({
     (id) => !visibleFiles.some((file) => file.id === id)
   ).length
   const selectFiles = (ids: string[]) => setSelection({ scope, ids })
-  const prepareSelected = async () => {
-    if (!canEdit || !canUpload || preparing || !selectedIds.length) return
-    const snapshot = JSON.stringify([scope, [...selectedIds].sort()])
+  const unpreparedFiles = visibleFiles.filter(
+    (file) =>
+      usesPdfStatementReader(file) &&
+      file.status === "processed" &&
+      !file.financial_removed &&
+      !imports.data?.files.some(
+        (item) =>
+          item.evidence_file_id === file.id &&
+          (item.prepared_periods ||
+            item.periods.length ||
+            item.incomplete_count)
+      )
+  )
+  const prepareSelected = async (ids = selectedIds) => {
+    if (!canEdit || !canUpload || preparing || !ids.length) return
+    const snapshot = JSON.stringify([scope, [...ids].sort()])
     if (batchRequest.current?.selection !== snapshot)
       batchRequest.current = { selection: snapshot, id: newReviewId() }
     setPreparing(true)
@@ -277,7 +290,7 @@ export function StatementFilesPanel({
             method: "POST",
             body: {
               request_id: batchRequest.current.id,
-              file_ids: selectedIds,
+              file_ids: ids,
               folder_ids: [],
             },
           }
@@ -537,6 +550,30 @@ export function StatementFilesPanel({
           aria-label="Statement work remaining"
           className="rounded border p-3 space-y-2"
         >
+          {!!unpreparedFiles.length && canEdit && canUpload && (
+            <div className="space-y-2">
+              <p>
+                {unpreparedFiles.length} read{" "}
+                {unpreparedFiles.length === 1 ? "file has" : "files have"} not
+                been checked for import in a batch. These readings are not
+                included in the ready counts below.
+              </p>
+              <Button
+                disabled={preparing}
+                onClick={() =>
+                  void prepareSelected(unpreparedFiles.map((file) => file.id))
+                }
+              >
+                Review {unpreparedFiles.length} read{" "}
+                {unpreparedFiles.length === 1 ? "file" : "files"} together
+              </Button>
+              <p className="text-sm text-muted-foreground">
+                Uses the retained readings to show ready statements, saved
+                copies and checks. Payments are saved only when you confirm
+                import.
+              </p>
+            </div>
+          )}
           <div className="flex flex-wrap gap-2">
             <Button
               variant="outline"
@@ -830,16 +867,20 @@ export function StatementFilesPanel({
                         ? `${saved.current_transactions} usable transactions · ${saved.incomplete_count} incomplete records to check`
                         : saved?.periods.length && !saved.current_transactions
                           ? `Statement saved · ${saved.periods.length} recorded ${saved.periods.length === 1 ? "period" : "periods"} · no payments`
-                          : saved
-                            ? `${saved.current_transactions} imported payments · ${saved.periods.length} recorded ${saved.periods.length === 1 ? "period" : "periods"}`
-                            : file.status === "processed"
-                              ? imports.data && !imports.data.truncated
-                                ? "PDF read · payments not yet imported"
-                                : "Ready to open"
-                              : file.status === "unprocessed" &&
-                                  queuedReadings.has(file.id)
-                                ? "Reading queued — waiting for progress"
-                                : file.status}
+                          : saved?.same_pdf_saved_file_ids.length
+                            ? "Same PDF has saved records · review this copy"
+                            : saved &&
+                                (saved.current_transactions ||
+                                  saved.periods.length)
+                              ? `${saved.current_transactions} imported payments · ${saved.periods.length} recorded ${saved.periods.length === 1 ? "period" : "periods"}`
+                              : file.status === "processed"
+                                ? imports.data && !imports.data.truncated
+                                  ? "PDF read · open review to check and import"
+                                  : "Ready to open"
+                                : file.status === "unprocessed" &&
+                                    queuedReadings.has(file.id)
+                                  ? "Reading queued — waiting for progress"
+                                  : file.status}
               </span>
               {saved?.prepared_periods !== undefined && (
                 <span className="block text-sm">
@@ -937,11 +978,11 @@ export function StatementFilesPanel({
                   </ul>
                 </details>
               )}
-            {status === "ready" &&
+            {(status === "ready" || !saved?.periods.length) &&
               !removed &&
               !removalMode &&
               file.status === "processed" &&
-              (saved?.ready_periods.length ? (
+              (status === "ready" && saved?.ready_periods.length ? (
                 <ReadyStatementPeriods
                   periods={saved.ready_periods}
                   canEdit={canEdit}
@@ -954,7 +995,12 @@ export function StatementFilesPanel({
                   variant="outline"
                   onClick={() => openStatement(file.id)}
                 >
-                  {canEdit ? "Review and import" : "Review statement"}
+                  {saved?.same_pdf_saved_file_ids.length ||
+                  saved?.periods.length
+                    ? "Review reading and saved records"
+                    : canEdit
+                      ? "Review and import"
+                      : "Review statement"}
                 </Button>
               ))}
             {!removalMode && (

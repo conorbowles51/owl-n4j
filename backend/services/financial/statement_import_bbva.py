@@ -234,6 +234,13 @@ def propose_bbva_statement(sources, currency, choice):
                     item['issues'].append(str(exc))
                 continue
             names = ('OPER', 'LIQ', 'COD. DESCRIPCION', 'REFERENCIA', 'CARGOS', 'ABONOS', 'OPERACION', 'LIQUIDACION')
+            # Scanned table rules can attach punctuation to otherwise exact
+            # column labels. Normalize only known headings, never cell amounts
+            # or descriptions, and still require the complete positioned grid.
+            for cell in cells:
+                heading = norm(cell['expected_text']).strip(" \"'‘’“”.,:;_-=–—|")
+                if heading in (*names, 'OPER LIQ') and heading not in labels:
+                    labels[heading] = cell
             date_headings = all(name in labels and box(labels[name]) for name in names[:2]) or (
                 'OPER LIQ' in labels and box(labels['OPER LIQ']))
             if date_headings and all(name in labels and box(labels[name]) for name in names[2:]):

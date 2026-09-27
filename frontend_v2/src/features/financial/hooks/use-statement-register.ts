@@ -80,6 +80,7 @@ const importStates = z.object({
   files: z.array(
     z.object({
       evidence_file_id: z.string(),
+      same_pdf_saved_file_ids: z.array(z.string()).default([]),
       current_transactions: z.number().int().nonnegative(),
       incomplete_count: z.number().int().nonnegative().default(0),
       receipt_review_count: z.number().int().nonnegative().default(0),
@@ -154,7 +155,13 @@ export function useStatementRegister(
   includeRemoved = false,
   active = true
 ) {
-  const files = useStatementFiles(caseId, uploading, queuedIds, includeRemoved, active)
+  const files = useStatementFiles(
+    caseId,
+    uploading,
+    queuedIds,
+    includeRemoved,
+    active
+  )
   const imports = useQuery({
     queryKey: ["statement-import-status", caseId],
     enabled: active,
@@ -189,6 +196,11 @@ export function useStatementRegister(
             return [
               {
                 evidence_file_id: file.id,
+                same_pdf_saved_file_ids: [
+                  ...new Set(
+                    entries.flatMap((entry) => entry.same_pdf_saved_file_ids)
+                  ),
+                ].filter((id) => !ids.has(id)),
                 current_transactions: entries.reduce(
                   (sum, entry) => sum + entry.current_transactions,
                   0

@@ -10,6 +10,28 @@ class StatementFileStatusTests(DuplicateTestCase):
         from postgres.models.financial_import_batches import FinancialImportBatch, FinancialImportBatchItem
         Base.metadata.create_all(self.db.connection(), tables=[WorkspaceEntry.__table__, WorkspaceEntryLink.__table__, FinancialImportBatch.__table__, FinancialImportBatchItem.__table__])
 
+    def test_identical_upload_links_saved_source_without_double_counting(self):
+        from uuid import uuid4
+        from postgres.models.evidence import EvidenceFile
+        document = self.make_document()
+        document.document_type = 'statement_review'
+        period = self.make_period(document)
+        self.add_row(period, document, amount=100)
+        copy = EvidenceFile(id=uuid4(), case_id=self.case.id, original_filename='copy.pdf',
+            stored_path='/synthetic/copy.pdf', sha256=document.sha256_at_ingestion)
+        foreign = EvidenceFile(id=uuid4(), case_id=self.other_case.id, original_filename='other.pdf',
+            stored_path='/synthetic/other.pdf', sha256=document.sha256_at_ingestion)
+        self.db.add_all([copy, foreign]); self.db.commit()
+        files = statement_file_status(self.db, case_id=self.case.id)['files']
+        linked = next(f for f in files if f['evidence_file_id'] == str(copy.id))
+        self.assertEqual(linked['same_pdf_saved_file_ids'], [str(document.evidence_file_id)])
+        self.assertEqual(linked['current_transactions'], 0)
+        self.assertEqual(linked['periods'], [])
+        self.assertEqual(sum(f['current_transactions'] for f in files), 1)
+        self.assertFalse(any(f['evidence_file_id'] == str(foreign.id) for f in files))
+        document.status = 'superseded'; self.db.commit()
+        self.assertFalse(any(f['evidence_file_id'] == str(copy.id) for f in statement_file_status(self.db, case_id=self.case.id)['files']))
+
     def test_individual_import_cannot_still_be_offered_as_ready_by_old_batch_snapshot(self):
         from uuid import uuid4
         from postgres.models.financial_import_batches import FinancialImportBatch as Batch, FinancialImportBatchItem as Item

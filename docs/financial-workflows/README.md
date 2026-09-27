@@ -1,5 +1,7 @@
 # Loupe financial investigator workflow reference
 
+**27 September fresh-upload follow-up:** [Read-file status, group review and scanned column headings](read-files-status-2026-09-27.md) records the reproduced missing-table defect, same-PDF saved-import status, explicit review actions and separate release/live acceptance.
+
 **27 September saved statement PDF navigation:** the account-and-balances editor now has Previous page and Next page beside its existing page selector. Both use the available source-page sequence, disable at boundaries and preserve unsaved corrections. The existing correction/save/reopen Chromium journey covers desktop and narrow layouts, including nonconsecutive source pages. Nine account-details unit checks also pass. Deployment of this follow-up remains separate from the preceding release.
 
 **26 September later retry feedback:** [Retained-source recovery, honest unfinished counts and historical flag labels](reread-and-duplicate-decisions-2026-09-26.md#later-feedback-removed-source-retry-dead-end) is implemented and tested locally. Release `abb5524f` was deployed and browser-verified on 27 September. Mutating source-specific journeys remain separately unverified.

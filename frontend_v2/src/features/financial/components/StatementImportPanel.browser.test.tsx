@@ -705,3 +705,50 @@ it("keeps manual rows while completing amounts and preserves review filters acro
   expect(screen.getByLabelText("Show excluded rows")).not.toBeChecked()
   expect(screen.getByLabelText("Show problems and edits only")).toBeChecked()
 })
+
+it("opens a newly read file from its explicit action and returns without importing at narrow width", async () => {
+  const { StatementRegister } = await import("./StatementRegister")
+  await page.viewport(390, 844)
+  const originalRead = vi.mocked(fetchAPI).getMockImplementation()!
+  vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
+    if (url.includes("statement-import/files?"))
+      return { case_id: "case", files: [], truncated: false } as never
+    return originalRead(url, options)
+  })
+  render(
+    <MemoryRouter>
+      <QueryClientProvider
+        client={
+          new QueryClient({ defaultOptions: { queries: { retry: false } } })
+        }
+      >
+        <StatementRegister caseId="case">
+          <StatementImportPanel caseId="case" onImported={vi.fn()} />
+        </StatementRegister>
+      </QueryClientProvider>
+    </MemoryRouter>
+  )
+  expect(
+    await screen.findByText(/not included in the ready counts/)
+  ).toBeVisible()
+  fireEvent.click(screen.getByRole("button", { name: "Review and import" }))
+  expect(
+    await screen.findByRole("heading", { name: "Review statement.pdf" })
+  ).toBeVisible()
+  expect(
+    screen.getByRole("button", { name: "All files & imports" })
+  ).toBeVisible()
+  fireEvent.click(screen.getByRole("button", { name: "All files & imports" }))
+  expect(
+    screen.getByRole("button", { name: "Review and import" })
+  ).toBeVisible()
+  expect(
+    screen.getByRole("button", { name: "Review 1 read file together" })
+  ).toBeVisible()
+  expect(sent).toEqual([])
+  screen
+    .getByRole("button", { name: "Review and import" })
+    .scrollIntoView({ block: "center" })
+  await page.screenshot({ path: "/private/tmp/loupe-read-files-narrow.png" })
+  cleanup()
+})

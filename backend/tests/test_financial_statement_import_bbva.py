@@ -97,6 +97,22 @@ class BbvaProposalTests(TestCase):
         self.assertEqual(len(rows), sum(len(s['rows']) for s in sources))
         self.assertEqual(sources, before)
 
+    def test_scanned_header_rule_punctuation_does_not_drop_payments(self):
+        sources = statement()
+        for table in sources:
+            for row in table['rows']:
+                for cell in row['cells']:
+                    if cell['expected_text'] == 'ABONOS':
+                        cell['expected_text'] = "ABONOS'"
+                    elif cell['expected_text'] == 'LIQUIDACIÓN':
+                        cell['expected_text'] = '—LIQUIDACIÓN'
+        before = deepcopy(sources)
+        _, proposal = self.proposal(sources)
+        payments = [r for r in proposal['rows'] if not r['excluded']]
+        self.assertEqual([r['fields']['amount_minor'] for r in payments], ['3000', '480'])
+        self.assertTrue(all(c['status'] == 'matches' for c in check_statement_rows(proposal['rows'])['checks']))
+        self.assertEqual(sources, before)
+
     def test_scanned_rows_keep_adjacent_address_summary_and_merged_date_columns(self):
         sources = statement()
         # A scan has no ruled-cell structure. Both sides of the page can be
@@ -327,7 +343,7 @@ class BbvaImportTests(TestCase):
     def tearDown(self):
         self.fixture.tearDown()
 
-    def prepare(self, empty=False):
+    def prepare(self, empty=False, noisy_headers=False):
         from postgres.models.evidence import EvidenceDocumentText, EvidenceTableGeometry
         from services.financial.statement_import import read_statement_import
         from services.financial.import_batches import initial_request
@@ -336,6 +352,12 @@ class BbvaImportTests(TestCase):
         f.db.flush()
         document = f.db.get(EvidenceDocumentText, f.file.id)
         sources = statement(empty)
+        if noisy_headers:
+            for source in sources:
+                for row in source['rows']:
+                    for cell in row['cells']:
+                        if cell['expected_text'] == 'ABONOS': cell['expected_text'] = "ABONOS'"
+                        if cell['expected_text'] == 'LIQUIDACIÓN': cell['expected_text'] = '—LIQUIDACIÓN'
         for page in sorted({s['page_number'] for s in sources}):
             payload = [dict(table_source=s['table_source'], geometry_source='cell_rectangles', table=dict(page=page,
                 table=dict(kind='page_rectangle', page=page, rect=[0,0,612000,792000], page_size=[612000,792000], units='millipoints', space='pdf_displayed'),
@@ -345,6 +367,15 @@ class BbvaImportTests(TestCase):
         f.db.commit()
         proposal = read_statement_import(f.db, case_id=f.case.id, evidence_file_id=f.file.id)
         return proposal, initial_request(proposal)
+
+    def test_noisy_header_imports_all_payments_and_reopens_current_import(self):
+        from services.financial.statement_import import read_statement_import
+        proposal, request = self.prepare(noisy_headers=True)
+        receipt = self.fixture.confirm(request)
+        self.assertEqual(receipt['transaction_count'], 2)
+        reopened = read_statement_import(self.fixture.db, case_id=self.fixture.case.id, evidence_file_id=self.fixture.file.id)
+        self.assertEqual(reopened['current_import']['transaction_count'], 2)
+        self.assertEqual(reopened['current_import']['source_document_id'], receipt['source_document_id'])
 
     def test_import_and_retry_retain_two_payments_balances_dates_and_sources(self):
         self.check_import(False, 2, 2520)
@@ -391,7 +422,10 @@ class BbvaImportTests(TestCase):
             # Reproduce the old importer, which selected all unclassified text.
             for row in request['rows']:
                 row['excluded'] = False
-            old = f.confirm(request)
+            # Seed a pre-admission-policy import; new imports must still pass
+            # the real policy in the recovery steps below.
+            with patch('services.financial.statement_admission.require_admission', return_value={}):
+                old = f.confirm(request)
         self.assertGreater(old['incomplete_count'], 250)
         self.assertEqual(old['transaction_count'], 0)
         original_id = f.file.id
@@ -433,7 +467,10 @@ class BbvaImportTests(TestCase):
             _, request = self.prepare()
             for row in request['rows']:
                 row['excluded'] = False
-            old = f.confirm(request)
+            # Seed a pre-admission-policy import; new imports must still pass
+            # the real policy in the recovery steps below.
+            with patch('services.financial.statement_admission.require_admission', return_value={}):
+                old = f.confirm(request)
         proposal = read_statement_import(f.db, case_id=f.case.id, evidence_file_id=f.file.id)
         self.assertTrue(proposal['current_import']['refresh_available'])
         args = dict(session_factory=f.SessionLocal, case_id=f.case.id, source_id=UUID(old['source_document_id']),
@@ -486,8 +523,9 @@ class BbvaImportTests(TestCase):
         payments[0]['excluded'] = True
         summary = assess(proposal, request)[1]
         self.assertTrue(any(p.get('kind') == 'transaction_count' for p in summary['problems']))
-        result = self.fixture.confirm(request)
-        self.assertTrue(any(p.get('kind') == 'transaction_count' for p in result['issues']))
+        from services.financial.pdf_candidates import PdfMappingError
+        with self.assertRaisesRegex(PdfMappingError, 'statement lists 2 charges'):
+            self.fixture.confirm(request)
 
     def check_import(self, empty, count, closing):
         from postgres.models.financial import FinancialSourceDocument, FinancialStatementPeriod, FinancialTransaction

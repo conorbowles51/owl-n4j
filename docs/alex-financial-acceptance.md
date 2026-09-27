@@ -1,5 +1,7 @@
 **24 September reconciliation and account history follow-up:** R01–R06 are implemented and locally verified in the [connected acceptance record](financial-workflows/reconciliation-and-account-history-plan-2026-09-24.md#implementation-and-local-acceptance--24-september-2026). Reconciliation now gates new statement payments, including batch/recovery and saved-record/manual additions. Balance-only observations remain saveable; confirmed quiet periods are distinct. Bulk dates, currency retry feedback, copyable source access and account history are connected to existing screens. This supersedes historical statements below that unresolved payments may be imported immediately. Live verification and the prior production cleanup audit are not claimed complete.
 
+**27 September fresh-upload follow-up:** [Read-file status, group review and scanned column headings](financial-workflows/read-files-status-2026-09-27.md) records the reproduced missing-table defect, same-PDF saved-import status, explicit review actions and separate release/live acceptance.
+
 **26 September later retry feedback:** [Retained-source recovery, honest unfinished counts and historical flag labels](financial-workflows/reread-and-duplicate-decisions-2026-09-26.md#later-feedback-removed-source-retry-dead-end) is implemented and tested locally. The specific live files remain unverified; publication is still blocked by the recorded release authorization requirement.
 
 # Alex's financial workflow acceptance

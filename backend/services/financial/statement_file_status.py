@@ -212,4 +212,24 @@ def statement_file_status(session, *, case_id):
         item['ignored_periods'] = item.get('ignored_periods', 0) + int(ignored)
         if not decision['current'] or decision['status'] in ('needs_comparison', 'restored'):
             item['periods_with_checks'] = item.get('periods_with_checks', 0) + 1
+    # An independently uploaded copy has a different evidence ID, but opening
+    # it resolves imports by the source digest. Expose that relationship without
+    # attributing the older copy's payments to this file or counting them twice.
+    saved_by_hash = {}
+    for source in saved_sources:
+        if (source.metadata_ or {}).get('financial_import_removal'):
+            continue
+        owner = files.get(str(source.evidence_file_id))
+        if owner and (owner['periods'] or owner.get('incomplete_count')):
+            saved_by_hash.setdefault(source.sha256_at_ingestion, set()).add(source.evidence_file_id)
+    if saved_by_hash:
+        copies = list(session.scalars(select(EvidenceFile).where(
+            EvidenceFile.case_id == case_id, *active_file,
+            EvidenceFile.sha256.in_(saved_by_hash)).order_by(EvidenceFile.id).limit(20001)))
+        truncated = truncated or len(copies) > 20000
+        for copy in copies[:20000]:
+            related = sorted(str(identifier) for identifier in saved_by_hash[copy.sha256] if identifier != copy.id)
+            if related:
+                item = files.setdefault(str(copy.id), dict(evidence_file_id=str(copy.id), current_transactions=0, periods=[]))
+                item['same_pdf_saved_file_ids'] = related
     return dict(case_id=str(case_id), files=list(files.values()), truncated=truncated)
