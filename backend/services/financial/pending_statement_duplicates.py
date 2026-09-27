@@ -145,7 +145,8 @@ def _persist(file, proposal, request, decision, actor):
     previous = _stored(file, proposal.get('statement_id'))
     value = dict(policy=POLICY, reading_revision=proposal['revision'], signature=review_signature(proposal, request),
         scope=scope({**request, 'account_type': proposal.get('metadata', {}).get('account_type') or ''}),
-        matched_fields=MATCHED_FIELDS if decision.get('retained') else [], **decision)
+        matched_fields=(['source_sha256', 'period_start', 'period_end', 'currency']
+            if decision.get('basis') == 'identical_bytes' else MATCHED_FIELDS) if decision.get('retained') else [], **decision)
     value['projection_guard'] = capture_projection_guard(object_session(file), file, proposal.get('statement_id'), decision)
     revision = _digest(value)
     if previous and previous.get('revision') == revision:
@@ -200,6 +201,25 @@ def _candidate(session, case_id, entry, cache):
     return file, proposal, request
 
 
+def _same_source_section(left, right):
+    for key in ('statement_row_addresses', 'statement_source_regions'):
+        if (left.get(key) or right.get(key)) and left.get(key) != right.get(key):
+            return False
+    def addresses(proposal):
+        pages = proposal.get('statement_page_numbers') or proposal.get('page_numbers')
+        if pages:
+            return tuple(sorted(set(pages)))
+        return tuple(sorted({row['page_number'] for row in proposal.get('rows', []) if row.get('page_number')}))
+    own, other = addresses(left), addresses(right)
+    return bool(own and own == other)
+
+
+def _same_content_scope(left, right):
+    """Masked identity is comparable only alongside verified identical bytes."""
+    return bool(left and right and all(left.get(key) == right.get(key) for key in (
+        'identity', 'account_reference', 'holder', 'currency', 'start', 'end', 'account_type')))
+
+
 def apply_duplicate_disposition(session, *, case_id, file, proposal, request=None, actor=None, sources=None):
     """Caller holds Case then EvidenceFile locks; flushes/commit belong to caller.
 
@@ -219,12 +239,15 @@ def apply_duplicate_disposition(session, *, case_id, file, proposal, request=Non
     if _requires_review_comparison(proposal):
         return _persist(file, proposal, request, dict(status='needs_comparison', label='Compare this statement', basis=None,
             retained=None, reason='Compare the earlier saved reviews with this reading before deciding whether it is a duplicate. Saved corrections remain available.'), actor)
-    if not own or not own.get('full_reference') or not own.get('holder'):
+    if not own:
         return _persist(file, proposal, request, dict(status='not_duplicate', label='No confirmed duplicate', basis=None,
             retained=None, reason='Complete bank, full account, holder, currency and exact dates are required.'), actor)
     sources = sources if sources is not None else comparison_sources(session, case_id)[0]
+    content_peers = {str(peer.id) for peer in session.scalars(select(EvidenceFile).where(
+        EvidenceFile.case_id == case_id, EvidenceFile.sha256 == file.sha256))} if file.sha256 else set()
     candidates = [entry for entry in sources.get((own['identity'], own['currency']), [])
-        if same_statement(own, entry.get('scope')) and not (entry['file_id'] == str(file.id)
+        if (same_statement(own, entry.get('scope')) or (entry['file_id'] in content_peers
+            and _same_content_scope(own, entry.get('scope')))) and not (entry['file_id'] == str(file.id)
             and (entry.get('statement_id') or '') == (proposal.get('statement_id') or ''))]
     # Explicit internal reread lineage is already governed by replacement rules.
     families = getattr(sources, 'families', {}) or {}
@@ -257,13 +280,15 @@ def apply_duplicate_disposition(session, *, case_id, file, proposal, request=Non
         other_file, other_proposal, other_request = loaded
         # A corrected candidate identity must still match its current reading/review.
         other_scope = scope({**other_request, 'account_type': other_proposal.get('metadata', {}).get('account_type') or ''})
-        if not same_statement(own, other_scope):
+        same_bytes = bool(file.sha256 and file.sha256 == other_file.sha256)
+        strong_identity = same_statement(own, other_scope)
+        if not strong_identity and not (same_bytes and _same_content_scope(own, other_scope)):
             continue
         fingerprint, usable = _financial_reading(other_proposal)
-        same_bytes = file.sha256 == other_file.sha256
         same_reading = own_reading == fingerprint
         own_changes_preserved = not conflicting_saved_review and (not own_edited or own_shape == _review_shape(other_proposal, other_request))
-        if (not own_changes_preserved or (not same_bytes and not (same_reading and own_usable and usable))
+        if ((not strong_identity and not (own_usable and usable and same_reading and _same_source_section(proposal, other_proposal)))
+                or not own_changes_preserved or (not same_bytes and not (same_reading and own_usable and usable))
                 or (same_bytes and own_usable and usable and not same_reading)):
             conflicts.append(entry)
             continue
@@ -278,20 +303,29 @@ def apply_duplicate_disposition(session, *, case_id, file, proposal, request=Non
             source_document_id=first.get('source_document_id'), filename=first['filename'], page_number=first.get('page_number', 1))
         return _persist(file, proposal, request, dict(status='needs_comparison', label='Compare this statement', basis=None,
             retained=retained, reason='The matching period contains different readings, saved edits or unavailable comparison evidence.'), actor)
-    own_rank = (1, not bool(proposal.get('saved_review')), str(file.created_at), str(file.id), proposal.get('statement_id') or '')
-    ranked = sorted(peers, key=lambda item: (item[0]['status'] != 'imported', not item[2], str(item[1].created_at), item[0]['file_id'], item[0].get('statement_id') or ''))
+    # Keep the first verified retained reading stable. File creation timestamps
+    # can tie, and UUID ordering must not nominate a second retained copy when
+    # it is prepared after its peer.
+    def peer_rank(item):
+        entry, peer, reviewed, _, _ = item
+        retained = (_stored(peer, entry.get('statement_id')) or {}).get('status') == 'retained'
+        return (entry['status'] != 'imported', not reviewed, not retained,
+            str(peer.created_at), entry['file_id'], entry.get('statement_id') or '')
+    own_rank = (1, not bool(proposal.get('saved_review')), not bool(previous and previous.get('status') == 'retained'),
+        str(file.created_at), str(file.id), proposal.get('statement_id') or '')
+    ranked = sorted(peers, key=peer_rank)
     if not ranked:
         return _persist(file, proposal, request, dict(status='retained', label='Retained statement', basis=None,
             retained=_own_link(file, proposal), reason='No confirmed duplicate remained after comparing the current identities.'), actor)
     entry, other_file, reviewed, basis, retained_reading_revision = ranked[0]
-    rank = (entry['status'] != 'imported', not reviewed, str(other_file.created_at), entry['file_id'], entry.get('statement_id') or '')
+    rank = peer_rank(ranked[0])
     if own_rank <= rank:
         return _persist(file, proposal, request, dict(status='retained', label='Retained statement', basis=basis,
             retained=_own_link(file, proposal), reason='This is the retained source for matching copies of this period.'), actor)
     retained = dict(evidence_file_id=entry['file_id'], statement_id=entry.get('statement_id'),
         source_document_id=entry.get('source_document_id'), filename=entry['filename'], page_number=entry.get('page_number', 1))
     return _persist(file, proposal, request, dict(status='ignored', label='Duplicate - Ignored by system', basis=basis,
-        retained=retained, retained_reading_revision=retained_reading_revision, reason='The full statement identity and financial reading match the retained source. Evidence and saved reviews remain available.'), actor)
+        retained=retained, retained_reading_revision=retained_reading_revision, reason='The statement content and period match the retained source. Evidence and saved reviews remain available.'), actor)
 
 
 def decide_duplicate_disposition(session, *, case_id, evidence_file_id, action, expected_reading_revision,

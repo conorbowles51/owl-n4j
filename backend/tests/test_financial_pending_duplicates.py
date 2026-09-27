@@ -229,3 +229,87 @@ class PendingDuplicateTests(TestCase):
                 request=StatementReviewDraft.model_validate(raw), expected_review_revision=batches._digest({}))
         self.assertEqual(self.fixture.b.status(batch)['items'][0]['status'], 'attention')
         self.assertEqual(self.decision(other)['status'], 'needs_comparison')
+
+    def masked_copy_batch(self, *, identical=True):
+        import hashlib
+        from postgres.models.evidence import EvidenceDocumentText
+        text = self.f.db.get(EvidenceDocumentText, self.primary.id)
+        text.content = text.content.replace('TEST123', '***123')
+        text.content_sha256 = hashlib.sha256(text.content.encode()).hexdigest()
+        self.f.db.commit()
+        other = self.fixture.copy_file()
+        if identical:
+            file = self.f.db.get(EvidenceFile, other.id)
+            file.sha256 = self.primary.sha256
+            file.stored_path = self.primary.stored_path
+            self.f.db.commit()
+        return other, self.fixture.create(self.primary, other)
+
+    def test_identical_masked_copies_have_one_ready_period_and_one_excluded_copy(self):
+        other, batch = self.masked_copy_batch()
+        state = self.fixture.b.status(batch)
+        self.assertEqual(state['counts']['duplicate_ignored'], 1, state)
+        self.assertEqual(state['available_transactions'], 12)
+        ignored = next(item for item in state['items'] if item['status'] == 'duplicate_ignored')
+        self.assertEqual(ignored['duplicate_disposition']['basis'], 'identical_bytes')
+        # A batch GET must validate persisted fingerprints, not reconstruct all
+        # ignored PDFs. Reopening cannot write decisions or restart reading.
+        from unittest.mock import patch
+        with patch('services.financial.statement_import.read_statement_import', side_effect=AssertionError('reparsed duplicate')), \
+             patch('services.financial.import_batches.read_statement_import', side_effect=AssertionError('reparsed duplicate')):
+            reopened = self.fixture.b.status(batch)
+        self.assertEqual(reopened['counts'], state['counts'])
+
+    def test_masked_identity_and_equal_reading_without_identical_bytes_are_not_duplicates(self):
+        _, batch = self.masked_copy_batch(identical=False)
+        state = self.fixture.b.status(batch)
+        self.assertEqual(state['counts']['duplicate_ignored'], 0)
+
+    def test_edited_masked_copy_returns_to_review(self):
+        _, batch = self.masked_copy_batch()
+        state = self.fixture.b.status(batch)
+        item = next(item for item in state['items'] if item['status'] == 'duplicate_ignored')
+        from postgres.models.financial_import_batches import FinancialImportBatchItem as Item
+        with self.f.SessionLocal() as db:
+            file_id = UUID(item['file_id'])
+            proposal = read_statement_import(db, case_id=self.f.case.id, evidence_file_id=file_id)
+            from services.financial.import_batches import initial_request
+            draft = initial_request(proposal)
+            next(row for row in draft['rows'] if not row['excluded'])['description'] = 'Investigator correction'
+            db.get(Item, UUID(item['id'])).review_request = draft
+            db.commit()
+        current = self.fixture.b.status(batch)
+        edited = next(row for row in current['items'] if row['id'] == item['id'])
+        self.assertNotEqual(edited['status'], 'duplicate_ignored')
+
+    def test_masked_copy_batch_imports_payments_once_and_preserves_both_sources(self):
+        other, batch = self.masked_copy_batch()
+        from services.financial import import_batches as batches
+        state = self.fixture.b.status(batch)
+        with self.f.SessionLocal() as db:
+            batches.queue_import(db, case_id=self.f.case.id, batch_id=batch,
+                expected_revision=state['ready_revision'], actor=self.f.actor)
+        self.fixture.b.advance(batch)
+        current = self.fixture.b.status(batch)
+        self.assertEqual(current['counts']['imported'], 1)
+        self.assertEqual(current['counts']['duplicate_ignored'], 1)
+        with self.f.SessionLocal() as db:
+            self.assertEqual(len(list(db.scalars(select(FinancialTransaction)))), 12)
+            self.assertIsNotNone(db.get(EvidenceFile, self.primary.id))
+            self.assertIsNotNone(db.get(EvidenceFile, other.id))
+
+    def test_identical_bytes_different_source_section_requires_comparison(self):
+        other, batch = self.masked_copy_batch()
+        from unittest.mock import patch
+        from services.financial import pending_statement_duplicates as duplicates
+        original = duplicates._candidate
+        def different_section(*args, **kwargs):
+            result = original(*args, **kwargs)
+            if result:
+                file, proposal, request = result
+                proposal = {**proposal, 'statement_page_numbers': [2]}
+                return file, proposal, request
+            return result
+        with patch.object(duplicates, '_candidate', side_effect=different_section):
+            decision = self.decision(other)
+        self.assertEqual(decision['status'], 'needs_comparison')

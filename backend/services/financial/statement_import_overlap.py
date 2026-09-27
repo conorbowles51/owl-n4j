@@ -15,6 +15,7 @@ from services.financial.pdf_candidates import _digest, PdfMappingError
 
 class ComparisonSources(dict):
     families = None
+    duplicate_context = None
 
 
 def scope(raw):
@@ -83,6 +84,17 @@ def comparison_sources(session, case_id, pending=None, *, read_pending=None):
     current_ids = {str(current_version(versions).id) for versions in groups.values()}
     entries, prepared, cache = ComparisonSources(), {}, {}
     entries.families = families
+    from services.financial.pending_duplicate_projection import load_projection_context, cached_disposition
+    all_files = [file for versions in groups.values() for file in versions]
+    decision_ids = set()
+    for file in all_files:
+        for decision in (file.metadata_ or {}).get('financial_duplicate_dispositions', {}).values():
+            if decision.get('status') in ('ignored', 'restored'):
+                decision_ids.add(str(file.id))
+                decision_ids.add((decision.get('retained') or {}).get('evidence_file_id'))
+    if decision_ids:
+        entries.duplicate_context = load_projection_context(session, case_id,
+            [file for file in all_files if str(file.id) in decision_ids])
     def reading(item, *, include_duplicate_disposition=True):
         if read_pending is not None:
             return read_pending(item, include_duplicate_disposition=include_duplicate_disposition)
@@ -118,12 +130,11 @@ def comparison_sources(session, case_id, pending=None, *, read_pending=None):
             except PdfMappingError:
                 raw = {**raw, '_coverage_error': 'Reopen this older review to check its current bank, account and statement dates.'}
         prepared[item.id] = raw
-        from services.financial.pending_statement_duplicates import METADATA_KEY, read_duplicate_disposition
+        from services.financial.pending_statement_duplicates import METADATA_KEY
         decision = (file.metadata_ or {}).get(METADATA_KEY, {}).get(item.statement_key or '')
         if decision and decision.get('status') == 'ignored':
             try:
-                proposal = reading(item, include_duplicate_disposition=False)
-                current_decision = read_duplicate_disposition(session, file, proposal, item.review_request)
+                current_decision = cached_disposition(entries.duplicate_context, file, item.statement_key)
                 if current_decision and current_decision.get('current') and current_decision['status'] == 'ignored':
                     continue
             except PdfMappingError:

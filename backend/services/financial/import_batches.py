@@ -309,13 +309,21 @@ def checked_batch_items(session, case_id, items):
         if state in ('ready', 'attention', 'duplicate_ignored') and (state == 'duplicate_ignored' or
                 (stored_duplicate or {}).get('status') in ('ignored', 'restored')):
             try:
-                proposal = read_pending(item)
-                duplicate = read_duplicate_disposition(session, file, proposal, projected_request)
+                from services.financial.pending_duplicate_projection import cached_disposition
+                context = getattr(sources, 'duplicate_context', None)
+                duplicate = cached_disposition(context, file, item.statement_key) if context is not None else None
+                # Legacy decisions without guards require a full check. Current
+                # guards cover source bytes, geometry, edits and retained work.
+                proposal = None
+                if duplicate is None or not duplicate.get('current'):
+                    proposal = read_pending(item)
+                    duplicate = read_duplicate_disposition(session, file, proposal, projected_request)
                 summary['duplicate_disposition'] = duplicate
                 if duplicate and duplicate.get('current') and duplicate['status'] == 'ignored':
                     state = 'duplicate_ignored'
                     summary.update(can_import=False, problems=[], problem_count=0)
                 elif state == 'duplicate_ignored':
+                    proposal = proposal or read_pending(item)
                     state, assessment = assess({**proposal, 'duplicate_disposition': duplicate}, projected_request)
                     summary.update(assessment)
             except PdfMappingError as error:
