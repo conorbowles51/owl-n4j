@@ -1927,6 +1927,7 @@ function EditableStatement({
     ? `loupe-pending-statement:${owner}:${caseId}:${fileId}:${data.statement_id || "single"}` : null
   const [checkingImport, setCheckingImport] = useState(false)
   const [backgroundImportBatch, setBackgroundImportBatch] = useState<string | null>(null)
+  const [backgroundImportStatus, setBackgroundImportStatus] = useState<string | null>(null)
   const confirm = useMutation({
     retry: false,
     mutationFn: async (recoverOnly?: boolean) => {
@@ -1935,7 +1936,10 @@ function EditableStatement({
         endpoint: `/api/financial/statement-import/${fileId}?${new URLSearchParams({ case_id: caseId })}`,
         request: importRequest(), storageKey: pendingImportKey, recoverOnly,
         onChecking: () => setCheckingImport(true),
-        onOperation: (operation) => setBackgroundImportBatch(operation.batch_id),
+        onOperation: (operation) => {
+          setBackgroundImportBatch(operation.batch_id)
+          setBackgroundImportStatus(operation.status)
+        },
       })
       const result = receipt.parse(recovered ? recovered.result : await batchReview!.confirm!(importRequest()))
       if (
@@ -1959,12 +1963,23 @@ function EditableStatement({
   })
   const resumeImport = confirm.mutate
   const resumedImportKey = useRef<string | null>(null)
+  const backgroundChecks = useRef(0)
+  useEffect(() => { backgroundChecks.current = 0 }, [pendingImportKey])
   useEffect(() => {
     if (pendingImportKey && resumedImportKey.current !== pendingImportKey && hasPendingStatementImport(pendingImportKey)) {
       resumedImportKey.current = pendingImportKey
       resumeImport(true)
     }
   }, [pendingImportKey, resumeImport])
+  useEffect(() => {
+    if (!confirm.isError || backgroundImportStatus !== "in_progress" ||
+        !hasPendingStatementImport(pendingImportKey) || backgroundChecks.current >= 10) return
+    const timer = window.setTimeout(() => {
+      backgroundChecks.current += 1
+      resumeImport(true)
+    }, 15000)
+    return () => window.clearTimeout(timer)
+  }, [confirm.isError, backgroundImportStatus, pendingImportKey, resumeImport])
   useEffect(() => {
     if ((confirm.isSuccess && !confirm.data.ignored) || importedHere) {
       if (draftKey)
@@ -3178,7 +3193,9 @@ function EditableStatement({
             )}
             {confirm.isError && (
               <div className="w-full space-y-2">
-                <p role="alert">{confirm.error.message}</p>
+                {backgroundImportStatus === "in_progress" && backgroundChecks.current < 10
+                  ? <p role="status">The accepted import is still running. Checking automatically; you can leave this screen.</p>
+                  : <p role="alert">{confirm.error.message}</p>}
                 {hasPendingStatementImport(pendingImportKey) && (
                   <Button variant="outline" onClick={() => confirm.mutate(true)}>Check saved result</Button>
                 )}
