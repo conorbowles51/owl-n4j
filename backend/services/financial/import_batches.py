@@ -673,6 +673,7 @@ def save_review(session, *, case_id, batch_id, item_id, request, expected_review
         raise PdfMappingError('Another user saved changes to this review. Reopen it from the batch before saving.',409)
     if item.status in ('pending_import','imported'): raise PdfMappingError('This statement is already being imported or was imported.',409)
     if item.status == 'skipped': raise PdfMappingError('Restore this statement to review from the batch before saving further changes.',409)
+    if item.status == 'duplicate_ignored': raise PdfMappingError('Restore this duplicate explicitly before saving further changes.',409)
     if request.statement_id != (item.statement_key or None): raise PdfMappingError('Open this statement period from the batch again.',409)
     if request.replaces_source_document_id: raise PdfMappingError('Replace a previous import through its individual review, not bulk import.',422)
     proposal=read_statement_import(session,case_id=case_id,evidence_file_id=item.file_id,currency=request.currency,statement_id=request.statement_id)
@@ -689,16 +690,18 @@ def save_review(session, *, case_id, batch_id, item_id, request, expected_review
     for key in ('import_decision','import_decision_history'):
         if key in item.summary: summary[key] = item.summary[key]
     item.status=status;item.summary=summary;item.review_request=payload
-    if saved and payload != saved['request']:
+    if not saved or payload != saved['request']:
         metadata = deepcopy(file.metadata_ or {})
-        metadata.setdefault('financial_review_history', []).append(saved)
-        updated = {**saved, 'request': payload, 'review_revision': _digest(payload),
+        if saved:
+            metadata.setdefault('financial_review_history', []).append(saved)
+        updated = {**(saved or {}), 'request': payload, 'review_revision': _digest(payload),
             'saved_at': datetime.now(timezone.utc).isoformat(), 'assessment': summary, 'assessment_status': status,
-            'superseded_request_signatures': sorted(set([*saved.get('superseded_request_signatures', []),
-                request_signature(saved['request'])]))}
+            'initial_request_signature': (saved or {}).get('initial_request_signature') or request_signature(initial_request(proposal)),
+            'superseded_request_signatures': sorted(set([*(saved or {}).get('superseded_request_signatures', []),
+                *([request_signature(saved['request'])] if saved else [])]))}
         updated['saved_by'] = (dict(user_id=str(actor.user_id), name=actor.name) if actor else
             dict(name='Batch review', batch_id=str(batch_id)))
-        metadata['financial_review_progress'][item.statement_key or ''] = updated
+        metadata.setdefault('financial_review_progress', {})[item.statement_key or ''] = updated
         file.metadata_ = metadata
         saved = updated
     session.commit()

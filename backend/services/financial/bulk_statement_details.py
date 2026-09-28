@@ -15,6 +15,8 @@ from services.financial import import_batches
 from services.financial.currency_correction import CurrencyCode
 from services.financial.statement_details import StatementDetailsRequest, read_statement_details, update_statement_details
 from services.financial.statement_import import read_statement_import
+from services.financial.effective_statement_review import resolve_review, request_signature
+from services.financial.statement_progress import review_progress
 
 FIELDS = ('holder', 'account_number', 'institution', 'currency', 'period_start', 'period_end')
 
@@ -90,7 +92,7 @@ def _file(session, case_id, file_id):
 def _items(session, case_id, file_id, statement_id):
     return list(session.scalars(select(Item).join(Batch, Batch.id == Item.batch_id).where(
         Batch.case_id == case_id, Batch.status != 'removed', Item.file_id == file_id,
-        Item.statement_key == (statement_id or ''), Item.status != 'removed').order_by(Item.id)))
+        Item.statement_key == (statement_id or ''), Item.status.notin_(('removed', 'superseded_reading'))).order_by(Item.id)))
 
 
 def _load(session, case_id, target, cache):
@@ -106,7 +108,16 @@ def _load(session, case_id, target, cache):
         items = _items(session, case_id, file.id, target.statement_id)
         if any(item.status in ('pending_import', 'imported', 'skipped', 'assigned') for item in items):
             raise PdfMappingError('This statement is importing, imported or left unimported. Refresh the list or restore it to review first.', 409)
-        drafts = [item.review_request for item in items if item.review_request]
+        if any(item.status == 'duplicate_ignored' for item in items):
+            raise PdfMappingError('This copy was left unimported as a duplicate. Restore it explicitly before changing its details.', 409)
+        shared = review_progress(file, target.statement_id)
+        # A predecessor is not a competing investigator edit. Resolve it before
+        # choosing currency, otherwise a corrected currency falsely splits the
+        # same saved review into two conflicting drafts.
+        drafts = [resolve_review(item.review_request, shared)[0] for item in items]
+        drafts = [raw for raw in drafts if raw]
+        if shared:
+            drafts.append(shared['request'])
         currencies = {raw.get('currency') for raw in drafts}
         if len(currencies) > 1:
             raise PdfMappingError('This statement has conflicting saved reviews. Open it to compare them first.', 409)
@@ -119,7 +130,11 @@ def _load(session, case_id, target, cache):
             drafts.append(saved['request'])
         from services.financial.review_upgrade import upgrade_request
         drafts = [upgrade_request(raw, proposal) or raw for raw in drafts]
-        if len({_digest(raw) for raw in drafts}) > 1:
+        resolved = [resolve_review(raw, saved, baseline=import_batches.initial_request(proposal)) for raw in drafts]
+        if any(conflict for _, conflict in resolved):
+            raise PdfMappingError('This statement has different corrections saved in its batch and PDF review. Compare them individually first.', 409)
+        drafts = [raw for raw, _ in resolved]
+        if len({request_signature(raw) for raw in drafts}) > 1:
             raise PdfMappingError('This statement has different corrections saved in its batch and PDF review. Compare them individually first.', 409)
         raw = deepcopy(drafts[0] if drafts else import_batches.initial_request(proposal))
         if raw['expected_revision'] != proposal['revision']:
@@ -269,12 +284,18 @@ def save(session, *, case_id, request, actor):
                     metadata.setdefault('financial_review_history', []).append(previous)
                 record = dict(request=raw, review_revision=_digest(raw), saved_at=datetime.now(timezone.utc).isoformat(),
                     saved_by=dict(user_id=str(actor.user_id), name=actor.name))
+                status, summary = import_batches.assess(state['proposal'], raw)
+                record.update(assessment=summary, assessment_status=status,
+                    initial_request_signature=request_signature(import_batches.initial_request(state['proposal'])),
+                    superseded_request_signatures=sorted(set([
+                        *(previous or {}).get('superseded_request_signatures', []),
+                        *([request_signature(previous['request'])] if previous else []),
+                    ])))
                 metadata.setdefault('financial_review_progress', {})[target.statement_id or ''] = record
                 metadata.setdefault('financial_account_detail_history', []).append(dict(
                     request_id=str(request.request_id), before=row['values'], after=after,
                     statement_id=target.statement_id, at=record['saved_at'], actor=record['saved_by']))
                 file.metadata_ = metadata
-                status, summary = import_batches.assess(state['proposal'], raw)
                 for item in state['items']:
                     item.review_request = deepcopy(raw)
                     item.status = status

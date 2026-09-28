@@ -150,3 +150,7 @@ Still open: full fresh-source preparation-to-group-import browser proof, automat
 ### 29 September release instruction
 
 The user explicitly requested building and pushing the pending automation implementation without further test runs to conserve usage, then continuing development. The code-only E31/E32 release follows that instruction. The verification above predates this request; full browser, held-out and scale acceptance remain open. Push triggers the normal guarded deployment; successful publication alone does not establish deployment or live acceptance. The recurring schedule remains paused.
+
+Release `a48958e0` was committed and pushed to `integration/evidence-main-reunion` after the requested production build passed. No additional tests ran. Deployment and live acceptance have not been checked.
+
+Continued development extends the same effective review to grouped account-detail decisions: known predecessor drafts no longer create false conflicts, including corrected currency; grouped saves retain cached readiness and revision ancestry; superseded readings are excluded and ignored duplicates require explicit restoration. A first batch save now creates shared progress so the individual view can reuse it too. These follow-up changes have not been tested, following the user's instruction. They do not complete automatic date handling, the repair coordinator, durable single-import recovery or scale acceptance.
