@@ -31,6 +31,7 @@ class StatementCheckRequest(_Contract):
     institution: Annotated[str, Field(max_length=128)] = ''
     period_start: Annotated[str, Field(max_length=32)] = ''
     period_end: Annotated[str, Field(max_length=32)] = ''
+    period_start_unprinted: bool = False
     no_activity_confirmed: bool = False
     no_activity_revision: _Digest | None = None
     rows: Annotated[list[CheckRow], Field(max_length=100000)]

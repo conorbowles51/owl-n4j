@@ -20,6 +20,39 @@ class StatementAdmissionTests(TestCase):
     def tearDown(self): self.f.tearDown()
     def request(self): return StatementImportRequest.model_validate(initial_request(self.f.preview()))
 
+    def test_unchecked_unprinted_option_preserves_existing_admission_revision(self):
+        from services.financial.pdf_candidates import _digest
+        from services.financial.review_arithmetic import check_proposed_rows
+        from services.financial.statement_admission import POLICY
+        raw = self.request().model_dump()
+        proposal = self.f.preview()
+        arithmetic = check_proposed_rows(proposal, raw['rows'])
+        old_revision = _digest(dict(policy=POLICY, checks=arithmetic['checks_revision'], details={
+            key: raw.get(key) for key in ('currency', 'holder', 'account_number', 'institution', 'period_start', 'period_end')}))
+        self.assertEqual(assess_admission(proposal, self.request())['revision'], old_revision)
+
+    def test_unprinted_start_requires_explicit_confirmation_and_keeps_other_checks(self):
+        proposal = deepcopy(self.f.preview())
+        proposal['metadata']['period_start'] = ''
+        raw = {**self.request().model_dump(), 'period_start': ''}
+        blocked = assess_admission(proposal, StatementImportRequest.model_validate(raw))
+        self.assertFalse(blocked['can_import'])
+        raw['period_start_unprinted'] = True
+        accepted = assess_admission(proposal, StatementImportRequest.model_validate(raw))
+        self.assertTrue(accepted['can_import'], accepted['blockers'])
+        self.assertNotEqual(accepted['revision'], blocked['revision'])
+        self.assertEqual(raw['period_start'], '')
+        for changes in ({'period_end': ''}, {'period_end': 'not a date'},
+                        {'period_start': '2023-01-01'}):
+            result = assess_admission(proposal, StatementImportRequest.model_validate({**raw, **changes}))
+            self.assertFalse(result['can_import'])
+        # A recognised printed start cannot be erased with this confirmation.
+        self.assertFalse(assess_admission(self.f.preview(), StatementImportRequest.model_validate(raw))['can_import'])
+        changed = deepcopy(raw)
+        row = next(row for row in changed['rows'] if not row['excluded'])
+        row['amount_minor'] = str(int(row['amount_minor']) + 1)
+        self.assertFalse(assess_admission(proposal, StatementImportRequest.model_validate(changed))['can_import'])
+
     def test_reconciled_individual_and_batch_share_rule_and_history(self):
         proposal = self.f.preview(); request=self.request()
         self.assertTrue(assess(proposal, request.model_dump())[1]['can_import'])

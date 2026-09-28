@@ -35,6 +35,7 @@ export const statementDraft = z.object({
   account: z.string(),
   institution: z.string(),
   periodStart: z.string(),
+  periodStartUnprinted: z.boolean().optional(),
   periodEnd: z.string(),
   detailsReason: z.string(),
   noActivityRevision: z.string().optional(),
@@ -68,6 +69,7 @@ export function serverStatementDraft(raw: Record<string, unknown> | undefined) {
     account: raw.account_number ?? "",
     institution: raw.institution ?? "",
     periodStart: raw.period_start ?? "",
+    periodStartUnprinted: raw.period_start_unprinted === true,
     periodEnd: raw.period_end ?? "",
     detailsReason: raw.details_reason || "",
     noActivityRevision: raw.no_activity_confirmed

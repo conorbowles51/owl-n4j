@@ -625,6 +625,7 @@ class StatementReviewDraft(_Contract):
     institution: Annotated[str, Field(max_length=128)] = ''
     holder: Annotated[str, Field(max_length=128)]
     period_start: Annotated[str, Field(max_length=32)] = ''
+    period_start_unprinted: bool = False
     period_end: Annotated[str, Field(max_length=32)] = ''
     details_reason: Annotated[str, Field(max_length=4096)] = ''
     balance_exception_reason: Annotated[str, Field(max_length=4096)] = ''
@@ -786,6 +787,8 @@ def confirm_statement_import(*, session_factory, case_id, evidence_file_id, requ
                         raise PdfMappingError('The statement reading changed. Reopen it before comparing copies.', 409)
                     disposition = apply_duplicate_disposition(session, case_id=case_id, file=file,
                         proposal=proposal, request=request.model_dump(mode='json'), actor=actor)
+                    if request.period_start_unprinted and disposition['status'] == 'needs_comparison':
+                        raise PdfMappingError(disposition['reason'], 409)
                     if disposition['status'] == 'ignored':
                         session.commit()
                         return ignored_receipt(case_id, file, disposition)
@@ -825,6 +828,8 @@ def confirm_statement_import(*, session_factory, case_id, evidence_file_id, requ
                 if replacing is None:
                     disposition = apply_duplicate_disposition(session, case_id=case_id, file=file,
                         proposal=proposal, request=request.model_dump(mode='json'), actor=actor)
+                    if request.period_start_unprinted and disposition['status'] == 'needs_comparison':
+                        raise PdfMappingError(disposition['reason'], 409)
                     if disposition['status'] == 'ignored':
                         session.commit()
                         return ignored_receipt(case_id, file, disposition)
@@ -890,6 +895,9 @@ def confirm_statement_import(*, session_factory, case_id, evidence_file_id, requ
                 balance_sign = -1 if proposal['metadata'].get('balance_convention') == 'liability_owed' else 1
                 start, end = calendar_date(request.period_start), calendar_date(request.period_end)
                 bounds = PeriodBounds.printed(start, end) if start and end and start <= end else PeriodBounds()
+                if request.period_start_unprinted and not start and end:
+                    from postgres.models.enums import PeriodBoundsSource
+                    bounds = PeriodBounds(end=end, end_source=PeriodBoundsSource.printed)
                 from services.financial.import_issues import usable_balance
                 convention = proposal['metadata'].get('balance_convention')
                 openings = [row for row in request.rows if row.excluded and originals[row.id]['kind'] == 'balance'

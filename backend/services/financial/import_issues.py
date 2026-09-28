@@ -106,7 +106,8 @@ def retained_issues(proposal, request, *, arithmetic=None, coverage=None):
             issues.append(dict(kind='statement_detail', field=field, row_id=None,
                 message=f'The {label} has not been identified.'))
     start, end = calendar_date(request.period_start), calendar_date(request.period_end)
-    if (request.period_start or request.period_end) and (not start or not end or start > end):
+    start_unprinted = request.period_start_unprinted and not request.period_start and bool(end)
+    if (request.period_start or request.period_end) and not start_unprinted and (not start or not end or start > end):
         issues.append(dict(kind='statement_detail', field='period', row_id=None,
             message='The complete statement period has not been identified.'))
     if arithmetic:

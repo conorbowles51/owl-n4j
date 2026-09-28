@@ -43,7 +43,11 @@ def _review_shape(proposal, request):
         if kind not in ('balance', 'statement_total', 'total', 'header'):
             value.update(amount_minor=row.get('amount_minor') or '0', direction=row.get('direction'))
         rows.append(value)
-    return dict(scope=scope({**request, 'account_type': proposal.get('metadata', {}).get('account_type') or ''}),
+    descriptor = scope({**request, 'account_type': proposal.get('metadata', {}).get('account_type') or ''})
+    if request.get('period_start_unprinted'):
+        descriptor = {key: request.get(key) for key in ('period_start_unprinted', 'period_start', 'period_end',
+            'currency', 'holder', 'institution', 'account_number')}
+    return dict(scope=descriptor,
         rows=rows, notes={key: request.get(key) or None for key in (
             'details_reason', 'balance_exception_reason', 'coverage_review_reason', 'no_activity_confirmed')})
 
@@ -145,7 +149,7 @@ def _persist(file, proposal, request, decision, actor):
     previous = _stored(file, proposal.get('statement_id'))
     value = dict(policy=POLICY, reading_revision=proposal['revision'], signature=review_signature(proposal, request),
         scope=scope({**request, 'account_type': proposal.get('metadata', {}).get('account_type') or ''}),
-        matched_fields=(['source_sha256', 'period_start', 'period_end', 'currency']
+        matched_fields=((['source_sha256', 'source_section', 'reviewed_values'] if request.get('period_start_unprinted') else ['source_sha256', 'period_start', 'period_end', 'currency'])
             if decision.get('basis') == 'identical_bytes' else MATCHED_FIELDS) if decision.get('retained') else [], **decision)
     value['projection_guard'] = capture_projection_guard(object_session(file), file, proposal.get('statement_id'), decision)
     revision = _digest(value)
@@ -220,6 +224,52 @@ def _same_content_scope(left, right):
         'identity', 'account_reference', 'holder', 'currency', 'start', 'end', 'account_type')))
 
 
+def _unprinted_start_disposition(session, case_id, file, proposal, request, actor):
+    """Unknown dates cannot establish equality; identical bytes and sections can.
+
+    Consult admitted receipts under the caller's case lock, including periods
+    omitted by date-based coverage. Never merge neighbouring sections or hide
+    a corrected reading. Pending copies are checked again at admission.
+    """
+    if not file.sha256:
+        return None
+    documents = session.scalars(select(FinancialSourceDocument).join(
+        EvidenceFile, EvidenceFile.id == FinancialSourceDocument.evidence_file_id).where(
+        FinancialSourceDocument.case_id == case_id, EvidenceFile.case_id == case_id,
+        EvidenceFile.sha256 == file.sha256, EvidenceFile.id != file.id,
+        FinancialSourceDocument.status == 'admitted'))
+    matches = []
+    for document in documents:
+        metadata = document.metadata_ or {}
+        if metadata.get('financial_import_removal'):
+            continue
+        original = metadata.get('statement_import_original') or {}
+        if not _same_source_section(proposal, original):
+            continue
+        entry = dict(file_id=str(document.evidence_file_id), source_document_id=str(document.id))
+        loaded = _candidate(session, case_id, entry, {})
+        if loaded is None:
+            raise PdfMappingError('A saved copy of this source section could not be verified. Open its saved records before importing this copy.', 409)
+        peer, original, saved_request = loaded
+        same_values = _review_shape(proposal, request) == _review_shape(original, saved_request)
+        # scope() intentionally excludes incomplete periods. Compare identity
+        # explicitly so two unknown scopes never imply account equality.
+        same_identity = all(request.get(key) == saved_request.get(key) for key in (
+            'currency', 'holder', 'account_number', 'institution'))
+        matches.append((document, peer, original, same_values and same_identity))
+    if not matches:
+        return None
+    matches.sort(key=lambda item: (item[3], str(item[0].id)))
+    document, peer, original, identical = matches[0]
+    return _persist(file, proposal, request, dict(
+        status='ignored' if identical else 'needs_comparison',
+        label='Duplicate - Ignored by system' if identical else 'Compare this statement',
+        basis='identical_bytes', retained=_own_link(peer, original, str(document.id)),
+        retained_reading_revision=original['revision'],
+        reason=('These identical source pages already have the same saved review. No additional payments are needed.'
+                if identical else 'These source pages already have saved payments with different review values. Open the saved records to compare or correct them before importing this copy.')), actor)
+
+
 def apply_duplicate_disposition(session, *, case_id, file, proposal, request=None, actor=None, sources=None):
     """Caller holds Case then EvidenceFile locks; flushes/commit belong to caller.
 
@@ -228,6 +278,10 @@ def apply_duplicate_disposition(session, *, case_id, file, proposal, request=Non
     """
     request = _raw(proposal, request)
     previous = read_duplicate_disposition(session, file, proposal, request)
+    if request.get('period_start_unprinted'):
+        partial = _unprinted_start_disposition(session, case_id, file, proposal, request, actor)
+        if partial is not None:
+            return partial
     if previous and previous['current'] and (previous['status'] == 'restored' or
             (previous['status'] == 'ignored' and previous.get('basis') == 'investigator_decision')):
         return previous

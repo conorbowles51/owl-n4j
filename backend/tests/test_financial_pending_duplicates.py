@@ -31,6 +31,59 @@ class PendingDuplicateTests(TestCase):
                 action=action, expected_reading_revision=proposal['revision'], currency=proposal['currency'],
                 statement_id=proposal.get('statement_id'), actor=self.f.actor, **kwargs)['duplicate_disposition']
 
+    def test_unprinted_start_import_copy_and_coverage_keep_known_end(self):
+        from hashlib import sha256
+        from postgres.models.evidence import EvidenceDocumentText
+        from services.financial.account_history import account_history
+        from postgres.models.financial import FinancialStatementPeriod
+        from tests.financial_reconciled_fixture import install_reconciled_source
+        install_reconciled_source(self.f)
+        text = self.f.db.get(EvidenceDocumentText, self.primary.id)
+        text.content = '\n'.join(line for line in text.content.splitlines() if not line.startswith('Statement Period:'))
+        text.content_sha256 = sha256(text.content.encode()).hexdigest()
+        text.character_count = len(text.content)
+        self.f.db.commit()
+        other = self.fixture.copy_file()
+        Path(other.stored_path).write_bytes(self.f.path.read_bytes())
+        other.sha256 = self.primary.sha256
+        self.f.db.commit()
+        def request():
+            raw = self.f.request()
+            raw.update(period_start='', period_end='2023-12-31', period_start_unprinted=True)
+            return raw
+        self.assertFalse(self.f.preview()['metadata']['period_start'])
+        raw = request()
+        first = self.f.confirm(raw)
+        self.assertEqual(first['transaction_count'], 12)
+        self.assertFalse(self.f.confirm(raw)['created'])
+        with self.f.SessionLocal() as db:
+            period = account_history(db, case_id=self.f.case.id)['groups'][0]['periods'][0]
+            self.assertIsNone(period['start'])
+            self.assertEqual(period['end'], '2023-12-31')
+            self.assertEqual(period['status'], 'reconciled')
+            stored = db.get(FinancialStatementPeriod, UUID(period['id']))
+            self.assertEqual(stored.period_start_source, 'absent')
+            self.assertEqual(stored.period_end_source, 'printed')
+        self.f.file = other
+        copied = request()
+        with self.f.SessionLocal() as db:
+            proposal = self.f.preview()
+            proposal['statement_page_numbers'] = [2]
+            result = apply_duplicate_disposition(db, case_id=self.f.case.id,
+                file=db.get(EvidenceFile, other.id), proposal=proposal, request=copied)
+            self.assertNotEqual(result['status'], 'ignored')
+        changed = deepcopy(copied)
+        changed['rows'][1]['description'] = 'Investigator correction retained for comparison'
+        with self.assertRaises(PdfMappingError):
+            self.f.confirm(changed)
+        receipt = self.f.confirm(copied)
+        self.assertEqual(receipt['outcome'], 'duplicate_ignored')
+        self.assertEqual(receipt['duplicate_disposition']['retained']['source_document_id'], first['source_document_id'])
+        self.assertEqual(self.f.confirm(copied)['outcome'], 'duplicate_ignored')
+        with self.f.SessionLocal() as db:
+            self.assertEqual(len(list(db.scalars(select(FinancialTransaction)))), 12)
+            self.assertIsNotNone(db.get(EvidenceFile, other.id))
+
     def test_investigator_can_leave_matching_copy_unimported_and_restore(self):
         self.f.confirm()
         other = self.fixture.copy_file()

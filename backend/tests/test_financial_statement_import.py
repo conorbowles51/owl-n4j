@@ -1093,6 +1093,44 @@ class StatementImportTests(TransactionPersistenceTestCase):
         notice.update(excluded=False, date='2020-06-29', amount_minor='100', direction='credit', reason='Wrongly treated closure as a payment')
         with self.assertRaisesRegex(PdfMappingError, 'closure notice is not a payment'):
             check_import_request(p, StatementImportRequest.model_validate(incorrect))
+        from services.financial.statement_admission import assess_admission
+        request['period_end'] = '2020-06-29'
+        admission = assess_admission(p, StatementImportRequest.model_validate(request))
+        self.assertEqual([b['kind'] for b in admission['blockers']], ['no_activity'])
+        request.update(no_activity_confirmed=True, no_activity_revision=admission['revision'])
+        admission = assess_admission(p, StatementImportRequest.model_validate(request))
+        self.assertTrue(admission['can_import'], admission['blockers'])
+        self.assertFalse(admission['calculation']['available'])
+        self.assertIsNone(admission['calculation']['printed_closing_minor'])
+        from services.financial.statement_check_request import StatementCheckRequest, check_statement_request
+        checked = check_statement_request(p, StatementCheckRequest.model_validate(request))
+        self.assertTrue(checked['admission']['can_import'])
+        self.assertFalse(checked['applied'])
+        # The closure capability cannot waive a missing printed control in a
+        # payment review, an erased opening reading, or unrelated source data.
+        for change in ('capability', 'notice', 'date', 'opening', 'payment', 'detected_payment', 'printed_closing', 'holder'):
+            with self.subTest(change=change):
+                candidate, edited = deepcopy(p), deepcopy(request)
+                if change == 'capability': candidate['can_record_account_closure'] = False
+                elif change == 'notice': candidate['metadata'].pop('account_closure')
+                elif change == 'date': edited['period_end'] = '2020-06-30'
+                elif change == 'opening':
+                    next(r for r in edited['rows'] if r['description'] == 'Opening Balance')['balance_minor'] = None
+                elif change == 'payment':
+                    edited['rows'].append(dict(id='manual:closure-payment', excluded=False, date='2020-06-28',
+                        description='Added payment', amount_minor='100', direction='credit', manual_page=1))
+                elif change == 'detected_payment':
+                    candidate['rows'].append({**deepcopy(candidate['rows'][0]), 'id': 'detected-payment',
+                        'kind': 'transaction', 'excluded': False, 'fields': dict(description='Detected payment')})
+                    edited['rows'].append(dict(id='detected-payment', excluded=True, description='Detected payment', reason='Reviewed'))
+                elif change == 'printed_closing':
+                    candidate['rows'].append({**deepcopy(candidate['rows'][0]), 'id': 'printed-closing',
+                        'kind': 'balance', 'excluded': True, 'fields': dict(description='Closing Balance', balance='0')})
+                    edited['rows'].append(dict(id='printed-closing', excluded=True, description='Closing Balance', balance_minor=None))
+                elif change == 'holder': edited['holder'] = ''
+                first = assess_admission(candidate, StatementImportRequest.model_validate(edited))
+                edited.update(no_activity_revision=first['revision'])
+                self.assertFalse(assess_admission(candidate, StatementImportRequest.model_validate(edited))['can_import'])
         result=self.confirm(request);self.assertEqual(result['transaction_count'],0)
         self.assertEqual(result['account_closed_on'],'2020-06-29')
         self.assertFalse(self.confirm(request)['created'])
@@ -1101,6 +1139,11 @@ class StatementImportTests(TransactionPersistenceTestCase):
         period=self.db.scalar(select(FinancialStatementPeriod).where(FinancialStatementPeriod.source_document_id==UUID(result['source_document_id'])))
         self.assertEqual(read_opening(period).amount.minor_units,0)
         self.assertIsNone(read_closing(period).amount)
+        from services.financial.account_history import account_history
+        saved_period = account_history(self.db, case_id=self.case.id)['groups'][0]['periods'][0]
+        self.assertEqual(saved_period['status'], 'confirmed_no_activity')
+        self.assertIsNone(saved_period['closing_minor'])
+        self.assertFalse(list(self.db.scalars(select(FinancialTransaction))))
         controls=statement_source(self.db,case_id=self.case.id,period_id=period.id)['reviewed_controls']
         self.assertEqual([c['role'] for c in controls['controls']],['opening'])
         self.assertEqual(controls['account_closure']['original_text'],'06/29 ID 0011 VISA PAYMENT Closed')

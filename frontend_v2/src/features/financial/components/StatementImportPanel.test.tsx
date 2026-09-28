@@ -2892,3 +2892,58 @@ it.each([
   if (!ready) expect(screen.queryByText("You need editing access to this case to confirm an import.")).not.toBeInTheDocument()
   expect(screen.getByRole("button", { name: /Confirm import of/ })).toBeDisabled()
 })
+
+it("saves and restores explicit unprinted start without inventing coverage", async () => {
+  const base = vi.mocked(fetchAPI).getMockImplementation()!
+  let progress: Record<string, unknown> | null = null
+  vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
+    if (String(url).includes("/progress?")) {
+      const body = options!.body as { request: Record<string, unknown> }
+      progress = { request: body.request, review_revision: "saved-revision", saved_at: "2026-09-28T00:00:00Z", saved_by: { name: "Reviewer" } }
+      return { case_id: "case", evidence_file_id: "file", ...progress } as never
+    }
+    if (String(url).includes("statement-import/file?"))
+      return { ...data, metadata: { ...data.metadata, period_start: "" }, saved_review: progress } as never
+    return base(url, options)
+  })
+  mount()
+  await open(false)
+  const label = "I checked this statement: no start date is printed."
+  fireEvent.click(screen.getByRole("checkbox", { name: new RegExp(label.replace(".", "\\.")) }))
+  expect(screen.getByLabelText("Period start")).toHaveValue("")
+  expect(screen.getByText(/will not count this as a complete month/)).toBeVisible()
+  fireEvent.click(screen.getByRole("button", { name: "Save progress" }))
+  await screen.findByText("Progress saved to the case. You can reopen this statement on another device.")
+  expect(progress).toMatchObject({ request: { period_start: "", period_start_unprinted: true, period_end: "2023-01-31" } })
+  expect(sent).toHaveLength(0)
+  cleanup()
+  sessionStorage.clear()
+  useFinancialDraftStore.setState({ drafts: {} })
+  mount()
+  await screen.findByText("Review statement.pdf")
+  expect(screen.getByRole("checkbox", { name: /no start date is printed/ })).toBeChecked()
+  fireEvent.change(screen.getByLabelText("Period start"), { target: { value: "2023-01-01" } })
+  expect(screen.queryByRole("checkbox", { name: /no start date is printed/ })).not.toBeInTheDocument()
+})
+
+it("keeps unreadable charges selected and shows their source before a review decision", async () => {
+  const implementation = vi.mocked(fetchAPI).getMockImplementation()!
+  vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
+    const result = await implementation(url, options)
+    return result === data ? ({ ...data, rows: [...data.rows, {
+      id: "1:0:9", page_number: 1, table_index: 0, row_index: 9,
+      kind: "unresolved", excluded: false, fields: {}, issues: ["unreadable"],
+      source_cells: [{ column_index: 0, expected_text: "Interest Charge on Purchases 12.34", locator: {} }],
+    }] } as never) : result
+  })
+  mount()
+  await open()
+  const region = screen.getByRole("region", { name: "Unreadable transaction rows" })
+  expect(region).toHaveTextContent("Interest Charge on Purchases 12.34")
+  expect(region).toHaveTextContent("may contain real payments or charges")
+  expect(screen.queryByRole("button", { name: /blank rows from import/ })).not.toBeInTheDocument()
+  expect(screen.getByLabelText("Include row 1:0:9")).toBeChecked()
+  fireEvent.click(screen.getByRole("button", { name: "Review original row 10" }))
+  expect(screen.getByLabelText("Include row 1:0:9")).toBeChecked()
+  expect(screen.getByLabelText("Debit 1:0:9")).toBeVisible()
+})

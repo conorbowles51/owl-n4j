@@ -6,7 +6,7 @@ that extraction was complete.
 """
 from services.financial.pdf_candidates import _digest, PdfMappingError
 from services.financial.review_arithmetic import check_proposed_rows, arithmetic_problems
-from services.financial.import_issues import retained_issues, calendar_date
+from services.financial.import_issues import retained_issues, calendar_date, usable_balance
 
 POLICY = 'reconciled-statement-v1'
 
@@ -66,14 +66,38 @@ def explain_blockers(blockers, proposal=None, raw=None):
 def assess_admission(proposal, request, arithmetic=None):
     raw = request.model_dump(mode='json')
     arithmetic = arithmetic or check_proposed_rows(proposal, raw['rows'])
-    revision = _digest(dict(policy=POLICY, checks=arithmetic['checks_revision'], details={
-        key: raw.get(key) for key in ('currency', 'holder', 'account_number', 'institution', 'period_start', 'period_end')}))
+    details = {key: raw.get(key) for key in ('currency', 'holder', 'account_number', 'institution', 'period_start', 'period_end')}
+    if raw.get('period_start_unprinted'):
+        details['period_start_unprinted'] = True
+    revision = _digest(dict(policy=POLICY, checks=arithmetic['checks_revision'], details=details))
     blockers = retained_issues(proposal, request, arithmetic=arithmetic)
+    start_unprinted = (raw.get('period_start_unprinted') and not raw.get('period_start')
+        and calendar_date(raw.get('period_end', ''))
+        and not calendar_date(proposal['metadata'].get('period_start', '')))
+    if raw.get('period_start_unprinted') and not start_unprinted:
+        blockers.append(dict(kind='statement_detail', field='period_start', row_id=None,
+            message='A start date is present or the closing date is missing. Check the printed dates before confirming that no start date is printed.'))
     for field, label in [('institution', 'bank'), ('period_start', 'statement start date'), ('period_end', 'statement end date')]:
+        if field == 'period_start' and start_unprinted:
+            continue
         if not raw.get(field) or (field.startswith('period_') and not calendar_date(raw[field])):
             blockers.append(dict(kind='statement_detail', field=field, row_id=None, message=f'Enter the {label} printed on this statement.'))
     closing = next(c for c in arithmetic['checks'] if c['kind'] == 'closing_balance')
-    if closing['status'] == 'unavailable':
+    # A reader-identified closure is account information, not a payment or a
+    # printed zero balance. Only waive the absent closing control for a quiet
+    # closure with its retained opening reading and exact closure date.
+    closure_date = (proposal['metadata'].get('account_closure') or {}).get('date')
+    originals = proposal['rows']
+    opening_ids = {r['id'] for r in originals if r['kind'] == 'balance'
+        and r['fields'].get('description') == 'Opening Balance'}
+    closure_without_closing = bool(proposal.get('can_record_account_closure')
+        and calendar_date(closure_date) and raw.get('period_end') == closure_date
+        and not any(not r.excluded for r in request.rows)
+        and not any(not r['excluded'] for r in originals)
+        and not any(r['kind'] == 'balance' and r['fields'].get('description') == 'Closing Balance' for r in originals)
+        and any(r.id in opening_ids and usable_balance(r.balance_minor,
+            proposal['metadata'].get('balance_convention')) for r in request.rows))
+    if closing['status'] == 'unavailable' and not closure_without_closing:
         blockers.append(dict(kind='arithmetic', check='closing_balance', row_id=None,
             message='Enter one opening and one closing balance from the statement, and complete every selected payment, to reconcile this period.'))
     # An optional total absent from the source is not a blocker. An identified

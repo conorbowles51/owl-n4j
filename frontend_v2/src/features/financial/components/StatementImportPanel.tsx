@@ -1478,6 +1478,7 @@ function EditableStatement({
         data.metadata.period_end
     ),
     [detailsReason, setDetailsReason] = useState(saved?.detailsReason ?? "")
+  const [periodStartUnprinted, setPeriodStartUnprinted] = useState(saved?.periodStartUnprinted ?? false)
   const [balanceException, setBalanceException] = useState(
     saved?.balanceException ?? { revision: "", reason: "" }
   )
@@ -1693,15 +1694,6 @@ function EditableStatement({
       r.balance_minor === null
     )
   })
-  const [setAsideIds, setSetAsideIds] = useState<string[]>([])
-  const setAsideEmptyEntries = () => {
-    const ids = new Set(emptyEntries.map((r) => r.id))
-    setRows((current) =>
-      current.map((r) => (ids.has(r.id) ? { ...r, excluded: true } : r))
-    )
-    setSetAsideIds([...ids])
-    setCorrectionPage(0)
-  }
   const detailProblems: { message: string; field?: string }[] = []
   if (coverageBlocked)
     detailProblems.push({
@@ -1749,7 +1741,7 @@ function EditableStatement({
         "Enter the account number shown on the statement before importing payments.",
       field: "Account number",
     })
-  if (Boolean(periodStart) !== Boolean(periodEnd))
+  if (Boolean(periodStart) !== Boolean(periodEnd) && !(periodStartUnprinted && !periodStart && validDate(periodEnd)))
     detailProblems.push({
       message:
         "The statement period is incomplete. Its coverage will stay unknown until corrected.",
@@ -1849,6 +1841,7 @@ function EditableStatement({
     institution,
     account_number: account,
     period_start: periodStart,
+    period_start_unprinted: periodStartUnprinted,
     period_end: periodEnd,
     details_reason: detailsReason,
     coverage_review_reason: coverageDecision.reason,
@@ -1980,6 +1973,7 @@ function EditableStatement({
       account,
       institution,
       periodStart,
+      periodStartUnprinted,
       periodEnd,
       detailsReason,
       balanceException,
@@ -2014,6 +2008,7 @@ function EditableStatement({
     account,
     institution,
     periodStart,
+    periodStartUnprinted,
     periodEnd,
     detailsReason,
     balanceException,
@@ -2032,6 +2027,7 @@ function EditableStatement({
     institution,
     account_number: account,
     period_start: periodStart,
+    period_start_unprinted: periodStartUnprinted,
     period_end: periodEnd,
     no_activity_confirmed: !!noActivityRevision,
     no_activity_revision: noActivityRevision || null,
@@ -2753,7 +2749,7 @@ function EditableStatement({
             readOnly={!canEdit}
             className="block border rounded p-2 bg-background"
             value={periodStart}
-            onChange={(e) => setPeriodStart(e.target.value)}
+            onChange={(e) => { setPeriodStart(e.target.value); setPeriodStartUnprinted(false) }}
           />
         </label>
         <label>
@@ -2767,6 +2763,14 @@ function EditableStatement({
             onChange={(e) => setPeriodEnd(e.target.value)}
           />
         </label>
+        {!data.current_import && !periodStart && !data.metadata.period_start && (
+          <label className="basis-full text-sm">
+            <input type="checkbox" checked={periodStartUnprinted} disabled={!canEdit}
+              onChange={(e) => setPeriodStartUnprinted(e.target.checked)} />
+            {" "}I checked this statement: no start date is printed.
+            <span className="block text-muted-foreground">Enter its printed closing date above. Loupe will keep the start date unknown and will not count this as a complete month of coverage.</span>
+          </label>
+        )}
         {!excludedCopy && (detailsChanged || data.current_import) && (
           <label>
             {replacePrevious
@@ -3319,63 +3323,30 @@ function EditableStatement({
           </div>
         </section>
       )}
-      {canEdit &&
-        (!data.current_import || replacePrevious) &&
-        (emptyEntries.length > 0 || setAsideIds.length > 0) && (
-          <section
-            aria-label="Blank transaction rows"
-            className="rounded border bg-card p-3 space-y-2 text-sm"
-          >
-            {emptyEntries.length > 0 && (
-              <>
-                <p>
-                  {emptyEntries.length} rows have no transaction values entered.
-                  Exclude them together if their original text is not a payment.
-                  Partly filled rows stay selected.
-                </p>
-                <Button
-                  variant="outline"
-                  onClick={setAsideEmptyEntries}
-                  disabled={
-                    confirm.isPending ||
-                    saveBatchReview.isPending ||
-                    assignmentSaving
-                  }
-                >
-                  Exclude {emptyEntries.length} blank rows from import
-                </Button>
-              </>
-            )}
-            {setAsideIds.length > 0 && (
-              <div className="flex flex-wrap items-center gap-2" role="status">
-                <span>
-                  {setAsideIds.length} blank rows excluded. Their original text
-                  is kept under Show excluded rows.
-                </span>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={
-                    confirm.isPending ||
-                    saveBatchReview.isPending ||
-                    assignmentSaving
-                  }
-                  onClick={() => {
-                    const ids = new Set(setAsideIds)
-                    setRows((current) =>
-                      current.map((r) =>
-                        ids.has(r.id) ? { ...r, excluded: false } : r
-                      )
-                    )
-                    setSetAsideIds([])
-                  }}
-                >
-                  Undo excluding blank rows
-                </Button>
-              </div>
-            )}
-          </section>
-        )}
+      {canEdit && (!data.current_import || replacePrevious) && emptyEntries.length > 0 && (
+        <section aria-label="Unreadable transaction rows" className="rounded border bg-card p-3 space-y-2 text-sm">
+          <p>
+            Loupe could not fill in {emptyEntries.length} rows. These may contain real
+            payments or charges. Check each original before correcting or excluding it.
+          </p>
+          <ul className="space-y-3">
+            {emptyEntries.map((row) => {
+              const original = originals.get(row.id)
+              const sourceText = original?.source_cells.map((cell) => cell.expected_text).filter(Boolean).join(" ")
+              return (
+                <li key={row.id}>
+                  <p>PDF page {original?.page_number}</p>
+                  <p className="whitespace-pre-wrap break-words">{sourceText || "No readable text. Inspect the original page."}</p>
+                  <Button variant="outline" disabled={confirm.isPending || saveBatchReview.isPending || assignmentSaving} onClick={() => reviewRow(row.id)}>
+                    Review original row {original ? original.row_index + 1 : row.id}
+                  </Button>
+                </li>
+              )
+            })}
+          </ul>
+          <p>Rows remain selected until you decide what each contains.</p>
+        </section>
+      )}
       {problemIds.length > 0 && (
         <div
           role="group"

@@ -2,6 +2,8 @@
 
 ## Current release authorisation
 
+- On 28 September 2026, after the local E25 date-workflow fix and publication block were explained, the user instructed **“So push them! Why are they only local?”** This explicitly authorizes committing and pushing the verified code-only pending financial fixes (E25, E30 and U10), synthetic tests and sanitized workflow documentation. Preserve ingestion deployment guards and keep all client evidence out of Git.
+
 - On 24 September 2026, after the specific pending release and publication block were explained, the user instructed **“deploy when this is ready”**. This authorizes committing and pushing the verified code-only release for any-format Financial source selection, compact Findings & Observations, one-time statement recovery, missing-reading Retry and grouped batch-review reasons. Client documents, extracted data, screenshots, exports and credentials remain excluded. Push is the deployment trigger; this authorization does not permit bypassing a separate live-origin access denial.
 
 - **Push triggers the user's automatic deployment.** Confirmed explicitly on 23 September 2026. When asked to release completed work, finish verification and push the authorized code; do not request Google Cloud login or start a separate manual deployment. The user confirmed the previous release was deployed. An inability to inspect the server is not evidence that deployment is pending.

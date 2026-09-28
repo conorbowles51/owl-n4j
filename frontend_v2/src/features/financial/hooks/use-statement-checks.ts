@@ -63,6 +63,7 @@ export function useStatementChecks(
     holder?: string
     account_number?: string
     institution?: string
+    period_start_unprinted?: boolean
     period_start?: string
     period_end?: string
     no_activity_confirmed?: boolean
