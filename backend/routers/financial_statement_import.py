@@ -280,6 +280,16 @@ def save_payment_review(evidence_file_id: UUID, body: PaymentDocumentReviewReque
 
 # Match a file UUID in the router itself so named operations such as
 # /removals/confirm cannot be captured as a single-statement import.
+@router.post('/{evidence_file_id:uuid}/confirm-result')
+def confirm_result(evidence_file_id: UUID, body: StatementImportRequest, case_id: UUID = Query(...),
+                   db: Session = Depends(get_db)):
+    from services.financial.statement_import_receipt import saved_receipt
+    try:
+        return saved_receipt(db, case_id=case_id, evidence_file_id=evidence_file_id, request=body)
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
 @router.post('/{evidence_file_id:uuid}/confirm', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
 def confirm(evidence_file_id: UUID, body: StatementImportRequest, case_id: UUID = Query(...),
             user=Depends(get_current_db_user), db: Session = Depends(get_db)):

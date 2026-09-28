@@ -34,6 +34,7 @@ import {
 } from "../lib/statement-assessment"
 import { ReprocessStatement } from "./ReprocessStatement"
 import { newReviewId } from "../lib/statement-review-id"
+import { hasPendingStatementImport, importWithReceiptRecovery } from "../lib/statement-import-recovery"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { z } from "zod"
@@ -1922,28 +1923,27 @@ function EditableStatement({
     automaticDuplicateSnapshot.current = currentRequestSnapshot.current
     checkDuplicate(currentRequestSnapshot.current)
   }, [automaticDuplicateEligible, checkDuplicate])
+  const pendingImportKey = owner && !batchReview
+    ? `loupe-pending-statement:${owner}:${caseId}:${fileId}:${data.statement_id || "single"}` : null
+  const [checkingImport, setCheckingImport] = useState(false)
   const confirm = useMutation({
     retry: false,
-    mutationFn: async () => {
-      const result = receipt.parse(
-        await (batchReview?.confirm
-          ? batchReview.confirm(importRequest())
-          : fetchAPI(
-              `/api/financial/statement-import/${fileId}/confirm?${new URLSearchParams({ case_id: caseId })}`,
-              {
-                method: "POST",
-                body: importRequest(),
-                timeout: 120000,
-              }
-            ))
-      )
+    mutationFn: async (recoverOnly?: boolean) => {
+      setCheckingImport(false)
+      const recovered = batchReview?.confirm ? null : await importWithReceiptRecovery({
+        endpoint: `/api/financial/statement-import/${fileId}?${new URLSearchParams({ case_id: caseId })}`,
+        request: importRequest(), storageKey: pendingImportKey, recoverOnly,
+        onChecking: () => setCheckingImport(true),
+      })
+      const result = receipt.parse(recovered ? recovered.result : await batchReview!.confirm!(importRequest()))
       if (
         result.case_id !== caseId ||
         result.evidence_file_id !== fileId ||
         (!result.ignored &&
-          (result.record_count ?? result.transaction_count) !== included.length)
+          (result.record_count ?? result.transaction_count) !== (recovered?.expectedCount ?? included.length))
       )
         throw Error("The import result does not match the reviewed statement.")
+      recovered?.clear()
       return result
     },
     onSuccess: (result) => {
@@ -1955,6 +1955,14 @@ function EditableStatement({
       onImported({ ...result, filename: data.filename })
     },
   })
+  const resumeImport = confirm.mutate
+  const resumedImportKey = useRef<string | null>(null)
+  useEffect(() => {
+    if (pendingImportKey && resumedImportKey.current !== pendingImportKey && hasPendingStatementImport(pendingImportKey)) {
+      resumedImportKey.current = pendingImportKey
+      resumeImport(true)
+    }
+  }, [pendingImportKey, resumeImport])
   useEffect(() => {
     if ((confirm.isSuccess && !confirm.data.ignored) || importedHere) {
       if (draftKey)
@@ -2112,7 +2120,7 @@ function EditableStatement({
     }
     if (importDisabled) return
     if (batchReview) saveBatchReview.mutate("done")
-    else confirm.mutate()
+    else confirm.mutate(false)
   }
   const activeTransaction = included.findIndex((row) => row.id === focus?.rowId)
   const showTransaction = (index: number) => {
@@ -3109,11 +3117,11 @@ function EditableStatement({
               disabled={!!importDisabled}
               onClick={() => {
                 if (batchReview && !batchReview.confirm) submitImport()
-                else if (!importDisabled) confirm.mutate()
+                else if (!importDisabled) confirm.mutate(false)
               }}
             >
               {confirm.isPending || saveBatchReview.isPending
-                ? "Saving statement…"
+                ? checkingImport ? "Checking saved import result…" : "Saving statement…"
                 : batchReview && !batchReview.confirm
                   ? "Save and return to batch"
                   : included.length
@@ -3144,7 +3152,7 @@ function EditableStatement({
                     serverChecks.pending ||
                     !!data.reading_failure
                   }
-                  onClick={() => confirm.mutate()}
+                  onClick={() => confirm.mutate(false)}
                 >
                   Save balances for review
                 </Button>
@@ -3159,9 +3167,12 @@ function EditableStatement({
                 </p>
               )}
             {confirm.isError && (
-              <p className="w-full" role="alert">
-                {confirm.error.message}
-              </p>
+              <div className="w-full space-y-2">
+                <p role="alert">{confirm.error.message}</p>
+                {hasPendingStatementImport(pendingImportKey) && (
+                  <Button variant="outline" onClick={() => confirm.mutate(true)}>Check saved result</Button>
+                )}
+              </div>
             )}
             {serverChecks.error && (
               <div role="alert" className="w-full">
