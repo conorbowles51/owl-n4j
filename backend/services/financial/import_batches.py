@@ -59,6 +59,8 @@ def create_batch(session, *, case_id, request_id, file_ids, folder_ids, actor):
         # has new evidence IDs and therefore gets a fresh preparation.
         for previous in session.scalars(select(Batch).where(Batch.case_id == case_id,
                 Batch.status != 'removed').order_by(Batch.created_at.desc(), Batch.id)):
+            if any(f.get('standalone_import') for f in previous.files):
+                continue  # A single accepted period is not a whole-file selection.
             if {f['file_id'] for f in previous.files} == selected_ids:
                 return previous.id
     session.add(Batch(id=request_id, case_id=case_id, created_by=actor.user_id, status='preparing',
@@ -213,6 +215,8 @@ def prepare_reviews(session, batch, file):
     for statement_id in identifiers:
         proposal = read_statement_import(session,case_id=batch.case_id,evidence_file_id=fid,currency=file.get('currency') or None,statement_id=statement_id,_cache=cache)
         key = statement_id or proposal.get('statement_id') or ''
+        if file.get('standalone_import') and key != (file.get('statement_id') or ''):
+            continue
         identifier = uuid5(batch.id, str(fid)+':'+key)
         existing = session.get(Item,identifier)
         if existing and existing.status in ('imported','pending_import','skipped','duplicate_ignored'):

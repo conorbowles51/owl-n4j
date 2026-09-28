@@ -1926,6 +1926,7 @@ function EditableStatement({
   const pendingImportKey = owner && !batchReview
     ? `loupe-pending-statement:${owner}:${caseId}:${fileId}:${data.statement_id || "single"}` : null
   const [checkingImport, setCheckingImport] = useState(false)
+  const [backgroundImportBatch, setBackgroundImportBatch] = useState<string | null>(null)
   const confirm = useMutation({
     retry: false,
     mutationFn: async (recoverOnly?: boolean) => {
@@ -1934,6 +1935,7 @@ function EditableStatement({
         endpoint: `/api/financial/statement-import/${fileId}?${new URLSearchParams({ case_id: caseId })}`,
         request: importRequest(), storageKey: pendingImportKey, recoverOnly,
         onChecking: () => setCheckingImport(true),
+        onOperation: (operation) => setBackgroundImportBatch(operation.batch_id),
       })
       const result = receipt.parse(recovered ? recovered.result : await batchReview!.confirm!(importRequest()))
       if (
@@ -3166,6 +3168,14 @@ function EditableStatement({
                   does not mark it as having no activity.
                 </p>
               )}
+            {backgroundImportBatch && !confirm.isSuccess && (
+              <p className="w-full text-sm" role="status">
+                This import is saved as a background job. You can leave this screen.{' '}
+                <a className="underline" href={`/cases/${caseId}/financial?view=statements&batch=${backgroundImportBatch}`}>
+                  Open processing batch and saved result
+                </a>
+              </p>
+            )}
             {confirm.isError && (
               <div className="w-full space-y-2">
                 <p role="alert">{confirm.error.message}</p>

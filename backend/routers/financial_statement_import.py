@@ -290,6 +290,18 @@ def confirm_result(evidence_file_id: UUID, body: StatementImportRequest, case_id
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
 
+@router.post('/{evidence_file_id:uuid}/queue-import', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
+def queue_statement_import(evidence_file_id: UUID, body: StatementImportRequest, case_id: UUID = Query(...),
+                           user=Depends(get_current_db_user), db: Session = Depends(get_db)):
+    from services.financial.standalone_import_jobs import queue_statement
+    try:
+        return queue_statement(db, case_id=case_id, evidence_file_id=evidence_file_id,
+            request=body, actor=actor_from_user(user))
+    except PdfMappingError as exc:
+        db.rollback()
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
 @router.post('/{evidence_file_id:uuid}/confirm', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
 def confirm(evidence_file_id: UUID, body: StatementImportRequest, case_id: UUID = Query(...),
             user=Depends(get_current_db_user), db: Session = Depends(get_db)):

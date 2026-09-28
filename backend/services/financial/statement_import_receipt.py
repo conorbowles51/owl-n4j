@@ -33,4 +33,10 @@ def saved_receipt(session, *, case_id, evidence_file_id, request):
             account_closed_on=(metadata.get('statement_import_original', {}).get('metadata', {}).get('account_closure') or {}).get('date'))
     # Absence is deliberately not a failure verdict: the original request can
     # still be committing. The browser may poll but must not replay the write.
-    return dict(case_id=str(case_id), evidence_file_id=str(evidence_file_id), receipt=result)
+    from services.financial.standalone_import_jobs import find_operation
+    operation = find_operation(session, case_id=case_id, evidence_file_id=evidence_file_id, request=request)
+    if result is None and operation and operation['duplicate_ignored']:
+        outcome = next(row for row in operation['outcomes'] if row['status'] == 'duplicate_ignored')
+        result = dict(case_id=str(case_id), evidence_file_id=str(evidence_file_id), transaction_count=0,
+            applied=True, ignored=True, outcome='duplicate_ignored', duplicate_disposition=outcome['duplicate_disposition'])
+    return dict(case_id=str(case_id), evidence_file_id=str(evidence_file_id), receipt=result, operation=operation)
