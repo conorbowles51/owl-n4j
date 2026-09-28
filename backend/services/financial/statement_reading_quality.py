@@ -25,14 +25,23 @@ def sources_from_tables(tables):
 def assess_statement_reading(tables):
     from services.financial.statement_import_credit_one import credit_one_catalog, propose_credit_one_table
     from services.financial.statement_import_andrews import andrews_page, propose_andrews_statement
+    from services.financial.statement_import_merrick import merrick_statement, propose_merrick_table
     sources = sources_from_tables(tables)
     if not sources:
         return None
     cards, _ = credit_one_catalog(sources)
+    merrick = merrick_statement(sources[0]) if len(sources) == 1 else None
     if len(cards) == 1:
         card = cards[0]
         identity = [card[key] for key in ('layout_id', 'account_reference', 'period_start', 'period_end')]
         rows = [r for s in sources for r in propose_credit_one_table(s, 'USD', card)['rows']]
+    elif merrick:
+        # A missing identity needs explicit identity recovery, not a payment
+        # reread whose candidate happens to have the same empty identifier.
+        if not merrick['account_reference'] or not merrick['statement_date'] or merrick.get('date_conflict'):
+            return None
+        identity = [merrick['layout_id'], merrick['account_reference'], merrick['statement_date']]
+        rows = propose_merrick_table(sources[0], 'USD', merrick)['rows']
     else:
         pages = [andrews_page(s, allow_unbranded=True) for s in sources]
         if len(pages) != 1 or not pages[0]:
@@ -45,6 +54,7 @@ def assess_statement_reading(tables):
         statement = dict(period_start=page['start'], period_end=page['end'], sources=[scope])
         rows = propose_andrews_statement(sources, 'USD', statement)['rows']
     payments = [r for r in rows if not r['excluded'] and (r['kind'] == 'transaction'
+        or (identity[0] == 'merrick-card' and r['kind'] == 'unresolved')
         or 'date_column' in r['fields'] or 'amount_column' in r['fields'])]
     balances = [r for r in rows if r['kind'] == 'balance']
     # Valid but different balances require review, not another guess at digits.
@@ -59,17 +69,33 @@ def assess_statement_reading(tables):
         and 'balance' not in r['fields'] for r in payments)
     missing['statement_balance'] = sum('balance' not in r['fields'] for r in balances)
     zero_charges = sum(r['kind'] == 'zero_charge' for r in rows)
-    return dict(identity=identity, payments=len(payments), payment_rows=len(payments) + zero_charges,
+    result = dict(identity=identity, payments=len(payments), payment_rows=len(payments) + zero_charges,
         zero_charge_rows=zero_charges, balances=len(balances), missing_fields=missing, unreadable=sum(missing.values()))
+    if identity[0] == 'merrick-card':
+        # Preserve readable facts, not just counts. Otherwise a page reread
+        # could fix one damaged amount while silently changing another payment.
+        result['known_rows'] = [{key: r['fields'][key] for key in
+            ('date', 'amount_minor', 'direction', 'description', 'bank_reference', 'balance')
+            if key in r['fields']} for r in rows
+            if r in payments or r['kind'] in ('zero_charge', 'balance', 'statement_total')]
+    return result
 
 
 def prefer_image_reading(original, image):
+    def preserves_known_rows():
+        if 'known_rows' not in original:
+            return True
+        before, after = original['known_rows'], image.get('known_rows', [])
+        return len(before) == len(after) and all(
+            all(candidate.get(key) == value for key, value in row.items())
+            for row, candidate in zip(before, after))
     def physical_rows(reading):
         if 'payment_rows' not in reading:
             return reading['payments']
         count = reading['payments'] + reading.get('zero_charge_rows', 0)
         return count if count == reading['payment_rows'] else None
     return bool(original and image and original['identity'] == image['identity']
+        and preserves_known_rows()
         and physical_rows(original) is not None and physical_rows(original) == physical_rows(image)
         and original['balances'] == image['balances']
         and (not original.get('missing_fields') or not image.get('missing_fields') or

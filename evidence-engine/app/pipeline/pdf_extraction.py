@@ -31,7 +31,7 @@ LOW_CONFIDENCE_THRESHOLD = 60.0
 MIN_OCR_DPI = 150
 MIN_RELIABLE_OSD_CONFIDENCE = 15.0
 MAX_OSD_TIMEOUT_SECONDS = 30.0
-PDF_READING_REVISION = 'bank-payment-rows-v8'
+PDF_READING_REVISION = 'bank-payment-rows-v9'
 OSD_INSUFFICIENT_TEXT_MARKERS = ("too few characters", "skipping this page")
 
 
@@ -901,8 +901,8 @@ def _extract_pdf_sync(
                 # original geometry and try only demonstrably unreadable card
                 # money cells; crop disagreement never replaces a value.
                 try:
-                    from app.pipeline.financial_amount_ocr import refine_credit_one_native_cells
-                    refined, refinements = refine_credit_one_native_cells(document[page_index], original['tables'],
+                    from app.pipeline.financial_amount_ocr import refine_statement_native_cells
+                    refined, refinements = refine_statement_native_cells(document[page_index], original['tables'],
                         deadline=time.monotonic() + 30, language=settings.tesseract_lang)
                     if refinements:
                         page_result.ocr_refinements.extend(refinements)

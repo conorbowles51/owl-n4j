@@ -215,19 +215,33 @@ def prepare_reviews(session, batch, file):
         key = statement_id or proposal.get('statement_id') or ''
         identifier = uuid5(batch.id, str(fid)+':'+key)
         existing = session.get(Item,identifier)
-        if existing and (existing.review_request or existing.status in ('imported','pending_import','skipped','duplicate_ignored')):
+        if existing and existing.status in ('imported','pending_import','skipped','duplicate_ignored'):
             continue
         progress = proposal.get('saved_review') or proposal.get('previous_saved_review')
+        if existing and existing.review_request and not progress:
+            continue  # An independent saved batch draft is never reset by refresh.
         draft = progress.get('request') if progress else None
+        from services.financial.effective_statement_review import resolve_review, conflict_summary
+        conflict = False
+        if existing:
+            draft, conflict = resolve_review(existing.review_request, progress, baseline=initial_request(proposal))
         if draft and draft.get('expected_revision') != proposal['revision']:
             if proposal.get('saved_review'):
                 raise PdfMappingError('This file has saved corrections from an earlier reading. Open its individual statement review, compare them and save progress before adding it to bulk import.', 409)
             # Keep the new reading editable while earlier values stay in the
             # recovery panel. Assessment holds import until comparison is saved.
-            draft = None
+            if not (existing and existing.review_request):
+                draft = None
         status,summary = assess(proposal, draft)
+        if conflict:
+            status, summary = 'attention', conflict_summary(summary)
         summary.update(filename=file['filename'], currency=proposal['currency'], source_id=file['source_id'])
         if existing:
+            summary = {**existing.summary, **summary}
+            if existing.review_request and existing.review_request != draft:
+                summary = deepcopy(summary)
+                summary.setdefault('review_upgrade_history', []).append(dict(request=existing.review_request,
+                    at=datetime.now(timezone.utc).isoformat(), reason='shared_saved_review'))
             existing.status=status; existing.summary=summary; existing.review_request=draft
         else:
             session.add(Item(id=identifier,batch_id=batch.id,file_id=fid,statement_key=key,status=status,summary=summary,review_request=draft))
@@ -260,7 +274,7 @@ def _sort_statements(session, case_id, items):
         item.summary.get('account') or '', item.summary.get('period_start') or '', str(item.id)))
 
 
-def checked_batch_items(session, case_id, items):
+def checked_batch_items(session, case_id, items, *, validate_reviews=False):
     """Project current coverage concerns without making a GET write changes."""
     items = [item for item in items if item.status not in ('removed', 'superseded_reading')]
     # Failed/queued files have no statement reviews to compare. Do not rebuild
@@ -330,13 +344,34 @@ def checked_batch_items(session, case_id, items):
                 state = 'attention'
                 summary.update(can_import=False, problems=[dict(message=str(error), row_id=None)], problem_count=1)
         if state in ('ready', 'attention'):
-            if item.file_id in saved_files or 'can_import' not in summary or summary.get('review_model') != REVIEW_MODEL:
+            from services.financial.statement_progress import review_progress
+            progress = review_progress(file, item.statement_key) if file else None
+            conflict = False
+            cached_assessment = (progress or {}).get('assessment') or {}
+            can_reuse = (progress and not validate_reviews and item.file_id not in saved_files
+                and cached_assessment.get('revision') == summary.get('revision')
+                and summary.get('review_model') == REVIEW_MODEL
+                and cached_assessment.get('review_model') == REVIEW_MODEL)
+            if can_reuse:
+                from services.financial.effective_statement_review import resolve_review, conflict_summary
+                projected_request, conflict = resolve_review(projected_request, progress)
+                if not conflict:
+                    summary.update(cached_assessment)
+                    state = progress['assessment_status']
+                else:
+                    state, summary = 'attention', conflict_summary(summary)
+            elif progress or validate_reviews or item.file_id in saved_files or 'can_import' not in summary or summary.get('review_model') != REVIEW_MODEL:
                 try:
                     proposal = read_pending(item)
                     from services.financial.review_upgrade import upgrade_request
                     projected_request = upgrade_request(item.review_request, proposal) or item.review_request
+                    from services.financial.effective_statement_review import resolve_review, conflict_summary
+                    projected_request, conflict = resolve_review(projected_request, proposal.get('saved_review'),
+                        baseline=initial_request(proposal))
                     state, assessment = assess(proposal, None if proposal.get('current_import') else projected_request)
                     summary.update(assessment)
+                    if conflict and not proposal.get('current_import'):
+                        state, summary = 'attention', conflict_summary(summary)
                 except PdfMappingError as error:
                     summary.update(can_import=False, problems=[dict(message=str(error), row_id=None)], problem_count=1)
             if state in ('ready', 'attention'):
@@ -393,9 +428,12 @@ def checked_batch_items(session, case_id, items):
         for key in ('currency', 'holder', 'account', 'institution', 'account_type', 'period_start', 'period_end'):
             if key in summary and summary[key] is None:
                 summary[key] = ''
+        from services.financial.effective_statement_review import batch_review_revision
+        from services.financial.statement_progress import review_progress
         result.append(SimpleNamespace(id=item.id, file_id=item.file_id, statement_key=item.statement_key,
             status=state, summary=summary, review_request=projected_request,
-            review_revision=_digest(item.review_request or {})))
+            review_revision=batch_review_revision(item.review_request,
+                review_progress(duplicate_files[item.file_id], item.statement_key) if item.file_id in duplicate_files else None)))
     return result
 
 
@@ -612,7 +650,7 @@ def batch_status(session, *, case_id, batch_id, offset=0, limit=100, only_proble
         items=[dict(id=str(i.id),file_id=str(i.file_id),statement_id=i.statement_key or None,status=i.status,**i.summary) for i in shown[offset:offset+limit]])
 
 
-def save_review(session, *, case_id, batch_id, item_id, request, expected_review_revision):
+def save_review(session, *, case_id, batch_id, item_id, request, expected_review_revision, actor=None):
     """Persist the selected draft and return its local assessment.
 
     Current batch reads and import admission separately check competing sources.
@@ -627,7 +665,11 @@ def save_review(session, *, case_id, batch_id, item_id, request, expected_review
     if item is None or item.status == 'removed': raise PdfMappingError('Statement not found in this batch.',404)
     if item.status == 'superseded_reading':
         raise PdfMappingError('This reading was replaced by a newer one. Return to the batch to open its current statements. Your earlier review remains in history.', 409)
-    if _digest(item.review_request or {}) != expected_review_revision:
+    from services.financial.statement_progress import review_progress
+    from services.financial.effective_statement_review import batch_review_revision, resolve_review, request_signature
+    file = session.get(EvidenceFile, file_id)
+    saved = review_progress(file, item.statement_key)
+    if batch_review_revision(item.review_request, saved) != expected_review_revision:
         raise PdfMappingError('Another user saved changes to this review. Reopen it from the batch before saving.',409)
     if item.status in ('pending_import','imported'): raise PdfMappingError('This statement is already being imported or was imported.',409)
     if item.status == 'skipped': raise PdfMappingError('Restore this statement to review from the batch before saving further changes.',409)
@@ -638,13 +680,29 @@ def save_review(session, *, case_id, batch_id, item_id, request, expected_review
         raise PdfMappingError('The saved reading changed. Reopen this statement before saving corrections.', 409)
     # Save incomplete edits without discarding their source rows or page references.
     check_proposed_rows(proposal, [r.model_dump() for r in request.rows])
-    status,summary=assess(proposal,request.model_dump(mode='json'))
+    payload = request.model_dump(mode='json')
+    _, conflict = resolve_review(item.review_request, saved, baseline=initial_request(proposal))
+    if conflict and request_signature(payload) != request_signature(saved['request']):
+        raise PdfMappingError('The individual statement and batch have different saved edits. Load the saved individual review or explicitly compare both before saving.', 409)
+    status,summary=assess(proposal,payload)
     summary.update(filename=item.summary['filename'],source_id=item.summary['source_id'])
     for key in ('import_decision','import_decision_history'):
         if key in item.summary: summary[key] = item.summary[key]
-    item.status=status;item.summary=summary;item.review_request=request.model_dump(mode='json')
+    item.status=status;item.summary=summary;item.review_request=payload
+    if saved and payload != saved['request']:
+        metadata = deepcopy(file.metadata_ or {})
+        metadata.setdefault('financial_review_history', []).append(saved)
+        updated = {**saved, 'request': payload, 'review_revision': _digest(payload),
+            'saved_at': datetime.now(timezone.utc).isoformat(), 'assessment': summary, 'assessment_status': status,
+            'superseded_request_signatures': sorted(set([*saved.get('superseded_request_signatures', []),
+                request_signature(saved['request'])]))}
+        updated['saved_by'] = (dict(user_id=str(actor.user_id), name=actor.name) if actor else
+            dict(name='Batch review', batch_id=str(batch_id)))
+        metadata['financial_review_progress'][item.statement_key or ''] = updated
+        file.metadata_ = metadata
+        saved = updated
     session.commit()
-    return dict(status=item.status, review_revision=_digest(item.review_request))
+    return dict(status=item.status, review_revision=batch_review_revision(item.review_request, saved))
 
 
 def confirm_review(*, session_factory, case_id, batch_id, item_id, request,
@@ -665,9 +723,14 @@ def confirm_review(*, session_factory, case_id, batch_id, item_id, request,
                 raise PdfMappingError('This statement is already being imported or was imported with different values. Reopen it to check the result.', 409)
         else:
             require_running(batch)
+            from services.financial.effective_statement_review import batch_review_revision, request_signature
+            from services.financial.statement_progress import review_progress
+            shared = review_progress(session.get(EvidenceFile, item.file_id), item.statement_key)
+            unchanged_retry = item.review_request == raw and (
+                not shared or request_signature(shared['request']) == request_signature(raw))
             save_review(session, case_id=case_id, batch_id=batch_id, item_id=item_id,
-                request=request, expected_review_revision=(
-                    _digest(item.review_request) if item.review_request == raw else expected_review_revision))
+                request=request, expected_review_revision=(batch_review_revision(item.review_request, shared)
+                    if unchanged_retry else expected_review_revision), actor=actor)
             batch = batch_for(session, case_id, batch_id, True)
             item = session.scalar(select(Item).where(Item.id == item_id, Item.batch_id == batch.id)
                 .with_for_update().execution_options(populate_existing=True))
@@ -709,7 +772,19 @@ def queue_import(session, *, case_id,batch_id,expected_revision,actor,request_id
         return dict(queued=existing and len(existing.outcomes), operation=operation_view(existing))
     require_running(batch)
     items=list(session.scalars(select(Item).where(Item.batch_id==batch.id).with_for_update()))
-    checked=checked_batch_items(session, case_id, items)
+    # Serialize the effective draft snapshot with standalone saves. That path
+    # locks only the file and reads pending items without locking them, avoiding
+    # a reverse item/file lock dependency.
+    session.execute(select(EvidenceFile).where(EvidenceFile.case_id == case_id,
+        EvidenceFile.id.in_({item.file_id for item in items})).order_by(EvidenceFile.id)
+        .with_for_update().execution_options(populate_existing=True)).all()
+    # First preserve the scope the user actually saw, including a newly ready
+    # item that fresh validation might subsequently hold. Then validate that
+    # same scope against current source readings before accepting the job.
+    displayed = checked_batch_items(session, case_id, items)
+    if ready_revision(displayed) != expected_revision:
+        raise PdfMappingError('The ready statements changed. Refresh the batch before confirming.', 409)
+    checked=checked_batch_items(session, case_id, items, validate_reviews=True)
     if ready_revision(checked)!=expected_revision: raise PdfMappingError('The ready statements changed. Refresh the batch before confirming.',409)
     ready_ids={i.id for i in checked if import_available(i)}
     ready=[i for i in items if i.id in ready_ids]

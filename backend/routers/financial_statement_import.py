@@ -695,9 +695,9 @@ def confirm_financial_batch_review(batch_id: UUID, item_id: UUID, body: SaveFina
 
 
 @router.put('/batches/{batch_id}/items/{item_id}',  dependencies=[Depends(case_access_dependency(lambda request,payload: ('case','edit')))])
-def save_financial_batch_review(batch_id: UUID,item_id: UUID,body: SaveFinancialBatchReview,case_id: UUID = Query(...),db: Session = Depends(get_db)):
+def save_financial_batch_review(batch_id: UUID,item_id: UUID,body: SaveFinancialBatchReview,case_id: UUID = Query(...),db: Session = Depends(get_db),user=Depends(get_current_db_user)):
     try:
-        return import_batches.save_review(db,case_id=case_id,batch_id=batch_id,item_id=item_id,request=body.request,expected_review_revision=body.expected_review_revision)
+        return import_batches.save_review(db,case_id=case_id,batch_id=batch_id,item_id=item_id,request=body.request,expected_review_revision=body.expected_review_revision,actor=actor_from_user(user))
     except PdfMappingError as exc:
         db.rollback();raise HTTPException(status_code=exc.status_code,detail=str(exc)) from exc
 

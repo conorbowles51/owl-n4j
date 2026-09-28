@@ -379,6 +379,11 @@ def propose_merrick_table(source, currency, statement):
                     item.update(excluded=True,kind='zero_charge')
                     item['issues']=[]
             except ValueError as exc:
+                # Retain a measured target for automatic crop rereading. A
+                # damaged amount is not permission to guess its column.
+                if _matches_transaction_columns(cells, header, source['page_number']):
+                    amount_index = len(cells) - (2 if texts[-1] == '-' else 1)
+                    fields['amount_column'] = str(cells[amount_index]['column_index'])
                 item['issues'].append(str(exc))
         elif active and texts and not (texts[0] in ('Transactions, Payments and Credits','Fees','Interest Charged') or texts[0].upper().startswith('TOTAL ') or any('Description' in text for text in texts)):
             item.update(excluded=False,kind='unresolved')

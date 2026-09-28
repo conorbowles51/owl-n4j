@@ -131,22 +131,28 @@ def _cleaned_line_readings(page, rect, rotation, deadline, language):
     return observations
 
 
-def refine_credit_one_native_cells(page, tables, *, deadline, language):
+def refine_statement_native_cells(page, tables, *, deadline, language):
     """Recover only missing card money from its original measured cell.
 
     A failed whole-page reread may drop a payment. This preserves every native
-    row and only accepts independent crop consensus for an unreadable value;
+    row and only accepts repeated crop agreement for an unreadable value;
     complete existing values and conflicting crop readings remain unchanged.
     """
     from dataclasses import replace
     from services.financial import pdf_tables
     from services.financial.statement_import_credit_one import credit_one_catalog, propose_credit_one_table
+    from services.financial.statement_import_merrick import merrick_statement, propose_merrick_table
     from services.financial.statement_reading_quality import sources_from_tables, assess_statement_reading, prefer_image_reading
     if page.rotation or deadline - time.monotonic() < 2:
         return tables, []
     sources = sources_from_tables([table.to_json() for table in tables])
     cards, _ = credit_one_catalog(sources)
-    if len(cards) != 1:
+    merrick = merrick_statement(sources[0]) if len(sources) == 1 else None
+    if len(cards) == 1:
+        propose = lambda source: propose_credit_one_table(source, 'USD', cards[0])
+    elif merrick:
+        propose = lambda source: propose_merrick_table(source, 'USD', merrick)
+    else:
         return tables, []
     before = assess_statement_reading([table.to_json() for table in tables])
     if not before or not before['unreadable']:
@@ -154,7 +160,7 @@ def refine_credit_one_native_cells(page, tables, *, deadline, language):
     replacements, records = {}, []
     deadline = min(deadline, time.monotonic() + 30)
     for source in sources:
-        for row in propose_credit_one_table(source, 'USD', cards[0])['rows']:
+        for row in propose(source)['rows']:
             fields = row['fields']
             field = 'balance' if row['kind'] == 'balance' else 'amount_minor' if row['kind'] == 'transaction' else None
             column = fields.get('balance_column' if field == 'balance' else 'amount_column')
@@ -209,6 +215,10 @@ def refine_credit_one_native_cells(page, tables, *, deadline, language):
     for record in records:
         record.update(original_quality=before, refined_quality=after)
     return refined, records
+
+
+# Compatibility for callers of the earlier layout-specific entry point.
+refine_credit_one_native_cells = refine_statement_native_cells
 
 
 def reread_financial_amounts(page, data, *, rotation, image_width, image_height,

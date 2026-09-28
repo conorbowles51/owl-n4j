@@ -121,8 +121,9 @@ def statement_file_status(session, *, case_id):
             parent = source.metadata_.get('statement_recovery_parent_id')
             if parent:
                 ancestors.add(parent)
-    file_hashes = dict(session.execute(select(EvidenceFile.id, EvidenceFile.sha256)
-        .where(EvidenceFile.case_id == case_id, EvidenceFile.id.in_([p.file_id for p in prepared]))).all())
+    prepared_files = {file.id: file for file in session.scalars(select(EvidenceFile)
+        .where(EvidenceFile.case_id == case_id, EvidenceFile.id.in_([p.file_id for p in prepared])))}
+    file_hashes = {key: file.sha256 for key, file in prepared_files.items()}
     # Decisions can be recorded directly from a statement, without updating its
     # old batch snapshot. Validate their lightweight source/review fingerprints
     # together; reconstructing every PDF on a listing would be prohibitively
@@ -160,6 +161,27 @@ def statement_file_status(session, *, case_id):
     coverage_sources = None
     coverage_prepared = {}
     for prepared_item in prepared[:20000]:
+        summary = prepared_item.summary
+        effective_request = prepared_item.review_request
+        if prepared_item.status in ('ready', 'attention'):
+            from services.financial.statement_progress import review_progress
+            from services.financial.effective_statement_review import resolve_review, conflict_summary
+            file = prepared_files.get(prepared_item.file_id)
+            saved = review_progress(file, prepared_item.statement_key) if file else None
+            effective_request, conflict = resolve_review(effective_request, saved)
+            if conflict:
+                summary = conflict_summary(summary)
+            elif saved and effective_request == saved['request']:
+                assessment = saved.get('assessment')
+                # Reuse only an assessment of this reading; never parse an
+                # entire case to render a list. Legacy drafts are picked up by
+                # the existing background Refresh statements operation.
+                if (assessment and assessment.get('revision') == summary.get('revision')
+                        and assessment.get('review_model') == summary.get('review_model')):
+                    summary = {**summary, **assessment}
+                elif effective_request != prepared_item.review_request:
+                    summary = {**summary, 'can_import': False,
+                        'problem_count': max(1, summary.get('problem_count', 0))}
         key = str(prepared_item.file_id)
         identity = (key, prepared_item.statement_key)
         if identity in seen_periods:
@@ -168,25 +190,32 @@ def statement_file_status(session, *, case_id):
         item = files.setdefault(key, dict(evidence_file_id=key, current_transactions=0, periods=[]))
         item['prepared_periods'] = item.get('prepared_periods', 0) + 1
         decision = decisions.get(identity)
+        source_file = prepared_files.get(prepared_item.file_id)
+        previous_decision = ((source_file.metadata_ or {}).get(METADATA_KEY, {}).get(prepared_item.statement_key or '') or {}) if source_file else {}
         ignored = bool(decision and decision['current'] and decision['status'] == 'ignored')
         duplicate_review = bool(decision and (not decision['current'] or
             decision['status'] in ('needs_comparison', 'restored'))) or (
             prepared_item.status == 'duplicate_ignored' and not ignored)
+        if (decision and not decision['current'] and previous_decision.get('status') in ('retained', 'not_duplicate')
+                and prepared_item.status in ('ready', 'attention')):
+            # A corrected retained source needs a fresh coverage comparison,
+            # not an automatic duplicate hold against itself. Ignored copies
+            # and actual conflicting comparisons still require their decision.
+            duplicate_review = False
         already_saved = (file_hashes.get(prepared_item.file_id), prepared_item.statement_key or None) in saved_scopes
-        available = not already_saved and not ignored and not duplicate_review and prepared_item.status in ('ready', 'attention') and prepared_item.summary.get('can_import', False)
+        available = not already_saved and not ignored and not duplicate_review and prepared_item.status in ('ready', 'attention') and summary.get('can_import', False)
         held = False
         if available:
-            raw = {**(prepared_item.review_request or summary_request(prepared_item.summary)),
-                'statement_id': prepared_item.statement_key or None, 'account_type': prepared_item.summary.get('account_type', '')}
+            raw = {**(effective_request or summary_request(summary)),
+                'statement_id': prepared_item.statement_key or None, 'account_type': summary.get('account_type', '')}
             if scope(raw) is not None:
                 if coverage_sources is None:
                     coverage_sources, coverage_prepared = comparison_sources(session, case_id)
-                raw = {**coverage_prepared.get(prepared_item.id, raw), 'statement_id': prepared_item.statement_key or None}
+                raw = {**(effective_request or coverage_prepared.get(prepared_item.id, raw)), 'statement_id': prepared_item.statement_key or None}
                 held = duplicate_hold(coverage_review(session, case_id=case_id, file_id=prepared_item.file_id,
                     request=raw, sources=coverage_sources), raw)
             available = not held
         if available:
-            summary = prepared_item.summary
             item.setdefault('ready_periods', []).append(dict(
                 statement_id=prepared_item.statement_key or '',
                 holder=summary.get('holder') or '', institution=summary.get('institution') or '',
@@ -199,7 +228,7 @@ def statement_file_status(session, *, case_id):
             ('available_periods', available),
             ('ignored_periods', ignored),
             ('pending_periods', prepared_item.status == 'pending_import' and not ignored),
-            ('periods_with_checks', not ignored and (duplicate_review or held or bool(prepared_item.summary.get('problem_count', 0))) and prepared_item.status != 'skipped'),
+            ('periods_with_checks', not ignored and (duplicate_review or held or bool(summary.get('problem_count', 0))) and prepared_item.status != 'skipped'),
         ):
             item[field] = item.get(field, 0) + int(matched)
     # Direct statement decisions also appear before the file joins a batch.

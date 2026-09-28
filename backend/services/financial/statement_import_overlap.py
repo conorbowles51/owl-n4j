@@ -118,7 +118,12 @@ def comparison_sources(session, case_id, pending=None, *, read_pending=None):
             file_id=str(file_id), statement_id=statement_id, source_document_id=str(document_id),
             filename=filename, status='imported', page_number=page_number or 1, period_start=start.isoformat(), period_end=end.isoformat()))
     for item, file in pending:
-        raw = item.review_request or summary_request(item.summary)
+        from services.financial.statement_progress import review_progress
+        from services.financial.effective_statement_review import resolve_review
+        effective, conflict = resolve_review(item.review_request, review_progress(file, item.statement_key))
+        raw = effective or summary_request(item.summary)
+        if conflict:
+            raw = {**raw, '_coverage_error': 'The individual statement and batch have different saved edits. Compare both reviews before importing.'}
         raw = {**raw, 'account_type': item.summary.get('account_type', '')}
         # Older summaries did not save bank/product identity. Recover only
         # absent fields from that reading, preserving every saved correction.

@@ -1,3 +1,7 @@
+**27 September plain-language follow-up:** [Overview, missing months, group saving and source copying](financial-workflows/plain-language-overview-and-group-actions-2026-09-27.md) carries forward the latest investigator workflow requirements and separate live acceptance.
+
+**27 September continuous error tracking:** [Error register](financial-workflows/error-register-2026-09-27.md) tracks confirmed defects, suspected causes, earlier user reports and separate local/deployed/live verification. Private source evidence stays outside Git.
+
 **24 September reconciliation and account history follow-up:** R01–R06 are implemented and locally verified in the [connected acceptance record](financial-workflows/reconciliation-and-account-history-plan-2026-09-24.md#implementation-and-local-acceptance--24-september-2026). Reconciliation now gates new statement payments, including batch/recovery and saved-record/manual additions. Balance-only observations remain saveable; confirmed quiet periods are distinct. Bulk dates, currency retry feedback, copyable source access and account history are connected to existing screens. This supersedes historical statements below that unresolved payments may be imported immediately. Live verification and the prior production cleanup audit are not claimed complete.
 
 **27 September fresh-upload follow-up:** [Read-file status, group review and scanned column headings](financial-workflows/read-files-status-2026-09-27.md) records the reproduced missing-table defect, same-PDF saved-import status, explicit review actions and separate release/live acceptance.
@@ -322,3 +326,7 @@ preserve unsaved fields and do not save or import records. The existing Chromium
 correction/save/reopen journey passes at desktop and narrow widths, including
 nonconsecutive pages; nine unit checks pass. This follow-up's publication and live
 verification remain distinct from the confirmed `abb5524f` deployment.
+
+## 28 September: automation is the acceptance standard
+
+The user reiterated that investigators must not correct statements one by one. The [automation delivery plan](financial-workflows/automation-delivery-plan-2026-09-28.md) replaces the manual audit loop as the immediate implementation priority. It records a reproduced standalone-save/batch-readiness defect, limited quality-triggered reread coverage, durable-operation and scale requirements, and fresh-upload/held-out/human-effort release gates. A plan and existing component tests are not workflow acceptance. No new automation capability is claimed complete.

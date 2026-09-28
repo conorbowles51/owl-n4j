@@ -1,3 +1,9 @@
+**28 September priority reset:** [Statement automation delivery plan](automation-delivery-plan-2026-09-28.md) makes automation and measured reduction of investigator work the acceptance standard. Repeated individual imports are stopped; shared readiness, automatic source repair, exception-only review and durable group import are the current connected delivery.
+
+**27 September plain-language follow-up:** [Overview, missing months, group saving and source copying](plain-language-overview-and-group-actions-2026-09-27.md) carries forward the latest investigator workflow requirements and separate live acceptance.
+
+**27 September continuous error tracking:** [Error register](error-register-2026-09-27.md) tracks confirmed defects, suspected causes, earlier user reports and separate local/deployed/live verification. Private source evidence stays outside Git.
+
 # Loupe financial investigator workflow reference
 
 **27 September fresh-upload follow-up:** [Read-file status, group review and scanned column headings](read-files-status-2026-09-27.md) records the reproduced missing-table defect, same-PDF saved-import status, explicit review actions and separate release/live acceptance.

@@ -73,6 +73,53 @@ def state(pg):
             payments=set(db.scalars(select(Payment.id))))
 
 
+def test_standalone_save_and_group_confirmation_serialize_without_losing_edits(pg, monkeypatch):
+    from services.financial import statement_progress
+    from postgres.models.financial_import_batches import FinancialImportBatch as Batch
+    saved_lock, queue_attempt = Event(), Event()
+    with pg.SessionLocal() as db:
+        item = db.get(Item, pg.item_id)
+        file_id = item.file_id
+        item.status = 'ready'
+        db.get(Batch, pg.batch_id).status = 'review'
+        db.delete(db.get(Operation, pg.operation_id))
+        db.commit()
+        revision = batches.batch_status(db, case_id=pg.case_id, batch_id=pg.batch_id)['ready_revision']
+    original = statement_progress.read_statement_import
+    def reading(*args, **kwargs):
+        saved_lock.set()  # save_progress already owns the evidence row here.
+        assert queue_attempt.wait(3)
+        return original(*args, **kwargs)
+    def capture(conn, cursor, statement, parameters, context, many):
+        if current_thread().name == 'synthetic-group-queue' and 'FROM evidence_files' in statement and 'FOR UPDATE' in statement:
+            queue_attempt.set()
+    def save():
+        with pg.SessionLocal() as db:
+            return statement_progress.save_progress(db, case_id=pg.case_id, evidence_file_id=file_id,
+                request=pg.draft.model_copy(update={'holder': 'New synthetic holder'}),
+                expected_review_revision='initial', actor=pg.actor)
+    def queue():
+        current_thread().name = 'synthetic-group-queue'
+        with pg.SessionLocal() as db:
+            with pytest.raises(PdfMappingError, match='ready statements changed'):
+                batches.queue_import(db, case_id=pg.case_id, batch_id=pg.batch_id,
+                    expected_revision=revision, actor=pg.actor)
+    monkeypatch.setattr(statement_progress, 'read_statement_import', reading)
+    event.listen(pg.engine, 'before_cursor_execute', capture)
+    try:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            saving = pool.submit(save)
+            assert saved_lock.wait(3)
+            queuing = pool.submit(queue)
+            assert saving.result(timeout=5)['request']['holder'] == 'New synthetic holder'
+            queuing.result(timeout=5)
+    finally:
+        event.remove(pg.engine, 'before_cursor_execute', capture)
+    with pg.SessionLocal() as db:
+        assert db.get(Item, pg.item_id).status == 'ready'
+        assert list(db.scalars(select(Payment.id))) == []
+
+
 def test_concurrent_save_cannot_form_item_evidence_application_deadlock(pg, monkeypatch):
     entered, save_locked_evidence = Event(), Event()
     actual = batches.confirm_statement_import

@@ -33,6 +33,10 @@ def save_progress(session, *, case_id, evidence_file_id, request, expected_revie
         EvidenceFile.case_id == case_id).with_for_update().execution_options(populate_existing=True))
     if file is None:
         raise PdfMappingError('Statement not found in this case.', 404)
+    from postgres.models.financial_import_batches import FinancialImportBatchItem as Item
+    if session.scalar(select(Item.id).where(Item.file_id == evidence_file_id,
+            Item.statement_key == (request.statement_id or ''), Item.status == 'pending_import').limit(1)):
+        raise PdfMappingError('This statement is being imported. Wait for its receipt before editing it.', 409)
     previous = review_progress(file, request.statement_id)
     revision = previous['review_revision'] if previous else 'initial'
     if revision != expected_review_revision:
@@ -51,6 +55,15 @@ def save_progress(session, *, case_id, evidence_file_id, request, expected_revie
     payload = request.model_dump(mode='json')
     saved = dict(request=payload, review_revision=_digest(payload), saved_at=datetime.now(timezone.utc).isoformat(),
                  saved_by=dict(user_id=str(actor.user_id), name=actor.name))
+    from services.financial.effective_statement_review import request_signature
+    from services.financial.import_batches import assess, initial_request
+    state, assessment = assess(proposal, payload)
+    saved.update(assessment=assessment, assessment_status=state,
+        initial_request_signature=request_signature(initial_request(proposal)),
+        superseded_request_signatures=sorted(set([
+            *(previous or {}).get('superseded_request_signatures', []),
+            *([request_signature(previous['request'])] if previous else []),
+        ])))
     metadata = deepcopy(file.metadata_ or {})
     if previous and previous['request']['expected_revision'] != request.expected_revision:
         # Retain old corrections if the extraction changed underneath a draft.
