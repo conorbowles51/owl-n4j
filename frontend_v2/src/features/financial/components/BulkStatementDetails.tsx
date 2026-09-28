@@ -51,7 +51,7 @@ const previewSchema = z.object({
   preview_revision: z.string(),
   updated: z.number(),
   items: z.array(
-    statement.extend({ after: z.record(z.string(), z.string()), changes })
+    statement.extend({ after: z.record(z.string(), z.string()), changes, excluded_reason: z.string().nullable().optional() })
   ),
 })
 const receiptSchema = z.object({
@@ -76,6 +76,7 @@ type Draft = {
   mode: "fill_missing" | "replace"
   requestId: string
   open: boolean
+  confirmUnprintedStart?: boolean
 }
 type Props = {
   caseId: string
@@ -169,7 +170,7 @@ function Editor({
         revision,
       })
     ),
-    changes: draft.values,
+    changes: draft.confirmUnprintedStart ? { period_start_unprinted: true } : draft.values,
     mode: draft.mode,
     request_id: draft.requestId,
   })
@@ -261,8 +262,8 @@ function Editor({
   ).length
   const valid =
     selected.length > 0 &&
-    Object.keys(draft.values).length > 0 &&
-    (draft.values.currency === undefined || !!draft.values.currency)
+    (draft.confirmUnprintedStart || (Object.keys(draft.values).length > 0 &&
+    (draft.values.currency === undefined || !!draft.values.currency)))
   const summary = (item: Statement) =>
     [
       item.values.holder || "Holder missing",
@@ -272,7 +273,7 @@ function Editor({
       `${item.values.period_start || "Start missing"} – ${item.values.period_end || "End missing"}`,
       item.status,
     ].join(" · ")
-  const labels = Object.fromEntries(fields)
+  const labels = { ...Object.fromEntries(fields), period_start_unprinted: "Statement start" } as Record<string, string>
   return (
     <>
       <Button
@@ -347,7 +348,7 @@ function Editor({
                   correction history are retained. Saving does not import
                   additional transactions.
                 </p>
-                {draft.mode === "fill_missing" && !preview.updated && (
+                {draft.mode === "fill_missing" && !preview.updated && !draft.confirmUnprintedStart && (
                   <div
                     className="rounded border p-3 space-y-2 text-sm"
                     role="status"
@@ -374,7 +375,7 @@ function Editor({
                     <strong>{item.filename}</strong>
                     <p>{summary(item)}</p>
                     {!Object.keys(item.changes).length ? (
-                      <p>No changes — existing details kept.</p>
+                      <p>{item.excluded_reason || "No changes — existing details kept."}</p>
                     ) : (
                       <ul className="list-disc pl-5">
                         {Object.entries(item.changes).map(([field, value]) => (
@@ -516,6 +517,20 @@ function Editor({
                   </>
                 )}
                 <h3 className="font-semibold">2. Choose fields to change</h3>
+                <label className="block rounded border p-3 text-sm space-y-2">
+                  <span className="flex items-start gap-2">
+                    <input type="checkbox" checked={!!draft.confirmUnprintedStart} disabled={busy}
+                      onChange={(event) => changeDraft({ confirmUnprintedStart: event.target.checked })} />
+                    I confirm these statements do not print a start date
+                  </span>
+                  <span className="block text-muted-foreground">
+                    Apply one confirmation to the selected unimported statements. Each keeps its own closing date;
+                    recognized printed closing dates fill missing values. Starts remain unknown. Statements with
+                    a start date, no valid closing date, or an existing import are excluded in the preview.
+                    Only confirm after checking that the source layout omits the start date, rather than an unreadable date.
+                  </span>
+                </label>
+                {!draft.confirmUnprintedStart && (
                 <fieldset disabled={busy} className="space-y-3">
                   <label className="block text-sm">
                     Whole-month shortcut (optional)
@@ -642,6 +657,7 @@ function Editor({
                     </p>
                   )}
                 </fieldset>
+                )}
               </>
             )}
             {(review.error || save.error) && (

@@ -504,6 +504,10 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
     recovery, previous_review = recovery_state(session, file, sources=all_sources, choices=choices,
         statement_id=statement_id, revision=revision, cache=cache)
     result = dict(case_id=str(case_id), evidence_file_id=str(evidence_file_id), filename=file.original_filename,
+                # Derived from the same source reading; keep historical review
+                # revisions stable while exposing this date to grouped decisions.
+                printed_closing_date_iso=(selected.get('statement_date', '') if selected
+                    and selected.get('layout_id') == 'merrick-card' and not selected.get('date_conflict') else ''),
                 metadata=metadata, currency=chosen_currency, detected_currency=detected_currency, rows=[] if reading_failure else rows, sources=sources, issues=issues,
                 saved_review=review_progress(file, statement_id),
                 previous_saved_review=previous_review, review_recovery=recovery,

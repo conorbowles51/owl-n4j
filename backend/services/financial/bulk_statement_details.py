@@ -49,11 +49,14 @@ class Changes(BaseModel):
     currency: CurrencyCode | None = None
     period_start: str | None = None
     period_end: str | None = None
+    period_start_unprinted: Literal[True] | None = None
 
     @model_validator(mode='after')
     def valid_fields(self):
-        if not any(getattr(self, key) is not None for key in FIELDS):
+        if not self.period_start_unprinted and not any(getattr(self, key) is not None for key in FIELDS):
             raise ValueError('Choose at least one field to change.')
+        if self.period_start_unprinted and any(getattr(self, key) is not None for key in FIELDS):
+            raise ValueError('Confirm unprinted start dates separately; each statement keeps its own details and closing date.')
         for key in FIELDS:
             value = getattr(self, key)
             if value is not None:
@@ -206,6 +209,7 @@ def _plan(session, case_id, request):
     if len({_key(t) for t in request.targets}) != len(request.targets):
         raise PdfMappingError('Select each statement once.', 422)
     changes = request.changes.model_dump(exclude_none=True)
+    unprinted = changes.pop('period_start_unprinted', False)
     plan, states, cache = [], [], {}
     for target in sorted(request.targets, key=lambda target: (str(target.file_id), _key(target))):
         row, state = _load(session, case_id, target, cache)
@@ -216,14 +220,31 @@ def _plan(session, case_id, request):
         if after.get('period_start') and after.get('period_end') and after['period_start'] > after['period_end']:
             raise PdfMappingError(f'{row["filename"]}: statement start must be on or before statement end.', 422)
         changed = {key: dict(before=row['values'].get(key, ''), after=after[key]) for key in changes if after[key] != row['values'].get(key, '')}
+        excluded_reason = None
+        if unprinted:
+            from services.financial.import_issues import calendar_date
+            metadata = state.get('proposal', {}).get('metadata', {})
+            closing = after.get('period_end') or state.get('proposal', {}).get('printed_closing_date_iso', '')
+            if target.source_id:
+                excluded_reason = 'Already imported; saved records are unchanged.'
+            elif after.get('period_start') or calendar_date(metadata.get('period_start', '')):
+                excluded_reason = 'A start date is present; it is preserved.'
+            elif not calendar_date(closing):
+                excluded_reason = 'No valid closing date is available; this statement still needs a date decision.'
+            else:
+                if not state['raw'].get('period_start_unprinted'):
+                    changed['period_start_unprinted'] = dict(before='Not confirmed', after='Confirmed not printed; start remains unknown')
+                if closing != after.get('period_end'):
+                    changed['period_end'] = dict(before=after.get('period_end', ''), after=closing)
+                    after['period_end'] = closing
         if not target.source_id and 'currency' in changed:
             new = read_statement_import(session, case_id=case_id, evidence_file_id=target.file_id,
                 statement_id=target.statement_id, currency=after['currency'], _cache=cache, _include_period_checks=False)
             state['raw'] = import_batches.rebase_review_currency(state['proposal'], new, state['raw'], after['currency'])
             state['proposal'] = new
-        plan.append({**row, 'after': after, 'changes': changed})
+        plan.append({**row, 'after': after, 'changes': changed, 'excluded_reason': excluded_reason})
         states.append((target, state))
-    revision = _digest(dict(case_id=str(case_id), rows=plan, mode=request.mode, changes=changes))
+    revision = _digest(dict(case_id=str(case_id), rows=plan, mode=request.mode, changes=changes, unprinted=unprinted))
     return dict(case_id=str(case_id), preview_revision=revision, items=plan,
         updated=sum(bool(row['changes']) for row in plan)), states
 
@@ -276,6 +297,8 @@ def save(session, *, case_id, request, actor):
                 account_changes.append(dict(before=state['view']['account_id'], after=result['account_id']))
             else:
                 raw = {**state['raw'], **after}
+                if request.changes.period_start_unprinted:
+                    raw['period_start_unprinted'] = True
                 import_batches.check_proposed_rows(state['proposal'], raw['rows'])
                 file = next(f for f in files if f.id == target.file_id)
                 metadata = deepcopy(file.metadata_ or {})
@@ -294,6 +317,7 @@ def save(session, *, case_id, request, actor):
                 metadata.setdefault('financial_review_progress', {})[target.statement_id or ''] = record
                 metadata.setdefault('financial_account_detail_history', []).append(dict(
                     request_id=str(request.request_id), before=row['values'], after=after,
+                    period_start_unprinted=bool(raw.get('period_start_unprinted')),
                     statement_id=target.statement_id, at=record['saved_at'], actor=record['saved_by']))
                 file.metadata_ = metadata
                 for item in state['items']:
