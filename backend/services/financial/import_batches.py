@@ -1104,6 +1104,7 @@ def _same_failed_import(item, accepted):
 
 def _import_item(factory,case_id,batch_id,item_id,resolve_path):
     from services.financial.import_operations import record_outcome
+    from sqlalchemy.exc import OperationalError, TimeoutError as DatabaseTimeout
     # Never retain an Item lock while a second session confirms the import.
     # Save/removal can own Evidence/Case before waiting for this Item, forming
     # an application-level cycle that PostgreSQL cannot detect as a deadlock.
@@ -1111,9 +1112,12 @@ def _import_item(factory,case_id,batch_id,item_id,resolve_path):
         item=db.scalar(select(Item).join(Batch, Item.batch_id == Batch.id).where(Item.id==item_id,Item.batch_id==batch_id,
             Batch.case_id == case_id).with_for_update(of=Item, skip_locked=True))
         if not item or item.status!='pending_import': return
+        retry_after = item.summary.get('automatic_import_retry_after')
+        if retry_after and datetime.fromisoformat(retry_after) > datetime.now(timezone.utc):
+            return
         accepted = _accepted_import_snapshot(item)
         db.commit()
-    receipt, error_message = None, None
+    receipt, error_message, transient_failure = None, None, False
     try:
         with factory() as db:
             proposal=read_statement_import(db,case_id=case_id,evidence_file_id=accepted['file_id'],
@@ -1130,6 +1134,9 @@ def _import_item(factory,case_id,batch_id,item_id,resolve_path):
             request=request,actor=actor,resolve_path=resolve_path)
     except Exception as error:
         log.exception('Financial batch import failed')
+        # Retry only infrastructure failures, never admission/source problems.
+        # The same immutable request reaches the idempotent strict writer.
+        transient_failure = isinstance(error, (OperationalError, DatabaseTimeout, TimeoutError, ConnectionError))
         error_message = str(error) if isinstance(error,PdfMappingError) else 'Import could not be confirmed. Open this statement to check its current import before retrying.'
     with factory() as db:
         batch = db.scalar(select(Batch).where(Batch.id == batch_id, Batch.case_id == case_id).with_for_update())
@@ -1143,7 +1150,8 @@ def _import_item(factory,case_id,batch_id,item_id,resolve_path):
             return
         if receipt:
             item.summary = deepcopy(accepted['summary'])
-        resolved_failure = {} if same_pending else {'message': ''}
+            item.summary.pop('automatic_import_retry_after', None)
+        resolved_failure = {} if same_pending and not accepted['summary'].get('automatic_import_retry_count') else {'message': ''}
         if receipt and receipt.get('outcome') == 'duplicate_ignored':
             item.status = 'duplicate_ignored'
             item.summary = {**item.summary, 'duplicate_disposition': receipt['duplicate_disposition'],
@@ -1160,8 +1168,17 @@ def _import_item(factory,case_id,batch_id,item_id,resolve_path):
                 source_document_id=receipt['source_document_id'], transaction_count=receipt['transaction_count'],
                 incomplete_count=receipt.get('incomplete_count', 0), **resolved_failure)
         else:
-            item.status='attention';item.summary=_failed_import_summary(item.summary, error_message)
-            record_outcome(db, case_id, item, 'failed', message=item.summary['problems'][0]['message'])
+            retries = accepted['summary'].get('automatic_import_retry_count', 0)
+            if transient_failure and retries < 2:
+                delay = 15 * (2 ** retries)
+                retry_at = (datetime.now(timezone.utc) + timedelta(seconds=delay)).isoformat()
+                item.summary = {**item.summary, 'automatic_import_retry_count': retries + 1,
+                    'automatic_import_retry_after': retry_at}
+                record_outcome(db, case_id, item, 'queued', retry_after=retry_at,
+                    message=f'Temporary connection or database failure. Automatic retry {retries + 1} of 2 is scheduled; no action is needed.')
+            else:
+                item.status='attention';item.summary=_failed_import_summary(item.summary, error_message)
+                record_outcome(db, case_id, item, 'failed', message=item.summary['problems'][0]['message'])
         db.commit()
 
 

@@ -1,22 +1,27 @@
 import { z } from "zod"
 import { batchReviewSummarySchema } from "../lib/batch-review-summary"
 import { Button } from "@/components/ui/button"
+import { useState, type ReactNode } from "react"
 
 export function BatchReviewSummary({
   summary,
   selected,
   onSelect,
+  renderGroupAction,
 }: {
   summary: z.infer<typeof batchReviewSummarySchema>
   selected: string
   onSelect: (group: string) => void
+  renderGroupAction?: (group: string, count: number) => ReactNode
 }) {
+  const [showRetained, setShowRetained] = useState(false)
+  const groups = summary.groups.filter(group => showRetained || group.blocked_statements > 0)
   return (
     <section
       aria-label="Review checks by reason"
       className="rounded border bg-card p-4 space-y-3"
     >
-      <h3 className="font-semibold">Review checks by reason</h3>
+      <h3 className="font-semibold">Decisions needed before import</h3>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
         {summary.blocked_statements ? (
           <Button
@@ -38,19 +43,17 @@ export function BatchReviewSummary({
         )}
         {!!summary.imported_with_checks && (
           <p>
-            {summary.imported_with_checks} already imported with checks to
-            review.
+            {summary.imported_with_checks} already imported with check history retained.
           </p>
         )}
       </div>
       {!!summary.groups.length && (
         <>
           <p className="text-xs text-muted-foreground">
-            These counts cover the whole batch. A statement can appear under
-            more than one reason.
+            Current blockers appear first. Ready and saved statements keep their check history without becoming new import tasks. A statement can appear under more than one reason.
           </p>
           <ul className="divide-y max-h-72 overflow-y-auto pr-2">
-            {summary.groups.map((group) => (
+            {groups.map((group) => (
               <li
                 key={group.id}
                 className="py-3 first:pt-0 last:pb-0 flex flex-wrap items-start justify-between gap-3"
@@ -82,6 +85,8 @@ export function BatchReviewSummary({
                       .join(" · ")}
                   </p>
                 </div>
+                <div className="flex flex-wrap gap-2">
+                {!!group.blocked_statements && renderGroupAction?.(group.id, group.blocked_statements)}
                 <Button
                   size="sm"
                   variant="outline"
@@ -91,9 +96,15 @@ export function BatchReviewSummary({
                 >
                   Show statements
                 </Button>
+                </div>
               </li>
             ))}
           </ul>
+          {summary.groups.some(group => !group.blocked_statements) && (
+            <Button variant="ghost" size="sm" onClick={() => setShowRetained(!showRetained)}>
+              {showRetained ? "Hide retained check history" : "Show retained check history"}
+            </Button>
+          )}
         </>
       )}
       {!!summary.unchecked_balance_statements && (

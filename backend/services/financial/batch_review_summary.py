@@ -5,6 +5,7 @@ Legacy messages get a display category; their underlying checks remain intact.
 """
 
 REASONS = {
+    'institution': ('Missing bank name', 'Choose the bank shown on the source once for the matching statements.'),
     'currency': ('Choose statement currency', 'Choose the currency printed on the source. Currency is required before import.'),
     'holder': ('Missing account holder', 'Add the person or company shown on the statement. Use Edit account details to fill several statements together.'),
     'account': ('Missing account number', 'Add the printed account number. Use Edit account details to fill several statements together.'),
@@ -27,7 +28,10 @@ def reason(problem):
     kind, field, check = (problem.get(key) for key in ('kind', 'field', 'check'))
     message = problem.get('message', '').lower()
     if kind == 'statement_detail':
-        return {'holder': 'holder', 'account_number': 'account', 'period': 'dates'}.get(field, 'reading')
+        return {'holder': 'holder', 'account_number': 'account', 'institution': 'institution',
+            'currency': 'currency', 'period': 'dates', 'period_start': 'dates', 'period_end': 'dates'}.get(field, 'reading')
+    if kind == 'review_conflict':
+        return 'saved_review'
     if kind == 'coverage_load':
         return 'reading'
     if kind == 'coverage' and problem.get('matching_statement'):

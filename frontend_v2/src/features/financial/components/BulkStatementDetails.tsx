@@ -85,6 +85,8 @@ type Props = {
   onSaved: () => void
   datesOnly?: boolean
   statementId?: string | null
+  reviewGroup?: string
+  buttonLabel?: string
 }
 
 export function BulkStatementDetails(props: Props) {
@@ -95,6 +97,7 @@ export function BulkStatementDetails(props: Props) {
     props.batchId || [...(props.fileIds || [])].sort().join(","),
     props.datesOnly ? "dates" : "details",
     props.statementId === undefined ? "all" : props.statementId || "single",
+    props.reviewGroup || "all-reasons",
   ].join(":")
   return (
     <Editor
@@ -113,6 +116,8 @@ function Editor({
   scopeKey,
   datesOnly = false,
   statementId,
+  reviewGroup,
+  buttonLabel,
 }: Props & { scopeKey: string }) {
   const client = useQueryClient()
   const [scope, applyScope] = useInvestigationScope(caseId)
@@ -121,13 +126,16 @@ function Editor({
     `bulk-account-details:${scopeKey}`,
     {
       selected: {},
-      values: datesOnly ? { period_start: "", period_end: "" } : {},
+      values: reviewGroup && ["holder", "institution", "currency", "account"].includes(reviewGroup)
+        ? { [reviewGroup === "account" ? "account_number" : reviewGroup]: "" }
+        : datesOnly ? { period_start: "", period_end: "" } : {},
       mode: "fill_missing",
       requestId: "",
       open: false,
     }
   )
   const [search, setSearch] = useState("")
+  const [accountScope, setAccountScope] = useState("")
   const [page, setPage] = useState(0)
   const [preview, setPreview] = useState<z.infer<typeof previewSchema> | null>(
     null
@@ -146,7 +154,7 @@ function Editor({
       const result = listing.parse(
         await fetchAPI(`${endpoint}/statements?case_id=${caseId}`, {
           method: "POST",
-          body: batchId ? { batch_id: batchId } : { file_ids: fileIds },
+          body: batchId ? { batch_id: batchId, review_group: reviewGroup } : { file_ids: fileIds },
         })
       )
       if (result.case_id !== caseId)
@@ -250,8 +258,13 @@ function Editor({
       `Loaded the latest saved details for ${retained.length} selected statements. Your proposed values are kept; review the new before-and-after preview.${unavailable ? ` ${unavailable} statements are no longer editable here and were removed from this selection.` : ""}`
     )
   }
+  const accountKey = (item: Statement) => JSON.stringify([
+    item.values.institution || "Bank unknown", item.values.account_number || `Source: ${item.filename} (${item.file_id})`, item.values.currency || "Currency unknown",
+  ])
+  const accountOptions = [...new Map((query.data?.items || []).map(item => [accountKey(item),
+    [item.values.institution || "Bank unknown", item.values.account_number || item.filename, item.values.currency || "Currency unknown"].join(" · ")])).entries()]
   const matching = (query.data?.items || []).filter((item) =>
-    [item.filename, item.status, ...Object.values(item.values)]
+    (!accountScope || accountKey(item) === accountScope) && [item.filename, item.status, ...Object.values(item.values)]
       .join(" ")
       .toLowerCase()
       .includes(search.toLowerCase())
@@ -288,11 +301,11 @@ function Editor({
           })
         }}
       >
-        {datesOnly
+        {buttonLabel || (datesOnly
           ? statementId === undefined
             ? "Set dates for selected statements"
             : "Set statement dates"
-          : "Edit account details"}
+          : "Edit account details")}
       </Button>
       {receipt && (
         <p role="status" className="text-sm w-full">
@@ -337,6 +350,7 @@ function Editor({
             </DialogDescription>
           </DialogHeader>
           <div className="min-h-0 overflow-y-auto space-y-4 pr-1">
+            {reviewGroup && !preview && <p className="text-sm">Only statements currently blocked for this reason are listed. Choose the matching account, select its periods and resolve the shared detail once. Saving updates group readiness without importing payments.</p>}
             {preview ? (
               <>
                 <h3 className="font-semibold">
@@ -398,6 +412,14 @@ function Editor({
                   <p role="alert">{query.error.message}</p>
                 ) : (
                   <>
+                    {accountOptions.length > 1 && <label className="block text-sm">
+                      Limit to bank, account and currency
+                      <select className="block border rounded bg-background p-2 w-full" value={accountScope}
+                        onChange={event => { setAccountScope(event.target.value); setPage(0); changeDraft({ selected: {} }) }}>
+                        <option value="">All accounts — choose a group before sharing details</option>
+                        {accountOptions.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+                      </select>
+                    </label>}
                     <label className="block text-sm">
                       Find statements
                       <input

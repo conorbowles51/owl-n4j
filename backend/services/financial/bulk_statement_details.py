@@ -25,11 +25,14 @@ class Selection(BaseModel):
     model_config = ConfigDict(extra='forbid')
     file_ids: list[UUID] = Field(default_factory=list, max_length=1000)
     batch_id: UUID | None = None
+    review_group: str | None = None
 
     @model_validator(mode='after')
     def one_scope(self):
         if bool(self.file_ids) == bool(self.batch_id):
             raise ValueError('Choose files or one processing batch.')
+        if self.review_group and not self.batch_id:
+            raise ValueError('Choose a batch for grouped review decisions.')
         return self
 
 
@@ -157,6 +160,11 @@ def list_statements(session, *, case_id, selection):
     if selection.batch_id:
         import_batches.batch_for(session, case_id, selection.batch_id)
         batch_items = list(session.scalars(select(Item).where(Item.batch_id == selection.batch_id, Item.status != 'removed')))
+        if selection.review_group:
+            from services.financial.batch_review_summary import validate_group, matches_group, is_blocked
+            validate_group(selection.review_group)
+            batch_items = [item for item in import_batches.checked_batch_items(session, case_id, batch_items)
+                if is_blocked(item) and matches_group(item, selection.review_group)]
         file_ids = {item.file_id for item in batch_items}
         scopes = {(item.file_id, item.statement_key or None) for item in batch_items}
     else:
