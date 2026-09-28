@@ -132,7 +132,7 @@ def _cleaned_line_readings(page, rect, rotation, deadline, language):
 
 
 def refine_statement_native_cells(page, tables, *, deadline, language):
-    """Recover only missing card money from its original measured cell.
+    """Recover missing statement money from its original measured cell.
 
     A failed whole-page reread may drop a payment. This preserves every native
     row and only accepts repeated crop agreement for an unreadable value;
@@ -142,6 +142,7 @@ def refine_statement_native_cells(page, tables, *, deadline, language):
     from services.financial import pdf_tables
     from services.financial.statement_import_credit_one import credit_one_catalog, propose_credit_one_table
     from services.financial.statement_import_merrick import merrick_statement, propose_merrick_table
+    from services.financial.statement_import_andrews import andrews_page, propose_andrews_statement
     from services.financial.statement_reading_quality import sources_from_tables, assess_statement_reading, prefer_image_reading
     if page.rotation or deadline - time.monotonic() < 2:
         return tables, []
@@ -153,46 +154,60 @@ def refine_statement_native_cells(page, tables, *, deadline, language):
     elif merrick:
         propose = lambda source: propose_merrick_table(source, 'USD', merrick)
     else:
-        return tables, []
+        andrews = andrews_page(sources[0], allow_unbranded=True) if len(sources) == 1 else None
+        if not andrews:
+            return tables, []
+        scope = dict(page_number=sources[0]['page_number'], table_index=sources[0]['table_index'],
+            heading_rows=andrews['heading_rows'], row_indices=[r['row_index'] for r in sources[0]['rows']
+                if r['row_index'] >= andrews['body_start']])
+        statement = dict(period_start=andrews['start'], period_end=andrews['end'], sources=[scope])
+        propose = lambda source: propose_andrews_statement([source], 'USD', statement)
     before = assess_statement_reading([table.to_json() for table in tables])
     if not before or not before['unreadable']:
         return tables, []
     replacements, records = {}, []
     deadline = min(deadline, time.monotonic() + 30)
+    targets = []
     for source in sources:
         for row in propose(source)['rows']:
             fields = row['fields']
-            field = 'balance' if row['kind'] == 'balance' else 'amount_minor' if row['kind'] == 'transaction' else None
-            column = fields.get('balance_column' if field == 'balance' else 'amount_column')
-            if field is None or field in fields or column is None or deadline - time.monotonic() < 2:
-                continue
-            matches = [c for c in row['source_cells'] if str(c['column_index']) == column]
-            if len(matches) != 1:
-                continue
-            cell = matches[0]
-            locator = cell.get('locator') or {}
-            rect = locator.get('rect') or []
-            size = locator.get('page_size') or []
-            if (locator.get('kind') != 'page_rectangle' or locator.get('page') != page.number + 1
-                    or len(rect) != 4 or len(size) != 2 or not all(type(v) is int for v in rect + size)
-                    or not 0 <= rect[0] < rect[2] <= size[0] or not 0 <= rect[1] < rect[3] <= size[1]
-                    or abs(size[0] - page.rect.width * 1000) > 2 or abs(size[1] - page.rect.height * 1000) > 2
-                    or rect[2] - rect[0] > size[0] * .13 or len(cell['expected_text']) > 24):
-                continue
-            try:
-                observations = _cleaned_line_readings(page, rect, 0, deadline, language)
-            except (RuntimeError, pytesseract.TesseractError):
-                continue
-            valid = [o for o in observations if _money(o['text'])]
-            if (len(observations) != 6 or not _money(observations[0]['text']) or len(valid) < 4
-                    or len({o['dpi'] for o in valid}) != 2 or len({o['text'] for o in valid}) != 1):
-                continue
-            value = valid[0]['text']
-            replacements[(source['table_index'], row['row_index'], int(column))] = value
-            records.append(dict(method='tesseract_native_statement_cell_consensus', page=page.number + 1,
-                table_index=source['table_index'], row_index=row['row_index'], column_index=int(column),
-                field=field, original_text=cell['expected_text'], text=value, source_locator=locator,
-                observations=observations, reason='unreadable_native_card_money'))
+            candidates = [('balance', 'balance_column')] if row['kind'] == 'balance' else (
+                [('amount_minor', 'amount_column'), ('balance', 'balance_column')]
+                if row['kind'] in ('transaction', 'unresolved') and not row['excluded'] else [])
+            for field, column_key in candidates:
+                column = fields.get(column_key)
+                if field not in fields and column is not None:
+                    targets.append((source, row, field, column))
+    for source, row, field, column in targets:
+        if deadline - time.monotonic() < 2:
+            break
+        matches = [c for c in row['source_cells'] if str(c['column_index']) == column]
+        if len(matches) != 1:
+            continue
+        cell = matches[0]
+        locator = cell.get('locator') or {}
+        rect = locator.get('rect') or []
+        size = locator.get('page_size') or []
+        if (locator.get('kind') != 'page_rectangle' or locator.get('page') != page.number + 1
+                or len(rect) != 4 or len(size) != 2 or not all(type(v) is int for v in rect + size)
+                or not 0 <= rect[0] < rect[2] <= size[0] or not 0 <= rect[1] < rect[3] <= size[1]
+                or abs(size[0] - page.rect.width * 1000) > 2 or abs(size[1] - page.rect.height * 1000) > 2
+                or rect[2] - rect[0] > size[0] * .13 or len(cell['expected_text']) > 24):
+            continue
+        try:
+            observations = _cleaned_line_readings(page, rect, 0, deadline, language)
+        except (RuntimeError, pytesseract.TesseractError):
+            continue
+        valid = [o for o in observations if _money(o['text'])]
+        if (len(observations) != 6 or not _money(observations[0]['text']) or len(valid) < 4
+                or len({o['dpi'] for o in valid}) != 2 or len({o['text'] for o in valid}) != 1):
+            continue
+        value = valid[0]['text']
+        replacements[(source['table_index'], row['row_index'], int(column))] = value
+        records.append(dict(method='tesseract_native_statement_cell_consensus', page=page.number + 1,
+            table_index=source['table_index'], row_index=row['row_index'], column_index=int(column),
+            field=field, original_text=cell['expected_text'], text=value, source_locator=locator,
+            observations=observations, reason='unreadable_native_statement_money'))
     if not replacements:
         return tables, []
     refined = []

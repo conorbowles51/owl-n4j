@@ -71,13 +71,13 @@ def assess_statement_reading(tables):
     zero_charges = sum(r['kind'] == 'zero_charge' for r in rows)
     result = dict(identity=identity, payments=len(payments), payment_rows=len(payments) + zero_charges,
         zero_charge_rows=zero_charges, balances=len(balances), missing_fields=missing, unreadable=sum(missing.values()))
-    if identity[0] == 'merrick-card':
-        # Preserve readable facts, not just counts. Otherwise a page reread
-        # could fix one damaged amount while silently changing another payment.
-        result['known_rows'] = [{key: r['fields'][key] for key in
-            ('date', 'amount_minor', 'direction', 'description', 'bank_reference', 'balance')
-            if key in r['fields']} for r in rows
-            if r in payments or r['kind'] in ('zero_charge', 'balance', 'statement_total')]
+    # Preserve readable facts across every supported family, not just counts.
+    # One repaired cell must not silently alter another payment or control.
+    result['known_rows'] = [{key: r['fields'][key] for key in
+        ('date', 'booking_date', 'value_date', 'amount_minor', 'direction',
+         'description', 'bank_reference', 'balance', 'additional_printed_date')
+        if key in r['fields']} for r in rows
+        if r in payments or r['kind'] in ('zero_charge', 'balance', 'statement_total')]
     return result
 
 

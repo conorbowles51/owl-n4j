@@ -597,6 +597,11 @@ def propose_andrews_statement(sources, currency, statement):
                     amount_text, balance_text = voucher['amount_text'], voucher['balance_text']
                 separate_cells = (len(money_cells) == 2 and
                                   _box(money_cells[0])[2] <= _box(money_cells[1])[0])
+                if separate_cells and (not voucher or not voucher['wrapped']):
+                    # Geometry identifies both targets even when their digits
+                    # fail parsing. Wrapped/merged cells are not crop targets.
+                    fields['amount_column'] = str(money_cells[0]['column_index'])
+                    fields['balance_column'] = str(money_cells[1]['column_index'])
                 try:
                     amount = _amount(amount_text, currency, separate_cell=separate_cells)
                     fields['amount_minor'] = str(abs(amount))

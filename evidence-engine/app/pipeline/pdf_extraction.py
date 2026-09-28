@@ -31,7 +31,7 @@ LOW_CONFIDENCE_THRESHOLD = 60.0
 MIN_OCR_DPI = 150
 MIN_RELIABLE_OSD_CONFIDENCE = 15.0
 MAX_OSD_TIMEOUT_SECONDS = 30.0
-PDF_READING_REVISION = 'bank-payment-rows-v9'
+PDF_READING_REVISION = 'bank-payment-rows-v10'
 OSD_INSUFFICIENT_TEXT_MARKERS = ("too few characters", "skipping this page")
 
 
@@ -898,7 +898,7 @@ def _extract_pdf_sync(
             quality = _statement_reading_quality(ocr_tables) if original else None
             if original and not _prefer_statement_image(original['quality'], quality):
                 # A whole-page image reading can omit a row. Keep that page's
-                # original geometry and try only demonstrably unreadable card
+                # original geometry and try only demonstrably unreadable statement
                 # money cells; crop disagreement never replaces a value.
                 try:
                     from app.pipeline.financial_amount_ocr import refine_statement_native_cells
