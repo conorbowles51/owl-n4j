@@ -4,6 +4,7 @@ Reader-specific campaigns identify demonstrated fixes and exact earlier reader
 revisions. The authorized unresolved-work follow-up has its own content and
 disposition eligibility policy; it is not a generic parser-version sweep.
 """
+import os
 from dataclasses import dataclass, field
 
 
@@ -16,6 +17,9 @@ class RecoveryCampaign:
     source_probe: str | None = None
     unresolved_followup: bool = False
     repair_of: str | None = None
+    # Re-read held batch statements whose retained reading was produced by an
+    # exact earlier engine revision (affected_readers names engine source files).
+    batch_reread: bool = False
 
     def __post_init__(self):
         if not self.release or len(self.release) > 64:
@@ -29,6 +33,11 @@ class RecoveryCampaign:
     def eligible(self, previous, observed_readers=None):
         if self.initial_snapshot:
             return True
+        if self.batch_reread:
+            # The retained reading's own runtime record is the evidence; there
+            # is no earlier recovery outcome to qualify a held batch statement.
+            observed = observed_readers or {}
+            return any(observed.get(reader) in versions for reader, versions in self.affected_readers.items())
         if previous is None or previous.status not in self.eligible_outcomes:
             return False
         observed = observed_readers if observed_readers is not None else (previous.result or {}).get('readers') or {}
@@ -40,6 +49,35 @@ INITIAL_RELEASE = 'statement-recovery-2026-09-24-v1'
 FOLLOWUP_RELEASE = 'statement-recovery-2026-09-25-unresolved-v1'
 RESTORED_REPAIR_RELEASE = 'statement-recovery-2026-09-25-restored-v2'
 ANDREWS_BALANCE_RELEASE = 'statement-recovery-2026-09-25-andrews-balances-v1'
+READER_RECOVERY_RELEASE = 'statement-recovery-2026-10-02-readers-v1'
+READER_RECOVERY_FLAG = 'LOUPE_FINANCIAL_READER_RECOVERY'
+# Exact SHA-256 of every committed evidence-engine pdf_extraction.py that wrote
+# a PDF processing record (the record exists from 7b0013fb, 10 Sept), oldest
+# first, up to and including 13d03dbe (2 Oct). The current file (7bd84c16, the
+# independent glyph reader) is deliberately absent so a reading made by this
+# release is never selected again. Since 29 Sept the engine gained: Andrews
+# amount/balance crop reread (bb3ccef3), money-cell crop verification
+# (0f75eddc), the pinned generic repair (13d03dbe) and the glyph second reader
+# (7bd84c16). Unknown or unrecorded fingerprints are never swept. If a later
+# change edits pdf_extraction.py, add the digest of 7bd84c16's file here.
+AFFECTED_EXTRACTION_SHA256 = (
+    '838372af7b656fa02f655aaa564582ff7ba15c5c17ff46020935ce3356152495',  # 7b0013fb
+    '8f9e668367c9c3c9f577e1357cd8130952d9206742a653b6a0a42b1da1d62489',  # 14edbfec
+    '419d9cbb27f0635d29f965c9d519937b07ab7d900136f28cdf68be5870df2dd4',  # 5ae7ef47
+    '4f5a75a7bc6975e0d2249a4f9d5f7d9eae2d699e0dc60e14f852ca035cdc6a65',  # 2117ae62
+    'ea91148920ad6cd893bdb3b7a122567cc462bc0087d7469b6706240dd7423c85',  # 1e006ae1
+    '2550c8214ce3540d6a8973467477518462078d4777d4d65da9c165c3b1c35e92',  # a465f6fc
+    '0bc79a33b9a70d3c533828715debb9d31677b3e529a90b8d843fe474075f4d0b',  # 60b6706a
+    'ec9cfca7b4120060c7292491f83daccfb9f0591f7e66d90f950a93638ac1d5b4',  # b9414962
+    '05b595733283c2f77483f6348aab948d65c57d650293dd2709d4be26d9653efc',  # d9a04e8a
+    '56b70de3562c0919646342b5a2ee260db7e17f11ffc2fe97e817581022bf26b4',  # e886aff6
+    '35b7854d7f4e7c5325a5ef34c8c99d690b8fee1d6bb241a26a28134d27a5f253',  # a48958e0
+    '773d3e88130b2958009a47ed658235c31643f2351678974693a3fbfad3b58bd7',  # bb3ccef3
+    '3af21e5e970dfee0346c6789a6236dc6386fccaaf5216ca0bab5a55d845766d1',  # 0f75eddc
+    '1084b5e6882ec589595bd4fe5ab4a07618e12797e803e837995c2324aa8686c3',  # 13d03dbe
+)
+READER_RECOVERY = RecoveryCampaign(READER_RECOVERY_RELEASE, {'pdf_extraction.py': AFFECTED_EXTRACTION_SHA256},
+    batch_reread=True)
 CAMPAIGNS = (RecoveryCampaign(INITIAL_RELEASE, initial_snapshot=True),
     RecoveryCampaign(FOLLOWUP_RELEASE, unresolved_followup=True),
     RecoveryCampaign(RESTORED_REPAIR_RELEASE, unresolved_followup=True, repair_of=FOLLOWUP_RELEASE))
@@ -47,7 +85,14 @@ CAMPAIGNS = (RecoveryCampaign(INITIAL_RELEASE, initial_snapshot=True),
 # the current Andrews sample has not demonstrated an additional admitted period.
 REGISTERED_CAMPAIGNS = (*CAMPAIGNS,
     RecoveryCampaign(ANDREWS_BALANCE_RELEASE, {'andrews-share-statement': ('statement-review-v31',)},
-        source_probe='andrews-unreadable-running-balance-v1'))
+        source_probe='andrews-unreadable-running-balance-v1'),
+    READER_RECOVERY)
+
+
+def reader_recovery_enabled(environ=None):
+    """Off unless explicitly switched on: Neil decides activation."""
+    value = (os.environ if environ is None else environ).get(READER_RECOVERY_FLAG, '')
+    return value.strip().lower() in ('1', 'true', 'yes', 'on')
 
 
 def source_reader_evidence(session, file, campaign):

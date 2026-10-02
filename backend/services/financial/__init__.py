@@ -2166,3 +2166,5 @@ from services.financial.request_timing import FinancialTimingMiddleware
 __all__ += ["FinancialTimingMiddleware"]
 from services.financial.graph_followup import project_case_graph, request_follow_up, follow_up_status
 __all__ += ["project_case_graph", "request_follow_up", "follow_up_status"]
+from services.financial.recovery_readers import reading_fingerprint
+__all__ += ["reading_fingerprint"]

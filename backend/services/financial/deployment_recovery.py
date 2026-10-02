@@ -23,12 +23,18 @@ from services.financial.file_scope import financial_file_ids
 from services.financial.file_visibility import financial_file_visibility
 from services.financial.source_lineage import lineage_groups, current_version
 from services.financial.pdf_candidates import PdfMappingError
-from services.financial.recovery_campaigns import CAMPAIGNS, INITIAL_RELEASE, manifest, source_reader_evidence
+from services.financial.recovery_campaigns import (CAMPAIGNS, INITIAL_RELEASE, READER_RECOVERY, manifest,
+    reader_recovery_enabled, source_reader_evidence)
 
 RELEASE = INITIAL_RELEASE
 ACTOR = Actor(name='Loupe automatic statement recovery', email='statement-recovery@system.local')
 PENDING = ('pending', 'waiting', 'reading')
 log = logging.getLogger(__name__)
+
+
+def scheduled_campaigns():
+    """Campaigns this worker snapshots and runs. The reader campaign is off by default."""
+    return CAMPAIGNS + ((READER_RECOVERY,) if reader_recovery_enabled() else ())
 
 
 def activate(session, release_id=RELEASE):
@@ -51,6 +57,9 @@ def snapshot_case(session, case_id, cutoff, campaign=None):
     run_id = uuid5(NAMESPACE_URL, campaign.release + ':' + str(case_id))
     if session.get(Run, run_id):
         return True
+    if campaign.batch_reread:
+        from services.financial.recovery_readers import snapshot
+        return snapshot(session, case_id, cutoff, campaign, run_id)
     from services.financial import recovery_followup
     if campaign.repair_of and not recovery_followup.repair_snapshot_available(session, case_id, campaign.repair_of):
         return True
@@ -197,6 +206,11 @@ def recover_one(factory, item_id, resolve_path):
         if current_run.status != 'running' or item.status not in PENDING:
             return
         file = db.get(EvidenceFile, file_id)
+        if item.result.get('reader_recovery'):
+            from services.financial.recovery_readers import advance
+            # Hand-off to the batch's own reading path; nothing is admitted here.
+            advance(db, item, file, manifest(current_run.release))
+            return
         guard = _guard(db, item, file)
         target = db.get(EvidenceFile, UUID(item.result['reading_file_id'])) if item.result.get('reading_file_id') else None
         if not guard and target and target.status == 'processing':
@@ -447,7 +461,7 @@ def next_recovery_items(session, after=None):
     Restarting the cursor is safe because each unit rechecks its durable state.
     """
     query = select(Item.id).join(Run, Item.run_id == Run.id).where(
-        Run.release.in_([campaign.release for campaign in CAMPAIGNS]),
+        Run.release.in_([campaign.release for campaign in scheduled_campaigns()]),
         Run.status == 'running', Item.status.in_(PENDING)).order_by(Item.id).limit(2)
     if after is not None:
         following = list(session.scalars(query.where(Item.id > after)))
@@ -468,7 +482,7 @@ async def run_recovery_forever():
             factory = _get_session_local()
             if not initialized:
                 results = []
-                for campaign in CAMPAIGNS:
+                for campaign in scheduled_campaigns():
                     try:
                         with factory() as db:
                             cutoff = activate(db, campaign.release)
@@ -512,7 +526,7 @@ async def run_recovery_forever():
                     await asyncio.to_thread(_record_failure, factory, item_id,
                         'Recovery could not complete this file. Open its statement to inspect the retained reading and retry.')
             with factory() as db:
-                runs = list(db.scalars(select(Run).where(Run.release.in_([campaign.release for campaign in CAMPAIGNS]), Run.status == 'running').with_for_update(skip_locked=True)))
+                runs = list(db.scalars(select(Run).where(Run.release.in_([campaign.release for campaign in scheduled_campaigns()]), Run.status == 'running').with_for_update(skip_locked=True)))
                 for run in runs:
                     if not db.scalar(select(Item.id).where(Item.run_id == run.id, Item.status.in_(PENDING)).limit(1)):
                         run.status = 'complete'
