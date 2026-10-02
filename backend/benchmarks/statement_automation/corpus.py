@@ -31,7 +31,7 @@ from pathlib import Path
 PAGE_WIDTH, PAGE_HEIGHT = 600, 800
 FONT_SIZE = 7
 SCAN_DPI = 200
-CORPUS_VERSION = 'statement-automation-corpus-v3'
+CORPUS_VERSION = 'statement-automation-corpus-v4'
 
 
 # ---------------------------------------------------------------------------
@@ -100,20 +100,68 @@ def _draw(page, lines, *, use_ocr, render_mode=0):
                              render_mode=render_mode)
 
 
-def render(pages, mode):
-    """Return PDF bytes. ``pages`` is a list of line lists."""
+def _rule(page, segments):
+    """Drawn table rules (corpus v4 ruled PDFs): thin vector lines."""
+    import fitz
+    for x0, y0, x1, y1 in segments:
+        page.draw_line(fitz.Point(x0, y0), fitz.Point(x1, y1), color=(0, 0, 0), width=0.6)
+
+
+def _degraded_scan(source, degrade, seed):
+    """Raster of ``source`` with the damage of a poor production scan.
+
+    ``degrade`` keys (all optional): ``dpi`` scan resolution; ``faint``
+    fraction of ink density kept (0.4 = pale toner); ``skew`` degrees of
+    rotation; ``noise`` Gaussian sigma in grey levels; ``jpeg`` quality.
+    Deterministic: the noise generator is seeded per page.
+    """
+    import io
+    import fitz
+    import numpy
+    from PIL import Image
+    pixmap = source.get_pixmap(dpi=degrade.get('dpi', SCAN_DPI), colorspace=fitz.csGRAY, alpha=False)
+    image = Image.frombytes('L', (pixmap.width, pixmap.height), pixmap.samples)
+    if degrade.get('faint'):
+        keep = degrade['faint']
+        image = image.point(lambda v: int(round(255 - (255 - v) * keep)))
+    if degrade.get('skew'):
+        image = image.rotate(degrade['skew'], resample=Image.BICUBIC, expand=False, fillcolor=255)
+    if degrade.get('noise'):
+        pixels = numpy.asarray(image, dtype=numpy.float64)
+        pixels = pixels + numpy.random.default_rng(seed).normal(0.0, degrade['noise'], pixels.shape)
+        image = Image.fromarray(numpy.clip(numpy.rint(pixels), 0, 255).astype(numpy.uint8), 'L')
+    buffer = io.BytesIO()
+    if degrade.get('jpeg'):
+        image.save(buffer, format='JPEG', quality=degrade['jpeg'])
+    else:
+        image.save(buffer, format='PNG')
+    return buffer.getvalue()
+
+
+def render(pages, mode, degrade=None, rules=None):
+    """Return PDF bytes. ``pages`` is a list of line lists.
+
+    ``degrade`` (scan modes) and ``rules`` (a list of line segments per page)
+    were added in corpus v4; without them the output is the v3 output.
+    """
     import fitz
     document = fitz.open()
-    for lines in pages:
+    for number, lines in enumerate(pages):
         page = document.new_page(width=PAGE_WIDTH, height=PAGE_HEIGHT)
+        segments = rules[number] if rules else ()
         if mode == 'digital':
             _draw(page, lines, use_ocr=False)
+            _rule(page, segments)
             continue
         printed = fitz.open()
         source = printed.new_page(width=PAGE_WIDTH, height=PAGE_HEIGHT)
         _draw(source, lines, use_ocr=False)
-        pixmap = source.get_pixmap(dpi=SCAN_DPI, colorspace=fitz.csGRAY, alpha=False)
-        page.insert_image(page.rect, stream=pixmap.tobytes('png'))
+        _rule(source, segments)
+        if degrade:
+            page.insert_image(page.rect, stream=_degraded_scan(source, degrade, seed=number + 1))
+        else:
+            pixmap = source.get_pixmap(dpi=SCAN_DPI, colorspace=fitz.csGRAY, alpha=False)
+            page.insert_image(page.rect, stream=pixmap.tobytes('png'))
         printed.close()
         if mode == 'scan_text_layer':
             _draw(page, lines, use_ocr=True, render_mode=3)
@@ -542,6 +590,10 @@ def build():
     entries += _compensating_entries(generic_opening=generic_closing, card_opening=card_closing,
                                      merrick_opening=merrick_closing,
                                      savings=savings, checking=checking)
+    # Corpus v4: families, damage and outcomes v1-v3 did not cover. Appended
+    # so every earlier file keeps its bytes and its ground truth.
+    from benchmarks.statement_automation.corpus_v4 import v4_entries
+    entries += v4_entries()
     return entries
 
 
@@ -757,12 +809,15 @@ def deepcopy_rows(shares):
     return [(share, label, opening, [dict(item) for item in rows_]) for share, label, opening, rows_ in shares]
 
 
-def write(out):
+def write(out, only=None):
+    """Render the corpus. ``only`` (development aid) keeps file names containing it."""
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
     manifest = dict(version=CORPUS_VERSION, synthetic=True, files=[])
     produced = {}
     for entry in build():
+        if only and only not in entry['filename']:
+            continue
         if 'copy_of' in entry:
             data = produced[entry['copy_of']]
             original = next(f for f in manifest['files'] if f['filename'] == entry['copy_of'])
@@ -770,9 +825,12 @@ def write(out):
                           periods=[{**p, 'expected': 'duplicate', 'defects': ['exact_duplicate_copy'],
                                     'duplicate_of': entry['copy_of']} for p in original['periods']])
         else:
-            data = render(entry['pages'], entry['mode'])
+            data = render(entry['pages'], entry['mode'], entry.get('degrade'), entry.get('rules'))
             record = dict(filename=entry['filename'], mode=entry['mode'], pages=len(entry['pages']),
                           periods=entry['periods'])
+            for key in ('degrade', 'missing_pages', 'ruled'):
+                if entry.get(key):
+                    record[key] = entry[key]
         produced[entry['filename']] = data
         (out / entry['filename']).write_bytes(data)
         record['sha256'] = hashlib.sha256(data).hexdigest()
@@ -787,8 +845,9 @@ def write(out):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument('--out', default=str(Path(__file__).with_name('corpus')))
+    parser.add_argument('--only', help='Development aid: render only files whose name contains this text.')
     args = parser.parse_args(argv)
-    manifest = write(args.out)
+    manifest = write(args.out, args.only)
     periods = sum(len(f['periods']) for f in manifest['files'])
     print(f"Wrote {len(manifest['files'])} PDFs, {periods} statement periods to {args.out}")
 

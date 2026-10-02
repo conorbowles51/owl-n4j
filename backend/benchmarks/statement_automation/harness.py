@@ -256,16 +256,16 @@ def simulate_correction(proposal, truth, assess, initial_request):
 # The run
 # ---------------------------------------------------------------------------
 
-def run(out, python, concurrency):
+def run(out, python, concurrency, corpus=CORPUS):
     from sqlalchemy import select
     out.mkdir(parents=True, exist_ok=True)
     run_started = time.monotonic()
-    manifest = json.loads((CORPUS / 'manifest.json').read_text())
+    manifest = json.loads((corpus / 'manifest.json').read_text())
     source_dir = out / 'sources'
     source_dir.mkdir(exist_ok=True)
     corpus_problems = []
     for record in manifest['files']:
-        data = (CORPUS / record['filename']).read_bytes()
+        data = (corpus / record['filename']).read_bytes()
         if hashlib.sha256(data).hexdigest() != record['sha256']:
             corpus_problems.append(record['filename'])
         (source_dir / record['filename']).write_bytes(data)
@@ -388,6 +388,7 @@ def run(out, python, concurrency):
                          status=item['status'], can_import=bool(item.get('can_import')),
                          truth_id=truth['id'] if truth else None, family=truth['family'] if truth else 'unmatched',
                          expected=truth['expected'] if truth else None, defects=truth['defects'] if truth else [],
+                         added_in=truth.get('added_in', 'v1-v3') if truth else None,
                          reasons=dict(reasons), problems=[p.get('message', '') for p in item.get('problems', [])][:12],
                          read=dict(holder=item.get('holder'), account=item.get('account'),
                                    institution=item.get('institution'), currency=item.get('currency'),
@@ -404,7 +405,8 @@ def run(out, python, concurrency):
     for truth in missing:
         periods.append(dict(item_id=None, filename=truth['filename'], statement_id=None, status='not_detected',
             can_import=False, truth_id=truth['id'], family=truth['family'], expected=truth['expected'],
-            defects=truth['defects'], reasons={'not_detected': 1}, problems=[], read={}))
+            defects=truth['defects'], added_in=truth.get('added_in', 'v1-v3'), reasons={'not_detected': 1},
+            problems=[], read={}))
 
     # Group import of everything the batch offers, exactly once.
     import_result = dict(queued=0)
@@ -424,7 +426,7 @@ def run(out, python, concurrency):
     repairs = {name: repair_summary(r.get('source_locations')) for name, r in readings.items() if 'error' not in r}
     result = dict(
         generated_at=datetime.now(timezone.utc).isoformat(timespec='seconds'),
-        corpus=dict(version=manifest['version'], files=len(manifest['files']), periods=len(truths)),
+        corpus=dict(version=manifest['version'], files=len(manifest['files']), periods=len(truths), path=str(corpus)),
         code=dict(commit=_git('rev-parse', 'HEAD'), dirty=bool(_git('status', '--porcelain', '--', 'backend', 'evidence-engine'))),
         environment=dict(cpus=os.cpu_count(), load_average_before=load_before, load_average_after=os.getloadavg(),
                          python=sys.version.split()[0], engine_python=python, tesseract=_tesseract(),
@@ -506,14 +508,19 @@ def verify_ledger(db, periods, final_items, truths, Transaction, Account, select
         remaining = list(expected)
         for row in rows:
             account = db.get(Account, row.account_id)
-            identity = (row.amount_minor, row.direction, row.currency, row.posted_date or row.transaction_date)
+            # The printed transaction date is the truth ``date``. A layout that
+            # also prints a posting date carries it as ``posted_date`` (v4);
+            # before v4 every posting date equalled the transaction date.
+            identity = (row.amount_minor, row.direction, row.currency, row.transaction_date or row.posted_date)
             key = (truth['family'] if truth else '', truth['account'] if truth else '', row.amount_minor, row.direction,
-                   str(row.posted_date or row.transaction_date))
+                   str(row.transaction_date or row.posted_date))
             seen[key] += 1
             match = next((r for r in remaining if r['amount_minor'] == row.amount_minor and r['direction'] == row.direction
                           and str(identity[3]) == r['date']), None)
             if match is not None:
                 remaining.remove(match)
+                if match.get('posted_date') and str(row.posted_date) != match['posted_date']:
+                    errors['posted_date'] += 1
             else:
                 near = next((r for r in remaining if _norm(r['description']) in _norm(row.description)), None)
                 if near is None:
@@ -535,7 +542,7 @@ def verify_ledger(db, periods, final_items, truths, Transaction, Account, select
         report['transactions'] += len(rows)
         report['by_period'][period['truth_id'] or period['item_id']] = dict(saved=len(rows), errors=dict(errors))
         report['critical_errors'].update(errors)
-        if errors or (truth and truth['expected'] == 'hold'):
+        if errors or (truth and truth['expected'] in HELD):
             report['wrongly_admitted'].append(dict(period=period['truth_id'], expected=truth['expected'] if truth else None,
                                                    errors=dict(errors)))
     report['duplicate_contributions'] = sum(count - 1 for count in seen.values() if count > 1)
@@ -544,6 +551,10 @@ def verify_ledger(db, periods, final_items, truths, Transaction, Account, select
 
 
 ACTION_COST = dict(edit=1, decision=1, add_row=2)  # add_row: enter values + choose its place
+# Outcomes that must never reach the ledger: a period the source cannot
+# complete (``hold``) and a document that is not a statement (``not_statement``,
+# e.g. a teller receipt uploaded with statements). Admitting either is wrong.
+HELD = ('hold', 'not_statement')
 GROUPABLE = ('holder', 'account', 'institution', 'currency', 'period_start_unprinted')
 
 
@@ -562,7 +573,7 @@ def _period_effort(p):
     """(per-period actions, non-groupable actions, groupable keys, fixable)."""
     if p['can_import'] or p['status'] == 'duplicate_ignored':
         return 0, 0, set(), True
-    if p['expected'] in ('hold', 'duplicate'):
+    if p['expected'] in HELD + ('duplicate',):
         return 2, 2, set(), True  # open the statement + record hold / leave unimported
     correction = p.get('correction')
     if correction is None:
@@ -579,7 +590,11 @@ def metrics(result):
     families = sorted({p['family'] for p in periods})
 
     def block(subset):
-        unique = [p for p in subset if p['expected'] != 'duplicate']
+        # A batch item matched to no ground-truth period (for example one
+        # unclassified item covering a whole multi-period PDF) is reported
+        # separately; the periods it failed to present count as not detected.
+        unique = [p for p in subset if p['expected'] not in ('duplicate', None)]
+        unmatched_items = [p for p in subset if p['expected'] is None]
         copies = [p for p in subset if p['expected'] == 'duplicate']
         total = len(unique)
         ready = [p for p in unique if p['can_import']]
@@ -612,8 +627,8 @@ def metrics(result):
                     recoverable_periods=len(auto), recoverable_ready=len(auto_ready),
                     recoverable_ready_pct=round(100 * len(auto_ready) / len(auto), 1) if auto else None,
                     decision_periods=sum(p['expected'] == 'decision' for p in unique),
-                    hold_periods=sum(p['expected'] == 'hold' for p in unique),
-                    holds_kept=sum(p['expected'] == 'hold' and not p['can_import'] for p in unique),
+                    hold_periods=sum(p['expected'] in HELD for p in unique),
+                    holds_kept=sum(p['expected'] in HELD and not p['can_import'] for p in unique),
                     duplicate_copies=len(copies),
                     duplicate_copies_held_automatically=sum(p['status'] == 'duplicate_ignored' for p in copies),
                     duplicate_copies_offered_for_import=sum(p['can_import'] for p in copies),
@@ -624,8 +639,16 @@ def metrics(result):
                     blocked_not_fixable_by_field_edits=unresolved,
                     proposal_critical_errors_in_ready_periods=dict(proposal_errors),
                     valid_but_wrong_values_proposed=dict(wrong_values),
-                    wrongly_ready=[p['truth_id'] for p in unique if p['can_import'] and p['expected'] == 'hold'])
+                    wrongly_ready=[p['truth_id'] for p in unique if p['can_import'] and p['expected'] in HELD],
+                    unmatched_items=len(unmatched_items),
+                    unmatched_items_offered_for_import=sum(p['can_import'] for p in unmatched_items))
+    defects = sorted({d for p in periods for d in p['defects']} | {'(none)'})
+    subsets = sorted({p.get('added_in') or 'unmatched' for p in periods})
     return dict(overall=block(periods), by_family={f: block([p for p in periods if p['family'] == f]) for f in families},
+                by_defect={d: block([p for p in periods if d in p['defects'] or (d == '(none)' and not p['defects'])])
+                           for d in defects},
+                by_corpus_version={v: block([p for p in periods if (p.get('added_in') or 'unmatched') == v])
+                                   for v in subsets},
                 by_expected={e: block([p for p in periods if (p['expected'] or 'unmatched') == e])
                              for e in sorted({p['expected'] or 'unmatched' for p in periods})})
 
@@ -647,7 +670,9 @@ def render_summary(result):
              f"{ledger['admitted_periods']} periods); duplicate ledger contributions {ledger['duplicate_contributions']}; "
              f"held periods kept out {o['holds_kept']}/{o['hold_periods']}; exact copies held automatically "
              f"{o['duplicate_copies_held_automatically']}/{o['duplicate_copies']}. Valid-looking but wrong values "
-             f"proposed before review (any period): {sum(o['valid_but_wrong_values_proposed'].values())}.", '',
+             f"proposed before review (any period): {sum(o['valid_but_wrong_values_proposed'].values())}. Batch items "
+             f"matched to no ground-truth period: {o['unmatched_items']} ({o['unmatched_items_offered_for_import']} "
+             f"offered for import).", '',
              f"Human actions to make every blocked period ready or decided: {o['human_actions_per_period']} "
              f"one statement at a time; {o['human_actions_grouped']} using today's grouped decisions "
              f"({', '.join(o['shared_decisions']) or 'none'}). Field edits {o['field_edits']}, decisions {o['decisions']}, "
@@ -660,6 +685,16 @@ def render_summary(result):
         lines.append(f"| {family} | {f['periods']} | {f['ready_without_edits']} ({f['ready_without_edits_pct']}%) | "
                      f"{f['recoverable_ready']}/{f['recoverable_periods']} | {f['human_actions_per_period']} / "
                      f"{f['human_actions_grouped']} | {reasons} |")
+    def short(block):
+        return (f"{block['ready_without_edits']}/{block['periods']} ({block['ready_without_edits_pct']}%) | "
+                f"{block['recoverable_ready']}/{block['recoverable_periods']} | {block['holds_kept']}/{block['hold_periods']} | "
+                f"{', '.join(f'{k} {v}' for k, v in block['blocking_reasons'].items()) or '—'} |")
+    lines += ['', '| Corpus subset | Ready w/o edits | Recoverable ready | Held kept out | Blocking reasons |',
+              '|---|---|---|---|---|']
+    lines += [f"| {name} | {short(block)}" for name, block in m.get('by_corpus_version', {}).items()]
+    lines += ['', '| Defect / damage type | Ready w/o edits | Recoverable ready | Held kept out | Blocking reasons |',
+              '|---|---|---|---|---|']
+    lines += [f"| {name} | {short(block)}" for name, block in m.get('by_defect', {}).items()]
     lines += ['', '| Period | Expected | Defects | Batch status | Importable | Blocking reasons | Simulated actions |',
               '|---|---|---|---|---|---|---|']
     for p in sorted(result['periods'], key=lambda p: p['truth_id'] or ''):
@@ -706,10 +741,12 @@ def main(argv=None):
     parser.add_argument('--engine-python', default=sys.executable,
                         help='Interpreter with the evidence engine dependencies (default: this one).')
     parser.add_argument('--concurrency', type=int, default=2)
+    parser.add_argument('--corpus', default=str(CORPUS),
+                        help='Corpus directory with manifest.json (default: the committed corpus).')
     args = parser.parse_args(argv)
     out = Path(args.out) if args.out else Path(os.environ.get('TMPDIR', '/tmp')) / (
         f"loupe-statement-benchmark-{os.environ.get('USER') or os.getuid()}-{datetime.now():%Y%m%d-%H%M%S}")
-    result = run(out, args.engine_python, args.concurrency)
+    result = run(out, args.engine_python, args.concurrency, Path(args.corpus))
     print((out / 'summary.md').read_text())
     print(f'Full results: {out / "results.json"}')
     return 0 if not result['ledger']['wrongly_admitted'] else 1
