@@ -31,7 +31,7 @@ from pathlib import Path
 PAGE_WIDTH, PAGE_HEIGHT = 600, 800
 FONT_SIZE = 7
 SCAN_DPI = 200
-CORPUS_VERSION = 'statement-automation-corpus-v1'
+CORPUS_VERSION = 'statement-automation-corpus-v2'
 
 
 # ---------------------------------------------------------------------------
@@ -59,6 +59,28 @@ def damage(text):
         if index >= 0:
             return text[:index] + bad + text[index + 1:]
     return text[:-1] + '?'
+
+
+def shift(text, delta_minor):
+    """``text`` misread by exactly one digit so that its value moves by ``delta_minor``.
+
+    The result is a valid-looking amount in the same printed format, the shape
+    of an OCR confusion such as 3/8, 5/6, 1/7 or 0/8. Raises if no single-digit
+    change produces that value, so a corpus case cannot silently become a
+    different defect.
+    """
+    sign = '-' if text.startswith('-') else ''
+    trailing = '-' if text.endswith('-') else ''
+    dollar = '$' in text
+    digits = int(''.join(ch for ch in text if ch.isdigit()))
+    value = -digits if sign or trailing else digits
+    moved = value + delta_minor
+    if (moved < 0) != (value < 0) or moved == 0:
+        raise ValueError(f'{text} cannot move by {delta_minor} without changing sign')
+    result = money(moved, dollar=dollar, sign=sign) + trailing
+    if len(result) != len(text) or sum(a != b for a, b in zip(result, text)) != 1:
+        raise ValueError(f'{text} -> {result} is not a single-digit misreading')
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -127,13 +149,16 @@ def _long(day):
 
 
 def generic_statement(*, holder, account, start, end, opening, rows, include_holder=True,
-                      include_account=True, omit=(), damage_cells=(), ocr_text=None):
+                      include_account=True, omit=(), damage_cells=(), ocr_text=None, shifts=None):
     """Return (pages, truth rows, closing). ``rows`` carry the true payments.
 
     ``omit`` removes printed rows (by index) from the page while the printed
     balances still include them, as a missing physical line would.
     ``damage_cells`` names (row index, 'amount'|'balance') OCR defects.
+    ``shifts`` maps (row index, 'amount'|'balance') to a value change that the
+    OCR layer shows as a single misread digit (a valid-looking wrong value).
     """
+    shifts = shifts or {}
     lines = [(40, [L(40, 'Bank: Harbour Synthetic Bank')])]
     if include_holder:
         lines.append((54, [L(40, f'Account Name: {holder}')]))
@@ -153,8 +178,13 @@ def generic_statement(*, holder, account, start, end, opening, rows, include_hol
         amount_text = money(item['amount_minor'])
         balance_text = money(balance)
         ocr = (ocr_text or {}).get(index) or (damage(amount_text) if (index, 'amount') in damage_cells else None)
+        if (index, 'amount') in shifts:
+            ocr = shift(amount_text, shifts[index, 'amount'])
         amount_cell = R(380 if item['direction'] == 'credit' else 460, amount_text, ocr)
-        balance_cell = R(560, balance_text, damage(balance_text) if (index, 'balance') in damage_cells else None)
+        balance_ocr = damage(balance_text) if (index, 'balance') in damage_cells else None
+        if (index, 'balance') in shifts:
+            balance_ocr = shift(balance_text, shifts[index, 'balance'])
+        balance_cell = R(560, balance_text, balance_ocr)
         lines.append((y, [L(40, item['date']), L(120, item['description']), amount_cell, balance_cell]))
         y += 14
     lines.append((y, [L(40, end.isoformat()), L(120, 'Closing Balance'), R(560, money(balance))]))
@@ -219,7 +249,7 @@ def credit_one_page(*, account, start, end, opening, rows, interest=0, holder='E
 # ---------------------------------------------------------------------------
 
 def merrick_page(*, account, closing_day, opening, rows, holder='EXAMPLE HOLDER', include_holder=True,
-                 damage_cells=()):
+                 damage_cells=(), shifts=None):
     purchases = sum(r['amount_minor'] for r in rows if r['direction'] == 'debit')
     payments = sum(r['amount_minor'] for r in rows if r['direction'] == 'credit')
     closing = opening + purchases - payments
@@ -241,7 +271,10 @@ def merrick_page(*, account, closing_day, opening, rows, holder='EXAMPLE HOLDER'
     y = 380
     for index, item in enumerate(rows):
         text = money(item['amount_minor']) + ('-' if item['direction'] == 'credit' else '')
-        cell = R(535, text, damage(text) if (index, 'amount') in damage_cells else None)
+        ocr = damage(text) if (index, 'amount') in damage_cells else None
+        if (shifts or {}).get(index):
+            ocr = shift(text, shifts[index])
+        cell = R(535, text, ocr)
         lines.append((y, [L(30, _mmdd(item['date'])), L(150, f'2413{closing_day:%m%d}{index:04d}ABCDE'),
                           L(270, item['description']), cell]))
         y += 15
@@ -259,8 +292,13 @@ def merrick_page(*, account, closing_day, opening, rows, holder='EXAMPLE HOLDER'
 # Family: Andrews share statement (several shares/accounts per period)
 # ---------------------------------------------------------------------------
 
-def andrews_page(*, account, start, end, shares, printed_page=1, damage_cells=(), omit=()):
-    """``shares`` is a list of (share id, label, opening, rows)."""
+def andrews_page(*, account, start, end, shares, printed_page=1, damage_cells=(), omit=(), shifts=None):
+    """``shares`` is a list of (share id, label, opening, rows).
+
+    ``shifts`` maps (share, row index, 'amount'|'balance') or (share, 'ending')
+    to a value change the OCR layer shows as one misread digit.
+    """
+    shifts = shifts or {}
     header = [[L(420, 'Account Statement')], [L(40, 'Andrews')], [L(300, account)],
               [L(300, f'{start:%m/%d/%y} {end:%m/%d/%y}')], [L(300, str(printed_page))],
               [L(20, '>1234567890<')], [L(20, 'EXAMPLE PERSON')], [L(20, 'JOINT PERSON')],
@@ -280,11 +318,19 @@ def andrews_page(*, account, start, end, shares, printed_page=1, damage_cells=()
                 continue
             amount_text = ('-' if delta < 0 else '') + money(item['amount_minor'])
             balance_text = money(balance)
-            amount_cell = R(340, amount_text, damage(amount_text) if (share, index, 'amount') in damage_cells else None)
-            balance_cell = R(380, balance_text, damage(balance_text) if (share, index, 'balance') in damage_cells else None)
+            amount_ocr = damage(amount_text) if (share, index, 'amount') in damage_cells else None
+            balance_ocr = damage(balance_text) if (share, index, 'balance') in damage_cells else None
+            if (share, index, 'amount') in shifts:
+                amount_ocr = shift(amount_text, shifts[share, index, 'amount'])
+            if (share, index, 'balance') in shifts:
+                balance_ocr = shift(balance_text, shifts[share, index, 'balance'])
+            amount_cell = R(340, amount_text, amount_ocr)
+            balance_cell = R(380, balance_text, balance_ocr)
             lines.append((y, [L(15, _mmdd(item['date'])), L(75, item['description']), amount_cell, balance_cell]))
             y += 12
-        lines.append((y, [L(15, _mmdd(end.isoformat())), L(75, 'Ending Balance'), R(380, money(balance))]))
+        ending = money(balance)
+        ending_ocr = shift(ending, shifts[share, 'ending']) if (share, 'ending') in shifts else None
+        lines.append((y, [L(15, _mmdd(end.isoformat())), L(75, 'Ending Balance'), R(380, ending, ending_ocr)]))
         y += 12
         closings[share] = balance
     return lines, closings
@@ -339,6 +385,7 @@ def build():
         entries.append(dict(filename=f'generic-{month:02d}-{"-".join(defects) or "clean"}.pdf', mode=mode,
                             pages=pages, periods=[truth]))
         opening = closing
+    generic_closing = opening
     # Exact duplicate copy of January: identical bytes, different file name.
     entries.append(dict(filename='generic-01-copy-of-clean.pdf', copy_of='generic-01-clean.pdf'))
 
@@ -383,6 +430,7 @@ def build():
             row('2024-06-01', 'EXAMPLE GARAGE 6C', 1879, 'debit')]
     lines, truth_rows, closing = credit_one_page(account=card, start=start, end=end, opening=balance, rows=rows,
                                                  interest=200, ocr_text={0: '28.11', 2: '15.79'})
+    card_closing = closing
     cancelling = (lines, period_truth(family='credit-one-card', institution='Credit One Bank',
         account=card.replace(' ', ''), holder='EXAMPLE PERSON', currency='USD', start=start.isoformat(),
         end=end.isoformat(), opening=balance, closing=closing, rows=truth_rows, expected='auto',
@@ -426,6 +474,7 @@ def build():
             holder_printed=options.get('include_holder', True))
         merrick.append((lines, truth, options.get('damage_cells')))
         balance = closing
+    merrick_closing = balance
     entries.append(dict(filename='merrick-two-statements.pdf', mode='digital',
                         pages=[merrick[0][0], merrick[1][0]], periods=[merrick[0][1], merrick[1][1]]))
     entries.append(dict(filename='merrick-2021-06-ocr-amount-digit.pdf', mode='scan_text_layer',
@@ -468,6 +517,104 @@ def build():
                 notes=f'share {share}') | dict(share=share))
         entries.append(dict(filename=f'andrews-2020-{month:02d}-{label}.pdf', mode=mode, pages=[lines], periods=periods))
         savings, checking = closings_by_share['0000'], closings_by_share['0040']
+    entries += _compensating_entries(generic_opening=generic_closing, card_opening=card_closing,
+                                     merrick_opening=merrick_closing,
+                                     savings=savings, checking=checking)
+    return entries
+
+
+def _compensating_entries(*, generic_opening, card_opening, merrick_opening, savings, checking):
+    """Corpus v2: valid-looking OCR misreads that every printed control accepts.
+
+    Each case is a scan whose image prints the true values while its OCR layer
+    carries single-digit confusions (5/8, 3/0, 7/1, 0/6, 0/3) arranged so
+    that totals, endpoint balances and running balances all still reconcile.
+    Clean scans of the same layouts check that verification does not hold
+    correct readings. Entries are appended after v1 so every v1 file keeps its
+    bytes and results stay comparable.
+    """
+    entries = []
+    holder, account = 'Northwind Synthetic Trading LLC', '55501234'
+    # Generic running-balance statement: a purchase read 3.00 high, its printed
+    # balance read 3.00 low and the next purchase read 3.00 low, so every
+    # running balance and the closing balance still agree.
+    opening = generic_opening
+    for month, shifts, defects in (
+            (11, {(1, 'amount'): 300, (1, 'balance'): -300, (2, 'amount'): -300},
+             ['ocr_valid_but_wrong_running_balance_chain']),
+            (12, {}, ['clean_scan_text_layer'])):
+        start, end = date(2023, month, 1), _month_end(2023, month)
+        rows = _generic_rows(month, month)
+        pages, closing = generic_statement(holder=holder, account=account, start=start, end=end,
+                                           opening=opening, rows=rows, shifts=shifts)
+        truth = period_truth(family='generic-labelled', institution='Harbour Synthetic Bank', account=account,
+            holder=holder, currency='USD', start=start.isoformat(), end=end.isoformat(), opening=opening,
+            closing=closing, rows=rows, expected='auto', defects=defects)
+        entries.append(dict(filename=f'generic-{month:02d}-{"-".join(defects)}.pdf', mode='scan_text_layer',
+                            pages=pages, periods=[truth]))
+        opening = closing
+
+    # Credit One: 17.11 read as 11.11 (7/1) and 30.62 as 36.62 (0/6); then a
+    # clean scan of the next cycle.
+    card = '4111 1111 1111 1111'
+    balance = card_opening
+    for start, end, rows, ocr_text, defects in (
+            (date(2024, 6, 16), date(2024, 7, 15),
+             [row('2024-06-19', 'EXAMPLE PHARMACY 7A', 1711, 'debit'),
+              row('2024-06-25', 'PAYMENT RECEIVED 7B', 4000, 'credit'),
+              row('2024-07-02', 'EXAMPLE PARKING 7C', 3062, 'debit')],
+             {0: '11.11', 2: '36.62'}, ['ocr_valid_but_wrong_amounts_cancelling_7_1_0_6']),
+            (date(2024, 7, 16), date(2024, 8, 15),
+             [row('2024-07-18', 'EXAMPLE BOOKSHOP 8A', 2934, 'debit'),
+              row('2024-07-26', 'PAYMENT RECEIVED 8B', 4000, 'credit'),
+              row('2024-08-03', 'EXAMPLE GARAGE 8C', 1598, 'debit')],
+             {}, ['clean_scan_text_layer'])):
+        lines, truth_rows, closing = credit_one_page(account=card, start=start, end=end, opening=balance,
+                                                     rows=rows, interest=200, ocr_text=ocr_text)
+        truth = period_truth(family='credit-one-card', institution='Credit One Bank', account=card.replace(' ', ''),
+            holder='EXAMPLE PERSON', currency='USD', start=start.isoformat(), end=end.isoformat(), opening=balance,
+            closing=closing, rows=truth_rows, expected='auto', defects=defects)
+        cycle = 7 if ocr_text else 8
+        entries.append(dict(filename=f'credit-one-cycle-{cycle}-{"-".join(defects)}.pdf', mode='scan_text_layer',
+                            pages=[lines], periods=[truth]))
+        balance = closing
+
+    # Merrick: 15.48 read as 18.48 (5/8) and 103.34 as 100.34 (3/0); the
+    # purchases total and new balance are unchanged.
+    closing_day = date(2021, 8, 25)
+    rows = [row('2021-08-06', 'EXAMPLE STORE 4A', 1548, 'debit'),
+            row('2021-08-10', 'PAYMENT THANK YOU 4B', 2500, 'credit'),
+            row('2021-08-20', 'EXAMPLE DINER 4C', 10334, 'debit')]
+    lines, truth_rows, closing = merrick_page(account='1111 2222 3333 4444', closing_day=closing_day,
+        opening=merrick_opening, rows=rows, shifts={0: 300, 2: -300})
+    truth = period_truth(family='merrick-card', institution='Merrick Bank', account='1111222233334444',
+        holder='EXAMPLE HOLDER', currency='USD', start=None, end=closing_day.isoformat(), opening=merrick_opening,
+        closing=closing, rows=truth_rows, expected='auto', start_printed=False,
+        defects=['start_not_printed', 'ocr_valid_but_wrong_amounts_cancelling_5_8_3_0'])
+    entries.append(dict(filename='merrick-2021-08-ocr-valid-but-wrong-cancelling.pdf', mode='scan_text_layer',
+                        pages=[lines], periods=[truth]))
+
+    # Andrews: a deposit of 1,500.00 read as 1,530.00 (0/3) with its running
+    # balance and the share's ending balance misread the same way.
+    month = 9
+    start, end = date(2020, month, 1), _month_end(2020, month)
+    save_rows = [row(date(2020, month, 3).isoformat(), 'Deposit Online Banking Transfer From Share 0040', 2000, 'credit'),
+                 row(date(2020, month, 21).isoformat(), 'Deposit Dividend', 13, 'credit')]
+    check_rows = [row(date(2020, month, 3).isoformat(), 'Withdrawal Online Banking Transfer To Share 0000', 2000, 'debit'),
+                  row(date(2020, month, 9).isoformat(), f'Withdrawal Debit Card EXAMPLE MARKET {month}', 4567 + month, 'debit'),
+                  row(date(2020, month, 15).isoformat(), 'Deposit ACH EXAMPLE EMPLOYER PAYROLL', 150000, 'credit')]
+    lines, closings_by_share = andrews_page(account='123456789', start=start, end=end,
+        shares=[('0000', 'BASE SHARE SAVINGS', savings, save_rows), ('0040', 'FREE CHECKING', checking, check_rows)],
+        shifts={('0040', 2, 'amount'): 3000, ('0040', 2, 'balance'): 3000, ('0040', 'ending'): 3000})
+    periods = []
+    for share, opening_, rows_ in (('0000', savings, save_rows), ('0040', checking, check_rows)):
+        defects = ['ocr_valid_but_wrong_amount_balance_and_ending'] if share == '0040' else []
+        periods.append(period_truth(family='andrews-share', institution='Andrews', account='123456789',
+            holder='EXAMPLE PERSON', currency='USD', start=start.isoformat(), end=end.isoformat(),
+            opening=opening_, closing=closings_by_share[share], rows=rows_, expected='auto', defects=defects,
+            notes=f'share {share}') | dict(share=share))
+    entries.append(dict(filename='andrews-2020-09-ocr-valid-but-wrong-consistent.pdf', mode='scan_text_layer',
+                        pages=[lines], periods=periods))
     return entries
 
 
