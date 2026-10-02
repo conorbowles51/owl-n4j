@@ -119,6 +119,82 @@ def build_live(out, manifest, readings):
     return engine, factory, case_id, dict(prepared=status['counts'], final=final['counts'])
 
 
+def run_campaign(factory, case_id, out, python, concurrency):
+    """Run the real campaign: snapshot, hand-off, batch re-read with the current engine, Import all."""
+    from sqlalchemy import select
+    from postgres.models.evidence import EvidenceDocumentText, EvidenceFile, EvidenceTableGeometry
+    from postgres.models.financial_import_batches import FinancialImportBatch as Batch
+    from postgres.models.financial_recovery import FinancialRecoveryItem as Item, FinancialRecoveryRun as Run
+    from services.financial import deployment_recovery as recovery, import_batches as batches
+    from services.financial.decisions import Actor
+    from services.financial.recovery_campaigns import READER_RECOVERY
+    with factory() as db:
+        cutoff = recovery.activate(db, READER_RECOVERY.release)
+        recovery.snapshot_case(db, case_id, cutoff, READER_RECOVERY)
+        run = db.scalar(select(Run).where(Run.case_id == case_id, Run.release == READER_RECOVERY.release))
+        items = list(db.scalars(select(Item.id).where(Item.run_id == run.id)))
+        selected = {Path(db.get(EvidenceFile, item.file_id).stored_path).name: Path(db.get(EvidenceFile, item.file_id).stored_path)
+                    for item in db.scalars(select(Item).where(Item.run_id == run.id))}
+    estimator = _script('financial_reader_recovery_estimate')
+    scratch = out / 'campaign-reads'
+    scratch.mkdir(exist_ok=True)
+    readings = estimator.engine_reread(selected, scratch, python, concurrency) if selected else {}
+    for item_id in items:
+        recovery.recover_one(factory, item_id, Path)
+
+    async def process_files(session, *, case_id, file_ids, preparation_mode, force_reprocess, requested_by_user_id):
+        jobs = []
+        for file_id in file_ids:
+            record = session.get(EvidenceFile, file_id)
+            parent = session.get(EvidenceFile, uuid.UUID(record.metadata_['statement_parent_evidence_id']))
+            reading = readings[Path(parent.stored_path).name]
+            job = uuid.uuid4()
+            if 'error' in reading:
+                record.status, record.last_error = 'failed', reading['error']
+            else:
+                session.add(EvidenceDocumentText(evidence_file_id=file_id, engine_job_id=job, content=reading['content'],
+                    content_sha256=reading['content_sha256'], character_count=reading['character_count'],
+                    source_locations=reading['source_locations'], processing_manifest=reading['processing_manifest']))
+                for page, entries in reading['geometry'].items():
+                    session.add(EvidenceTableGeometry(evidence_file_id=file_id, page_number=int(page), engine_job_id=job, payload=entries))
+                record.status, record.engine_job_id = 'processed', str(job)
+            jobs.append(str(job))
+        session.commit()
+        return dict(job_ids=jobs)
+
+    with factory() as db:
+        batch_ids = list(db.scalars(select(Batch.id).where(Batch.case_id == case_id)))
+    for batch_id in batch_ids:
+        for _ in range(400):
+            asyncio.run(batches.advance_batch(factory, batch_id, Path, process_files))
+            with factory() as db:
+                if batches.batch_for(db, case_id, batch_id).status != 'preparing':
+                    break
+    for item_id in items:
+        recovery.recover_one(factory, item_id, Path)
+    with factory() as db:
+        outcomes = Counter(db.scalars(select(Item.status).where(Item.run_id == run.id)))
+        periods = Counter()
+        for item in db.scalars(select(Item).where(Item.run_id == run.id)):
+            periods.update(item.result.get('periods') or {})
+    imported = Counter()
+    for batch_id in batch_ids:
+        with factory() as db:
+            status = batches.batch_status(db, case_id=case_id, batch_id=batch_id, limit=100_000)
+            batch = batches.batch_for(db, case_id, batch_id)
+            actor = Actor(**{**batch.actor, 'user_id': uuid.UUID(batch.actor['user_id'])})
+        if status['available_statements']:
+            with factory() as db:
+                imported['queued'] += batches.queue_import(db, case_id=case_id, batch_id=batch_id,
+                    expected_revision=status['ready_revision'], actor=actor)['queued']
+            for _ in range(400):
+                asyncio.run(batches.advance_batch(factory, batch_id, Path, process_files))
+                with factory() as db:
+                    if batches.batch_for(db, case_id, batch_id).status != 'preparing':
+                        break
+    return dict(scheduled=len(items), outcomes=dict(outcomes), new_reading_periods=dict(periods), import_all=dict(imported))
+
+
 def admitted_truth(factory, case_id, manifest):
     """Which admitted statement reviews hold a value that differs from the printed truth."""
     from sqlalchemy import select
@@ -184,6 +260,14 @@ def main(argv=None):
     audit = misread.audit(factory, case_id, python=args.engine_python, concurrency=args.concurrency,
         scratch_root=args.out / 'scratch', resolve_path=Path)
     audit_seconds = time.monotonic() - started
+    started = time.monotonic()
+    campaign = run_campaign(factory, case_id, args.out, args.engine_python, args.concurrency)
+    campaign['seconds'] = time.monotonic() - started
+    after = admitted_truth(factory, case_id, manifest)
+    new_admissions = {key: value for key, value in after.items() if key not in verdicts}
+    campaign['new_admissions'] = len(new_admissions)
+    campaign['new_admissions_by_truth'] = dict(Counter(value['truth'] for value in new_admissions.values()))
+    campaign['new_admissions_detail'] = new_admissions
     outcome = {period['source_document_id']: period['outcome'] for period in audit['periods']}
     scored = Counter()
     for document_id, verdict in verdicts.items():
@@ -194,14 +278,17 @@ def main(argv=None):
         periods=sum(len(f['periods']) for f in manifest['files']), old_read_seconds=old_seconds,
         live_counts=counts, admitted=len(verdicts), admitted_wrong=sum(v['truth'] == 'wrong' for v in verdicts.values()),
         audit_vs_truth=dict(scored), admitted_detail=verdicts, estimate=estimate, estimate_seconds=estimate_seconds,
-        audit=audit, audit_seconds=audit_seconds)
+        audit=audit, audit_seconds=audit_seconds, campaign=campaign)
     (args.out / 'simulation.json').write_text(json.dumps(result, indent=1, sort_keys=True, default=str) + '\n')
     summary = ['# Reader recovery simulation', '', f"Old engine: {args.old_root}; files {result['files']}, periods {result['periods']}.",
         f"Live batch after Import all: {counts['final']}.",
         f"Admitted statement reviews: {result['admitted']}, of which wrong against the printed truth: {result['admitted_wrong']}.",
-        f"Audit vs truth (truth:audit): {dict(scored)}.", '', estimator.render(estimate), '', misread.render(audit)]
+        f"Audit vs truth (truth:audit): {dict(scored)}.",
+        f"Campaign run (real hand-off, current engine re-read, Import all): scheduled {campaign['scheduled']}, "
+        f"outcomes {campaign['outcomes']}, periods of the new readings {campaign['new_reading_periods']}, "
+        f"newly admitted {campaign['new_admissions']} by truth {campaign['new_admissions_by_truth']}.", '', estimator.render(estimate), '', misread.render(audit)]
     (args.out / 'summary.md').write_text('\n'.join(summary))
-    print('\n'.join(summary[:6]))
+    print('\n'.join(summary[:7]))
     engine.dispose()
 
 
