@@ -7,7 +7,7 @@ from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4, uuid5
 from types import SimpleNamespace
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from pydantic import ValidationError
 from postgres.models.financial_import_batches import FinancialImportBatch as Batch, FinancialImportBatchItem as Item, FinancialImportOperation as Operation
 from postgres.models.evidence import EvidenceFile
@@ -1290,6 +1290,19 @@ def queue_import(session, *, case_id,batch_id,expected_revision,actor,request_id
     ready_ids={i.id for i in checked if import_available(i)}
     ready=[i for i in items if i.id in ready_ids]
     if not ready: raise PdfMappingError('There are no new statement records available to import.',422)
+    # Claim each statement only while it is still unclaimed. In PostgreSQL the
+    # batch row lock already serialises confirmations; this compare-and-set
+    # keeps "imported once" independent of lock order and of databases without
+    # row locks. A confirmation that loses the race claims nothing and stops.
+    claimed = session.execute(update(Item).where(Item.id.in_([i.id for i in ready]),
+        Item.status.in_(('ready', 'attention'))).values(status='pending_import')
+        .execution_options(synchronize_session=False)).rowcount
+    if claimed != len(ready):
+        session.rollback()
+        existing = session.get(Operation, operation_id)
+        if existing and (existing.case_id, existing.batch_id, existing.expected_revision) == (case_id, batch_id, expected_revision):
+            return dict(queued=len(existing.outcomes), operation=operation_view(existing))
+        raise PdfMappingError('The ready statements changed. Refresh the batch before confirming.', 409)
     operation = Operation(id=operation_id, case_id=case_id, batch_id=batch_id, expected_revision=expected_revision,
         actor=dict(name=actor.name, user_id=str(actor.user_id)),
         outcomes=[dict(item_id=str(i.id), file_id=str(i.file_id), filename=i.summary.get('filename', ''),

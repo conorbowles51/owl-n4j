@@ -12,7 +12,12 @@ case, through the same functions the routes call:
   under repeat, double submission and concurrent submission.
 
 SQLite is the database here. Row locks (`FOR UPDATE`, `SKIP LOCKED`) do not exist
-in SQLite; the concurrent cases prove the result, not the PostgreSQL lock order.
+in SQLite, and plain reads run outside a transaction, so the concurrent cases prove
+only what holds without those locks. Two workers writing the same accepted statement
+at once are kept to one ledger entry by the Case row lock in the strict writer, with
+no database constraint behind it; on SQLite they write it twice. That property is
+covered only by tests/test_financial_batch_import_lock_postgres.py, which needs the
+disposable local PostgreSQL.
 """
 import hashlib
 from concurrent.futures import ThreadPoolExecutor
@@ -307,3 +312,135 @@ class CheckpointBGateTests(TestCase):
         self.assert_ready_everywhere(batch, early, 'Saved Before Batch')
         self.assertEqual(self.listed(batch)['available_statements'], 1)
         self.assert_list_agrees(batch)
+
+    # -- 4. one group confirmation imports the exact eligible set once ---------
+
+    def mixed_batch(self):
+        """Two ready (one only after a saved correction), one blocked, one left unimported."""
+        ready = self.statement('GATER1')
+        corrected = self.statement('GATER2', holder_printed=False)
+        blocked = self.statement('GATEH1', holder_printed=False)
+        skipped = self.statement('GATES1')
+        batch = self.batch(ready, corrected, blocked, skipped)
+        with self.f.SessionLocal() as db:
+            save_progress(db, case_id=self.f.case.id, evidence_file_id=corrected.id,
+                request=self.request(corrected, 'Corrected Holder'), expected_review_revision='initial', actor=self.f.actor)
+        detail, _ = self.detail(batch, skipped)
+        with self.f.SessionLocal() as db:
+            batches.leave_unimported(db, case_id=self.f.case.id, batch_id=batch, item_id=UUID(detail['id']),
+                action='skip', reason='Synthetic: not part of this import.',
+                expected_revision=detail['disposition_revision'], actor=self.f.actor)
+        return batch, dict(ready=ready, corrected=corrected, blocked=blocked, skipped=skipped)
+
+    def confirm(self, batch, revision, request_id=None):
+        with self.f.SessionLocal() as db:
+            return batches.queue_import(db, case_id=self.f.case.id, batch_id=batch,
+                expected_revision=revision, actor=self.f.actor, request_id=request_id)
+
+    def operations(self):
+        with self.f.SessionLocal() as db:
+            return list(db.scalars(select(Operation)))
+
+    def assert_imported_exactly(self, files, absent):
+        documents = self.documents_by_file()
+        for file in files:
+            self.assertEqual(documents.get(file.id), 1, self.accounts[file.id])
+        for file in absent:
+            self.assertNotIn(file.id, documents, self.accounts[file.id])
+        self.assertEqual(self.payments(), ROWS_PER_STATEMENT * len(files))
+
+    def test_group_confirmation_imports_exactly_the_eligible_set_once(self):
+        batch, s = self.mixed_batch()
+        state = self.b.status(batch)
+        self.assertEqual(state['available_statements'], 2)
+        self.assert_list_agrees(batch)
+        first = self.confirm(batch, state['ready_revision'])
+        submitted = {row['file_id'] for row in first['operation']['outcomes']}
+        self.assertEqual(submitted, {str(s['ready'].id), str(s['corrected'].id)})
+        # Repeat of the same confirmation (lost response) and a second click
+        # with its own request id: one job, nothing added.
+        self.assertEqual(self.confirm(batch, state['ready_revision'])['operation']['id'], first['operation']['id'])
+        with self.assertRaisesRegex(PdfMappingError, 'ready statements changed'):
+            self.confirm(batch, state['ready_revision'], request_id=uuid4())
+        self.assertEqual(len(self.operations()), 1)
+        self.b.advance(batch)
+        self.assert_imported_exactly([s['ready'], s['corrected']], [s['blocked'], s['skipped']])
+        # Re-confirming the old screen after the import reuses its receipt;
+        # the worker running again imports nothing more.
+        again = self.confirm(batch, state['ready_revision'])
+        self.assertEqual(again['operation']['id'], first['operation']['id'])
+        self.assertEqual(again['operation']['imported'], 2)
+        self.b.advance(batch)
+        self.assert_imported_exactly([s['ready'], s['corrected']], [s['blocked'], s['skipped']])
+        after = self.b.status(batch)
+        self.assertEqual((after['counts']['imported'], after['available_statements']), (2, 0))
+        with self.assertRaisesRegex(PdfMappingError, 'no new statement records'):
+            self.confirm(batch, after['ready_revision'])
+        self.assert_list_agrees(batch)
+        # Resolving the remaining decision makes only that statement eligible.
+        with self.f.SessionLocal() as db:
+            save_progress(db, case_id=self.f.case.id, evidence_file_id=s['blocked'].id,
+                request=self.request(s['blocked'], 'Later Holder'), expected_review_revision='initial', actor=self.f.actor)
+        later = self.b.status(batch)
+        self.assertEqual(later['available_statements'], 1)
+        second = self.confirm(batch, later['ready_revision'])
+        self.assertEqual({row['file_id'] for row in second['operation']['outcomes']}, {str(s['blocked'].id)})
+        self.b.advance(batch)
+        self.assert_imported_exactly([s['ready'], s['corrected'], s['blocked']], [s['skipped']])
+        self.assertEqual(len(self.operations()), 2)
+
+    def test_concurrent_group_confirmations_queue_one_job(self):
+        batch, s = self.mixed_batch()
+        revision = self.b.status(batch)['ready_revision']
+        start = Barrier(3)
+
+        def confirm(request_id):
+            start.wait()
+            try:
+                return self.confirm(batch, revision, request_id=request_id)
+            except Exception as error:  # noqa: BLE001 - every outcome is checked below
+                return error
+
+        # Two tabs with their own request ids and one repeated default id.
+        with ThreadPoolExecutor(3) as pool:
+            outcomes = list(pool.map(confirm, (uuid4(), uuid4(), None)))
+        accepted = [o for o in outcomes if isinstance(o, dict)]
+        refused = [o for o in outcomes if not isinstance(o, dict)]
+        for error in refused:
+            self.assertNotIsInstance(error, AssertionError)
+        operations = self.operations()
+        self.assertEqual(len(operations), 1, outcomes)
+        self.assertTrue(accepted)
+        self.assertEqual({o['operation']['id'] for o in accepted}, {str(operations[0].id)})
+        self.assertEqual({row['file_id'] for row in operations[0].outcomes},
+            {str(s['ready'].id), str(s['corrected'].id)})
+        self.b.advance(batch)
+        self.assert_imported_exactly([s['ready'], s['corrected']], [s['blocked'], s['skipped']])
+
+    def test_worker_interrupted_after_the_ledger_write_imports_once_on_rerun(self):
+        """Concurrent workers are a PostgreSQL-only property (see the module notes).
+
+        What holds without row locks: a worker that stops after the ledger write
+        but before recording its outcome leaves the statement accepted, and
+        running the worker again finds the saved statement instead of adding it.
+        """
+        from unittest.mock import patch
+        from services.financial import import_operations
+        batch, s = self.mixed_batch()
+        first = self.confirm(batch, self.b.status(batch)['ready_revision'])
+        items = [self.item(batch, s['ready']).id, self.item(batch, s['corrected']).id]
+        with patch.object(import_operations, 'record_outcome', side_effect=RuntimeError('Synthetic worker stop')):
+            for item_id in items:
+                with self.assertRaisesRegex(RuntimeError, 'Synthetic worker stop'):
+                    batches._import_item(self.f.SessionLocal, self.f.case.id, batch, item_id, Path)
+        self.assert_imported_exactly([s['ready'], s['corrected']], [s['blocked'], s['skipped']])
+        with self.f.SessionLocal() as db:
+            self.assertEqual({i.status for i in db.scalars(select(Item).where(Item.id.in_(items)))}, {'pending_import'})
+        for _ in range(2):
+            for item_id in items:
+                batches._import_item(self.f.SessionLocal, self.f.case.id, batch, item_id, Path)
+        self.assert_imported_exactly([s['ready'], s['corrected']], [s['blocked'], s['skipped']])
+        with self.f.SessionLocal() as db:
+            self.assertEqual({i.status for i in db.scalars(select(Item).where(Item.id.in_(items)))}, {'imported'})
+            operation = db.get(Operation, UUID(first['operation']['id']))
+            self.assertEqual(sorted(row['status'] for row in operation.outcomes), ['already_present', 'already_present'])
