@@ -186,3 +186,19 @@ def test_original_geometry_uses_the_original_image_when_the_page_was_turned():
     prepared.close()
     faint.close()
     document.close()
+
+
+def test_only_words_over_blank_paper_are_dropped():
+    image = Image.new('RGB', (200, 40), 'white')
+    image.paste((0, 0, 0), (10, 10, 40, 30))
+    image.paste((120, 120, 120), (150, 10, 160, 30))
+    data = dict(text=['', '61.25', '=', 'grey', '  '], conf=['-1', '90', '3', '50', '-1'],
+                left=[0, 10, 80, 150, 0], top=[0, 10, 10, 10, 0], width=[200, 30, 10, 10, 1],
+                height=[40, 20, 20, 20, 1], block_num=[0, 1, 1, 1, 1], par_num=[0, 1, 1, 1, 1],
+                line_num=[0, 1, 1, 1, 1], word_num=[0, 1, 2, 3, 4])
+    kept, dropped = pdf_extraction._drop_inkless_words(data, image)
+    assert kept['text'] == ['', '61.25', 'grey', '  ']
+    assert all(len(kept[k]) == 4 for k in ('left', 'top', 'width', 'height', 'conf', 'line_num'))
+    assert dropped == [dict(text='=', confidence='3', box=[80, 10, 10, 20])]
+    clean = dict(data, text=['', '61.25', '', 'grey', ''])
+    assert pdf_extraction._drop_inkless_words(clean, image) == (clean, [])

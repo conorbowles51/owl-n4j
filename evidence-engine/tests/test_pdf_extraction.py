@@ -746,7 +746,7 @@ async def test_requested_image_reading_bypasses_embedded_text_and_records_method
     _write_native_pdf(pdf_path, ['Wrong embedded number 999.00', 'Wrong embedded date 01/01121'])
     before = hashlib.sha256(pdf_path.read_bytes()).hexdigest()
     read_pages = []
-    def fresh_read(page):
+    def fresh_read(page, **_kwargs):
         read_pages.append(page.number)
         return ['New Balance $114.00', 'Statement Date: 04/25/21'][page.number], 95.0, 300, None, []
     monkeypatch.setattr(pdf_extraction, '_ocr_page', fresh_read)
@@ -848,6 +848,10 @@ async def test_ocr_word_boxes_produce_source_cells_with_ocr_provenance(tmp_path,
     from app.pipeline import statement_money_verification
     monkeypatch.setattr(statement_money_verification, "verify_money_cells",
         lambda page, tables, **_kwargs: (tables, []))
+    # The stubbed words sit where the fixture printed nothing, and a prepared
+    # (here: resampled 150 dpi) scan drops words over blank paper; that is
+    # covered in test_scan_preprocessing.
+    monkeypatch.setattr(settings, "pdf_scan_preprocessing", False)
     result = await extract_text(str(pdf_path), pdf_path.name)
     assert result.metadata["page_spans"][0]["text_origin"] == "recognised_glyphs"
     assert result.metadata["page_spans"][0]["ocr_geometry_status"] == "available"

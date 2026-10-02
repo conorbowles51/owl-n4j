@@ -603,7 +603,47 @@ def _ocr_at_rotation(
         oriented_image.close()
 
 
-def _ocr_page(page: fitz.Page) -> tuple[str, float | None, int, list | None, list[dict]]:
+INKLESS_WORD_THRESHOLD = 128
+
+
+def _drop_inkless_words(data: dict, image: Image.Image) -> tuple[dict, list[dict]]:
+    """``data`` without recognised words whose rectangle holds no ink at all.
+
+    Tesseract can report a word in an empty gap (measured: an ``=`` between an
+    amount and its running balance on straightened and contrast-stretched
+    scans, in a box with no pixel darker than mid grey). Such a word was not
+    printed, and between two money columns it merges them into one cell. Only
+    a word whose whole rectangle has no pixel darker than
+    ``INKLESS_WORD_THRESHOLD`` is dropped; the caller applies this only to a
+    prepared scan, where ink is black or measured darker than grey 125.
+    """
+    texts = data.get("text") or []
+    fields = ("left", "top", "width", "height")
+    if any(not isinstance(data.get(name), list) or len(data[name]) != len(texts) for name in fields):
+        return data, []
+    grey = image.convert("L")
+    try:
+        keep, dropped = [], []
+        for index, raw in enumerate(texts):
+            word = str(raw or "").strip()
+            left, top, width, height = (data[name][index] for name in fields)
+            if word and width > 0 and height > 0:
+                with grey.crop((left, top, left + width, top + height)) as box:
+                    if box.getextrema()[0] >= INKLESS_WORD_THRESHOLD:
+                        dropped.append(dict(text=word, confidence=data.get("conf", [None] * len(texts))[index],
+                                            box=[left, top, width, height]))
+                        continue
+            keep.append(index)
+    finally:
+        grey.close()
+    if not dropped:
+        return data, []
+    filtered = {name: ([values[i] for i in keep] if isinstance(values, list) and len(values) == len(texts) else values)
+                for name, values in data.items()}
+    return filtered, dropped
+
+
+def _ocr_page(page: fitz.Page, *, drop_inkless_words: bool = False) -> tuple[str, float | None, int, list | None, list[dict]]:
     deadline = time.monotonic() + max(
         1,
         int(settings.pdf_ocr_page_timeout_seconds),
@@ -702,9 +742,17 @@ def _ocr_page(page: fitz.Page) -> tuple[str, float | None, int, list | None, lis
                 best_data, best_rotation = alternative_data, alternative_rotation
             if alternative_confidence is not None and alternative_confidence >= 80.0:
                 break
+        inkless = []
+        if drop_inkless_words and best_rotation == 0:
+            best_data, inkless = _drop_inkless_words(best_data, image)
+            if inkless:
+                text, confidence = _text_and_confidence_from_tesseract(best_data)
     finally:
         image.close()
     refinements = []
+    if inkless:
+        refinements.append(dict(field='ocr_inkless_words', decision='dropped', threshold=INKLESS_WORD_THRESHOLD,
+                                words=inkless))
     try:
         from app.pipeline.financial_bbva_ocr import reread_bbva_fields
         refined_data, comparisons = reread_bbva_fields(page, best_data,
@@ -845,7 +893,8 @@ def _read_ocr_page(document, page_index, page_result, prepared, page_cache, nati
         if checkpoint and checkpoint.exists():
             text, confidence, dpi, words, refinements = json.loads(checkpoint.read_text())
         else:
-            text, confidence, dpi, words, refinements = _ocr_page(reading_page)
+            text, confidence, dpi, words, refinements = (_ocr_page(reading_page, drop_inkless_words=True)
+                if prepared is not None else _ocr_page(reading_page))
             if prepared is not None:
                 refinements = [prepared.record, *refinements]
             if checkpoint:

@@ -31,8 +31,13 @@ measurements are taken, and only what they show is done:
   cores of the strokes. Measured on the v4 corpus: pale scans sit at 88 to
   107 levels, normal ones (including 100 dpi and JPEG-damaged) at 167 or
   more. A page with fewer than ``MIN_INK_PIXELS`` inked pixels is not
-  measured and not stretched. A linear stretch keeps the order of
-  every grey level: it adds no shape that was not printed;
+  measured and not stretched. The white point is ``WHITE_MARGIN`` levels
+  below paper, so the grey halo that JPEG compression leaves around print
+  maps to paper rather than to a grey the crop check's lightest threshold
+  (220) reads as ink: measured on the combined-damage Andrews page, a stretch
+  to paper itself left 4 money cells unconfirmed, to 10 below it none. The
+  stretch is linear and clipped, so it never reverses the order of two grey
+  levels: it adds no shape that was not printed;
 * **skew**: the angle, within ``MAX_SKEW`` degrees, at which the rows of ink
   are sharpest (largest summed squared change of the horizontal ink profile).
   A page is turned only when that angle is at least ``MIN_SKEW`` degrees, is
@@ -71,6 +76,7 @@ WORK_DPI = 300
 LOW_DPI = 200
 FAINT_RANGE = 130
 INK_STEP = 30
+WHITE_MARGIN = 10
 MIN_INK_PIXELS = 500
 MAX_SKEW = 5.0
 MIN_SKEW = 0.2
@@ -186,10 +192,11 @@ def prepare_scan_page(page):
         image.close()
         return None
     if paper - ink < FAINT_RANGE:
-        stretched = _stretch(image, paper, ink)
+        stretched = _stretch(image, paper - WHITE_MARGIN, ink)
         image.close()
         image = stretched
         steps.append('contrast_stretched')
+        record.update(stretch_black_level=round(ink, 1), stretch_white_level=round(paper - WHITE_MARGIN, 1))
         paper, ink = 255.0, 0.0
     angle, gain = measure_skew(image, paper, ink)
     record.update(measured_skew_degrees=angle, skew_gain=round(gain, 3))
