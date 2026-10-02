@@ -31,7 +31,7 @@ LOW_CONFIDENCE_THRESHOLD = 60.0
 MIN_OCR_DPI = 150
 MIN_RELIABLE_OSD_CONFIDENCE = 15.0
 MAX_OSD_TIMEOUT_SECONDS = 30.0
-PDF_READING_REVISION = 'bank-payment-rows-v11'
+PDF_READING_REVISION = 'bank-payment-rows-v12'
 OSD_INSUFFICIENT_TEXT_MARKERS = ("too few characters", "skipping this page")
 
 
@@ -361,6 +361,39 @@ def _verify_recognised_money(page, tables, chunks, *, text_origin, extraction_me
     return chunks, refined, records
 
 
+def _prepare_scan(page):
+    """The page straightened and clarified for reading, or ``None`` to read it as scanned.
+
+    See ``scan_preprocessing``: only a full-page scan that measures tilted,
+    coarse or pale is changed, and a failure here never costs the page.
+    """
+    if not settings.pdf_scan_preprocessing:
+        return None
+    try:
+        from app.pipeline.scan_preprocessing import prepare_scan_page
+        return prepare_scan_page(page)
+    except Exception:
+        logger.warning('Scan preprocessing unavailable; reading the page as scanned', exc_info=True)
+        return None
+
+
+def _crop_page_for_original_geometry(page, prepared, refinements):
+    """The image that rectangles measured on ``page`` itself can be cropped from.
+
+    A prepared page that was only resampled or contrast-stretched has the same
+    frame as the original, so its clearer image serves the crop rereads. A
+    turned page does not: the original page's own rectangles would land beside
+    the printed cell, so the original image is used and the record says so.
+    """
+    if prepared is None:
+        return page
+    used = prepared.same_frame
+    for index, entry in enumerate(refinements):
+        if entry.get('field') == prepared.record['field']:
+            refinements[index] = dict(entry, used_for='crop_rereads' if used else 'not_used')
+    return prepared.page if used else page
+
+
 def _page_rotation(refinements):
     return next((r['rotation'] for r in refinements or [] if r.get('field') == 'page_orientation'), 0)
 
@@ -570,7 +603,60 @@ def _ocr_at_rotation(
         oriented_image.close()
 
 
-def _ocr_page(page: fitz.Page) -> tuple[str, float | None, int, list | None, list[dict]]:
+INKLESS_WORD_THRESHOLD = 128
+INKLESS_WORD_PADDING = 4
+
+
+def _drop_inkless_words(data: dict, image: Image.Image) -> tuple[dict, list[dict]]:
+    """``data`` without low-confidence recognised words over blank paper.
+
+    Tesseract can report a word in an empty gap (measured: an ``=`` at
+    confidence 8 to 45 between an amount and its running balance on
+    straightened and contrast-stretched scans, its box pure white). Such a
+    word was not printed, and between two money columns it merges them into
+    one cell. A word is dropped only when its confidence is below
+    ``LOW_CONFIDENCE_THRESHOLD`` and its rectangle, widened by
+    ``INKLESS_WORD_PADDING`` pixels (about one point at 300 dpi) on every
+    side, has no pixel darker than ``INKLESS_WORD_THRESHOLD``. The widening
+    matters: a real colon on a straightened BBVA page was reported at
+    confidence 92 with a one-pixel box beside its dots (darkest pixel 174
+    inside the box, 8 within four pixels of it). The caller applies this only
+    to a prepared scan, where ink is black or measured darker than grey 125.
+    """
+    texts = data.get("text") or []
+    fields = ("left", "top", "width", "height")
+    if any(not isinstance(data.get(name), list) or len(data[name]) != len(texts) for name in fields):
+        return data, []
+    grey = image.convert("L")
+    try:
+        keep, dropped = [], []
+        for index, raw in enumerate(texts):
+            word = str(raw or "").strip()
+            left, top, width, height = (data[name][index] for name in fields)
+            try:
+                confidence = float(data.get("conf", [None] * len(texts))[index])
+            except (TypeError, ValueError):
+                confidence = None
+            if (word and width > 0 and height > 0 and confidence is not None
+                    and 0 <= confidence < LOW_CONFIDENCE_THRESHOLD):
+                pad = INKLESS_WORD_PADDING
+                with grey.crop((max(0, left - pad), max(0, top - pad), min(grey.width, left + width + pad),
+                                min(grey.height, top + height + pad))) as box:
+                    if box.getextrema()[0] >= INKLESS_WORD_THRESHOLD:
+                        dropped.append(dict(text=word, confidence=data.get("conf", [None] * len(texts))[index],
+                                            box=[left, top, width, height]))
+                        continue
+            keep.append(index)
+    finally:
+        grey.close()
+    if not dropped:
+        return data, []
+    filtered = {name: ([values[i] for i in keep] if isinstance(values, list) and len(values) == len(texts) else values)
+                for name, values in data.items()}
+    return filtered, dropped
+
+
+def _ocr_page(page: fitz.Page, *, drop_inkless_words: bool = False) -> tuple[str, float | None, int, list | None, list[dict]]:
     deadline = time.monotonic() + max(
         1,
         int(settings.pdf_ocr_page_timeout_seconds),
@@ -669,9 +755,17 @@ def _ocr_page(page: fitz.Page) -> tuple[str, float | None, int, list | None, lis
                 best_data, best_rotation = alternative_data, alternative_rotation
             if alternative_confidence is not None and alternative_confidence >= 80.0:
                 break
+        inkless = []
+        if drop_inkless_words and best_rotation == 0:
+            best_data, inkless = _drop_inkless_words(best_data, image)
+            if inkless:
+                text, confidence = _text_and_confidence_from_tesseract(best_data)
     finally:
         image.close()
     refinements = []
+    if inkless:
+        refinements.append(dict(field='ocr_inkless_words', decision='dropped', threshold=INKLESS_WORD_THRESHOLD,
+                                words=inkless))
     try:
         from app.pipeline.financial_bbva_ocr import reread_bbva_fields
         refined_data, comparisons = reread_bbva_fields(page, best_data,
@@ -796,6 +890,111 @@ def _restore_page_tables(values):
     return result
 
 
+def _read_ocr_page(document, page_index, page_result, prepared, page_cache, native_alternatives,
+                   table_chunks, extracted_tables):
+    """Read one page selected for OCR into ``page_result`` and the table lists.
+
+    ``prepared`` (``scan_preprocessing``) is the image the page reading, its
+    rereads and the money-cell crop check measure, when the scan needed
+    preparing; the original page otherwise. Returns ``True`` when the image
+    reading failed and the page's embedded reading was kept for review.
+    """
+    page = document[page_index]
+    reading_page = prepared.page if prepared is not None else page
+    try:
+        checkpoint = page_cache / f'ocr-{page_index}.json' if page_cache else None
+        if checkpoint and checkpoint.exists():
+            text, confidence, dpi, words, refinements = json.loads(checkpoint.read_text())
+        else:
+            text, confidence, dpi, words, refinements = (_ocr_page(reading_page, drop_inkless_words=True)
+                if prepared is not None else _ocr_page(reading_page))
+            if prepared is not None:
+                refinements = [prepared.record, *refinements]
+            if checkpoint:
+                from app.services.ingestion_checkpoints import atomic_json
+                atomic_json(checkpoint, [text, confidence, dpi, words, refinements])
+        page_result.ocr_refinements = refinements
+    except Exception as exc:
+        if original := native_alternatives.get(page_index):
+            if prepared is not None:
+                page_result.ocr_refinements.append(dict(prepared.record))
+            crop_page = _crop_page_for_original_geometry(page, prepared, page_result.ocr_refinements)
+            chunks, verified, verification = _verify_recognised_money(crop_page,
+                original['tables'], original['chunks'], text_origin=original['origin'],
+                extraction_method='native')
+            page_result.ocr_refinements.extend(verification)
+            original = {**original, 'tables': verified, 'chunks': chunks}
+            _retain_native_statement(page_result, original, table_chunks, extracted_tables,
+                'Image reread unavailable; unresolved embedded readings remain for review.')
+            return True
+        logger.error(
+            "PDF OCR failed page=%d reason=%s",
+            page_result.page_number,
+            exc,
+        )
+        message = 'Tesseract executable was not found' if isinstance(exc, pytesseract.TesseractNotFoundError) else str(exc)
+        raise PdfOcrError(
+            f"OCR failed on PDF page {page_result.page_number}: {message}"
+        ) from exc
+
+    page_result.text = text
+    page_result.text_origin = "recognised_glyphs"
+    page_result.ocr_status = "success" if text else "no_text"
+    page_result.ocr_confidence = confidence
+    page_result.ocr_dpi = dpi
+    page_result.ocr_language = settings.tesseract_lang
+    page_result.ocr_geometry_status = "unavailable"
+    reader = _load_table_reader()
+    ocr_tables = []
+    if words is not None and reader is not None:
+        try:
+            ocr_tables = reader.read_positioned_ocr_words(words,
+                page_number=page_result.page_number,
+                page_width=page.rect.width,
+                page_height=page.rect.height)
+            if any(table.geometry_source.value == "cell_rectangles" for table in ocr_tables):
+                page_result.ocr_geometry_status = "available"
+        except Exception:
+            logger.warning("OCR source geometry unavailable on page %s", page_result.page_number, exc_info=True)
+
+    original = native_alternatives.get(page_index)
+    quality = _statement_reading_quality(ocr_tables) if original else None
+    if original and not _prefer_statement_image(original['quality'], quality):
+        # A whole-page image reading can omit a row. Keep that page's
+        # original geometry and try only demonstrably unreadable statement
+        # money cells; crop disagreement never replaces a value.
+        crop_page = _crop_page_for_original_geometry(page, prepared, page_result.ocr_refinements)
+        try:
+            from app.pipeline.financial_amount_ocr import refine_statement_native_cells
+            refined, refinements = refine_statement_native_cells(crop_page, original['tables'],
+                deadline=time.monotonic() + 30, language=settings.tesseract_lang)
+            if refinements:
+                page_result.ocr_refinements.extend(refinements)
+                original = {**original, 'tables': refined, 'chunks': reader.chunks_of(refined)}
+        except Exception:
+            logger.debug('Native statement cell reread unavailable', exc_info=True)
+        chunks, verified, verification = _verify_recognised_money(crop_page,
+            original['tables'], original['chunks'], text_origin=original['origin'],
+            extraction_method='native')
+        page_result.ocr_refinements.extend(verification)
+        original = {**original, 'tables': verified, 'chunks': chunks}
+        _retain_native_statement(page_result, original, table_chunks, extracted_tables,
+            'Image reread did not safely improve the same account, period and payment rows.')
+    else:
+        ocr_chunks = reader.chunks_of(ocr_tables) if reader is not None else []
+        ocr_chunks, ocr_tables, verification = _verify_recognised_money(reading_page,
+            ocr_tables, ocr_chunks, text_origin='recognised_glyphs', extraction_method='tesseract_ocr',
+            rotation=_page_rotation(page_result.ocr_refinements))
+        page_result.ocr_refinements.extend(verification)
+        table_chunks.extend(ocr_chunks)
+        extracted_tables.extend(ocr_tables)
+        if original:
+            page_result.ocr_refinements.append(dict(field='statement_page_reading', decision='image_selected',
+                original_quality=original['quality'], image_quality=quality,
+                original_text_sha256=hashlib.sha256(original['text'].encode()).hexdigest()))
+    return False
+
+
 def _extract_pdf_sync(
     file_path: str,
     report_progress: Callable[[PdfExtractionProgress], None] | None = None,
@@ -866,8 +1065,19 @@ def _extract_pdf_sync(
                     page_result.detection_reason = 'unreadable_statement_fields'
                     ocr_indexes.append(page_index)
                 else:
-                    page_chunks, page_tables, verification = _verify_recognised_money(page, page_tables,
-                        page_chunks, text_origin=page_result.text_origin, extraction_method='native')
+                    from app.pipeline.statement_money_verification import page_needs_verification
+                    prepared = (_prepare_scan(page) if page_tables
+                                and page_needs_verification(page_result.text_origin, 'native') else None)
+                    try:
+                        crop_page = page
+                        if prepared is not None and prepared.same_frame:
+                            page_result.ocr_refinements.append(dict(prepared.record, used_for='crop_rereads'))
+                            crop_page = prepared.page
+                        page_chunks, page_tables, verification = _verify_recognised_money(crop_page, page_tables,
+                            page_chunks, text_origin=page_result.text_origin, extraction_method='native')
+                    finally:
+                        if prepared is not None:
+                            prepared.close()
                     page_result.ocr_refinements.extend(verification)
                     table_chunks.extend(page_chunks)
                     extracted_tables.extend(page_tables)
@@ -901,105 +1111,28 @@ def _extract_pdf_sync(
         progress_checkpoints = _progress_checkpoints(ocr_count)
         ocr_started = time.perf_counter()
         for completed, page_index in enumerate(ocr_indexes, start=1):
-            page_result = pages[page_index]
+            prepared = _prepare_scan(document[page_index])
             try:
-                checkpoint = page_cache / f'ocr-{page_index}.json' if page_cache else None
-                if checkpoint and checkpoint.exists():
-                    text, confidence, dpi, words, refinements = json.loads(checkpoint.read_text())
-                else:
-                    text, confidence, dpi, words, refinements = _ocr_page(document[page_index])
-                    if checkpoint:
-                        from app.services.ingestion_checkpoints import atomic_json
-                        atomic_json(checkpoint, [text, confidence, dpi, words, refinements])
-                page_result.ocr_refinements = refinements
-            except Exception as exc:
-                if original := native_alternatives.get(page_index):
-                    chunks, verified, verification = _verify_recognised_money(document[page_index],
-                        original['tables'], original['chunks'], text_origin=original['origin'],
-                        extraction_method='native')
-                    page_result.ocr_refinements.extend(verification)
-                    original = {**original, 'tables': verified, 'chunks': chunks}
-                    _retain_native_statement(page_result, original, table_chunks, extracted_tables,
-                        'Image reread unavailable; unresolved embedded readings remain for review.')
-                    if report_progress:
-                        report_progress(PdfExtractionProgress('Kept original statement reading for review',
-                            completed, ocr_count, page_result.page_number))
-                    continue
-                logger.error(
-                    "PDF OCR failed page=%d reason=%s",
-                    page_result.page_number,
-                    exc,
-                )
-                message = 'Tesseract executable was not found' if isinstance(exc, pytesseract.TesseractNotFoundError) else str(exc)
-                raise PdfOcrError(
-                    f"OCR failed on PDF page {page_result.page_number}: {message}"
-                ) from exc
-
-            page_result.text = text
-            page_result.text_origin = "recognised_glyphs"
-            page_result.ocr_status = "success" if text else "no_text"
-            page_result.ocr_confidence = confidence
-            page_result.ocr_dpi = dpi
-            page_result.ocr_language = settings.tesseract_lang
-            page_result.ocr_geometry_status = "unavailable"
-            reader = _load_table_reader()
-            ocr_tables = []
-            if words is not None and reader is not None:
-                try:
-                    ocr_tables = reader.read_positioned_ocr_words(words,
-                        page_number=page_result.page_number,
-                        page_width=document[page_index].rect.width,
-                        page_height=document[page_index].rect.height)
-                    if any(table.geometry_source.value == "cell_rectangles" for table in ocr_tables):
-                        page_result.ocr_geometry_status = "available"
-                except Exception:
-                    logger.warning("OCR source geometry unavailable on page %s", page_result.page_number, exc_info=True)
-
-            original = native_alternatives.get(page_index)
-            quality = _statement_reading_quality(ocr_tables) if original else None
-            if original and not _prefer_statement_image(original['quality'], quality):
-                # A whole-page image reading can omit a row. Keep that page's
-                # original geometry and try only demonstrably unreadable statement
-                # money cells; crop disagreement never replaces a value.
-                try:
-                    from app.pipeline.financial_amount_ocr import refine_statement_native_cells
-                    refined, refinements = refine_statement_native_cells(document[page_index], original['tables'],
-                        deadline=time.monotonic() + 30, language=settings.tesseract_lang)
-                    if refinements:
-                        page_result.ocr_refinements.extend(refinements)
-                        original = {**original, 'tables': refined, 'chunks': reader.chunks_of(refined)}
-                except Exception:
-                    logger.debug('Native statement cell reread unavailable', exc_info=True)
-                chunks, verified, verification = _verify_recognised_money(document[page_index],
-                    original['tables'], original['chunks'], text_origin=original['origin'],
-                    extraction_method='native')
-                page_result.ocr_refinements.extend(verification)
-                original = {**original, 'tables': verified, 'chunks': chunks}
-                _retain_native_statement(page_result, original, table_chunks, extracted_tables,
-                    'Image reread did not safely improve the same account, period and payment rows.')
-            else:
-                ocr_chunks = reader.chunks_of(ocr_tables) if reader is not None else []
-                ocr_chunks, ocr_tables, verification = _verify_recognised_money(document[page_index],
-                    ocr_tables, ocr_chunks, text_origin='recognised_glyphs', extraction_method='tesseract_ocr',
-                    rotation=_page_rotation(page_result.ocr_refinements))
-                page_result.ocr_refinements.extend(verification)
-                table_chunks.extend(ocr_chunks)
-                extracted_tables.extend(ocr_tables)
-                if original:
-                    page_result.ocr_refinements.append(dict(field='statement_page_reading', decision='image_selected',
-                        original_quality=original['quality'], image_quality=quality,
-                        original_text_sha256=hashlib.sha256(original['text'].encode()).hexdigest()))
-
+                kept_after_failure = _read_ocr_page(document, page_index, pages[page_index], prepared,
+                    page_cache, native_alternatives, table_chunks, extracted_tables)
+            finally:
+                if prepared is not None:
+                    prepared.close()
+            if kept_after_failure:
+                if report_progress:
+                    report_progress(PdfExtractionProgress('Kept original statement reading for review',
+                        completed, ocr_count, pages[page_index].page_number))
+                continue
             if report_progress:
                 report_progress(
                     PdfExtractionProgress(
                         message=(
                             f"OCR page {completed} of {ocr_count} "
-                            f"(PDF page {page_result.page_number})"
+                            f"(PDF page {pages[page_index].page_number})"
                         ),
                         completed=completed,
                         total=ocr_count,
-                        pdf_page=page_result.page_number,
+                        pdf_page=pages[page_index].page_number,
                     )
                 )
 
@@ -1069,7 +1202,7 @@ def _extract_pdf_sync(
 
 _PDF_WORKER_SETTINGS = (
     'pdf_ocr_dpi', 'pdf_ocr_max_pixels', 'pdf_ocr_page_timeout_seconds',
-    'pdf_ocr_max_concurrency', 'tesseract_lang', 'max_pdf_pages',
+    'pdf_ocr_max_concurrency', 'tesseract_lang', 'max_pdf_pages', 'pdf_scan_preprocessing',
 )
 
 

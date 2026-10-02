@@ -97,7 +97,7 @@ def test_full_page_ocr_losing_a_row_uses_only_the_safe_native_cell_fallback(tmp_
     reader=pdf._load_table_reader()
     monkeypatch.setattr(pdf,'_ocr_detection_reason',lambda *args:None)
     monkeypatch.setattr(pdf,'_extract_native_tables',lambda *args:(reader.chunks_of(native),native))
-    monkeypatch.setattr(pdf,'_ocr_page',lambda *args:('Synthetic image reading',90,300,[],[]))
+    monkeypatch.setattr(pdf,'_ocr_page',lambda *args,**kwargs:('Synthetic image reading',90,300,[],[]))
     monkeypatch.setattr(reader,'read_positioned_ocr_words',lambda *args,**kwargs:missing)
     monkeypatch.setattr(cells,'_cleaned_line_readings',lambda *args:observations(['20.00']*6))
     result=pdf._extract_pdf_sync(str(path))

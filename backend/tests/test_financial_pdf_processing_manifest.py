@@ -28,8 +28,23 @@ class ProcessingManifestTests(unittest.TestCase):
         spec.loader.exec_module(producer)
         current = producer.capture_pdf_processing_manifest(
             settings=SimpleNamespace(**manifest()['content']['settings']), ocr_used=False)
-        self.assertEqual(len(current['content']['source_files_sha256']), 7)
+        self.assertEqual(len(current['content']['source_files_sha256']), 8)
+        self.assertIn('scan_preprocessing.py', current['content']['source_files_sha256'])
+        self.assertIs(current['content']['settings']['pdf_scan_preprocessing'], False)
         self.assertEqual(validate_pdf_processing_manifest(current), current)
+        # A record captured before scan preparation existed (seven sources, no
+        # setting) is still a valid record of what that reading did.
+        earlier = copy.deepcopy(current)
+        earlier['content']['source_files_sha256'].pop('scan_preprocessing.py')
+        earlier['content']['settings'].pop('pdf_scan_preprocessing')
+        earlier['sha256'] = _digest(earlier['content'])
+        self.assertEqual(validate_pdf_processing_manifest(earlier), earlier)
+        for wrong in ('yes', 1):
+            typed = copy.deepcopy(current)
+            typed['content']['settings']['pdf_scan_preprocessing'] = wrong
+            typed['sha256'] = _digest(typed['content'])
+            with self.subTest(setting=wrong), self.assertRaises(ValueError):
+                validate_pdf_processing_manifest(typed)
         f = grids.GridBindingTests(); f.setUp()
         try:
             f.text.processing_manifest = current; f.db.commit()
