@@ -85,6 +85,10 @@ class Settings(BaseSettings):
     # Image processing
     image_provider: str = "tesseract"  # "tesseract" or "openai"
     tesseract_lang: str = "eng"
+    # Second, non-Tesseract reader for recognised statement money cells the
+    # crop check disputes (app.pipeline.statement_glyph_reader). Off = those
+    # cells stay held for a person, exactly as before it existed.
+    statement_glyph_second_reader: bool = True
     pdf_ocr_dpi: int = 300
     pdf_ocr_max_pixels: int = 25_000_000
     pdf_ocr_page_timeout_seconds: int = 300

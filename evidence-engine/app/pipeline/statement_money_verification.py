@@ -141,12 +141,13 @@ def _single_threaded_tesseract():
             os.environ['OMP_THREAD_LIMIT'] = previous
 
 
-def stacked_readings(page, rects, *, rotation, deadline, language):
+def stacked_readings(page, rects, *, rotation, deadline, language, whitelist=WHITELIST):
     with _single_threaded_tesseract():
-        return _stacked_readings(page, rects, rotation=rotation, deadline=deadline, language=language)
+        return _stacked_readings(page, rects, rotation=rotation, deadline=deadline, language=language,
+            whitelist=whitelist)
 
 
-def _stacked_readings(page, rects, *, rotation, deadline, language):
+def _stacked_readings(page, rects, *, rotation, deadline, language, whitelist=WHITELIST):
     """Read every rectangle under each profile; ``{profile index: [(text, confidence)]}``.
 
     Each crop is a separate horizontal strip with a wide white gap, so a
@@ -169,7 +170,7 @@ def _stacked_readings(page, rects, *, rotation, deadline, language):
                         readings = None
                         break
                     readings.extend(_read_stack(greys[start:start + MAX_STRIPS_PER_IMAGE], dpi,
-                        threshold, language, min(10, remaining)))
+                        threshold, language, min(10, remaining), whitelist))
                 if readings is None:
                     break
                 results[index] = readings
@@ -179,7 +180,7 @@ def _stacked_readings(page, rects, *, rotation, deadline, language):
     return results
 
 
-def _read_stack(images, dpi, threshold, language, timeout):
+def _read_stack(images, dpi, threshold, language, timeout, whitelist=WHITELIST):
     gap = max(20, int(dpi / 72 * 8))
     pad = 30
     width = max(image.width for image in images) + 2 * pad
@@ -193,7 +194,7 @@ def _read_stack(images, dpi, threshold, language, timeout):
             spans.append((y, y + image.height))
             y += image.height + gap
         data = pytesseract.image_to_data(canvas, lang=language, output_type=pytesseract.Output.DICT,
-            config=f'--oem 1 --psm 6 --dpi {dpi} -c tessedit_char_whitelist={WHITELIST}', timeout=timeout)
+            config=f'--oem 1 --psm 6 --dpi {dpi} -c tessedit_char_whitelist={whitelist}', timeout=timeout)
     words = [[] for _ in images]
     for i, raw in enumerate(data.get('text') or []):
         word = str(raw or '').strip()
@@ -340,6 +341,28 @@ def _with_cells(page, tables, replacements, chunk):
 PINNED_METHOD = 'statement_money_pinned_repair'
 
 
+def _unanimously_contradicted(record):
+    """``(crop text by cell, record cell by cell)`` when every held cell is a unanimous contradiction.
+
+    The page must be held by this check alone, without error, and every cell
+    it did not confirm must be contradicted by all six crop readings giving
+    one identical, parseable amount. Otherwise ``None``.
+    """
+    if not record or record.get('method') != METHOD or record.get('decision') != 'held' or record.get('error'):
+        return None
+    disputed, by_key = {}, {}
+    for cell in record['cells']:
+        if cell['status'] == 'confirmed':
+            continue
+        texts = {o['text'] for o in cell['observations']}
+        if (cell['status'] != 'contradicted' or len(cell['observations']) != len(PROFILES)
+                or len(texts) != 1 or money_value(next(iter(texts))) is None):
+            return None
+        key = (cell['table_index'], cell['row_index'], cell['column_index'])
+        disputed[key], by_key[key] = texts.pop(), cell
+    return (disputed, by_key) if disputed else None
+
+
 def repair_pinned_cells(page, tables, record, *, chunk=None):
     """Accept crop readings that the statement's own agreed controls fix.
 
@@ -354,18 +377,10 @@ def repair_pinned_cells(page, tables, record, *, chunk=None):
     """
     if chunk is None:
         from services.financial.pdf_tables import _chunk as chunk
-    if not record or record.get('method') != METHOD or record.get('decision') != 'held' or record.get('error'):
+    found = _unanimously_contradicted(record)
+    if not found:
         return tables, []
-    disputed, by_key = {}, {}
-    for cell in record['cells']:
-        if cell['status'] == 'confirmed':
-            continue
-        texts = {o['text'] for o in cell['observations']}
-        if (cell['status'] != 'contradicted' or len(cell['observations']) != len(PROFILES)
-                or len(texts) != 1 or money_value(next(iter(texts))) is None):
-            return tables, []
-        key = (cell['table_index'], cell['row_index'], cell['column_index'])
-        disputed[key], by_key[key] = texts.pop(), cell
+    disputed, by_key = found
     from services.financial.statement_reading_quality import pinned_running_balance_values
     accepted = pinned_running_balance_values([table.to_json() for table in tables], disputed)
     if not accepted or accepted.keys() != disputed.keys():
@@ -376,4 +391,179 @@ def repair_pinned_cells(page, tables, record, *, chunk=None):
                     page_reading=by_key[key]['original_text'], held_text=by_key[key]['marked_text'],
                     text=value['text'], pinned_by=value['pinned_by'], observations=by_key[key]['observations'],
                     reason='crop_reading_pinned_by_agreed_controls')
+               for key, value in sorted(accepted.items())])]
+
+
+SECOND_READER_METHOD = 'statement_money_second_reader_repair'
+# Digit-only printed text that is not money (dates, account and reference
+# numbers) also supplies glyph templates once the crops confirm it.
+TEMPLATE_WHITELIST = WHITELIST + '/'
+_TEMPLATE_TEXT = re.compile(r'[0-9$.,/()+\-\s]+')
+
+
+def _compact(text):
+    return re.sub(r'\s+', '', text or '')
+
+
+def _darkness(page, rect, rotation):
+    from app.pipeline.statement_glyph_reader import DPI, ink
+    image = _strip(page, rect, DPI, rotation)
+    try:
+        return ink(image)
+    finally:
+        image.close()
+
+
+def _template_cells(page, tables, record, *, rotation, deadline, language):
+    """``[(cell key, rect, text, source)]`` whose printed text two readings agree on.
+
+    Confirmed money cells come from the verification record. Other cells whose
+    text is only digits and money punctuation are reread here from crops at
+    every profile and kept only when, as for money, at least four readings at
+    both resolutions give exactly the page's characters.
+    """
+    found = [((c['table_index'], c['row_index'], c['column_index']), c['rect'], c['original_text'], 'money_cell')
+             for c in record['cells'] if c['status'] == 'confirmed' and c.get('rect')]
+    known = {(c['table_index'], c['row_index'], c['column_index']) for c in record['cells']}
+    extra = []
+    for table_index, table in enumerate(tables):
+        geometry = getattr(table, 'geometry', None)
+        for cell in getattr(geometry, 'cells', None) or ():
+            key = (table_index, cell.row, cell.column)
+            compact = _compact(cell.text)
+            if (key in known or len(compact) < 2 or not any(ch.isdigit() for ch in compact)
+                    or not _TEMPLATE_TEXT.fullmatch(cell.text or '')):
+                continue
+            rect = _cell_rect(cell, page)
+            if rect is not None:
+                extra.append((key, rect, cell.text))
+    if extra and not page.rotation:
+        readings = stacked_readings(page, [rect for _, rect, _ in extra], rotation=rotation, deadline=deadline,
+            language=language, whitelist=TEMPLATE_WHITELIST)
+        for position, (key, rect, text) in enumerate(extra):
+            agreeing = [PROFILES[i][0] for i in sorted(readings)
+                        if position < len(readings[i]) and _compact(readings[i][position][0]) == _compact(text)]
+            if len(agreeing) >= MIN_AGREEING and set(agreeing) == {dpi for dpi, _ in PROFILES}:
+                found.append((key, rect, text, 'digit_text_cell'))
+    return found
+
+
+def _contradicted(record):
+    """``(majority crop text by cell, record cell by cell)`` for a page held only by contradictions.
+
+    Every held cell must carry the verification's own ``contradicted``
+    verdict: at least ``MIN_AGREEING`` crop readings, spanning both
+    resolutions, agree on one amount other than the page reading, those
+    readings are character for character the same, and no crop reading at all
+    supports the page reading. Otherwise ``None``.
+    """
+    if not record or record.get('method') != METHOD or record.get('decision') != 'held' or record.get('error'):
+        return None
+    disputed, by_key = {}, {}
+    for cell in record['cells']:
+        if cell['status'] == 'confirmed':
+            continue
+        if cell['status'] != 'contradicted':
+            return None
+        values = Counter(money_value(o['text']) for o in cell['observations'])
+        page_value = money_value(cell['original_text'])
+        value, count = next(iter(values.most_common(1)), (None, 0))
+        supporters = [o for o in cell['observations'] if money_value(o['text']) == value]
+        texts = {_compact(o['text']) for o in supporters}
+        if (value is None or value == page_value or count < MIN_AGREEING or values.get(page_value)
+                or {o['dpi'] for o in supporters} != {dpi for dpi, _ in PROFILES} or len(texts) != 1):
+            return None
+        key = (cell['table_index'], cell['row_index'], cell['column_index'])
+        disputed[key], by_key[key] = supporters[0]['text'], cell
+    return (disputed, by_key) if disputed else None
+
+
+def repair_with_second_reader(page, tables, record, *, rotation=0, deadline, language, chunk=None):
+    """Accept the crop reading of held cells that an independent reader also gives.
+
+    Considered only on a page held solely by contradicted cells: for each,
+    at least four crop readings at both resolutions agree on one other amount
+    and none supports the page reading (``_contradicted``). Unlike
+    ``repair_pinned_cells`` one dissenting crop reading is tolerated, because
+    the value must also be given by a reader that is not Tesseract. The glyph reader
+    (``statement_glyph_reader``) then reads every disputed cell from the page
+    image using templates cut from cells on the same page that the page reading
+    and the crops agree on. Every cell must satisfy all of:
+
+    * the glyph reader reads the whole cell, every character, and gives
+      exactly the crop reading;
+    * the page reading and the crop reading have the same length, and at each
+      position where they differ the page has templates for both characters,
+      so the glyph reader actually compared the two candidates;
+
+    and then, with every disputed cell replaced, every printed control on the
+    page must reconcile (``page_controls_reconcile``): each statement's closing
+    balance printed and matching, no difference anywhere, no flagged row.
+
+    All or nothing per page. Anything short of it returns the tables unchanged
+    with a ``declined`` record saying why, so the page stays held exactly as
+    before. An accepted page carries one ``repaired`` record listing, per
+    cell, the page reading, the held text, the accepted text, every crop
+    reading and the glyph reader's per-character scores, so the original
+    reading stays visible beside the repair.
+    """
+    if chunk is None:
+        from services.financial.pdf_tables import _chunk as chunk
+    def declined(reason, **extra):
+        return tables, [dict(method=SECOND_READER_METHOD, page=page.number + 1, decision='declined',
+                             reason=reason, **extra)]
+
+    if not record or record.get('method') != METHOD or record.get('decision') != 'held':
+        return tables, []
+    found = _contradicted(record)
+    if not found:
+        return declined('not_every_held_cell_is_contradicted')
+    if page.rotation:
+        return declined('page_rotation_not_supported')
+    disputed, by_key = found
+    from app.pipeline import statement_glyph_reader as glyphs
+
+    started = time.monotonic()
+    try:
+        sources = _template_cells(page, tables, record, rotation=rotation, deadline=deadline, language=language)
+    except (RuntimeError, pytesseract.TesseractError) as exc:
+        return declined('template_reread_failed', error=str(exc)[:200])
+    strips = {}
+    try:
+        for key, rect, _, _ in sources:
+            strips[key] = _darkness(page, rect, rotation)
+        reader = glyphs.PageGlyphs([(key, strips[key], text) for key, _, text, _ in sources])
+        summary = dict(reader.summary(), template_sources=dict(
+            money_cell=sum(s[3] == 'money_cell' for s in sources),
+            digit_text_cell=sum(s[3] == 'digit_text_cell' for s in sources)))
+        accepted = {}
+        for key, crop_text in sorted(disputed.items()):
+            cell = by_key[key]
+            page_text, image_text = _compact(cell['original_text']), _compact(crop_text)
+            if not cell.get('rect') or len(page_text) != len(image_text):
+                return declined('readings_not_aligned', reader=summary)
+            needed = {a for pair in zip(page_text, image_text) if pair[0] != pair[1] for a in pair}
+            if not needed <= reader.classes:
+                return declined('no_templates_for_disputed_characters', reader=summary,
+                                missing=sorted(needed - reader.classes))
+            reading = reader.read(_darkness(page, cell['rect'], rotation), len(image_text))
+            if reading['text'] != image_text:
+                return declined('second_reader_does_not_confirm_crop_reading', reader=summary,
+                    cell=list(key), glyph_text=reading['text'], glyph_reason=reading.get('reason'))
+            accepted[key] = dict(text=crop_text, glyphs=[{k: g[k] for k in ('character', 'score', 'runner_up',
+                'runner_up_score')} for g in reading['glyphs']])
+    finally:
+        strips.clear()
+    repaired = _with_cells(page, tables, {key: value['text'] for key, value in accepted.items()}, chunk)
+    from services.financial.statement_reading_quality import page_controls_reconcile
+    controls = page_controls_reconcile([table.to_json() for table in repaired])
+    if not controls or not controls['reconciles']:
+        return declined('printed_controls_do_not_reconcile', reader=summary, controls=controls)
+    return repaired, [dict(method=SECOND_READER_METHOD, page=page.number + 1, decision='repaired',
+        reader=summary, controls=controls, seconds=round(time.monotonic() - started, 3),
+        cells=[dict(table_index=key[0], row_index=key[1], column_index=key[2], rect=by_key[key]['rect'],
+                    page_reading=by_key[key]['original_text'], held_text=by_key[key]['marked_text'],
+                    text=value['text'], observations=by_key[key]['observations'],
+                    second_reading=dict(method=glyphs.METHOD, text=_compact(value['text']), glyphs=value['glyphs']),
+                    reason='crop_reading_confirmed_by_independent_glyph_reader')
                for key, value in sorted(accepted.items())])]
