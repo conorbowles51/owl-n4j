@@ -318,6 +318,11 @@ it("filters by the whole-batch reason, focuses the right detail, and retains the
     return original(url, options)
   })
   mount()
+  // No statement is blocked for this reason, so it is retained check history
+  // and stays collapsed until asked for.
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Show retained check history" })
+  )
   fireEvent.click(
     await screen.findByRole("button", {
       name: "Show statements: Missing account holder",
