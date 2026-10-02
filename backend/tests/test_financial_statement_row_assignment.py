@@ -184,8 +184,12 @@ class RowAssignmentTests(TestCase):
             from services.financial.review_arithmetic import check_proposed_rows
             checks=check_proposed_rows(proposal,raw['rows'])
             raw.update(balance_exception_reason='Synthetic reassignment regression: controls intentionally remain in original periods.',balance_exception_revision=checks['checks_revision'])
-            receipt=self.f.confirm(raw); receipts.append(receipt)
-            self.assertFalse(self.f.confirm(raw)['created'])
+            # Since 62f7db3a a typed balance exception no longer bypasses
+            # reconciliation, and the moved row leaves both periods' printed
+            # controls unreconciled by design. This test is about copy/locator
+            # integrity, so it bypasses only the admission policy.
+            receipt=self.f.confirm_legacy(raw); receipts.append(receipt)
+            self.assertFalse(self.f.confirm_legacy(raw)['created'])
         self.assertEqual([r['transaction_count'] for r in receipts],[4,2])
         with self.f.SessionLocal() as db:
             rows=list(db.scalars(select(FinancialTransaction)))
