@@ -1,4 +1,12 @@
 import "@testing-library/jest-dom/vitest"
+import { configure } from "@testing-library/react"
+
+// In jsdom, the first role query after a React update recomputes styles for
+// every element against jsdom's default stylesheet. On the financial screens
+// one query measured 1.2-1.8 s with no other load, and about three times that
+// on a busy box. The 1 s default cannot fit even one check, so findBy and
+// waitFor failed on load alone. 10 s fits at least two checks.
+configure({ asyncUtilTimeout: 10_000 })
 
 if (typeof Element.prototype.scrollIntoView !== "function") {
   Element.prototype.scrollIntoView = () => undefined

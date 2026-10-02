@@ -229,17 +229,18 @@ it("finds the exact file family despite duplicate names, focuses its controls an
     throw Error(`Unexpected request ${url}`)
   })
   mount(<StatementFilesPanel caseId="case" register />)
+  // Taken before the audit opens: with 50 sources rendered, one role query
+  // costs over a second in jsdom, longer than a waitFor budget, so the frame
+  // that moves focus never ran between checks.
+  const results = screen.getByRole("heading", { name: /matching files$/ })
   fireEvent.click(
     screen.getByRole("button", { name: "Review Financial sources" })
   )
   fireEvent.click(
     (await screen.findAllByRole("button", { name: "Find in files" }))[1]
   )
-  await waitFor(() =>
-    expect(
-      screen.getByRole("heading", { name: "1 matching files" })
-    ).toHaveFocus()
-  )
+  await waitFor(() => expect(results).toHaveFocus())
+  expect(results).toHaveAccessibleName("1 matching files")
   const source = screen.getByRole("article", {
     name: "Financial source Shared name.txt",
   })
