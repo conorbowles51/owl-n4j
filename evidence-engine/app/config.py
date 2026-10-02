@@ -89,6 +89,10 @@ class Settings(BaseSettings):
     # crop check disputes (app.pipeline.statement_glyph_reader). Off = those
     # cells stay held for a person, exactly as before it existed.
     statement_glyph_second_reader: bool = True
+    # Straighten, resample and contrast-stretch full-page scans that measure
+    # tilted, coarse or pale before they are read
+    # (app.pipeline.scan_preprocessing). Off = every page is read as scanned.
+    pdf_scan_preprocessing: bool = True
     pdf_ocr_dpi: int = 300
     pdf_ocr_max_pixels: int = 25_000_000
     pdf_ocr_page_timeout_seconds: int = 300

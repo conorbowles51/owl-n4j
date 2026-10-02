@@ -187,7 +187,13 @@ async def test_image_only_pdf_is_ocrd_and_replaces_missing_native_text(
         "ocr_dpi": 300,
         "ocr_language": "eng",
         "ocr_geometry_status": "unavailable",
-        "ocr_refinements": [],
+        # The fixture is a 150 dpi scan: it is resampled before it is read,
+        # and the span says so (see scan_preprocessing).
+        "ocr_refinements": [{
+            "field": "scan_preprocessing", "native_dpi": 150.1, "work_dpi": 300,
+            "paper_level": 255.0, "ink_level": 13.0, "measured_skew_degrees": 0.0,
+            "skew_gain": 1.0, "steps": ["resampled"],
+        }],
     }
 
 
