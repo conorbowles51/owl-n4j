@@ -121,6 +121,33 @@ def _date(text):
     return value
 
 
+def printed_label(content, labels):
+    """The one value printed after any of ``labels``; empty when absent or repeated differently."""
+    pattern = r'(?im)^\s*(?:' + '|'.join(re.escape(x) for x in labels) + r')\s*:\s*([^\n]+)'
+    values = sorted(set(m.group(1).strip() for m in re.finditer(pattern, content)))
+    return values[0] if len(values) == 1 else ''
+
+
+def printed_period(value):
+    from datetime import datetime
+    parts = re.split(r'\s+(?:-|to)\s+', value, flags=re.I)
+    if len(parts) != 2:
+        return '', ''
+    dates = []
+    for part in parts:
+        parsed = None
+        for fmt in ('%Y-%m-%d', '%B %d, %Y', '%b %d, %Y'):
+            try:
+                parsed = datetime.strptime(part.strip(), fmt).date().isoformat()
+                break
+            except ValueError:
+                pass
+        if parsed is None:
+            return '', ''
+        dates.append(parsed)
+    return tuple(dates) if dates[0] <= dates[1] else ('', '')
+
+
 def _rect(cell, page):
     locator = cell.get('locator') or {}
     rect, size = locator.get('rect'), locator.get('page_size')
