@@ -171,7 +171,7 @@ class ScotiabankImportTests(TestCase):
             raw=initial_request(self.preview())
             raw.update(holder='Investigator corrected holder',account_number='00001234567')
             for row in raw['rows']: row['excluded']=False
-            old=self.f.confirm(raw)
+            old=self.f.confirm_legacy(raw)
         self.assertGreater(old['incomplete_count'],20)
         p=self.preview()
         self.assertTrue(p['current_import']['refresh_available'])
@@ -194,7 +194,7 @@ class ScotiabankImportTests(TestCase):
         with patch('services.financial.statement_import_scotiabank.scotiabank_catalog',return_value=([],set())):
             raw=initial_request(self.preview())
             for row in raw['rows']: row['excluded']=False
-            old=self.f.confirm(raw)
+            old=self.f.confirm_legacy(raw)
         with self.f.SessionLocal() as db:
             doc=db.get(FinancialSourceDocument,UUID(old['source_document_id']))
             meta=deepcopy(doc.metadata_)
