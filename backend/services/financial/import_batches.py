@@ -974,6 +974,10 @@ async def advance_batch(factory,batch_id,resolve_path,process_files):
                 active.lease_until=datetime.now(timezone.utc)+timedelta(minutes=5)
                 db.commit()
     def should_stop():
+        # A stopping process ends the turn at the next item boundary, so the
+        # lease is released normally and the next start resumes at once.
+        if shutdown_requested():
+            return True
         with factory() as db:
             current = batch_for(db, case_id, batch_id)
             return current.worker_token != token or current.status in PAUSED_STATES

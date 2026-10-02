@@ -18,6 +18,7 @@ from postgres.models.user import User
 from postgres.session import get_background_session
 from services.auth_service import auth_service
 from services.case_service import get_case_if_allowed
+from services.process_shutdown import shutdown_requested
 
 logger = logging.getLogger(__name__)
 
@@ -128,7 +129,9 @@ async def job_progress_ws(websocket: WebSocket, job_id: str):
             await websocket.send_json(existing)
             return
 
-        while True:
+        # Uvicorn closes the socket on shutdown, but this loop only notices a
+        # closed socket when a progress message arrives to send.
+        while not shutdown_requested():
             message = await pubsub.get_message(
                 ignore_subscribe_messages=True, timeout=1.0
             )

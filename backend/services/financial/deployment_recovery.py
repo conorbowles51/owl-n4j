@@ -497,6 +497,8 @@ async def run_recovery_forever():
             with factory() as db:
                 ids = next_recovery_items(db, after)
             for item_id in ids:
+                if shutdown_requested():
+                    break  # Pending items stay pending; the next start resumes them.
                 after = item_id
                 try:
                     pending = await _finish_atomic(recover_one, factory, item_id, _resolve_stored_path)
