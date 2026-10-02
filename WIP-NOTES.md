@@ -24,3 +24,10 @@
    by the catalog (Credit One / Merrick / Andrews geometry may need x/y tuning).
 2. Add `scripts/run_statement_benchmark.sh` one-command wrapper.
 3. Run baseline, write `docs/financial-workflows/baseline-2026-10-02.md`.
+
+## Update — complete (2026-10-02)
+All steps landed: corpus (a4192fb4), harness + `scripts/run_statement_benchmark.sh` (d3113874),
+baseline report `docs/financial-workflows/baseline-2026-10-02.md`. Three consecutive runs gave
+identical outcomes: 12/26 distinct periods ready without edits (46.2%), 12/18 recoverable,
+1 wrongly admitted period (cancelling valid-but-wrong OCR amounts on Credit One), 34 / 20 actions.
+This notes file can be deleted once read.
