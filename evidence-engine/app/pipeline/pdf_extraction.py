@@ -322,14 +322,21 @@ def _verify_recognised_money(page, tables, chunks, *, text_origin, extraction_me
     Digital text layers return unchanged at no cost. A valid-looking misread
     parses and can reconcile with every printed control, so recognised money
     is reread from crops of the page image and any cell those readings do not
-    confirm is marked unreadable for review, never replaced by a crop value.
+    confirm is marked unreadable for review. A crop value replaces it only when
+    the statement's own agreed controls pin that value (``repair_pinned_cells``).
     """
-    from app.pipeline.statement_money_verification import page_needs_verification, verify_money_cells
+    from app.pipeline.statement_money_verification import (page_needs_verification, repair_pinned_cells,
+        verify_money_cells)
     if not tables or not page_needs_verification(text_origin, extraction_method):
         return chunks, tables, []
     try:
         refined, records = verify_money_cells(page, tables, rotation=rotation,
             deadline=time.monotonic() + 30, language=settings.tesseract_lang)
+        try:
+            refined, repairs = repair_pinned_cells(page, refined, records[0] if records else None)
+            records = records + repairs
+        except Exception:
+            logger.warning('Pinned money repair unavailable; disputed cells stay held', exc_info=True)
     except Exception:
         logger.warning('Money-cell verification failed; holding recognised money for review', exc_info=True)
         try:

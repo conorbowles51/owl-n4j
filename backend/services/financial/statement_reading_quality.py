@@ -146,3 +146,96 @@ def prefer_image_reading(original, image):
         and (not original.get('missing_fields') or not image.get('missing_fields') or
             all(image['missing_fields'].get(field, 0) <= count for field, count in original['missing_fields'].items()))
         and image['unreadable'] < original['unreadable'])
+
+
+def pinned_running_balance_values(tables, disputed):
+    """Crop readings that a generic running-balance statement fixes on its own.
+
+    ``disputed`` maps ``(table_index, row, column)`` to the value every crop
+    reading of that money cell gave, where it contradicts the page reading.
+    Arithmetic alone cannot choose between two readings that both reconcile,
+    which is exactly what compensating misreads do. So a crop value is only
+    accepted when it is pinned: one printed control equation (previous
+    balance, payment, running balance; or last balance and closing balance)
+    contains it as its only disputed cell, every other cell of that equation
+    was read the same by the page and the crops, and the equation holds with
+    the crop value. The page reading then contradicts both the image and the
+    agreed controls. Every disputed cell must be pinned and the whole chain
+    must reconcile, or nothing is accepted and the page stays held.
+
+    Returns ``{cell: dict(text=..., pinned_by=[cells])}`` or ``{}``.
+    """
+    if not disputed:
+        return {}
+    candidate = []
+    for index, item in enumerate(tables):
+        table = item.get('table') or {}
+        values = [{**cell, 'text': disputed.get((index, cell['row'], cell['column']), cell.get('text'))}
+                  for cell in table.get('values', [])]
+        candidate.append({**item, 'table': {**table, 'values': values}})
+    sources = sources_from_tables(candidate)
+    if len(sources) != 1:
+        return {}
+    statement = labelled_statement(sources)
+    if not statement:
+        return {}
+    source = sources[0]
+    rows = propose_labelled_rows(sources, statement)
+    from services.financial.statement_import_proposal import has_transaction_header
+    header = next((i for i, r in enumerate(rows) if r['kind'] == 'header'
+                   and has_transaction_header(dict(rows=[dict(cells=r['source_cells'])]))), None)
+    if header is None:
+        return {}
+    body = [r for r in rows[header + 1:] if not (r['kind'] == 'header' and r['excluded'])]
+
+    def cell(row, column_key):
+        return (source['table_index'], row['row_index'], int(row['fields'][column_key]))
+
+    opening = closing = None
+    steps, totals = [], []
+    for row in body:
+        fields = row['fields']
+        if row['issues'] or row['kind'] not in ('balance', 'transaction', 'statement_total'):
+            return {}
+        if row['kind'] == 'balance':
+            if 'balance' not in fields or fields.get('normalized_balance_label'):
+                return {}
+            if fields['description'] == 'Opening Balance' and opening is None and not steps:
+                opening = (cell(row, 'balance_column'), int(fields['balance']))
+            elif fields['description'] == 'Closing Balance' and closing is None and opening is not None:
+                closing = (cell(row, 'balance_column'), int(fields['balance']))
+            else:
+                return {}
+        elif row['kind'] == 'statement_total':
+            totals.append(row)
+        else:
+            if closing is not None or opening is None or row['excluded']:
+                return {}
+            role = fields.get('direction')
+            if role not in ('credit', 'debit') or role not in fields or 'balance' not in fields:
+                return {}
+            movement = int(fields['amount_minor']) * (1 if role == 'credit' else -1)
+            steps.append(((cell(row, role + '_column'), movement), (cell(row, 'balance_column'), int(fields['balance']))))
+    if opening is None or closing is None:
+        return {}
+    equations, previous = [], opening
+    for (amount_cell, movement), balance in steps:
+        equations.append(([previous[0], amount_cell, balance[0]], previous[1] + movement == balance[1]))
+        previous = balance
+    equations.append(([previous[0], closing[0]], previous[1] == closing[1]))
+    for row in totals:
+        direction = row['fields']['total_direction']
+        printed = int(row['fields']['balance'])
+        members = [amount for amount, movement in (s[0] for s in steps) if (movement > 0) == (direction == 'credit')]
+        total = sum(abs(movement) for _, movement in (s[0] for s in steps) if (movement > 0) == (direction == 'credit'))
+        equations.append(([cell(row, 'balance_column'), *members], printed == total))
+    if not all(holds for _, holds in equations):
+        return {}
+    accepted = {}
+    for key, text in disputed.items():
+        pinning = next((cells for cells, _ in equations if key in cells
+                        and not any(other in disputed for other in cells if other != key)), None)
+        if pinning is None:
+            return {}
+        accepted[key] = dict(text=text, pinned_by=[list(other) for other in pinning if other != key])
+    return accepted

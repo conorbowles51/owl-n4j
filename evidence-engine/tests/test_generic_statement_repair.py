@@ -143,3 +143,67 @@ def test_extraction_rereads_a_generic_page_with_an_unreadable_amount(tmp_path, m
     from services.financial.statement_reading_quality import assess_statement_reading
     quality = assess_statement_reading(result.metadata['table_geometry']['per_table'])
     assert quality['payments'] == 1 and quality['unreadable'] == 0
+
+
+def held_record(status='contradicted', texts=('85.13',) * 6, **extra):
+    observations = [dict(dpi=300 if i < 3 else 450, threshold=(150, 190, 220)[i % 3], text=text, confidence=95.0)
+                    for i, text in enumerate(texts)]
+    return dict(method='tesseract_money_cell_verification', page=1, decision='held', **extra,
+        cells=[dict(table_index=0, row_index=6, column_index=2, original_text='15,556.17', status='confirmed',
+                    observations=[]),
+               dict(table_index=0, row_index=7, column_index=2, original_text='88.13', status=status,
+                    marked_text='8?.13', observations=observations)])
+
+
+def test_contradicted_cell_pinned_by_agreed_balances_is_repaired_with_its_evidence():
+    from app.pipeline.statement_money_verification import repair_pinned_cells
+    held = tables(debit='8?.13')
+    with fitz.open() as doc:
+        repaired, records = repair_pinned_cells(doc.new_page(width=600, height=800), held, held_record())
+    assert [(c.row, c.column, c.text) for a, c in zip(held[0].geometry.cells, repaired[0].geometry.cells)
+            if a.text != c.text] == [(7, 2, '85.13')]
+    assert all(a.locator == b.locator for a, b in zip(held[0].geometry.cells, repaired[0].geometry.cells))
+    assert '85.13' in repaired[0].chunk
+    cell = records[0]['cells'][0]
+    assert records[0]['method'] == 'statement_money_pinned_repair' and records[0]['decision'] == 'repaired'
+    assert (cell['page_reading'], cell['held_text'], cell['text']) == ('88.13', '8?.13', '85.13')
+    assert cell['pinned_by'] == [[0, 6, 2], [0, 7, 3]] and len(cell['observations']) == 6
+
+
+@pytest.mark.parametrize('record', [
+    held_record(texts=('85.13',) * 5 + ('86.13',)),
+    held_record(texts=('85.13',) * 5),
+    held_record(status='unconfirmed'),
+    held_record(error='Tesseract timed out'),
+    held_record(texts=('8S.13',) * 6),
+    {**held_record(), 'decision': 'all_confirmed'},
+    None,
+])
+def test_anything_short_of_unanimous_contradiction_stays_held(record):
+    from app.pipeline.statement_money_verification import repair_pinned_cells
+    held = tables(debit='8?.13')
+    with fitz.open() as doc:
+        repaired, records = repair_pinned_cells(doc.new_page(width=600, height=800), held, record)
+    assert repaired is held and records == []
+
+
+def test_crop_value_that_breaks_the_balance_chain_stays_held():
+    from app.pipeline.statement_money_verification import repair_pinned_cells
+    held = tables(debit='8?.13')
+    with fitz.open() as doc:
+        repaired, records = repair_pinned_cells(doc.new_page(width=600, height=800), held,
+            held_record(texts=('86.13',) * 6))
+    assert repaired is held and records == []
+
+
+def test_recognised_valid_but_wrong_amount_is_verified_then_repaired_from_the_page_image():
+    # Real rasterisation and Tesseract: the image prints 85.13, the recognised
+    # text says 88.13, and both agree on the balances either side of it.
+    misread = tables(debit='88.13')
+    with fitz.open() as doc:
+        page = printed_page(doc)
+        chunks, verified, records = pdf._verify_recognised_money(page, misread,
+            [t.chunk for t in misread], text_origin='recognised_glyphs', extraction_method='native')
+    assert records[0]['decision'] == 'held' and records[0]['contradicted'] == 1
+    assert records[1]['method'] == 'statement_money_pinned_repair'
+    assert next(c.text for c in verified[0].geometry.cells if (c.row, c.column) == (7, 2)) == '85.13'

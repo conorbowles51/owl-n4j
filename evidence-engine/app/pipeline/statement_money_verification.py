@@ -34,6 +34,14 @@ aligned), so the statement reader cannot parse it and the period is held for a
 person with the page reading, every crop reading and the crop location
 retained in the page's refinement record. Pages with a digital text layer are
 never touched and cost nothing.
+
+One exception is made afterwards, by ``repair_pinned_cells``: on a generic
+running-balance statement, a contradicted cell that every crop profile reads
+the same way is accepted when a printed control equation fixes it from cells
+the page and the crops both read identically. That is a second, independent
+line of evidence (the agreed printed balances) that the page reading
+contradicts and the crop reading satisfies. Compensating misreads that only
+fix a sum of disputed cells stay held.
 """
 from __future__ import annotations
 
@@ -305,6 +313,11 @@ def verify_money_cells(page, tables, *, rotation=0, deadline, language, chunk=No
         record['error'] = error
     if not replacements:
         return tables, [record]
+    return _with_cells(page, tables, replacements, chunk), [record]
+
+
+def _with_cells(page, tables, replacements, chunk):
+    """``tables`` with the cell texts in ``replacements`` substituted; every cell keeps its locator."""
     refined = []
     for table_index, table in enumerate(tables):
         geometry = getattr(table, 'geometry', None)
@@ -321,4 +334,46 @@ def verify_money_cells(page, tables, *, rotation=0, deadline, language, chunk=No
             grid = [[row.get(column, '') for column in range(max(row) + 1)] for _, row in sorted(rows.items())]
             text = chunk(grid, page.number + 1) or table.chunk
         refined.append(replace(table, geometry=replace(geometry, cells=cells), chunk=text))
-    return refined, [record]
+    return refined
+
+
+PINNED_METHOD = 'statement_money_pinned_repair'
+
+
+def repair_pinned_cells(page, tables, record, *, chunk=None):
+    """Accept crop readings that the statement's own agreed controls fix.
+
+    Only a page held solely by contradicted cells, each read identically by
+    every crop profile at both resolutions, is considered. The statement
+    reader then decides whether each such value is pinned by a printed control
+    whose other cells the page and the crops read the same way (see
+    ``pinned_running_balance_values``). It is all or nothing: one cell that is
+    not pinned leaves the whole page held. Each accepted cell is recorded with
+    the page reading, the held text, every crop reading and the cells that pin
+    it, so the original reading stays visible beside the repair.
+    """
+    if chunk is None:
+        from services.financial.pdf_tables import _chunk as chunk
+    if not record or record.get('method') != METHOD or record.get('decision') != 'held' or record.get('error'):
+        return tables, []
+    disputed, by_key = {}, {}
+    for cell in record['cells']:
+        if cell['status'] == 'confirmed':
+            continue
+        texts = {o['text'] for o in cell['observations']}
+        if (cell['status'] != 'contradicted' or len(cell['observations']) != len(PROFILES)
+                or len(texts) != 1 or money_value(next(iter(texts))) is None):
+            return tables, []
+        key = (cell['table_index'], cell['row_index'], cell['column_index'])
+        disputed[key], by_key[key] = texts.pop(), cell
+    from services.financial.statement_reading_quality import pinned_running_balance_values
+    accepted = pinned_running_balance_values([table.to_json() for table in tables], disputed)
+    if not accepted or accepted.keys() != disputed.keys():
+        return tables, []
+    repaired = _with_cells(page, tables, {key: value['text'] for key, value in accepted.items()}, chunk)
+    return repaired, [dict(method=PINNED_METHOD, page=page.number + 1, decision='repaired',
+        cells=[dict(table_index=key[0], row_index=key[1], column_index=key[2],
+                    page_reading=by_key[key]['original_text'], held_text=by_key[key]['marked_text'],
+                    text=value['text'], pinned_by=value['pinned_by'], observations=by_key[key]['observations'],
+                    reason='crop_reading_pinned_by_agreed_controls')
+               for key, value in sorted(accepted.items())])]
