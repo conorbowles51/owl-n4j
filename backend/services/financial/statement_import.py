@@ -4,6 +4,7 @@ from sqlalchemy import select
 from postgres.models.evidence import EvidenceFile, EvidenceDocumentText, EvidenceTableGeometry
 from services.financial.candidate_sources import read_candidate_source
 from services.financial.pdf_candidates import PdfMappingError, _digest
+from services.financial.runs import RunAborted
 from services.financial.statement_import_proposal import propose_table, VERSION
 from services.financial.statement_import_proposal import printed_label as _label, printed_period as _period
 
@@ -753,7 +754,55 @@ def confirm_statement_import(*, session_factory, case_id, evidence_file_id, requ
     return receipt
 
 
-def _write_statement_import(*, session_factory, case_id, evidence_file_id, request, actor, resolve_path):
+class _ConcurrentAdmission(RunAborted):
+    """Another transaction committed an active copy of this statement first."""
+
+
+def active_statement_conflict(error):
+    """Whether a commit was refused by the one-active-statement constraint.
+
+    PostgreSQL checks it at commit (SQLSTATE 23P01).  Any other integrity
+    failure is a different problem and is not treated as a concurrent save.
+    """
+    from sqlalchemy.exc import IntegrityError
+    from postgres.models.financial import ONE_ACTIVE_STATEMENT_CONSTRAINT
+    if not isinstance(error, IntegrityError) or getattr(error.orig, 'sqlstate', None) != '23P01':
+        return False
+    name = getattr(getattr(error.orig, 'diag', None), 'constraint_name', None)
+    return name == ONE_ACTIVE_STATEMENT_CONSTRAINT or (name is None and ONE_ACTIVE_STATEMENT_CONSTRAINT in str(error.orig))
+
+
+def _commit_statement(session):
+    from sqlalchemy.exc import IntegrityError
+    try:
+        session.commit()
+    except IntegrityError as error:
+        if not active_statement_conflict(error):
+            raise
+        session.rollback()
+        raise _ConcurrentAdmission('Another save of this statement committed first. Nothing was written by this run.') from error
+
+
+def _write_statement_import(**kwargs):
+    """Write once; if a concurrent save won the commit, answer from its copy.
+
+    The losing attempt is rolled back whole and its run is recorded as
+    aborted.  The second attempt reads the committed copy under the usual
+    locks, so the same request returns that copy's receipt (created=False) and
+    a different one is refused as already imported, exactly as if the two
+    saves had arrived one after the other.
+    """
+    for _attempt in range(2):
+        receipt = _write_statement_import_once(**kwargs)
+        if receipt is not _CONCURRENT_ADMISSION:
+            return receipt
+    raise PdfMappingError('Another save of this statement was committed at the same time. Reload the statement to see its saved copy.', 409)
+
+
+_CONCURRENT_ADMISSION = object()
+
+
+def _write_statement_import_once(*, session_factory, case_id, evidence_file_id, request, actor, resolve_path):
     import hashlib
     from postgres.models.case import Case
     from postgres.models.financial import FinancialSourceDocument, FinancialTransaction
@@ -809,7 +858,7 @@ def _write_statement_import(*, session_factory, case_id, evidence_file_id, reque
                     if request.period_start_unprinted and disposition['status'] == 'needs_comparison':
                         raise PdfMappingError(disposition['reason'], 409)
                     if disposition['status'] == 'ignored':
-                        session.commit()
+                        _commit_statement(session)
                         return ignored_receipt(case_id, file, disposition)
                 if existing is not None:
                     if _same_import_request(existing, request, request_hash):
@@ -850,7 +899,7 @@ def _write_statement_import(*, session_factory, case_id, evidence_file_id, reque
                     if request.period_start_unprinted and disposition['status'] == 'needs_comparison':
                         raise PdfMappingError(disposition['reason'], 409)
                     if disposition['status'] == 'ignored':
-                        session.commit()
+                        _commit_statement(session)
                         return ignored_receipt(case_id, file, disposition)
                 from services.financial.statement_import_overlap import coverage_review, requires_decision, duplicate_hold
                 coverage_request = {**request.model_dump(mode='json'), 'account_type': proposal['metadata'].get('account_type') or ''}
@@ -965,7 +1014,7 @@ def _write_statement_import(*, session_factory, case_id, evidence_file_id, reque
                     store_fingerprint(session, document)
                     _supersede(session, replacing, document.id, case_id=case_id, rung=DuplicateMatchRung.identical_bytes, actor=actor, ingestion_run_id=run.run_id,
                         reason="Statement reread replaces the prior import: " + request.details_reason)
-                session.commit()
+                _commit_statement(session)
                 run.document_seen()
                 run.transaction_admitted(len(transactions))
                 return dict(case_id=str(case_id), evidence_file_id=str(evidence_file_id),
@@ -976,3 +1025,5 @@ def _write_statement_import(*, session_factory, case_id, evidence_file_id, reque
             except Exception:
                 session.rollback()
                 raise
+    # Reached only when the run was aborted by a concurrent admission.
+    return _CONCURRENT_ADMISSION
