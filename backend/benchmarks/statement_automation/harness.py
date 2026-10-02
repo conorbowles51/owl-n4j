@@ -119,7 +119,7 @@ def repair_summary(locations):
                    refinements=Counter())
     for page in pages:
         reason = page.get('detection_reason')
-        if page.get('extraction_method') == 'tesseract_ocr' or reason:
+        if page.get('extraction_method') == 'tesseract_ocr':
             summary['detection_reasons'][reason or 'ocr'] += 1
             if reason == 'unreadable_statement_fields':
                 summary['quality_reread'] += 1
@@ -179,7 +179,7 @@ def simulate_correction(proposal, truth, assess, initial_request):
     if not raw.get('currency'):
         raw['currency'] = truth['currency']
         act('decision', 'currency')
-    if _norm(raw.get('holder')) != _norm(truth['holder']):
+    if not _norm(raw.get('holder')) or _norm(truth['holder']) not in _norm(raw.get('holder')):
         raw['holder'] = truth['holder']
         act('edit' if truth['holder_printed'] else 'decision', 'holder')
     if truth['account'] not in _digits(raw.get('account_number')):
@@ -190,7 +190,10 @@ def simulate_correction(proposal, truth, assess, initial_request):
         act('edit', 'institution')
     if truth['period_end'] and raw.get('period_end') != truth['period_end']:
         raw['period_end'] = truth['period_end']
-        act('edit', 'period_end')
+        # A closing date the reader already recognised (Merrick statement
+        # date) can be filled by the grouped unprinted-start decision.
+        recognised = proposal.get('printed_closing_date_iso') == truth['period_end']
+        act('edit', 'period_end', 'recognised_closing' if recognised else '')
     if truth['start_printed']:
         if raw.get('period_start') != truth['period_start']:
             raw['period_start'] = truth['period_start']
@@ -218,7 +221,8 @@ def simulate_correction(proposal, truth, assess, initial_request):
         if edit.get('direction') != expected['direction']:
             edit['direction'] = expected['direction']
             act('edit', 'row_direction', original['id'])
-        if 'balance_after' in expected and edit.get('balance_minor') not in (None, str(expected['balance_after'])):
+        unreadable_balance = edit.get('balance_minor') is None and any('balance' in i.lower() for i in original['issues'])
+        if 'balance_after' in expected and (unreadable_balance or edit.get('balance_minor') not in (None, str(expected['balance_after']))):
             edit['balance_minor'] = str(expected['balance_after'])
             act('edit', 'row_balance', original['id'])
     for index in missing:
@@ -264,6 +268,7 @@ def run(out, python, concurrency):
     if corpus_problems:
         raise RuntimeError('Corpus files differ from the manifest: ' + ', '.join(corpus_problems))
 
+    load_before = os.getloadavg()
     readings, read_wall, read_cpu = read_corpus(python, [source_dir / f['filename'] for f in manifest['files']],
                                                 out, concurrency)
     readings = {Path(path).name: value for path, value in readings.items()}
@@ -417,7 +422,8 @@ def run(out, python, concurrency):
         generated_at=datetime.now(timezone.utc).isoformat(timespec='seconds'),
         corpus=dict(version=manifest['version'], files=len(manifest['files']), periods=len(truths)),
         code=dict(commit=_git('rev-parse', 'HEAD'), dirty=bool(_git('status', '--porcelain', '--', 'backend', 'evidence-engine'))),
-        environment=dict(python=sys.version.split()[0], engine_python=python, tesseract=_tesseract(),
+        environment=dict(cpus=os.cpu_count(), load_average_before=load_before, load_average_after=os.getloadavg(),
+                         python=sys.version.split()[0], engine_python=python, tesseract=_tesseract(),
                          database='sqlite (disposable, ' + str(out / 'benchmark.db') + ')',
                          skipped_non_financial_tables=skipped_tables),
         upload=dict(duplicates_flagged=duplicates_flagged),
@@ -534,6 +540,32 @@ def verify_ledger(db, periods, final_items, truths, Transaction, Account, select
 
 
 ACTION_COST = dict(edit=1, decision=1, add_row=2)  # add_row: enter values + choose its place
+GROUPABLE = ('holder', 'account', 'institution', 'currency', 'period_start_unprinted')
+
+
+def _groupable(action):
+    """Decisions the batch can apply once across matching periods today."""
+    if action['field'] in GROUPABLE:
+        return 'dates' if action['field'] == 'period_start_unprinted' else action['field']
+    if action['field'] == 'period_end' and action['detail'] == 'recognised_closing':
+        return 'dates'  # filled by the grouped unprinted-start decision
+    return None
+
+
+def _period_effort(p):
+    """(per-period actions, non-groupable actions, groupable keys, fixable)."""
+    if p['can_import'] or p['status'] == 'duplicate_ignored':
+        return 0, 0, set(), True
+    if p['expected'] in ('hold', 'duplicate'):
+        return 2, 2, set(), True  # open the statement + record hold / leave unimported
+    correction = p.get('correction')
+    if correction is None:
+        return 1, 1, set(), False
+    individual = [a for a in correction['actions'] if _groupable(a) is None]
+    keys = {(p['family'], _groupable(a)) for a in correction['actions'] if _groupable(a)}
+    total = 1 + sum(ACTION_COST[a['kind']] for a in correction['actions'])
+    remaining = (1 + sum(ACTION_COST[a['kind']] for a in individual)) if individual else 0
+    return total, remaining, keys, correction['resolved']
 
 
 def metrics(result):
@@ -541,83 +573,110 @@ def metrics(result):
     families = sorted({p['family'] for p in periods})
 
     def block(subset):
-        total = len(subset)
-        ready = [p for p in subset if p['can_import']]
-        auto = [p for p in subset if p['expected'] == 'auto']
+        unique = [p for p in subset if p['expected'] != 'duplicate']
+        copies = [p for p in subset if p['expected'] == 'duplicate']
+        total = len(unique)
+        ready = [p for p in unique if p['can_import']]
+        auto = [p for p in unique if p['expected'] == 'auto']
         auto_ready = [p for p in auto if p['can_import']]
         histogram = Counter()
-        for p in subset:
+        for p in unique:
             if not p['can_import']:
                 histogram.update(p['reasons'].keys() or ['unexplained'])
-        actions, grouped_keys, unresolved = 0, set(), 0
-        per_period_actions = []
+        actions = grouped = unresolved = edits = decisions = added = 0
+        keys = set()
         for p in subset:
-            if p['can_import']:
-                continue
-            if p['expected'] in ('hold', 'duplicate'):
-                count = 2  # open the statement + record the hold/leave-unimported decision
-            elif 'correction' in p:
-                count = 1 + sum(ACTION_COST[a['kind']] for a in p['correction']['actions'])
-                if not p['correction']['resolved']:
-                    unresolved += 1
-            else:
-                count = 1
-                unresolved += 1
-            actions += count
-            per_period_actions.append(count)
-            for a in p.get('correction', {}).get('actions', []):
-                if a['field'] in ('holder', 'account', 'institution', 'currency', 'period_start_unprinted'):
-                    grouped_keys.add((p['family'], a['field']))
-        grouped = actions - sum(1 for p in subset if not p['can_import'] for a in p.get('correction', {}).get('actions', [])
-                                if a['field'] in ('holder', 'account', 'institution', 'currency', 'period_start_unprinted')) + len(grouped_keys)
+            total_actions, individual, group_keys, fixable = _period_effort(p)
+            actions += total_actions
+            grouped += individual
+            keys |= group_keys
+            unresolved += 0 if fixable else 1
+            for a in p.get('correction', {}).get('actions', []) if not p['can_import'] else []:
+                edits += a['kind'] == 'edit'
+                decisions += a['kind'] == 'decision'
+                added += a['kind'] == 'add_row'
+        proposal_errors, wrong_values = Counter(), Counter()
+        for p in ready:
+            proposal_errors.update(p.get('proposal_checks') or {})
+        for p in unique:
+            wrong_values.update({k: v for k, v in (p.get('proposal_checks') or {}).items() if k.endswith('_wrong')})
         return dict(periods=total, ready_without_edits=len(ready),
                     ready_without_edits_pct=round(100 * len(ready) / total, 1) if total else None,
-                    clean_ready=sum(p['status'] == 'ready' and p['can_import'] for p in subset),
+                    clean_ready=sum(p['status'] == 'ready' and p['can_import'] for p in unique),
                     recoverable_periods=len(auto), recoverable_ready=len(auto_ready),
                     recoverable_ready_pct=round(100 * len(auto_ready) / len(auto), 1) if auto else None,
+                    decision_periods=sum(p['expected'] == 'decision' for p in unique),
+                    hold_periods=sum(p['expected'] == 'hold' for p in unique),
+                    holds_kept=sum(p['expected'] == 'hold' and not p['can_import'] for p in unique),
+                    duplicate_copies=len(copies),
+                    duplicate_copies_held_automatically=sum(p['status'] == 'duplicate_ignored' for p in copies),
+                    duplicate_copies_offered_for_import=sum(p['can_import'] for p in copies),
                     blocked=total - len(ready), blocking_reasons=dict(histogram.most_common()),
-                    human_actions_per_period=actions, human_actions_grouped=grouped,
+                    human_actions_per_period=actions, human_actions_grouped=grouped + len(keys),
+                    shared_decisions=sorted('/'.join(k) for k in keys),
+                    field_edits=edits, decisions=decisions, rows_to_add=added,
                     blocked_not_fixable_by_field_edits=unresolved,
-                    wrongly_ready=[p['truth_id'] for p in subset if p['can_import'] and p['expected'] in ('hold',)])
-    overall = block([p for p in periods if p['family'] != 'unmatched'] + [p for p in periods if p['family'] == 'unmatched'])
-    return dict(overall=overall, by_family={f: block([p for p in periods if p['family'] == f]) for f in families},
-                by_expected={e: block([p for p in periods if p['expected'] == e])
+                    proposal_critical_errors_in_ready_periods=dict(proposal_errors),
+                    valid_but_wrong_values_proposed=dict(wrong_values),
+                    wrongly_ready=[p['truth_id'] for p in unique if p['can_import'] and p['expected'] == 'hold'])
+    return dict(overall=block(periods), by_family={f: block([p for p in periods if p['family'] == f]) for f in families},
+                by_expected={e: block([p for p in periods if (p['expected'] or 'unmatched') == e])
                              for e in sorted({p['expected'] or 'unmatched' for p in periods})})
 
 
 def render_summary(result):
     m = result['metrics']
     o = m['overall']
+    ledger = result['ledger']
     lines = [f"# Statement automation benchmark — {result['generated_at']}", '',
              f"Code {result['code']['commit'][:10]}{' (uncommitted changes)' if result['code']['dirty'] else ''}; "
-             f"corpus {result['corpus']['version']}: {result['corpus']['files']} PDFs, {result['corpus']['periods']} periods.", '',
-             f"**Ready without any human edit: {o['ready_without_edits']} of {o['periods']} periods "
-             f"({o['ready_without_edits_pct']}%).** Recoverable periods ready: {o['recoverable_ready']} of "
-             f"{o['recoverable_periods']} ({o['recoverable_ready_pct']}%).", '',
-             f"Wrongly admitted periods: {len(result['ledger']['wrongly_admitted'])}. Critical-field errors in saved "
-             f"transactions: {sum(result['ledger']['critical_errors'].values())}. Duplicate ledger contributions: "
-             f"{result['ledger']['duplicate_contributions']}.", '',
-             f"Estimated human actions to clear blocked periods: {o['human_actions_per_period']} per period, "
-             f"{o['human_actions_grouped']} with grouped decisions. Blocked periods not fixable by field edits: "
+             f"corpus {result['corpus']['version']}: {result['corpus']['files']} PDFs, {result['corpus']['periods']} periods "
+             f"({o['periods']} distinct + {o['duplicate_copies']} exact copies).", '',
+             f"**Ready without any human edit: {o['ready_without_edits']} of {o['periods']} distinct periods "
+             f"({o['ready_without_edits_pct']}%).** Recoverable periods (source establishes every fact) ready: "
+             f"{o['recoverable_ready']} of {o['recoverable_periods']} ({o['recoverable_ready_pct']}%). "
+             f"The other {o['decision_periods']} need a genuine decision and {o['hold_periods']} must stay held.", '',
+             f"Safety: wrongly admitted periods {len(ledger['wrongly_admitted'])}; critical-field errors in saved "
+             f"transactions {sum(ledger['critical_errors'].values())} ({ledger['transactions']} saved from "
+             f"{ledger['admitted_periods']} periods); duplicate ledger contributions {ledger['duplicate_contributions']}; "
+             f"held periods kept out {o['holds_kept']}/{o['hold_periods']}; exact copies held automatically "
+             f"{o['duplicate_copies_held_automatically']}/{o['duplicate_copies']}. Valid-looking but wrong values "
+             f"proposed before review (any period): {sum(o['valid_but_wrong_values_proposed'].values())}.", '',
+             f"Human actions to make every blocked period ready or decided: {o['human_actions_per_period']} "
+             f"one statement at a time; {o['human_actions_grouped']} using today's grouped decisions "
+             f"({', '.join(o['shared_decisions']) or 'none'}). Field edits {o['field_edits']}, decisions {o['decisions']}, "
+             f"rows to add {o['rows_to_add']}. Blocked periods not fixable by field edits: "
              f"{o['blocked_not_fixable_by_field_edits']}.", '',
-             '| Family | Periods | Ready w/o edits | Recoverable ready | Actions | Top blocking reasons |',
+             '| Family | Distinct periods | Ready w/o edits | Recoverable ready | Actions (single / grouped) | Blocking reasons |',
              '|---|---|---|---|---|---|']
     for family, f in m['by_family'].items():
-        reasons = ', '.join(f'{k} {v}' for k, v in list(f['blocking_reasons'].items())[:4]) or '—'
+        reasons = ', '.join(f'{k} {v}' for k, v in f['blocking_reasons'].items()) or '—'
         lines.append(f"| {family} | {f['periods']} | {f['ready_without_edits']} ({f['ready_without_edits_pct']}%) | "
-                     f"{f['recoverable_ready']}/{f['recoverable_periods']} | {f['human_actions_per_period']} | {reasons} |")
-    lines += ['', '| Period | Expected | Defects | Status | Ready | Reasons | Actions (simulated) |', '|---|---|---|---|---|---|---|']
+                     f"{f['recoverable_ready']}/{f['recoverable_periods']} | {f['human_actions_per_period']} / "
+                     f"{f['human_actions_grouped']} | {reasons} |")
+    lines += ['', '| Period | Expected | Defects | Batch status | Importable | Blocking reasons | Simulated actions |',
+              '|---|---|---|---|---|---|---|']
     for p in sorted(result['periods'], key=lambda p: p['truth_id'] or ''):
         correction = p.get('correction')
-        acted = ('; '.join(sorted({a['field'] for a in correction['actions']})) + ('' if correction['resolved'] else ' → still blocked')
-                 if correction else '')
+        acted = ''
+        if correction and not p['can_import'] and p['status'] != 'duplicate_ignored':
+            acted = ', '.join(a['field'] for a in correction['actions']) or 'none'
+            acted += '' if correction['resolved'] else ' (still blocked)'
         lines.append(f"| {p['truth_id']} | {p['expected']} | {', '.join(p['defects']) or '—'} | {p['status']} | "
                      f"{'yes' if p['can_import'] else 'no'} | {', '.join(f'{k} {v}' for k, v in p['reasons'].items()) or '—'} | {acted} |")
     t = result['timing']
-    lines += ['', f"Timing: engine reading {t['engine_read_wall_seconds']:.1f}s wall ({t['engine_read_cpu_seconds']:.1f}s CPU); "
-              f"batch preparation {t['preparation']['seconds']:.1f}s over {t['preparation']['turns']} worker turns; "
-              f"batch status read {t['batch_status_seconds']:.2f}s; group import {t['group_import']['seconds']:.1f}s; "
-              f"total {t['total_wall_seconds']:.1f}s.", '']
+    reread = {k: v for k, v in result['repairs'].items() if v['quality_reread'] or v['full_page_ocr']}
+    lines += ['', 'Automatic reading repair: ' + ('; '.join(
+        f"{k}: {v['quality_reread']} quality reread, {v['full_page_ocr']} full-page OCR, "
+        f"{', '.join(f'{a} {b}' for a, b in v['refinements'].items()) or 'no refinement records'}"
+        for k, v in reread.items()) or 'none triggered') + '.', '',
+        f"Timing: engine reading {t['engine_read_wall_seconds']:.1f}s wall ({t['engine_read_cpu_seconds']:.1f}s CPU "
+        f"incl. children); batch preparation {t['preparation']['seconds']:.1f}s over {t['preparation']['turns']} "
+        f"worker turns; batch status read {t['batch_status_seconds']:.2f}s; group import "
+        f"{t['group_import']['seconds']:.1f}s; total {t['total_wall_seconds']:.1f}s. Host: "
+        f"{result['environment']['cpus']} CPUs, 1-minute load {result['environment']['load_average_before'][0]:.1f} "
+        f"before reading and {result['environment']['load_average_after'][0]:.1f} after (timings are not comparable "
+        f"across hosts or loads).", '']
     return '\n'.join(lines)
 
 
