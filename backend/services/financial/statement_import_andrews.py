@@ -658,8 +658,9 @@ def andrews_no_activity_evidence(sources, statement, rows):
     """Decide whether the printed page itself proves a section had no activity.
 
     Equal balances alone never establish no activity. This requires, on one
-    page: the exact printed opening line dated the period start, the exact
-    printed Ending Balance line dated the period end, both balances readable
+    page: the exact printed opening (Previous Balance) line with a readable
+    date in the period, the exact printed Ending Balance line dated the period
+    end, both balances readable
     and equal, nothing at all read between them, and no vertical room between
     them for an unread line (measured against this page's own line spacing).
     A failed or partial reading, a missing page or a section that crosses a
@@ -743,11 +744,14 @@ def andrews_no_activity_evidence(sources, statement, rows):
     if distance * 2 > pitch * 3:
         return held('unread_band', 'There is space between the opening and ending balance lines where a line may not have been read. Check the page before confirming that it contains no transactions.',
                     page_number=key[0], line_pitch=pitch, distance=distance)
-    # Another table on the same page must not place anything in that band.
+    # Nothing read on this page, in this or another table and whatever its
+    # row numbering, may lie in the band between the two lines.
     for other in sources:
-        if other['page_number'] != key[0] or other is source:
+        if other['page_number'] != key[0]:
             continue
         for row in other['rows']:
+            if other is source and row['row_index'] in (opening['row_index'], closing['row_index']):
+                continue
             for cell in row['cells']:
                 b = _box(cell)
                 if b is None or first[3] < (b[1] + b[3]) / 2 < second[1]:

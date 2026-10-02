@@ -97,6 +97,23 @@ class AndrewsNoActivityEvidenceTests(unittest.TestCase):
         self.assertFalse(evidence['verified'])
         self.assertEqual(evidence['reason'], 'rows_between_endpoints')
 
+    def test_same_table_text_numbered_out_of_order_inside_the_band_stays_held(self):
+        data = page()
+        closing = data['rows'][-1]
+        for cell in closing['cells']:
+            cell['locator']['rect'][1] += 6000
+            cell['locator']['rect'][3] += 6000
+        stray = deepcopy(data['rows'][-2])
+        stray['row_index'] = 99
+        stray['cells'] = stray['cells'][:1]
+        stray['cells'][0]['expected_text'] = 'smudge'
+        top = data['rows'][-2]['cells'][0]['locator']['rect'][3]
+        stray['cells'][0]['locator']['rect'][1:4:2] = [top + 500, top + 3500]
+        data['rows'].append(stray)
+        _, evidence = proposal_for(data)
+        self.assertFalse(evidence['verified'])
+        self.assertEqual(evidence['reason'], 'rows_between_endpoints')
+
     def test_unequal_or_unreadable_or_misdated_endpoints_stay_held(self):
         cases = {
             'endpoints_differ': [QUIET[0], [(15, '06/30'), (75, 'Ending Balance'), (350, '210.00')]],
