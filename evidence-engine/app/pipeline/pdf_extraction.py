@@ -31,7 +31,7 @@ LOW_CONFIDENCE_THRESHOLD = 60.0
 MIN_OCR_DPI = 150
 MIN_RELIABLE_OSD_CONFIDENCE = 15.0
 MAX_OSD_TIMEOUT_SECONDS = 30.0
-PDF_READING_REVISION = 'bank-payment-rows-v10'
+PDF_READING_REVISION = 'bank-payment-rows-v11'
 OSD_INSUFFICIENT_TEXT_MARKERS = ("too few characters", "skipping this page")
 
 
@@ -314,6 +314,38 @@ def _statement_reading_quality(tables):
 def _prefer_statement_image(original, image):
     from services.financial.statement_reading_quality import prefer_image_reading
     return prefer_image_reading(original, image)
+
+
+def _verify_recognised_money(page, tables, chunks, *, text_origin, extraction_method, rotation=0):
+    """Hold recognised money cells that the page image does not confirm.
+
+    Digital text layers return unchanged at no cost. A valid-looking misread
+    parses and can reconcile with every printed control, so recognised money
+    is reread from crops of the page image and any cell those readings do not
+    confirm is marked unreadable for review, never replaced by a crop value.
+    """
+    from app.pipeline.statement_money_verification import page_needs_verification, verify_money_cells
+    if not tables or not page_needs_verification(text_origin, extraction_method):
+        return chunks, tables, []
+    try:
+        refined, records = verify_money_cells(page, tables, rotation=rotation,
+            deadline=time.monotonic() + 30, language=settings.tesseract_lang)
+    except Exception:
+        logger.warning('Money-cell verification failed; holding recognised money for review', exc_info=True)
+        try:
+            refined, records = verify_money_cells(page, tables, rotation=rotation,
+                deadline=time.monotonic(), language=settings.tesseract_lang, measure=False)
+        except Exception:
+            logger.error('Recognised money could not be marked for review', exc_info=True)
+            return chunks, tables, []
+    if refined is not tables:
+        reader = _load_table_reader()
+        chunks = reader.chunks_of(refined) if reader is not None else [t.chunk for t in refined]
+    return chunks, refined, records
+
+
+def _page_rotation(refinements):
+    return next((r['rotation'] for r in refinements or [] if r.get('field') == 'page_orientation'), 0)
 
 
 def _retain_native_statement(page_result, original, table_chunks, extracted_tables, reason):
@@ -680,6 +712,9 @@ def _ocr_page(page: fitz.Page) -> tuple[str, float | None, int, list | None, lis
             refinements.extend(comparisons)
     except Exception:
         logger.warning('Optional Santander closing OCR unavailable; retaining the page reading', exc_info=True)
+    if best_rotation:
+        # Later crops of this page's cells must be turned the same way.
+        refinements.append(dict(field='page_orientation', rotation=best_rotation))
     from app.pipeline.ocr_geometry import project_ocr_words
     try:
         words = project_ocr_words(best_data, rotation=best_rotation,
@@ -789,7 +824,7 @@ def _extract_pdf_sync(
             if checkpoint and checkpoint.exists():
                 cached = json.loads(checkpoint.read_text())
                 page_result = _PageResult(page_number=page_number, text=cached['text'],
-                    text_origin=cached['text_origin'])
+                    text_origin=cached['text_origin'], ocr_refinements=cached.get('refinements', []))
                 pages.append(page_result)
                 table_chunks.extend(cached['chunks'])
                 extracted_tables.extend(_restore_page_tables(cached['tables']))
@@ -814,12 +849,16 @@ def _extract_pdf_sync(
                     page_result.detection_reason = 'unreadable_statement_fields'
                     ocr_indexes.append(page_index)
                 else:
+                    page_chunks, page_tables, verification = _verify_recognised_money(page, page_tables,
+                        page_chunks, text_origin=page_result.text_origin, extraction_method='native')
+                    page_result.ocr_refinements.extend(verification)
                     table_chunks.extend(page_chunks)
                     extracted_tables.extend(page_tables)
                 if checkpoint and page_index not in native_alternatives:
                     from app.services.ingestion_checkpoints import atomic_json
                     atomic_json(checkpoint, dict(text=native_text, text_origin=page_result.text_origin,
-                        chunks=page_chunks, tables=[dict(chunk=t.chunk, metadata=t.to_json()) for t in page_tables]))
+                        chunks=page_chunks, tables=[dict(chunk=t.chunk, metadata=t.to_json()) for t in page_tables],
+                        refinements=page_result.ocr_refinements))
             else:
                 page_result = _PageResult(
                     page_number=page_number,
@@ -858,6 +897,11 @@ def _extract_pdf_sync(
                 page_result.ocr_refinements = refinements
             except Exception as exc:
                 if original := native_alternatives.get(page_index):
+                    chunks, verified, verification = _verify_recognised_money(document[page_index],
+                        original['tables'], original['chunks'], text_origin=original['origin'],
+                        extraction_method='native')
+                    page_result.ocr_refinements.extend(verification)
+                    original = {**original, 'tables': verified, 'chunks': chunks}
                     _retain_native_statement(page_result, original, table_chunks, extracted_tables,
                         'Image reread unavailable; unresolved embedded readings remain for review.')
                     if report_progress:
@@ -909,11 +953,20 @@ def _extract_pdf_sync(
                         original = {**original, 'tables': refined, 'chunks': reader.chunks_of(refined)}
                 except Exception:
                     logger.debug('Native statement cell reread unavailable', exc_info=True)
+                chunks, verified, verification = _verify_recognised_money(document[page_index],
+                    original['tables'], original['chunks'], text_origin=original['origin'],
+                    extraction_method='native')
+                page_result.ocr_refinements.extend(verification)
+                original = {**original, 'tables': verified, 'chunks': chunks}
                 _retain_native_statement(page_result, original, table_chunks, extracted_tables,
                     'Image reread did not safely improve the same account, period and payment rows.')
             else:
-                if reader is not None:
-                    table_chunks.extend(reader.chunks_of(ocr_tables))
+                ocr_chunks = reader.chunks_of(ocr_tables) if reader is not None else []
+                ocr_chunks, ocr_tables, verification = _verify_recognised_money(document[page_index],
+                    ocr_tables, ocr_chunks, text_origin='recognised_glyphs', extraction_method='tesseract_ocr',
+                    rotation=_page_rotation(page_result.ocr_refinements))
+                page_result.ocr_refinements.extend(verification)
+                table_chunks.extend(ocr_chunks)
                 extracted_tables.extend(ocr_tables)
                 if original:
                     page_result.ocr_refinements.append(dict(field='statement_page_reading', decision='image_selected',
