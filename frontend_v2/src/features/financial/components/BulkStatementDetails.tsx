@@ -51,7 +51,12 @@ const previewSchema = z.object({
   preview_revision: z.string(),
   updated: z.number(),
   items: z.array(
-    statement.extend({ after: z.record(z.string(), z.string()), changes, excluded_reason: z.string().nullable().optional() })
+    statement.extend({
+      after: z.record(z.string(), z.string()),
+      changes,
+      excluded_reason: z.string().nullable().optional(),
+      source_check: z.string().nullable().optional(),
+    })
   ),
 })
 const receiptSchema = z.object({
@@ -77,6 +82,7 @@ type Draft = {
   requestId: string
   open: boolean
   confirmUnprintedStart?: boolean
+  confirmNoActivity?: boolean
 }
 type Props = {
   caseId: string
@@ -178,7 +184,11 @@ function Editor({
         revision,
       })
     ),
-    changes: draft.confirmUnprintedStart ? { period_start_unprinted: true } : draft.values,
+    changes: draft.confirmNoActivity
+      ? { no_activity_confirmed: true }
+      : draft.confirmUnprintedStart
+        ? { period_start_unprinted: true }
+        : draft.values,
     mode: draft.mode,
     request_id: draft.requestId,
   })
@@ -275,7 +285,7 @@ function Editor({
   ).length
   const valid =
     selected.length > 0 &&
-    (draft.confirmUnprintedStart || (Object.keys(draft.values).length > 0 &&
+    (draft.confirmNoActivity || draft.confirmUnprintedStart || (Object.keys(draft.values).length > 0 &&
     (draft.values.currency === undefined || !!draft.values.currency)))
   const summary = (item: Statement) =>
     [
@@ -286,7 +296,11 @@ function Editor({
       `${item.values.period_start || "Start missing"} – ${item.values.period_end || "End missing"}`,
       item.status,
     ].join(" · ")
-  const labels = { ...Object.fromEntries(fields), period_start_unprinted: "Statement start" } as Record<string, string>
+  const labels = {
+    ...Object.fromEntries(fields),
+    period_start_unprinted: "Statement start",
+    no_activity_confirmed: "Activity",
+  } as Record<string, string>
   return (
     <>
       <Button
@@ -362,7 +376,7 @@ function Editor({
                   correction history are retained. Saving does not import
                   additional transactions.
                 </p>
-                {draft.mode === "fill_missing" && !preview.updated && !draft.confirmUnprintedStart && (
+                {draft.mode === "fill_missing" && !preview.updated && !draft.confirmUnprintedStart && !draft.confirmNoActivity && (
                   <div
                     className="rounded border p-3 space-y-2 text-sm"
                     role="status"
@@ -388,6 +402,9 @@ function Editor({
                   >
                     <strong>{item.filename}</strong>
                     <p>{summary(item)}</p>
+                    {item.source_check && (
+                      <p>Why its pages did not settle this automatically: {item.source_check}</p>
+                    )}
                     {!Object.keys(item.changes).length ? (
                       <p>{item.excluded_reason || "No changes — existing details kept."}</p>
                     ) : (
@@ -541,8 +558,22 @@ function Editor({
                 <h3 className="font-semibold">2. Choose fields to change</h3>
                 <label className="block rounded border p-3 text-sm space-y-2">
                   <span className="flex items-start gap-2">
+                    <input type="checkbox" checked={!!draft.confirmNoActivity} disabled={busy}
+                      onChange={(event) => changeDraft({ confirmNoActivity: event.target.checked, confirmUnprintedStart: false })} />
+                    I checked every page of these statements and confirm they contain no transactions
+                  </span>
+                  <span className="block text-muted-foreground">
+                    Apply one confirmation to the selected unimported statements that have no payments.
+                    Each keeps its own dates and printed balances. Statements with payments, with printed
+                    opening and ending balances that differ, or that are already imported are excluded in
+                    the preview. A missing or unreadable page is not a period without activity: only confirm
+                    after checking the original pages.
+                  </span>
+                </label>
+                <label className="block rounded border p-3 text-sm space-y-2">
+                  <span className="flex items-start gap-2">
                     <input type="checkbox" checked={!!draft.confirmUnprintedStart} disabled={busy}
-                      onChange={(event) => changeDraft({ confirmUnprintedStart: event.target.checked })} />
+                      onChange={(event) => changeDraft({ confirmUnprintedStart: event.target.checked, confirmNoActivity: false })} />
                     I confirm these statements do not print a start date
                   </span>
                   <span className="block text-muted-foreground">
@@ -552,7 +583,7 @@ function Editor({
                     Only confirm after checking that the source layout omits the start date, rather than an unreadable date.
                   </span>
                 </label>
-                {!draft.confirmUnprintedStart && (
+                {!draft.confirmUnprintedStart && !draft.confirmNoActivity && (
                 <fieldset disabled={busy} className="space-y-3">
                   <label className="block text-sm">
                     Whole-month shortcut (optional)
