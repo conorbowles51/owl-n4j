@@ -23,3 +23,11 @@ Env: system pip blocked by Debian typing_extensions; used a venv with
 ## Next
 - Full suite run was in progress (log /tmp/u0out-root/full.log); record counts.
   Expected: 2 failures (unassigned_statement), skipped=17.
+
+## Full suite result (venv run, 1223 s)
+Ran 5544, FAILED (failures=2, errors=1, skipped=29).
+- 2 failures = unassigned_statement (open, product decision above).
+- 1 error = test_financial_pdf_geometry_candidates: ModuleNotFoundError 'fitz' — my venv lacks
+  PyMuPDF; environment only (the original run had it; not in the CLAUDE.md bootstrap list).
+- skipped 29 vs 12: +5 identity_graph_integration (now correctly skipped); remainder are
+  likely optional-dependency skips in this venv — re-check in the canonical environment.
