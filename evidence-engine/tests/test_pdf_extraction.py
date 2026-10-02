@@ -836,6 +836,12 @@ async def test_ocr_word_boxes_produce_source_cells_with_ocr_provenance(tmp_path,
         "line_num": [1,1,2,2], "left": [100,800,100,800], "top": [100,100,200,200],
         "width": [200,100,200,100], "height": [30] * 4,
     })
+    # The stubbed recogniser returns this page's words for every image, so the
+    # money-cell crop check (covered in test_statement_money_verification)
+    # cannot confirm anything here; this test is about cell provenance only.
+    from app.pipeline import statement_money_verification
+    monkeypatch.setattr(statement_money_verification, "verify_money_cells",
+        lambda page, tables, **_kwargs: (tables, []))
     result = await extract_text(str(pdf_path), pdf_path.name)
     assert result.metadata["page_spans"][0]["text_origin"] == "recognised_glyphs"
     assert result.metadata["page_spans"][0]["ocr_geometry_status"] == "available"
