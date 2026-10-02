@@ -218,7 +218,8 @@ minutes. Always name the project.
 
 **Branch is `integration/evidence-main-reunion`. Never merge to main.**
 
-**Push is blocked. Neil pushes.** Never attempt it.
+**Pushing `integration/evidence-main-reunion` is allowed.** Never push to main and
+never force-push.
 
 **Never modify git config.** The write procedure below sets both identities per
 commit instead.
