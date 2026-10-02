@@ -2031,6 +2031,9 @@ __all__ += ["propose_card_table"]
 from services.financial.statement_import_merrick import merrick_statement, propose_merrick_table
 __all__ += ["merrick_statement", "propose_merrick_table"]
 
+from services.financial.closing_only_period import closing_only_period_dates
+__all__ += ["closing_only_period_dates"]
+
 from services.financial.transaction_notes import capture_transaction_notes
 __all__ += ["capture_transaction_notes"]
 
