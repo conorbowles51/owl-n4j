@@ -1,35 +1,18 @@
-# U3 shutdown hang - WIP notes
+# U3 shutdown hang - notes (complete)
 
-## Findings
-- journald owl-backend-v2, 2026-10-02 09:41:06 -> 10:12:36: both workers stuck in
-  uvicorn's request-task phase ("Waiting for background tasks to complete"), no
-  "Waiting for connections" => in-flight HTTP tasks whose connections were gone.
-  Lifespan shutdown never ran (forced exit at 10:12:36 skipped it). The access log
-  cannot name the request (lines are written at response start).
-- Live unit has no --timeout-graceful-shutdown, so uvicorn waits forever.
-- Lifespan exit then did cancel + unbounded gather on recovery / identity sweep /
-  batch loops, each of which awaits an uncancellable worker thread (_finish_atomic,
-  run_identity_graph_forever `await work`).
-- deploy.sh restart blocked in `systemctl restart` (log ends at "Restarting services"),
-  no last-good written.
+Status: done on fin/u3-shutdown (commits 53a77ffa, 2888a653, 210c19b9 + this one).
+Not deployed; nothing live touched.
 
-## Done (uncommitted -> committed as WIP)
-- backend/services/process_shutdown.py: shutdown event, signal-chained watchdog
-  (hard deadline 45s, diagnostics at 25s naming pending tasks incl. request path),
-  stop_background_tasks (cancel + bounded wait 10s, abandon + log).
-- main.py lifespan uses it; import_batches should_stop + recovery loop + evidence WS
-  loop observe shutdown_requested(). identity_graph.py untouched.
-- tests/test_process_shutdown.py: 12 tests; 11 pass, describe_task innermost-await
-  assertion fails (cr_await chain stops at sleep; fix the test expectation or walk).
-  Uvicorn e2e: old variant never stops (>8s), fixed single worker / 2 workers stop
-  within bound, watchdog-only path stops at deadline.
+Measured (real uvicorn 0.38 subprocess, hung request + stuck atomic thread):
+- before (old lifespan, no uvicorn timeout): did not stop within 30s (unbounded)
+- old lifespan + --timeout-graceful-shutdown only: still hangs (lifespan gather)
+- after, production defaults, 2 workers: 31.0s
+- after, no uvicorn timeout (watchdog only): 45.1s
+- after, test bounds (2s request / 1s lifespan): 3.3s
 
-## Next
-- Fix describe_task test; time each e2e precisely for the report.
-- Add import-batch shutdown test in test_financial_import_batches.py.
-- deploy: new deploy/backend-stop.sh (bounded stop: stop --no-block, wait 60s,
-  journal tail, SIGINT all, 20s, SIGKILL, 10s), EXIT/TERM trap writing outcome
-  block to the log; use in deploy.sh + rollback.sh; drop-in -> TimeoutStopSec=90 +
-  Environment=UVICORN_TIMEOUT_GRACEFUL_SHUTDOWN=20; setup-server.sh unit same;
-  update test-ingestion-shutdown.sh + README; new deploy/tests/test-backend-stop.sh;
-  shellcheck.
+Tests: backend/tests/test_process_shutdown.py (12, OK);
+test_financial_import_batches new shutdown test passes (1 pre-existing failure on
+base too: test_incomplete_progress_is_saved_but_cannot_enter_transactions);
+deploy/tests/test-backend-stop.sh, test-ingestion-shutdown.sh pass; shellcheck -S warning clean.
+
+This file can be dropped before merge.
