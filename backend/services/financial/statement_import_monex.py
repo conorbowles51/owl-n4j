@@ -162,3 +162,24 @@ def propose_monex_statement(sources, currency, choice):
             except ValueError as exc:
                 item['issues'].append(str(exc))
     return dict(rows=result, issues=[])
+
+
+def monex_no_activity_evidence(sources, choice, rows, currency):
+    """A currency summary's printed zero + Total abonos / - Total cargos prove it quiet.
+
+    The catalog accepts this layout only when every numbered page is
+    understood and none carries a movement table. As a further guard the
+    currency's summary page must contain no line that starts with a date.
+    """
+    from services.financial.statement_printed_no_activity import zero_totals_evidence
+
+    def guard():
+        for s in sources:
+            if s['page_number'] != choice.get('summary_page'):
+                continue
+            for raw in s['rows']:
+                if re.match(r'^\d{1,2}\s*[/-]\s*(?:\d{1,2}|[A-Z]{3})\s*[/-]\s*\d{2,4}\b', norm(text(raw))):
+                    return ('dated_line', 'A dated line was read on this currency summary page. Check it before confirming that the section contains no transactions.')
+        return None
+
+    return zero_totals_evidence(rows, choice, currency, family='monex-mexico', guard=guard)

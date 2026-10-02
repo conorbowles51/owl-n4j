@@ -397,22 +397,31 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
         _check_review_size(rows)
     from services.financial.statement_import_proposal import has_transaction_header
     if selected and selected.get('layout_id') == 'scotiabank-mexico-zero-activity':
-        from services.financial.statement_import_scotiabank import propose_scotiabank_statement
+        from services.financial.statement_import_scotiabank import propose_scotiabank_statement, scotiabank_no_activity_evidence
         proposal = propose_scotiabank_statement(sources, chosen_currency, selected)
         rows.extend(proposal['rows'])
+        no_activity_evidence = scotiabank_no_activity_evidence(sources, selected, proposal['rows'], chosen_currency)
         _check_review_size(rows)
     transaction_header_pages = {s['page_number'] for s in sources if has_transaction_header(s)} if not selected else set()
     if selected and selected.get('layout_id') == 'monex-mexico-currency-summary':
-        from services.financial.statement_import_monex import propose_monex_statement
-        rows.extend(propose_monex_statement(sources, chosen_currency, selected)['rows'])
+        from services.financial.statement_import_monex import propose_monex_statement, monex_no_activity_evidence
+        proposed = propose_monex_statement(sources, chosen_currency, selected)['rows']
+        rows.extend(proposed)
+        no_activity_evidence = monex_no_activity_evidence(sources, selected, proposed, chosen_currency)
         _check_review_size(rows)
     if selected and selected.get('layout_id') in ('kapital-mexico-product-statement', 'intercam-mexico-product-statement'):
-        from services.financial.statement_import_kapital import propose_kapital_statement
-        rows.extend(propose_kapital_statement(sources, chosen_currency, selected)['rows'])
+        from services.financial.statement_import_kapital import propose_kapital_statement, kapital_no_activity_evidence
+        proposed = propose_kapital_statement(sources, chosen_currency, selected)['rows']
+        rows.extend(proposed)
+        no_activity_evidence = kapital_no_activity_evidence(sources, selected, proposed, chosen_currency)
         _check_review_size(rows)
     if selected and selected.get('layout_id') == 'santander-mexico-movements':
-        from services.financial.statement_import_santander import propose_santander_statement
-        rows.extend(propose_santander_statement(sources, chosen_currency, selected)['rows'])
+        from services.financial.statement_import_santander import propose_santander_statement, santander_no_activity_evidence
+        proposed = propose_santander_statement(sources, chosen_currency, selected)['rows']
+        rows.extend(proposed)
+        # Printed zero totals and equal balances of this section only; the
+        # proof is bound to the cited rows and checked again at admission.
+        no_activity_evidence = santander_no_activity_evidence(sources, selected, proposed, chosen_currency)
         _check_review_size(rows)
     for source in ([] if selected and selected.get('layout_id') in ('andrews-share-statement', 'bbva-mexico-cash-management', 'scotiabank-mexico-zero-activity', 'monex-mexico-currency-summary', 'kapital-mexico-product-statement', 'intercam-mexico-product-statement', 'santander-mexico-movements') else sources):
         try:

@@ -2168,3 +2168,5 @@ from services.financial.graph_followup import project_case_graph, request_follow
 __all__ += ["project_case_graph", "request_follow_up", "follow_up_status"]
 from services.financial.recovery_readers import reading_fingerprint
 __all__ += ["reading_fingerprint"]
+from services.financial.statement_printed_no_activity import zero_totals_evidence
+__all__ += ["zero_totals_evidence"]

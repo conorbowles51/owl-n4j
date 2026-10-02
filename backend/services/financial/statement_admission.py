@@ -74,8 +74,13 @@ def source_proves_no_activity(evidence, raw):
         return False
     rows = {row.get('id'): row for row in raw.get('rows', [])}
     ends = [rows.get(evidence.get('opening_row_id')), rows.get(evidence.get('closing_row_id'))]
+    # A printed-totals proof also names its zero deposit/withdrawal totals
+    # and the currency they were read in; those must be unchanged as well.
+    totals = [rows.get(row_id) for row_id in evidence.get('zero_total_row_ids') or []]
     return bool(evidence.get('balance_minor') is not None
         and all(row is not None and row.get('excluded') and row.get('balance_minor') == evidence['balance_minor'] for row in ends)
+        and all(row is not None and row.get('excluded') and row.get('balance_minor') == '0' for row in totals)
+        and ('currency' not in evidence or raw.get('currency') == evidence['currency'])
         and raw.get('period_start') == evidence.get('period_start') and raw.get('period_end') == evidence.get('period_end')
         and not raw.get('period_start_unprinted'))
 
@@ -178,7 +183,8 @@ def assess_admission(proposal, request, arithmetic=None):
         status=('needs_review' if unique else 'confirmed_no_activity' if no_payments else 'reconciled'),
         no_activity_confirmed=no_payments and not unique, blockers=explain_blockers(unique, proposal, raw),
         no_activity_basis=(None if unique or not no_payments else 'printed_zero_counts' if printed_no_activity
-            else 'source_verified' if source_no_activity and not reviewed_no_activity else 'investigator_confirmed'),
+            else (evidence.get('basis') or 'source_verified') if source_no_activity and not reviewed_no_activity
+            else 'investigator_confirmed'),
         **(dict(no_activity_evidence=evidence) if no_payments and not unique and source_no_activity and not reviewed_no_activity else {}),
         checks=arithmetic['checks'], calculation=calculation, assessment_current=True)
 
