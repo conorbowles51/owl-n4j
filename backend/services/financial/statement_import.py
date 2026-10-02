@@ -509,6 +509,7 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
                         and any(row['kind'] == 'balance' and row['fields'].get('description') == 'Opening Balance'
                                 and 'balance' in row['fields'] for row in rows))
     from services.financial.statement_progress import review_progress
+    from services.financial.closing_only_period import closing_only_period_dates
     revision = _digest(snapshot)
     recovery, previous_review = recovery_state(session, file, sources=all_sources, choices=choices,
         statement_id=statement_id, revision=revision, cache=cache)
@@ -517,6 +518,10 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
                 # revisions stable while exposing this date to grouped decisions.
                 printed_closing_date_iso=(selected.get('statement_date', '') if selected
                     and selected.get('layout_id') == 'merrick-card' and not selected.get('date_conflict') else ''),
+                # Also outside the revision: the start can depend on another
+                # statement in the case. Admission re-derives it at import.
+                period_dates=closing_only_period_dates(session, case_id=case_id, file=file, selected=selected,
+                    sources=sources, currency=chosen_currency, cache=cache),
                 metadata=metadata, currency=chosen_currency, detected_currency=detected_currency, rows=[] if reading_failure else rows, sources=sources, issues=issues,
                 saved_review=review_progress(file, statement_id),
                 previous_saved_review=previous_review, review_recovery=recovery,
@@ -934,6 +939,15 @@ def _write_statement_import(*, session_factory, case_id, evidence_file_id, reque
                 balance_sign = -1 if proposal['metadata'].get('balance_convention') == 'liability_owed' else 1
                 start, end = calendar_date(request.period_start), calendar_date(request.period_end)
                 bounds = PeriodBounds.printed(start, end) if start and end and start <= end else PeriodBounds()
+                derived = proposal.get('period_dates') or {}
+                if (bounds.start and derived.get('period_start_basis') and request.period_start == derived['period_start']
+                        and not calendar_date(proposal['metadata'].get('period_start', ''))):
+                    # Not printed: established by the previous statement for this
+                    # card, re-derived from source in this same transaction. The
+                    # evidence is retained with the original reading.
+                    from postgres.models.enums import PeriodBoundsSource
+                    bounds = PeriodBounds(start=start, end=end, start_source=PeriodBoundsSource.derived,
+                                          end_source=PeriodBoundsSource.printed)
                 if request.period_start_unprinted and not start and end:
                     from postgres.models.enums import PeriodBoundsSource
                     bounds = PeriodBounds(end=end, end_source=PeriodBoundsSource.printed)

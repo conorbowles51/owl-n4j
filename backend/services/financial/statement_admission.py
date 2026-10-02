@@ -98,7 +98,13 @@ def assess_admission(proposal, request, arithmetic=None):
         if field == 'period_start' and start_unprinted:
             continue
         if not raw.get(field) or (field.startswith('period_') and not calendar_date(raw[field])):
-            blockers.append(dict(kind='statement_detail', field=field, row_id=None, message=f'Enter the {label} printed on this statement.'))
+            message = f'Enter the {label} printed on this statement.'
+            held = ((proposal.get('period_dates') or {}).get('period_start_hold') or {}) if field == 'period_start' else {}
+            if held and not raw.get(field):
+                # A closing-only statement: say why its source did not establish the start.
+                message = held['message']
+            blockers.append(dict(kind='statement_detail', field=field, row_id=None, message=message,
+                                 **(dict(source_check=held['code']) if held and not raw.get(field) else {})))
     closing = next(c for c in arithmetic['checks'] if c['kind'] == 'closing_balance')
     # A reader-identified closure is account information, not a payment or a
     # printed zero balance. Only waive the absent closing control for a quiet
