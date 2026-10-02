@@ -64,6 +64,7 @@ class BackgroundTaskBoundTests(ShutdownStateMixin, unittest.TestCase):
             # The event loop's own teardown cancels again; the abandoned task
             # must then end without waiting for its thread.
             stuck.cancel()
+            self.release.set()  # Else asyncio.run's executor shutdown waits on it.
             with self.assertRaises(asyncio.CancelledError):
                 await asyncio.wait_for(stuck, 1)
             return elapsed
@@ -105,6 +106,7 @@ class BackgroundTaskBoundTests(ShutdownStateMixin, unittest.TestCase):
                 self.assertLess(time.monotonic() - started, 1.5)
                 self.assertEqual(pending, {task})
                 task.cancel()
+                self.release.set()
                 with self.assertRaises(asyncio.CancelledError):
                     await asyncio.wait_for(task, 1)
 
@@ -252,7 +254,9 @@ class LifespanShutdownTests(ShutdownStateMixin, unittest.TestCase):
                         while not event.is_set():
                             await asyncio.sleep(0.01)
                     started = time.monotonic()
-                return time.monotonic() - started
+                elapsed = time.monotonic() - started
+                self.release.set()
+                return elapsed
             finally:
                 for item in reversed(patches):
                     item.stop()

@@ -95,16 +95,17 @@ def describe_task(task: asyncio.Task) -> str:
         scope = getattr(owner, "scope", None)
         if isinstance(scope, dict) and scope.get("path"):
             parts.append(f"{scope.get('method', scope.get('type', ''))} {scope['path']}".strip())
-        innermost = coro
+        chain = []
+        current = coro
         for _ in range(64):
-            nxt = getattr(innermost, "cr_await", None) or getattr(innermost, "gi_yieldfrom", None)
-            if nxt is None or not (hasattr(nxt, "cr_frame") or hasattr(nxt, "gi_frame")):
+            frame = getattr(current, "cr_frame", None) or getattr(current, "gi_frame", None)
+            if frame is None:
                 break
-            innermost = nxt
-        inner_frame = getattr(innermost, "cr_frame", None) or getattr(innermost, "gi_frame", None)
-        if inner_frame is not None:
-            code = inner_frame.f_code
-            parts.append(f"at {code.co_qualname} ({os.path.basename(code.co_filename)}:{inner_frame.f_lineno})")
+            chain.append(f"{frame.f_code.co_qualname} ({os.path.basename(frame.f_code.co_filename)}:{frame.f_lineno})")
+            current = getattr(current, "cr_await", None) or getattr(current, "gi_yieldfrom", None)
+        if chain:
+            # The innermost few awaits say what the task is stuck on.
+            parts.append("at " + " > ".join(chain[-4:]))
     except Exception:
         pass
     return " ".join(parts)

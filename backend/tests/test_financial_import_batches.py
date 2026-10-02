@@ -736,6 +736,25 @@ class BatchImportTests(TestCase):
             self.assertTrue(finished.is_set())
         asyncio.run(scenario())
 
+    def test_process_shutdown_ends_the_turn_and_releases_the_lease_for_the_next_start(self):
+        from services import process_shutdown
+        batch = self.create()
+        process_shutdown._reset_for_tests()
+        process_shutdown.requested.set()
+        try:
+            self.advance(batch)
+        finally:
+            process_shutdown._reset_for_tests()
+        with self.f.SessionLocal() as db:
+            record = db.get(Batch, batch)
+            self.assertEqual(record.status, 'preparing')
+            self.assertIsNone(record.worker_token)
+            self.assertIsNone(record.lease_until)
+        self.assertEqual(self.status(batch)['files'][0]['status'], 'waiting')
+        # The next process resumes immediately, without waiting out a lease.
+        self.advance(batch)
+        self.assertEqual(self.status(batch)['files'][0]['status'], 'checked')
+
     def setUp(self):
         self.f = Fixture('test_existing_import_and_same_request_keep_the_saved_account_for_navigation')
         self.f.setUp()

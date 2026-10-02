@@ -18,6 +18,7 @@ from postgres.models.financial import FinancialSourceDocument, FinancialTransact
 from postgres.models.financial_recovery import FinancialRecoveryRelease as Release, FinancialRecoveryRun as Run, FinancialRecoveryItem as Item
 from postgres.models.financial_import_batches import FinancialImportBatch as Batch, FinancialImportBatchItem as BatchItem
 from services.financial.decisions import Actor
+from services.process_shutdown import shutdown_requested
 from services.financial.file_scope import financial_file_ids
 from services.financial.file_visibility import financial_file_visibility
 from services.financial.source_lineage import lineage_groups, current_version

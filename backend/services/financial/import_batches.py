@@ -12,6 +12,7 @@ from postgres.models.financial_import_batches import FinancialImportBatch as Bat
 from postgres.models.evidence import EvidenceFile
 from services.financial.pdf_candidates import PdfMappingError, _digest
 from services.financial.decisions import Actor
+from services.process_shutdown import shutdown_requested
 from services.financial.evidence_intake import resolve_financial_selection, prepare_existing_financial_file
 from services.financial.statement_import import read_statement_import, StatementImportRequest, check_import_request, confirm_statement_import, _date_roles, _primary_date_role
 from services.financial.review_arithmetic import check_proposed_rows, arithmetic_problems, accepted_difference
