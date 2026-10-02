@@ -439,7 +439,7 @@ describe("FinancialPage", () => {
     )
     expect(screen.getByLabelText("PDF document")).toBe(input)
     expect(input.files?.[0]).toBe(file)
-  }, 20_000)
+  })
 
   it("mounts the ledger panel in the ledger tab", () => {
     graphWithRows()
