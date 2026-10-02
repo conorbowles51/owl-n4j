@@ -2130,3 +2130,6 @@ from services.financial.payment_counterparty_link import PaymentCounterpartyLink
 from services.financial.statement_import_santander import santander_catalog
 __all__ += ["ConsolidationRequest", "preview_consolidation", "save_consolidation", "undo_consolidation",
     "BulkEdit", "ManualStatementPayment", "PaymentCounterpartyLink", "santander_catalog"]
+
+from services.financial.graph_followup import project_case_graph, request_follow_up, follow_up_status
+__all__ += ["project_case_graph", "request_follow_up", "follow_up_status"]
