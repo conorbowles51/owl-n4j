@@ -1661,7 +1661,19 @@ async def run_batches_forever():
                         await advance_batch(factory,identifier,_resolve_stored_path,process_db_files)
                     except Exception:
                         log.exception('A financial batch turn failed; other batches continue')
-            await asyncio.gather(*(advance(identifier) for identifier in ids))
+            async def graph_follow_up():
+                # Ledger to graph projection for cases whose imports committed
+                # (requested by confirm_statement_import). Isolated: a graph
+                # failure is recorded and retried with backoff, and never
+                # interrupts batch progress.
+                from services.financial.graph_followup import follow_up_round
+                try:
+                    await follow_up_round(factory)
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    log.exception('Financial graph follow-up round failed; it will retry')
+            await asyncio.gather(*(advance(identifier) for identifier in ids), graph_follow_up())
             if time.monotonic() >= next_sweep:
                 # Batch reads never re-read PDFs. Inputs changed by paths
                 # without their own refresh are brought current here.

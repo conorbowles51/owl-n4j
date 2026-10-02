@@ -8,7 +8,8 @@ import asyncio
 import hashlib
 import json
 import logging
-from threading import Event
+import time
+from threading import Event, Lock
 from uuid import UUID
 from neo4j import Query
 from sqlalchemy import select
@@ -22,6 +23,55 @@ RELATIONSHIPS = {'holder': 'HOLDS_ACCOUNT', 'controller': 'CONTROLS_ACCOUNT',
     'signatory': 'SIGNATORY_FOR', 'analysis_group': 'GROUPS_ACCOUNT'}
 GRAPH_TRANSACTION_TIMEOUT = 20
 GRAPH_CONNECTION_TIMEOUT = 20
+# A case whose payment nodes are not in the graph yet, or whose sync failed, is
+# deferred by the sweep with exponential backoff instead of being rewritten every
+# round. The ledger projection wakes it early when it draws the payments.
+SWEEP_RETRY_BASE_SECONDS = 60
+SWEEP_RETRY_CAP_SECONDS = 1800
+WAITING_FOR_PAYMENTS = 'waiting_for_payment_nodes'
+_deferred = {}
+_deferred_lock = Lock()
+
+
+def sweep_retry_delay(attempts):
+    return float(min(SWEEP_RETRY_BASE_SECONDS * (2 ** max(attempts - 1, 0)), SWEEP_RETRY_CAP_SECONDS))
+
+
+def _defer(case_id, reason, *, missing=0, error=None):
+    with _deferred_lock:
+        state = _deferred.setdefault(str(case_id), dict(attempts=0, since=time.time()))
+        state['attempts'] += 1
+        delay = sweep_retry_delay(state['attempts'])
+        state.update(reason=reason, missing=missing, error=error, next_due=time.monotonic() + delay)
+        return state['attempts'], delay
+
+
+def _clear_deferral(case_id):
+    with _deferred_lock:
+        _deferred.pop(str(case_id), None)
+
+
+def _is_deferred(case_id):
+    with _deferred_lock:
+        state = _deferred.get(str(case_id))
+        return state is not None and time.monotonic() < state['next_due']
+
+
+def payment_nodes_changed(case_id):
+    """Called after the ledger projection redraws a case: retry it on the next sweep."""
+    with _deferred_lock:
+        state = _deferred.get(str(case_id))
+        if state is not None:
+            state['next_due'] = 0.0
+
+
+def sweep_deferral(case_id):
+    with _deferred_lock:
+        state = _deferred.get(str(case_id))
+        if state is None:
+            return None
+        return dict(reason=state['reason'], attempts=state['attempts'], missing_payment_nodes=state['missing'],
+            last_error=state['error'], retry_in_seconds=round(max(state['next_due'] - time.monotonic(), 0.0), 1))
 
 
 def identity_graph_plan(db, case_id):
@@ -115,6 +165,7 @@ def apply_identity_graph(graph_session, plan, *, is_current=None):
         validate_graph_targets(tx, plan)
         if marker and marker['revision'] == revision:
             tx.rollback()
+            _clear_deferral(case_id)
             return False
         for label, rows in [('FinancialAccount', plan['accounts']), ('FinancialParty', plan['parties'])]:
             # All labels and relation types come from this module, never user text.
@@ -167,12 +218,28 @@ def apply_identity_graph(graph_session, plan, *, is_current=None):
             WITH key, count(n) AS matches WHERE matches=0 RETURN key''',
             keys=[r['source'] for r in plan.get('payment_links', [])], case=case_id).data()
         if missing:
+            # Bounded, visible waiting: the marker says what is missing, and the
+            # sweep defers this case with backoff rather than rewriting it every
+            # round. Links whose payments exist are already committed above.
+            attempts, delay = _defer(case_id, WAITING_FOR_PAYMENTS, missing=len(missing))
+            tx.run('''MATCH (m:FinancialIdentitySync {case_id:$case})
+                SET m.status=$status, m.missing_payment_nodes=$missing, m.waiting_revision=$revision,
+                    m.waiting_since=coalesce(m.waiting_since, datetime()), m.waiting_attempts=$attempts,
+                    m.next_attempt_at=datetime() + duration({seconds:$delay})''',
+                case=case_id, status=WAITING_FOR_PAYMENTS, missing=len(missing), revision=revision,
+                attempts=attempts, delay=int(delay)).consume()
             tx.commit()
+            if attempts == 1 or attempts % 10 == 0:
+                log.info('Reviewed identity graph for case %s is waiting for %s payment nodes (attempt %s, next in %ss)',
+                    case_id, len(missing), attempts, int(delay))
             return True
         # The marker is hidden from ordinary entity lists by the standard system flag.
         tx.run('''MERGE (m:FinancialIdentitySync {case_id:$case})
-            SET m.system_node=true, m.revision=$revision, m.completed_at=datetime()''', case=case_id, revision=revision).consume()
+            SET m.system_node=true, m.revision=$revision, m.completed_at=datetime(), m.status='current'
+            REMOVE m.missing_payment_nodes, m.waiting_revision, m.waiting_since, m.waiting_attempts, m.next_attempt_at''',
+            case=case_id, revision=revision).consume()
         tx.commit()
+        _clear_deferral(case_id)
         return True
 
 
@@ -206,10 +273,22 @@ def identity_graph_status(db, case_id):
     try:
         with neo4j_service.session() as graph:
             validate_graph_targets(graph, plan)
-            row = graph.run('MATCH (m:FinancialIdentitySync {case_id:$case}) RETURN m.revision AS revision, toString(m.completed_at) AS completed_at', case=str(case_id)).single()
-        return dict(case_id=str(case_id), status='current' if row and row['revision'] == expected else 'pending', completed_at=row['completed_at'] if row else None)
+            row = graph.run('''MATCH (m:FinancialIdentitySync {case_id:$case}) RETURN m.revision AS revision,
+                toString(m.completed_at) AS completed_at, m.status AS status, m.waiting_revision AS waiting_revision,
+                m.missing_payment_nodes AS missing_payment_nodes, toString(m.waiting_since) AS waiting_since,
+                m.waiting_attempts AS waiting_attempts, toString(m.next_attempt_at) AS next_attempt_at''', case=str(case_id)).single()
     except Exception:
         return dict(case_id=str(case_id), status='unavailable', completed_at=None)
+    result = dict(case_id=str(case_id), status='current' if row and row['revision'] == expected else 'pending',
+        completed_at=row['completed_at'] if row else None)
+    if result['status'] == 'pending' and row and row['status'] == WAITING_FOR_PAYMENTS and row['waiting_revision'] == expected:
+        # Saved decisions are linked, except those whose payments are not yet
+        # in the graph; the ledger graph follow-up draws them.
+        local = sweep_deferral(case_id) or {}
+        result.update(status='waiting_for_payments', missing_payment_nodes=row['missing_payment_nodes'],
+            waiting_since=row['waiting_since'], attempts=row['waiting_attempts'],
+            next_attempt_at=row['next_attempt_at'], retry_in_seconds=local.get('retry_in_seconds'))
+    return result
 
 
 def sync_saved_identities(stop=None):
@@ -219,10 +298,17 @@ def sync_saved_identities(stop=None):
     for case_id in cases:
         if stop is not None and stop.is_set():
             break
+        if _is_deferred(case_id):
+            continue
         try:
             synchronize_case(case_id)
-        except Exception:
-            log.exception('Reviewed account identity graph will retry for case %s', case_id)
+        except Exception as error:
+            attempts, delay = _defer(case_id, 'failed', error=str(error)[:500])
+            if attempts == 1:
+                log.exception('Reviewed account identity graph will retry for case %s in %ss', case_id, int(delay))
+            else:
+                log.warning('Reviewed account identity graph failed again for case %s (attempt %s); next in %ss: %s',
+                    case_id, attempts, int(delay), error)
 
 
 async def run_identity_graph_forever():
