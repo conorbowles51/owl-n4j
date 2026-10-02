@@ -17,9 +17,48 @@ def sources_from_tables(tables):
                     expected_text=cell['text'], locator=cell.get('locator')))
         if rows:
             sources.append(dict(page_number=table['page'], table_index=index,
-                source_revision='reading-quality', rows=[dict(row_index=i,
+                source_revision='reading-quality', table_source=item.get('table_source'), rows=[dict(row_index=i,
                     cells=sorted(cells, key=lambda c: c['column_index'])) for i, cells in sorted(rows.items())]))
     return sources
+
+
+_LABELLED_IDENTITY = (('institution', ('Bank', 'Institution')), ('holder', ('Account Name', 'Account Holder')),
+    ('account', ('Account Number', 'Account No', 'IBAN')), ('currency', ('Currency',)),
+    ('period', ('Statement Period', 'Period')))
+
+
+def labelled_statement(sources):
+    """The printed header of a generic labelled statement page, or None.
+
+    These are the facts the statement review reads from labelled lines, so an
+    image reading must reproduce every one of them. OCR can split one printed
+    line into several cells; a row is read as its whole printed line and the
+    period is compared as dates. A page without its own account number and
+    period, or without a labelled payments table, is not assessed.
+    """
+    from services.financial.money import MoneyError, get_currency
+    from services.financial.statement_import_proposal import has_transaction_header, printed_label, printed_period
+    if not any(has_transaction_header(source) for source in sources):
+        return None
+    text = '\n'.join(' '.join(' '.join(cell['expected_text'] for cell in row['cells']).split())
+        for source in sources for row in source['rows'])
+    printed = {key: printed_label(text, labels) for key, labels in _LABELLED_IDENTITY}
+    start, end = printed_period(printed['period'])
+    if not printed['account'] or not start:
+        return None
+    try:
+        currency = get_currency(printed['currency'].upper()).code if printed['currency'] else 'USD'
+    except MoneyError:
+        currency = 'USD'
+    return dict(identity=['generic-labelled', printed['institution'], printed['holder'], printed['account'],
+        printed['currency'], start, end], currency=currency)
+
+
+def propose_labelled_rows(sources, statement):
+    from services.financial.statement_import_proposal import has_transaction_header, propose_table
+    header_pages = {s['page_number'] for s in sources if has_transaction_header(s)}
+    return [row for source in sources for row in propose_table({**source, 'case_id': '', 'evidence_file_id': ''},
+        statement['currency'], page_has_transaction_table=source['page_number'] in header_pages)['rows']]
 
 
 def assess_statement_reading(tables):
@@ -42,6 +81,10 @@ def assess_statement_reading(tables):
             return None
         identity = [merrick['layout_id'], merrick['account_reference'], merrick['statement_date']]
         rows = propose_merrick_table(sources[0], 'USD', merrick)['rows']
+    elif (labelled := None if any(andrews_page(s, allow_unbranded=True) for s in sources)
+            else labelled_statement(sources)):
+        identity = labelled['identity']
+        rows = propose_labelled_rows(sources, labelled)
     else:
         pages = [andrews_page(s, allow_unbranded=True) for s in sources]
         if len(pages) != 1 or not pages[0]:
@@ -53,8 +96,10 @@ def assess_statement_reading(tables):
                 if r['row_index'] >= page['body_start']])
         statement = dict(period_start=page['start'], period_end=page['end'], sources=[scope])
         rows = propose_andrews_statement(sources, 'USD', statement)['rows']
+    # Merrick and generic rows that fit no printed column are still payments
+    # whose fields are unreadable; a reread that adds or drops one is refused.
     payments = [r for r in rows if not r['excluded'] and (r['kind'] == 'transaction'
-        or (identity[0] == 'merrick-card' and r['kind'] == 'unresolved')
+        or (identity[0] in ('merrick-card', 'generic-labelled') and r['kind'] == 'unresolved')
         or 'date_column' in r['fields'] or 'amount_column' in r['fields'])]
     balances = [r for r in rows if r['kind'] == 'balance']
     # Valid but different balances require review, not another guess at digits.

@@ -183,16 +183,26 @@ def refine_statement_native_cells(page, tables, *, deadline, language):
     from services.financial.statement_import_credit_one import credit_one_catalog, propose_credit_one_table
     from services.financial.statement_import_merrick import merrick_statement, propose_merrick_table
     from services.financial.statement_import_andrews import andrews_page, propose_andrews_statement
-    from services.financial.statement_reading_quality import sources_from_tables, assess_statement_reading, prefer_image_reading
+    from services.financial.statement_reading_quality import (sources_from_tables, assess_statement_reading,
+        prefer_image_reading, labelled_statement, propose_labelled_rows)
     if page.rotation or deadline - time.monotonic() < 2:
         return tables, []
     sources = sources_from_tables([table.to_json() for table in tables])
+    if not sources:
+        return tables, []
     cards, _ = credit_one_catalog(sources)
     merrick = merrick_statement(sources[0]) if len(sources) == 1 else None
+    labelled = None
     if len(cards) == 1:
         propose = lambda source: propose_credit_one_table(source, 'USD', cards[0])
     elif merrick:
         propose = lambda source: propose_merrick_table(source, 'USD', merrick)
+    elif (labelled := None if any(andrews_page(s, allow_unbranded=True) for s in sources)
+            else labelled_statement(sources)):
+        # Labelled columns name the money they hold; an unreadable credit or
+        # debit stays in that column, so the target is that printed cell.
+        rows = propose_labelled_rows(sources, labelled)
+        propose = lambda source: dict(rows=[r for r in rows if r['table_index'] == source['table_index']])
     else:
         andrews = andrews_page(sources[0], allow_unbranded=True) if len(sources) == 1 else None
         if not andrews:
@@ -211,9 +221,11 @@ def refine_statement_native_cells(page, tables, *, deadline, language):
     for source in sources:
         for row in propose(source)['rows']:
             fields = row['fields']
+            payment = row['kind'] in ('transaction', 'unresolved') and not row['excluded']
             candidates = [('balance', 'balance_column')] if row['kind'] == 'balance' else (
-                [('amount_minor', 'amount_column'), ('balance', 'balance_column')]
-                if row['kind'] in ('transaction', 'unresolved') and not row['excluded'] else [])
+                [('credit', 'credit_column'), ('debit', 'debit_column'), ('amount', 'amount_column'),
+                 ('balance', 'balance_column')] if labelled and payment else
+                [('amount_minor', 'amount_column'), ('balance', 'balance_column')] if payment else [])
             if (row['kind'] == 'balance' and fields.get('statement_layout') == 'andrews-share-statement'
                     and sum(1 for c in row['source_cells'] if (c.get('locator') or {}).get('rect')
                             and c['locator']['rect'][0] >= page.rect.width * 1000 * .46) != 1):

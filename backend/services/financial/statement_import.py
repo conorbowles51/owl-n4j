@@ -5,6 +5,7 @@ from postgres.models.evidence import EvidenceFile, EvidenceDocumentText, Evidenc
 from services.financial.candidate_sources import read_candidate_source
 from services.financial.pdf_candidates import PdfMappingError, _digest
 from services.financial.statement_import_proposal import propose_table, VERSION
+from services.financial.statement_import_proposal import printed_label as _label, printed_period as _period
 
 MAX_STATEMENT_TRANSACTIONS = 25000
 MAX_STATEMENT_REVIEW_ROWS = 100000
@@ -27,32 +28,6 @@ def _check_review_size(rows):
         raise PdfMappingError('This statement exceeds the 100,000-row review limit, including headings and other page text. No rows were omitted.', 422)
     if sum(not row['excluded'] for row in rows) > MAX_STATEMENT_TRANSACTIONS:
         raise PdfMappingError('This statement has more than 25,000 possible transactions. Review a shorter statement period. No rows were omitted.', 422)
-
-
-def _label(content, labels):
-    pattern = r'(?im)^\s*(?:' + '|'.join(re.escape(x) for x in labels) + r')\s*:\s*([^\n]+)'
-    values = sorted(set(m.group(1).strip() for m in re.finditer(pattern, content)))
-    return values[0] if len(values) == 1 else ''
-
-
-def _period(value):
-    from datetime import datetime
-    parts = re.split(r'\s+(?:-|to)\s+', value, flags=re.I)
-    if len(parts) != 2:
-        return '', ''
-    dates = []
-    for part in parts:
-        parsed = None
-        for fmt in ('%Y-%m-%d', '%B %d, %Y', '%b %d, %Y'):
-            try:
-                parsed = datetime.strptime(part.strip(), fmt).date().isoformat()
-                break
-            except ValueError:
-                pass
-        if parsed is None:
-            return '', ''
-        dates.append(parsed)
-    return tuple(dates) if dates[0] <= dates[1] else ('', '')
 
 
 def _date_roles(fields):
