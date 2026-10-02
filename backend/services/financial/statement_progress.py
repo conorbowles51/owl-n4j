@@ -71,4 +71,7 @@ def save_progress(session, *, case_id, evidence_file_id, request, expected_revie
     metadata.setdefault('financial_review_progress', {})[request.statement_id or ''] = saved
     file.metadata_ = metadata
     session.commit()
+    # Batch lists reuse stored readiness; bring this period's batch items current.
+    from services.financial.import_batches import refresh_file_readiness
+    refresh_file_readiness(session, case_id=case_id, file_id=evidence_file_id, statement_key=request.statement_id or '')
     return dict(case_id=str(case_id), evidence_file_id=str(evidence_file_id), **saved)

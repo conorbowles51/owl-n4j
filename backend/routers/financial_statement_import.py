@@ -743,7 +743,8 @@ def get_financial_batch_item(batch_id: UUID,item_id: UUID,case_id: UUID=Query(..
         if item is None: raise PdfMappingError('Statement not found in this batch.',404)
         if item.status == 'superseded_reading':
             raise PdfMappingError('This reading was replaced by a newer one. Return to the batch to open its current statements. Your earlier review remains in history.',409)
-        item=import_batches.checked_batch_items(db,case_id,[item])[0]
+        # Opening one review may re-read that statement; other sources stay stored.
+        item=import_batches.checked_batch_items(db,case_id,[item],reading='targets')[0]
         return dict(id=str(item.id),file_id=str(item.file_id),statement_id=item.statement_key or None,status=item.status,review_request=item.review_request,review_revision=item.review_revision,**item.summary)
     except PdfMappingError as exc:
         raise HTTPException(status_code=exc.status_code,detail=str(exc)) from exc

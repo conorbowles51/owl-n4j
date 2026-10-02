@@ -21,6 +21,7 @@ REASONS = {
     'balance_unavailable': ('Balance comparison unavailable', 'An automatic comparison could not be made. This does not establish a balance difference; inspect the printed controls if needed.'),
     'reading': ('Check a source reading', 'The reason is shown on each matching statement. Open the indicated row or statement to compare it with the original.'),
     'additional': ('Additional checks in statement review', 'More checks are retained than fit in the batch preview. Open these statements to see the remaining reasons.'),
+    'readiness_update': ('Readiness being updated', 'These statements are being rechecked from their saved readings in the background. No action is needed; saved work is unchanged and they become available when the update finishes.'),
 }
 
 
@@ -34,6 +35,8 @@ def reason(problem):
         return 'saved_review'
     if kind == 'coverage_load':
         return 'reading'
+    if kind == 'readiness_pending':
+        return 'readiness_update'
     if kind == 'coverage' and problem.get('matching_statement'):
         return 'duplicate'
     if kind == 'coverage' or 'another statement covers' in message:

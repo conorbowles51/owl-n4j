@@ -178,8 +178,12 @@ app.add_middleware(
         "X-Loupe-Start-Date", "X-Loupe-End-Date", "X-Loupe-PDF-Report",
         "X-Loupe-Source-Files", "X-Loupe-Table-View", "X-Loupe-Table-View-Sha256", "X-Loupe-Privilege-Marking",
         "X-Loupe-Case-Review-History", "X-Loupe-Archive-Sha256", "X-Loupe-Assembly-Inputs-Sha256", "X-Loupe-Scenario-Sha256",
-        "X-Loupe-Export-Id", "X-Loupe-Export-Event-Sha256", "X-Loupe-Export-Event-Sequence"],
+        "X-Loupe-Export-Id", "X-Loupe-Export-Event-Sha256", "X-Loupe-Export-Event-Sequence",
+        "X-Request-ID", "Server-Timing"],
 )
+# Correlation id and per-stage Server-Timing on financial batch endpoints.
+from services.financial.request_timing import FinancialTimingMiddleware
+app.add_middleware(FinancialTimingMiddleware)
 
 # Include routers
 app.include_router(graph_router)
