@@ -75,9 +75,13 @@ def create_batch(session, *, case_id, request_id, file_ids, folder_ids, actor):
 
 def initial_request(proposal):
     metadata = proposal['metadata']
+    # A closing-only statement's printed closing date, and a start that its
+    # source establishes, fill only dates the printed header left empty.
+    dates = proposal.get('period_dates') or {}
     return dict(expected_revision=proposal['revision'], statement_id=proposal.get('statement_id'),
         currency=proposal['currency'], holder=metadata.get('holder',''), account_number=metadata.get('account_number',''),
-        institution=metadata.get('institution',''), period_start=metadata.get('period_start',''), period_end=metadata.get('period_end',''),
+        institution=metadata.get('institution',''), period_start=metadata.get('period_start','') or dates.get('period_start') or '',
+        period_end=metadata.get('period_end','') or dates.get('period_end') or '',
         rows=[dict(id=r['id'], excluded=r['excluded'], date=r['fields'].get('date') or r['fields'].get('booking_date') or r['fields'].get('value_date') or '',
             date_unprinted=r['fields'].get('date_basis') == 'statement_end_ordering_only',
             date_values={role:r['fields'].get(role,'') for role in _date_roles(r['fields']) if role != _primary_date_role(r['fields'])},
@@ -165,6 +169,8 @@ def assess(proposal, request=None):
         balance_status=balance['balance_status'], checks=balance['checks'],
         can_import=can_import, admission=admission, balance_exception=False, problems=problems[:50], problem_count=len(problems))
     summary['review_model'] = REVIEW_MODEL
+    if proposal.get('period_dates'):
+        summary['closing_only_period'] = True
     summary['account_type'] = proposal['metadata'].get('account_type') or ''
     summary['unclassified_count'] = sum(row['kind'] == 'unclassified' and reviewed.get(row['id'], {}).get('excluded', row['excluded']) for row in rows)
     if admission is not None:
@@ -1529,6 +1535,7 @@ def _review_file(factory,batch_id,case_id,file):
         # Saved reviews, earlier imports or duplicate decisions on this file can
         # leave its periods needing a reading at list time. Store it now.
         refresh_file_readiness(db, case_id=case_id, file_id=UUID(file['file_id']))
+        _refresh_closing_only_neighbours(db, case_id, batch_id, UUID(file['file_id']))
         if (file.get('recovery') or {}).get('fresh_reading'):
             previous = list(db.scalars(select(Item).where(Item.batch_id == batch_id,
                 Item.file_id != UUID(file['file_id']), Item.status.in_(('ready', 'attention')))))
@@ -1539,6 +1546,40 @@ def _review_file(factory,batch_id,case_id,file):
                         'superseded_by_reading': file['file_id'],
                         'recovery_message': 'A newer reading of this original is available. This earlier preparation is retained in history.'}
             db.commit()
+
+
+def _waiting_for_previous_statement(item):
+    from services.financial.closing_only_period import HOLD_MESSAGES
+    return (item.status == 'attention' and not item.review_request and item.summary.get('closing_only_period')
+            and any(problem.get('field') == 'period_start' and problem.get('source_check') in HOLD_MESSAGES
+                    for problem in item.summary.get('problems', [])))
+
+
+def _refresh_closing_only_neighbours(db, case_id, batch_id, file_id):
+    """A newly prepared closing-only statement can establish another one's start.
+
+    Statements prepared earlier in this batch whose start was held for want of
+    their previous statement are prepared again from their own sources. Items
+    with saved edits are left to their reviewer. Best effort: a failure keeps
+    the held state, never the file just prepared.
+    """
+    try:
+        items = list(db.scalars(select(Item).where(Item.batch_id == batch_id)))
+        if not any(item.file_id == file_id and item.summary.get('closing_only_period') for item in items):
+            return
+        waiting = sorted({item.file_id for item in items if item.file_id != file_id and _waiting_for_previous_statement(item)}, key=str)
+        if not waiting:
+            return
+        batch = batch_for(db, case_id, batch_id)
+        entries = {UUID(entry['file_id']): entry for entry in batch.files if entry.get('status') == 'checked'}
+        for other in waiting:
+            if other in entries:
+                prepare_reviews(db, batch_for(db, case_id, batch_id), deepcopy(entries[other]))
+                refresh_file_readiness(db, case_id=case_id, file_id=other)
+        db.commit()
+    except Exception:
+        db.rollback()
+        log.exception('Refreshing closing-only statements after a neighbouring file failed; they stay held')
 
 
 def _accepted_import_snapshot(item):
