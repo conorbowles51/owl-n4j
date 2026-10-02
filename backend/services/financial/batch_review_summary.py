@@ -19,6 +19,7 @@ REASONS = {
     'assignment': ('Payments need an account', 'Open the review to assign these payments to the correct account and period.'),
     'import_failed': ('Import needs recovery', 'Open the statement to check the saved import result and retry without duplicating payments.'),
     'balance_unavailable': ('Balance comparison unavailable', 'An automatic comparison could not be made. This does not establish a balance difference; inspect the printed controls if needed.'),
+    'no_activity': ('Confirm no activity', 'No payments were read in these periods and their pages do not establish that none occurred. Check every page of each period, then confirm the periods without activity together.'),
     'reading': ('Check a source reading', 'The reason is shown on each matching statement. Open the indicated row or statement to compare it with the original.'),
     'additional': ('Additional checks in statement review', 'More checks are retained than fit in the batch preview. Open these statements to see the remaining reasons.'),
     'readiness_update': ('Readiness being updated', 'These statements are being rechecked from their saved readings in the background. No action is needed; saved work is unchanged and they become available when the update finishes.'),
@@ -31,6 +32,8 @@ def reason(problem):
     if kind == 'statement_detail':
         return {'holder': 'holder', 'account_number': 'account', 'institution': 'institution',
             'currency': 'currency', 'period': 'dates', 'period_start': 'dates', 'period_end': 'dates'}.get(field, 'reading')
+    if kind == 'no_activity':
+        return 'no_activity'
     if kind == 'review_conflict':
         return 'saved_review'
     if kind == 'coverage_load':

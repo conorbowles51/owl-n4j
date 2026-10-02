@@ -42,6 +42,10 @@ def _candidates(tables, words, width, height):
             rows.setdefault(cell['row'], []).append(cell)
         for row in rows.values():
             row.sort(key=lambda c: c['column'])
+            endpoint = _endpoint_balance_candidate(row, box, width, height, words, used)
+            if endpoint:
+                candidates.append(endpoint)
+                continue
             if not 4 <= len(row) <= 8:
                 continue
             descriptions = [c for c in row if re.match(r'^(?:Recurring\s+)?(?:Withdrawal|Deposit)\b', c['text'].strip())
@@ -94,6 +98,42 @@ def _candidates(tables, words, width, height):
                     verb=verb[1], adjustment='Adjustment' in description['text'],
                     reason='description_sign_conflict' if sign_conflict else 'unreadable_money'))
     return candidates[:40]
+
+
+_ENDPOINT_LABEL = re.compile(r'(?:\S{4,7} ID \d{4} (?:BASE SHARE SAVINGS|FREE CHECKING|VISA PAYMENT) Previous Balance'
+                             r'|\S{4,7} Ending Balance)')
+
+
+def _endpoint_balance_candidate(row, box, width, height, words, used):
+    """Target an unreadable printed opening or ending balance cell.
+
+    The exact printed label (Previous Balance on the share heading, or Ending
+    Balance) must occupy the left of the line, and the line's only money cell
+    must sit in the measured running-balance column. Nothing is computed from
+    other balances; the crop reading must still agree with itself.
+    """
+    label = [c for c in row if box(c)[0] < width*.46]
+    money = [c for c in row if box(c)[0] >= width*.46]
+    if (not label or len(money) != 1 or len(row) > 10 or box(label[0])[0] >= width*.08
+            or box(label[0])[1] <= height*.2
+            or not _ENDPOINT_LABEL.fullmatch(' '.join(' '.join(c['text'].split()) for c in label))
+            or max(box(c)[1] for c in row) >= min(box(c)[3] for c in row)):
+        return None
+    cell = money[0]
+    b = list(box(cell))
+    text = cell['text'].strip()
+    if (_money(re.sub(r'\s+', '', text)) and re.fullmatch(r'[+-]?\s*(?:\d{1,3}(?:,\d{3})+|\d+)\s*\.\s*\d{2}', text)
+            or not (width*.56 <= b[0] < b[2] <= width*.68) or len(text) > 24 or b[2]-b[0] > width*.13):
+        return None
+    indices = sorted((i for i, w in enumerate(words)
+        if w[0]*1000 >= b[0]-1000 and w[1]*1000 >= b[1]-1000
+        and w[2]*1000 <= b[2]+1000 and w[3]*1000 <= b[3]+1000), key=lambda i: words[i][0])
+    if (not indices or len(indices) > 5 or used.intersection(indices)
+            or ' '.join(words[i][4] for i in indices) != ' '.join(text.split())):
+        return None
+    used.update(indices)
+    return dict(indices=indices, text=text, rect=b, field='balance', verb=None, adjustment=False,
+                reason='unreadable_endpoint_balance')
 
 
 def _cleaned_line_readings(page, rect, rotation, deadline, language):
@@ -174,6 +214,12 @@ def refine_statement_native_cells(page, tables, *, deadline, language):
             candidates = [('balance', 'balance_column')] if row['kind'] == 'balance' else (
                 [('amount_minor', 'amount_column'), ('balance', 'balance_column')]
                 if row['kind'] in ('transaction', 'unresolved') and not row['excluded'] else [])
+            if (row['kind'] == 'balance' and fields.get('statement_layout') == 'andrews-share-statement'
+                    and sum(1 for c in row['source_cells'] if (c.get('locator') or {}).get('rect')
+                            and c['locator']['rect'][0] >= page.rect.width * 1000 * .46) != 1):
+                # A balance split across several money cells is not one
+                # measured target; a fragment could read as a complete value.
+                candidates = []
             for field, column_key in candidates:
                 column = fields.get(column_key)
                 if field not in fields and column is not None:

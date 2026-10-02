@@ -399,7 +399,16 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
         proposal = propose_andrews_statement(sources, chosen_currency, selected)
         rows.extend(proposal['rows'])
         issues.extend(proposal.get('issues', []))
+        # Other tables read from the same page are checked too, so text the
+        # reader placed in a separate table cannot hide inside the section.
+        from services.financial.statement_import_andrews import andrews_no_activity_evidence, endpoint_balance_provenance
+        endpoint_balance_provenance(proposal['rows'], text.source_locations)
+        section_pages = {source['page_number'] for source in sources}
+        no_activity_evidence = andrews_no_activity_evidence(
+            [source for source in all_sources if source['page_number'] in section_pages], selected, proposal['rows'])
         _check_review_size(rows)
+    else:
+        no_activity_evidence = None
     balance_basis = None
     prior_period_settlement_pages = []
     if selected and selected.get('layout_id') == 'bbva-mexico-cash-management':
@@ -518,6 +527,9 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
                 can_import_balances=balance_only and not closure_only,
                 balance_basis=balance_basis,
                 prior_period_settlement_pages=prior_period_settlement_pages,
+                # Derived only from this reading's sources, so it is bound to
+                # the same revision. Admission decides whether it applies.
+                no_activity_evidence=no_activity_evidence,
                 page_numbers=all_page_numbers,
                 unassigned_page_numbers=unassigned_pages if selected else [],
                 information_pages=[dict(page_number=number, kind=kind) for number, kind in sorted(

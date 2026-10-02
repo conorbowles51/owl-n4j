@@ -644,4 +644,175 @@ def propose_andrews_statement(sources, currency, statement):
         controls = [r for r in result if r['kind'] == 'balance' and r['fields'].get('description') == name]
         if not controls and not (name == 'Closing Balance' and statement.get('account_closure')):
             issues.append(f'The {name.lower()} was not found for this account section. Check the PDF for a missing or unreadable page.')
-    return dict(rows=result, issues=issues)
+    return dict(rows=result, issues=issues,
+                no_activity_evidence=andrews_no_activity_evidence(sources, statement, result))
+
+
+# Exact printed letters; only OCR spacing is ignored, as in the reader itself.
+_QUIET_OPENING = re.compile(r'\d{2}/\d{2}ID\d{4}(?:BASESHARESAVINGS|FREECHECKING|VISAPAYMENT)PreviousBalance')
+_QUIET_CLOSING = re.compile(r'\d{2}/\d{2}EndingBalance')
+NO_ACTIVITY_METHOD = 'andrews-adjacent-endpoint-rows-v1'
+
+
+def andrews_no_activity_evidence(sources, statement, rows):
+    """Decide whether the printed page itself proves a section had no activity.
+
+    Equal balances alone never establish no activity. This requires, on one
+    page: the exact printed opening (Previous Balance) line with a readable
+    date in the period, the exact printed Ending Balance line dated the period
+    end, both balances readable
+    and equal, nothing at all read between them, and no vertical room between
+    them for an unread line (measured against this page's own line spacing).
+    A failed or partial reading, a missing page or a section that crosses a
+    page break stays unproven; the investigator's confirmation remains needed.
+    Returns None when the section has payment candidates (not a quiet question).
+    """
+    if statement.get('assignment_only') or statement.get('account_closure'):
+        return None
+    if any(not row['excluded'] for row in rows):
+        return None
+
+    def held(reason, message, **extra):
+        return dict(verified=False, method=NO_ACTIVITY_METHOD, reason=reason, message=message, **extra)
+
+    scopes = statement.get('sources') or []
+    if len(scopes) != 1:
+        return held('section_spans_pages', 'This account section continues across pages. Check every page of this period before confirming that it contains no transactions.')
+    scope = scopes[0]
+    key = (scope['page_number'], scope['table_index'])
+    source = next((s for s in sources if (s['page_number'], s['table_index']) == key), None)
+    in_scope = {row['id']: row for row in rows if (row['page_number'], row['table_index']) == key
+                and row['row_index'] in scope['row_indices']}
+    balances = [row for row in in_scope.values() if row['kind'] == 'balance']
+    openings = [row for row in balances if row['fields'].get('description') == 'Opening Balance']
+    closings = [row for row in balances if row['fields'].get('description') == 'Closing Balance']
+    if source is None or len(openings) != 1 or len(closings) != 1:
+        return held('endpoint_missing', 'The opening or ending balance line of this section was not read. Check the page before confirming that it contains no transactions.', page_number=key[0])
+    opening, closing = openings[0], closings[0]
+    if len(in_scope) != 2:
+        return held('rows_between_endpoints', 'Other lines were read inside this account section. Check them before confirming that it contains no transactions.', page_number=key[0])
+    page = andrews_page(source, allow_unbranded=True)
+    width = page['width'] if page else None
+
+    def label(row):
+        money = _money_cells(row, width)
+        return money, ' '.join(c['expected_text'].strip() for c in row['cells'] if c not in money)
+
+    source_rows = {row['row_index']: row for row in source['rows']}
+    open_money, open_text = label(source_rows[opening['row_index']]) if page else ([], '')
+    close_money, close_text = label(source_rows[closing['row_index']]) if page else ([], '')
+    if (not page or len(open_money) != 1 or len(close_money) != 1
+            or not _QUIET_OPENING.fullmatch(re.sub(r'\s+', '', open_text))
+            or not _QUIET_CLOSING.fullmatch(re.sub(r'\s+', '', close_text))):
+        return held('endpoint_label', 'The opening or ending balance line was not read exactly as printed. Check the page before confirming that it contains no transactions.', page_number=key[0])
+    if 'balance' not in opening['fields'] or 'balance' not in closing['fields']:
+        return held('endpoint_unreadable', 'An opening or ending balance could not be read. Check the page before confirming that it contains no transactions.', page_number=key[0])
+    if opening['fields']['balance'] != closing['fields']['balance']:
+        return held('endpoints_differ', 'The opening and ending balances differ, so money moved in this period. Check the page for transactions that were not read.', page_number=key[0])
+    if opening['issues'] or closing['issues']:
+        return held('endpoint_unreadable', 'An opening or ending balance line needs checking. Check the page before confirming that it contains no transactions.', page_number=key[0])
+    # The section must run to the printed period end; its opening date must be
+    # a readable date inside the period. No date is inferred.
+    if (not opening['fields'].get('date') or closing['fields'].get('date') != statement.get('period_end')
+            or opening['fields']['date'] > closing['fields']['date']):
+        return held('endpoint_dates', 'The opening and ending balance dates do not cover the printed statement period. Check the page before confirming that it contains no transactions.', page_number=key[0])
+    ordered = sorted(source_rows)
+    position = ordered.index(opening['row_index'])
+    if position + 1 >= len(ordered) or ordered[position + 1] != closing['row_index']:
+        return held('rows_between_endpoints', 'Other lines were read between the opening and ending balances. Check them before confirming that it contains no transactions.', page_number=key[0])
+
+    def extent(cells):
+        boxes = [_box(c) for c in cells]
+        locators = [c.get('locator') or {} for c in cells]
+        if not boxes or any(b is None for b in boxes) or len({(l.get('page'), str(l.get('page_size')), l.get('space')) for l in locators}) != 1:
+            return None
+        return [min(b[0] for b in boxes), min(b[1] for b in boxes), max(b[2] for b in boxes), max(b[3] for b in boxes)]
+
+    first = extent(source_rows[opening['row_index']]['cells'])
+    second = extent(source_rows[closing['row_index']]['cells'])
+    space = (source_rows[opening['row_index']]['cells'][0].get('locator') or {})
+    # Measure spacing only among account-section lines, never the address block.
+    body = [r for r in (source_rows[i] for i in ordered) if r['row_index'] >= page['body_start'] and r['cells']]
+    first_section = next((i for i, r in enumerate(body) if _SHARE_LABEL.match(_text(r)) or _PREVIOUS.search(_text(r))), len(body))
+    body = body[first_section:]
+    tops = [e[1] for r in body if (e := extent(r['cells'])) is not None]
+    steps = sorted(b - a for a, b in zip(tops, tops[1:]) if b > a)
+    if first is None or second is None or len(steps) < 3 or second[1] <= first[1]:
+        return held('line_spacing_unmeasured', 'The position of the lines on this page could not be measured. Check the page before confirming that it contains no transactions.', page_number=key[0])
+    pitch = steps[len(steps) // 2]
+    distance = second[1] - first[1]
+    if distance * 2 > pitch * 3:
+        return held('unread_band', 'There is space between the opening and ending balance lines where a line may not have been read. Check the page before confirming that it contains no transactions.',
+                    page_number=key[0], line_pitch=pitch, distance=distance)
+    # Nothing read on this page, in this or another table and whatever its
+    # row numbering, may lie in the band between the two lines.
+    for other in sources:
+        if other['page_number'] != key[0]:
+            continue
+        for row in other['rows']:
+            if other is source and row['row_index'] in (opening['row_index'], closing['row_index']):
+                continue
+            for cell in row['cells']:
+                b = _box(cell)
+                if b is None or first[3] < (b[1] + b[3]) / 2 < second[1]:
+                    return held('rows_between_endpoints', 'Other text was read between the opening and ending balance lines. Check it before confirming that it contains no transactions.', page_number=key[0])
+    return dict(verified=True, method=NO_ACTIVITY_METHOD, reason='adjacent_equal_endpoints',
+        message='The printed page shows this account section\'s opening balance line followed directly by its ending balance line at the statement end date, with equal balances and no line between them.',
+        page_number=key[0], table_index=key[1], opening_row_id=opening['id'], closing_row_id=closing['id'],
+        balance_minor=opening['fields']['balance'], period_start=statement.get('period_start'),
+        opening_date=opening['fields']['date'], closing_date=closing['fields']['date'],
+        period_end=statement.get('period_end'), opening_rect=first, closing_rect=second,
+        page_size=space.get('page_size'), coordinate_space=space.get('space'),
+        line_pitch=pitch, distance=distance,
+        endpoint_methods=[(row.get('value_provenance') or {}).get('method') for row in (opening, closing)])
+
+
+def _overlap(a, b):
+    width = min(a[2], b[2]) - max(a[0], b[0])
+    height = min(a[3], b[3]) - max(a[1], b[1])
+    if width <= 0 or height <= 0:
+        return 0
+    smaller = min((a[2]-a[0]) * (a[3]-a[1]), (b[2]-b[0]) * (b[3]-b[1]))
+    return width * height / smaller if smaller > 0 else 0
+
+
+def endpoint_balance_provenance(rows, page_locations):
+    """Record where and how each printed opening/ending balance was read.
+
+    Page, coordinates and the reading method come from the stored reading
+    and its retained repair records. Nothing here supplies or changes a
+    value; a balance that was not read keeps no value and says so.
+    """
+    spans = {loc.get('page_number'): loc for loc in (page_locations or []) if isinstance(loc, dict)}
+    for row in rows:
+        fields = row['fields']
+        if row['kind'] != 'balance' or fields.get('description') not in ('Opening Balance', 'Closing Balance'):
+            continue
+        span = spans.get(row['page_number']) or {}
+        records = [r for r in span.get('ocr_refinements') or [] if isinstance(r, dict)]
+        page_reread = any(r.get('field') == 'statement_page_reading' and r.get('decision') == 'image_selected' for r in records)
+        method = ('page_image_reading' if page_reread else 'page_ocr' if span.get('extraction_method') == 'tesseract_ocr'
+                  else 'native_text' if span else 'unknown')
+        column = fields.get('balance_column')
+        cells = [c for c in row['source_cells'] if column is not None and str(c['column_index']) == column]
+        result = dict(field='balance', role=fields['description'], page_number=row['page_number'],
+                      status='read' if 'balance' in fields else 'unreadable', method=method)
+        if len(cells) == 1 and _box(cells[0]):
+            cell = cells[0]
+            rect = _box(cell)
+            result.update(rect=rect, page_size=cell['locator'].get('page_size'),
+                          coordinate_space=cell['locator'].get('space'), printed_text=cell['expected_text'])
+            for record in records:
+                source_rect = ((record.get('source_locator') or {}).get('rect')
+                               if record.get('method') == 'tesseract_native_statement_cell_consensus' else record.get('rect'))
+                if (record.get('method') in ('tesseract_native_statement_cell_consensus', 'tesseract_amount_crop_consensus')
+                        and record.get('field') == 'balance' and isinstance(source_rect, list) and len(source_rect) == 4
+                        and _overlap(source_rect, rect) >= .5):
+                    result.update(method='cell_crop_reread', reread=dict(method=record['method'],
+                        original_text=record.get('original_text'), text=record.get('text'),
+                        observations=len(record.get('observations') or []), reason=record.get('reason')))
+                    break
+        else:
+            result['rect'] = None
+        row['value_provenance'] = result
+    return rows

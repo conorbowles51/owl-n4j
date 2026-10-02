@@ -1068,7 +1068,7 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
           summary={batch.review_summary}
           selected={reviewGroup}
           onSelect={selectReviewGroup}
-          renderGroupAction={(group, count) => canEdit && ["holder", "account", "institution", "currency", "dates"].includes(group) ? (
+          renderGroupAction={(group, count) => canEdit && ["holder", "account", "institution", "currency", "dates", "no_activity"].includes(group) ? (
             <BulkStatementDetails key={group} caseId={caseId} batchId={batchId}
               reviewGroup={group} buttonLabel={`Resolve ${count} together`} onSaved={refresh} />
           ) : null}
