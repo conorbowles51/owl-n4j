@@ -4,6 +4,7 @@ No Neo4j is used.  ``tests.financial_fake_graph`` stands in for the session and
 keeps transaction semantics, so rollback and partial failure are observable.
 """
 import asyncio
+import importlib.util
 import io
 import json
 import os
@@ -310,7 +311,13 @@ class FailureIsolationTests(GraphFollowUpTestCase):
 
 class BackfillCommandTests(GraphFollowUpTestCase):
     def backfill(self, *args):
-        from scripts.financial_graph_backfill import run
+        # Loaded by path: evidence-engine/scripts is a regular package and shadows
+        # backend/scripts once another test has put evidence-engine on sys.path.
+        path = Path(__file__).resolve().parents[1] / 'scripts' / 'financial_graph_backfill.py'
+        spec = importlib.util.spec_from_file_location('financial_graph_backfill', path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        run = module.run
         out = io.StringIO()
         code = run(['--case', self.case, *args], session_factory=self.f.SessionLocal,
                    graph_session_factory=self.graph.session, out=out)
