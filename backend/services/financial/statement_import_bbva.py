@@ -6,6 +6,7 @@ Summary amounts are controls, never additional payments. All source rows survive
 import re
 import unicodedata
 from datetime import date
+from functools import lru_cache
 
 from services.financial.pdf_candidates import _digest
 from services.financial.statement_import_proposal import exact_amount
@@ -15,8 +16,16 @@ MONTHS = {name: i for i, name in enumerate(
     ('ENE', 'FEB', 'MAR', 'ABR', 'MAY', 'JUN', 'JUL', 'AGO', 'SEP', 'OCT', 'NOV', 'DIC'), 1)}
 
 
+@lru_cache(maxsize=65536)
 def norm(text):
-    return ' '.join(''.join(c for c in unicodedata.normalize('NFKD', text.upper())
+    # Pure function of the text, called for every cell by every Mexican
+    # layout detector on each reading. ASCII text has no compatibility forms
+    # or combining marks, so its result is the upper-cased, space-collapsed
+    # text; other text takes the full decomposition path.
+    upper = text.upper()
+    if upper.isascii():
+        return ' '.join(upper.split())
+    return ' '.join(''.join(c for c in unicodedata.normalize('NFKD', upper)
                            if not unicodedata.combining(c)).split())
 
 
