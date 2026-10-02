@@ -289,6 +289,13 @@ COMPARISON_PENDING_MESSAGE = ('Statement dates cannot be compared yet because {c
     '{verb} being updated in the background. No action is needed. Saved work is unchanged.')
 
 
+def _json_copy(value, without=None):
+    """Independent copy of a stored JSON value; several times faster than deepcopy."""
+    if without is not None:
+        value = {name: item for name, item in value.items() if name != without}
+    return json.loads(json.dumps(value))
+
+
 def _admitted_sources(session, case_id, file_ids):
     from postgres.models.financial import FinancialSourceDocument
     result = {}
@@ -403,7 +410,7 @@ class _ProjectionInputs:
                 or item.status not in PROJECTED_STATUSES
                 or record.get('inputs') != self.fingerprint(item, item.status, item.summary)):
             return None
-        summary = deepcopy({name: value for name, value in item.summary.items() if name != 'readiness'})
+        summary = _json_copy(item.summary, without='readiness')
         request = deepcopy(record.get('request')) if record.get('request_changed') else item.review_request
         return record['state'], summary, request
 
@@ -426,7 +433,7 @@ def _project_item(session, case_id, item, file, *, read, saved_files, duplicate_
     when the caller only allows stored data.
     """
     from services.financial.pending_statement_duplicates import METADATA_KEY, read_duplicate_disposition
-    summary = deepcopy({name: value for name, value in item.summary.items() if name != 'readiness'})
+    summary = _json_copy(item.summary, without='readiness')
     state = item.status
     projected_request = item.review_request
     stored_duplicate = (file.metadata_ or {}).get(METADATA_KEY, {}).get(item.statement_key or '') if file else None
@@ -489,14 +496,16 @@ def _project_item(session, case_id, item, file, *, read, saved_files, duplicate_
 
 def _readiness_pending(item):
     """Hold an item whose projection needs a reading the read path may not do."""
-    summary = deepcopy({name: value for name, value in item.summary.items() if name != 'readiness'})
+    summary = _json_copy(item.summary, without='readiness')
     retained = [p for p in summary.get('problems', []) if p.get('kind') not in ('coverage', 'coverage_load', 'readiness_pending')]
     extra = max(0, summary.get('problem_count', 0) - len(summary.get('problems', [])))
     problems = [dict(kind='readiness_pending', row_id=None, message=READINESS_PENDING_MESSAGE), *retained]
     summary.update(can_import=False, readiness_pending=True, problems=problems, problem_count=len(problems) + extra,
         coverage_review=dict(available=False, candidates=[], revision=None, matching_statement=False,
             reason=READINESS_PENDING_MESSAGE))
-    state = 'attention' if item.status in ('ready', 'attention') else item.status
+    # A held duplicate is shown for review too: its ignored status is no
+    # longer established by current inputs.
+    state = 'attention' if item.status in PROJECTED_STATUSES else item.status
     return state, summary, item.review_request
 
 
@@ -684,7 +693,9 @@ def hydrate_comparison_inputs(session, *, case_id, item_ids=None, budget_seconds
     """
     from services.financial.statement_import_overlap import needs_hydration, HYDRATION_ERROR_KEY
     conditions = (Item.id.in_(list(item_ids)),) if item_ids is not None else ()
-    candidates = [item for item in _active_items(session, case_id, ('ready', 'attention', 'pending_import'), *conditions)
+    # Never pending imports: the worker compares their summary with the
+    # accepted request before writing the receipt.
+    candidates = [item for item in _active_items(session, case_id, ('ready', 'attention'), *conditions)
                   if needs_hydration(item) and not item.summary.get(HYDRATION_ERROR_KEY)]
     started, cache, updates = time.monotonic(), {}, {}
     for item in candidates:
@@ -744,8 +755,13 @@ def refresh_readiness(session, *, case_id, item_ids, budget_seconds=None):
         if budget_seconds is not None and time.monotonic() - started >= budget_seconds:
             break
         snapshot = (item.status, deepcopy(item.summary), deepcopy(item.review_request))
-        state, summary, projected_request = _project_item(session, case_id, item, inputs.files.get(item.file_id),
-            read=read, saved_files=inputs.admitted, duplicate_context=inputs.duplicate_context, validate_reviews=False)
+        try:
+            state, summary, projected_request = _project_item(session, case_id, item, inputs.files.get(item.file_id),
+                read=read, saved_files=inputs.admitted, duplicate_context=inputs.duplicate_context, validate_reviews=False)
+        except Exception:
+            # One unexpected failure must not stop the rest; it stays held.
+            log.exception('Stored readiness could not be computed for one batch item')
+            continue
         status = state if item.status in ('ready', 'attention') and state in ('ready', 'attention') else item.status
         body = _json_value(summary)
         changed = projected_request != item.review_request
@@ -961,6 +977,8 @@ def set_selected_currency(session, *, case_id, batch_id, selections, currency, a
             item.review_request = merged
             item.summary = {**item.summary, **summary, 'currency_history': history}
         session.commit()
+        for item in items:
+            refresh_file_readiness(session, case_id=case_id, file_id=item.file_id, statement_key=item.statement_key or '')
         return dict(case_id=str(case_id), batch_id=str(batch_id), updated=len(items), currency=currency)
     except Exception:
         session.rollback()
@@ -1609,9 +1627,6 @@ def _import_item(factory,case_id,batch_id,item_id,resolve_path):
                 item.status='attention';item.summary=_failed_import_summary(item.summary, error_message)
                 record_outcome(db, case_id, item, 'failed', message=item.summary['problems'][0]['message'])
         db.commit()
-        # An admitted period changes what the file's other pending periods
-        # (in this and other batches) need; store their readiness now.
-        refresh_file_readiness(db, case_id=case_id, file_id=item.file_id)
 
 
 READINESS_SWEEP_SECONDS = 60

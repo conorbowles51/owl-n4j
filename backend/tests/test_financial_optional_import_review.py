@@ -198,6 +198,11 @@ class OptionalImportReviewTests(TestCase):
             item.review_request = initial_request(proposal)
             item.summary = {key:value for key,value in item.summary.items() if key != 'can_import'}
             db.commit()
+            # A legacy summary is held by list reads until the write side
+            # (worker sweep or backfill) reassesses it from its reading.
+            held = service.batch_status(db, case_id=f.case.id, batch_id=batch)
+            self.assertEqual((held['readiness_pending'], held['available_statements']), (1, 0))
+            service.refresh_batch_readiness(db, case_id=f.case.id, batch_id=batch)
             status = service.batch_status(db, case_id=f.case.id, batch_id=batch)
             self.assertEqual(status['available_statements'], 0)
             with self.assertRaisesRegex(PdfMappingError, 'no new statement records'):

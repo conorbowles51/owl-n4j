@@ -2130,3 +2130,5 @@ from services.financial.payment_counterparty_link import PaymentCounterpartyLink
 from services.financial.statement_import_santander import santander_catalog
 __all__ += ["ConsolidationRequest", "preview_consolidation", "save_consolidation", "undo_consolidation",
     "BulkEdit", "ManualStatementPayment", "PaymentCounterpartyLink", "santander_catalog"]
+from services.financial.request_timing import FinancialTimingMiddleware
+__all__ += ["FinancialTimingMiddleware"]

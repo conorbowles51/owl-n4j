@@ -432,8 +432,12 @@ def decide_duplicate_disposition(session, *, case_id, evidence_file_id, action, 
     else:
         result = apply_duplicate_disposition(session, case_id=case_id, file=file, proposal=proposal, actor=actor)
     session.commit()
-    return dict(case_id=str(case_id), evidence_file_id=str(file.id), statement_id=proposal.get('statement_id'),
+    response = dict(case_id=str(case_id), evidence_file_id=str(file.id), statement_id=proposal.get('statement_id'),
         duplicate_disposition=result)
+    # Batch lists reuse stored readiness; bring this period's batch items current.
+    from services.financial.import_batches import refresh_file_readiness
+    refresh_file_readiness(session, case_id=case_id, file_id=file.id, statement_key=proposal.get('statement_id') or '')
+    return response
 
 
 def ignored_receipt(case_id, file, decision):
