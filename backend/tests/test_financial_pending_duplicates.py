@@ -277,9 +277,26 @@ class PendingDuplicateTests(TestCase):
         self.f.file = other
         raw = self.f.request()
         next(row for row in raw['rows'] if not row['excluded'])['description'] = 'Unique batch-only investigator detail'
-        with self.f.SessionLocal() as db:
+        # Since 8cade27d an ignored duplicate requires explicit restoration
+        # before further edits (automation-delivery-plan-2026-09-28).
+        with self.f.SessionLocal() as db, self.assertRaisesRegex(PdfMappingError, 'Restore this duplicate explicitly'):
             batches.save_review(db, case_id=self.f.case.id, batch_id=batch, item_id=UUID(item['id']),
                 request=StatementReviewDraft.model_validate(raw), expected_review_revision=batches._digest({}))
+        self.assertEqual(self.fixture.b.status(batch)['items'][0]['status'], 'duplicate_ignored')
+        ignored = self.decision(other)
+        self.assertEqual(ignored['status'], 'ignored')
+        self.assertEqual(self.decision(other, 'restore', expected_decision_revision=ignored['revision'])['status'], 'restored')
+        item = self.fixture.b.status(batch)['items'][0]
+        self.assertIn(item['status'], ('ready', 'attention'))
+        from postgres.models.financial_import_batches import FinancialImportBatchItem
+        from services.financial.effective_statement_review import batch_review_revision
+        from services.financial.statement_progress import review_progress
+        with self.f.SessionLocal() as db:
+            stored = db.get(FinancialImportBatchItem, UUID(item['id']))
+            revision = batch_review_revision(stored.review_request,
+                review_progress(db.get(EvidenceFile, stored.file_id), stored.statement_key))
+            batches.save_review(db, case_id=self.f.case.id, batch_id=batch, item_id=UUID(item['id']),
+                request=StatementReviewDraft.model_validate(raw), expected_review_revision=revision)
         self.assertEqual(self.fixture.b.status(batch)['items'][0]['status'], 'attention')
         self.assertEqual(self.decision(other)['status'], 'needs_comparison')
 
