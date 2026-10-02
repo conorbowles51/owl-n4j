@@ -272,6 +272,24 @@ def import_available(item):
     return item.status in ('ready', 'attention') and item.summary.get('can_import', item.status == 'ready')
 
 
+def project_list_items(session, case_id, items):
+    """The case batch list's items: stored state, plus the read-time holds on importable ones.
+
+    Overlap and duplicate holds, pending comparisons and pending readiness are
+    applied when a batch is read and only ever remove availability, so only an
+    item its stored summary counts as importable can be overstated. Those go
+    through the batch detail's own projection (stored readings only, no write);
+    every other item is listed as stored.
+    """
+    candidates = [item for item in items if isinstance(item, Item) and import_available(item)]
+    if not candidates:
+        return items
+    checked = {item.id: item for item in checked_batch_items(session, case_id, candidates)}
+    return [SimpleNamespace(id=item.id, batch_id=item.batch_id, file_id=item.file_id,
+            statement_key=item.statement_key, status=checked[item.id].status, summary=checked[item.id].summary,
+            review_request=checked[item.id].review_request) if item.id in checked else item for item in items]
+
+
 def ready_revision(items):
     return _digest(sorted((str(i.id),i.summary['revision'],_digest(i.review_request or {}),
                           (i.summary.get('coverage_review') or {}).get('revision')) for i in items if import_available(i)))

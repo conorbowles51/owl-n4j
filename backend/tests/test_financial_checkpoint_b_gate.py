@@ -60,14 +60,19 @@ class CheckpointBGateTests(TestCase):
 
     # -- synthetic statements ------------------------------------------------
 
-    def statement(self, account, *, holder_printed=True):
-        """A separate synthetic PDF for its own account, optionally without a printed holder."""
+    def statement(self, account, *, holder_printed=True, revised=False):
+        """A separate synthetic PDF for its own account, optionally without a printed holder.
+
+        `revised` reads one payment description differently, as a second reading
+        or version of the same account and period would.
+        """
         f = self.f
-        raw = f.path.read_bytes() + ('\n% ' + account).encode()
-        path = Path(f._directory) / (account + '.pdf')
+        name = account + ('-revised' if revised else '')
+        raw = f.path.read_bytes() + ('\n% ' + name).encode()
+        path = Path(f._directory) / (name + '.pdf')
         path.write_bytes(raw)
         file = f.evidence(hashlib.sha256(raw).hexdigest())
-        file.stored_path, file.original_filename, file.status = str(path), account + '.pdf', 'processed'
+        file.stored_path, file.original_filename, file.status = str(path), name + '.pdf', 'processed'
         text = f.db.get(EvidenceDocumentText, self.primary.id)
         geometry = f.db.get(EvidenceTableGeometry, (self.primary.id, 1))
         content = text.content.replace('TEST123', account)
@@ -77,8 +82,12 @@ class CheckpointBGateTests(TestCase):
             content_sha256=hashlib.sha256(content.encode()).hexdigest(), character_count=len(content),
             engine_job_id=text.engine_job_id, source_locations=[dict(kind='page', page_number=1,
                 start_char=0, end_char=len(content), text_origin='digital_text_layer')]))
+        payload = deepcopy(geometry.payload)
+        if revised:
+            cell = next(v for v in payload[0]['table']['values'] if v['row'] == 2 and v['column'] == 1)
+            cell['text'] = 'Revised source payment detail'
         f.db.add(EvidenceTableGeometry(evidence_file_id=file.id, page_number=1,
-            engine_job_id=geometry.engine_job_id, payload=deepcopy(geometry.payload)))
+            engine_job_id=geometry.engine_job_id, payload=payload))
         f.db.commit()
         self.accounts[file.id] = account
         return file
@@ -183,6 +192,25 @@ class CheckpointBGateTests(TestCase):
         self.assert_ready_everywhere(batch, blocked, 'Batch Reviewed Holder')
         self.assertEqual(self.listed(batch)['available_statements'], 1)
         self.assert_list_agrees(batch)
+
+    def test_batch_list_applies_the_same_overlap_hold_as_batch_detail(self):
+        """Two readings of one account and period: both are held for a comparison decision."""
+        copy = self.statement('OV12345678')
+        overlapping = self.statement('OV12345678', revised=True)
+        batch = self.batch(copy, overlapping)
+        opened = self.opened(batch, overlapping)
+        with self.f.SessionLocal() as db:
+            batches.save_review(db, case_id=self.f.case.id, batch_id=batch, item_id=opened.id,
+                request=self.request(overlapping, 'Test Company'),
+                expected_review_revision=opened.review_revision, actor=self.f.actor)
+        state = self.b.status(batch)
+        self.assertEqual(state['available_statements'], 0, state['counts'])
+        self.assertTrue(all(i['coverage_review']['candidates'] for i in state['items']))
+        self.assert_list_agrees(batch)
+        with self.f.SessionLocal() as db:
+            with self.assertRaisesRegex(PdfMappingError, 'no new statement records'):
+                batches.queue_import(db, case_id=self.f.case.id, batch_id=batch,
+                    expected_revision=state['ready_revision'], actor=self.f.actor)
 
     # -- 2. independent edits stay intact -------------------------------------
 
