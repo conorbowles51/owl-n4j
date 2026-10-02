@@ -35,3 +35,25 @@ class ReviewUpgradeTests(TestCase):
         attach_upgrade(proposal, snapshot)
         self.assertEqual(proposal['saved_review'], before['saved_review'])
         self.assertIsNone(upgrade_request(old, proposal))
+
+
+class VersionedDigestTests(TestCase):
+    """The shared-serialization digests must equal `_digest` byte for byte."""
+
+    def test_every_historical_version_matches_the_reference_digest(self):
+        from services.financial.review_upgrade import versioned_digests
+        snapshot = dict(version='statement-review-v30', source_sha256='b'*64,
+            sources=[{'page_number': 1, 'text': 'Señor Ünicode — "quoted" \\ back\\slash', 'cells': [1, 2.5, None, True]}],
+            metadata={'account_number': '0042', 'zeta': {'nested': ['ä', 'version']}}, currency='MXN',
+            statement_id='section-2', version_note='version')
+        versions = [f'statement-review-v{n}' for n in range(1, 30)]
+        self.assertEqual(versioned_digests(snapshot, versions),
+                         [_digest({**snapshot, 'version': v}) for v in versions])
+
+    def test_placeholder_collision_falls_back_to_reference_digest(self):
+        from unittest.mock import patch
+        from services.financial import review_upgrade
+        snapshot = dict(sources=['review-version-placeholder-' + '0' * 32], version='x')
+        with patch.object(review_upgrade, 'uuid4', return_value=type('U', (), {'hex': '0' * 32})()):
+            result = review_upgrade.versioned_digests(snapshot, ['statement-review-v1'])
+        self.assertEqual(result, [_digest({**snapshot, 'version': 'statement-review-v1'})])

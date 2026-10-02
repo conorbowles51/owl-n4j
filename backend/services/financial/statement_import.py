@@ -738,7 +738,20 @@ def _same_import_request(document, request, request_hash):
 
 
 def confirm_statement_import(*, session_factory, case_id, evidence_file_id, request, actor, resolve_path):
-    """One transaction writes the account, source and all money rows, or none."""
+    """One transaction writes the account, source and all money rows, or none.
+
+    Afterwards, pending batch periods of the same file are brought current:
+    batch list reads reuse stored readiness and an admitted period changes it.
+    """
+    result = _confirm_statement_import(session_factory=session_factory, case_id=case_id,
+        evidence_file_id=evidence_file_id, request=request, actor=actor, resolve_path=resolve_path)
+    from services.financial.import_batches import refresh_file_readiness
+    with session_factory() as session:
+        refresh_file_readiness(session, case_id=case_id, file_id=UUID(str(evidence_file_id)))
+    return result
+
+
+def _confirm_statement_import(*, session_factory, case_id, evidence_file_id, request, actor, resolve_path):
     import hashlib
     from postgres.models.case import Case
     from postgres.models.financial import FinancialSourceDocument, FinancialTransaction

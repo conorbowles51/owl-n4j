@@ -568,3 +568,19 @@ class MaestraProposalTests(TestCase):
             self.assertEqual(checks['transaction_count'],0 if empty else 2)
             self.assertEqual(checks['balance_status'],'matches')
             self.assertEqual(checks['flagged_rows'],0)
+
+
+class BbvaNormTests(TestCase):
+    """The cached ASCII fast path must equal the full decomposition."""
+
+    def test_norm_matches_full_unicode_decomposition(self):
+        import unicodedata
+        from services.financial.statement_import_bbva import norm
+        def reference(text):
+            return ' '.join(''.join(c for c in unicodedata.normalize('NFKD', text.upper())
+                                   if not unicodedata.combining(c)).split())
+        samples = ['', '   ', 'saldo de operación inicial', 'DEPÓSITOS / ABONOS (+)', 'No. de cuenta:  0123',
+                   'straße', 'ﬁnal ½ Ⅻ', 'tab\tand\nnewline', 'ÁÉÍÓÚ ñ ü', 'plain ascii text', '\u00a0nbsp\u2003em']
+        for sample in samples:
+            self.assertEqual(norm(sample), reference(sample), sample)
+            self.assertEqual(norm(sample), reference(sample), sample)  # cached result

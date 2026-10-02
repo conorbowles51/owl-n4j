@@ -18,6 +18,28 @@ class ComparisonSources(dict):
     duplicate_context = None
     case_id = None
     files = None
+    # Pending items whose older summary lacks the bank/product identity the
+    # comparison needs, when the caller does not allow re-reading their PDF.
+    unhydrated = ()
+
+
+class ReadingDeferred(Exception):
+    """A read path declined to reconstruct a statement from its PDF.
+
+    Batch list reads use stored projections only. The write side (worker,
+    saves and the readiness refresh) re-reads and stores what was missing.
+    """
+
+
+HYDRATION_ERROR_KEY = 'comparison_hydration_error'
+
+
+HYDRATION_ERROR = 'Reopen this older review to check its current bank, account and statement dates.'
+
+
+def needs_hydration(item):
+    """True when an older summary lacks fields the comparison derives from a reading."""
+    return (not item.review_request and 'institution' not in item.summary) or 'account_type' not in item.summary
 
 
 def scope(raw):
@@ -86,6 +108,8 @@ def comparison_sources(session, case_id, pending=None, *, read_pending=None):
     current_ids = {str(current_version(versions).id) for versions in groups.values()}
     entries, prepared, cache = ComparisonSources(), {}, {}
     entries.families = families
+    entries.unhydrated = set()
+    unhydrated_keys = set()
     from services.financial.pending_duplicate_projection import load_projection_context, cached_disposition
     all_files = [file for versions in groups.values() for file in versions]
     entries.case_id = str(case_id)
@@ -129,6 +153,7 @@ def comparison_sources(session, case_id, pending=None, *, read_pending=None):
         # absent fields from that reading, preserving every saved correction.
         # Source geometry/catalogue is cached per PDF.
         missing_bank = not item.review_request and 'institution' not in item.summary
+        deferred = False
         if missing_bank or 'account_type' not in item.summary:
             try:
                 proposal = reading(item)
@@ -137,7 +162,13 @@ def comparison_sources(session, case_id, pending=None, *, read_pending=None):
                 if 'account_type' not in item.summary:
                     raw = {**raw, 'account_type': proposal['metadata'].get('account_type') or ''}
             except PdfMappingError:
-                raw = {**raw, '_coverage_error': 'Reopen this older review to check its current bank, account and statement dates.'}
+                raw = {**raw, '_coverage_error': HYDRATION_ERROR}
+            except ReadingDeferred:
+                if item.summary.get(HYDRATION_ERROR_KEY):
+                    # The write side already found this older reading unusable.
+                    raw = {**raw, '_coverage_error': HYDRATION_ERROR}
+                else:
+                    deferred = True
         prepared[item.id] = raw
         from services.financial.pending_statement_duplicates import METADATA_KEY
         decision = (file.metadata_ or {}).get(METADATA_KEY, {}).get(item.statement_key or '')
@@ -151,6 +182,12 @@ def comparison_sources(session, case_id, pending=None, *, read_pending=None):
         # Old internal readings remain in history, not as fresh competing work.
         if str(file.id) not in current_ids:
             continue
+        if deferred:
+            # Comparing with an incomplete identity could miss or invent an
+            # overlap. Hold comparisons until the write side stores the fields.
+            entries.unhydrated.add(item.id)
+            unhydrated_keys.add((str(file.id), item.statement_key or ''))
+            continue
         own = scope(raw)
         if own is None:
             continue
@@ -162,6 +199,7 @@ def comparison_sources(session, case_id, pending=None, *, read_pending=None):
     # A statement reviewed individually may have no batch item yet. Register
     # only explicit current decisions, never guess candidates from file names.
     registered = {(entry['file_id'], entry.get('statement_id') or '') for values in entries.values() for entry in values}
+    registered |= unhydrated_keys  # Held above; never substituted by its decision scope.
     from services.financial.pending_statement_duplicates import METADATA_KEY
     inactive = {(str(file_id), key or '') for file_id, key in session.execute(select(Item.file_id, Item.statement_key)
         .join(Batch, Batch.id == Item.batch_id).where(Batch.case_id == case_id,

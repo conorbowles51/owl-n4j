@@ -2159,3 +2159,5 @@ __all__ += ["record_admission_snapshot", "active_recovery_file_ids", "review_sum
     "RecoveryCampaign", "retry_failed_batches", "prepare_readings", "assess_saved_additions",
     "list_source_audit", "source_audit_detail", "queue_statement", "assess_admission",
     "credit_one_catalog", "saved_receipt", "assess_statement_reading"]
+from services.financial.request_timing import FinancialTimingMiddleware
+__all__ += ["FinancialTimingMiddleware"]

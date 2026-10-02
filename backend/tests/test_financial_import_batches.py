@@ -536,6 +536,10 @@ class BatchImportTests(TestCase):
         self.assertNotEqual(current['revision'], old['revision'])
         self.assertEqual(current['saved_review']['request']['expected_revision'], current['revision'])
         self.assertEqual(current['saved_review']['request']['holder'], raw['holder'])
+        # The legacy summary is held until the write side reassesses it.
+        self.assertEqual(self.status(batch)['readiness_pending'], 1)
+        with self.f.SessionLocal() as db:
+            service.refresh_batch_readiness(db, case_id=self.f.case.id, batch_id=batch)
         status = self.status(batch)
         self.assertTrue(status['items'][0]['can_import'])
         with self.f.SessionLocal() as db:
@@ -575,6 +579,9 @@ class BatchImportTests(TestCase):
             item = db.scalar(select(Item).where(Item.batch_id == batch))
             item.summary = {**item.summary, 'revision': 'f'*64, 'review_model': 'older'}
             db.commit()
+            # Held for the write side, which stores the refreshed reading.
+            self.assertTrue(service.batch_status(db, case_id=self.f.case.id, batch_id=batch)['items'][0]['readiness_pending'])
+            service.refresh_batch_readiness(db, case_id=self.f.case.id, batch_id=batch)
             current = service.batch_status(db, case_id=self.f.case.id, batch_id=batch)['items'][0]
             self.assertNotEqual(current['revision'], 'f'*64)
             service.set_selected_currency(db, case_id=self.f.case.id, batch_id=batch,

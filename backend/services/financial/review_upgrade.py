@@ -1,5 +1,8 @@
 """Keep saved edits when only the statement reader version has changed."""
+import hashlib
+import json
 from copy import deepcopy
+from uuid import uuid4
 from services.financial.pdf_candidates import _digest
 
 
@@ -28,12 +31,39 @@ def upgrade_request(request, proposal):
     return result
 
 
+def versioned_digests(snapshot, versions):
+    """Return `_digest({**snapshot, 'version': v})` for each version.
+
+    The snapshot holds every source cell of the statement, so serializing it
+    once per historical version dominated each reading. Serialize it once with
+    a unique placeholder and hash the shared prefix once; the bytes hashed for
+    each version are exactly those `_digest` would produce.
+    """
+    marker = f'review-version-placeholder-{uuid4().hex}'
+    encoded = json.dumps({**snapshot, 'version': marker}, sort_keys=True, ensure_ascii=False,
+                         separators=(',', ':'), allow_nan=False)
+    token = json.dumps(marker)
+    if encoded.count(token) != 1 or not all(
+            json.dumps(v, ensure_ascii=False) == json.dumps(v) for v in versions):
+        return [_digest({**snapshot, 'version': version}) for version in versions]
+    before, after = encoded.split(token)
+    prefix = hashlib.sha256(before.encode('utf-8'))
+    after = after.encode('utf-8')
+    result = []
+    for version in versions:
+        digest = prefix.copy()
+        digest.update(json.dumps(version).encode('utf-8'))
+        digest.update(after)
+        result.append(digest.hexdigest())
+    return result
+
+
 def attach_upgrade(proposal, snapshot):
     # Matching the full old digest proves the PDF bytes, source text/locations,
     # account/period metadata and currency are identical. A filename or period
     # match alone must never migrate a saved correction.
-    proposal['_compatible_review_revisions'] = [
-        _digest({**snapshot, 'version': f'statement-review-v{version}'}) for version in range(1, 30)]
+    proposal['_compatible_review_revisions'] = versioned_digests(
+        snapshot, [f'statement-review-v{version}' for version in range(1, 30)])
     saved = proposal.get('saved_review')
     if saved and saved['request'].get('expected_revision') != proposal['revision']:
         upgraded = upgrade_request(saved['request'], proposal)
