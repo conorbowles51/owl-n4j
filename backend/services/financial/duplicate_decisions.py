@@ -90,8 +90,14 @@ def decide_duplicate(session, *, case_id, document_id, action, expected_revision
                        action=action, expected_revision=expected_revision,
                        actor=actor, reason=reason, primary_id=primary_id,
                        expected_primary_revision=expected_primary_revision)
-    except Exception:
+    except Exception as error:
         session.rollback()
+        from services.financial.statement_import import active_statement_conflict
+        if active_statement_conflict(error):
+            # Restoring this copy would make it a second active saved copy of
+            # a statement that already has one.  Nothing was changed.
+            raise DuplicateDecisionError("Another saved copy of this statement is already counted. "
+                                         "Exclude or remove that copy before restoring this one.") from error
         raise
 
 

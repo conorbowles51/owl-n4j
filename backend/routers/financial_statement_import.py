@@ -632,7 +632,7 @@ def list_financial_batches(case_id: UUID = Query(...), db: Session = Depends(get
     if by_batch:
         from services.financial.batch_import_history import project_individual_receipts
         items = list(db.scalars(select(FinancialImportBatchItem).where(FinancialImportBatchItem.batch_id.in_(by_batch), FinancialImportBatchItem.status != 'removed')))
-        for item in project_individual_receipts(db, case_id, items):
+        for item in import_batches.project_list_items(db, case_id, project_individual_receipts(db, case_id, items)):
             by_batch[item.batch_id].append(item)
     def counts(batch):
         items = by_batch[batch.id]

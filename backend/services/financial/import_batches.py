@@ -7,7 +7,7 @@ from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4, uuid5
 from types import SimpleNamespace
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from pydantic import ValidationError
 from postgres.models.financial_import_batches import FinancialImportBatch as Batch, FinancialImportBatchItem as Item, FinancialImportOperation as Operation
 from postgres.models.evidence import EvidenceFile
@@ -270,6 +270,24 @@ def prepare_reviews(session, batch, file):
 
 def import_available(item):
     return item.status in ('ready', 'attention') and item.summary.get('can_import', item.status == 'ready')
+
+
+def project_list_items(session, case_id, items):
+    """The case batch list's items: stored state, plus the read-time holds on importable ones.
+
+    Overlap and duplicate holds, pending comparisons and pending readiness are
+    applied when a batch is read and only ever remove availability, so only an
+    item its stored summary counts as importable can be overstated. Those go
+    through the batch detail's own projection (stored readings only, no write);
+    every other item is listed as stored.
+    """
+    candidates = [item for item in items if isinstance(item, Item) and import_available(item)]
+    if not candidates:
+        return items
+    checked = {item.id: item for item in checked_batch_items(session, case_id, candidates)}
+    return [SimpleNamespace(id=item.id, batch_id=item.batch_id, file_id=item.file_id,
+            statement_key=item.statement_key, status=checked[item.id].status, summary=checked[item.id].summary,
+            review_request=checked[item.id].review_request) if item.id in checked else item for item in items]
 
 
 def ready_revision(items):
@@ -763,25 +781,32 @@ def refresh_readiness(session, *, case_id, item_ids, budget_seconds=None):
             break
         snapshot = (item.status, deepcopy(item.summary), deepcopy(item.review_request))
         try:
-            state, summary, projected_request = _project_item(session, case_id, item, inputs.files.get(item.file_id),
+            projection = _project_item(session, case_id, item, inputs.files.get(item.file_id),
                 read=read, saved_files=inputs.admitted, duplicate_context=inputs.duplicate_context, validate_reviews=False)
         except Exception:
             # One unexpected failure must not stop the rest; it stays held.
             log.exception('Stored readiness could not be computed for one batch item')
             continue
-        status = state if item.status in ('ready', 'attention') and state in ('ready', 'attention') else item.status
-        body = _json_value(summary)
-        changed = projected_request != item.review_request
-        record = dict(version=READINESS_VERSION, state=state, request_changed=changed,
-            request=_json_value(projected_request) if changed else None)
-        # The fingerprint covers the values exactly as they will be stored.
-        record['inputs'] = inputs.fingerprint(SimpleNamespace(id=item.id, file_id=item.file_id,
-            statement_key=item.statement_key, status=status, review_request=item.review_request), status, body)
-        updates[item.id] = (snapshot, (status, {**body, 'readiness': record}))
-    def apply(item, change):
-        item.status, item.summary = change
-    written = _write_items(session, updates, apply)
+        updates[item.id] = (snapshot, _readiness_change(inputs, item, *projection))
+    written = _write_items(session, updates, _apply_readiness)
     return dict(refreshed=written, skipped=len(updates) - written, remaining=len(items) - written)
+
+
+def _readiness_change(inputs, item, state, summary, projected_request):
+    """The stored (status, summary) for one projection, with its input fingerprint."""
+    status = state if item.status in ('ready', 'attention') and state in ('ready', 'attention') else item.status
+    body = _json_value(summary)
+    changed = projected_request != item.review_request
+    record = dict(version=READINESS_VERSION, state=state, request_changed=changed,
+        request=_json_value(projected_request) if changed else None)
+    # The fingerprint covers the values exactly as they will be stored.
+    record['inputs'] = inputs.fingerprint(SimpleNamespace(id=item.id, file_id=item.file_id,
+        statement_key=item.statement_key, status=status, review_request=item.review_request), status, body)
+    return status, {**body, 'readiness': record}
+
+
+def _apply_readiness(item, change):
+    item.status, item.summary = change
 
 
 def readiness_backlog(session, case_id, items=None):
@@ -799,9 +824,12 @@ def refresh_case_readiness(session, *, case_id, budget_seconds=None, items=None)
     def left():
         return None if budget_seconds is None else max(0.0, budget_seconds - (time.monotonic() - started))
     hydrated = hydrate_comparison_inputs(session, case_id=case_id, budget_seconds=left())
-    stale, unhydrated = readiness_backlog(session, case_id, items)
-    refreshed = refresh_readiness(session, case_id=case_id, item_ids=stale, budget_seconds=left()) if stale and left() != 0.0 else \
-        dict(refreshed=0, skipped=0, remaining=len(stale))
+    if items is None:
+        items = _active_items(session, case_id, PROJECTED_STATUSES)
+    else:
+        items = _active_items(session, case_id, PROJECTED_STATUSES, Item.id.in_([item.id for item in items])) if items else []
+    refreshed = _store_current_readiness(session, case_id, items, budget_seconds=left()) if left() != 0.0 else \
+        dict(refreshed=0, skipped=0, remaining=len(items))
     return dict(hydrated=hydrated['hydrated'], hydration_remaining=hydrated['remaining'], **refreshed)
 
 
@@ -812,8 +840,51 @@ def refresh_batch_readiness(session, *, case_id, batch_id, budget_seconds=None):
     return refresh_case_readiness(session, case_id=case_id, budget_seconds=budget_seconds, items=items)
 
 
+def _store_current_readiness(session, case_id, items, *, budget_seconds=None):
+    """Store readiness for every item whose stored record is not current.
+
+    Views that read stored summaries (the case's batch list) never project, so
+    every such item is written: from stored inputs when they suffice, without
+    reading its PDF, otherwise by re-reading that statement once. Items whose
+    record is still current are left alone, so a repeat changes nothing.
+    """
+    from services.financial.statement_import_overlap import ReadingDeferred
+    started = time.monotonic()
+    def left():
+        return None if budget_seconds is None else max(0.0, budget_seconds - (time.monotonic() - started))
+    if not items:
+        return dict(refreshed=0, skipped=0, remaining=0)
+    inputs = _ProjectionInputs(session, case_id, items)
+    stale, current, unvisited = [], {}, 0
+    for item in items:
+        if left() == 0.0:
+            unvisited += 1
+            continue
+        if 'readiness' in item.summary and inputs.stored_readiness(item) is not None:
+            continue
+        if inputs.outdated_projection(item):
+            stale.append(item.id)
+            continue
+        snapshot = (item.status, deepcopy(item.summary), deepcopy(item.review_request))
+        try:
+            projection = _project_item(session, case_id, item, inputs.files.get(item.file_id), read=_never_read,
+                saved_files=inputs.admitted, duplicate_context=inputs.duplicate_context, validate_reviews=False)
+        except ReadingDeferred:
+            stale.append(item.id)
+            continue
+        current[item.id] = (snapshot, _readiness_change(inputs, item, *projection))
+    written = _write_items(session, current, _apply_readiness)
+    result = dict(refreshed=written, skipped=len(current) - written, remaining=len(current) - written + unvisited)
+    if stale and left() != 0.0:
+        reread = refresh_readiness(session, case_id=case_id, item_ids=stale, budget_seconds=left())
+        result = {key: result[key] + reread[key] for key in result}
+    elif stale:
+        result['remaining'] += len(stale)
+    return result
+
+
 def refresh_file_readiness(session, *, case_id, file_id, statement_key=None):
-    """After a write that changed one file's inputs, refresh only what became stale.
+    """After a write that changed one file's inputs, store every item it made stale.
 
     Best effort: a failure leaves those items held as pending, and the
     background sweep retries them. It never fails the write that called it.
@@ -825,23 +896,7 @@ def refresh_file_readiness(session, *, case_id, file_id, statement_key=None):
         items = _active_items(session, case_id, PROJECTED_STATUSES, *conditions)
         if not items:
             return dict(refreshed=0, skipped=0, remaining=0)
-        inputs = _ProjectionInputs(session, case_id, items)
-        from services.financial.statement_import_overlap import ReadingDeferred
-        def deferred(item):
-            if 'readiness' in item.summary and inputs.stored_readiness(item) is not None:
-                return False
-            if inputs.outdated_projection(item):
-                return True
-            try:
-                _project_item(session, case_id, item, inputs.files.get(item.file_id), read=_never_read,
-                    saved_files=inputs.admitted, duplicate_context=inputs.duplicate_context, validate_reviews=False)
-            except ReadingDeferred:
-                return True
-            return False
-        stale = [item.id for item in items if deferred(item)]
-        if not stale:
-            return dict(refreshed=0, skipped=0, remaining=0)
-        return refresh_readiness(session, case_id=case_id, item_ids=stale)
+        return _store_current_readiness(session, case_id, items)
     except Exception:
         session.rollback()
         log.exception('Refreshing stored batch readiness failed; the background sweep will retry')
@@ -1253,6 +1308,19 @@ def queue_import(session, *, case_id,batch_id,expected_revision,actor,request_id
     ready_ids={i.id for i in checked if import_available(i)}
     ready=[i for i in items if i.id in ready_ids]
     if not ready: raise PdfMappingError('There are no new statement records available to import.',422)
+    # Claim each statement only while it is still unclaimed. In PostgreSQL the
+    # batch row lock already serialises confirmations; this compare-and-set
+    # keeps "imported once" independent of lock order and of databases without
+    # row locks. A confirmation that loses the race claims nothing and stops.
+    claimed = session.execute(update(Item).where(Item.id.in_([i.id for i in ready]),
+        Item.status.in_(('ready', 'attention'))).values(status='pending_import')
+        .execution_options(synchronize_session=False)).rowcount
+    if claimed != len(ready):
+        session.rollback()
+        existing = session.get(Operation, operation_id)
+        if existing and (existing.case_id, existing.batch_id, existing.expected_revision) == (case_id, batch_id, expected_revision):
+            return dict(queued=len(existing.outcomes), operation=operation_view(existing))
+        raise PdfMappingError('The ready statements changed. Refresh the batch before confirming.', 409)
     operation = Operation(id=operation_id, case_id=case_id, batch_id=batch_id, expected_revision=expected_revision,
         actor=dict(name=actor.name, user_id=str(actor.user_id)),
         outcomes=[dict(item_id=str(i.id), file_id=str(i.file_id), filename=i.summary.get('filename', ''),

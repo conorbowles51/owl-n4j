@@ -367,6 +367,9 @@ def save_recovery(session, *, case_id, source_id, request, actor):
             saved_by=dict(user_id=str(actor.user_id), name=actor.name))}
         session.commit()
         return result
-    except Exception:
+    except Exception as error:
         session.rollback()
+        from services.financial.statement_import import active_statement_conflict
+        if active_statement_conflict(error):
+            raise PdfMappingError('Another save of this statement was committed at the same time. Nothing was changed. Reload it to see the saved sections.', 409) from error
         raise
