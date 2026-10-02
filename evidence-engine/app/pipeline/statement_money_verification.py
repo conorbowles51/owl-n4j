@@ -38,7 +38,9 @@ never touched and cost nothing.
 from __future__ import annotations
 
 from collections import Counter
+from contextlib import contextmanager
 from dataclasses import replace
+import os
 import re
 import time
 
@@ -110,7 +112,33 @@ def _strip(page, rect, dpi, rotation):
     return image
 
 
+@contextmanager
+def _single_threaded_tesseract():
+    """Run these small reads with one OpenMP thread.
+
+    Measured on the benchmark host under load (1-minute load 25 on 6 CPUs): a
+    stacked strip read took 15-24 s with Tesseract's default OpenMP threads and
+    about 1 s with ``OMP_THREAD_LIMIT=1``, the same text either way. pytesseract
+    passes the process environment to its subprocess, so the limit is set only
+    for the duration of these calls and then restored.
+    """
+    previous = os.environ.get('OMP_THREAD_LIMIT')
+    os.environ['OMP_THREAD_LIMIT'] = '1'
+    try:
+        yield
+    finally:
+        if previous is None:
+            os.environ.pop('OMP_THREAD_LIMIT', None)
+        else:
+            os.environ['OMP_THREAD_LIMIT'] = previous
+
+
 def stacked_readings(page, rects, *, rotation, deadline, language):
+    with _single_threaded_tesseract():
+        return _stacked_readings(page, rects, rotation=rotation, deadline=deadline, language=language)
+
+
+def _stacked_readings(page, rects, *, rotation, deadline, language):
     """Read every rectangle under each profile; ``{profile index: [(text, confidence)]}``.
 
     Each crop is a separate horizontal strip with a wide white gap, so a
