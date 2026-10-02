@@ -648,8 +648,9 @@ def propose_andrews_statement(sources, currency, statement):
                 no_activity_evidence=andrews_no_activity_evidence(sources, statement, result))
 
 
-_QUIET_OPENING = re.compile(r'(\d{2}/\d{2}) ID (\d{4}) (BASE SHARE SAVINGS|FREE CHECKING|VISA PAYMENT) Previous Balance')
-_QUIET_CLOSING = re.compile(r'(\d{2}/\d{2}) Ending Balance')
+# Exact printed letters; only OCR spacing is ignored, as in the reader itself.
+_QUIET_OPENING = re.compile(r'\d{2}/\d{2}ID\d{4}(?:BASESHARESAVINGS|FREECHECKING|VISAPAYMENT)PreviousBalance')
+_QUIET_CLOSING = re.compile(r'\d{2}/\d{2}EndingBalance')
 NO_ACTIVITY_METHOD = 'andrews-adjacent-endpoint-rows-v1'
 
 
@@ -700,8 +701,8 @@ def andrews_no_activity_evidence(sources, statement, rows):
     open_money, open_text = label(source_rows[opening['row_index']]) if page else ([], '')
     close_money, close_text = label(source_rows[closing['row_index']]) if page else ([], '')
     if (not page or len(open_money) != 1 or len(close_money) != 1
-            or not _QUIET_OPENING.fullmatch(' '.join(open_text.split()))
-            or not _QUIET_CLOSING.fullmatch(' '.join(close_text.split()))):
+            or not _QUIET_OPENING.fullmatch(re.sub(r'\s+', '', open_text))
+            or not _QUIET_CLOSING.fullmatch(re.sub(r'\s+', '', close_text))):
         return held('endpoint_label', 'The opening or ending balance line was not read exactly as printed. Check the page before confirming that it contains no transactions.', page_number=key[0])
     if 'balance' not in opening['fields'] or 'balance' not in closing['fields']:
         return held('endpoint_unreadable', 'An opening or ending balance could not be read. Check the page before confirming that it contains no transactions.', page_number=key[0])
@@ -709,9 +710,11 @@ def andrews_no_activity_evidence(sources, statement, rows):
         return held('endpoints_differ', 'The opening and ending balances differ, so money moved in this period. Check the page for transactions that were not read.', page_number=key[0])
     if opening['issues'] or closing['issues']:
         return held('endpoint_unreadable', 'An opening or ending balance line needs checking. Check the page before confirming that it contains no transactions.', page_number=key[0])
-    if (opening['fields'].get('date') != statement.get('period_start')
-            or closing['fields'].get('date') != statement.get('period_end')):
-        return held('endpoint_dates', 'The opening and ending balance dates do not span the printed statement period. Check the page before confirming that it contains no transactions.', page_number=key[0])
+    # The section must run to the printed period end; its opening date must be
+    # a readable date inside the period. No date is inferred.
+    if (not opening['fields'].get('date') or closing['fields'].get('date') != statement.get('period_end')
+            or opening['fields']['date'] > closing['fields']['date']):
+        return held('endpoint_dates', 'The opening and ending balance dates do not cover the printed statement period. Check the page before confirming that it contains no transactions.', page_number=key[0])
     ordered = sorted(source_rows)
     position = ordered.index(opening['row_index'])
     if position + 1 >= len(ordered) or ordered[position + 1] != closing['row_index']:
@@ -750,9 +753,10 @@ def andrews_no_activity_evidence(sources, statement, rows):
                 if b is None or first[3] < (b[1] + b[3]) / 2 < second[1]:
                     return held('rows_between_endpoints', 'Other text was read between the opening and ending balance lines. Check it before confirming that it contains no transactions.', page_number=key[0])
     return dict(verified=True, method=NO_ACTIVITY_METHOD, reason='adjacent_equal_endpoints',
-        message='The printed page shows the opening balance line followed directly by the ending balance line for the whole statement period, with equal balances and no line between them.',
+        message='The printed page shows this account section\'s opening balance line followed directly by its ending balance line at the statement end date, with equal balances and no line between them.',
         page_number=key[0], table_index=key[1], opening_row_id=opening['id'], closing_row_id=closing['id'],
         balance_minor=opening['fields']['balance'], period_start=statement.get('period_start'),
+        opening_date=opening['fields']['date'], closing_date=closing['fields']['date'],
         period_end=statement.get('period_end'), opening_rect=first, closing_rect=second,
         page_size=space.get('page_size'), coordinate_space=space.get('space'),
         line_pitch=pitch, distance=distance,

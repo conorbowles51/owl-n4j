@@ -58,6 +58,13 @@ class AndrewsNoActivityEvidenceTests(unittest.TestCase):
         self.assertEqual(result['no_activity_evidence']['method'], evidence['method'])
         self.assertEqual(data, before)
 
+    def test_ocr_spacing_inside_the_label_and_a_later_opening_date_are_accepted(self):
+        lines = [[(15, '06/15 ID 0040 FREE CHECKING Prev ious  Balance'), (350, '200.00')], QUIET[1]]
+        proposal, evidence = proposal_for(page(lines))
+        self.assertTrue(evidence['verified'], evidence)
+        self.assertEqual((evidence['opening_date'], evidence['closing_date']), ('2020-06-15', '2020-06-30'))
+        self.assertTrue(admit(proposal)['can_import'])
+
     def test_section_with_payments_is_not_a_quiet_question(self):
         _, evidence = proposal_for(page(), share='0000')
         self.assertIsNone(evidence)
