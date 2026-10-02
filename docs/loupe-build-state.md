@@ -1,3 +1,44 @@
+## 2 October: plan audit, regression fixes, automation analysis (resume here)
+
+Head after this entry: see `git log -1`. Previous work entry is `ca8be046` (server measurement plan) on top of `54656ea5` (restored duplicate fix). Both unpushed at time of writing; pushing triggers deployment.
+
+**Note:** this file stopped being updated after 21 September. The 22 to 29 September record lives in `docs/financial-workflows/` (especially `automation-delivery-plan-2026-09-28.md`, `error-register-2026-09-27.md`).
+
+**Test environment on Neil's Mac:** use `data/local-runtime/backend-venv/bin/python` (Python 3.12), not the sandbox bootstrap in CLAUDE.md. Full financial suite: `cd backend && env PYTHONDONTWRITEBYTECODE=1 PYTHONHASHSEED=0 ../data/local-runtime/backend-venv/bin/python -m unittest discover -s tests -p 'test_financial_*.py' -t .` (about 3 minutes). Baseline at `ddd11e4b`: Ran 5544, failures=33, errors=6. The CLAUDE.md baseline (3057) is stale. Local Postgres for queries: container `loupe-local-postgres-1`, user and db `loupe_local` (26 batch items, not production data).
+
+**Suite failures, classified against `a48958e0~1` (worktree compare):**
+- Fixed in `54656ea5`: a restored duplicate could never be edited from its batch (`save_review` read the stale stored status; it now reads the current duplicate decision). Two tests updated for the shared-revision token introduced deliberately in `8cade27d`. The "incomplete statement can enter the ledger" fear was wrong: that test failed on the token line before its safety assertions, which pass.
+- 22 failures: modules not registered in `test_financial_exports.py` (housekeeping, not done).
+- 5 identity-graph tests: need `NEO4J_URI`; environment, not code.
+- 7 older failures, already failing before 29 September, not yet fixed: Scotiabank x2 and row-assignment x1 (`confirm` raises "direction is missing" / "enter one opening and one closing balance"), review-checks x2 (`KeyError: 'id'`: test helper rows lack `id`), unassigned-statement x2 (`attention` where `ready` expected). Not yet established whether each is a stale test or a real bug.
+
+**Plan audit verdict (four read-only passes, key claims verified by hand):** checkpoints A to E of the automation plan are all not met. Group import of ready statements is real and the default path; durable group import is real. What causes line-by-line work:
+1. Every row with a reader doubt blocks its whole statement (`import_batches.py:131-134`).
+2. Matching balance intervals are computed and discarded; nothing uses a match to clear a doubt (`review_arithmetic.py:104-107`).
+3. Dropped rows surface as balance differences handed to a person; no localisation or reread.
+4. `accepted_difference` is dead code (imported `import_batches.py:17`, never called); the UI "I checked these differences" box has no effect.
+5. Bank-wide facts (Merrick unprinted start, quiet months) confirmed per period.
+Automatic reread covers 3 of 10 layouts (Credit One, Merrick, Andrews).
+
+**Correctness defects found, not yet fixed:**
+- An unrelated edit (e.g. description) counts as reviewing a doubtful amount (`import_issues.py:39-44`).
+- One invalid or out-of-order date disables the running-balance check for the whole statement, silently (`review_arithmetic.py:63-75`; admission only blocks for unplaced manual rows, `statement_admission.py:117-121`).
+- Group date fix can stamp one date on many months; only start<=end is checked (`bulk_statement_details.py:228`).
+
+**Live evidence (from docs):** manual corrections concentrate on Andrews (~52 log entries) and Merrick (~53); one Andrews collection had 1 of 45 sections auto-admissible, Merrick 7 of 42. Causes: dropped OCR rows, garbled cells ("o.oo"), per-period confirmations, duplicates. Final Test: 233 ready, 105 blocked, reasons never recorded. Alex's own effort was never measured.
+
+**Proposed plan (awaiting Neil's approval of the three-tier rule):**
+1. Fix the correctness defects above and the 7 older failures (~1.5 days).
+2. Confirm a doubtful amount/direction automatically when it is the only row between two readable printed balances and both adjacent gaps match; keep the original reading and record the evidence (~2 days).
+3. Locate dropped rows from the balance gap, reread only that strip, accept only if both printed balances then agree (~3-4 days, Andrews first).
+4. Record layout-level facts once (Merrick closing-only dates; start stays unknown), group confirmations for quiet months and duplicates (~2-3 days).
+5. Reconciled statements import with date/description doubts flagged; missing amounts, differences and two or more amount doubts in one group still stop (~1-2 days).
+Three-tier rule: verified from printed balances / imported with a visible flag / stopped. Reverse if Neil wants flagged dates to block even when reconciled.
+
+**Server measurement:** `docs/financial-workflows/server-blocker-measurement-plan-2026-10-02.md`, read-only, counts only. Neil offered server access; not yet set up. Its M6 result decides whether step 2 or step 3 goes first.
+
+**Alex message:** a draft was written in the 2 October session but should not be sent until step 1 lands; its "correction made once and used everywhere" claim depends on fixes above.
+
 ## 21 September live description suggestions verified
 
 Authenticated readback of build 0eeab81 in finance sunday confirms 672 identical transaction IDs and unchanged pre-existing non-label fields (including amounts, currency, running balances, dates and source references). It exposes 588 suggested categories, 423 suggested To names and 23 suggested From names; all suggested categories are available in the category filter. The live table displays the correct merchant/category suggestions, edit controls and Not printed card balances. Opening a category editor while scrolled down exposed a focus gap, corrected so the first editable field receives focus and scrolls into view.
