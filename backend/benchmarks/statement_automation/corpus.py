@@ -31,7 +31,7 @@ from pathlib import Path
 PAGE_WIDTH, PAGE_HEIGHT = 600, 800
 FONT_SIZE = 7
 SCAN_DPI = 200
-CORPUS_VERSION = 'statement-automation-corpus-v2'
+CORPUS_VERSION = 'statement-automation-corpus-v3'
 
 
 # ---------------------------------------------------------------------------
@@ -618,13 +618,14 @@ def _compensating_entries(*, generic_opening, card_opening, merrick_opening, sav
 
     # Andrews: a deposit of 1,500.00 read as 1,530.00 (0/3) with its running
     # balance and the share's ending balance misread the same way.
-    month = 9
-    start, end = date(2020, month, 1), _month_end(2020, month)
-    save_rows = [row(date(2020, month, 3).isoformat(), 'Deposit Online Banking Transfer From Share 0040', 2000, 'credit'),
-                 row(date(2020, month, 21).isoformat(), 'Deposit Dividend', 13, 'credit')]
-    check_rows = [row(date(2020, month, 3).isoformat(), 'Withdrawal Online Banking Transfer To Share 0000', 2000, 'debit'),
-                  row(date(2020, month, 9).isoformat(), f'Withdrawal Debit Card EXAMPLE MARKET {month}', 4567 + month, 'debit'),
-                  row(date(2020, month, 15).isoformat(), 'Deposit ACH EXAMPLE EMPLOYER PAYROLL', 150000, 'credit')]
+    # Its own month: the account's 2020-09 statement is the quiet-checking case.
+    year, month = 2021, 5
+    start, end = date(year, month, 1), _month_end(year, month)
+    save_rows = [row(date(year, month, 3).isoformat(), 'Deposit Online Banking Transfer From Share 0040', 2000, 'credit'),
+                 row(date(year, month, 21).isoformat(), 'Deposit Dividend', 13, 'credit')]
+    check_rows = [row(date(year, month, 3).isoformat(), 'Withdrawal Online Banking Transfer To Share 0000', 2000, 'debit'),
+                  row(date(year, month, 9).isoformat(), f'Withdrawal Debit Card EXAMPLE MARKET {month}', 4567 + month, 'debit'),
+                  row(date(year, month, 15).isoformat(), 'Deposit ACH EXAMPLE EMPLOYER PAYROLL', 150000, 'credit')]
     lines, closings_by_share = andrews_page(account='123456789', start=start, end=end,
         shares=[('0000', 'BASE SHARE SAVINGS', savings, save_rows), ('0040', 'FREE CHECKING', checking, check_rows)],
         shifts={('0040', 2, 'amount'): 3000, ('0040', 2, 'balance'): 3000, ('0040', 'ending'): 3000})
@@ -635,7 +636,7 @@ def _compensating_entries(*, generic_opening, card_opening, merrick_opening, sav
             holder='EXAMPLE PERSON', currency='USD', start=start.isoformat(), end=end.isoformat(),
             opening=opening_, closing=closings_by_share[share], rows=rows_, expected='auto', defects=defects,
             notes=f'share {share}') | dict(share=share))
-    entries.append(dict(filename='andrews-2020-09-ocr-valid-but-wrong-consistent.pdf', mode='scan_text_layer',
+    entries.append(dict(filename='andrews-2021-05-ocr-valid-but-wrong-consistent.pdf', mode='scan_text_layer',
                         pages=[lines], periods=periods))
     return entries
 

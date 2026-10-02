@@ -2308,7 +2308,7 @@
    "size": 65482
   },
   {
-   "filename": "andrews-2020-09-ocr-valid-but-wrong-consistent.pdf",
+   "filename": "andrews-2021-05-ocr-valid-but-wrong-consistent.pdf",
    "mode": "scan_text_layer",
    "pages": 1,
    "periods": [
@@ -2322,24 +2322,24 @@
      "family": "andrews-share",
      "holder": "EXAMPLE PERSON",
      "holder_printed": true,
-     "id": "andrews-2020-09-ocr-valid-but-wrong-consistent.pdf#1",
+     "id": "andrews-2021-05-ocr-valid-but-wrong-consistent.pdf#1",
      "institution": "Andrews",
      "notes": "share 0000",
      "opening_minor": 56039,
-     "period_end": "2020-09-30",
-     "period_start": "2020-09-01",
+     "period_end": "2021-05-31",
+     "period_start": "2021-05-01",
      "rows": [
       {
        "amount_minor": 2000,
        "balance_after": 58039,
-       "date": "2020-09-03",
+       "date": "2021-05-03",
        "description": "Deposit Online Banking Transfer From Share 0040",
        "direction": "credit"
       },
       {
        "amount_minor": 13,
        "balance_after": 58052,
-       "date": "2020-09-21",
+       "date": "2021-05-21",
        "description": "Deposit Dividend",
        "direction": "credit"
       }
@@ -2350,7 +2350,7 @@
     {
      "account": "123456789",
      "account_printed": true,
-     "closing_minor": 693702,
+     "closing_minor": 693706,
      "currency": "USD",
      "defects": [
       "ocr_valid_but_wrong_amount_balance_and_ending"
@@ -2359,31 +2359,31 @@
      "family": "andrews-share",
      "holder": "EXAMPLE PERSON",
      "holder_printed": true,
-     "id": "andrews-2020-09-ocr-valid-but-wrong-consistent.pdf#2",
+     "id": "andrews-2021-05-ocr-valid-but-wrong-consistent.pdf#2",
      "institution": "Andrews",
      "notes": "share 0040",
      "opening_minor": 550278,
-     "period_end": "2020-09-30",
-     "period_start": "2020-09-01",
+     "period_end": "2021-05-31",
+     "period_start": "2021-05-01",
      "rows": [
       {
        "amount_minor": 2000,
        "balance_after": 548278,
-       "date": "2020-09-03",
+       "date": "2021-05-03",
        "description": "Withdrawal Online Banking Transfer To Share 0000",
        "direction": "debit"
       },
       {
-       "amount_minor": 4576,
-       "balance_after": 543702,
-       "date": "2020-09-09",
-       "description": "Withdrawal Debit Card EXAMPLE MARKET 9",
+       "amount_minor": 4572,
+       "balance_after": 543706,
+       "date": "2021-05-09",
+       "description": "Withdrawal Debit Card EXAMPLE MARKET 5",
        "direction": "debit"
       },
       {
        "amount_minor": 150000,
-       "balance_after": 693702,
-       "date": "2020-09-15",
+       "balance_after": 693706,
+       "date": "2021-05-15",
        "description": "Deposit ACH EXAMPLE EMPLOYER PAYROLL",
        "direction": "credit"
       }
@@ -2392,10 +2392,10 @@
      "start_printed": true
     }
    ],
-   "sha256": "65a54ac9a789b9120f63ed847dbe7d2caa152c343a27d13b03dbf3f0e497b62a",
-   "size": 55342
+   "sha256": "7f25b271c50b993ccc1349acf83905f100f78ca200c2e5f786699e27cb8ad9c5",
+   "size": 54777
   }
  ],
  "synthetic": true,
- "version": "statement-automation-corpus-v2"
+ "version": "statement-automation-corpus-v3"
 }
