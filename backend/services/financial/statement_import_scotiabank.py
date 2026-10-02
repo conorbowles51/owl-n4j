@@ -204,3 +204,21 @@ def propose_scotiabank_statement(sources, currency, choice):
                 result.append({**item, 'id': item['id'] + (f':{role}' if index else ''), 'kind': 'balance',
                     'fields': fields, 'issues': issues})
     return dict(rows=result, issues=[])
+
+
+def scotiabank_no_activity_evidence(sources, choice, rows, currency):
+    """The printed activity chart's five zero amounts prove the period quiet.
+
+    The catalog accepts this layout only for the complete three-page statement
+    with equal printed Saldo inicial / Saldo final, five chart amounts each
+    read exactly as zero, no movement table, no dated payment line and no
+    readable nonzero summary amount. The chart cells are re-read from the
+    same page here and cited; nothing is assumed zero.
+    """
+    from services.financial.statement_printed_no_activity import zero_totals_evidence, held
+    found = _controls([s for s in sources if s['page_number'] == choice['page_numbers'][0]])
+    if found is None:
+        return held('scotiabank-mexico', 'chart_unreadable', 'The activity chart amounts were not all read as zero. Check the page before confirming that it contains no transactions.',
+            page_number=choice['page_numbers'][0])
+    return zero_totals_evidence(rows, choice, currency, family='scotiabank-mexico', zero_cells=found[1],
+        printed_currency='MXN')  # the catalog requires Moneda NACIONAL

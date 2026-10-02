@@ -2166,3 +2166,5 @@ from services.financial.request_timing import FinancialTimingMiddleware
 __all__ += ["FinancialTimingMiddleware"]
 from services.financial.graph_followup import project_case_graph, request_follow_up, follow_up_status
 __all__ += ["project_case_graph", "request_follow_up", "follow_up_status"]
+from services.financial.statement_printed_no_activity import zero_totals_evidence
+__all__ += ["zero_totals_evidence"]

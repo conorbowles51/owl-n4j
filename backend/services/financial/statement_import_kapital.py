@@ -257,3 +257,30 @@ def propose_kapital_statement(sources,currency,choice):
             except ValueError as exc:item['issues'].append(str(exc))
         if not fields['description']:item['issues'].append('Check the payment description.')
     return dict(rows=result,issues=[])
+
+
+def kapital_no_activity_evidence(sources, choice, rows, currency):
+    """A product section's printed + Depositos / - Retiros of zero prove it quiet.
+
+    Beyond the shared printed-control checks, the product section must print
+    no movement table (CONCEPTO/DEPOSITOS/RETIROS/SALDO heading), no Total
+    line and no line that starts like a payment (day then folio). Any of them
+    could carry an unread payment and keeps the period held.
+    """
+    from services.financial.statement_printed_no_activity import zero_totals_evidence
+    scopes = {(s['page_number'], s['table_index']): set(s['row_indices']) for s in choice.get('section_sources') or []}
+
+    def guard():
+        for s in sources:
+            for raw in s['rows']:
+                if raw['row_index'] not in scopes.get((s['page_number'], s['table_index']), set()):
+                    continue
+                joined = norm(text(raw))
+                if any(label in joined for label in ('CONCEPTO', 'FOLIO')) or re.search(r'\bDEPOSITOS\b.*\bRETIROS\b', joined):
+                    return ('movement_table', 'A movement table was read in this product section. Check it before confirming that the section contains no transactions.')
+                if joined.startswith('TOTAL') or re.match(r'^\d{1,2}\s+\d{4,}', joined):
+                    return ('payment_line', 'A line that may be a payment was read in this product section. Check it before confirming that the section contains no transactions.')
+        return None
+
+    family = 'intercam-mexico' if choice.get('layout_id') == 'intercam-mexico-product-statement' else 'kapital-mexico'
+    return zero_totals_evidence(rows, choice, currency, family=family, guard=guard)
