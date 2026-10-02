@@ -13,6 +13,8 @@ from postgres.models.financial_import_batches import FinancialImportBatchItem as
 from services.financial import import_batches as batches, statement_import
 from services.financial.pdf_candidates import PdfMappingError
 from services.financial.statement_import import StatementReviewDraft
+from services.financial.effective_statement_review import batch_review_revision
+from services.financial.statement_progress import review_progress
 from tests import test_financial_statement_overlap as fixtures
 
 
@@ -85,7 +87,10 @@ class BatchReviewSaveScopeTests(TestCase):
         with f.SessionLocal() as db:
             saved = db.get(Item, item_id)
             self.assertEqual(saved.review_request, saved_request)
-            self.assertEqual(result['review_revision'], batches._digest(saved_request))
+            # Every batch save is also a shared save (a48958e0), so the token
+            # binds the batch request to the shared review revision.
+            shared = review_progress(db.get(EvidenceFile, saved.file_id), saved.statement_key)
+            self.assertEqual(result['review_revision'], batch_review_revision(saved_request, shared))
             self.assertEqual(list(db.scalars(select(FinancialTransaction))), [])
 
     def test_saved_draft_status_does_not_bypass_overlapping_source_import_check(self):

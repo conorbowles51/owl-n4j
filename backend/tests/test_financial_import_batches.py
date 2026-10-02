@@ -8,10 +8,12 @@ from sqlalchemy import select
 from postgres.base import Base
 from postgres.models.financial import FinancialTransaction
 from postgres.models.financial_import_batches import FinancialImportBatch as Batch, FinancialImportBatchItem as Item
-from postgres.models.evidence import EvidenceFolder, IngestionLog
+from postgres.models.evidence import EvidenceFile, EvidenceFolder, IngestionLog
 from services.financial import import_batches as service
 from services.financial.statement_import import StatementImportRequest, StatementReviewDraft
 from services.financial.pdf_candidates import PdfMappingError
+from services.financial.effective_statement_review import batch_review_revision
+from services.financial.statement_progress import review_progress
 from tests.test_financial_statement_import import StatementImportTests as Fixture
 
 
@@ -941,7 +943,10 @@ class BatchImportTests(TestCase):
             self.assertEqual(result['status'], 'attention')
             saved=db.get(Item, UUID(item['id']))
             self.assertEqual(saved.review_request['holder'], '')
-            self.assertEqual(result['review_revision'], service._digest(saved.review_request))
+            # Every batch save is also a shared save (a48958e0), so the token
+            # binds the batch request to the shared review revision.
+            shared=review_progress(db.get(EvidenceFile, saved.file_id), saved.statement_key)
+            self.assertEqual(result['review_revision'], batch_review_revision(saved.review_request, shared))
             self.assertFalse(saved.summary['can_import'])
             with self.assertRaisesRegex(PdfMappingError, 'no new statement records'):
                 service.queue_import(db, case_id=f.case.id, batch_id=batch,
