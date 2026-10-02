@@ -738,7 +738,24 @@ def _same_import_request(document, request, request_hash):
 
 
 def confirm_statement_import(*, session_factory, case_id, evidence_file_id, request, actor, resolve_path):
-    """One transaction writes the account, source and all money rows, or none."""
+    """One transaction writes the account, source and all money rows, or none.
+
+    Every admission path (batch worker, standalone jobs, the confirm route and
+    legacy refresh) reaches the ledger through here.  Once the write and its
+    run record have committed, the case is queued for its graph follow-up.
+    That is a request only: no I/O and no exception reach the caller, and the
+    projection itself runs later in the worker loop, so a graph failure can
+    never fail or roll back the ledger write.
+    """
+    receipt = _write_statement_import(session_factory=session_factory, case_id=case_id,
+        evidence_file_id=evidence_file_id, request=request, actor=actor, resolve_path=resolve_path)
+    if not (isinstance(receipt, dict) and receipt.get('outcome') == 'duplicate_ignored'):
+        from services.financial.graph_followup import request_follow_up
+        request_follow_up(case_id)
+    return receipt
+
+
+def _write_statement_import(*, session_factory, case_id, evidence_file_id, request, actor, resolve_path):
     import hashlib
     from postgres.models.case import Case
     from postgres.models.financial import FinancialSourceDocument, FinancialTransaction
