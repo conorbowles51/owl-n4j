@@ -24,7 +24,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { beforeEach, expect, it, vi } from "vitest"
 import { StatementImportPanel } from "./StatementImportPanel"
 import { TransactionSourceHighlight } from "./TransactionSourceHighlight"
-import { fetchAPI } from "@/lib/api-client"
+import { ApiError, fetchAPI } from "@/lib/api-client"
 import { useStatementChecks } from "../hooks/use-statement-checks"
 vi.mock("../hooks/use-statement-checks", async (original) => ({
   ...(await original<typeof import("../hooks/use-statement-checks")>()),
@@ -94,6 +94,11 @@ const data = {
   transaction_count: 1,
   needs_attention: 0,
 }
+// Standalone imports are queued as background jobs: the queue accepts the
+// reviewed request and the saved receipt is read back from confirm-result.
+const queued = (url: unknown) => String(url).includes("/queue-import?")
+const importCall = (url: unknown) =>
+  /\/(queue-import|confirm-result)\?/.test(String(url))
 let sent: unknown[] = [],
   failure = false
 function mount(client?: QueryClient) {
@@ -174,16 +179,25 @@ beforeEach(() => {
           },
         ],
       } as never
-    if (String(url).includes("/confirm?")) {
-      if (failure) throw Error("Source changed. Reload review.")
+    if (queued(url)) {
+      if (failure) throw new ApiError("Source changed. Reload review.", 409)
       sent.push(options?.body)
       return {
         case_id: "case",
         evidence_file_id: "file",
-        transaction_count: 1,
-        applied: true,
+        operation: { batch_id: "job", status: "queued", outcomes: [] },
       } as never
     }
+    if (String(url).includes("/confirm-result?"))
+      return {
+        receipt: {
+          case_id: "case",
+          evidence_file_id: "file",
+          transaction_count: 1,
+          applied: true,
+        },
+        operation: { batch_id: "job", status: "completed", outcomes: [] },
+      } as never
     return data as never
   })
 })
@@ -1002,8 +1016,7 @@ it("edits posting and value dates separately and records a reason without changi
   })
   const base = vi.mocked(fetchAPI).getMockImplementation()!
   vi.mocked(fetchAPI).mockImplementation((url, options) =>
-    String(url).includes("statement-import") &&
-    !String(url).includes("/confirm?")
+    String(url).includes("statement-import") && !importCall(url)
       ? Promise.resolve(multiple as never)
       : base(url, options)
   )
@@ -1051,8 +1064,7 @@ it("offers the missing transaction date separately when the posting date was rea
   multiple.rows[1].issues = ["Check the transaction date."]
   const base = vi.mocked(fetchAPI).getMockImplementation()!
   vi.mocked(fetchAPI).mockImplementation((url, options) =>
-    String(url).includes("statement-import") &&
-    !String(url).includes("/confirm?")
+    String(url).includes("statement-import") && !importCall(url)
       ? Promise.resolve(multiple as never)
       : base(url, options)
   )
@@ -1084,8 +1096,7 @@ it("imports unknown directions and allows corrections without a mandatory note",
   unknown.rows[1].issues = ["The payment's minus sign could not be read."]
   const base = vi.mocked(fetchAPI).getMockImplementation()!
   vi.mocked(fetchAPI).mockImplementation((url, options) =>
-    String(url).includes("statement-import") &&
-    !String(url).includes("/confirm?")
+    String(url).includes("statement-import") && !importCall(url)
       ? Promise.resolve(unknown as never)
       : base(url, options)
   )
@@ -1175,8 +1186,7 @@ it("opens card-balance corrections from the summary and submits the printed sign
   }
   const base = vi.mocked(fetchAPI).getMockImplementation()!
   vi.mocked(fetchAPI).mockImplementation((url, options) =>
-    String(url).includes("statement-import") &&
-    !String(url).includes("/confirm?")
+    String(url).includes("statement-import") && !importCall(url)
       ? Promise.resolve(card as never)
       : base(url, options)
   )
@@ -1242,8 +1252,7 @@ it("keeps repeated statement balances editable instead of calling them missing",
   }
   const base = vi.mocked(fetchAPI).getMockImplementation()!
   vi.mocked(fetchAPI).mockImplementation((url, options) =>
-    String(url).includes("statement-import") &&
-    !String(url).includes("/confirm?")
+    String(url).includes("statement-import") && !importCall(url)
       ? Promise.resolve(repeated as never)
       : base(url, options)
   )
@@ -2082,13 +2091,15 @@ it("saves a statement with matching balances and no payments, with a clear confi
   }
   const base = vi.mocked(fetchAPI).getMockImplementation()!
   vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
-    if (String(url).includes("/confirm?")) {
+    if (queued(url)) {
       sent.push(options?.body)
       return {
-        case_id: "case",
-        evidence_file_id: "file",
-        transaction_count: 0,
-        applied: true,
+        receipt: {
+          case_id: "case",
+          evidence_file_id: "file",
+          transaction_count: 0,
+          applied: true,
+        },
       } as never
     }
     return String(url).includes("statement-import")
@@ -2145,14 +2156,16 @@ it("records a closure notice with no payments and no invented closing balance", 
   }
   const base = vi.mocked(fetchAPI).getMockImplementation()!
   vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
-    if (String(url).includes("/confirm?")) {
+    if (queued(url)) {
       sent.push(options?.body)
       return {
-        case_id: "case",
-        evidence_file_id: "file",
-        transaction_count: 0,
-        account_closed_on: "2020-06-29",
-        applied: true,
+        receipt: {
+          case_id: "case",
+          evidence_file_id: "file",
+          transaction_count: 0,
+          account_closed_on: "2020-06-29",
+          applied: true,
+        },
       } as never
     }
     return String(url).includes("statement-import")
@@ -2788,7 +2801,7 @@ it("saves a single zero closing balance without asking for an opening balance or
     ],
   }
   vi.mocked(fetchAPI).mockImplementation((url, options) =>
-    url.includes("statement-import") && !url.includes("/confirm?")
+    url.includes("statement-import") && !importCall(url)
       ? Promise.resolve(balance as never)
       : base(url, options)
   )
