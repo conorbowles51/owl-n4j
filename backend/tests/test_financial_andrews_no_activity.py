@@ -227,3 +227,51 @@ class GroupedNoActivityExclusionTests(GroupedNoActivityConfirmationTests):
         _, _, preview = self.plan(dict(no_activity_confirmed=True))
         self.assertEqual(preview['updated'], 0)
         self.assertIn('Payments are selected', preview['items'][0]['excluded_reason'])
+
+
+class EndpointBalanceProvenanceTests(unittest.TestCase):
+    def rows(self, closing='200.00'):
+        from services.financial.statement_import_andrews import endpoint_balance_provenance
+        data = page([QUIET[0], [(15, '06/30'), (75, 'Ending Balance'), (350, closing)]])
+        _, result = selected([data], '0040')
+        return endpoint_balance_provenance, result['rows']
+
+    def endpoints(self, rows):
+        return {r['fields']['description']: r['value_provenance'] for r in rows if r['kind'] == 'balance'}
+
+    def test_native_and_page_ocr_methods_with_cell_coordinates(self):
+        annotate, rows = self.rows()
+        before = deepcopy([{k: v for k, v in r.items()} for r in rows])
+        annotate(rows, [dict(page_number=1, extraction_method='native_text')])
+        found = self.endpoints(rows)
+        self.assertEqual({p['method'] for p in found.values()}, {'native_text'})
+        self.assertEqual(found['Closing Balance']['printed_text'], '200.00')
+        self.assertEqual(found['Closing Balance']['status'], 'read')
+        self.assertEqual(len(found['Opening Balance']['rect']), 4)
+        # Only provenance is added; no value or other field changes.
+        self.assertEqual([{k: v for k, v in r.items() if k != 'value_provenance'} for r in rows], before)
+        annotate(rows, [dict(page_number=1, extraction_method='tesseract_ocr')])
+        self.assertEqual({p['method'] for p in self.endpoints(rows).values()}, {'page_ocr'})
+        annotate(rows, [dict(page_number=1, extraction_method='tesseract_ocr', ocr_refinements=[
+            dict(field='statement_page_reading', decision='image_selected')])])
+        self.assertEqual({p['method'] for p in self.endpoints(rows).values()}, {'page_image_reading'})
+
+    def test_crop_reread_is_named_with_its_original_text(self):
+        annotate, rows = self.rows()
+        closing = next(r for r in rows if r['fields'].get('description') == 'Closing Balance')
+        cell = next(c for c in closing['source_cells'] if str(c['column_index']) == closing['fields']['balance_column'])
+        annotate(rows, [dict(page_number=1, extraction_method='native_text', ocr_refinements=[
+            dict(method='tesseract_native_statement_cell_consensus', field='balance', original_text='2O0.00',
+                 text='200.00', source_locator=cell['locator'], observations=[{}] * 6,
+                 reason='unreadable_native_statement_money')])])
+        found = self.endpoints(rows)
+        self.assertEqual(found['Closing Balance']['method'], 'cell_crop_reread')
+        self.assertEqual(found['Closing Balance']['reread']['original_text'], '2O0.00')
+        self.assertEqual(found['Opening Balance']['method'], 'native_text')
+
+    def test_unreadable_balance_is_reported_unread_not_filled(self):
+        annotate, rows = self.rows(closing='2O0.00')
+        annotate(rows, [])
+        closing = self.endpoints(rows)['Closing Balance']
+        self.assertEqual((closing['status'], closing['method']), ('unreadable', 'unknown'))
+        self.assertNotIn('balance', next(r for r in rows if r['fields'].get('description') == 'Closing Balance')['fields'])

@@ -549,6 +549,8 @@ def _groupable(action):
         return 'dates' if action['field'] == 'period_start_unprinted' else action['field']
     if action['field'] == 'period_end' and action['detail'] == 'recognised_closing':
         return 'dates'  # filled by the grouped unprinted-start decision
+    if action['field'] == 'confirm_no_activity':
+        return 'no_activity'  # the grouped "confirm no activity" decision
     return None
 
 

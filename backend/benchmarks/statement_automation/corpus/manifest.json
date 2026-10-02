@@ -1423,8 +1423,599 @@
    ],
    "sha256": "2afab0b0c7cf1f3707a422a511bfef5f1fb803e7009f9d153a65e109eed8a529",
    "size": 6636
+  },
+  {
+   "filename": "andrews-2020-09-quiet-checking.pdf",
+   "mode": "digital",
+   "pages": 1,
+   "periods": [
+    {
+     "account": "123456789",
+     "account_printed": true,
+     "closing_minor": 64017,
+     "currency": "USD",
+     "defects": [],
+     "expected": "auto",
+     "family": "andrews-share",
+     "holder": "EXAMPLE PERSON",
+     "holder_printed": true,
+     "id": "andrews-2020-09-quiet-checking.pdf#1",
+     "institution": "Andrews",
+     "notes": "share 0000",
+     "opening_minor": 61000,
+     "period_end": "2020-09-30",
+     "period_start": "2020-09-01",
+     "rows": [
+      {
+       "amount_minor": 3000,
+       "balance_after": 64000,
+       "date": "2020-09-04",
+       "description": "Deposit Online Banking Transfer From Share 0040",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 17,
+       "balance_after": 64017,
+       "date": "2020-09-22",
+       "description": "Deposit Dividend",
+       "direction": "credit"
+      }
+     ],
+     "share": "0000",
+     "start_printed": true
+    },
+    {
+     "account": "123456789",
+     "account_printed": true,
+     "closing_minor": 230000,
+     "currency": "USD",
+     "defects": [
+      "no_activity_source_proven"
+     ],
+     "expected": "auto",
+     "family": "andrews-share",
+     "holder": "EXAMPLE PERSON",
+     "holder_printed": true,
+     "id": "andrews-2020-09-quiet-checking.pdf#2",
+     "institution": "Andrews",
+     "notes": "share 0040",
+     "opening_minor": 230000,
+     "period_end": "2020-09-30",
+     "period_start": "2020-09-01",
+     "rows": [],
+     "share": "0040",
+     "start_printed": true
+    }
+   ],
+   "sha256": "5b97bc48f7b4f83223d1076ec3fff4fed3d3b4ceabc31073f0a06745165b11df",
+   "size": 5224
+  },
+  {
+   "filename": "andrews-2020-10-quiet-checking-scan.pdf",
+   "mode": "scan_text_layer",
+   "pages": 1,
+   "periods": [
+    {
+     "account": "123456789",
+     "account_printed": true,
+     "closing_minor": 67034,
+     "currency": "USD",
+     "defects": [],
+     "expected": "auto",
+     "family": "andrews-share",
+     "holder": "EXAMPLE PERSON",
+     "holder_printed": true,
+     "id": "andrews-2020-10-quiet-checking-scan.pdf#1",
+     "institution": "Andrews",
+     "notes": "share 0000",
+     "opening_minor": 64017,
+     "period_end": "2020-10-31",
+     "period_start": "2020-10-01",
+     "rows": [
+      {
+       "amount_minor": 3000,
+       "balance_after": 67017,
+       "date": "2020-10-04",
+       "description": "Deposit Online Banking Transfer From Share 0040",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 17,
+       "balance_after": 67034,
+       "date": "2020-10-22",
+       "description": "Deposit Dividend",
+       "direction": "credit"
+      }
+     ],
+     "share": "0000",
+     "start_printed": true
+    },
+    {
+     "account": "123456789",
+     "account_printed": true,
+     "closing_minor": 230000,
+     "currency": "USD",
+     "defects": [
+      "no_activity_source_proven"
+     ],
+     "expected": "auto",
+     "family": "andrews-share",
+     "holder": "EXAMPLE PERSON",
+     "holder_printed": true,
+     "id": "andrews-2020-10-quiet-checking-scan.pdf#2",
+     "institution": "Andrews",
+     "notes": "share 0040",
+     "opening_minor": 230000,
+     "period_end": "2020-10-31",
+     "period_start": "2020-10-01",
+     "rows": [],
+     "share": "0040",
+     "start_printed": true
+    }
+   ],
+   "sha256": "6fc6d139832ea91962b790c838411b58025da8a52a64905702ad0976dd9d076f",
+   "size": 38832
+  },
+  {
+   "filename": "andrews-2020-11-quiet-checking-image-only.pdf",
+   "mode": "image_only",
+   "pages": 1,
+   "periods": [
+    {
+     "account": "123456789",
+     "account_printed": true,
+     "closing_minor": 70051,
+     "currency": "USD",
+     "defects": [],
+     "expected": "auto",
+     "family": "andrews-share",
+     "holder": "EXAMPLE PERSON",
+     "holder_printed": true,
+     "id": "andrews-2020-11-quiet-checking-image-only.pdf#1",
+     "institution": "Andrews",
+     "notes": "share 0000",
+     "opening_minor": 67034,
+     "period_end": "2020-11-30",
+     "period_start": "2020-11-01",
+     "rows": [
+      {
+       "amount_minor": 3000,
+       "balance_after": 70034,
+       "date": "2020-11-04",
+       "description": "Deposit Online Banking Transfer From Share 0040",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 17,
+       "balance_after": 70051,
+       "date": "2020-11-22",
+       "description": "Deposit Dividend",
+       "direction": "credit"
+      }
+     ],
+     "share": "0000",
+     "start_printed": true
+    },
+    {
+     "account": "123456789",
+     "account_printed": true,
+     "closing_minor": 230000,
+     "currency": "USD",
+     "defects": [
+      "no_activity_source_proven"
+     ],
+     "expected": "auto",
+     "family": "andrews-share",
+     "holder": "EXAMPLE PERSON",
+     "holder_printed": true,
+     "id": "andrews-2020-11-quiet-checking-image-only.pdf#2",
+     "institution": "Andrews",
+     "notes": "share 0040",
+     "opening_minor": 230000,
+     "period_end": "2020-11-30",
+     "period_start": "2020-11-01",
+     "rows": [],
+     "share": "0040",
+     "start_printed": true
+    }
+   ],
+   "sha256": "3f7facc959bfc8c11780acf247c8348842913b07bd34252414d4a28832034f78",
+   "size": 33605
+  },
+  {
+   "filename": "andrews-2020-12-ocr-lost-lines-equal-balances.pdf",
+   "mode": "scan_text_layer",
+   "pages": 1,
+   "periods": [
+    {
+     "account": "123456789",
+     "account_printed": true,
+     "closing_minor": 73068,
+     "currency": "USD",
+     "defects": [],
+     "expected": "auto",
+     "family": "andrews-share",
+     "holder": "EXAMPLE PERSON",
+     "holder_printed": true,
+     "id": "andrews-2020-12-ocr-lost-lines-equal-balances.pdf#1",
+     "institution": "Andrews",
+     "notes": "share 0000; OCR layer lost two payment lines; printed balances are equal",
+     "opening_minor": 70051,
+     "period_end": "2020-12-31",
+     "period_start": "2020-12-01",
+     "rows": [
+      {
+       "amount_minor": 3000,
+       "balance_after": 73051,
+       "date": "2020-12-04",
+       "description": "Deposit Online Banking Transfer From Share 0040",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 17,
+       "balance_after": 73068,
+       "date": "2020-12-22",
+       "description": "Deposit Dividend",
+       "direction": "credit"
+      }
+     ],
+     "share": "0000",
+     "start_printed": true
+    },
+    {
+     "account": "123456789",
+     "account_printed": true,
+     "closing_minor": 230000,
+     "currency": "USD",
+     "defects": [
+      "ocr_lost_rows_equal_balances"
+     ],
+     "expected": "auto",
+     "family": "andrews-share",
+     "holder": "EXAMPLE PERSON",
+     "holder_printed": true,
+     "id": "andrews-2020-12-ocr-lost-lines-equal-balances.pdf#2",
+     "institution": "Andrews",
+     "notes": "share 0040; OCR layer lost two payment lines; printed balances are equal",
+     "opening_minor": 230000,
+     "period_end": "2020-12-31",
+     "period_start": "2020-12-01",
+     "rows": [
+      {
+       "amount_minor": 5000,
+       "balance_after": 235000,
+       "date": "2020-12-07",
+       "description": "Deposit Mobile Check Deposit",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 5000,
+       "balance_after": 230000,
+       "date": "2020-12-09",
+       "description": "Withdrawal Debit Card EXAMPLE OUTFITTERS",
+       "direction": "debit"
+      }
+     ],
+     "share": "0040",
+     "start_printed": true
+    }
+   ],
+   "sha256": "a3ce83f12294f090433f0f46a503bf3e4972f43ac58f21e848d938c8b0ac5464",
+   "size": 46845
+  },
+  {
+   "filename": "andrews-2021-01-quiet-section-across-pages.pdf",
+   "mode": "digital",
+   "pages": 2,
+   "periods": [
+    {
+     "account": "123456789",
+     "account_printed": true,
+     "closing_minor": 76085,
+     "currency": "USD",
+     "defects": [],
+     "expected": "auto",
+     "family": "andrews-share",
+     "holder": "EXAMPLE PERSON",
+     "holder_printed": true,
+     "id": "andrews-2021-01-quiet-section-across-pages.pdf#1",
+     "institution": "Andrews",
+     "notes": "share 0000",
+     "opening_minor": 73068,
+     "period_end": "2021-01-31",
+     "period_start": "2021-01-01",
+     "rows": [
+      {
+       "amount_minor": 3000,
+       "balance_after": 76068,
+       "date": "2021-01-04",
+       "description": "Deposit Online Banking Transfer From Share 0040",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 17,
+       "balance_after": 76085,
+       "date": "2021-01-22",
+       "description": "Deposit Dividend",
+       "direction": "credit"
+      }
+     ],
+     "share": "0000",
+     "start_printed": true
+    },
+    {
+     "account": "123456789",
+     "account_printed": true,
+     "closing_minor": 230000,
+     "currency": "USD",
+     "defects": [
+      "no_activity",
+      "section_spans_pages"
+     ],
+     "expected": "decision",
+     "family": "andrews-share",
+     "holder": "EXAMPLE PERSON",
+     "holder_printed": true,
+     "id": "andrews-2021-01-quiet-section-across-pages.pdf#2",
+     "institution": "Andrews",
+     "notes": "share 0040",
+     "opening_minor": 230000,
+     "period_end": "2021-01-31",
+     "period_start": "2021-01-01",
+     "rows": [],
+     "share": "0040",
+     "start_printed": true
+    }
+   ],
+   "sha256": "8052d07ed740cd7cb18c46c54074f5ee1163e729269d78112eeaee845daab0f7",
+   "size": 5712
+  },
+  {
+   "filename": "andrews-2021-02-ocr-endpoint-balances.pdf",
+   "mode": "scan_text_layer",
+   "pages": 1,
+   "periods": [
+    {
+     "account": "123456789",
+     "account_printed": true,
+     "closing_minor": 79102,
+     "currency": "USD",
+     "defects": [
+      "ocr_opening_balance_digit"
+     ],
+     "expected": "auto",
+     "family": "andrews-share",
+     "holder": "EXAMPLE PERSON",
+     "holder_printed": true,
+     "id": "andrews-2021-02-ocr-endpoint-balances.pdf#1",
+     "institution": "Andrews",
+     "notes": "share 0000",
+     "opening_minor": 76085,
+     "period_end": "2021-02-28",
+     "period_start": "2021-02-01",
+     "rows": [
+      {
+       "amount_minor": 3000,
+       "balance_after": 79085,
+       "date": "2021-02-04",
+       "description": "Deposit Online Banking Transfer From Share 0040",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 17,
+       "balance_after": 79102,
+       "date": "2021-02-22",
+       "description": "Deposit Dividend",
+       "direction": "credit"
+      }
+     ],
+     "share": "0000",
+     "start_printed": true
+    },
+    {
+     "account": "123456789",
+     "account_printed": true,
+     "closing_minor": 322655,
+     "currency": "USD",
+     "defects": [
+      "ocr_closing_balance_digit"
+     ],
+     "expected": "auto",
+     "family": "andrews-share",
+     "holder": "EXAMPLE PERSON",
+     "holder_printed": true,
+     "id": "andrews-2021-02-ocr-endpoint-balances.pdf#2",
+     "institution": "Andrews",
+     "notes": "share 0040",
+     "opening_minor": 230000,
+     "period_end": "2021-02-28",
+     "period_start": "2021-02-01",
+     "rows": [
+      {
+       "amount_minor": 3000,
+       "balance_after": 227000,
+       "date": "2021-02-05",
+       "description": "Withdrawal Online Banking Transfer To Share 0000",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 2345,
+       "balance_after": 224655,
+       "date": "2021-02-12",
+       "description": "Withdrawal Debit Card EXAMPLE PHARMACY 2",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 98000,
+       "balance_after": 322655,
+       "date": "2021-02-16",
+       "description": "Deposit ACH EXAMPLE EMPLOYER PAYROLL",
+       "direction": "credit"
+      }
+     ],
+     "share": "0040",
+     "start_printed": true
+    }
+   ],
+   "sha256": "c3e563cfbbaf88df524b92616e81f10c7890b05bd74be9eb95b033ac65b9c120",
+   "size": 54303
+  },
+  {
+   "filename": "andrews-2021-03-quiet-ocr-ending-balance-digit.pdf",
+   "mode": "scan_text_layer",
+   "pages": 1,
+   "periods": [
+    {
+     "account": "123456789",
+     "account_printed": true,
+     "closing_minor": 82119,
+     "currency": "USD",
+     "defects": [],
+     "expected": "auto",
+     "family": "andrews-share",
+     "holder": "EXAMPLE PERSON",
+     "holder_printed": true,
+     "id": "andrews-2021-03-quiet-ocr-ending-balance-digit.pdf#1",
+     "institution": "Andrews",
+     "notes": "share 0000",
+     "opening_minor": 79102,
+     "period_end": "2021-03-31",
+     "period_start": "2021-03-01",
+     "rows": [
+      {
+       "amount_minor": 3000,
+       "balance_after": 82102,
+       "date": "2021-03-04",
+       "description": "Deposit Online Banking Transfer From Share 0040",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 17,
+       "balance_after": 82119,
+       "date": "2021-03-22",
+       "description": "Deposit Dividend",
+       "direction": "credit"
+      }
+     ],
+     "share": "0000",
+     "start_printed": true
+    },
+    {
+     "account": "123456789",
+     "account_printed": true,
+     "closing_minor": 322655,
+     "currency": "USD",
+     "defects": [
+      "no_activity_source_proven",
+      "ocr_closing_balance_digit"
+     ],
+     "expected": "auto",
+     "family": "andrews-share",
+     "holder": "EXAMPLE PERSON",
+     "holder_printed": true,
+     "id": "andrews-2021-03-quiet-ocr-ending-balance-digit.pdf#2",
+     "institution": "Andrews",
+     "notes": "share 0040",
+     "opening_minor": 322655,
+     "period_end": "2021-03-31",
+     "period_start": "2021-03-01",
+     "rows": [],
+     "share": "0040",
+     "start_printed": true
+    }
+   ],
+   "sha256": "bbc2f718c4624d1fba721c56fb7f9e4fc154d59fe649f2aedd9aceb7f9fbe084",
+   "size": 39932
+  },
+  {
+   "filename": "andrews-2021-04-ocr-lost-ending-balance.pdf",
+   "mode": "scan_text_layer",
+   "pages": 1,
+   "periods": [
+    {
+     "account": "123456789",
+     "account_printed": true,
+     "closing_minor": 85136,
+     "currency": "USD",
+     "defects": [
+      "ocr_lost_closing_balance"
+     ],
+     "expected": "auto",
+     "family": "andrews-share",
+     "holder": "EXAMPLE PERSON",
+     "holder_printed": true,
+     "id": "andrews-2021-04-ocr-lost-ending-balance.pdf#1",
+     "institution": "Andrews",
+     "notes": "share 0000",
+     "opening_minor": 82119,
+     "period_end": "2021-04-30",
+     "period_start": "2021-04-01",
+     "rows": [
+      {
+       "amount_minor": 3000,
+       "balance_after": 85119,
+       "date": "2021-04-04",
+       "description": "Deposit Online Banking Transfer From Share 0040",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 17,
+       "balance_after": 85136,
+       "date": "2021-04-22",
+       "description": "Deposit Dividend",
+       "direction": "credit"
+      }
+     ],
+     "share": "0000",
+     "start_printed": true
+    },
+    {
+     "account": "123456789",
+     "account_printed": true,
+     "closing_minor": 415310,
+     "currency": "USD",
+     "defects": [],
+     "expected": "auto",
+     "family": "andrews-share",
+     "holder": "EXAMPLE PERSON",
+     "holder_printed": true,
+     "id": "andrews-2021-04-ocr-lost-ending-balance.pdf#2",
+     "institution": "Andrews",
+     "notes": "share 0040",
+     "opening_minor": 322655,
+     "period_end": "2021-04-30",
+     "period_start": "2021-04-01",
+     "rows": [
+      {
+       "amount_minor": 3000,
+       "balance_after": 319655,
+       "date": "2021-04-05",
+       "description": "Withdrawal Online Banking Transfer To Share 0000",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 2345,
+       "balance_after": 317310,
+       "date": "2021-04-12",
+       "description": "Withdrawal Debit Card EXAMPLE PHARMACY 4",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 98000,
+       "balance_after": 415310,
+       "date": "2021-04-16",
+       "description": "Deposit ACH EXAMPLE EMPLOYER PAYROLL",
+       "direction": "credit"
+      }
+     ],
+     "share": "0040",
+     "start_printed": true
+    }
+   ],
+   "sha256": "6b1c4995335cce995db343263dacf8e8db0b68291c1eddd16b50ed875a256ee3",
+   "size": 54477
   }
  ],
  "synthetic": true,
- "version": "statement-automation-corpus-v1"
+ "version": "statement-automation-corpus-v2"
 }

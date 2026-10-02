@@ -31,7 +31,7 @@ from pathlib import Path
 PAGE_WIDTH, PAGE_HEIGHT = 600, 800
 FONT_SIZE = 7
 SCAN_DPI = 200
-CORPUS_VERSION = 'statement-automation-corpus-v1'
+CORPUS_VERSION = 'statement-automation-corpus-v2'
 
 
 # ---------------------------------------------------------------------------
@@ -70,6 +70,8 @@ def _draw(page, lines, *, use_ocr, render_mode=0):
     for y, cells in lines:
         for cell in cells:
             text = cell['ocr'] if use_ocr and cell['ocr'] is not None else cell['text']
+            if not text:
+                continue  # the OCR layer lost this printed text entirely
             width = fitz.get_text_length(text, fontname='helv', fontsize=FONT_SIZE)
             x = cell['x'] - width if cell['align'] == 'right' else cell['x']
             page.insert_text((x, y + FONT_SIZE), text, fontsize=FONT_SIZE, fontname='helv',
@@ -259,17 +261,33 @@ def merrick_page(*, account, closing_day, opening, rows, holder='EXAMPLE HOLDER'
 # Family: Andrews share statement (several shares/accounts per period)
 # ---------------------------------------------------------------------------
 
-def andrews_page(*, account, start, end, shares, printed_page=1, damage_cells=(), omit=()):
-    """``shares`` is a list of (share id, label, opening, rows)."""
+def _andrews_header(account, start, end, printed_page, names=True):
     header = [[L(420, 'Account Statement')], [L(40, 'Andrews')], [L(300, account)],
-              [L(300, f'{start:%m/%d/%y} {end:%m/%d/%y}')], [L(300, str(printed_page))],
-              [L(20, '>1234567890<')], [L(20, 'EXAMPLE PERSON')], [L(20, 'JOINT PERSON')],
-              [L(20, '1 TEST STREET')]]
-    lines = [(20 + i * 12, cells) for i, cells in enumerate(header)]
+              [L(300, f'{start:%m/%d/%y} {end:%m/%d/%y}')], [L(300, str(printed_page))]]
+    if names:
+        header += [[L(20, '>1234567890<')], [L(20, 'EXAMPLE PERSON')], [L(20, 'JOINT PERSON')],
+                   [L(20, '1 TEST STREET')]]
+    return [(20 + i * 12, cells) for i, cells in enumerate(header)]
+
+
+def andrews_page(*, account, start, end, shares, printed_page=1, damage_cells=(), omit=(), ocr_lost=(),
+                 endpoint_ocr=None):
+    """``shares`` is a list of (share id, label, opening, rows).
+
+    ``ocr_lost`` names (share, row index) lines the scan shows but its OCR
+    layer lost entirely. ``endpoint_ocr`` maps (share, 'opening'|'closing') to
+    the OCR-layer text of that printed balance ('' when OCR lost the value).
+    """
+    endpoint_ocr = endpoint_ocr or {}
+
+    def endpoint(share, role, value):
+        return R(380, money(value), endpoint_ocr.get((share, role)))
+
+    lines = _andrews_header(account, start, end, printed_page)
     y = 220
     closings = {}
     for share, label, opening, rows in shares:
-        lines.append((y, [L(15, f'{start:%m/%d} ID {share} {label} Previous Balance'), R(380, money(opening))]))
+        lines.append((y, [L(15, f'{start:%m/%d} ID {share} {label} Previous Balance'), endpoint(share, 'opening', opening)]))
         y += 12
         balance = opening
         for index, item in enumerate(rows):
@@ -282,9 +300,12 @@ def andrews_page(*, account, start, end, shares, printed_page=1, damage_cells=()
             balance_text = money(balance)
             amount_cell = R(340, amount_text, damage(amount_text) if (share, index, 'amount') in damage_cells else None)
             balance_cell = R(380, balance_text, damage(balance_text) if (share, index, 'balance') in damage_cells else None)
-            lines.append((y, [L(15, _mmdd(item['date'])), L(75, item['description']), amount_cell, balance_cell]))
+            cells = [L(15, _mmdd(item['date'])), L(75, item['description']), amount_cell, balance_cell]
+            if (share, index) in ocr_lost:
+                cells = [{**cell, 'ocr': ''} for cell in cells]
+            lines.append((y, cells))
             y += 12
-        lines.append((y, [L(15, _mmdd(end.isoformat())), L(75, 'Ending Balance'), R(380, money(balance))]))
+        lines.append((y, [L(15, _mmdd(end.isoformat())), L(75, 'Ending Balance'), endpoint(share, 'closing', balance)]))
         y += 12
         closings[share] = balance
     return lines, closings
@@ -468,7 +489,124 @@ def build():
                 notes=f'share {share}') | dict(share=share))
         entries.append(dict(filename=f'andrews-2020-{month:02d}-{label}.pdf', mode=mode, pages=[lines], periods=periods))
         savings, checking = closings_by_share['0000'], closings_by_share['0040']
+    entries.extend(andrews_quiet_and_endpoint_entries(andrews_account))
     return entries
+
+
+def andrews_quiet_and_endpoint_entries(account):
+    """Andrews quiet periods (provable and not) and damaged endpoint balances.
+
+    A share section with no activity prints its Previous Balance line followed
+    directly by its Ending Balance line. Whether that can be established from
+    the source depends on the reading: a lost OCR line, a section split by a
+    page break, or an unreadable balance must not pass as a quiet period.
+    """
+    entries = []
+
+    def savings_rows(month, year):
+        return [row(date(year, month, 4).isoformat(), 'Deposit Online Banking Transfer From Share 0040', 3000, 'credit'),
+                row(date(year, month, 22).isoformat(), 'Deposit Dividend', 17, 'credit')]
+
+    def checking_rows(month, year):
+        return [row(date(year, month, 5).isoformat(), 'Withdrawal Online Banking Transfer To Share 0000', 3000, 'debit'),
+                row(date(year, month, 12).isoformat(), f'Withdrawal Debit Card EXAMPLE PHARMACY {month}', 2345, 'debit'),
+                row(date(year, month, 16).isoformat(), 'Deposit ACH EXAMPLE EMPLOYER PAYROLL', 98000, 'credit')]
+
+    def truths(start, end, shares, closings, defects_by_share, expected_by_share, notes=''):
+        result = []
+        for share, _, opening, rows_ in shares:
+            result.append(period_truth(family='andrews-share', institution='Andrews', account=account,
+                holder='EXAMPLE PERSON', currency='USD', start=start.isoformat(), end=end.isoformat(),
+                opening=opening, closing=closings[share], rows=rows_, expected=expected_by_share.get(share, 'auto'),
+                defects=defects_by_share.get(share, []), notes=f'share {share}' + (f'; {notes}' if notes else ''))
+                | dict(share=share))
+        return result
+
+    savings, checking = 61000, 230000
+    # Provable quiet checking share: digital, scanned with a good OCR layer, and image only.
+    for (year, month), mode, label in (((2020, 9), 'digital', 'quiet-checking'),
+                                       ((2020, 10), 'scan_text_layer', 'quiet-checking-scan'),
+                                       ((2020, 11), 'image_only', 'quiet-checking-image-only')):
+        start, end = date(year, month, 1), _month_end(year, month)
+        shares = [('0000', 'BASE SHARE SAVINGS', savings, savings_rows(month, year)),
+                  ('0040', 'FREE CHECKING', checking, [])]
+        lines, closings = andrews_page(account=account, start=start, end=end, shares=shares)
+        entries.append(dict(filename=f'andrews-{year}-{month:02d}-{label}.pdf', mode=mode, pages=[lines],
+            periods=truths(start, end, shares, closings, {'0040': ['no_activity_source_proven']}, {})))
+        savings = closings['0000']
+
+    # The scan shows two equal and opposite payments; its OCR layer lost both
+    # lines, so the printed balances are equal. This is not a quiet period.
+    start, end = date(2020, 12, 1), date(2020, 12, 31)
+    lost = [row('2020-12-07', 'Deposit Mobile Check Deposit', 5000, 'credit'),
+            row('2020-12-09', 'Withdrawal Debit Card EXAMPLE OUTFITTERS', 5000, 'debit')]
+    shares = [('0000', 'BASE SHARE SAVINGS', savings, savings_rows(12, 2020)), ('0040', 'FREE CHECKING', checking, lost)]
+    lines, closings = andrews_page(account=account, start=start, end=end, shares=shares,
+                                   ocr_lost={('0040', 0), ('0040', 1)})
+    entries.append(dict(filename='andrews-2020-12-ocr-lost-lines-equal-balances.pdf', mode='scan_text_layer', pages=[lines],
+        periods=truths(start, end, shares, closings, {'0040': ['ocr_lost_rows_equal_balances']}, {},
+                       notes='OCR layer lost two payment lines; printed balances are equal')))
+    savings = closings['0000']
+
+    # A genuinely quiet checking section that a page break splits: the page
+    # alone cannot establish that nothing was lost between the two pages.
+    start, end = date(2021, 1, 1), date(2021, 1, 31)
+    first = _andrews_header(account, start, end, 1)
+    y = 220
+    first.append((y, [L(15, f'{start:%m/%d} ID 0000 BASE SHARE SAVINGS Previous Balance'), R(380, money(savings))]))
+    balance = savings
+    save = savings_rows(1, 2021)
+    for item in save:
+        y += 12
+        balance += item['amount_minor']
+        item['balance_after'] = balance
+        first.append((y, [L(15, _mmdd(item['date'])), L(75, item['description']), R(340, money(item['amount_minor'])),
+                          R(380, money(balance))]))
+    first += [(y + 12, [L(15, _mmdd(end.isoformat())), L(75, 'Ending Balance'), R(380, money(balance))]),
+              (y + 24, [L(15, f'{start:%m/%d} ID 0040 FREE CHECKING Previous Balance'), R(380, money(checking))]),
+              (y + 36, [L(15, 'Continued on following page')])]
+    second = _andrews_header(account, start, end, 2, names=False)
+    second.append((220, [L(15, _mmdd(end.isoformat())), L(75, 'Ending Balance'), R(380, money(checking))]))
+    shares = [('0000', 'BASE SHARE SAVINGS', savings, save), ('0040', 'FREE CHECKING', checking, [])]
+    entries.append(dict(filename='andrews-2021-01-quiet-section-across-pages.pdf', mode='digital', pages=[first, second],
+        periods=truths(start, end, shares, {'0000': balance, '0040': checking},
+                       {'0040': ['no_activity', 'section_spans_pages']}, {'0040': 'decision'})))
+    savings = balance
+
+    # Damaged endpoint balances in the OCR layer of a scan; the image is right.
+    start, end = date(2021, 2, 1), date(2021, 2, 28)
+    shares = [('0000', 'BASE SHARE SAVINGS', savings, savings_rows(2, 2021)),
+              ('0040', 'FREE CHECKING', checking, checking_rows(2, 2021))]
+    _, closings = andrews_page(account=account, start=start, end=end, shares=deepcopy_rows(shares))
+    lines, closings = andrews_page(account=account, start=start, end=end, shares=shares,
+        endpoint_ocr={('0000', 'opening'): damage(money(savings)), ('0040', 'closing'): damage(money(closings['0040']))})
+    entries.append(dict(filename='andrews-2021-02-ocr-endpoint-balances.pdf', mode='scan_text_layer', pages=[lines],
+        periods=truths(start, end, shares, closings, {'0000': ['ocr_opening_balance_digit'],
+                                                      '0040': ['ocr_closing_balance_digit']}, {})))
+    savings, checking = closings['0000'], closings['0040']
+
+    # A quiet checking share whose ending balance digit is damaged in OCR.
+    start, end = date(2021, 3, 1), date(2021, 3, 31)
+    shares = [('0000', 'BASE SHARE SAVINGS', savings, savings_rows(3, 2021)), ('0040', 'FREE CHECKING', checking, [])]
+    lines, closings = andrews_page(account=account, start=start, end=end, shares=shares,
+                                   endpoint_ocr={('0040', 'closing'): damage(money(checking))})
+    entries.append(dict(filename='andrews-2021-03-quiet-ocr-ending-balance-digit.pdf', mode='scan_text_layer', pages=[lines],
+        periods=truths(start, end, shares, closings, {'0040': ['no_activity_source_proven', 'ocr_closing_balance_digit']}, {})))
+    savings = closings['0000']
+
+    # The OCR layer lost an ending balance value entirely; the image shows it.
+    start, end = date(2021, 4, 1), date(2021, 4, 30)
+    shares = [('0000', 'BASE SHARE SAVINGS', savings, savings_rows(4, 2021)),
+              ('0040', 'FREE CHECKING', checking, checking_rows(4, 2021))]
+    lines, closings = andrews_page(account=account, start=start, end=end, shares=shares,
+                                   endpoint_ocr={('0000', 'closing'): ''})
+    entries.append(dict(filename='andrews-2021-04-ocr-lost-ending-balance.pdf', mode='scan_text_layer', pages=[lines],
+        periods=truths(start, end, shares, closings, {'0000': ['ocr_lost_closing_balance']}, {})))
+    return entries
+
+
+def deepcopy_rows(shares):
+    return [(share, label, opening, [dict(item) for item in rows_]) for share, label, opening, rows_ in shares]
 
 
 def write(out):
