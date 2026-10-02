@@ -263,7 +263,9 @@ function IdentityEditor({ caseId }: { caseId: string }) {
           ? "Up to date with the reviewed identities."
           : graphStatus.data?.status === "unavailable" || graphStatus.error
             ? "Temporarily unavailable; saved decisions are retained and synchronization retries automatically."
-            : "Updates automatically from saved decisions, usually within 30 seconds."}{" "}
+            : graphStatus.data?.status === "waiting_for_payments"
+              ? "Linked, except payments not yet drawn into the case graph; this retries automatically once they are."
+              : "Updates automatically from saved decisions, usually within 30 seconds."}{" "}
         <a className="underline" href={`/cases/${caseId}/graph`}>
           Open case graph
         </a>
