@@ -1,3 +1,130 @@
+# b-unique: database uniqueness guarantee for saved statements (headless session, 2026-10-02)
+
+Branch `fin/b-unique`, based on `fin/b-gate` head `58a63dfc` (itself on `fin/release-1` `6335e4e8`).
+Nothing was pushed. No services, live databases, case data or evidence were touched, and the
+migration has **not** been run against any database.
+
+## What landed
+
+| Commit | What |
+|---|---|
+| `c2151c61` | Migration `20261002_one_active_statement` (down_revision `20260924_statement_recovery`, the single head). Same constraint on the model. Losing-commit mapping in the statement writer (which also covers the batch worker), duplicate restore and recovery split. SQLite tests and PG tests. |
+
+### The constraint (exact DDL as the migration runs it)
+
+```
+ALTER TABLE financial_source_documents ADD CONSTRAINT ex_financial_source_documents_one_active_statement
+EXCLUDE USING btree (case_id WITH =, evidence_file_id WITH =,
+  (coalesce(metadata ->> 'statement_import_statement_id', '')) WITH =)
+WHERE (document_type = 'statement_review' AND status = 'admitted' AND NOT (metadata ? 'financial_import_removal'))
+DEFERRABLE INITIALLY DEFERRED
+```
+
+- **Upgrade** runs `LOCK TABLE financial_source_documents IN ACCESS EXCLUSIVE MODE`, then a grouped query
+  over the same predicate. If any group has more than one row it raises `RuntimeError` naming every case,
+  evidence file, statement id and document id, and adds nothing. Otherwise it adds the constraint.
+  Coordinator's live read-only check at 18:40 found 0 offenders among 937 admitted statement_review docs.
+- **Downgrade** runs `DROP CONSTRAINT IF EXISTS`.
+- **Model:** the same `ExcludeConstraint(...).ddl_if(dialect="postgresql")` in
+  `FinancialSourceDocument.__table_args__`, with name/key/predicate as module constants. It is on the model
+  because the PG test fixtures build their schema with `Base.metadata.create_all`. With `ddl_if`, SQLite
+  `create_all` omits it (tested). A test asserts the model-compiled clause equals the migration DDL.
+- **Syntax validation without a server:** the DDL, the offender query, LOCK, DROP and the model's full
+  `CREATE TABLE` were parsed with `pglast` 8.4 (libpg_query, the real PostgreSQL parser), installed only
+  into `/tmp/pglast-<user>`. The parser reads it as an exclusion constraint: btree, deferrable, initially
+  deferred, 3 elements. Parsing does not prove planning or semantic acceptance (see Unproven).
+
+### Code paths checked against the constraint
+
+- `statement_import._write_statement_import_once` (was `_write_statement_import`). This is the only
+  writer of `statement_review` docs other than recovery (checked: the only constructors are
+  `documents.record_source_document` and `saved_statement_recovery.save_recovery`).
+  - A new import inserts one doc. A same-file reread or replacement inserts the new doc (~L950) and then
+    `_supersede`s the old one (~L1010) in the same transaction. That is fine because the check is deferred.
+  - All three commits now go through `_commit_statement`. On SQLSTATE 23P01 with this constraint name, it
+    rolls back and raises `_ConcurrentAdmission` (a `RunAborted`). The run is recorded **aborted** with
+    "Another save of this statement committed first. Nothing was written by this run." `_write_statement_import`
+    then retries once. The retry reads the committed copy: the same request returns its receipt with
+    `created=False`, and a different request gets the existing 409 "already has imported transactions".
+    If the retry also loses, the result is a 409 "committed at the same time", never a 500.
+- Batch worker `import_batches._import_item`: unchanged. `created=False` already maps to `already_present`,
+  and a `PdfMappingError` message already maps to `attention`. Tested end to end.
+- `saved_statement_recovery.save_recovery`: inserts sections (distinct ids =
+  `_digest(recovery_source, key)`, and keys are validated unique, L108) before setting the parent
+  superseded (L363). This is fine because the check is deferred. A violation now maps to a 409 (it is
+  serialized by the Case lock and the receipt check anyway).
+- `duplicate_decisions.decide_duplicate` restore: restoring an excluded copy re-admits it. If that would
+  make a second active copy, it is now a 409 `DuplicateDecisionError` instead of the router's 500.
+- `import_removal` sets `status='rejected'` and the removal marker, so it only ever reduces active copies.
+  `duplicates.restore_document` has no callers in services/routers/scripts. Nothing else rewrites
+  `statement_import_statement_id` (grep).
+
+## Numbers
+
+Benchmark at `c2151c61` (`/mnt/owl-data/fin-wt/bench-runs/b-unique-final{,.log}`) **exit 0**, identical to
+the `release-1-v3` baseline:
+- 33/49 periods ready with no edits (67.3%)
+- 33/40 recoverable periods ready (82.5%)
+- **0 wrong admissions**, 0 critical-field errors, 0 duplicate ledger contributions
+
+## Tests actually run (pytest, `CHROMADB_PORT=1 CHROMA_PORT=1`)
+
+- New `tests/test_financial_one_active_statement.py`: **14 passed**. SQLite stands in for the constraint
+  with a `before_commit` hook that refuses exactly the deferred constraint's condition and raises the same
+  SQLSTATE and constraint name. The race is reproduced deterministically: the loser's first writer attempt
+  reads as if the winner had not committed.
+  - A control test shows that without the guarantee the stale writer admits a **second** copy (the b-gate finding).
+  - With the guarantee: the loser returns the winner's receipt and writes nothing, and its runs are
+    completed/aborted/completed with 12/0/0 rows. The batch worker records `already_present`, and a rerun
+    is a no-op. A different request gets a 409. A writer that keeps losing gets a 409. Other integrity
+    errors are not swallowed. Restore and recovery mappings give a 409.
+  - Also tested: model DDL equals migration DDL, single alembic head, SQLite omits the constraint, upgrade
+    lists every offender and adds nothing, upgrade/downgrade statements.
+  - Mutation check: with `active_statement_conflict` forced to False, the 4 losing-writer tests fail.
+- Targeted run of 24 modules (the new module, batch import finalization/history/lock-PG, checkpoint B gate,
+  cross-case and pending duplicates, documents, duplicate decisions, duplicates, exports, import batches,
+  import removal, recovery preparation (+PG), review recovery, runs, statement import (+router, andrews,
+  card, merrick), statement recovery, saved statement recovery): **615 passed, 20 skipped (PG), 2 failed**.
+  - Both failures are in `test_financial_recovery_preparation`
+    (`test_concurrent_recovery_winner_invalidates_older_preparation_without_duplicate`,
+    `test_retained_reading_without_processed_status_does_not_loop`, `DetachedInstanceError` on
+    `EvidenceFile`).
+  - They fail identically on an untouched `git archive` of `58a63dfc`, so they predate this unit and were
+    not investigated.
+- The checkpoint B gate module (12) is inside that run and passed.
+- The full financial suite and the frontend were not run (no frontend change).
+
+## Unproven without PostgreSQL
+
+Four new PG tests were appended to `tests/test_financial_batch_import_lock_postgres.py`, in the existing
+style: opt-in via `LOUPE_TEST_LOCAL_POSTGRES=1`, the fixture hard-asserts `127.0.0.1:55434/loupe_local`,
+and each runs in a disposable schema. They **skip cleanly here and have never executed**:
+1. The constraint exists as `contype='x'`, deferrable and initially deferred.
+2. A second active copy is refused at commit with a 23P01 that `active_statement_conflict` recognizes.
+   Insert-then-supersede commits. A removed copy and a different statement id coexist.
+3. A real-constraint loser in the batch worker gives `already_present`, one active copy and 12 payments.
+4. The migration refuses existing duplicates (listing both ids), then applies, then downgrades.
+
+Only their row-cloning helper was smoke-run, on SQLite. Also unproven:
+- that PG accepts the DDL semantically (expression immutability, btree `=` on uuid/text, the partial
+  predicate in an EXCLUDE);
+- that psycopg exposes `sqlstate`/`diag.constraint_name` exactly as assumed (they are documented psycopg 3
+  attributes);
+- that the existing `test_two_workers_confirm_once_and_keep_first_durable_outcome` still holds with the
+  constraint present;
+- the migration's run time and lock under live load (ACCESS EXCLUSIVE for a ~1k-row index build).
+
+## Needs Neil
+
+1. **A disposable PostgreSQL on 127.0.0.1:55434** (same ask as b-gate) to run the PG files. Without it, the
+   PG rows above stay unproven. Recommendation: run both `*_postgres.py` files before deploying this migration.
+2. Before the deploy that runs `alembic upgrade`, nothing else is needed: the upgrade refuses cleanly with
+   the offender list if the data changed since 18:40.
+
+---
+
+# Previous unit on this base: b-gate notes (unchanged)
+
 # b-gate: U5 / checkpoint B gate (headless session, 2026-10-02)
 
 Branch `fin/b-gate`, based on `fin/release-1` head `6335e4e8`. Nothing pushed. No services,
