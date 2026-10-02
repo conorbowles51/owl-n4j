@@ -58,7 +58,7 @@ def arithmetic_checks(rows, *, liability=False):
     # intervals that could contain them on their declared source page.
     unplaced = [r for r in included if r.get('kind') == 'manual_entry' and not r['fields'].get('source_order_anchor')]
     unplaced_ids = {row['id'] for row in unplaced}
-    source_included = [r for r in included if r['id'] not in unplaced_ids]
+    source_included = [r for r in included if r.get('id') not in unplaced_ids]
     dated_source = [r for r in source_included if r.get('kind') != 'manual_entry']
     dates = [r['fields'].get('date') or r['fields'].get('booking_date') or r['fields'].get('value_date') or '' for r in dated_source]
     valid_dates = bool(dates)
@@ -82,7 +82,7 @@ def arithmetic_checks(rows, *, liability=False):
         for row in sequence:
             move = movement(row, liability)
             if move is None:
-                interval_invalid.append(row['id'])
+                interval_invalid.append(row.get('id'))
             else:
                 pending += move
             if row.get('page_number') is not None:
@@ -95,7 +95,7 @@ def arithmetic_checks(rows, *, liability=False):
                 not pages or min(pages) <= entry['page_number'] <= max(pages)]
             if previous is not None:
                 if interval_invalid or uncertain:
-                    unavailable.append(dict(row_id=row['id'], page=row.get('page_number'),
+                    unavailable.append(dict(row_id=row.get('id'), page=row.get('page_number'),
                         unplaced_row_ids=uncertain, invalid_row_ids=list(interval_invalid),
                         reason='Choose the source position of added payments or complete unreadable values in this interval.'))
                 else:
