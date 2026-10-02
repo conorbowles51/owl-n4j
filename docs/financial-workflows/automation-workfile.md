@@ -13,52 +13,71 @@ sets it itself only when it is genuinely blocked on Neil; see "Halt rules".)
 
 ## ▶ NEXT
 
-**(2026-10-02 19:45) Wave 3 merged into `fin/release-1` (head after the workfile fold, see Log). NOT pushed.**
-Release-1 now: corpus v1–v3 37/49 ready without edits (75.5%), 37/40 recoverable (92.5%); corpus v4 additions
-28/75 (37.3%), 28/67 recoverable (41.8%); 0 wrong admissions anywhere. Suites: financial 5650 / all-tests 6041,
-only the 2 known `unassigned_statement` failures; tsc 0; vitest unit 295/295.
+**(2026-10-02 21:55) Wave 4 merged into `fin/release-1` (head after the workfile fold, see Log). NOT pushed.**
+Release-1 now (corpus v4, 124 distinct periods): **93/124 ready without edits (75.0%)**, 93/107 recoverable (86.9%),
+0 wrong admissions, 0 critical-field errors. v1–v3 subset 37/49 (unchanged); v4 additions 56/75 (was 28/75).
+Suites: financial 5669 / all-tests 6060, only the 2 known `unassigned_statement` failures; tsc 0; vitest unit 295/295.
 
-**Next wave (≤3 headless units, each a worktree from fin/release-1, ranked by v4 recoverable periods unlocked):**
-1. **`fin/c-degraded`: degraded-image OCR + deskew** (~19 periods: degraded 12 [15 incl. combined] + skew 7 [10 incl.
-   combined]; they overlap on the combined scans). Detect and correct skew (every skewed scan fails today; 2.5° Andrews
-   not detected), then upscale/contrast-normalise low-dpi, faint and JPEG pages before OCR. Faint print currently holds
-   even a correct text layer. Safety gate unchanged: crop reread + second reader, benchmark must exit 0. Watch the two
-   near misses (wrong date on 1° skewed Andrews, wrong account on 100 dpi generic): they must stay held.
-2. **`fin/c-zero-totals`: printed zero totals as no-activity proof** (11 periods: Scotiabank, Santander, Kapital, Monex).
-   Standing decision taken here (a-corpus2 recommended it): printed zero totals AND equal printed opening/closing
-   balances on the same statement count as source proof, stored with basis `printed_zero_totals`, computed, never set
-   by hand. Reverse with one line if Neil rules that only printed counts of 0 qualify. Scotiabank's
-   `zero_activity_evidence` must reach admission. Also fix the benchmark pairing defect (Open defects) in this unit:
-   its Monex cases are exactly the ones it mis-pairs.
-3. **`fin/c-layouts`: Scotiabank/Monex movements layouts + BBVA/Capital One image reread** (3 + 2 + 1 = 6 periods).
-   The Scotiabank and Monex movements layouts were invented by a-corpus2; build against them only as a scaffold and say
-   so in notes. Lower value until real documents confirm the layout.
+**Next wave (≤3 headless units, each a worktree from fin/release-1, ranked by recoverable periods still held):**
+1. **`fin/c-image-fields`: BBVA and Capital One image pages** (5 periods). bbva-2024-07 image-only and bbva-2024-08
+   skewed (both `balance`: BBVA image-only reason), bbva-2024-09 ocr amount digit (reading 1, balance 3),
+   capital-one-2025-03 150 dpi+JPEG (every money cell confirmed; OCR reads the layout marker as
+   "...detailed transactions**:**" and `statement_layout_context.py:80` matches the phrase exactly, so section and
+   holder are lost), capital-one-2025-01 ocr amount digit. Safety gate unchanged; benchmark must exit 0.
+2. **`fin/c-andrews-residue`: last Andrews holds** (4 periods). 2022-04 150 dpi #2 (minus read as `“`), 2022-05 100 dpi #2
+   (crop rereads contradict page: 4 of 6 crops `61.28` vs page `-61.28`; `7,150.20` vs `7,180.20`), 2022-08 combined #2
+   (one row not separated), 2020-12 OCR-lost lines with equal balances (no_activity). Any fix that admits must do so on
+   printed values only; holding stays correct where readers disagree.
+3. **`fin/c-mx-layouts`: Scotiabank with-movements + Monex peso-movements, and the benchmark pairing defect** (3 periods).
+   **First commit: fix the harness pairing defect (Open defects)** — the two Monex 2024-03 zero-activity periods are now
+   ADMITTED and the harness pairs them crosswise by currency, so their scoring is not trustworthy until it is fixed.
+   The movements layouts were invented by a-corpus2: scaffold only, say so in notes.
+Not in a unit: credit-one-6 (compensating misreads, held by design until an independent reader agrees);
+merrick-two-statements#1 (earlier note: ground truth mislabelled — corpus fix, not pipeline).
 
 **Open Neil decisions (nothing above waits on them; all have a recorded default):**
+- **Live reader-recovery dry run + ledger audit (r-recovery) — NOT run.** The headless session was blocked from reading the
+  service DB configuration and did not work around it. Both scripts are read-only (READ ONLY transaction, verified
+  evidence hashes, private scratch dir). From `backend/` with the service env loaded:
+  `OMP_THREAD_LIMIT=1 python3 scripts/financial_reader_recovery_estimate.py --case <case> --select-only` (seconds), then
+  without `--select-only` and `--out /mnt/owl-data/fin-wt/r-recovery-estimate` (minutes per Andrews file);
+  `OMP_THREAD_LIMIT=1 python3 scripts/financial_ledger_misread_audit.py --case <case> --out /mnt/owl-data/fin-wt/r-recovery-audit`.
+  Then decide `LOUPE_FINANCIAL_READER_RECOVERY=1` (default OFF). Corpus simulation: 7 of 44 held periods became ready
+  with 0 wrong (23 Sept engine); audit flagged all 5 wrong admissions, "disagrees" 4/4 true, "disputed now" 3–4 false of 4–5.
 - **Disposable PostgreSQL on 127.0.0.1:55434** (or name an instance that may hold throwaway schemas). Without it the
   b-gate PG rows (two-worker exactly-once, save vs group confirmation, deadlock, removal, recovery prep ×6, concurrent
-  `queue_import` lock order, audit triggers) and b-unique's 4 new PG tests have never executed. Run both
-  `backend/tests/*_postgres.py` files (`LOUPE_TEST_LOCAL_POSTGRES=1`) before deploying the migration below.
+  `queue_import` lock order, audit triggers), b-unique's 4 new PG tests and r-recovery's PG-only paths (row locks,
+  `SHOW transaction_read_only`) have never executed. Run both `backend/tests/*_postgres.py` files
+  (`LOUPE_TEST_LOCAL_POSTGRES=1`) before deploying the migration below.
 - **Migration `20261002_one_active_statement` runs at deploy** (`alembic upgrade`, single head, down_revision
   `20260924_statement_recovery`). Deferred EXCLUDE constraint: one active admitted statement copy per case + evidence
   file + statement id. Takes ACCESS EXCLUSIVE on `financial_source_documents` (~1k rows) briefly; refuses with an
   offender list (adds nothing) if duplicates exist. Live read-only check 18:40: 0 offenders among 937. Approved in
-  principle by Neil; PG-semantic acceptance unproven (parsed only).
-- **Second reader (c-reader2)**: (1) accept glyph reader + Tesseract crop agreement + page reconciliation as
-  independent evidence for admission (default ON; kill switch `STATEMENT_GLYPH_SECOND_READER=false`); (2) 4-of-6 crop
-  contradiction instead of unanimous (generic-11 depends on it); (3) templates from non-money digits (dates/account
-  numbers; Andrews-05 and Credit One-7 depend on it); (4) show repaired cells beside the machine reading in the UI
-  (not built; design rule on corrections says it should be visible). No hosted vision model (private images).
+  principle by Neil; PG-semantic acceptance unproven (parsed only). Wave 4 added no migration.
+- **Engine and backend must deploy together (c-image):** the engine now records scan preparation in the processing
+  manifest; a backend without it rejects those records ("Stored table provenance is malformed").
+- **c-image**: (1) geometry kept in the straightened frame, so highlights on turned pages sit up to ~9 pt (1°) / ~22 pt
+  (2.5°) off near corners until the viewer applies the recorded `deskew_degrees` (not built); (2) words over blank paper
+  dropped on prepared scans when confidence < 60 and no ink within 4 px (recorded as `ocr_inkless_words`); kill switch
+  `PDF_SCAN_PREPROCESSING=false`. All numbers are on synthetic damage; real productions unmeasured.
+- **c-mx-noactivity**: printed zero totals + equal printed balances count as source proof (basis `printed_zero_totals`,
+  computed) — implemented yes; reverse if only printed counts of 0 qualify. Monex contracts with any movements page keep
+  failing closed until a real page is seen. Layouts modelled from reader code, not real documents.
+- **r-recovery**: system re-reads attributed to the batch owner (as the 25 Sept campaign did); files with any ready
+  period are left alone.
+- **Second reader (c-reader2)**: (1) glyph reader + Tesseract crop agreement + page reconciliation as independent
+  evidence for admission (default ON; kill switch `STATEMENT_GLYPH_SECOND_READER=false`); (2) 4-of-6 crop contradiction
+  instead of unanimous; (3) templates from non-money digits; (4) show repaired cells beside the machine reading in the UI
+  (not built). No hosted vision model (private images).
 - **a-corpus2**: route deposit receipts out of statement batches automatically?; Mexican zero-activity sections treated
-  as `auto` in ground truth (consistent with Andrews quiet periods).
+  as `auto` in ground truth.
 - **Carried**: Merrick start = previous closing + 1 stored `derived`; c-generic pinned-repair exception to "never
   substitute a crop value" (revert 13d03dbe to refuse); investigator-typed start recorded as `printed`;
   `unassigned_statement` (moved continuation pages don't carry balance rows; the only 2 suite failures); U2 Neo4j index
   auto-creation on first live run; check the suspected duplicate population (232 = 232) before the case's next import
-  auto-projects it; re-read live Andrews sources through the current reader (live data action); read-only audit of
-  admitted image-derived periods for compensating misreads.
+  auto-projects it; re-read live Andrews sources through the current reader (now = the r-recovery campaign above).
 - **Before pushing fin/release-1**: in the live checkout, move the untracked `docs/financial-workflows/automation-workfile.md`
-  and `scripts/headless/` aside (they are now tracked in release-1; the fast-forward fails otherwise), push, then copy
+  and `scripts/headless/` aside (they are tracked in release-1; the fast-forward fails otherwise), push, then copy
   the workfile back over the tracked one if it changed. After deploy: run the readiness refresh for the case.
 
 ---
@@ -141,8 +160,9 @@ reasoning, proceed. Set `STATUS: HALT — <reason>` only when:
 - Benchmark pairing (`backend/benchmarks/statement_automation/harness.py` `_score`, ~L158): scores period end, share
   and row amounts but not currency, so two sections of one file that differ only by currency (Monex 2024-03 MXN/USD
   zero activity) tie and pair by item order. In release-1-w3 they paired crosswise: 2 false `currency_wrong` and 4
-  extra simulated actions; ready/held outcomes unaffected. Fix: add a currency term to `_score`. Assigned to
-  `fin/c-zero-totals` in ▶ NEXT. (Found 2026-10-02 integrate-3.)
+  extra simulated actions; ready/held outcomes unaffected. Fix: add a currency term to `_score`. Found 2026-10-02
+  integrate-3. Still open after wave 4 (c-zero-totals was superseded by c-mx-noactivity, which did not take it); both
+  Monex 2024-03 periods are now admitted and still pair crosswise. Assigned to `fin/c-mx-layouts` (first commit).
 
 ## Log
 
@@ -384,4 +404,29 @@ brief (briefs = Queue entries above + the 2026-10-02 log lines). Automation is t
   bench-runs/release-1-w3{,.log}, bench-runs/release-1-w3-vitest.log.
 - Folded this workfile + `scripts/headless/` (financial-prompt.md identical) into fin/release-1. Live untracked copies
   left in place: **move them aside right before the push** (see ▶ NEXT).
+- Plain-language status: /mnt/owl-data/fin-wt/headless/STATUS-FOR-NEIL.md.
+- fin/release-1 head **1c840355** (workfile fold). The live workfile has changed only by this head line since that commit.
+
+### 2026-10-02 21:55 — wave 4 merged into fin/release-1 (headless integrate-4)
+- Merged, none refused (every unit's notes say landed; every unit benchmark exited 0; WIP-NOTES.md dropped; notes archived
+  /mnt/owl-data/fin-wt/notes/{r-recovery,c-image,c-mx-noactivity}.md): `fin/r-recovery` (3f3057b3), `fin/c-image`
+  (08a4cb3d), `fin/c-mx-noactivity` (9e215ee0; one conflict in `services/financial/__init__.py`, both sides appended an
+  export, kept both). Merge fix b5ebfeb7: c-image changed `pdf_extraction.py`, so the wave-3 reader's digest
+  (7bd84c16, `e6526e20…`) joins `AFFECTED_EXTRACTION_SHA256` as r-recovery's notes asked (current file `003d53a6…`
+  stays excluded; 34 recovery/exports tests pass).
+- **Benchmark on merge** (corpus v4, OMP_THREAD_LIMIT=1; exit status not captured, the script exits 1 only on a wrong admission and there were 0; bench-runs/release-1-w4{,.log}):
+  - All: 65/124 → **93/124 ready w/o edits (75.0%)**; recoverable 65/107 → **93/107 (86.9%)**; 0 wrong admissions,
+    0 critical-field errors (301 saved from 93 periods); held kept out 10/10. Actions 277/251 → 122/114. Gains are exactly
+    additive: c-image +17, c-mx-noactivity +11, r-recovery 0 (no fresh-upload change).
+  - v1–v3 subset: 37/49 → 37/49 (75.5%), recoverable 37/40, unchanged. Andrews 21/24, Credit One 5/8, generic 8/13, Merrick 3/5.
+  - v4 additions: 28/75 → **56/75 (74.7%)**, recoverable 28/67 → 56/67 (83.6%). By family: Andrews 7 → 18/22
+    (rec 18/21), generic 6 → 12/14 (12/12), Santander 3 → 7/8 (7/7), Kapital 2 → 4/4, Monex 0 → 2/4, Scotiabank 0 → 3/4;
+    unchanged BBVA 3/7, Capital One 4/7, Credit One 2/2, Intercam 1/1, deposit receipts 0/2 (held, correct).
+  - 14 recoverable still held → next wave in ▶ NEXT. 2 `currency_wrong` proposals = the Monex pairing artefact (Open defects).
+- Suites on merge (live .venv, CHROMADB_PORT=1 CHROMA_PORT=1): financial **Ran 5669, failures=2**; all-tests **Ran 6060,
+  failures=2, errors=0** (the 2 = known `unassigned_statement`); engine pytest (c-image's selection) 462 passed 8 skipped;
+  tsc -b 0; vitest unit **295/295 files, 2053 tests**. Logs fin-wt/release-1-w4-{fullsuite,allsuite}.log,
+  bench-runs/release-1-w4-vitest.log. r-recovery's pytest-only adjacent suites have 12 pre-existing `DetachedInstanceError`
+  failures (identical on 1c840355, per its notes); not run here.
+- r-recovery live dry-run estimate and live ledger audit: **NOT run** (no counts exist); see ▶ NEXT for the commands.
 - Plain-language status: /mnt/owl-data/fin-wt/headless/STATUS-FOR-NEIL.md.
