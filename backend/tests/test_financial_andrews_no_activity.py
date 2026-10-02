@@ -286,6 +286,26 @@ class EndpointBalanceProvenanceTests(unittest.TestCase):
         self.assertEqual(found['Closing Balance']['reread']['original_text'], '2O0.00')
         self.assertEqual(found['Opening Balance']['method'], 'native_text')
 
+    def test_second_reader_repair_is_named_with_the_page_reading_it_replaced(self):
+        annotate, rows = self.rows()
+        closing = next(r for r in rows if r['fields'].get('description') == 'Closing Balance')
+        cell = next(c for c in closing['source_cells'] if str(c['column_index']) == closing['fields']['balance_column'])
+        repair = dict(method='statement_money_second_reader_repair', decision='repaired', cells=[dict(
+            rect=cell['locator']['rect'], page_reading='280.00', text='200.00', observations=[{}] * 6,
+            reason='crop_reading_confirmed_by_independent_glyph_reader',
+            second_reading=dict(method='page_glyph_template_reader'))])
+        annotate(rows, [dict(page_number=1, extraction_method='native_text', ocr_refinements=[repair])])
+        found = self.endpoints(rows)
+        self.assertEqual(found['Closing Balance']['method'], 'second_reader_repair')
+        self.assertEqual((found['Closing Balance']['reread']['original_text'], found['Closing Balance']['reread']['text']),
+                         ('280.00', '200.00'))
+        self.assertEqual(found['Closing Balance']['reread']['second_reading'], 'page_glyph_template_reader')
+        self.assertEqual(found['Opening Balance']['method'], 'native_text')
+        # A declined attempt changes nothing.
+        annotate(rows, [dict(page_number=1, extraction_method='native_text', ocr_refinements=[
+            {**repair, 'decision': 'declined'}])])
+        self.assertEqual(self.endpoints(rows)['Closing Balance']['method'], 'native_text')
+
     def test_unreadable_balance_is_reported_unread_not_filled(self):
         annotate, rows = self.rows(closing='2O0.00')
         annotate(rows, [])
