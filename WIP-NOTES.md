@@ -1,27 +1,25 @@
-# U1 batch read performance - WIP notes (fin/u1-batch-read)
+# U1 batch read performance - notes (fin/u1-batch-read)
 
-## Done (committed)
-- ac9e51f9 harness `backend/scripts/financial_batch_read_benchmark.py` (synthetic only).
-- 54bec6f7 BBVA `norm` cache + ASCII fast path; `attach_upgrade` serialises snapshot once (equivalence tests added).
-- WIP commit (this one): stored-projection batch reads.
-  - `checked_batch_items(..., reading='stored'|'targets'|'all')`; default 'stored' never re-reads PDFs.
-    Needs-a-reading items use a fingerprinted `summary['readiness']` record written by the write side,
-    else are held (`readiness_pending`, problem kind `readiness_pending`, reason `readiness_update`).
-  - `comparison_sources` defers legacy hydration (`ReadingDeferred`), marks `unhydrated`; targets held (`comparison_pending`).
-  - Write side: `hydrate_comparison_inputs`, `refresh_readiness`, `refresh_case_readiness`, `refresh_batch_readiness`,
-    `refresh_file_readiness` (hooks: save_review, save_progress, worker _review_file, _import_item),
-    background `refresh_stale_readiness` sweep every 60 s in `run_batches_forever`.
-  - queue_import: displayed = stored, checked = validate + reading='all'. Single item GET = reading='targets'.
-  - `services/financial/request_timing.py`: stage timers + `FinancialTimingMiddleware` (X-Request-ID, Server-Timing) registered in main.py.
-  - test_financial_batch_read_projection rewritten for the new contract (passes).
+Status: code complete on branch, not pushed, not deployed. Coordinator owns the workfile.
 
-## Measurements (synthetic, SQLite, before = 687da296 code)
-- legacy 250: batch_status median 19.57 s (250 PDF re-reads, comparison_sources 17.3 s)
-- current 250: 0.39 s
-- legacy 1000: 68.6 s (1000 re-reads); current 1000: 1.76 s
-- after change (20-item smoke): legacy 0.029 s held, refresh 0.47 s, after refresh 0.022 s, results match old counts.
+## Commits
+- ac9e51f9 synthetic timing harness `backend/scripts/financial_batch_read_benchmark.py`
+- 54bec6f7 BBVA `norm` cache + ASCII fast path; `attach_upgrade` serialises the snapshot once
+- 743fac52 stored-projection batch reads + write-side refresh + sweep + Server-Timing/X-Request-ID (was WIP)
+- bfdd3025 refresh hooks on every input-changing write; JSON copy instead of deepcopy
+- 8829e5fe equivalence tests vs frozen pre-change implementation (`tests/financial_legacy_batch_read.py`)
+- fc4b1b83 backfill command `backend/scripts/financial_refresh_batch_readiness.py` (not run on live)
 
-## Next
-- New focused tests: old-path equivalence (frozen reference impl), GET no read/no write, middleware headers, sweep.
-- Run harness 250/1000 after; run targeted modules (baseline: import_batches 1 fail, save_scope 1 fail, pending_duplicates 1 error).
-- Backfill CLI script (`refresh_case_readiness` per case, dry-run via `readiness_backlog`).
+## Timings (synthetic SQLite, box load avg 10-18, so +/-2x noise)
+| scenario | before | after |
+|---|---|---|
+| legacy 250 (needs re-read, like live) | 19.6 s median, 250 PDF reads | 0.39 s, 0 reads (items held) |
+| legacy 250 after write-side refresh | n/a | 0.71 s, 0 reads; refresh itself 25 s once, in worker |
+| current 250 | 0.39-1.6 s | 0.8-1.3 s (A/B interleaved: no regression) |
+| legacy 1000 | 68.6 s, 1000 reads | 3.1 s held / 3.3 s after refresh |
+| current 1000 | 1.8-9.2 s | 3.8-4.8 s |
+
+## Test baseline (targeted modules) unchanged
+Pre-existing, before and after: import_batches test_incomplete_progress (1), batch_review_save_scope (1),
+pending_duplicates test_batch_only_correction (1 error), unassigned_statement (2), recovery_followup (3, pytest),
+exports (22). No new failures. New: test_financial_batch_read_stored (7 tests) passes.
