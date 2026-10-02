@@ -803,6 +803,17 @@ def endpoint_balance_provenance(rows, page_locations):
             result.update(rect=rect, page_size=cell['locator'].get('page_size'),
                           coordinate_space=cell['locator'].get('space'), printed_text=cell['expected_text'])
             for record in records:
+                # A held cell cleared by the independent glyph reader: name it, and keep the
+                # page reading it replaced beside the accepted value.
+                if record.get('method') == 'statement_money_second_reader_repair' and record.get('decision') == 'repaired':
+                    repaired = next((c for c in record.get('cells') or [] if isinstance(c.get('rect'), list)
+                                     and len(c['rect']) == 4 and _overlap(c['rect'], rect) >= .5), None)
+                    if repaired:
+                        result.update(method='second_reader_repair', reread=dict(method=record['method'],
+                            original_text=repaired.get('page_reading'), text=repaired.get('text'),
+                            observations=len(repaired.get('observations') or []), reason=repaired.get('reason'),
+                            second_reading=(repaired.get('second_reading') or {}).get('method')))
+                        break
                 source_rect = ((record.get('source_locator') or {}).get('rect')
                                if record.get('method') == 'tesseract_native_statement_cell_consensus' else record.get('rect'))
                 if (record.get('method') in ('tesseract_native_statement_cell_consensus', 'tesseract_amount_crop_consensus')

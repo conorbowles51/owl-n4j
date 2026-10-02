@@ -323,20 +323,30 @@ def _verify_recognised_money(page, tables, chunks, *, text_origin, extraction_me
     parses and can reconcile with every printed control, so recognised money
     is reread from crops of the page image and any cell those readings do not
     confirm is marked unreadable for review. A crop value replaces it only when
-    the statement's own agreed controls pin that value (``repair_pinned_cells``).
+    the statement's own agreed controls pin that value (``repair_pinned_cells``), or
+    when an independent glyph reader gives the same value and every printed control
+    on the page reconciles with it (``repair_with_second_reader``).
     """
     from app.pipeline.statement_money_verification import (page_needs_verification, repair_pinned_cells,
-        verify_money_cells)
+        repair_with_second_reader, verify_money_cells)
     if not tables or not page_needs_verification(text_origin, extraction_method):
         return chunks, tables, []
     try:
         refined, records = verify_money_cells(page, tables, rotation=rotation,
             deadline=time.monotonic() + 30, language=settings.tesseract_lang)
+        repairs = []
         try:
             refined, repairs = repair_pinned_cells(page, refined, records[0] if records else None)
             records = records + repairs
         except Exception:
             logger.warning('Pinned money repair unavailable; disputed cells stay held', exc_info=True)
+        if not repairs and settings.statement_glyph_second_reader:
+            try:
+                refined, second = repair_with_second_reader(page, refined, records[0] if records else None,
+                    rotation=rotation, deadline=time.monotonic() + 20, language=settings.tesseract_lang)
+                records = records + second
+            except Exception:
+                logger.warning('Second money reader unavailable; disputed cells stay held', exc_info=True)
     except Exception:
         logger.warning('Money-cell verification failed; holding recognised money for review', exc_info=True)
         try:

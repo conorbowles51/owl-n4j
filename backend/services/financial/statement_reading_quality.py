@@ -61,11 +61,15 @@ def propose_labelled_rows(sources, statement):
         statement['currency'], page_has_transaction_table=source['page_number'] in header_pages)['rows']]
 
 
-def assess_statement_reading(tables):
+def _page_statement_rows(sources):
+    """``(identity, rows)`` for one recognised page reading, or ``None``.
+
+    The layout is chosen exactly as the reading check chooses it; ``None``
+    means no supported layout claims the page.
+    """
     from services.financial.statement_import_credit_one import credit_one_catalog, propose_credit_one_table
     from services.financial.statement_import_andrews import andrews_page, propose_andrews_statement
     from services.financial.statement_import_merrick import merrick_statement, propose_merrick_table
-    sources = sources_from_tables(tables)
     if not sources:
         return None
     cards, _ = credit_one_catalog(sources)
@@ -96,6 +100,14 @@ def assess_statement_reading(tables):
                 if r['row_index'] >= page['body_start']])
         statement = dict(period_start=page['start'], period_end=page['end'], sources=[scope])
         rows = propose_andrews_statement(sources, 'USD', statement)['rows']
+    return identity, rows
+
+
+def assess_statement_reading(tables):
+    found = _page_statement_rows(sources_from_tables(tables))
+    if found is None:
+        return None
+    identity, rows = found
     # Merrick and generic rows that fit no printed column are still payments
     # whose fields are unreadable; a reread that adds or drops one is refused.
     payments = [r for r in rows if not r['excluded'] and (r['kind'] == 'transaction'
@@ -239,3 +251,45 @@ def pinned_running_balance_values(tables, disputed):
             return {}
         accepted[key] = dict(text=text, pinned_by=[list(other) for other in pinning if other != key])
     return accepted
+
+
+_LIABILITY_LAYOUTS = ('merrick-card', 'credit-one-card')
+
+
+def page_controls_reconcile(tables):
+    """Whether every printed control on one recognised page reconciles.
+
+    Used before a disputed money cell may take a second reader's value: two
+    compensating misreads reconcile too, so this never chooses a value, it
+    only refuses one that the page's own controls contradict. Each statement
+    on the page is checked as the review checks it (an Andrews page can carry
+    several share statements). Every statement must be complete on this page:
+    its closing balance must be printed here and match, no check may show a
+    difference and no row may be flagged. A control printed on another page
+    cannot be confirmed here, so such a page never reconciles.
+
+    Returns ``dict(reconciles=bool, statements=[...])`` or ``None`` when no
+    supported layout claims the page.
+    """
+    from services.financial.statement_review_checks import check_statement_rows
+    sources = sources_from_tables(tables)
+    found = _page_statement_rows(sources)
+    if found is None:
+        return None
+    identity, rows = found
+    statements = [(identity, rows)]
+    if identity[0] == 'andrews-share-statement':
+        from services.financial.statement_import_andrews import andrews_catalog, propose_andrews_statement
+        groups, _, incomplete = andrews_catalog(sources)
+        if not groups or incomplete:
+            return dict(reconciles=False, statements=[], reason='andrews_statements_not_separable')
+        statements = [([group['layout_id'], group['account_reference'], group['period_start'], group['period_end']],
+                       propose_andrews_statement(sources, 'USD', group)['rows']) for group in groups]
+    summaries = []
+    for statement_identity, statement_rows in statements:
+        result = check_statement_rows(statement_rows, liability=statement_identity[0] in _LIABILITY_LAYOUTS)
+        summaries.append(dict(identity=statement_identity, flagged_rows=result['flagged_rows'],
+            checks=[dict(kind=c['kind'], status=c['status']) for c in result['checks']],
+            reconciles=(result['flagged_rows'] == 0 and result['balance_status'] == 'matches'
+                        and not result['has_difference'])))
+    return dict(reconciles=bool(summaries) and all(s['reconciles'] for s in summaries), statements=summaries)
