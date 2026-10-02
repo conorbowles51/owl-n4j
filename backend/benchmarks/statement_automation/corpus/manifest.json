@@ -1,0 +1,1430 @@
+{
+ "files": [
+  {
+   "filename": "generic-01-clean.pdf",
+   "mode": "digital",
+   "pages": 1,
+   "periods": [
+    {
+     "account": "55501234",
+     "account_printed": true,
+     "closing_minor": 1213314,
+     "currency": "USD",
+     "defects": [],
+     "expected": "auto",
+     "family": "generic-labelled",
+     "holder": "Northwind Synthetic Trading LLC",
+     "holder_printed": true,
+     "id": "generic-01-clean.pdf#1",
+     "institution": "Harbour Synthetic Bank",
+     "notes": "",
+     "opening_minor": 1000000,
+     "period_end": "2023-01-31",
+     "period_start": "2023-01-01",
+     "rows": [
+      {
+       "amount_minor": 126000,
+       "balance_after": 1126000,
+       "date": "2023-01-03",
+       "description": "Incoming transfer 01-0",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 8511,
+       "balance_after": 1117489,
+       "date": "2023-01-08",
+       "description": "Card purchase grocer 01-1",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 14320,
+       "balance_after": 1103169,
+       "date": "2023-01-13",
+       "description": "Utility direct debit 01-2",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 210055,
+       "balance_after": 1313224,
+       "date": "2023-01-18",
+       "description": "Payroll deposit 01-3",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 99910,
+       "balance_after": 1213314,
+       "date": "2023-01-23",
+       "description": "Wire to supplier 01-4",
+       "direction": "debit"
+      }
+     ],
+     "start_printed": true
+    }
+   ],
+   "sha256": "40a1b7412b4a71a66096f730be2272aaff6b16135e62b6500f6ab8e85efc9c38",
+   "size": 6839
+  },
+  {
+   "filename": "generic-02-clean.pdf",
+   "mode": "digital",
+   "pages": 1,
+   "periods": [
+    {
+     "account": "55501234",
+     "account_printed": true,
+     "closing_minor": 1427617,
+     "currency": "USD",
+     "defects": [],
+     "expected": "auto",
+     "family": "generic-labelled",
+     "holder": "Northwind Synthetic Trading LLC",
+     "holder_printed": true,
+     "id": "generic-02-clean.pdf#1",
+     "institution": "Harbour Synthetic Bank",
+     "notes": "",
+     "opening_minor": 1213314,
+     "period_end": "2023-02-28",
+     "period_start": "2023-02-01",
+     "rows": [
+      {
+       "amount_minor": 127000,
+       "balance_after": 1340314,
+       "date": "2023-02-03",
+       "description": "Incoming transfer 02-0",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 8512,
+       "balance_after": 1331802,
+       "date": "2023-02-08",
+       "description": "Card purchase grocer 02-1",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 14320,
+       "balance_after": 1317482,
+       "date": "2023-02-13",
+       "description": "Utility direct debit 02-2",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 210055,
+       "balance_after": 1527537,
+       "date": "2023-02-18",
+       "description": "Payroll deposit 02-3",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 99920,
+       "balance_after": 1427617,
+       "date": "2023-02-23",
+       "description": "Wire to supplier 02-4",
+       "direction": "debit"
+      }
+     ],
+     "start_printed": true
+    }
+   ],
+   "sha256": "4125d95a924e1ee3a9f60b523d96467cda9a68c8d194670dbb87a2833cd7242c",
+   "size": 6842
+  },
+  {
+   "filename": "generic-03-ocr_amount_digit.pdf",
+   "mode": "scan_text_layer",
+   "pages": 1,
+   "periods": [
+    {
+     "account": "55501234",
+     "account_printed": true,
+     "closing_minor": 1642909,
+     "currency": "USD",
+     "defects": [
+      "ocr_amount_digit"
+     ],
+     "expected": "auto",
+     "family": "generic-labelled",
+     "holder": "Northwind Synthetic Trading LLC",
+     "holder_printed": true,
+     "id": "generic-03-ocr_amount_digit.pdf#1",
+     "institution": "Harbour Synthetic Bank",
+     "notes": "",
+     "opening_minor": 1427617,
+     "period_end": "2023-03-31",
+     "period_start": "2023-03-01",
+     "rows": [
+      {
+       "amount_minor": 128000,
+       "balance_after": 1555617,
+       "date": "2023-03-03",
+       "description": "Incoming transfer 03-0",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 8513,
+       "balance_after": 1547104,
+       "date": "2023-03-08",
+       "description": "Card purchase grocer 03-1",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 14320,
+       "balance_after": 1532784,
+       "date": "2023-03-13",
+       "description": "Utility direct debit 03-2",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 210055,
+       "balance_after": 1742839,
+       "date": "2023-03-18",
+       "description": "Payroll deposit 03-3",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 99930,
+       "balance_after": 1642909,
+       "date": "2023-03-23",
+       "description": "Wire to supplier 03-4",
+       "direction": "debit"
+      }
+     ],
+     "start_printed": true
+    }
+   ],
+   "sha256": "bad6ba4fe5551509394a07ea7cd27daf3d23961dbe7ca742ea6ddc142d7c694c",
+   "size": 50006
+  },
+  {
+   "filename": "generic-04-ocr_balance_digit.pdf",
+   "mode": "scan_text_layer",
+   "pages": 1,
+   "periods": [
+    {
+     "account": "55501234",
+     "account_printed": true,
+     "closing_minor": 1859190,
+     "currency": "USD",
+     "defects": [
+      "ocr_balance_digit"
+     ],
+     "expected": "auto",
+     "family": "generic-labelled",
+     "holder": "Northwind Synthetic Trading LLC",
+     "holder_printed": true,
+     "id": "generic-04-ocr_balance_digit.pdf#1",
+     "institution": "Harbour Synthetic Bank",
+     "notes": "",
+     "opening_minor": 1642909,
+     "period_end": "2023-04-30",
+     "period_start": "2023-04-01",
+     "rows": [
+      {
+       "amount_minor": 129000,
+       "balance_after": 1771909,
+       "date": "2023-04-03",
+       "description": "Incoming transfer 04-0",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 8514,
+       "balance_after": 1763395,
+       "date": "2023-04-08",
+       "description": "Card purchase grocer 04-1",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 14320,
+       "balance_after": 1749075,
+       "date": "2023-04-13",
+       "description": "Utility direct debit 04-2",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 210055,
+       "balance_after": 1959130,
+       "date": "2023-04-18",
+       "description": "Payroll deposit 04-3",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 99940,
+       "balance_after": 1859190,
+       "date": "2023-04-23",
+       "description": "Wire to supplier 04-4",
+       "direction": "debit"
+      }
+     ],
+     "start_printed": true
+    }
+   ],
+   "sha256": "b245931609b54d50ee332435eced72600f54f7c9a13b83de64e86698c3d698bc",
+   "size": 50007
+  },
+  {
+   "filename": "generic-05-holder_not_printed.pdf",
+   "mode": "digital",
+   "pages": 1,
+   "periods": [
+    {
+     "account": "55501234",
+     "account_printed": true,
+     "closing_minor": 2076460,
+     "currency": "USD",
+     "defects": [
+      "holder_not_printed"
+     ],
+     "expected": "decision",
+     "family": "generic-labelled",
+     "holder": "Northwind Synthetic Trading LLC",
+     "holder_printed": false,
+     "id": "generic-05-holder_not_printed.pdf#1",
+     "institution": "Harbour Synthetic Bank",
+     "notes": "",
+     "opening_minor": 1859190,
+     "period_end": "2023-05-31",
+     "period_start": "2023-05-01",
+     "rows": [
+      {
+       "amount_minor": 130000,
+       "balance_after": 1989190,
+       "date": "2023-05-03",
+       "description": "Incoming transfer 05-0",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 8515,
+       "balance_after": 1980675,
+       "date": "2023-05-08",
+       "description": "Card purchase grocer 05-1",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 14320,
+       "balance_after": 1966355,
+       "date": "2023-05-13",
+       "description": "Utility direct debit 05-2",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 210055,
+       "balance_after": 2176410,
+       "date": "2023-05-18",
+       "description": "Payroll deposit 05-3",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 99950,
+       "balance_after": 2076460,
+       "date": "2023-05-23",
+       "description": "Wire to supplier 05-4",
+       "direction": "debit"
+      }
+     ],
+     "start_printed": true
+    }
+   ],
+   "sha256": "7f650c9da6d2b6203c1d234fb6425cb63615a06f9b349c9358bf28602f27e0dc",
+   "size": 6635
+  },
+  {
+   "filename": "generic-06-account_not_printed.pdf",
+   "mode": "digital",
+   "pages": 1,
+   "periods": [
+    {
+     "account": "55501234",
+     "account_printed": false,
+     "closing_minor": 2294719,
+     "currency": "USD",
+     "defects": [
+      "account_not_printed"
+     ],
+     "expected": "decision",
+     "family": "generic-labelled",
+     "holder": "Northwind Synthetic Trading LLC",
+     "holder_printed": true,
+     "id": "generic-06-account_not_printed.pdf#1",
+     "institution": "Harbour Synthetic Bank",
+     "notes": "",
+     "opening_minor": 2076460,
+     "period_end": "2023-06-30",
+     "period_start": "2023-06-01",
+     "rows": [
+      {
+       "amount_minor": 131000,
+       "balance_after": 2207460,
+       "date": "2023-06-03",
+       "description": "Incoming transfer 06-0",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 8516,
+       "balance_after": 2198944,
+       "date": "2023-06-08",
+       "description": "Card purchase grocer 06-1",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 14320,
+       "balance_after": 2184624,
+       "date": "2023-06-13",
+       "description": "Utility direct debit 06-2",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 210055,
+       "balance_after": 2394679,
+       "date": "2023-06-18",
+       "description": "Payroll deposit 06-3",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 99960,
+       "balance_after": 2294719,
+       "date": "2023-06-23",
+       "description": "Wire to supplier 06-4",
+       "direction": "debit"
+      }
+     ],
+     "start_printed": true
+    }
+   ],
+   "sha256": "ee91ccc86ce70b0557e8151c5aedb74080ace6280302b41b21b507039a6fcdd2",
+   "size": 6669
+  },
+  {
+   "filename": "generic-07-omitted_row.pdf",
+   "mode": "digital",
+   "pages": 1,
+   "periods": [
+    {
+     "account": "55501234",
+     "account_printed": true,
+     "closing_minor": 2513967,
+     "currency": "USD",
+     "defects": [
+      "omitted_row"
+     ],
+     "expected": "hold",
+     "family": "generic-labelled",
+     "holder": "Northwind Synthetic Trading LLC",
+     "holder_printed": true,
+     "id": "generic-07-omitted_row.pdf#1",
+     "institution": "Harbour Synthetic Bank",
+     "notes": "",
+     "opening_minor": 2294719,
+     "period_end": "2023-07-31",
+     "period_start": "2023-07-01",
+     "rows": [
+      {
+       "amount_minor": 132000,
+       "balance_after": 2426719,
+       "date": "2023-07-03",
+       "description": "Incoming transfer 07-0",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 8517,
+       "balance_after": 2418202,
+       "date": "2023-07-08",
+       "description": "Card purchase grocer 07-1",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 14320,
+       "balance_after": 2403882,
+       "date": "2023-07-13",
+       "description": "Utility direct debit 07-2",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 210055,
+       "balance_after": 2613937,
+       "date": "2023-07-18",
+       "description": "Payroll deposit 07-3",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 99970,
+       "balance_after": 2513967,
+       "date": "2023-07-23",
+       "description": "Wire to supplier 07-4",
+       "direction": "debit"
+      }
+     ],
+     "start_printed": true
+    }
+   ],
+   "sha256": "a0e53c2372ff08186199f8160779185dd1bd6b1ba2faa01047e38b1c158cffae",
+   "size": 6163
+  },
+  {
+   "filename": "generic-08-no_activity.pdf",
+   "mode": "digital",
+   "pages": 1,
+   "periods": [
+    {
+     "account": "55501234",
+     "account_printed": true,
+     "closing_minor": 2513967,
+     "currency": "USD",
+     "defects": [
+      "no_activity"
+     ],
+     "expected": "decision",
+     "family": "generic-labelled",
+     "holder": "Northwind Synthetic Trading LLC",
+     "holder_printed": true,
+     "id": "generic-08-no_activity.pdf#1",
+     "institution": "Harbour Synthetic Bank",
+     "notes": "",
+     "opening_minor": 2513967,
+     "period_end": "2023-08-31",
+     "period_start": "2023-08-01",
+     "rows": [],
+     "start_printed": true
+    }
+   ],
+   "sha256": "e590443ec4f2835c8bd9a20ae4e10ccfbf7c4b06704281a354822464c825ec84",
+   "size": 3408
+  },
+  {
+   "filename": "generic-09-image_only_scan.pdf",
+   "mode": "image_only",
+   "pages": 1,
+   "periods": [
+    {
+     "account": "55501234",
+     "account_printed": true,
+     "closing_minor": 2735193,
+     "currency": "USD",
+     "defects": [
+      "image_only_scan"
+     ],
+     "expected": "auto",
+     "family": "generic-labelled",
+     "holder": "Northwind Synthetic Trading LLC",
+     "holder_printed": true,
+     "id": "generic-09-image_only_scan.pdf#1",
+     "institution": "Harbour Synthetic Bank",
+     "notes": "",
+     "opening_minor": 2513967,
+     "period_end": "2023-09-30",
+     "period_start": "2023-09-01",
+     "rows": [
+      {
+       "amount_minor": 134000,
+       "balance_after": 2647967,
+       "date": "2023-09-03",
+       "description": "Incoming transfer 09-0",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 8519,
+       "balance_after": 2639448,
+       "date": "2023-09-08",
+       "description": "Card purchase grocer 09-1",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 14320,
+       "balance_after": 2625128,
+       "date": "2023-09-13",
+       "description": "Utility direct debit 09-2",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 210055,
+       "balance_after": 2835183,
+       "date": "2023-09-18",
+       "description": "Payroll deposit 09-3",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 99990,
+       "balance_after": 2735193,
+       "date": "2023-09-23",
+       "description": "Wire to supplier 09-4",
+       "direction": "debit"
+      }
+     ],
+     "start_printed": true
+    }
+   ],
+   "sha256": "83be80717d88c08c464e248920a8fcd9404692a368fc70aeceb2ebb327458b09",
+   "size": 44294
+  },
+  {
+   "filename": "generic-10-ocr_valid_but_wrong_amount.pdf",
+   "mode": "scan_text_layer",
+   "pages": 1,
+   "periods": [
+    {
+     "account": "55501234",
+     "account_printed": true,
+     "closing_minor": 2957408,
+     "currency": "USD",
+     "defects": [
+      "ocr_valid_but_wrong_amount"
+     ],
+     "expected": "auto",
+     "family": "generic-labelled",
+     "holder": "Northwind Synthetic Trading LLC",
+     "holder_printed": true,
+     "id": "generic-10-ocr_valid_but_wrong_amount.pdf#1",
+     "institution": "Harbour Synthetic Bank",
+     "notes": "",
+     "opening_minor": 2735193,
+     "period_end": "2023-10-31",
+     "period_start": "2023-10-01",
+     "rows": [
+      {
+       "amount_minor": 135000,
+       "balance_after": 2870193,
+       "date": "2023-10-03",
+       "description": "Incoming transfer 10-0",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 8520,
+       "balance_after": 2861673,
+       "date": "2023-10-08",
+       "description": "Card purchase grocer 10-1",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 14320,
+       "balance_after": 2847353,
+       "date": "2023-10-13",
+       "description": "Utility direct debit 10-2",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 210055,
+       "balance_after": 3057408,
+       "date": "2023-10-18",
+       "description": "Payroll deposit 10-3",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 100000,
+       "balance_after": 2957408,
+       "date": "2023-10-23",
+       "description": "Wire to supplier 10-4",
+       "direction": "debit"
+      }
+     ],
+     "start_printed": true
+    }
+   ],
+   "sha256": "b9a5ed67d2d31a03b6137c1322cddb17e1fd55d1903b5e8ea851bed18c2d82e9",
+   "size": 50696
+  },
+  {
+   "copy_of": "generic-01-clean.pdf",
+   "filename": "generic-01-copy-of-clean.pdf",
+   "mode": "digital",
+   "periods": [
+    {
+     "account": "55501234",
+     "account_printed": true,
+     "closing_minor": 1213314,
+     "currency": "USD",
+     "defects": [
+      "exact_duplicate_copy"
+     ],
+     "duplicate_of": "generic-01-clean.pdf",
+     "expected": "duplicate",
+     "family": "generic-labelled",
+     "holder": "Northwind Synthetic Trading LLC",
+     "holder_printed": true,
+     "id": "generic-01-copy-of-clean.pdf#1",
+     "institution": "Harbour Synthetic Bank",
+     "notes": "",
+     "opening_minor": 1000000,
+     "period_end": "2023-01-31",
+     "period_start": "2023-01-01",
+     "rows": [
+      {
+       "amount_minor": 126000,
+       "balance_after": 1126000,
+       "date": "2023-01-03",
+       "description": "Incoming transfer 01-0",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 8511,
+       "balance_after": 1117489,
+       "date": "2023-01-08",
+       "description": "Card purchase grocer 01-1",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 14320,
+       "balance_after": 1103169,
+       "date": "2023-01-13",
+       "description": "Utility direct debit 01-2",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 210055,
+       "balance_after": 1313224,
+       "date": "2023-01-18",
+       "description": "Payroll deposit 01-3",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 99910,
+       "balance_after": 1213314,
+       "date": "2023-01-23",
+       "description": "Wire to supplier 01-4",
+       "direction": "debit"
+      }
+     ],
+     "start_printed": true
+    }
+   ],
+   "sha256": "40a1b7412b4a71a66096f730be2272aaff6b16135e62b6500f6ab8e85efc9c38",
+   "size": 6839
+  },
+  {
+   "filename": "credit-one-two-cycles.pdf",
+   "mode": "digital",
+   "pages": 2,
+   "periods": [
+    {
+     "account": "4111111111111111",
+     "account_printed": true,
+     "closing_minor": 10575,
+     "currency": "USD",
+     "defects": [],
+     "expected": "auto",
+     "family": "credit-one-card",
+     "holder": "EXAMPLE PERSON",
+     "holder_printed": true,
+     "id": "credit-one-two-cycles.pdf#1",
+     "institution": "Credit One Bank",
+     "notes": "",
+     "opening_minor": 10000,
+     "period_end": "2024-01-15",
+     "period_start": "2023-12-16",
+     "rows": [
+      {
+       "amount_minor": 2500,
+       "date": "2023-12-18",
+       "description": "EXAMPLE SHOP 0A",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 4000,
+       "date": "2023-12-25",
+       "description": "PAYMENT RECEIVED 0B",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 1875,
+       "date": "2023-12-31",
+       "description": "EXAMPLE CAFE 0C",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 200,
+       "date": "2024-01-15",
+       "description": "Interest Charge on Purchases",
+       "direction": "debit"
+      }
+     ],
+     "start_printed": true
+    },
+    {
+     "account": "4111111111111111",
+     "account_printed": true,
+     "closing_minor": 11262,
+     "currency": "USD",
+     "defects": [],
+     "expected": "auto",
+     "family": "credit-one-card",
+     "holder": "EXAMPLE PERSON",
+     "holder_printed": true,
+     "id": "credit-one-two-cycles.pdf#2",
+     "institution": "Credit One Bank",
+     "notes": "",
+     "opening_minor": 10575,
+     "period_end": "2024-02-15",
+     "period_start": "2024-01-16",
+     "rows": [
+      {
+       "amount_minor": 2611,
+       "date": "2024-01-19",
+       "description": "EXAMPLE SHOP 1A",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 4000,
+       "date": "2024-01-25",
+       "description": "PAYMENT RECEIVED 1B",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 1876,
+       "date": "2024-01-31",
+       "description": "EXAMPLE CAFE 1C",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 200,
+       "date": "2024-02-15",
+       "description": "Interest Charge on Purchases",
+       "direction": "debit"
+      }
+     ],
+     "start_printed": true
+    }
+   ],
+   "sha256": "e17595d7d77289695740157d81a2f34dc04a83e4b9158a8825d41a772f240343",
+   "size": 13607
+  },
+  {
+   "filename": "credit-one-cycle-3-ocr_amount_digit.pdf",
+   "mode": "scan_text_layer",
+   "pages": 1,
+   "periods": [
+    {
+     "account": "4111111111111111",
+     "account_printed": true,
+     "closing_minor": 12061,
+     "currency": "USD",
+     "defects": [
+      "ocr_amount_digit"
+     ],
+     "expected": "auto",
+     "family": "credit-one-card",
+     "holder": "EXAMPLE PERSON",
+     "holder_printed": true,
+     "id": "credit-one-cycle-3-ocr_amount_digit.pdf#1",
+     "institution": "Credit One Bank",
+     "notes": "",
+     "opening_minor": 11262,
+     "period_end": "2024-03-15",
+     "period_start": "2024-02-16",
+     "rows": [
+      {
+       "amount_minor": 2722,
+       "date": "2024-02-20",
+       "description": "EXAMPLE SHOP 2A",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 4000,
+       "date": "2024-02-25",
+       "description": "PAYMENT RECEIVED 2B",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 1877,
+       "date": "2024-03-02",
+       "description": "EXAMPLE CAFE 2C",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 200,
+       "date": "2024-03-15",
+       "description": "Interest Charge on Purchases",
+       "direction": "debit"
+      }
+     ],
+     "start_printed": true
+    }
+   ],
+   "sha256": "454b3a40960f593b0e75dbd03a40541fd91b6467ce6d922950fb24b845d63bf8",
+   "size": 71834
+  },
+  {
+   "filename": "credit-one-cycle-4-holder_not_printed.pdf",
+   "mode": "digital",
+   "pages": 1,
+   "periods": [
+    {
+     "account": "4111111111111111",
+     "account_printed": true,
+     "closing_minor": 12972,
+     "currency": "USD",
+     "defects": [
+      "holder_not_printed"
+     ],
+     "expected": "decision",
+     "family": "credit-one-card",
+     "holder": "EXAMPLE PERSON",
+     "holder_printed": false,
+     "id": "credit-one-cycle-4-holder_not_printed.pdf#1",
+     "institution": "Credit One Bank",
+     "notes": "",
+     "opening_minor": 12061,
+     "period_end": "2024-04-15",
+     "period_start": "2024-03-16",
+     "rows": [
+      {
+       "amount_minor": 2833,
+       "date": "2024-03-21",
+       "description": "EXAMPLE SHOP 3A",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 4000,
+       "date": "2024-03-25",
+       "description": "PAYMENT RECEIVED 3B",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 1878,
+       "date": "2024-03-31",
+       "description": "EXAMPLE CAFE 3C",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 200,
+       "date": "2024-04-15",
+       "description": "Interest Charge on Purchases",
+       "direction": "debit"
+      }
+     ],
+     "start_printed": true
+    }
+   ],
+   "sha256": "df4bc1a36494382bebd2b9167e7e94e8ec167a79648eee783728a63a55778641",
+   "size": 8691
+  },
+  {
+   "filename": "credit-one-cycle-5-no_activity.pdf",
+   "mode": "digital",
+   "pages": 1,
+   "periods": [
+    {
+     "account": "4111111111111111",
+     "account_printed": true,
+     "closing_minor": 12972,
+     "currency": "USD",
+     "defects": [
+      "no_activity"
+     ],
+     "expected": "decision",
+     "family": "credit-one-card",
+     "holder": "EXAMPLE PERSON",
+     "holder_printed": true,
+     "id": "credit-one-cycle-5-no_activity.pdf#1",
+     "institution": "Credit One Bank",
+     "notes": "",
+     "opening_minor": 12972,
+     "period_end": "2024-05-15",
+     "period_start": "2024-04-16",
+     "rows": [],
+     "start_printed": true
+    }
+   ],
+   "sha256": "ebf13c9c09cf0f9edd5837236699d1dac3ce443776d86811ad4c9bd80af7f690",
+   "size": 7253
+  },
+  {
+   "filename": "credit-one-cycle-6-ocr-valid-but-wrong-cancelling.pdf",
+   "mode": "scan_text_layer",
+   "pages": 1,
+   "periods": [
+    {
+     "account": "4111111111111111",
+     "account_printed": true,
+     "closing_minor": 13562,
+     "currency": "USD",
+     "defects": [
+      "ocr_valid_but_wrong_amounts_cancelling"
+     ],
+     "expected": "auto",
+     "family": "credit-one-card",
+     "holder": "EXAMPLE PERSON",
+     "holder_printed": true,
+     "id": "credit-one-cycle-6-ocr-valid-but-wrong-cancelling.pdf#1",
+     "institution": "Credit One Bank",
+     "notes": "",
+     "opening_minor": 12972,
+     "period_end": "2024-06-15",
+     "period_start": "2024-05-16",
+     "rows": [
+      {
+       "amount_minor": 2511,
+       "date": "2024-05-18",
+       "description": "EXAMPLE BOOKSHOP 6A",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 4000,
+       "date": "2024-05-25",
+       "description": "PAYMENT RECEIVED 6B",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 1879,
+       "date": "2024-06-01",
+       "description": "EXAMPLE GARAGE 6C",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 200,
+       "date": "2024-06-15",
+       "description": "Interest Charge on Purchases",
+       "direction": "debit"
+      }
+     ],
+     "start_printed": true
+    }
+   ],
+   "sha256": "dce43a9e01e5b9edf5e2a08872a11ea9a7bb34ac15a5fe7d9807199569a33a8b",
+   "size": 72908
+  },
+  {
+   "filename": "merrick-two-statements.pdf",
+   "mode": "digital",
+   "pages": 2,
+   "periods": [
+    {
+     "account": "1111222233334444",
+     "account_printed": true,
+     "closing_minor": 11400,
+     "currency": "USD",
+     "defects": [
+      "start_not_printed"
+     ],
+     "expected": "auto",
+     "family": "merrick-card",
+     "holder": "EXAMPLE HOLDER",
+     "holder_printed": true,
+     "id": "merrick-two-statements.pdf#1",
+     "institution": "Merrick Bank",
+     "notes": "",
+     "opening_minor": 0,
+     "period_end": "2021-04-25",
+     "period_start": null,
+     "rows": [
+      {
+       "amount_minor": 1400,
+       "date": "2021-04-02",
+       "description": "EXAMPLE STORE 0A",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 10000,
+       "date": "2021-04-20",
+       "description": "EXAMPLE DINER 0C",
+       "direction": "debit"
+      }
+     ],
+     "start_printed": false
+    },
+    {
+     "account": "1111222233334444",
+     "account_printed": true,
+     "closing_minor": 20338,
+     "currency": "USD",
+     "defects": [
+      "start_not_printed"
+     ],
+     "expected": "auto",
+     "family": "merrick-card",
+     "holder": "EXAMPLE HOLDER",
+     "holder_printed": true,
+     "id": "merrick-two-statements.pdf#2",
+     "institution": "Merrick Bank",
+     "notes": "",
+     "opening_minor": 11400,
+     "period_end": "2021-05-25",
+     "period_start": null,
+     "rows": [
+      {
+       "amount_minor": 1437,
+       "date": "2021-05-03",
+       "description": "EXAMPLE STORE 1A",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 2500,
+       "date": "2021-05-10",
+       "description": "PAYMENT THANK YOU 1B",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 10001,
+       "date": "2021-05-20",
+       "description": "EXAMPLE DINER 1C",
+       "direction": "debit"
+      }
+     ],
+     "start_printed": false
+    }
+   ],
+   "sha256": "82bc4e5cac4609dfc4dd409b681d88b74165dfbf8b7de66dfcc628c219275aaa",
+   "size": 12847
+  },
+  {
+   "filename": "merrick-2021-06-ocr-amount-digit.pdf",
+   "mode": "scan_text_layer",
+   "pages": 1,
+   "periods": [
+    {
+     "account": "1111222233334444",
+     "account_printed": true,
+     "closing_minor": 29314,
+     "currency": "USD",
+     "defects": [
+      "start_not_printed",
+      "ocr_amount_digit"
+     ],
+     "expected": "auto",
+     "family": "merrick-card",
+     "holder": "EXAMPLE HOLDER",
+     "holder_printed": true,
+     "id": "merrick-2021-06-ocr-amount-digit.pdf#1",
+     "institution": "Merrick Bank",
+     "notes": "",
+     "opening_minor": 20338,
+     "period_end": "2021-06-25",
+     "period_start": null,
+     "rows": [
+      {
+       "amount_minor": 1474,
+       "date": "2021-06-04",
+       "description": "EXAMPLE STORE 2A",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 2500,
+       "date": "2021-06-10",
+       "description": "PAYMENT THANK YOU 2B",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 10002,
+       "date": "2021-06-20",
+       "description": "EXAMPLE DINER 2C",
+       "direction": "debit"
+      }
+     ],
+     "start_printed": false
+    }
+   ],
+   "sha256": "4539afffae8b05c18b5fe4c5300e2af099b2ad16033ba9dad34d93816e658da3",
+   "size": 65179
+  },
+  {
+   "filename": "merrick-2021-07-holder-not-printed.pdf",
+   "mode": "digital",
+   "pages": 1,
+   "periods": [
+    {
+     "account": "1111222233334444",
+     "account_printed": true,
+     "closing_minor": 38328,
+     "currency": "USD",
+     "defects": [
+      "start_not_printed",
+      "holder_not_printed"
+     ],
+     "expected": "decision",
+     "family": "merrick-card",
+     "holder": "EXAMPLE HOLDER",
+     "holder_printed": false,
+     "id": "merrick-2021-07-holder-not-printed.pdf#1",
+     "institution": "Merrick Bank",
+     "notes": "",
+     "opening_minor": 29314,
+     "period_end": "2021-07-25",
+     "period_start": null,
+     "rows": [
+      {
+       "amount_minor": 1511,
+       "date": "2021-07-05",
+       "description": "EXAMPLE STORE 3A",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 2500,
+       "date": "2021-07-10",
+       "description": "PAYMENT THANK YOU 3B",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 10003,
+       "date": "2021-07-20",
+       "description": "EXAMPLE DINER 3C",
+       "direction": "debit"
+      }
+     ],
+     "start_printed": false
+    }
+   ],
+   "sha256": "9afe3a6223d6e038f4489faf49d1bc1e138843d8507f451f6e834612a8469c98",
+   "size": 8258
+  },
+  {
+   "filename": "andrews-2020-06-clean.pdf",
+   "mode": "digital",
+   "pages": 1,
+   "periods": [
+    {
+     "account": "123456789",
+     "account_printed": true,
+     "closing_minor": 52013,
+     "currency": "USD",
+     "defects": [],
+     "expected": "auto",
+     "family": "andrews-share",
+     "holder": "EXAMPLE PERSON",
+     "holder_printed": true,
+     "id": "andrews-2020-06-clean.pdf#1",
+     "institution": "Andrews",
+     "notes": "share 0000",
+     "opening_minor": 50000,
+     "period_end": "2020-06-30",
+     "period_start": "2020-06-01",
+     "rows": [
+      {
+       "amount_minor": 2000,
+       "balance_after": 52000,
+       "date": "2020-06-03",
+       "description": "Deposit Online Banking Transfer From Share 0040",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 13,
+       "balance_after": 52013,
+       "date": "2020-06-21",
+       "description": "Deposit Dividend",
+       "direction": "credit"
+      }
+     ],
+     "share": "0000",
+     "start_printed": true
+    },
+    {
+     "account": "123456789",
+     "account_printed": true,
+     "closing_minor": 263427,
+     "currency": "USD",
+     "defects": [],
+     "expected": "auto",
+     "family": "andrews-share",
+     "holder": "EXAMPLE PERSON",
+     "holder_printed": true,
+     "id": "andrews-2020-06-clean.pdf#2",
+     "institution": "Andrews",
+     "notes": "share 0040",
+     "opening_minor": 120000,
+     "period_end": "2020-06-30",
+     "period_start": "2020-06-01",
+     "rows": [
+      {
+       "amount_minor": 2000,
+       "balance_after": 118000,
+       "date": "2020-06-03",
+       "description": "Withdrawal Online Banking Transfer To Share 0000",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 4573,
+       "balance_after": 113427,
+       "date": "2020-06-09",
+       "description": "Withdrawal Debit Card EXAMPLE MARKET 6",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 150000,
+       "balance_after": 263427,
+       "date": "2020-06-15",
+       "description": "Deposit ACH EXAMPLE EMPLOYER PAYROLL",
+       "direction": "credit"
+      }
+     ],
+     "share": "0040",
+     "start_printed": true
+    }
+   ],
+   "sha256": "196b78b8f15bf61c33c2c9c197c77efc8ceb90530936e616b8823aa6f735035e",
+   "size": 7330
+  },
+  {
+   "filename": "andrews-2020-07-ocr-balance-digit.pdf",
+   "mode": "scan_text_layer",
+   "pages": 1,
+   "periods": [
+    {
+     "account": "123456789",
+     "account_printed": true,
+     "closing_minor": 54026,
+     "currency": "USD",
+     "defects": [],
+     "expected": "auto",
+     "family": "andrews-share",
+     "holder": "EXAMPLE PERSON",
+     "holder_printed": true,
+     "id": "andrews-2020-07-ocr-balance-digit.pdf#1",
+     "institution": "Andrews",
+     "notes": "share 0000",
+     "opening_minor": 52013,
+     "period_end": "2020-07-31",
+     "period_start": "2020-07-01",
+     "rows": [
+      {
+       "amount_minor": 2000,
+       "balance_after": 54013,
+       "date": "2020-07-03",
+       "description": "Deposit Online Banking Transfer From Share 0040",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 13,
+       "balance_after": 54026,
+       "date": "2020-07-21",
+       "description": "Deposit Dividend",
+       "direction": "credit"
+      }
+     ],
+     "share": "0000",
+     "start_printed": true
+    },
+    {
+     "account": "123456789",
+     "account_printed": true,
+     "closing_minor": 406853,
+     "currency": "USD",
+     "defects": [
+      "ocr_balance_digit"
+     ],
+     "expected": "auto",
+     "family": "andrews-share",
+     "holder": "EXAMPLE PERSON",
+     "holder_printed": true,
+     "id": "andrews-2020-07-ocr-balance-digit.pdf#2",
+     "institution": "Andrews",
+     "notes": "share 0040",
+     "opening_minor": 263427,
+     "period_end": "2020-07-31",
+     "period_start": "2020-07-01",
+     "rows": [
+      {
+       "amount_minor": 2000,
+       "balance_after": 261427,
+       "date": "2020-07-03",
+       "description": "Withdrawal Online Banking Transfer To Share 0000",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 4574,
+       "balance_after": 256853,
+       "date": "2020-07-09",
+       "description": "Withdrawal Debit Card EXAMPLE MARKET 7",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 150000,
+       "balance_after": 406853,
+       "date": "2020-07-15",
+       "description": "Deposit ACH EXAMPLE EMPLOYER PAYROLL",
+       "direction": "credit"
+      }
+     ],
+     "share": "0040",
+     "start_printed": true
+    }
+   ],
+   "sha256": "13903d5e8e11543d1db3b10607b8168e5036611967c459fc4dd72683cd8cbce2",
+   "size": 54250
+  },
+  {
+   "filename": "andrews-2020-08-omitted-row.pdf",
+   "mode": "digital",
+   "pages": 1,
+   "periods": [
+    {
+     "account": "123456789",
+     "account_printed": true,
+     "closing_minor": 56039,
+     "currency": "USD",
+     "defects": [],
+     "expected": "auto",
+     "family": "andrews-share",
+     "holder": "EXAMPLE PERSON",
+     "holder_printed": true,
+     "id": "andrews-2020-08-omitted-row.pdf#1",
+     "institution": "Andrews",
+     "notes": "share 0000",
+     "opening_minor": 54026,
+     "period_end": "2020-08-31",
+     "period_start": "2020-08-01",
+     "rows": [
+      {
+       "amount_minor": 2000,
+       "balance_after": 56026,
+       "date": "2020-08-03",
+       "description": "Deposit Online Banking Transfer From Share 0040",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 13,
+       "balance_after": 56039,
+       "date": "2020-08-21",
+       "description": "Deposit Dividend",
+       "direction": "credit"
+      }
+     ],
+     "share": "0000",
+     "start_printed": true
+    },
+    {
+     "account": "123456789",
+     "account_printed": true,
+     "closing_minor": 550278,
+     "currency": "USD",
+     "defects": [
+      "omitted_row"
+     ],
+     "expected": "hold",
+     "family": "andrews-share",
+     "holder": "EXAMPLE PERSON",
+     "holder_printed": true,
+     "id": "andrews-2020-08-omitted-row.pdf#2",
+     "institution": "Andrews",
+     "notes": "share 0040",
+     "opening_minor": 406853,
+     "period_end": "2020-08-31",
+     "period_start": "2020-08-01",
+     "rows": [
+      {
+       "amount_minor": 2000,
+       "balance_after": 404853,
+       "date": "2020-08-03",
+       "description": "Withdrawal Online Banking Transfer To Share 0000",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 4575,
+       "balance_after": 400278,
+       "date": "2020-08-09",
+       "description": "Withdrawal Debit Card EXAMPLE MARKET 8",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 150000,
+       "balance_after": 550278,
+       "date": "2020-08-15",
+       "description": "Deposit ACH EXAMPLE EMPLOYER PAYROLL",
+       "direction": "credit"
+      }
+     ],
+     "share": "0040",
+     "start_printed": true
+    }
+   ],
+   "sha256": "2afab0b0c7cf1f3707a422a511bfef5f1fb803e7009f9d153a65e109eed8a529",
+   "size": 6636
+  }
+ ],
+ "synthetic": true,
+ "version": "statement-automation-corpus-v1"
+}

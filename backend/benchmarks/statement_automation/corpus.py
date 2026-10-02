@@ -127,7 +127,7 @@ def _long(day):
 
 
 def generic_statement(*, holder, account, start, end, opening, rows, include_holder=True,
-                      include_account=True, omit=(), damage_cells=()):
+                      include_account=True, omit=(), damage_cells=(), ocr_text=None):
     """Return (pages, truth rows, closing). ``rows`` carry the true payments.
 
     ``omit`` removes printed rows (by index) from the page while the printed
@@ -147,13 +147,13 @@ def generic_statement(*, holder, account, start, end, opening, rows, include_hol
     y = 160
     for index, item in enumerate(rows):
         balance += item['amount_minor'] if item['direction'] == 'credit' else -item['amount_minor']
+        item['balance_after'] = balance  # printed running balance (ground truth)
         if index in omit:
             continue
         amount_text = money(item['amount_minor'])
         balance_text = money(balance)
-        amount_cell = (R(380, amount_text, damage(amount_text) if (index, 'amount') in damage_cells else None)
-                       if item['direction'] == 'credit' else
-                       R(460, amount_text, damage(amount_text) if (index, 'amount') in damage_cells else None))
+        ocr = (ocr_text or {}).get(index) or (damage(amount_text) if (index, 'amount') in damage_cells else None)
+        amount_cell = R(380 if item['direction'] == 'credit' else 460, amount_text, ocr)
         balance_cell = R(560, balance_text, damage(balance_text) if (index, 'balance') in damage_cells else None)
         lines.append((y, [L(40, item['date']), L(120, item['description']), amount_cell, balance_cell]))
         y += 14
@@ -170,7 +170,7 @@ def _mmdd(value):
 
 
 def credit_one_page(*, account, start, end, opening, rows, interest=0, holder='EXAMPLE PERSON',
-                    include_holder=True, damage_cells=()):
+                    include_holder=True, damage_cells=(), ocr_text=None):
     payments = sum(r['amount_minor'] for r in rows if r['direction'] == 'credit')
     purchases = sum(r['amount_minor'] for r in rows if r['direction'] == 'debit')
     closing = opening + purchases - payments + interest
@@ -193,7 +193,7 @@ def credit_one_page(*, account, start, end, opening, rows, interest=0, holder='E
     y = 270
     for index, item in enumerate(rows):
         text = ('-' if item['direction'] == 'credit' else '') + money(item['amount_minor'])
-        cell = R(470, text, damage(text) if (index, 'amount') in damage_cells else None)
+        cell = R(470, text, (ocr_text or {}).get(index) or (damage(text) if (index, 'amount') in damage_cells else None))
         lines.append((y, [L(140, f'REF{start:%y%m}{index:04d}'), L(222, _mmdd(item['date'])),
                           L(252, _mmdd(item['date'])), L(290, item['description']), cell]))
         y += 12
@@ -275,6 +275,7 @@ def andrews_page(*, account, start, end, shares, printed_page=1, damage_cells=()
         for index, item in enumerate(rows):
             delta = item['amount_minor'] if item['direction'] == 'credit' else -item['amount_minor']
             balance += delta
+            item['balance_after'] = balance
             if (share, index) in omit:
                 continue
             amount_text = ('-' if delta < 0 else '') + money(item['amount_minor'])
@@ -322,6 +323,8 @@ def build():
         (7, 'digital', dict(omit={3}), 'hold', ['omitted_row']),
         (8, 'digital', dict(quiet=True), 'decision', ['no_activity']),
         (9, 'image_only', {}, 'auto', ['image_only_scan']),
+        # OCR read 5 as 8: a valid-looking amount; the printed balances are right.
+        (10, 'scan_text_layer', dict(ocr_text={0: '1,380.00'}), 'auto', ['ocr_valid_but_wrong_amount']),
     ]
     for month, mode, options, expected, defects in generic:
         quiet = options.pop('quiet', False)
@@ -372,6 +375,18 @@ def build():
             holder_printed=options.get('include_holder', True))
         credit_one_pages.append((lines, truth, options.get('damage_cells')))
         balance = closing
+    # Two valid-looking OCR misreadings that cancel out: 25.11 -> 28.11 and
+    # 18.79 -> 15.79. Printed totals still reconcile; only the image is right.
+    start, end = date(2024, 5, 16), date(2024, 6, 15)
+    rows = [row('2024-05-18', 'EXAMPLE BOOKSHOP 6A', 2511, 'debit'),
+            row('2024-05-25', 'PAYMENT RECEIVED 6B', 4000, 'credit'),
+            row('2024-06-01', 'EXAMPLE GARAGE 6C', 1879, 'debit')]
+    lines, truth_rows, closing = credit_one_page(account=card, start=start, end=end, opening=balance, rows=rows,
+                                                 interest=200, ocr_text={0: '28.11', 2: '15.79'})
+    cancelling = (lines, period_truth(family='credit-one-card', institution='Credit One Bank',
+        account=card.replace(' ', ''), holder='EXAMPLE PERSON', currency='USD', start=start.isoformat(),
+        end=end.isoformat(), opening=balance, closing=closing, rows=truth_rows, expected='auto',
+        defects=['ocr_valid_but_wrong_amounts_cancelling']))
     entries.append(dict(filename='credit-one-two-cycles.pdf', mode='digital',
                         pages=[credit_one_pages[0][0], credit_one_pages[1][0]],
                         periods=[credit_one_pages[0][1], credit_one_pages[1][1]]))
@@ -379,6 +394,8 @@ def build():
         lines, truth, damaged = credit_one_pages[index]
         entries.append(dict(filename=f'credit-one-cycle-{index + 1}-{"-".join(truth["defects"]) or "clean"}.pdf',
                             mode='scan_text_layer' if damaged else 'digital', pages=[lines], periods=[truth]))
+    entries.append(dict(filename='credit-one-cycle-6-ocr-valid-but-wrong-cancelling.pdf', mode='scan_text_layer',
+                        pages=[cancelling[0]], periods=[cancelling[1]]))
 
     # Merrick: closing-only statements. Two statements in one PDF, one damaged scan.
     merrick_account = '1111 2222 3333 4444'
