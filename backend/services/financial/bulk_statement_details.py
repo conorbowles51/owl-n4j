@@ -53,10 +53,13 @@ class Changes(BaseModel):
     period_start: str | None = None
     period_end: str | None = None
     period_start_unprinted: Literal[True] | None = None
+    no_activity_confirmed: Literal[True] | None = None
 
     @model_validator(mode='after')
     def valid_fields(self):
-        if not self.period_start_unprinted and not any(getattr(self, key) is not None for key in FIELDS):
+        if self.no_activity_confirmed and (self.period_start_unprinted or any(getattr(self, key) is not None for key in FIELDS)):
+            raise ValueError('Confirm no activity separately; each statement keeps its own details, dates and balances.')
+        if not self.period_start_unprinted and not self.no_activity_confirmed and not any(getattr(self, key) is not None for key in FIELDS):
             raise ValueError('Choose at least one field to change.')
         if self.period_start_unprinted and any(getattr(self, key) is not None for key in FIELDS):
             raise ValueError('Confirm unprinted start dates separately; each statement keeps its own details and closing date.')
@@ -213,11 +216,41 @@ def list_statements(session, *, case_id, selection):
     return dict(case_id=str(case_id), items=rows, notices=notices)
 
 
+def _no_activity_plan(target, state, after):
+    """One investigator confirmation of no activity for each eligible period.
+
+    It applies only to an unimported period with no selected payments whose
+    remaining question is activity, bound to that period's own details and
+    revision. A period whose source already establishes it needs nothing; one
+    whose printed balances differ cannot be quiet and is excluded.
+    """
+    from pydantic import ValidationError
+    from services.financial.statement_import import StatementImportRequest
+    from services.financial.statement_admission import assess_admission
+    if target.source_id:
+        return 'Already imported; saved records are unchanged.', None, None
+    proposal, raw = state['proposal'], {**state['raw'], **after}
+    if any(not row.get('excluded') for row in raw['rows']):
+        return 'Payments are selected in this statement; it is not a period without activity.', None, None
+    evidence = proposal.get('no_activity_evidence') or {}
+    source_check = evidence.get('message') if evidence.get('verified') is False else None
+    if evidence.get('reason') == 'endpoints_differ':
+        return 'Its printed opening and ending balances differ, so money moved in this period.', None, source_check
+    try:
+        admission = assess_admission(proposal, StatementImportRequest.model_validate(raw))
+    except (ValidationError, PdfMappingError):
+        return 'Open this statement individually: its review is incomplete.', None, source_check
+    if not any(blocker['kind'] == 'no_activity' for blocker in admission['blockers']):
+        return 'No confirmation is needed for this statement.', None, source_check
+    return None, admission['revision'], source_check
+
+
 def _plan(session, case_id, request):
     if len({_key(t) for t in request.targets}) != len(request.targets):
         raise PdfMappingError('Select each statement once.', 422)
     changes = request.changes.model_dump(exclude_none=True)
     unprinted = changes.pop('period_start_unprinted', False)
+    quiet = changes.pop('no_activity_confirmed', False)
     plan, states, cache = [], [], {}
     for target in sorted(request.targets, key=lambda target: (str(target.file_id), _key(target))):
         row, state = _load(session, case_id, target, cache)
@@ -245,14 +278,23 @@ def _plan(session, case_id, request):
                 if closing != after.get('period_end'):
                     changed['period_end'] = dict(before=after.get('period_end', ''), after=closing)
                     after['period_end'] = closing
+        no_activity_revision = None
+        source_check = None
+        if quiet:
+            excluded_reason, no_activity_revision, source_check = _no_activity_plan(target, state, after)
+            if no_activity_revision:
+                changed['no_activity_confirmed'] = dict(before='Not confirmed',
+                    after='Confirmed: every page checked; no transactions in this period')
         if not target.source_id and 'currency' in changed:
             new = read_statement_import(session, case_id=case_id, evidence_file_id=target.file_id,
                 statement_id=target.statement_id, currency=after['currency'], _cache=cache, _include_period_checks=False)
             state['raw'] = import_batches.rebase_review_currency(state['proposal'], new, state['raw'], after['currency'])
             state['proposal'] = new
-        plan.append({**row, 'after': after, 'changes': changed, 'excluded_reason': excluded_reason})
+        plan.append({**row, 'after': after, 'changes': changed, 'excluded_reason': excluded_reason,
+                     **(dict(no_activity_revision=no_activity_revision, source_check=source_check) if quiet else {})})
         states.append((target, state))
-    revision = _digest(dict(case_id=str(case_id), rows=plan, mode=request.mode, changes=changes, unprinted=unprinted))
+    revision = _digest(dict(case_id=str(case_id), rows=plan, mode=request.mode, changes=changes, unprinted=unprinted,
+                            **(dict(no_activity=True) if quiet else {})))
     return dict(case_id=str(case_id), preview_revision=revision, items=plan,
         updated=sum(bool(row['changes']) for row in plan)), states
 
@@ -307,6 +349,8 @@ def save(session, *, case_id, request, actor):
                 raw = {**state['raw'], **after}
                 if request.changes.period_start_unprinted:
                     raw['period_start_unprinted'] = True
+                if request.changes.no_activity_confirmed:
+                    raw.update(no_activity_confirmed=True, no_activity_revision=row['no_activity_revision'])
                 import_batches.check_proposed_rows(state['proposal'], raw['rows'])
                 file = next(f for f in files if f.id == target.file_id)
                 metadata = deepcopy(file.metadata_ or {})
@@ -326,6 +370,7 @@ def save(session, *, case_id, request, actor):
                 metadata.setdefault('financial_account_detail_history', []).append(dict(
                     request_id=str(request.request_id), before=row['values'], after=after,
                     period_start_unprinted=bool(raw.get('period_start_unprinted')),
+                    **(dict(no_activity_confirmed=True) if request.changes.no_activity_confirmed else {}),
                     statement_id=target.statement_id, at=record['saved_at'], actor=record['saved_by']))
                 file.metadata_ = metadata
                 for item in state['items']:
