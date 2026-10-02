@@ -81,7 +81,10 @@ class BatchReviewSaveScopeTests(TestCase):
         finally:
             event.remove(f.engine, 'before_cursor_execute', sql)
         self.assertEqual(reads, [f.file.id])
-        self.assertLessEqual(len(queries), 20, 'Save must not query every other statement.')
+        # 99 other statements: a per-statement query would exceed this many
+        # times over. The budget includes storing this item's refreshed
+        # readiness (one locked read and one update) for the batch list.
+        self.assertLessEqual(len(queries), 24, 'Save must not query every other statement.')
         # This is the saved draft assessment, not permission to import.
         self.assertEqual(result['status'], 'ready')
         with f.SessionLocal() as db:

@@ -763,25 +763,32 @@ def refresh_readiness(session, *, case_id, item_ids, budget_seconds=None):
             break
         snapshot = (item.status, deepcopy(item.summary), deepcopy(item.review_request))
         try:
-            state, summary, projected_request = _project_item(session, case_id, item, inputs.files.get(item.file_id),
+            projection = _project_item(session, case_id, item, inputs.files.get(item.file_id),
                 read=read, saved_files=inputs.admitted, duplicate_context=inputs.duplicate_context, validate_reviews=False)
         except Exception:
             # One unexpected failure must not stop the rest; it stays held.
             log.exception('Stored readiness could not be computed for one batch item')
             continue
-        status = state if item.status in ('ready', 'attention') and state in ('ready', 'attention') else item.status
-        body = _json_value(summary)
-        changed = projected_request != item.review_request
-        record = dict(version=READINESS_VERSION, state=state, request_changed=changed,
-            request=_json_value(projected_request) if changed else None)
-        # The fingerprint covers the values exactly as they will be stored.
-        record['inputs'] = inputs.fingerprint(SimpleNamespace(id=item.id, file_id=item.file_id,
-            statement_key=item.statement_key, status=status, review_request=item.review_request), status, body)
-        updates[item.id] = (snapshot, (status, {**body, 'readiness': record}))
-    def apply(item, change):
-        item.status, item.summary = change
-    written = _write_items(session, updates, apply)
+        updates[item.id] = (snapshot, _readiness_change(inputs, item, *projection))
+    written = _write_items(session, updates, _apply_readiness)
     return dict(refreshed=written, skipped=len(updates) - written, remaining=len(items) - written)
+
+
+def _readiness_change(inputs, item, state, summary, projected_request):
+    """The stored (status, summary) for one projection, with its input fingerprint."""
+    status = state if item.status in ('ready', 'attention') and state in ('ready', 'attention') else item.status
+    body = _json_value(summary)
+    changed = projected_request != item.review_request
+    record = dict(version=READINESS_VERSION, state=state, request_changed=changed,
+        request=_json_value(projected_request) if changed else None)
+    # The fingerprint covers the values exactly as they will be stored.
+    record['inputs'] = inputs.fingerprint(SimpleNamespace(id=item.id, file_id=item.file_id,
+        statement_key=item.statement_key, status=status, review_request=item.review_request), status, body)
+    return status, {**body, 'readiness': record}
+
+
+def _apply_readiness(item, change):
+    item.status, item.summary = change
 
 
 def readiness_backlog(session, case_id, items=None):
@@ -813,7 +820,7 @@ def refresh_batch_readiness(session, *, case_id, batch_id, budget_seconds=None):
 
 
 def refresh_file_readiness(session, *, case_id, file_id, statement_key=None):
-    """After a write that changed one file's inputs, refresh only what became stale.
+    """After a write that changed one file's inputs, store every item it made stale.
 
     Best effort: a failure leaves those items held as pending, and the
     background sweep retries them. It never fails the write that called it.
@@ -827,21 +834,30 @@ def refresh_file_readiness(session, *, case_id, file_id, statement_key=None):
             return dict(refreshed=0, skipped=0, remaining=0)
         inputs = _ProjectionInputs(session, case_id, items)
         from services.financial.statement_import_overlap import ReadingDeferred
-        def deferred(item):
+        # Views that read stored summaries (the case's batch list) never
+        # project, so every changed item is written: from stored inputs when
+        # they suffice, otherwise by re-reading that statement once.
+        stale, current = [], {}
+        for item in items:
             if 'readiness' in item.summary and inputs.stored_readiness(item) is not None:
-                return False
+                continue
             if inputs.outdated_projection(item):
-                return True
+                stale.append(item.id)
+                continue
+            snapshot = (item.status, deepcopy(item.summary), deepcopy(item.review_request))
             try:
-                _project_item(session, case_id, item, inputs.files.get(item.file_id), read=_never_read,
+                projection = _project_item(session, case_id, item, inputs.files.get(item.file_id), read=_never_read,
                     saved_files=inputs.admitted, duplicate_context=inputs.duplicate_context, validate_reviews=False)
             except ReadingDeferred:
-                return True
-            return False
-        stale = [item.id for item in items if deferred(item)]
-        if not stale:
-            return dict(refreshed=0, skipped=0, remaining=0)
-        return refresh_readiness(session, case_id=case_id, item_ids=stale)
+                stale.append(item.id)
+                continue
+            current[item.id] = (snapshot, _readiness_change(inputs, item, *projection))
+        written = _write_items(session, current, _apply_readiness)
+        result = dict(refreshed=written, skipped=len(current) - written, remaining=len(current) - written)
+        if stale:
+            reread = refresh_readiness(session, case_id=case_id, item_ids=stale)
+            result = {key: result[key] + reread[key] for key in result}
+        return result
     except Exception:
         session.rollback()
         log.exception('Refreshing stored batch readiness failed; the background sweep will retry')
