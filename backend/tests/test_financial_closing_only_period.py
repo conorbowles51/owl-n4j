@@ -215,5 +215,56 @@ class ClosingOnlyPeriodImportTests(unittest.TestCase):
             self.assertNotEqual(period.period_start_source, PeriodBoundsSource.derived)
 
 
+class ClosingOnlyBatchOrderTests(unittest.TestCase):
+    """A later statement prepared before its predecessor is not left held."""
+
+    def setUp(self):
+        from tests import test_financial_statement_import as fixtures
+        module._memo.clear()
+        self.f = fixtures.StatementImportTests()
+        self.f.setUp()
+        _install(self.f.db, self.f.file, summary_statement())
+        self.previous = self.f.evidence('c' * 64)
+        self.f.db.commit()
+
+    def tearDown(self):
+        self.f.tearDown()
+
+    def test_preparing_the_previous_statement_refreshes_the_held_later_one(self):
+        from postgres.models.financial_import_batches import FinancialImportBatch as Batch, FinancialImportBatchItem as Item
+        from services.financial import import_batches as service
+        entries = [dict(source_id=str(file.id), file_id=str(file.id), filename=file.original_filename,
+                        expected_revision='r', status='checked') for file in (self.f.file, self.previous)]
+        batch_id = uuid4()
+        with self.f.SessionLocal() as db:
+            db.add(Batch(id=batch_id, case_id=self.f.case.id, created_by=self.f.user.id, status='preparing',
+                         actor=dict(name='n', email='e@example.test', user_id=str(self.f.user.id)), files=entries))
+            db.commit()
+            service.prepare_reviews(db, service.batch_for(db, self.f.case.id, batch_id), entries[0])
+            later = db.scalar(select(Item).where(Item.file_id == self.f.file.id))
+            self.assertEqual(later.status, 'attention')
+            self.assertTrue(service._waiting_for_previous_statement(later))
+        _install(self.f.db, self.previous, previous_statement())
+        with self.f.SessionLocal() as db:
+            service.prepare_reviews(db, service.batch_for(db, self.f.case.id, batch_id), entries[1])
+            service._refresh_closing_only_neighbours(db, self.f.case.id, batch_id, self.previous.id)
+        with self.f.SessionLocal() as db:
+            later = db.scalar(select(Item).where(Item.file_id == self.f.file.id))
+            self.assertEqual(later.status, 'ready', later.summary.get('problems'))
+            self.assertEqual((later.summary['period_start'], later.summary['period_end']), ('2021-03-26', '2021-04-25'))
+
+    def test_saved_edits_are_never_replaced_by_the_refresh(self):
+        from services.financial import import_batches as service
+        item = SimpleNamespace(status='attention', review_request={'period_start': ''},
+            summary=dict(closing_only_period=True, problems=[dict(field='period_start', source_check='no_previous_statement')]))
+        self.assertFalse(service._waiting_for_previous_statement(item))
+        item.review_request = None
+        self.assertTrue(service._waiting_for_previous_statement(item))
+        item.summary['problems'][0]['source_check'] = 'balance_mismatch'
+        self.assertTrue(service._waiting_for_previous_statement(item))
+        item.status = 'ready'
+        self.assertFalse(service._waiting_for_previous_statement(item))
+
+
 if __name__ == '__main__':
     unittest.main()

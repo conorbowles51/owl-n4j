@@ -177,6 +177,15 @@ const proposalSchema = z.object({
     .array(z.number().int().positive())
     .default([]),
   can_record_account_closure: z.boolean().default(false),
+  // A statement printing only its closing date: that date, and a start the
+  // previous statement for the same card establishes. Used only where the
+  // printed header has no date.
+  period_dates: z
+    .object({
+      period_start: z.string().default(""),
+      period_end: z.string().default(""),
+    })
+    .nullish(),
   assignment_only: z.boolean().default(false),
   printed_main_account: z.string().default(""),
   needs_attention: z.number(),
@@ -709,10 +718,12 @@ function StatementReview({
         <p className="text-sm">
           {query.data.current_import?.details?.period_start ||
             query.data.metadata.period_start ||
+            query.data.period_dates?.period_start ||
             "Start date not recorded"}
           {" to "}
           {query.data.current_import?.details?.period_end ||
             query.data.metadata.period_end ||
+            query.data.period_dates?.period_end ||
             "End date not recorded"}
           {" · "}
           {query.data.current_import?.currency || query.data.currency}
@@ -1468,15 +1479,15 @@ function EditableStatement({
       saved?.institution ??
       data.metadata.institution
   )
+  const proposedStart =
+      data.metadata.period_start || data.period_dates?.period_start || "",
+    proposedEnd =
+      data.metadata.period_end || data.period_dates?.period_end || ""
   const [periodStart, setPeriodStart] = useState(
-      importedDetails?.period_start ??
-        saved?.periodStart ??
-        data.metadata.period_start
+      importedDetails?.period_start ?? saved?.periodStart ?? proposedStart
     ),
     [periodEnd, setPeriodEnd] = useState(
-      importedDetails?.period_end ??
-        saved?.periodEnd ??
-        data.metadata.period_end
+      importedDetails?.period_end ?? saved?.periodEnd ?? proposedEnd
     ),
     [detailsReason, setDetailsReason] = useState(saved?.detailsReason ?? "")
   const [periodStartUnprinted, setPeriodStartUnprinted] = useState(saved?.periodStartUnprinted ?? false)
@@ -1519,8 +1530,8 @@ function EditableStatement({
     institution !== data.metadata.institution ||
     holder !== data.metadata.holder ||
     account !== data.metadata.account_number ||
-    periodStart !== data.metadata.period_start ||
-    periodEnd !== data.metadata.period_end
+    periodStart !== proposedStart ||
+    periodEnd !== proposedEnd
   const digits = exponent(data.currency),
     originals = new Map(data.rows.map((r) => [r.id, r]))
   const editsById = useMemo(

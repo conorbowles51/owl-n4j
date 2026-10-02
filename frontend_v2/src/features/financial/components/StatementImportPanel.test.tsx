@@ -536,6 +536,35 @@ it("retains an additional printed date without requiring a per-row decision", as
   })
 })
 
+it("pre-fills closing-only statement dates from the reading without treating them as edits", async () => {
+  const base = vi.mocked(fetchAPI).getMockImplementation()!
+  const proposal = {
+    ...structuredClone(data),
+    period_dates: { period_start: "2022-12-26", period_end: "2023-01-25" },
+  }
+  proposal.metadata.period_start = ""
+  proposal.metadata.period_end = ""
+  vi.mocked(fetchAPI).mockImplementation(async (url, options) =>
+    String(url).includes("/statement-import/file?")
+      ? (proposal as never)
+      : base(url, options)
+  )
+  mount()
+  await open()
+  expect(screen.getByLabelText("Period start")).toHaveValue("2022-12-26")
+  expect(screen.getByLabelText("Period end")).toHaveValue("2023-01-25")
+  expect(screen.queryByLabelText("Reason for detail corrections")).toBeNull()
+  fireEvent.click(
+    screen.getByRole("button", { name: "Confirm import of 1 transactions" })
+  )
+  await waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0]).toMatchObject({
+    period_start: "2022-12-26",
+    period_end: "2023-01-25",
+    period_start_unprinted: false,
+  })
+})
+
 it("imports recognised undated interest without inventing a date and supports a later date correction", async () => {
   const base = vi.mocked(fetchAPI).getMockImplementation()!
   const charge = structuredClone(data)
