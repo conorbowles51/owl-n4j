@@ -202,3 +202,15 @@ def test_only_words_over_blank_paper_are_dropped():
     assert dropped == [dict(text='=', confidence='3', box=[80, 10, 10, 20])]
     clean = dict(data, text=['', '61.25', '', 'grey', ''])
     assert pdf_extraction._drop_inkless_words(clean, image) == (clean, [])
+    # Confident words are never dropped, even over blank paper.
+    sure = dict(data, conf=['-1', '90', '92', '50', '-1'])
+    assert pdf_extraction._drop_inkless_words(sure, image) == (sure, [])
+
+
+def test_a_box_that_just_misses_its_ink_keeps_the_word():
+    image = Image.new('RGB', (100, 40), 'white')
+    image.paste((0, 0, 0), (50, 10, 53, 13))
+    data = dict(text=[':'], conf=['30'], left=[54], top=[10], width=[1], height=[16])
+    assert pdf_extraction._drop_inkless_words(data, image) == (data, [])
+    far = dict(data, left=[70])
+    assert pdf_extraction._drop_inkless_words(far, image)[1] == [dict(text=':', confidence='30', box=[70, 10, 1, 16])]

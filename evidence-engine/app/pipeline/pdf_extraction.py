@@ -604,18 +604,24 @@ def _ocr_at_rotation(
 
 
 INKLESS_WORD_THRESHOLD = 128
+INKLESS_WORD_PADDING = 4
 
 
 def _drop_inkless_words(data: dict, image: Image.Image) -> tuple[dict, list[dict]]:
-    """``data`` without recognised words whose rectangle holds no ink at all.
+    """``data`` without low-confidence recognised words over blank paper.
 
-    Tesseract can report a word in an empty gap (measured: an ``=`` between an
-    amount and its running balance on straightened and contrast-stretched
-    scans, in a box with no pixel darker than mid grey). Such a word was not
-    printed, and between two money columns it merges them into one cell. Only
-    a word whose whole rectangle has no pixel darker than
-    ``INKLESS_WORD_THRESHOLD`` is dropped; the caller applies this only to a
-    prepared scan, where ink is black or measured darker than grey 125.
+    Tesseract can report a word in an empty gap (measured: an ``=`` at
+    confidence 8 to 45 between an amount and its running balance on
+    straightened and contrast-stretched scans, its box pure white). Such a
+    word was not printed, and between two money columns it merges them into
+    one cell. A word is dropped only when its confidence is below
+    ``LOW_CONFIDENCE_THRESHOLD`` and its rectangle, widened by
+    ``INKLESS_WORD_PADDING`` pixels (about one point at 300 dpi) on every
+    side, has no pixel darker than ``INKLESS_WORD_THRESHOLD``. The widening
+    matters: a real colon on a straightened BBVA page was reported at
+    confidence 92 with a one-pixel box beside its dots (darkest pixel 174
+    inside the box, 8 within four pixels of it). The caller applies this only
+    to a prepared scan, where ink is black or measured darker than grey 125.
     """
     texts = data.get("text") or []
     fields = ("left", "top", "width", "height")
@@ -627,8 +633,15 @@ def _drop_inkless_words(data: dict, image: Image.Image) -> tuple[dict, list[dict
         for index, raw in enumerate(texts):
             word = str(raw or "").strip()
             left, top, width, height = (data[name][index] for name in fields)
-            if word and width > 0 and height > 0:
-                with grey.crop((left, top, left + width, top + height)) as box:
+            try:
+                confidence = float(data.get("conf", [None] * len(texts))[index])
+            except (TypeError, ValueError):
+                confidence = None
+            if (word and width > 0 and height > 0 and confidence is not None
+                    and 0 <= confidence < LOW_CONFIDENCE_THRESHOLD):
+                pad = INKLESS_WORD_PADDING
+                with grey.crop((max(0, left - pad), max(0, top - pad), min(grey.width, left + width + pad),
+                                min(grey.height, top + height + pad))) as box:
                     if box.getextrema()[0] >= INKLESS_WORD_THRESHOLD:
                         dropped.append(dict(text=word, confidence=data.get("conf", [None] * len(texts))[index],
                                             box=[left, top, width, height]))
