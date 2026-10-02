@@ -85,7 +85,12 @@ class BatchReviewSaveScopeTests(TestCase):
         with f.SessionLocal() as db:
             saved = db.get(Item, item_id)
             self.assertEqual(saved.review_request, saved_request)
-            self.assertEqual(result['review_revision'], batches._digest(saved_request))
+            # The first batch save also creates shared progress, so the token covers both.
+            from services.financial.effective_statement_review import batch_review_revision
+            from services.financial.statement_progress import review_progress
+            shared = review_progress(db.get(EvidenceFile, saved.file_id), saved.statement_key)
+            self.assertIsNotNone(shared)
+            self.assertEqual(result['review_revision'], batch_review_revision(saved_request, shared))
             self.assertEqual(list(db.scalars(select(FinancialTransaction))), [])
 
     def test_saved_draft_status_does_not_bypass_overlapping_source_import_check(self):

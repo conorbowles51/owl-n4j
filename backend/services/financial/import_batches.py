@@ -677,10 +677,14 @@ def save_review(session, *, case_id, batch_id, item_id, request, expected_review
         raise PdfMappingError('Another user saved changes to this review. Reopen it from the batch before saving.',409)
     if item.status in ('pending_import','imported'): raise PdfMappingError('This statement is already being imported or was imported.',409)
     if item.status == 'skipped': raise PdfMappingError('Restore this statement to review from the batch before saving further changes.',409)
-    if item.status == 'duplicate_ignored': raise PdfMappingError('Restore this duplicate explicitly before saving further changes.',409)
     if request.statement_id != (item.statement_key or None): raise PdfMappingError('Open this statement period from the batch again.',409)
     if request.replaces_source_document_id: raise PdfMappingError('Replace a previous import through its individual review, not bulk import.',422)
     proposal=read_statement_import(session,case_id=case_id,evidence_file_id=item.file_id,currency=request.currency,statement_id=request.statement_id)
+    # The stored status lags an explicit restore, so judge the current decision
+    # the same way batch status does.
+    duplicate = proposal.get('duplicate_disposition') or {}
+    if item.status == 'duplicate_ignored' and duplicate.get('current') and duplicate.get('status') == 'ignored':
+        raise PdfMappingError('Restore this duplicate explicitly before saving further changes.',409)
     if request.expected_revision != proposal['revision']:
         raise PdfMappingError('The saved reading changed. Reopen this statement before saving corrections.', 409)
     # Save incomplete edits without discarding their source rows or page references.

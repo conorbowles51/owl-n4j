@@ -941,7 +941,13 @@ class BatchImportTests(TestCase):
             self.assertEqual(result['status'], 'attention')
             saved=db.get(Item, UUID(item['id']))
             self.assertEqual(saved.review_request['holder'], '')
-            self.assertEqual(result['review_revision'], service._digest(saved.review_request))
+            # The first batch save also creates shared progress, so the token covers both.
+            from services.financial.effective_statement_review import batch_review_revision
+            from services.financial.statement_progress import review_progress
+            from postgres.models.evidence import EvidenceFile
+            shared = review_progress(db.get(EvidenceFile, saved.file_id), saved.statement_key)
+            self.assertIsNotNone(shared)
+            self.assertEqual(result['review_revision'], batch_review_revision(saved.review_request, shared))
             self.assertFalse(saved.summary['can_import'])
             with self.assertRaisesRegex(PdfMappingError, 'no new statement records'):
                 service.queue_import(db, case_id=f.case.id, batch_id=batch,

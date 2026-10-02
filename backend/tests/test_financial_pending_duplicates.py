@@ -274,6 +274,15 @@ class PendingDuplicateTests(TestCase):
         batch = self.fixture.create(other)
         item = self.fixture.b.status(batch)['items'][0]
         self.assertEqual(item['status'], 'duplicate_ignored')
+        # An ignored copy must be restored explicitly before the batch accepts edits.
+        self.f.file = other
+        with self.f.SessionLocal() as db, self.assertRaisesRegex(Exception, 'Restore this duplicate'):
+            batches.save_review(db, case_id=self.f.case.id, batch_id=batch, item_id=UUID(item['id']),
+                request=StatementReviewDraft.model_validate(self.f.request()), expected_review_revision=batches._digest({}))
+        ignored = self.decision(other)
+        self.assertEqual(self.decision(other, action='restore',
+            expected_decision_revision=ignored['revision'])['status'], 'restored')
+        item = self.fixture.b.status(batch)['items'][0]
         self.f.file = other
         raw = self.f.request()
         next(row for row in raw['rows'] if not row['excluded'])['description'] = 'Unique batch-only investigator detail'
