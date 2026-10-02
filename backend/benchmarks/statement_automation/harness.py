@@ -227,13 +227,17 @@ def simulate_correction(proposal, truth, assess, initial_request):
             act('edit', 'row_balance', original['id'])
     for index in missing:
         act('add_row', 'missing_row', truth['rows'][index]['description'])
-    # Printed opening/closing controls that were misread.
+    # Printed opening/closing controls that were misread or held unreadable.
     for original in proposal['rows']:
-        description = original['fields'].get('description')
-        target = {'Opening Balance': truth['opening_minor'], 'Closing Balance': truth['closing_minor']}.get(description)
+        description = original['fields'].get('description') or ''
+        target = (truth['opening_minor'] if re.search(r'Opening Balance|Previous\s*Balance', description)
+                  else truth['closing_minor'] if re.search(r'Closing Balance|Ending Balance', description) else None)
         if original['kind'] == 'balance' and target is not None:
             edit = rows.get(original['id'])
-            if edit is not None and edit.get('balance_minor') is not None and edit['balance_minor'] != str(target):
+            unreadable = (edit is not None and edit.get('balance_minor') is None
+                          and 'balance' not in original['fields'])
+            if edit is not None and (unreadable or edit.get('balance_minor') is not None
+                                     and edit['balance_minor'] != str(target)):
                 edit['balance_minor'] = str(target)
                 act('edit', 'printed_balance', original['id'])
     status, summary = assess(proposal, raw)
