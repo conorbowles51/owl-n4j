@@ -806,9 +806,12 @@ def refresh_case_readiness(session, *, case_id, budget_seconds=None, items=None)
     def left():
         return None if budget_seconds is None else max(0.0, budget_seconds - (time.monotonic() - started))
     hydrated = hydrate_comparison_inputs(session, case_id=case_id, budget_seconds=left())
-    stale, unhydrated = readiness_backlog(session, case_id, items)
-    refreshed = refresh_readiness(session, case_id=case_id, item_ids=stale, budget_seconds=left()) if stale and left() != 0.0 else \
-        dict(refreshed=0, skipped=0, remaining=len(stale))
+    if items is None:
+        items = _active_items(session, case_id, PROJECTED_STATUSES)
+    else:
+        items = _active_items(session, case_id, PROJECTED_STATUSES, Item.id.in_([item.id for item in items])) if items else []
+    refreshed = _store_current_readiness(session, case_id, items, budget_seconds=left()) if left() != 0.0 else \
+        dict(refreshed=0, skipped=0, remaining=len(items))
     return dict(hydrated=hydrated['hydrated'], hydration_remaining=hydrated['remaining'], **refreshed)
 
 
@@ -817,6 +820,49 @@ def refresh_batch_readiness(session, *, case_id, batch_id, budget_seconds=None):
     batch = batch_for(session, case_id, batch_id)
     items = list(session.scalars(select(Item).where(Item.batch_id == batch.id, Item.status.in_(PROJECTED_STATUSES))))
     return refresh_case_readiness(session, case_id=case_id, budget_seconds=budget_seconds, items=items)
+
+
+def _store_current_readiness(session, case_id, items, *, budget_seconds=None):
+    """Store readiness for every item whose stored record is not current.
+
+    Views that read stored summaries (the case's batch list) never project, so
+    every such item is written: from stored inputs when they suffice, without
+    reading its PDF, otherwise by re-reading that statement once. Items whose
+    record is still current are left alone, so a repeat changes nothing.
+    """
+    from services.financial.statement_import_overlap import ReadingDeferred
+    started = time.monotonic()
+    def left():
+        return None if budget_seconds is None else max(0.0, budget_seconds - (time.monotonic() - started))
+    if not items:
+        return dict(refreshed=0, skipped=0, remaining=0)
+    inputs = _ProjectionInputs(session, case_id, items)
+    stale, current, unvisited = [], {}, 0
+    for item in items:
+        if left() == 0.0:
+            unvisited += 1
+            continue
+        if 'readiness' in item.summary and inputs.stored_readiness(item) is not None:
+            continue
+        if inputs.outdated_projection(item):
+            stale.append(item.id)
+            continue
+        snapshot = (item.status, deepcopy(item.summary), deepcopy(item.review_request))
+        try:
+            projection = _project_item(session, case_id, item, inputs.files.get(item.file_id), read=_never_read,
+                saved_files=inputs.admitted, duplicate_context=inputs.duplicate_context, validate_reviews=False)
+        except ReadingDeferred:
+            stale.append(item.id)
+            continue
+        current[item.id] = (snapshot, _readiness_change(inputs, item, *projection))
+    written = _write_items(session, current, _apply_readiness)
+    result = dict(refreshed=written, skipped=len(current) - written, remaining=len(current) - written + unvisited)
+    if stale and left() != 0.0:
+        reread = refresh_readiness(session, case_id=case_id, item_ids=stale, budget_seconds=left())
+        result = {key: result[key] + reread[key] for key in result}
+    elif stale:
+        result['remaining'] += len(stale)
+    return result
 
 
 def refresh_file_readiness(session, *, case_id, file_id, statement_key=None):
@@ -832,32 +878,7 @@ def refresh_file_readiness(session, *, case_id, file_id, statement_key=None):
         items = _active_items(session, case_id, PROJECTED_STATUSES, *conditions)
         if not items:
             return dict(refreshed=0, skipped=0, remaining=0)
-        inputs = _ProjectionInputs(session, case_id, items)
-        from services.financial.statement_import_overlap import ReadingDeferred
-        # Views that read stored summaries (the case's batch list) never
-        # project, so every changed item is written: from stored inputs when
-        # they suffice, otherwise by re-reading that statement once.
-        stale, current = [], {}
-        for item in items:
-            if 'readiness' in item.summary and inputs.stored_readiness(item) is not None:
-                continue
-            if inputs.outdated_projection(item):
-                stale.append(item.id)
-                continue
-            snapshot = (item.status, deepcopy(item.summary), deepcopy(item.review_request))
-            try:
-                projection = _project_item(session, case_id, item, inputs.files.get(item.file_id), read=_never_read,
-                    saved_files=inputs.admitted, duplicate_context=inputs.duplicate_context, validate_reviews=False)
-            except ReadingDeferred:
-                stale.append(item.id)
-                continue
-            current[item.id] = (snapshot, _readiness_change(inputs, item, *projection))
-        written = _write_items(session, current, _apply_readiness)
-        result = dict(refreshed=written, skipped=len(current) - written, remaining=len(current) - written)
-        if stale:
-            reread = refresh_readiness(session, case_id=case_id, item_ids=stale)
-            result = {key: result[key] + reread[key] for key in result}
-        return result
+        return _store_current_readiness(session, case_id, items)
     except Exception:
         session.rollback()
         log.exception('Refreshing stored batch readiness failed; the background sweep will retry')

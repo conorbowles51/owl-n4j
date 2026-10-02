@@ -245,3 +245,65 @@ class CheckpointBGateTests(TestCase):
         for file, holder in ((a, 'Holder F'), (b, 'Holder G')):
             self.assert_ready_everywhere(batch, file, holder)
         self.assert_list_agrees(batch)
+
+    # -- 3. bringing existing saved work up to date is repeatable --------------
+
+    def stored_state(self, batch):
+        with self.f.SessionLocal() as db:
+            items = {str(i.file_id): (i.status, i.review_request, i.summary)
+                for i in db.scalars(select(Item).where(Item.batch_id == batch))}
+            files = {str(f.id): f.metadata_ for f in db.scalars(select(EvidenceFile).where(
+                EvidenceFile.case_id == self.f.case.id))}
+        return deepcopy(items), deepcopy(files)
+
+    def save_without_batch_refresh(self, file, holder):
+        """A save as the code before 541b15b9 left it: shared draft written, batch item untouched."""
+        from unittest.mock import patch
+        with self.f.SessionLocal() as db, patch.object(batches, 'refresh_file_readiness',
+                return_value=dict(refreshed=0, skipped=0, remaining=0)):
+            save_progress(db, case_id=self.f.case.id, evidence_file_id=file.id,
+                request=self.request(file, holder), expected_review_revision='initial', actor=self.f.actor)
+
+    def assert_upgrade_repeatable(self, upgrade):
+        a, b = self.statement('GATEH', holder_printed=False), self.statement('GATEI', holder_printed=False)
+        untouched = self.statement('GATEJ', holder_printed=False)
+        batch = self.batch(a, b, untouched)
+        self.save_without_batch_refresh(a, 'Earlier Holder A')
+        self.save_without_batch_refresh(b, 'Earlier Holder B')
+        upgrade(batch)
+        once = self.stored_state(batch)
+        for file, holder in ((a, 'Earlier Holder A'), (b, 'Earlier Holder B')):
+            self.assert_ready_everywhere(batch, file, holder)
+        self.assertFalse(self.views(batch, untouched)['detail'])
+        self.assertEqual(self.listed(batch)['available_statements'], 2)
+        self.assert_list_agrees(batch)
+        upgrade(batch)
+        upgrade(batch)
+        self.assertEqual(self.stored_state(batch), once)
+        self.assertEqual(self.listed(batch)['available_statements'], 2)
+
+    def test_background_readiness_sweep_upgrades_existing_drafts_repeatably(self):
+        self.assert_upgrade_repeatable(lambda batch: batches.refresh_stale_readiness(self.f.SessionLocal))
+
+    def test_batch_readiness_refresh_upgrades_existing_drafts_repeatably(self):
+        def upgrade(batch):
+            with self.f.SessionLocal() as db:
+                batches.refresh_batch_readiness(db, case_id=self.f.case.id, batch_id=batch)
+        self.assert_upgrade_repeatable(upgrade)
+
+    def test_refresh_statement_list_upgrades_existing_drafts_repeatably(self):
+        def upgrade(batch):
+            with self.f.SessionLocal() as db:
+                batches.refresh_statement_list(db, case_id=self.f.case.id, batch_id=batch)
+            self.b.advance(batch)
+        self.assert_upgrade_repeatable(upgrade)
+
+    def test_draft_saved_before_the_batch_existed_is_ready_when_the_batch_is_prepared(self):
+        early = self.statement('GATEK', holder_printed=False)
+        with self.f.SessionLocal() as db:
+            save_progress(db, case_id=self.f.case.id, evidence_file_id=early.id,
+                request=self.request(early, 'Saved Before Batch'), expected_review_revision='initial', actor=self.f.actor)
+        batch = self.batch(early)
+        self.assert_ready_everywhere(batch, early, 'Saved Before Batch')
+        self.assertEqual(self.listed(batch)['available_statements'], 1)
+        self.assert_list_agrees(batch)
