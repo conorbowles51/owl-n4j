@@ -1,14 +1,14 @@
 """Opt-in local Neo4j: shared identity projection is idempotent and retractable."""
 import os
 from uuid import UUID
-import pytest
+import unittest
 from neo4j import GraphDatabase
 from services.financial.account_parties import AccountPartyRequest, account_parties, set_account_party
 from services.financial.identity_graph import apply_identity_graph, identity_graph_plan, validate_graph_targets
 from tests.test_financial_duplicates import DuplicateTestCase
 
 
-@pytest.mark.skipif(os.getenv('LOUPE_TEST_LOCAL_GRAPH') != '1', reason='Requires isolated local graph')
+@unittest.skipUnless(os.getenv('LOUPE_TEST_LOCAL_GRAPH') == '1', 'Requires isolated local graph')
 class IdentityGraphTests(DuplicateTestCase):
     def test_target_validation_sees_cross_label_duplicates_but_not_other_cases(self):
         uri = os.environ['NEO4J_URI']
