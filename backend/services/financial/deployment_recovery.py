@@ -18,6 +18,7 @@ from postgres.models.financial import FinancialSourceDocument, FinancialTransact
 from postgres.models.financial_recovery import FinancialRecoveryRelease as Release, FinancialRecoveryRun as Run, FinancialRecoveryItem as Item
 from postgres.models.financial_import_batches import FinancialImportBatch as Batch, FinancialImportBatchItem as BatchItem
 from services.financial.decisions import Actor
+from services.process_shutdown import shutdown_requested
 from services.financial.file_scope import financial_file_ids
 from services.financial.file_visibility import financial_file_visibility
 from services.financial.source_lineage import lineage_groups, current_version
@@ -497,6 +498,8 @@ async def run_recovery_forever():
             with factory() as db:
                 ids = next_recovery_items(db, after)
             for item_id in ids:
+                if shutdown_requested():
+                    break  # Pending items stay pending; the next start resumes them.
                 after = item_id
                 try:
                     pending = await _finish_atomic(recover_one, factory, item_id, _resolve_stored_path)

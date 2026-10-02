@@ -67,7 +67,12 @@ if ! flock -n 9; then
     fi
 fi
 
+# fd 8 keeps the terminal/runner output so the exit summary can be written
+# even when the tee below has been killed with the deploy's process group.
+exec 8>&1
 exec > >(tee -a "${LOG_FILE}") 2>&1
+TEE_PID=$!
+DEPLOY_OUTCOME="failed before completion (see the last [FAIL] above)"
 
 echo ""
 echo -e "${BOLD}============================================${NC}"
@@ -91,6 +96,8 @@ fi
 
 # shellcheck source=deploy/ingestion-safety.sh
 source "${PROJECT_DIR}/deploy/ingestion-safety.sh"
+# shellcheck source=deploy/backend-stop.sh
+source "${PROJECT_DIR}/deploy/backend-stop.sh"
 
 FRONTEND_STOPPED=false
 restore_frontend_on_exit() {
@@ -105,7 +112,39 @@ restore_frontend_on_exit() {
         fi
     fi
 }
-trap restore_frontend_on_exit EXIT
+
+# Every exit, including an interrupted one, ends the log with the outcome, the
+# commit, how the backend stop went and the last-good marker.
+write_deploy_summary() {
+    local rc="$1"
+    local waited=0
+    exec 1>&8 2>&8
+    while kill -0 "${TEE_PID}" 2>/dev/null && [ "${waited}" -lt 20 ]; do
+        sleep 0.1
+        waited=$(( waited + 1 ))
+    done
+    {
+        echo ""
+        echo "==== Deploy summary - $(date) ===="
+        echo "  Outcome:      ${DEPLOY_OUTCOME}"
+        echo "  Exit status:  ${rc}"
+        echo "  Commit:       ${NEW_COMMIT_SHORT:-not updated}"
+        echo "  Backend stop: ${BACKEND_STOP_ESCALATED:-not attempted}"
+        echo "  Last good:    $(cat "${LAST_GOOD_FILE:-/nonexistent}" 2>/dev/null || echo none)"
+        echo "  Log:          ${LOG_FILE}"
+    } | tee -a "${LOG_FILE}"
+}
+on_deploy_exit() {
+    local rc=$?
+    trap - EXIT TERM INT HUP
+    restore_frontend_on_exit
+    write_deploy_summary "${rc}"
+    exit "${rc}"
+}
+trap on_deploy_exit EXIT
+trap 'DEPLOY_OUTCOME="interrupted by SIGTERM"; exit 143' TERM
+trap 'DEPLOY_OUTCOME="interrupted by SIGINT"; exit 130' INT
+trap 'DEPLOY_OUTCOME="interrupted by SIGHUP"; exit 129' HUP
 
 step "Pre-flight checks"
 
@@ -244,7 +283,11 @@ success "Docker stack refreshed"
 step "Restarting services"
 configure_ingestion_shutdown
 check_ingestion_idle
-$SYSTEMCTL restart owl-backend-v2
+# Bounded: a backend that will not stop is escalated (SIGINT, then SIGKILL)
+# and the release always reaches its health check, last-good marker and summary.
+if ! restart_backend_bounded; then
+    fail "owl-backend-v2 did not restart; the health check will fail and roll back"
+fi
 $SYSTEMCTL restart owl-frontend-v2
 FRONTEND_STOPPED=false
 success "V2 services restarted"
@@ -274,6 +317,7 @@ done
 
 if [ "${HEALTHY}" = true ]; then
     echo "${NEW_COMMIT}" > "${LAST_GOOD_FILE}"
+    DEPLOY_OUTCOME="deployed and healthy"
     DEPLOY_END=$(date +%s)
     DEPLOY_DURATION=$(( DEPLOY_END - DEPLOY_START ))
     echo ""
@@ -318,7 +362,7 @@ docker compose up -d --no-build --remove-orphans || true
 step "Rollback: restarting services"
 configure_ingestion_shutdown
 check_ingestion_idle
-$SYSTEMCTL restart owl-backend-v2 || true
+restart_backend_bounded || true
 $SYSTEMCTL restart owl-frontend-v2 || true
 FRONTEND_STOPPED=false
 
@@ -329,9 +373,11 @@ if echo "${RESPONSE}" | grep -q '"status":"ok"' &&
     ! echo "${RESPONSE}" | grep -Eq '"neo4j":"error:|"evidence_engine":"(error:|unavailable)"' &&
     is_compiled_frontend "${FRONTEND_RESPONSE}"; then
     warn "Rollback successful - running ${ROLLBACK_SHORT}"
+    DEPLOY_OUTCOME="health check failed; rolled back to ${ROLLBACK_SHORT} (healthy)"
     warn "See log: ${LOG_FILE}"
 else
     fail "Rollback also failed"
+    DEPLOY_OUTCOME="health check failed; rollback to ${ROLLBACK_SHORT} also failed"
     fail "Log: ${LOG_FILE}"
 fi
 

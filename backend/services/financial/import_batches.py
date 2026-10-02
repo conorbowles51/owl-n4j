@@ -12,6 +12,7 @@ from postgres.models.financial_import_batches import FinancialImportBatch as Bat
 from postgres.models.evidence import EvidenceFile
 from services.financial.pdf_candidates import PdfMappingError, _digest
 from services.financial.decisions import Actor
+from services.process_shutdown import shutdown_requested
 from services.financial.evidence_intake import resolve_financial_selection, prepare_existing_financial_file
 from services.financial.statement_import import read_statement_import, StatementImportRequest, check_import_request, confirm_statement_import, _date_roles, _primary_date_role
 from services.financial.review_arithmetic import check_proposed_rows, arithmetic_problems, accepted_difference
@@ -980,6 +981,10 @@ async def advance_batch(factory,batch_id,resolve_path,process_files):
                 active.lease_until=datetime.now(timezone.utc)+timedelta(minutes=5)
                 db.commit()
     def should_stop():
+        # A stopping process ends the turn at the next item boundary, so the
+        # lease is released normally and the next start resumes at once.
+        if shutdown_requested():
+            return True
         with factory() as db:
             current = batch_for(db, case_id, batch_id)
             return current.worker_token != token or current.status in PAUSED_STATES

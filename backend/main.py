@@ -71,6 +71,7 @@ from services.job_status_subscriber import get_subscriber
 from services.neo4j.driver import driver
 from services.platform_update_service import platform_update_service
 from services.financial.run_reaper import reap_stale_runs_forever
+from services import process_shutdown
 
 
 @asynccontextmanager
@@ -78,6 +79,10 @@ async def lifespan(app: FastAPI):
     """Handle startup and shutdown events."""
     # Startup
     print("Starting Loupe API...")
+    # The first SIGTERM/SIGINT marks the process as stopping and arms a
+    # hard-deadline watchdog, so no task, thread or blocked loop can hold a
+    # stop open for systemd's whole stop window.
+    process_shutdown.install_signal_handlers()
     try:
         # Reload snapshots from disk (non-blocking)
         snapshot_storage.reload()
@@ -88,9 +93,9 @@ async def lifespan(app: FastAPI):
     # Cases are now stored in PostgreSQL - no JSON file to reload
 
     # Background task: clean up orphaned chunk upload cache entries
-    cleanup_task = asyncio.create_task(_cleanup_stale_chunks())
+    cleanup_task = asyncio.create_task(_cleanup_stale_chunks(), name="upload-chunk-cleanup")
     platform_update_task = (
-        asyncio.create_task(platform_update_service.poll_forever())
+        asyncio.create_task(platform_update_service.poll_forever(), name="platform-update-poll")
         if platform_update_service.enabled
         else None
     )
@@ -128,16 +133,16 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    recovery_task.cancel()
-    identity_graph_task.cancel()
-    financial_batches_task.cancel()
-    cleanup_task.cancel()
-    run_reaper_task.cancel()
-    if platform_update_task:
-        platform_update_task.cancel()
-
-    # Finish atomic statement/graph units before closing their clients.
-    await asyncio.gather(recovery_task, identity_graph_task, financial_batches_task, return_exceptions=True)
+    # Cancel the background loops and give in-flight atomic statement/graph
+    # units a bounded time to finish before their clients close. A unit still
+    # inside its worker thread after that is abandoned: its transaction rolls
+    # back when the process ends, and its durable record (leased batch,
+    # pending recovery item, revisioned graph sweep) resumes on the next start.
+    await process_shutdown.stop_background_tasks(
+        [recovery_task, identity_graph_task, financial_batches_task,
+         cleanup_task, run_reaper_task, platform_update_task],
+        timeout=process_shutdown.BACKGROUND_STOP_SECONDS,
+    )
 
     # Stop job status subscriber
     try:
