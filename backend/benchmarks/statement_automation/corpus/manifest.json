@@ -2394,8 +2394,4414 @@
    ],
    "sha256": "7f25b271c50b993ccc1349acf83905f100f78ca200c2e5f786699e27cb8ad9c5",
    "size": 54777
+  },
+  {
+   "filename": "capital-one-2024-10-clean.pdf",
+   "mode": "digital",
+   "pages": 1,
+   "periods": [
+    {
+     "account": "4821",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": 54913,
+     "currency": "USD",
+     "defects": [],
+     "expected": "auto",
+     "family": "capital-one-card",
+     "holder": "EXAMPLE CARDHOLDER",
+     "holder_printed": true,
+     "id": "capital-one-2024-10-clean.pdf#1",
+     "institution": "Capital One",
+     "notes": "",
+     "opening_minor": 51230,
+     "period_end": "2024-10-15",
+     "period_start": "2024-09-16",
+     "rows": [
+      {
+       "amount_minor": 2512,
+       "date": "2024-09-19",
+       "description": "EXAMPLE GROCERY 1A",
+       "direction": "debit",
+       "posted_date": "2024-09-20"
+      },
+      {
+       "amount_minor": 4000,
+       "date": "2024-09-25",
+       "description": "CAPITAL ONE AUTOPAY PYMT",
+       "direction": "credit",
+       "posted_date": "2024-09-26"
+      },
+      {
+       "amount_minor": 3871,
+       "date": "2024-09-28",
+       "description": "EXAMPLE FUEL STATION 1B",
+       "direction": "debit",
+       "posted_date": "2024-09-29"
+      },
+      {
+       "amount_minor": 1300,
+       "date": "2024-10-06",
+       "description": "EXAMPLE PHARMACY 1C",
+       "direction": "debit",
+       "posted_date": "2024-10-07"
+      }
+     ],
+     "start_printed": true
+    }
+   ],
+   "sha256": "289f0b70ca255670fe509bfb618cee6ef72f01749dfe2b33343b6ea0428b1139",
+   "size": 11698
+  },
+  {
+   "filename": "capital-one-2024-11-two-pages.pdf",
+   "mode": "digital",
+   "pages": 2,
+   "periods": [
+    {
+     "account": "4821",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": 64243,
+     "currency": "USD",
+     "defects": [
+      "multi_page"
+     ],
+     "expected": "auto",
+     "family": "capital-one-card",
+     "holder": "EXAMPLE CARDHOLDER",
+     "holder_printed": true,
+     "id": "capital-one-2024-11-two-pages.pdf#1",
+     "institution": "Capital One",
+     "notes": "",
+     "opening_minor": 54913,
+     "period_end": "2024-11-15",
+     "period_start": "2024-10-16",
+     "rows": [
+      {
+       "amount_minor": 2513,
+       "date": "2024-10-19",
+       "description": "EXAMPLE GROCERY 2A",
+       "direction": "debit",
+       "posted_date": "2024-10-20"
+      },
+      {
+       "amount_minor": 4000,
+       "date": "2024-10-25",
+       "description": "CAPITAL ONE AUTOPAY PYMT",
+       "direction": "credit",
+       "posted_date": "2024-10-26"
+      },
+      {
+       "amount_minor": 3872,
+       "date": "2024-10-28",
+       "description": "EXAMPLE FUEL STATION 2B",
+       "direction": "debit",
+       "posted_date": "2024-10-29"
+      },
+      {
+       "amount_minor": 1301,
+       "date": "2024-11-05",
+       "description": "EXAMPLE PHARMACY 2C",
+       "direction": "debit",
+       "posted_date": "2024-11-06"
+      },
+      {
+       "amount_minor": 5644,
+       "date": "2024-11-09",
+       "description": "EXAMPLE HARDWARE 2D",
+       "direction": "debit",
+       "posted_date": "2024-11-10"
+      }
+     ],
+     "start_printed": true
+    }
+   ],
+   "sha256": "b560261f7cb8661255cb04c3bea0c8998383b3e9025303e1747c74b846f1705f",
+   "size": 13374
+  },
+  {
+   "filename": "capital-one-2024-12-missing-page-2.pdf",
+   "missing_pages": [
+    2
+   ],
+   "mode": "digital",
+   "pages": 1,
+   "periods": [
+    {
+     "account": "4821",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": 75642,
+     "currency": "USD",
+     "defects": [
+      "missing_page"
+     ],
+     "expected": "hold",
+     "family": "capital-one-card",
+     "holder": "EXAMPLE CARDHOLDER",
+     "holder_printed": true,
+     "id": "capital-one-2024-12-missing-page-2.pdf#1",
+     "institution": "Capital One",
+     "notes": "",
+     "opening_minor": 64243,
+     "period_end": "2024-12-15",
+     "period_start": "2024-11-16",
+     "rows": [
+      {
+       "amount_minor": 2514,
+       "date": "2024-11-19",
+       "description": "EXAMPLE GROCERY 3A",
+       "direction": "debit",
+       "posted_date": "2024-11-20"
+      },
+      {
+       "amount_minor": 4000,
+       "date": "2024-11-25",
+       "description": "CAPITAL ONE AUTOPAY PYMT",
+       "direction": "credit",
+       "posted_date": "2024-11-26"
+      },
+      {
+       "amount_minor": 3873,
+       "date": "2024-11-28",
+       "description": "EXAMPLE FUEL STATION 3B",
+       "direction": "debit",
+       "posted_date": "2024-11-29"
+      },
+      {
+       "amount_minor": 1302,
+       "date": "2024-12-06",
+       "description": "EXAMPLE PHARMACY 3C",
+       "direction": "debit",
+       "posted_date": "2024-12-07"
+      },
+      {
+       "amount_minor": 7710,
+       "date": "2024-12-10",
+       "description": "EXAMPLE HARDWARE 3D",
+       "direction": "debit",
+       "posted_date": "2024-12-11"
+      }
+     ],
+     "start_printed": true
+    }
+   ],
+   "sha256": "f1a33cf9b46bdbe68074258b412e3353cef9bae0274a51f099c4bef51cff8366",
+   "size": 9060
+  },
+  {
+   "filename": "capital-one-2025-01-ocr-amount-digit.pdf",
+   "mode": "scan_text_layer",
+   "pages": 1,
+   "periods": [
+    {
+     "account": "4821",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": 79334,
+     "currency": "USD",
+     "defects": [
+      "ocr_amount_digit"
+     ],
+     "expected": "auto",
+     "family": "capital-one-card",
+     "holder": "EXAMPLE CARDHOLDER",
+     "holder_printed": true,
+     "id": "capital-one-2025-01-ocr-amount-digit.pdf#1",
+     "institution": "Capital One",
+     "notes": "",
+     "opening_minor": 75642,
+     "period_end": "2025-01-15",
+     "period_start": "2024-12-16",
+     "rows": [
+      {
+       "amount_minor": 2515,
+       "date": "2024-12-19",
+       "description": "EXAMPLE GROCERY 4A",
+       "direction": "debit",
+       "posted_date": "2024-12-20"
+      },
+      {
+       "amount_minor": 4000,
+       "date": "2024-12-25",
+       "description": "CAPITAL ONE AUTOPAY PYMT",
+       "direction": "credit",
+       "posted_date": "2024-12-26"
+      },
+      {
+       "amount_minor": 3874,
+       "date": "2024-12-28",
+       "description": "EXAMPLE FUEL STATION 4B",
+       "direction": "debit",
+       "posted_date": "2024-12-29"
+      },
+      {
+       "amount_minor": 1303,
+       "date": "2025-01-05",
+       "description": "EXAMPLE PHARMACY 4C",
+       "direction": "debit",
+       "posted_date": "2025-01-06"
+      }
+     ],
+     "start_printed": true
+    }
+   ],
+   "sha256": "8a2395c47310a2b2d530d044d9d4b7a51a41e90474d0296197e1c1089cacd995",
+   "size": 91839
+  },
+  {
+   "filename": "capital-one-2025-02-credit-balance.pdf",
+   "mode": "digital",
+   "pages": 1,
+   "periods": [
+    {
+     "account": "4821",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": -2500,
+     "currency": "USD",
+     "defects": [
+      "credit_balance"
+     ],
+     "expected": "auto",
+     "family": "capital-one-card",
+     "holder": "EXAMPLE CARDHOLDER",
+     "holder_printed": true,
+     "id": "capital-one-2025-02-credit-balance.pdf#1",
+     "institution": "Capital One",
+     "notes": "",
+     "opening_minor": 79334,
+     "period_end": "2025-02-15",
+     "period_start": "2025-01-16",
+     "rows": [
+      {
+       "amount_minor": 1830,
+       "date": "2025-01-20",
+       "description": "EXAMPLE BOOKSHOP 5A",
+       "direction": "debit",
+       "posted_date": "2025-01-21"
+      },
+      {
+       "amount_minor": 83664,
+       "date": "2025-01-26",
+       "description": "CAPITAL ONE MOBILE PYMT",
+       "direction": "credit",
+       "posted_date": "2025-01-27"
+      }
+     ],
+     "start_printed": true
+    }
+   ],
+   "sha256": "ba7fd21b03a61b7e7fbfbad321fc337e3e1f8121acb00f05267f802b22280896",
+   "size": 10354
+  },
+  {
+   "degrade": {
+    "dpi": 150,
+    "jpeg": 35,
+    "noise": 6
+   },
+   "filename": "capital-one-2025-03-scan-150dpi-jpeg.pdf",
+   "mode": "image_only",
+   "pages": 1,
+   "periods": [
+    {
+     "account": "4821",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": 1198,
+     "currency": "USD",
+     "defects": [
+      "image_only_scan",
+      "low_dpi",
+      "jpeg_noise"
+     ],
+     "expected": "auto",
+     "family": "capital-one-card",
+     "holder": "EXAMPLE CARDHOLDER",
+     "holder_printed": true,
+     "id": "capital-one-2025-03-scan-150dpi-jpeg.pdf#1",
+     "institution": "Capital One",
+     "notes": "",
+     "opening_minor": -2500,
+     "period_end": "2025-03-15",
+     "period_start": "2025-02-16",
+     "rows": [
+      {
+       "amount_minor": 2517,
+       "date": "2025-02-19",
+       "description": "EXAMPLE GROCERY 6A",
+       "direction": "debit",
+       "posted_date": "2025-02-20"
+      },
+      {
+       "amount_minor": 4000,
+       "date": "2025-02-25",
+       "description": "CAPITAL ONE AUTOPAY PYMT",
+       "direction": "credit",
+       "posted_date": "2025-02-26"
+      },
+      {
+       "amount_minor": 3876,
+       "date": "2025-02-28",
+       "description": "EXAMPLE FUEL STATION 6B",
+       "direction": "debit",
+       "posted_date": "2025-03-01"
+      },
+      {
+       "amount_minor": 1305,
+       "date": "2025-03-08",
+       "description": "EXAMPLE PHARMACY 6C",
+       "direction": "debit",
+       "posted_date": "2025-03-09"
+      }
+     ],
+     "start_printed": true
+    }
+   ],
+   "sha256": "4eedcfa2b052825f957d1729cac09911e69fa353c5f57a71b2772a15b399a6d8",
+   "size": 70212
+  },
+  {
+   "filename": "capital-one-2025-04-scan-image-only.pdf",
+   "mode": "image_only",
+   "pages": 1,
+   "periods": [
+    {
+     "account": "4821",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": 4899,
+     "currency": "USD",
+     "defects": [
+      "image_only_scan"
+     ],
+     "expected": "auto",
+     "family": "capital-one-card",
+     "holder": "EXAMPLE CARDHOLDER",
+     "holder_printed": true,
+     "id": "capital-one-2025-04-scan-image-only.pdf#1",
+     "institution": "Capital One",
+     "notes": "",
+     "opening_minor": 1198,
+     "period_end": "2025-04-15",
+     "period_start": "2025-03-16",
+     "rows": [
+      {
+       "amount_minor": 2518,
+       "date": "2025-03-19",
+       "description": "EXAMPLE GROCERY 7A",
+       "direction": "debit",
+       "posted_date": "2025-03-20"
+      },
+      {
+       "amount_minor": 4000,
+       "date": "2025-03-25",
+       "description": "CAPITAL ONE AUTOPAY PYMT",
+       "direction": "credit",
+       "posted_date": "2025-03-26"
+      },
+      {
+       "amount_minor": 3877,
+       "date": "2025-03-28",
+       "description": "EXAMPLE FUEL STATION 7B",
+       "direction": "debit",
+       "posted_date": "2025-03-29"
+      },
+      {
+       "amount_minor": 1306,
+       "date": "2025-04-05",
+       "description": "EXAMPLE PHARMACY 7C",
+       "direction": "debit",
+       "posted_date": "2025-04-06"
+      }
+     ],
+     "start_printed": true
+    }
+   ],
+   "sha256": "1386e77a0a2517f8959828adae8e4b0fedc97e53dfa9044a4e1e25c727974b41",
+   "size": 79261
+  },
+  {
+   "filename": "bbva-2024-03-clean.pdf",
+   "mode": "digital",
+   "pages": 2,
+   "periods": [
+    {
+     "account": "0198765432",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": 25244586,
+     "currency": "MXN",
+     "defects": [],
+     "expected": "auto",
+     "family": "bbva-mexico",
+     "holder": "COMERCIALIZADORA EJEMPLO SA DE CV",
+     "holder_printed": true,
+     "id": "bbva-2024-03-clean.pdf#1",
+     "institution": "BBVA Mexico",
+     "notes": "",
+     "opening_minor": 25000000,
+     "period_end": "2024-03-31",
+     "period_start": "2024-03-01",
+     "rows": [
+      {
+       "amount_minor": 4503000,
+       "balance_after": 29503000,
+       "date": "2024-03-02",
+       "description": "T20 SPEI RECIBIDO CLIENTE 3A",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 1275053,
+       "balance_after": 28227947,
+       "date": "2024-03-05",
+       "description": "T17 SPEI ENVIADO PROVEEDOR 3B",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 2900,
+       "balance_after": 28225047,
+       "date": "2024-03-09",
+       "description": "S39 SERV BANCA INTERNET OPS",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 464,
+       "balance_after": 28224583,
+       "date": "2024-03-09",
+       "description": "S40 IVA COM SERV BCA INTERNET",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 860000,
+       "balance_after": 27364583,
+       "date": "2024-03-14",
+       "description": "N06 PAGO CUENTA DE TERCERO 3C",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 1210003,
+       "balance_after": 28574586,
+       "date": "2024-03-21",
+       "description": "T20 SPEI RECIBIDO CLIENTE 3D",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 3330000,
+       "balance_after": 25244586,
+       "date": "2024-03-27",
+       "description": "T17 SPEI ENVIADO NOMINA 3E",
+       "direction": "debit"
+      }
+     ],
+     "start_printed": true
+    }
+   ],
+   "sha256": "b0adf151d41b4e437f88c23df329930b804a0abb395176c0c7ccce85db6b75b8",
+   "size": 19579
+  },
+  {
+   "filename": "bbva-2024-04-scan.pdf",
+   "mode": "scan_text_layer",
+   "pages": 2,
+   "periods": [
+    {
+     "account": "0198765432",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": 25490172,
+     "currency": "MXN",
+     "defects": [
+      "clean_scan_text_layer"
+     ],
+     "expected": "auto",
+     "family": "bbva-mexico",
+     "holder": "COMERCIALIZADORA EJEMPLO SA DE CV",
+     "holder_printed": true,
+     "id": "bbva-2024-04-scan.pdf#1",
+     "institution": "BBVA Mexico",
+     "notes": "",
+     "opening_minor": 25244586,
+     "period_end": "2024-04-30",
+     "period_start": "2024-04-01",
+     "rows": [
+      {
+       "amount_minor": 4504000,
+       "balance_after": 29748586,
+       "date": "2024-04-02",
+       "description": "T20 SPEI RECIBIDO CLIENTE 4A",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 1275054,
+       "balance_after": 28473532,
+       "date": "2024-04-05",
+       "description": "T17 SPEI ENVIADO PROVEEDOR 4B",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 2900,
+       "balance_after": 28470632,
+       "date": "2024-04-09",
+       "description": "S39 SERV BANCA INTERNET OPS",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 464,
+       "balance_after": 28470168,
+       "date": "2024-04-09",
+       "description": "S40 IVA COM SERV BCA INTERNET",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 860000,
+       "balance_after": 27610168,
+       "date": "2024-04-14",
+       "description": "N06 PAGO CUENTA DE TERCERO 4C",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 1210004,
+       "balance_after": 28820172,
+       "date": "2024-04-21",
+       "description": "T20 SPEI RECIBIDO CLIENTE 4D",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 3330000,
+       "balance_after": 25490172,
+       "date": "2024-04-27",
+       "description": "T17 SPEI ENVIADO NOMINA 4E",
+       "direction": "debit"
+      }
+     ],
+     "start_printed": true
+    }
+   ],
+   "sha256": "bbc9a59c29386bed4f09e23c3533e3557172d22807f929681deff9cc98d84cf1",
+   "size": 171282
+  },
+  {
+   "filename": "bbva-2024-05-missing-page-2.pdf",
+   "missing_pages": [
+    2
+   ],
+   "mode": "digital",
+   "pages": 2,
+   "periods": [
+    {
+     "account": "0198765432",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": 25736758,
+     "currency": "MXN",
+     "defects": [
+      "missing_page"
+     ],
+     "expected": "hold",
+     "family": "bbva-mexico",
+     "holder": "COMERCIALIZADORA EJEMPLO SA DE CV",
+     "holder_printed": true,
+     "id": "bbva-2024-05-missing-page-2.pdf#1",
+     "institution": "BBVA Mexico",
+     "notes": "",
+     "opening_minor": 25490172,
+     "period_end": "2024-05-31",
+     "period_start": "2024-05-01",
+     "rows": [
+      {
+       "amount_minor": 4505000,
+       "balance_after": 29995172,
+       "date": "2024-05-02",
+       "description": "T20 SPEI RECIBIDO CLIENTE 5A",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 1275055,
+       "balance_after": 28720117,
+       "date": "2024-05-05",
+       "description": "T17 SPEI ENVIADO PROVEEDOR 5B",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 2900,
+       "balance_after": 28717217,
+       "date": "2024-05-09",
+       "description": "S39 SERV BANCA INTERNET OPS",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 464,
+       "balance_after": 28716753,
+       "date": "2024-05-09",
+       "description": "S40 IVA COM SERV BCA INTERNET",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 860000,
+       "balance_after": 27856753,
+       "date": "2024-05-14",
+       "description": "N06 PAGO CUENTA DE TERCERO 5C",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 1210005,
+       "balance_after": 29066758,
+       "date": "2024-05-21",
+       "description": "T20 SPEI RECIBIDO CLIENTE 5D",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 3330000,
+       "balance_after": 25736758,
+       "date": "2024-05-27",
+       "description": "T17 SPEI ENVIADO NOMINA 5E",
+       "direction": "debit"
+      }
+     ],
+     "start_printed": true
+    }
+   ],
+   "sha256": "f24caae489a4a4237454b93faa7922d959e865b4ec307d4a5a1f2371e1e0d69a",
+   "size": 14592
+  },
+  {
+   "filename": "bbva-2024-06-ruled.pdf",
+   "mode": "digital",
+   "pages": 2,
+   "periods": [
+    {
+     "account": "0198765432",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": 25984344,
+     "currency": "MXN",
+     "defects": [
+      "ruled_pdf"
+     ],
+     "expected": "auto",
+     "family": "bbva-mexico",
+     "holder": "COMERCIALIZADORA EJEMPLO SA DE CV",
+     "holder_printed": true,
+     "id": "bbva-2024-06-ruled.pdf#1",
+     "institution": "BBVA Mexico",
+     "notes": "",
+     "opening_minor": 25736758,
+     "period_end": "2024-06-30",
+     "period_start": "2024-06-01",
+     "rows": [
+      {
+       "amount_minor": 4506000,
+       "balance_after": 30242758,
+       "date": "2024-06-02",
+       "description": "T20 SPEI RECIBIDO CLIENTE 6A",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 1275056,
+       "balance_after": 28967702,
+       "date": "2024-06-05",
+       "description": "T17 SPEI ENVIADO PROVEEDOR 6B",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 2900,
+       "balance_after": 28964802,
+       "date": "2024-06-09",
+       "description": "S39 SERV BANCA INTERNET OPS",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 464,
+       "balance_after": 28964338,
+       "date": "2024-06-09",
+       "description": "S40 IVA COM SERV BCA INTERNET",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 860000,
+       "balance_after": 28104338,
+       "date": "2024-06-14",
+       "description": "N06 PAGO CUENTA DE TERCERO 6C",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 1210006,
+       "balance_after": 29314344,
+       "date": "2024-06-21",
+       "description": "T20 SPEI RECIBIDO CLIENTE 6D",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 3330000,
+       "balance_after": 25984344,
+       "date": "2024-06-27",
+       "description": "T17 SPEI ENVIADO NOMINA 6E",
+       "direction": "debit"
+      }
+     ],
+     "start_printed": true
+    }
+   ],
+   "ruled": true,
+   "sha256": "82ac46e25db5188e23aed93fb553a94fb05e50adea23668dfafe44108642a04a",
+   "size": 22115
+  },
+  {
+   "filename": "bbva-2024-07-image-only.pdf",
+   "mode": "image_only",
+   "pages": 2,
+   "periods": [
+    {
+     "account": "0198765432",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": 26232930,
+     "currency": "MXN",
+     "defects": [
+      "image_only_scan"
+     ],
+     "expected": "auto",
+     "family": "bbva-mexico",
+     "holder": "COMERCIALIZADORA EJEMPLO SA DE CV",
+     "holder_printed": true,
+     "id": "bbva-2024-07-image-only.pdf#1",
+     "institution": "BBVA Mexico",
+     "notes": "",
+     "opening_minor": 25984344,
+     "period_end": "2024-07-31",
+     "period_start": "2024-07-01",
+     "rows": [
+      {
+       "amount_minor": 4507000,
+       "balance_after": 30491344,
+       "date": "2024-07-02",
+       "description": "T20 SPEI RECIBIDO CLIENTE 7A",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 1275057,
+       "balance_after": 29216287,
+       "date": "2024-07-05",
+       "description": "T17 SPEI ENVIADO PROVEEDOR 7B",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 2900,
+       "balance_after": 29213387,
+       "date": "2024-07-09",
+       "description": "S39 SERV BANCA INTERNET OPS",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 464,
+       "balance_after": 29212923,
+       "date": "2024-07-09",
+       "description": "S40 IVA COM SERV BCA INTERNET",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 860000,
+       "balance_after": 28352923,
+       "date": "2024-07-14",
+       "description": "N06 PAGO CUENTA DE TERCERO 7C",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 1210007,
+       "balance_after": 29562930,
+       "date": "2024-07-21",
+       "description": "T20 SPEI RECIBIDO CLIENTE 7D",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 3330000,
+       "balance_after": 26232930,
+       "date": "2024-07-27",
+       "description": "T17 SPEI ENVIADO NOMINA 7E",
+       "direction": "debit"
+      }
+     ],
+     "start_printed": true
+    }
+   ],
+   "sha256": "e44619b17aa80baa9f5e2622882012cacd806ad6c89723170be14a086cff691d",
+   "size": 150226
+  },
+  {
+   "degrade": {
+    "skew": 1.2
+   },
+   "filename": "bbva-2024-08-scan-skewed.pdf",
+   "mode": "image_only",
+   "pages": 2,
+   "periods": [
+    {
+     "account": "0198765432",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": 26482516,
+     "currency": "MXN",
+     "defects": [
+      "image_only_scan",
+      "skew"
+     ],
+     "expected": "auto",
+     "family": "bbva-mexico",
+     "holder": "COMERCIALIZADORA EJEMPLO SA DE CV",
+     "holder_printed": true,
+     "id": "bbva-2024-08-scan-skewed.pdf#1",
+     "institution": "BBVA Mexico",
+     "notes": "",
+     "opening_minor": 26232930,
+     "period_end": "2024-08-31",
+     "period_start": "2024-08-01",
+     "rows": [
+      {
+       "amount_minor": 4508000,
+       "balance_after": 30740930,
+       "date": "2024-08-02",
+       "description": "T20 SPEI RECIBIDO CLIENTE 8A",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 1275058,
+       "balance_after": 29465872,
+       "date": "2024-08-05",
+       "description": "T17 SPEI ENVIADO PROVEEDOR 8B",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 2900,
+       "balance_after": 29462972,
+       "date": "2024-08-09",
+       "description": "S39 SERV BANCA INTERNET OPS",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 464,
+       "balance_after": 29462508,
+       "date": "2024-08-09",
+       "description": "S40 IVA COM SERV BCA INTERNET",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 860000,
+       "balance_after": 28602508,
+       "date": "2024-08-14",
+       "description": "N06 PAGO CUENTA DE TERCERO 8C",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 1210008,
+       "balance_after": 29812516,
+       "date": "2024-08-21",
+       "description": "T20 SPEI RECIBIDO CLIENTE 8D",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 3330000,
+       "balance_after": 26482516,
+       "date": "2024-08-27",
+       "description": "T17 SPEI ENVIADO NOMINA 8E",
+       "direction": "debit"
+      }
+     ],
+     "start_printed": true
+    }
+   ],
+   "sha256": "20ff78f81b8df829507f0f354241889c91bdfa68cecf143cde9f422a8eca247c",
+   "size": 261668
+  },
+  {
+   "filename": "bbva-2024-09-ocr-amount-digit.pdf",
+   "mode": "scan_text_layer",
+   "pages": 2,
+   "periods": [
+    {
+     "account": "0198765432",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": 26733102,
+     "currency": "MXN",
+     "defects": [
+      "ocr_amount_digit"
+     ],
+     "expected": "auto",
+     "family": "bbva-mexico",
+     "holder": "COMERCIALIZADORA EJEMPLO SA DE CV",
+     "holder_printed": true,
+     "id": "bbva-2024-09-ocr-amount-digit.pdf#1",
+     "institution": "BBVA Mexico",
+     "notes": "",
+     "opening_minor": 26482516,
+     "period_end": "2024-09-30",
+     "period_start": "2024-09-01",
+     "rows": [
+      {
+       "amount_minor": 4509000,
+       "balance_after": 30991516,
+       "date": "2024-09-02",
+       "description": "T20 SPEI RECIBIDO CLIENTE 9A",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 1275059,
+       "balance_after": 29716457,
+       "date": "2024-09-05",
+       "description": "T17 SPEI ENVIADO PROVEEDOR 9B",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 2900,
+       "balance_after": 29713557,
+       "date": "2024-09-09",
+       "description": "S39 SERV BANCA INTERNET OPS",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 464,
+       "balance_after": 29713093,
+       "date": "2024-09-09",
+       "description": "S40 IVA COM SERV BCA INTERNET",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 860000,
+       "balance_after": 28853093,
+       "date": "2024-09-14",
+       "description": "N06 PAGO CUENTA DE TERCERO 9C",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 1210009,
+       "balance_after": 30063102,
+       "date": "2024-09-21",
+       "description": "T20 SPEI RECIBIDO CLIENTE 9D",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 3330000,
+       "balance_after": 26733102,
+       "date": "2024-09-27",
+       "description": "T17 SPEI ENVIADO NOMINA 9E",
+       "direction": "debit"
+      }
+     ],
+     "start_printed": true
+    }
+   ],
+   "sha256": "05b006035d657483af3180ce782d3a2050f5d62834f55642174344674e5d38e7",
+   "size": 172709
+  },
+  {
+   "filename": "scotiabank-2024-03-zero-activity.pdf",
+   "mode": "digital",
+   "pages": 3,
+   "periods": [
+    {
+     "account": "00087654321",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": 1234567,
+     "currency": "MXN",
+     "defects": [
+      "no_activity_source_proven"
+     ],
+     "expected": "auto",
+     "family": "scotiabank-mexico",
+     "holder": "SERVICIOS EJEMPLO SA DE CV",
+     "holder_printed": true,
+     "id": "scotiabank-2024-03-zero-activity.pdf#1",
+     "institution": "Scotiabank Mexico",
+     "notes": "",
+     "opening_minor": 1234567,
+     "period_end": "2024-03-31",
+     "period_start": "2024-03-01",
+     "rows": [],
+     "start_printed": true
+    }
+   ],
+   "sha256": "c09d0a950cb3a0b5f60c62fb1a7ef5fd5af3059d2c0b12b57aa6f4005839dad5",
+   "size": 10413
+  },
+  {
+   "filename": "scotiabank-2024-04-zero-activity-image-only.pdf",
+   "mode": "image_only",
+   "pages": 3,
+   "periods": [
+    {
+     "account": "00087654321",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": 1234567,
+     "currency": "MXN",
+     "defects": [
+      "no_activity_source_proven",
+      "image_only_scan"
+     ],
+     "expected": "auto",
+     "family": "scotiabank-mexico",
+     "holder": "SERVICIOS EJEMPLO SA DE CV",
+     "holder_printed": true,
+     "id": "scotiabank-2024-04-zero-activity-image-only.pdf#1",
+     "institution": "Scotiabank Mexico",
+     "notes": "",
+     "opening_minor": 1234567,
+     "period_end": "2024-04-30",
+     "period_start": "2024-04-01",
+     "rows": [],
+     "start_printed": true
+    }
+   ],
+   "sha256": "b98d22ac375d380a3ce94724b8598df763576aff43a9698c79abf7f242a9825f",
+   "size": 81738
+  },
+  {
+   "degrade": {
+    "faint": 0.45
+   },
+   "filename": "scotiabank-2024-05-zero-activity-faint-scan.pdf",
+   "mode": "image_only",
+   "pages": 3,
+   "periods": [
+    {
+     "account": "00087654321",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": 1234567,
+     "currency": "MXN",
+     "defects": [
+      "no_activity_source_proven",
+      "image_only_scan",
+      "faint_print"
+     ],
+     "expected": "auto",
+     "family": "scotiabank-mexico",
+     "holder": "SERVICIOS EJEMPLO SA DE CV",
+     "holder_printed": true,
+     "id": "scotiabank-2024-05-zero-activity-faint-scan.pdf#1",
+     "institution": "Scotiabank Mexico",
+     "notes": "",
+     "opening_minor": 1234567,
+     "period_end": "2024-05-31",
+     "period_start": "2024-05-01",
+     "rows": [],
+     "start_printed": true
+    }
+   ],
+   "sha256": "e2826f4e0916ed4d09ab6ed1460e4f27dad6ada58a42870b9231ac35bbd67ebf",
+   "size": 76385
+  },
+  {
+   "filename": "scotiabank-2024-06-with-movements.pdf",
+   "mode": "digital",
+   "pages": 3,
+   "periods": [
+    {
+     "account": "00087654321",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": 1999567,
+     "currency": "MXN",
+     "defects": [
+      "layout_not_supported"
+     ],
+     "expected": "auto",
+     "family": "scotiabank-mexico",
+     "holder": "SERVICIOS EJEMPLO SA DE CV",
+     "holder_printed": true,
+     "id": "scotiabank-2024-06-with-movements.pdf#1",
+     "institution": "Scotiabank Mexico",
+     "notes": "",
+     "opening_minor": 1234567,
+     "period_end": "2024-06-30",
+     "period_start": "2024-06-01",
+     "rows": [
+      {
+       "amount_minor": 3500000,
+       "balance_after": 4734567,
+       "date": "2024-06-04",
+       "description": "TRANSF SPEI RECIBIDA EJEMPLO",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 1820000,
+       "balance_after": 2914567,
+       "date": "2024-06-11",
+       "description": "PAGO PROVEEDOR EJEMPLO",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 15000,
+       "balance_after": 2899567,
+       "date": "2024-06-18",
+       "description": "COMISION MANEJO DE CUENTA",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 900000,
+       "balance_after": 1999567,
+       "date": "2024-06-26",
+       "description": "TRANSF SPEI ENVIADA EJEMPLO",
+       "direction": "debit"
+      }
+     ],
+     "start_printed": true
+    }
+   ],
+   "sha256": "f64a7ae5efc4d4014ef3cff838a9f38259f66db7527f9d33f05cdda0c7fb10fc",
+   "size": 15074
+  },
+  {
+   "filename": "monex-2024-03-two-currencies-zero-activity.pdf",
+   "mode": "digital",
+   "pages": 6,
+   "periods": [
+    {
+     "account": "7712345",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": 3214550,
+     "currency": "MXN",
+     "defects": [
+      "no_activity_source_proven"
+     ],
+     "expected": "auto",
+     "family": "monex-mexico",
+     "holder": "IMPORTADORA EJEMPLO SA DE CV",
+     "holder_printed": true,
+     "id": "monex-2024-03-two-currencies-zero-activity.pdf#1",
+     "institution": "Monex",
+     "notes": "currency section Peso Mexicano",
+     "opening_minor": 3214550,
+     "period_end": "2024-03-31",
+     "period_start": "2024-03-01",
+     "rows": [],
+     "start_printed": true
+    },
+    {
+     "account": "7712345",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": 7900,
+     "currency": "USD",
+     "defects": [
+      "no_activity_source_proven"
+     ],
+     "expected": "auto",
+     "family": "monex-mexico",
+     "holder": "IMPORTADORA EJEMPLO SA DE CV",
+     "holder_printed": true,
+     "id": "monex-2024-03-two-currencies-zero-activity.pdf#2",
+     "institution": "Monex",
+     "notes": "currency section Dolar Americano",
+     "opening_minor": 7900,
+     "period_end": "2024-03-31",
+     "period_start": "2024-03-01",
+     "rows": [],
+     "start_printed": true
+    }
+   ],
+   "sha256": "51e3f2cb8215bac986e8c799490a230b8f5c7bdb89417c478b343e6e6d6788bd",
+   "size": 8771
+  },
+  {
+   "filename": "monex-2024-04-peso-movements.pdf",
+   "mode": "digital",
+   "pages": 7,
+   "periods": [
+    {
+     "account": "7712345",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": 2464550,
+     "currency": "MXN",
+     "defects": [
+      "layout_not_supported"
+     ],
+     "expected": "auto",
+     "family": "monex-mexico",
+     "holder": "IMPORTADORA EJEMPLO SA DE CV",
+     "holder_printed": true,
+     "id": "monex-2024-04-peso-movements.pdf#1",
+     "institution": "Monex",
+     "notes": "currency section Peso Mexicano",
+     "opening_minor": 3214550,
+     "period_end": "2024-04-30",
+     "period_start": "2024-04-01",
+     "rows": [
+      {
+       "amount_minor": 1500000,
+       "balance_after": 4714550,
+       "date": "2024-04-08",
+       "description": "TRASPASO RECIBIDO EJEMPLO",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 2250000,
+       "balance_after": 2464550,
+       "date": "2024-04-19",
+       "description": "PAGO INTERNACIONAL EJEMPLO",
+       "direction": "debit"
+      }
+     ],
+     "start_printed": true
+    },
+    {
+     "account": "7712345",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": 7900,
+     "currency": "USD",
+     "defects": [
+      "no_activity_source_proven"
+     ],
+     "expected": "auto",
+     "family": "monex-mexico",
+     "holder": "IMPORTADORA EJEMPLO SA DE CV",
+     "holder_printed": true,
+     "id": "monex-2024-04-peso-movements.pdf#2",
+     "institution": "Monex",
+     "notes": "currency section Dolar Americano",
+     "opening_minor": 7900,
+     "period_end": "2024-04-30",
+     "period_start": "2024-04-01",
+     "rows": [],
+     "start_printed": true
+    }
+   ],
+   "sha256": "1310a1a3da195d7eedfb083538028ad2078337fa5859f245076f61c5986eb776",
+   "size": 11803
+  },
+  {
+   "filename": "kapital-2024-03-two-products.pdf",
+   "mode": "digital",
+   "pages": 2,
+   "periods": [
+    {
+     "account": "128180000000000011",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": 3348840,
+     "currency": "MXN",
+     "defects": [],
+     "expected": "auto",
+     "family": "kapital-mexico",
+     "holder": "DISTRIBUIDORA EJEMPLO",
+     "holder_printed": true,
+     "id": "kapital-2024-03-two-products.pdf#1",
+     "institution": "Kapital",
+     "notes": "CLABE 128180000000000011",
+     "opening_minor": 2500000,
+     "period_end": "2024-03-31",
+     "period_start": "2024-03-01",
+     "rows": [
+      {
+       "amount_minor": 1800000,
+       "balance_after": 4300000,
+       "date": "2024-03-05",
+       "description": "SPEI RECIBIDO CLIENTE EJEMPLO 3",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 1160,
+       "balance_after": 4298840,
+       "date": "2024-03-12",
+       "description": "COMISION POR TIMBRADO FISCAL",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 950000,
+       "balance_after": 3348840,
+       "date": "2024-03-20",
+       "description": "SPEI ENVIADO PROVEEDOR 3",
+       "direction": "debit"
+      }
+     ],
+     "start_printed": true
+    },
+    {
+     "account": "128180000000000024",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": 125000,
+     "currency": "USD",
+     "defects": [
+      "no_activity_source_proven"
+     ],
+     "expected": "auto",
+     "family": "kapital-mexico",
+     "holder": "DISTRIBUIDORA EJEMPLO",
+     "holder_printed": true,
+     "id": "kapital-2024-03-two-products.pdf#2",
+     "institution": "Kapital",
+     "notes": "CLABE 128180000000000024",
+     "opening_minor": 125000,
+     "period_end": "2024-03-31",
+     "period_start": "2024-03-01",
+     "rows": [],
+     "start_printed": true
+    }
+   ],
+   "sha256": "7ffd8dad4494ccb2b2684456338cb673ec5a8e81be85571334cb54fba6102218",
+   "size": 10675
+  },
+  {
+   "filename": "kapital-2024-04-two-products-image-only.pdf",
+   "mode": "image_only",
+   "pages": 2,
+   "periods": [
+    {
+     "account": "128180000000000011",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": 4197680,
+     "currency": "MXN",
+     "defects": [
+      "image_only_scan"
+     ],
+     "expected": "auto",
+     "family": "kapital-mexico",
+     "holder": "DISTRIBUIDORA EJEMPLO",
+     "holder_printed": true,
+     "id": "kapital-2024-04-two-products-image-only.pdf#1",
+     "institution": "Kapital",
+     "notes": "CLABE 128180000000000011",
+     "opening_minor": 3348840,
+     "period_end": "2024-04-30",
+     "period_start": "2024-04-01",
+     "rows": [
+      {
+       "amount_minor": 1800000,
+       "balance_after": 5148840,
+       "date": "2024-04-05",
+       "description": "SPEI RECIBIDO CLIENTE EJEMPLO 4",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 1160,
+       "balance_after": 5147680,
+       "date": "2024-04-12",
+       "description": "COMISION POR TIMBRADO FISCAL",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 950000,
+       "balance_after": 4197680,
+       "date": "2024-04-20",
+       "description": "SPEI ENVIADO PROVEEDOR 4",
+       "direction": "debit"
+      }
+     ],
+     "start_printed": true
+    },
+    {
+     "account": "128180000000000024",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": 125000,
+     "currency": "USD",
+     "defects": [
+      "image_only_scan",
+      "no_activity_source_proven"
+     ],
+     "expected": "auto",
+     "family": "kapital-mexico",
+     "holder": "DISTRIBUIDORA EJEMPLO",
+     "holder_printed": true,
+     "id": "kapital-2024-04-two-products-image-only.pdf#2",
+     "institution": "Kapital",
+     "notes": "CLABE 128180000000000024",
+     "opening_minor": 125000,
+     "period_end": "2024-04-30",
+     "period_start": "2024-04-01",
+     "rows": [],
+     "start_printed": true
+    }
+   ],
+   "sha256": "4f296ea6c8698c543bb9a8396837cb4c10e57936bbc18dd343160722e359d842",
+   "size": 96886
+  },
+  {
+   "filename": "intercam-2024-05-peso-product.pdf",
+   "mode": "digital",
+   "pages": 1,
+   "periods": [
+    {
+     "account": "136180000000000017",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": 3299420,
+     "currency": "MXN",
+     "defects": [],
+     "expected": "auto",
+     "family": "intercam-mexico",
+     "holder": "DISTRIBUIDORA EJEMPLO",
+     "holder_printed": true,
+     "id": "intercam-2024-05-peso-product.pdf#1",
+     "institution": "Intercam",
+     "notes": "CLABE 136180000000000017",
+     "opening_minor": 4400000,
+     "period_end": "2024-05-31",
+     "period_start": "2024-05-01",
+     "rows": [
+      {
+       "amount_minor": 2000000,
+       "balance_after": 6400000,
+       "date": "2024-05-07",
+       "description": "SPEI RECIBIDO EJEMPLO COMERCIAL",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 3100000,
+       "balance_after": 3300000,
+       "date": "2024-05-15",
+       "description": "COMPRA DE DIVISAS EJEMPLO",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 580,
+       "balance_after": 3299420,
+       "date": "2024-05-28",
+       "description": "COMISION SPEI",
+       "direction": "debit"
+      }
+     ],
+     "start_printed": true
+    }
+   ],
+   "sha256": "f6c023ede37cc8a0c512c440f013cf8bddfc2fc72af1088ae23946cd3a698d5e",
+   "size": 9187
+  },
+  {
+   "filename": "santander-2024-03-clean.pdf",
+   "mode": "digital",
+   "pages": 1,
+   "periods": [
+    {
+     "account": "65000123456",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": 2550001,
+     "currency": "MXN",
+     "defects": [],
+     "expected": "auto",
+     "family": "santander-mexico",
+     "holder": "TRANSPORTES EJEMPLO SA DE CV",
+     "holder_printed": true,
+     "id": "santander-2024-03-clean.pdf#1",
+     "institution": "Santander",
+     "notes": "CUENTA SANTANDER PYME 65-00012345-6",
+     "opening_minor": 900000,
+     "period_end": "2024-03-31",
+     "period_start": "2024-03-01",
+     "rows": [
+      {
+       "amount_minor": 1250000,
+       "balance_after": 2150000,
+       "date": "2024-03-02",
+       "description": "DEPOSITO EN EFECTIVO EJEMPLO 3-0",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 211111,
+       "balance_after": 1938889,
+       "date": "2024-03-04",
+       "description": "PAGO TRANSFERENCIA SPEI EJEMPLO 3-1",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 212222,
+       "balance_after": 1726667,
+       "date": "2024-03-06",
+       "description": "CARGO DOMICILIADO EJEMPLO 3-2",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 1253333,
+       "balance_after": 2980000,
+       "date": "2024-03-08",
+       "description": "ABONO TRANSFERENCIA SPEI EJEMPLO 3-3",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 214444,
+       "balance_after": 2765556,
+       "date": "2024-03-10",
+       "description": "COMISION MANEJO DE CUENTA 3-4",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 215555,
+       "balance_after": 2550001,
+       "date": "2024-03-12",
+       "description": "PAGO NOMINA EJEMPLO 3-5",
+       "direction": "debit"
+      }
+     ],
+     "start_printed": true
+    },
+    {
+     "account": "66000123456",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": 5000000,
+     "currency": "MXN",
+     "defects": [
+      "no_activity_source_proven"
+     ],
+     "expected": "auto",
+     "family": "santander-mexico",
+     "holder": "TRANSPORTES EJEMPLO SA DE CV",
+     "holder_printed": true,
+     "id": "santander-2024-03-clean.pdf#2",
+     "institution": "Santander",
+     "notes": "INVERSION CRECIENTE 66-00012345-6",
+     "opening_minor": 5000000,
+     "period_end": "2024-03-31",
+     "period_start": "2024-03-01",
+     "rows": [],
+     "start_printed": true
+    }
+   ],
+   "sha256": "4012561d8d1238da301d4a3e976df244eed073f3c0c09ac0bc29ad38749f9adc",
+   "size": 12251
+  },
+  {
+   "filename": "santander-2024-04-continued.pdf",
+   "mode": "digital",
+   "pages": 2,
+   "periods": [
+    {
+     "account": "65000123456",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": 5020003,
+     "currency": "MXN",
+     "defects": [
+      "multi_page"
+     ],
+     "expected": "auto",
+     "family": "santander-mexico",
+     "holder": "TRANSPORTES EJEMPLO SA DE CV",
+     "holder_printed": true,
+     "id": "santander-2024-04-continued.pdf#1",
+     "institution": "Santander",
+     "notes": "CUENTA SANTANDER PYME 65-00012345-6",
+     "opening_minor": 2550001,
+     "period_end": "2024-04-30",
+     "period_start": "2024-04-01",
+     "rows": [
+      {
+       "amount_minor": 1250000,
+       "balance_after": 3800001,
+       "date": "2024-04-02",
+       "description": "DEPOSITO EN EFECTIVO EJEMPLO 4-0",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 211111,
+       "balance_after": 3588890,
+       "date": "2024-04-04",
+       "description": "PAGO TRANSFERENCIA SPEI EJEMPLO 4-1",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 212222,
+       "balance_after": 3376668,
+       "date": "2024-04-06",
+       "description": "CARGO DOMICILIADO EJEMPLO 4-2",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 1253333,
+       "balance_after": 4630001,
+       "date": "2024-04-08",
+       "description": "ABONO TRANSFERENCIA SPEI EJEMPLO 4-3",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 214444,
+       "balance_after": 4415557,
+       "date": "2024-04-10",
+       "description": "COMISION MANEJO DE CUENTA 4-4",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 215555,
+       "balance_after": 4200002,
+       "date": "2024-04-12",
+       "description": "PAGO NOMINA EJEMPLO 4-5",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 1256666,
+       "balance_after": 5456668,
+       "date": "2024-04-14",
+       "description": "DEPOSITO EN EFECTIVO EJEMPLO 4-6",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 217777,
+       "balance_after": 5238891,
+       "date": "2024-04-16",
+       "description": "PAGO TRANSFERENCIA SPEI EJEMPLO 4-7",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 218888,
+       "balance_after": 5020003,
+       "date": "2024-04-18",
+       "description": "CARGO DOMICILIADO EJEMPLO 4-8",
+       "direction": "debit"
+      }
+     ],
+     "start_printed": true
+    },
+    {
+     "account": "66000123456",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": 5000000,
+     "currency": "MXN",
+     "defects": [
+      "multi_page",
+      "no_activity_source_proven"
+     ],
+     "expected": "auto",
+     "family": "santander-mexico",
+     "holder": "TRANSPORTES EJEMPLO SA DE CV",
+     "holder_printed": true,
+     "id": "santander-2024-04-continued.pdf#2",
+     "institution": "Santander",
+     "notes": "INVERSION CRECIENTE 66-00012345-6",
+     "opening_minor": 5000000,
+     "period_end": "2024-04-30",
+     "period_start": "2024-04-01",
+     "rows": [],
+     "start_printed": true
+    }
+   ],
+   "sha256": "ea5573ad9ad4a01fb2213ecb7c4b55de92f6aec833d7a05f72a0050e9c342314",
+   "size": 16164
+  },
+  {
+   "filename": "santander-2024-05-missing-page-2.pdf",
+   "missing_pages": [
+    2
+   ],
+   "mode": "digital",
+   "pages": 2,
+   "periods": [
+    {
+     "account": "65000123456",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": 8528894,
+     "currency": "MXN",
+     "defects": [
+      "missing_page"
+     ],
+     "expected": "hold",
+     "family": "santander-mexico",
+     "holder": "TRANSPORTES EJEMPLO SA DE CV",
+     "holder_printed": true,
+     "id": "santander-2024-05-missing-page-2.pdf#1",
+     "institution": "Santander",
+     "notes": "CUENTA SANTANDER PYME 65-00012345-6",
+     "opening_minor": 5020003,
+     "period_end": "2024-05-31",
+     "period_start": "2024-05-01",
+     "rows": [
+      {
+       "amount_minor": 1250000,
+       "balance_after": 6270003,
+       "date": "2024-05-02",
+       "description": "DEPOSITO EN EFECTIVO EJEMPLO 5-0",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 211111,
+       "balance_after": 6058892,
+       "date": "2024-05-04",
+       "description": "PAGO TRANSFERENCIA SPEI EJEMPLO 5-1",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 212222,
+       "balance_after": 5846670,
+       "date": "2024-05-06",
+       "description": "CARGO DOMICILIADO EJEMPLO 5-2",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 1253333,
+       "balance_after": 7100003,
+       "date": "2024-05-08",
+       "description": "ABONO TRANSFERENCIA SPEI EJEMPLO 5-3",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 214444,
+       "balance_after": 6885559,
+       "date": "2024-05-10",
+       "description": "COMISION MANEJO DE CUENTA 5-4",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 215555,
+       "balance_after": 6670004,
+       "date": "2024-05-12",
+       "description": "PAGO NOMINA EJEMPLO 5-5",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 1256666,
+       "balance_after": 7926670,
+       "date": "2024-05-14",
+       "description": "DEPOSITO EN EFECTIVO EJEMPLO 5-6",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 217777,
+       "balance_after": 7708893,
+       "date": "2024-05-16",
+       "description": "PAGO TRANSFERENCIA SPEI EJEMPLO 5-7",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 218888,
+       "balance_after": 7490005,
+       "date": "2024-05-18",
+       "description": "CARGO DOMICILIADO EJEMPLO 5-8",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 1259999,
+       "balance_after": 8750004,
+       "date": "2024-05-20",
+       "description": "ABONO TRANSFERENCIA SPEI EJEMPLO 5-9",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 221110,
+       "balance_after": 8528894,
+       "date": "2024-05-22",
+       "description": "COMISION MANEJO DE CUENTA 5-10",
+       "direction": "debit"
+      }
+     ],
+     "start_printed": true
+    },
+    {
+     "account": "66000123456",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": 5000000,
+     "currency": "MXN",
+     "defects": [
+      "no_activity_source_proven"
+     ],
+     "expected": "auto",
+     "family": "santander-mexico",
+     "holder": "TRANSPORTES EJEMPLO SA DE CV",
+     "holder_printed": true,
+     "id": "santander-2024-05-missing-page-2.pdf#2",
+     "institution": "Santander",
+     "notes": "INVERSION CRECIENTE 66-00012345-6",
+     "opening_minor": 5000000,
+     "period_end": "2024-05-31",
+     "period_start": "2024-05-01",
+     "rows": [],
+     "start_printed": true
+    }
+   ],
+   "sha256": "8bc0399167d47062982aff9892d173c65baa86285d47bcd599d3b63f34c4bdf0",
+   "size": 14449
+  },
+  {
+   "filename": "santander-2024-06-image-only.pdf",
+   "mode": "image_only",
+   "pages": 1,
+   "periods": [
+    {
+     "account": "65000123456",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": 10178895,
+     "currency": "MXN",
+     "defects": [
+      "image_only_scan"
+     ],
+     "expected": "auto",
+     "family": "santander-mexico",
+     "holder": "TRANSPORTES EJEMPLO SA DE CV",
+     "holder_printed": true,
+     "id": "santander-2024-06-image-only.pdf#1",
+     "institution": "Santander",
+     "notes": "CUENTA SANTANDER PYME 65-00012345-6",
+     "opening_minor": 8528894,
+     "period_end": "2024-06-30",
+     "period_start": "2024-06-01",
+     "rows": [
+      {
+       "amount_minor": 1250000,
+       "balance_after": 9778894,
+       "date": "2024-06-02",
+       "description": "DEPOSITO EN EFECTIVO EJEMPLO 6-0",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 211111,
+       "balance_after": 9567783,
+       "date": "2024-06-04",
+       "description": "PAGO TRANSFERENCIA SPEI EJEMPLO 6-1",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 212222,
+       "balance_after": 9355561,
+       "date": "2024-06-06",
+       "description": "CARGO DOMICILIADO EJEMPLO 6-2",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 1253333,
+       "balance_after": 10608894,
+       "date": "2024-06-08",
+       "description": "ABONO TRANSFERENCIA SPEI EJEMPLO 6-3",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 214444,
+       "balance_after": 10394450,
+       "date": "2024-06-10",
+       "description": "COMISION MANEJO DE CUENTA 6-4",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 215555,
+       "balance_after": 10178895,
+       "date": "2024-06-12",
+       "description": "PAGO NOMINA EJEMPLO 6-5",
+       "direction": "debit"
+      }
+     ],
+     "start_printed": true
+    },
+    {
+     "account": "66000123456",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": 5000000,
+     "currency": "MXN",
+     "defects": [
+      "image_only_scan",
+      "no_activity_source_proven"
+     ],
+     "expected": "auto",
+     "family": "santander-mexico",
+     "holder": "TRANSPORTES EJEMPLO SA DE CV",
+     "holder_printed": true,
+     "id": "santander-2024-06-image-only.pdf#2",
+     "institution": "Santander",
+     "notes": "INVERSION CRECIENTE 66-00012345-6",
+     "opening_minor": 5000000,
+     "period_end": "2024-06-30",
+     "period_start": "2024-06-01",
+     "rows": [],
+     "start_printed": true
+    }
+   ],
+   "sha256": "8e8771f4e095c81fcdff79f84c6f509e523cfa1c4b501cc5f833f86d1a39e8fb",
+   "size": 78560
+  },
+  {
+   "filename": "andrews-receipt-2021-03-23-digital.pdf",
+   "mode": "digital",
+   "pages": 1,
+   "periods": [
+    {
+     "account": "5678",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": null,
+     "currency": "USD",
+     "defects": [
+      "deposit_receipt"
+     ],
+     "expected": "not_statement",
+     "family": "andrews-deposit-receipt",
+     "holder": "EXAMPLE PERSON",
+     "holder_printed": true,
+     "id": "andrews-receipt-2021-03-23-digital.pdf#1",
+     "institution": "Andrews",
+     "notes": "teller deposit receipt; must not be admitted as a statement period",
+     "opening_minor": null,
+     "period_end": null,
+     "period_start": null,
+     "rows": [],
+     "start_printed": true
+    }
+   ],
+   "sha256": "1b96028950f65a8135bba20fcee63750db195b7b7788f996b66b2cd052117637",
+   "size": 3114
+  },
+  {
+   "filename": "andrews-receipt-2021-04-14-scan.pdf",
+   "mode": "image_only",
+   "pages": 1,
+   "periods": [
+    {
+     "account": "5678",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": null,
+     "currency": "USD",
+     "defects": [
+      "deposit_receipt",
+      "image_only_scan"
+     ],
+     "expected": "not_statement",
+     "family": "andrews-deposit-receipt",
+     "holder": "EXAMPLE PERSON",
+     "holder_printed": true,
+     "id": "andrews-receipt-2021-04-14-scan.pdf#1",
+     "institution": "Andrews",
+     "notes": "teller deposit receipt; must not be admitted as a statement period",
+     "opening_minor": null,
+     "period_end": null,
+     "period_start": null,
+     "rows": [],
+     "start_printed": true
+    }
+   ],
+   "sha256": "f0e1fa7551249ef13c3c611121609e91a3e76151cba193fe19e815b6511ac0b5",
+   "size": 26144
+  },
+  {
+   "degrade": {
+    "skew": 1.0
+   },
+   "filename": "generic-v4-2025-01-scan-skew-1deg.pdf",
+   "mode": "image_only",
+   "pages": 1,
+   "periods": [
+    {
+     "account": "66602345",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": 656625,
+     "currency": "USD",
+     "defects": [
+      "image_only_scan",
+      "skew"
+     ],
+     "expected": "auto",
+     "family": "generic-labelled",
+     "holder": "Southwind Synthetic Holdings LLC",
+     "holder_printed": true,
+     "id": "generic-v4-2025-01-scan-skew-1deg.pdf#1",
+     "institution": "Lakeside Synthetic Bank",
+     "notes": "",
+     "opening_minor": 500000,
+     "period_end": "2025-01-31",
+     "period_start": "2025-01-01",
+     "rows": [
+      {
+       "amount_minor": 99000,
+       "balance_after": 599000,
+       "date": "2025-01-02",
+       "description": "Incoming transfer 01-0",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 7216,
+       "balance_after": 591784,
+       "date": "2025-01-07",
+       "description": "Card purchase hardware 01-1",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 21450,
+       "balance_after": 570334,
+       "date": "2025-01-12",
+       "description": "Insurance direct debit 01-2",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 164001,
+       "balance_after": 734335,
+       "date": "2025-01-17",
+       "description": "Client payment received 01-3",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 77710,
+       "balance_after": 656625,
+       "date": "2025-01-22",
+       "description": "Wire to contractor 01-4",
+       "direction": "debit"
+      }
+     ],
+     "start_printed": true
+    }
+   ],
+   "sha256": "2c23878e87ab9962a84d8d4b4f713626de2907b4c33df59dd593335f066c8c33",
+   "size": 67119
+  },
+  {
+   "degrade": {
+    "skew": 2.5
+   },
+   "filename": "generic-v4-2025-02-scan-skew-2-5deg.pdf",
+   "mode": "image_only",
+   "pages": 1,
+   "periods": [
+    {
+     "account": "66602345",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": 814240,
+     "currency": "USD",
+     "defects": [
+      "image_only_scan",
+      "skew"
+     ],
+     "expected": "auto",
+     "family": "generic-labelled",
+     "holder": "Southwind Synthetic Holdings LLC",
+     "holder_printed": true,
+     "id": "generic-v4-2025-02-scan-skew-2-5deg.pdf#1",
+     "institution": "Lakeside Synthetic Bank",
+     "notes": "",
+     "opening_minor": 656625,
+     "period_end": "2025-02-28",
+     "period_start": "2025-02-01",
+     "rows": [
+      {
+       "amount_minor": 100000,
+       "balance_after": 756625,
+       "date": "2025-02-02",
+       "description": "Incoming transfer 02-0",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 7217,
+       "balance_after": 749408,
+       "date": "2025-02-07",
+       "description": "Card purchase hardware 02-1",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 21450,
+       "balance_after": 727958,
+       "date": "2025-02-12",
+       "description": "Insurance direct debit 02-2",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 164002,
+       "balance_after": 891960,
+       "date": "2025-02-17",
+       "description": "Client payment received 02-3",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 77720,
+       "balance_after": 814240,
+       "date": "2025-02-22",
+       "description": "Wire to contractor 02-4",
+       "direction": "debit"
+      }
+     ],
+     "start_printed": true
+    }
+   ],
+   "sha256": "f132d381e9c81b8213f49455083aecc95a91e8ca7053d1303704280710581e31",
+   "size": 68610
+  },
+  {
+   "degrade": {
+    "dpi": 150
+   },
+   "filename": "generic-v4-2025-03-scan-150dpi.pdf",
+   "mode": "image_only",
+   "pages": 1,
+   "periods": [
+    {
+     "account": "66602345",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": 972845,
+     "currency": "USD",
+     "defects": [
+      "image_only_scan",
+      "low_dpi"
+     ],
+     "expected": "auto",
+     "family": "generic-labelled",
+     "holder": "Southwind Synthetic Holdings LLC",
+     "holder_printed": true,
+     "id": "generic-v4-2025-03-scan-150dpi.pdf#1",
+     "institution": "Lakeside Synthetic Bank",
+     "notes": "",
+     "opening_minor": 814240,
+     "period_end": "2025-03-31",
+     "period_start": "2025-03-01",
+     "rows": [
+      {
+       "amount_minor": 101000,
+       "balance_after": 915240,
+       "date": "2025-03-02",
+       "description": "Incoming transfer 03-0",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 7218,
+       "balance_after": 908022,
+       "date": "2025-03-07",
+       "description": "Card purchase hardware 03-1",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 21450,
+       "balance_after": 886572,
+       "date": "2025-03-12",
+       "description": "Insurance direct debit 03-2",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 164003,
+       "balance_after": 1050575,
+       "date": "2025-03-17",
+       "description": "Client payment received 03-3",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 77730,
+       "balance_after": 972845,
+       "date": "2025-03-22",
+       "description": "Wire to contractor 03-4",
+       "direction": "debit"
+      }
+     ],
+     "start_printed": true
+    }
+   ],
+   "sha256": "7519f68f74e80c0c350dc5d327aa7830eb9adb9b71fdf46cacdc981dfe0b9b2a",
+   "size": 31515
+  },
+  {
+   "degrade": {
+    "dpi": 100
+   },
+   "filename": "generic-v4-2025-04-scan-100dpi.pdf",
+   "mode": "image_only",
+   "pages": 1,
+   "periods": [
+    {
+     "account": "66602345",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": 1132440,
+     "currency": "USD",
+     "defects": [
+      "image_only_scan",
+      "low_dpi"
+     ],
+     "expected": "auto",
+     "family": "generic-labelled",
+     "holder": "Southwind Synthetic Holdings LLC",
+     "holder_printed": true,
+     "id": "generic-v4-2025-04-scan-100dpi.pdf#1",
+     "institution": "Lakeside Synthetic Bank",
+     "notes": "",
+     "opening_minor": 972845,
+     "period_end": "2025-04-30",
+     "period_start": "2025-04-01",
+     "rows": [
+      {
+       "amount_minor": 102000,
+       "balance_after": 1074845,
+       "date": "2025-04-02",
+       "description": "Incoming transfer 04-0",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 7219,
+       "balance_after": 1067626,
+       "date": "2025-04-07",
+       "description": "Card purchase hardware 04-1",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 21450,
+       "balance_after": 1046176,
+       "date": "2025-04-12",
+       "description": "Insurance direct debit 04-2",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 164004,
+       "balance_after": 1210180,
+       "date": "2025-04-17",
+       "description": "Client payment received 04-3",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 77740,
+       "balance_after": 1132440,
+       "date": "2025-04-22",
+       "description": "Wire to contractor 04-4",
+       "direction": "debit"
+      }
+     ],
+     "start_printed": true
+    }
+   ],
+   "sha256": "4383c547cfa80df762aaaa6f1bd9b074becd4c614b548a09074cd19dbabf57e7",
+   "size": 16519
+  },
+  {
+   "degrade": {
+    "jpeg": 30,
+    "noise": 8
+   },
+   "filename": "generic-v4-2025-05-scan-jpeg-noise.pdf",
+   "mode": "image_only",
+   "pages": 1,
+   "periods": [
+    {
+     "account": "66602345",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": 1293025,
+     "currency": "USD",
+     "defects": [
+      "image_only_scan",
+      "jpeg_noise"
+     ],
+     "expected": "auto",
+     "family": "generic-labelled",
+     "holder": "Southwind Synthetic Holdings LLC",
+     "holder_printed": true,
+     "id": "generic-v4-2025-05-scan-jpeg-noise.pdf#1",
+     "institution": "Lakeside Synthetic Bank",
+     "notes": "",
+     "opening_minor": 1132440,
+     "period_end": "2025-05-31",
+     "period_start": "2025-05-01",
+     "rows": [
+      {
+       "amount_minor": 103000,
+       "balance_after": 1235440,
+       "date": "2025-05-02",
+       "description": "Incoming transfer 05-0",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 7220,
+       "balance_after": 1228220,
+       "date": "2025-05-07",
+       "description": "Card purchase hardware 05-1",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 21450,
+       "balance_after": 1206770,
+       "date": "2025-05-12",
+       "description": "Insurance direct debit 05-2",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 164005,
+       "balance_after": 1370775,
+       "date": "2025-05-17",
+       "description": "Client payment received 05-3",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 77750,
+       "balance_after": 1293025,
+       "date": "2025-05-22",
+       "description": "Wire to contractor 05-4",
+       "direction": "debit"
+      }
+     ],
+     "start_printed": true
+    }
+   ],
+   "sha256": "fc9a9ada1af40d9294a2112fe91a1cc3e606129390a8d52c73b6b08eb034e699",
+   "size": 88609
+  },
+  {
+   "degrade": {
+    "faint": 0.45
+   },
+   "filename": "generic-v4-2025-06-scan-faint.pdf",
+   "mode": "image_only",
+   "pages": 1,
+   "periods": [
+    {
+     "account": "66602345",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": 1454600,
+     "currency": "USD",
+     "defects": [
+      "image_only_scan",
+      "faint_print"
+     ],
+     "expected": "auto",
+     "family": "generic-labelled",
+     "holder": "Southwind Synthetic Holdings LLC",
+     "holder_printed": true,
+     "id": "generic-v4-2025-06-scan-faint.pdf#1",
+     "institution": "Lakeside Synthetic Bank",
+     "notes": "",
+     "opening_minor": 1293025,
+     "period_end": "2025-06-30",
+     "period_start": "2025-06-01",
+     "rows": [
+      {
+       "amount_minor": 104000,
+       "balance_after": 1397025,
+       "date": "2025-06-02",
+       "description": "Incoming transfer 06-0",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 7221,
+       "balance_after": 1389804,
+       "date": "2025-06-07",
+       "description": "Card purchase hardware 06-1",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 21450,
+       "balance_after": 1368354,
+       "date": "2025-06-12",
+       "description": "Insurance direct debit 06-2",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 164006,
+       "balance_after": 1532360,
+       "date": "2025-06-17",
+       "description": "Client payment received 06-3",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 77760,
+       "balance_after": 1454600,
+       "date": "2025-06-22",
+       "description": "Wire to contractor 06-4",
+       "direction": "debit"
+      }
+     ],
+     "start_printed": true
+    }
+   ],
+   "sha256": "e86d187add49965503b04cdfcbf9c577894e73c8f5e02d6882f075f99154b605",
+   "size": 41962
+  },
+  {
+   "degrade": {
+    "dpi": 150,
+    "faint": 0.6,
+    "jpeg": 40,
+    "noise": 6,
+    "skew": 1.0
+   },
+   "filename": "generic-v4-2025-07-scan-combined.pdf",
+   "mode": "image_only",
+   "pages": 1,
+   "periods": [
+    {
+     "account": "66602345",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": 1617165,
+     "currency": "USD",
+     "defects": [
+      "image_only_scan",
+      "skew",
+      "low_dpi",
+      "faint_print",
+      "jpeg_noise"
+     ],
+     "expected": "auto",
+     "family": "generic-labelled",
+     "holder": "Southwind Synthetic Holdings LLC",
+     "holder_printed": true,
+     "id": "generic-v4-2025-07-scan-combined.pdf#1",
+     "institution": "Lakeside Synthetic Bank",
+     "notes": "",
+     "opening_minor": 1454600,
+     "period_end": "2025-07-31",
+     "period_start": "2025-07-01",
+     "rows": [
+      {
+       "amount_minor": 105000,
+       "balance_after": 1559600,
+       "date": "2025-07-02",
+       "description": "Incoming transfer 07-0",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 7222,
+       "balance_after": 1552378,
+       "date": "2025-07-07",
+       "description": "Card purchase hardware 07-1",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 21450,
+       "balance_after": 1530928,
+       "date": "2025-07-12",
+       "description": "Insurance direct debit 07-2",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 164007,
+       "balance_after": 1694935,
+       "date": "2025-07-17",
+       "description": "Client payment received 07-3",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 77770,
+       "balance_after": 1617165,
+       "date": "2025-07-22",
+       "description": "Wire to contractor 07-4",
+       "direction": "debit"
+      }
+     ],
+     "start_printed": true
+    }
+   ],
+   "sha256": "8013d1a67fb94326f2a6c5bccd24a07b2df98a0125656cf03f2c712ba152e25e",
+   "size": 49596
+  },
+  {
+   "degrade": {
+    "dpi": 150,
+    "jpeg": 35,
+    "noise": 6
+   },
+   "filename": "generic-v4-2025-08-ocr-amount-digit-poor-scan.pdf",
+   "mode": "scan_text_layer",
+   "pages": 1,
+   "periods": [
+    {
+     "account": "66602345",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": 1780720,
+     "currency": "USD",
+     "defects": [
+      "ocr_amount_digit",
+      "low_dpi",
+      "jpeg_noise"
+     ],
+     "expected": "auto",
+     "family": "generic-labelled",
+     "holder": "Southwind Synthetic Holdings LLC",
+     "holder_printed": true,
+     "id": "generic-v4-2025-08-ocr-amount-digit-poor-scan.pdf#1",
+     "institution": "Lakeside Synthetic Bank",
+     "notes": "",
+     "opening_minor": 1617165,
+     "period_end": "2025-08-31",
+     "period_start": "2025-08-01",
+     "rows": [
+      {
+       "amount_minor": 106000,
+       "balance_after": 1723165,
+       "date": "2025-08-02",
+       "description": "Incoming transfer 08-0",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 7223,
+       "balance_after": 1715942,
+       "date": "2025-08-07",
+       "description": "Card purchase hardware 08-1",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 21450,
+       "balance_after": 1694492,
+       "date": "2025-08-12",
+       "description": "Insurance direct debit 08-2",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 164008,
+       "balance_after": 1858500,
+       "date": "2025-08-17",
+       "description": "Client payment received 08-3",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 77780,
+       "balance_after": 1780720,
+       "date": "2025-08-22",
+       "description": "Wire to contractor 08-4",
+       "direction": "debit"
+      }
+     ],
+     "start_printed": true
+    }
+   ],
+   "sha256": "913db566defebb3e02d4ee9992f91275e84903de68056c0c000df6108bc6b1b5",
+   "size": 60464
+  },
+  {
+   "filename": "generic-v4-2025-09-ruled.pdf",
+   "mode": "digital",
+   "pages": 1,
+   "periods": [
+    {
+     "account": "66602345",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": 1945265,
+     "currency": "USD",
+     "defects": [
+      "ruled_pdf"
+     ],
+     "expected": "auto",
+     "family": "generic-labelled",
+     "holder": "Southwind Synthetic Holdings LLC",
+     "holder_printed": true,
+     "id": "generic-v4-2025-09-ruled.pdf#1",
+     "institution": "Lakeside Synthetic Bank",
+     "notes": "",
+     "opening_minor": 1780720,
+     "period_end": "2025-09-30",
+     "period_start": "2025-09-01",
+     "rows": [
+      {
+       "amount_minor": 107000,
+       "balance_after": 1887720,
+       "date": "2025-09-02",
+       "description": "Incoming transfer 09-0",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 7224,
+       "balance_after": 1880496,
+       "date": "2025-09-07",
+       "description": "Card purchase hardware 09-1",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 21450,
+       "balance_after": 1859046,
+       "date": "2025-09-12",
+       "description": "Insurance direct debit 09-2",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 164009,
+       "balance_after": 2023055,
+       "date": "2025-09-17",
+       "description": "Client payment received 09-3",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 77790,
+       "balance_after": 1945265,
+       "date": "2025-09-22",
+       "description": "Wire to contractor 09-4",
+       "direction": "debit"
+      }
+     ],
+     "start_printed": true
+    }
+   ],
+   "ruled": true,
+   "sha256": "e3d56594d18332eaf2ab82c3218c1f564cbec69793df826856944307f06ccea8",
+   "size": 9113
+  },
+  {
+   "filename": "generic-v4-2025-10-overdrawn.pdf",
+   "mode": "digital",
+   "pages": 1,
+   "periods": [
+    {
+     "account": "66602345",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": 15535,
+     "currency": "USD",
+     "defects": [
+      "negative_balance"
+     ],
+     "expected": "auto",
+     "family": "generic-labelled",
+     "holder": "Southwind Synthetic Holdings LLC",
+     "holder_printed": true,
+     "id": "generic-v4-2025-10-overdrawn.pdf#1",
+     "institution": "Lakeside Synthetic Bank",
+     "notes": "",
+     "opening_minor": 1945265,
+     "period_end": "2025-10-31",
+     "period_start": "2025-10-01",
+     "rows": [
+      {
+       "amount_minor": 108000,
+       "balance_after": 2053265,
+       "date": "2025-10-02",
+       "description": "Incoming transfer 10-0",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 7225,
+       "balance_after": 2046040,
+       "date": "2025-10-07",
+       "description": "Card purchase hardware 10-1",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 2095265,
+       "balance_after": -49225,
+       "date": "2025-10-12",
+       "description": "Wire to property escrow 10-2",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 21450,
+       "balance_after": -70675,
+       "date": "2025-10-17",
+       "description": "Insurance direct debit 10-3",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 164010,
+       "balance_after": 93335,
+       "date": "2025-10-22",
+       "description": "Client payment received 10-4",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 77800,
+       "balance_after": 15535,
+       "date": "2025-10-27",
+       "description": "Wire to contractor 10-5",
+       "direction": "debit"
+      }
+     ],
+     "start_printed": true
+    }
+   ],
+   "sha256": "63d66ba0b2bec05b644f2843fb88f79bdc7f26feb63ee991da0728879ffa1f46",
+   "size": 7727
+  },
+  {
+   "filename": "generic-v4-2025-11-three-pages.pdf",
+   "mode": "digital",
+   "pages": 3,
+   "periods": [
+    {
+     "account": "66602345",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": 162245,
+     "currency": "USD",
+     "defects": [
+      "multi_page"
+     ],
+     "expected": "auto",
+     "family": "generic-labelled",
+     "holder": "Southwind Synthetic Holdings LLC",
+     "holder_printed": true,
+     "id": "generic-v4-2025-11-three-pages.pdf#1",
+     "institution": "Lakeside Synthetic Bank",
+     "notes": "",
+     "opening_minor": 15535,
+     "period_end": "2025-11-30",
+     "period_start": "2025-11-01",
+     "rows": [
+      {
+       "amount_minor": 109000,
+       "balance_after": 124535,
+       "date": "2025-11-02",
+       "description": "Incoming transfer 11-0",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 7226,
+       "balance_after": 117309,
+       "date": "2025-11-07",
+       "description": "Card purchase hardware 11-1",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 21450,
+       "balance_after": 95859,
+       "date": "2025-11-12",
+       "description": "Insurance direct debit 11-2",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 164011,
+       "balance_after": 259870,
+       "date": "2025-11-17",
+       "description": "Client payment received 11-3",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 77810,
+       "balance_after": 182060,
+       "date": "2025-11-22",
+       "description": "Wire to contractor 11-4",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 3300,
+       "balance_after": 178760,
+       "date": "2025-11-23",
+       "description": "Card purchase office 11-9",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 3301,
+       "balance_after": 175459,
+       "date": "2025-11-24",
+       "description": "Card purchase office 11-10",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 3302,
+       "balance_after": 172157,
+       "date": "2025-11-25",
+       "description": "Card purchase office 11-11",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 3303,
+       "balance_after": 168854,
+       "date": "2025-11-26",
+       "description": "Card purchase office 11-12",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 3304,
+       "balance_after": 165550,
+       "date": "2025-11-27",
+       "description": "Card purchase office 11-13",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 3305,
+       "balance_after": 162245,
+       "date": "2025-11-28",
+       "description": "Card purchase office 11-14",
+       "direction": "debit"
+      }
+     ],
+     "start_printed": true
+    }
+   ],
+   "sha256": "02ad8a0a4f53390ae4881b8a9bea58c32385da9a0a377b79155b6fe73bf55d8e",
+   "size": 12851
+  },
+  {
+   "filename": "generic-v4-2025-12-missing-page-2.pdf",
+   "missing_pages": [
+    2
+   ],
+   "mode": "digital",
+   "pages": 2,
+   "periods": [
+    {
+     "account": "66602345",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": 309945,
+     "currency": "USD",
+     "defects": [
+      "missing_page"
+     ],
+     "expected": "hold",
+     "family": "generic-labelled",
+     "holder": "Southwind Synthetic Holdings LLC",
+     "holder_printed": true,
+     "id": "generic-v4-2025-12-missing-page-2.pdf#1",
+     "institution": "Lakeside Synthetic Bank",
+     "notes": "",
+     "opening_minor": 162245,
+     "period_end": "2025-12-31",
+     "period_start": "2025-12-01",
+     "rows": [
+      {
+       "amount_minor": 110000,
+       "balance_after": 272245,
+       "date": "2025-12-02",
+       "description": "Incoming transfer 12-0",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 7227,
+       "balance_after": 265018,
+       "date": "2025-12-07",
+       "description": "Card purchase hardware 12-1",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 21450,
+       "balance_after": 243568,
+       "date": "2025-12-12",
+       "description": "Insurance direct debit 12-2",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 164012,
+       "balance_after": 407580,
+       "date": "2025-12-17",
+       "description": "Client payment received 12-3",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 77820,
+       "balance_after": 329760,
+       "date": "2025-12-22",
+       "description": "Wire to contractor 12-4",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 3300,
+       "balance_after": 326460,
+       "date": "2025-12-23",
+       "description": "Card purchase office 12-9",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 3301,
+       "balance_after": 323159,
+       "date": "2025-12-24",
+       "description": "Card purchase office 12-10",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 3302,
+       "balance_after": 319857,
+       "date": "2025-12-25",
+       "description": "Card purchase office 12-11",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 3303,
+       "balance_after": 316554,
+       "date": "2025-12-26",
+       "description": "Card purchase office 12-12",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 3304,
+       "balance_after": 313250,
+       "date": "2025-12-27",
+       "description": "Card purchase office 12-13",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 3305,
+       "balance_after": 309945,
+       "date": "2025-12-28",
+       "description": "Card purchase office 12-14",
+       "direction": "debit"
+      }
+     ],
+     "start_printed": true
+    }
+   ],
+   "sha256": "2ee34c06dac15106e3934b8398e5bb8f8f771834653f004f3ed72f3b01feeb35",
+   "size": 9761
+  },
+  {
+   "filename": "generic-v4-2026-01-missing-last-page.pdf",
+   "missing_pages": [
+    3
+   ],
+   "mode": "digital",
+   "pages": 2,
+   "periods": [
+    {
+     "account": "66602345",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": 446755,
+     "currency": "USD",
+     "defects": [
+      "missing_page"
+     ],
+     "expected": "hold",
+     "family": "generic-labelled",
+     "holder": "Southwind Synthetic Holdings LLC",
+     "holder_printed": true,
+     "id": "generic-v4-2026-01-missing-last-page.pdf#1",
+     "institution": "Lakeside Synthetic Bank",
+     "notes": "",
+     "opening_minor": 309945,
+     "period_end": "2026-01-31",
+     "period_start": "2026-01-01",
+     "rows": [
+      {
+       "amount_minor": 99000,
+       "balance_after": 408945,
+       "date": "2026-01-02",
+       "description": "Incoming transfer 01-0",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 7216,
+       "balance_after": 401729,
+       "date": "2026-01-07",
+       "description": "Card purchase hardware 01-1",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 21450,
+       "balance_after": 380279,
+       "date": "2026-01-12",
+       "description": "Insurance direct debit 01-2",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 164001,
+       "balance_after": 544280,
+       "date": "2026-01-17",
+       "description": "Client payment received 01-3",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 77710,
+       "balance_after": 466570,
+       "date": "2026-01-22",
+       "description": "Wire to contractor 01-4",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 3300,
+       "balance_after": 463270,
+       "date": "2026-01-23",
+       "description": "Card purchase office 01-9",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 3301,
+       "balance_after": 459969,
+       "date": "2026-01-24",
+       "description": "Card purchase office 01-10",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 3302,
+       "balance_after": 456667,
+       "date": "2026-01-25",
+       "description": "Card purchase office 01-11",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 3303,
+       "balance_after": 453364,
+       "date": "2026-01-26",
+       "description": "Card purchase office 01-12",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 3304,
+       "balance_after": 450060,
+       "date": "2026-01-27",
+       "description": "Card purchase office 01-13",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 3305,
+       "balance_after": 446755,
+       "date": "2026-01-28",
+       "description": "Card purchase office 01-14",
+       "direction": "debit"
+      }
+     ],
+     "start_printed": true
+    }
+   ],
+   "sha256": "edd221e76752316eb0c7cf02cd5aabbebb9e17b5f7137a3e053827d1b33377e6",
+   "size": 9922
+  },
+  {
+   "filename": "generic-v4-mxn-2025-03-clean.pdf",
+   "mode": "digital",
+   "pages": 1,
+   "periods": [
+    {
+     "account": "77703456",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": 2162565,
+     "currency": "MXN",
+     "defects": [
+      "mxn"
+     ],
+     "expected": "auto",
+     "family": "generic-labelled",
+     "holder": "Comercial Sintetica del Norte SA de CV",
+     "holder_printed": true,
+     "id": "generic-v4-mxn-2025-03-clean.pdf#1",
+     "institution": "Banco Sintetico del Norte",
+     "notes": "",
+     "opening_minor": 2000000,
+     "period_end": "2025-03-31",
+     "period_start": "2025-03-01",
+     "rows": [
+      {
+       "amount_minor": 105000,
+       "balance_after": 2105000,
+       "date": "2025-03-02",
+       "description": "Incoming transfer 03-0",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 7222,
+       "balance_after": 2097778,
+       "date": "2025-03-07",
+       "description": "Card purchase hardware 03-1",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 21450,
+       "balance_after": 2076328,
+       "date": "2025-03-12",
+       "description": "Insurance direct debit 03-2",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 164007,
+       "balance_after": 2240335,
+       "date": "2025-03-17",
+       "description": "Client payment received 03-3",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 77770,
+       "balance_after": 2162565,
+       "date": "2025-03-22",
+       "description": "Wire to contractor 03-4",
+       "direction": "debit"
+      }
+     ],
+     "start_printed": true
+    }
+   ],
+   "sha256": "87b44ec48ffde137ec5d08679129a859569f89d9e0814a1ff57be62efbf6f5ef",
+   "size": 7030
+  },
+  {
+   "filename": "andrews-v4-2022-01-scan-image-only.pdf",
+   "mode": "image_only",
+   "pages": 1,
+   "periods": [
+    {
+     "account": "987654321",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": 76021,
+     "currency": "USD",
+     "defects": [
+      "image_only_scan"
+     ],
+     "expected": "auto",
+     "family": "andrews-share",
+     "holder": "EXAMPLE PERSON",
+     "holder_printed": true,
+     "id": "andrews-v4-2022-01-scan-image-only.pdf#1",
+     "institution": "Andrews",
+     "notes": "share 0000",
+     "opening_minor": 72000,
+     "period_end": "2022-01-31",
+     "period_start": "2022-01-01",
+     "rows": [
+      {
+       "amount_minor": 4000,
+       "balance_after": 76000,
+       "date": "2022-01-04",
+       "description": "Deposit Online Banking Transfer From Share 0040",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 21,
+       "balance_after": 76021,
+       "date": "2022-01-23",
+       "description": "Deposit Dividend",
+       "direction": "credit"
+      }
+     ],
+     "share": "0000",
+     "start_printed": true
+    },
+    {
+     "account": "987654321",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": 386006,
+     "currency": "USD",
+     "defects": [
+      "image_only_scan"
+     ],
+     "expected": "auto",
+     "family": "andrews-share",
+     "holder": "EXAMPLE PERSON",
+     "holder_printed": true,
+     "id": "andrews-v4-2022-01-scan-image-only.pdf#2",
+     "institution": "Andrews",
+     "notes": "share 0040",
+     "opening_minor": 310000,
+     "period_end": "2022-01-31",
+     "period_start": "2022-01-01",
+     "rows": [
+      {
+       "amount_minor": 4000,
+       "balance_after": 306000,
+       "date": "2022-01-04",
+       "description": "Withdrawal Online Banking Transfer To Share 0000",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 6124,
+       "balance_after": 299876,
+       "date": "2022-01-08",
+       "description": "Withdrawal Debit Card EXAMPLE GROCER 1",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 121000,
+       "balance_after": 420876,
+       "date": "2022-01-15",
+       "description": "Deposit ACH EXAMPLE EMPLOYER PAYROLL",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 9870,
+       "balance_after": 411006,
+       "date": "2022-01-19",
+       "description": "Withdrawal ACH EXAMPLE UTILITY 1",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 25000,
+       "balance_after": 386006,
+       "date": "2022-01-27",
+       "description": "Withdrawal Check 1042",
+       "direction": "debit"
+      }
+     ],
+     "share": "0040",
+     "start_printed": true
+    }
+   ],
+   "sha256": "455bed19fd838fd5801dea0b575ebe9bd8e8e9ba7b4cd56b023b78667cc1096d",
+   "size": 52701
+  },
+  {
+   "degrade": {
+    "skew": 1.0
+   },
+   "filename": "andrews-v4-2022-02-scan-skew-1deg.pdf",
+   "mode": "image_only",
+   "pages": 1,
+   "periods": [
+    {
+     "account": "987654321",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": 80042,
+     "currency": "USD",
+     "defects": [
+      "image_only_scan",
+      "skew"
+     ],
+     "expected": "auto",
+     "family": "andrews-share",
+     "holder": "EXAMPLE PERSON",
+     "holder_printed": true,
+     "id": "andrews-v4-2022-02-scan-skew-1deg.pdf#1",
+     "institution": "Andrews",
+     "notes": "share 0000",
+     "opening_minor": 76021,
+     "period_end": "2022-02-28",
+     "period_start": "2022-02-01",
+     "rows": [
+      {
+       "amount_minor": 4000,
+       "balance_after": 80021,
+       "date": "2022-02-04",
+       "description": "Deposit Online Banking Transfer From Share 0040",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 21,
+       "balance_after": 80042,
+       "date": "2022-02-23",
+       "description": "Deposit Dividend",
+       "direction": "credit"
+      }
+     ],
+     "share": "0000",
+     "start_printed": true
+    },
+    {
+     "account": "987654321",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": 462011,
+     "currency": "USD",
+     "defects": [
+      "image_only_scan",
+      "skew"
+     ],
+     "expected": "auto",
+     "family": "andrews-share",
+     "holder": "EXAMPLE PERSON",
+     "holder_printed": true,
+     "id": "andrews-v4-2022-02-scan-skew-1deg.pdf#2",
+     "institution": "Andrews",
+     "notes": "share 0040",
+     "opening_minor": 386006,
+     "period_end": "2022-02-28",
+     "period_start": "2022-02-01",
+     "rows": [
+      {
+       "amount_minor": 4000,
+       "balance_after": 382006,
+       "date": "2022-02-04",
+       "description": "Withdrawal Online Banking Transfer To Share 0000",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 6125,
+       "balance_after": 375881,
+       "date": "2022-02-08",
+       "description": "Withdrawal Debit Card EXAMPLE GROCER 2",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 121000,
+       "balance_after": 496881,
+       "date": "2022-02-15",
+       "description": "Deposit ACH EXAMPLE EMPLOYER PAYROLL",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 9870,
+       "balance_after": 487011,
+       "date": "2022-02-19",
+       "description": "Withdrawal ACH EXAMPLE UTILITY 2",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 25000,
+       "balance_after": 462011,
+       "date": "2022-02-27",
+       "description": "Withdrawal Check 1042",
+       "direction": "debit"
+      }
+     ],
+     "share": "0040",
+     "start_printed": true
+    }
+   ],
+   "sha256": "9626e0c34ddb0816b54e9467efc4dfb1228ce09c8c5fa11680e3a14382cbcd8e",
+   "size": 85156
+  },
+  {
+   "degrade": {
+    "skew": 2.5
+   },
+   "filename": "andrews-v4-2022-03-scan-skew-2-5deg.pdf",
+   "mode": "image_only",
+   "pages": 1,
+   "periods": [
+    {
+     "account": "987654321",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": 84063,
+     "currency": "USD",
+     "defects": [
+      "image_only_scan",
+      "skew"
+     ],
+     "expected": "auto",
+     "family": "andrews-share",
+     "holder": "EXAMPLE PERSON",
+     "holder_printed": true,
+     "id": "andrews-v4-2022-03-scan-skew-2-5deg.pdf#1",
+     "institution": "Andrews",
+     "notes": "share 0000",
+     "opening_minor": 80042,
+     "period_end": "2022-03-31",
+     "period_start": "2022-03-01",
+     "rows": [
+      {
+       "amount_minor": 4000,
+       "balance_after": 84042,
+       "date": "2022-03-04",
+       "description": "Deposit Online Banking Transfer From Share 0040",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 21,
+       "balance_after": 84063,
+       "date": "2022-03-23",
+       "description": "Deposit Dividend",
+       "direction": "credit"
+      }
+     ],
+     "share": "0000",
+     "start_printed": true
+    },
+    {
+     "account": "987654321",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": 538015,
+     "currency": "USD",
+     "defects": [
+      "image_only_scan",
+      "skew"
+     ],
+     "expected": "auto",
+     "family": "andrews-share",
+     "holder": "EXAMPLE PERSON",
+     "holder_printed": true,
+     "id": "andrews-v4-2022-03-scan-skew-2-5deg.pdf#2",
+     "institution": "Andrews",
+     "notes": "share 0040",
+     "opening_minor": 462011,
+     "period_end": "2022-03-31",
+     "period_start": "2022-03-01",
+     "rows": [
+      {
+       "amount_minor": 4000,
+       "balance_after": 458011,
+       "date": "2022-03-04",
+       "description": "Withdrawal Online Banking Transfer To Share 0000",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 6126,
+       "balance_after": 451885,
+       "date": "2022-03-08",
+       "description": "Withdrawal Debit Card EXAMPLE GROCER 3",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 121000,
+       "balance_after": 572885,
+       "date": "2022-03-15",
+       "description": "Deposit ACH EXAMPLE EMPLOYER PAYROLL",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 9870,
+       "balance_after": 563015,
+       "date": "2022-03-19",
+       "description": "Withdrawal ACH EXAMPLE UTILITY 3",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 25000,
+       "balance_after": 538015,
+       "date": "2022-03-27",
+       "description": "Withdrawal Check 1042",
+       "direction": "debit"
+      }
+     ],
+     "share": "0040",
+     "start_printed": true
+    }
+   ],
+   "sha256": "4d9fe6a827fb29af0382ff7a4905e9fd5d2458c596c9694dbcfa5616a89e2278",
+   "size": 86283
+  },
+  {
+   "degrade": {
+    "dpi": 150
+   },
+   "filename": "andrews-v4-2022-04-scan-150dpi.pdf",
+   "mode": "image_only",
+   "pages": 1,
+   "periods": [
+    {
+     "account": "987654321",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": 88084,
+     "currency": "USD",
+     "defects": [
+      "image_only_scan",
+      "low_dpi"
+     ],
+     "expected": "auto",
+     "family": "andrews-share",
+     "holder": "EXAMPLE PERSON",
+     "holder_printed": true,
+     "id": "andrews-v4-2022-04-scan-150dpi.pdf#1",
+     "institution": "Andrews",
+     "notes": "share 0000",
+     "opening_minor": 84063,
+     "period_end": "2022-04-30",
+     "period_start": "2022-04-01",
+     "rows": [
+      {
+       "amount_minor": 4000,
+       "balance_after": 88063,
+       "date": "2022-04-04",
+       "description": "Deposit Online Banking Transfer From Share 0040",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 21,
+       "balance_after": 88084,
+       "date": "2022-04-23",
+       "description": "Deposit Dividend",
+       "direction": "credit"
+      }
+     ],
+     "share": "0000",
+     "start_printed": true
+    },
+    {
+     "account": "987654321",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": 614018,
+     "currency": "USD",
+     "defects": [
+      "image_only_scan",
+      "low_dpi"
+     ],
+     "expected": "auto",
+     "family": "andrews-share",
+     "holder": "EXAMPLE PERSON",
+     "holder_printed": true,
+     "id": "andrews-v4-2022-04-scan-150dpi.pdf#2",
+     "institution": "Andrews",
+     "notes": "share 0040",
+     "opening_minor": 538015,
+     "period_end": "2022-04-30",
+     "period_start": "2022-04-01",
+     "rows": [
+      {
+       "amount_minor": 4000,
+       "balance_after": 534015,
+       "date": "2022-04-04",
+       "description": "Withdrawal Online Banking Transfer To Share 0000",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 6127,
+       "balance_after": 527888,
+       "date": "2022-04-08",
+       "description": "Withdrawal Debit Card EXAMPLE GROCER 4",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 121000,
+       "balance_after": 648888,
+       "date": "2022-04-15",
+       "description": "Deposit ACH EXAMPLE EMPLOYER PAYROLL",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 9870,
+       "balance_after": 639018,
+       "date": "2022-04-19",
+       "description": "Withdrawal ACH EXAMPLE UTILITY 4",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 25000,
+       "balance_after": 614018,
+       "date": "2022-04-27",
+       "description": "Withdrawal Check 1042",
+       "direction": "debit"
+      }
+     ],
+     "share": "0040",
+     "start_printed": true
+    }
+   ],
+   "sha256": "25c2e9683175c3d03e63ce9f1b734eaf743bb25fc336b830f1d94eadbb6c849b",
+   "size": 32339
+  },
+  {
+   "degrade": {
+    "dpi": 100
+   },
+   "filename": "andrews-v4-2022-05-scan-100dpi.pdf",
+   "mode": "image_only",
+   "pages": 1,
+   "periods": [
+    {
+     "account": "987654321",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": 92105,
+     "currency": "USD",
+     "defects": [
+      "image_only_scan",
+      "low_dpi"
+     ],
+     "expected": "auto",
+     "family": "andrews-share",
+     "holder": "EXAMPLE PERSON",
+     "holder_printed": true,
+     "id": "andrews-v4-2022-05-scan-100dpi.pdf#1",
+     "institution": "Andrews",
+     "notes": "share 0000",
+     "opening_minor": 88084,
+     "period_end": "2022-05-31",
+     "period_start": "2022-05-01",
+     "rows": [
+      {
+       "amount_minor": 4000,
+       "balance_after": 92084,
+       "date": "2022-05-04",
+       "description": "Deposit Online Banking Transfer From Share 0040",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 21,
+       "balance_after": 92105,
+       "date": "2022-05-23",
+       "description": "Deposit Dividend",
+       "direction": "credit"
+      }
+     ],
+     "share": "0000",
+     "start_printed": true
+    },
+    {
+     "account": "987654321",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": 690020,
+     "currency": "USD",
+     "defects": [
+      "image_only_scan",
+      "low_dpi"
+     ],
+     "expected": "auto",
+     "family": "andrews-share",
+     "holder": "EXAMPLE PERSON",
+     "holder_printed": true,
+     "id": "andrews-v4-2022-05-scan-100dpi.pdf#2",
+     "institution": "Andrews",
+     "notes": "share 0040",
+     "opening_minor": 614018,
+     "period_end": "2022-05-31",
+     "period_start": "2022-05-01",
+     "rows": [
+      {
+       "amount_minor": 4000,
+       "balance_after": 610018,
+       "date": "2022-05-04",
+       "description": "Withdrawal Online Banking Transfer To Share 0000",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 6128,
+       "balance_after": 603890,
+       "date": "2022-05-08",
+       "description": "Withdrawal Debit Card EXAMPLE GROCER 5",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 121000,
+       "balance_after": 724890,
+       "date": "2022-05-15",
+       "description": "Deposit ACH EXAMPLE EMPLOYER PAYROLL",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 9870,
+       "balance_after": 715020,
+       "date": "2022-05-19",
+       "description": "Withdrawal ACH EXAMPLE UTILITY 5",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 25000,
+       "balance_after": 690020,
+       "date": "2022-05-27",
+       "description": "Withdrawal Check 1042",
+       "direction": "debit"
+      }
+     ],
+     "share": "0040",
+     "start_printed": true
+    }
+   ],
+   "sha256": "ba1a07cf990a1daa488d740dd1d0689a882964b3eb2ee8bafbe4504766dcb340",
+   "size": 19245
+  },
+  {
+   "degrade": {
+    "jpeg": 30,
+    "noise": 8
+   },
+   "filename": "andrews-v4-2022-06-scan-jpeg-noise.pdf",
+   "mode": "image_only",
+   "pages": 1,
+   "periods": [
+    {
+     "account": "987654321",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": 96126,
+     "currency": "USD",
+     "defects": [
+      "image_only_scan",
+      "jpeg_noise"
+     ],
+     "expected": "auto",
+     "family": "andrews-share",
+     "holder": "EXAMPLE PERSON",
+     "holder_printed": true,
+     "id": "andrews-v4-2022-06-scan-jpeg-noise.pdf#1",
+     "institution": "Andrews",
+     "notes": "share 0000",
+     "opening_minor": 92105,
+     "period_end": "2022-06-30",
+     "period_start": "2022-06-01",
+     "rows": [
+      {
+       "amount_minor": 4000,
+       "balance_after": 96105,
+       "date": "2022-06-04",
+       "description": "Deposit Online Banking Transfer From Share 0040",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 21,
+       "balance_after": 96126,
+       "date": "2022-06-23",
+       "description": "Deposit Dividend",
+       "direction": "credit"
+      }
+     ],
+     "share": "0000",
+     "start_printed": true
+    },
+    {
+     "account": "987654321",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": 766021,
+     "currency": "USD",
+     "defects": [
+      "image_only_scan",
+      "jpeg_noise"
+     ],
+     "expected": "auto",
+     "family": "andrews-share",
+     "holder": "EXAMPLE PERSON",
+     "holder_printed": true,
+     "id": "andrews-v4-2022-06-scan-jpeg-noise.pdf#2",
+     "institution": "Andrews",
+     "notes": "share 0040",
+     "opening_minor": 690020,
+     "period_end": "2022-06-30",
+     "period_start": "2022-06-01",
+     "rows": [
+      {
+       "amount_minor": 4000,
+       "balance_after": 686020,
+       "date": "2022-06-04",
+       "description": "Withdrawal Online Banking Transfer To Share 0000",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 6129,
+       "balance_after": 679891,
+       "date": "2022-06-08",
+       "description": "Withdrawal Debit Card EXAMPLE GROCER 6",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 121000,
+       "balance_after": 800891,
+       "date": "2022-06-15",
+       "description": "Deposit ACH EXAMPLE EMPLOYER PAYROLL",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 9870,
+       "balance_after": 791021,
+       "date": "2022-06-19",
+       "description": "Withdrawal ACH EXAMPLE UTILITY 6",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 25000,
+       "balance_after": 766021,
+       "date": "2022-06-27",
+       "description": "Withdrawal Check 1042",
+       "direction": "debit"
+      }
+     ],
+     "share": "0040",
+     "start_printed": true
+    }
+   ],
+   "sha256": "0fc7715df5aa5b4764239ca2fd89fb6ca287a04489623f0c4999c033cf010fb7",
+   "size": 95943
+  },
+  {
+   "degrade": {
+    "faint": 0.45
+   },
+   "filename": "andrews-v4-2022-07-scan-faint.pdf",
+   "mode": "image_only",
+   "pages": 1,
+   "periods": [
+    {
+     "account": "987654321",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": 100147,
+     "currency": "USD",
+     "defects": [
+      "image_only_scan",
+      "faint_print"
+     ],
+     "expected": "auto",
+     "family": "andrews-share",
+     "holder": "EXAMPLE PERSON",
+     "holder_printed": true,
+     "id": "andrews-v4-2022-07-scan-faint.pdf#1",
+     "institution": "Andrews",
+     "notes": "share 0000",
+     "opening_minor": 96126,
+     "period_end": "2022-07-31",
+     "period_start": "2022-07-01",
+     "rows": [
+      {
+       "amount_minor": 4000,
+       "balance_after": 100126,
+       "date": "2022-07-04",
+       "description": "Deposit Online Banking Transfer From Share 0040",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 21,
+       "balance_after": 100147,
+       "date": "2022-07-23",
+       "description": "Deposit Dividend",
+       "direction": "credit"
+      }
+     ],
+     "share": "0000",
+     "start_printed": true
+    },
+    {
+     "account": "987654321",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": 842021,
+     "currency": "USD",
+     "defects": [
+      "image_only_scan",
+      "faint_print"
+     ],
+     "expected": "auto",
+     "family": "andrews-share",
+     "holder": "EXAMPLE PERSON",
+     "holder_printed": true,
+     "id": "andrews-v4-2022-07-scan-faint.pdf#2",
+     "institution": "Andrews",
+     "notes": "share 0040",
+     "opening_minor": 766021,
+     "period_end": "2022-07-31",
+     "period_start": "2022-07-01",
+     "rows": [
+      {
+       "amount_minor": 4000,
+       "balance_after": 762021,
+       "date": "2022-07-04",
+       "description": "Withdrawal Online Banking Transfer To Share 0000",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 6130,
+       "balance_after": 755891,
+       "date": "2022-07-08",
+       "description": "Withdrawal Debit Card EXAMPLE GROCER 7",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 121000,
+       "balance_after": 876891,
+       "date": "2022-07-15",
+       "description": "Deposit ACH EXAMPLE EMPLOYER PAYROLL",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 9870,
+       "balance_after": 867021,
+       "date": "2022-07-19",
+       "description": "Withdrawal ACH EXAMPLE UTILITY 7",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 25000,
+       "balance_after": 842021,
+       "date": "2022-07-27",
+       "description": "Withdrawal Check 1042",
+       "direction": "debit"
+      }
+     ],
+     "share": "0040",
+     "start_printed": true
+    }
+   ],
+   "sha256": "34c4d6af522b24888780c9a94578de99110ae26ad213810c766736252cc23c3a",
+   "size": 49386
+  },
+  {
+   "degrade": {
+    "dpi": 150,
+    "faint": 0.6,
+    "jpeg": 40,
+    "noise": 6,
+    "skew": 1.0
+   },
+   "filename": "andrews-v4-2022-08-scan-combined.pdf",
+   "mode": "image_only",
+   "pages": 1,
+   "periods": [
+    {
+     "account": "987654321",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": 104168,
+     "currency": "USD",
+     "defects": [
+      "image_only_scan",
+      "skew",
+      "low_dpi",
+      "faint_print",
+      "jpeg_noise"
+     ],
+     "expected": "auto",
+     "family": "andrews-share",
+     "holder": "EXAMPLE PERSON",
+     "holder_printed": true,
+     "id": "andrews-v4-2022-08-scan-combined.pdf#1",
+     "institution": "Andrews",
+     "notes": "share 0000",
+     "opening_minor": 100147,
+     "period_end": "2022-08-31",
+     "period_start": "2022-08-01",
+     "rows": [
+      {
+       "amount_minor": 4000,
+       "balance_after": 104147,
+       "date": "2022-08-04",
+       "description": "Deposit Online Banking Transfer From Share 0040",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 21,
+       "balance_after": 104168,
+       "date": "2022-08-23",
+       "description": "Deposit Dividend",
+       "direction": "credit"
+      }
+     ],
+     "share": "0000",
+     "start_printed": true
+    },
+    {
+     "account": "987654321",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": 918020,
+     "currency": "USD",
+     "defects": [
+      "image_only_scan",
+      "skew",
+      "low_dpi",
+      "faint_print",
+      "jpeg_noise"
+     ],
+     "expected": "auto",
+     "family": "andrews-share",
+     "holder": "EXAMPLE PERSON",
+     "holder_printed": true,
+     "id": "andrews-v4-2022-08-scan-combined.pdf#2",
+     "institution": "Andrews",
+     "notes": "share 0040",
+     "opening_minor": 842021,
+     "period_end": "2022-08-31",
+     "period_start": "2022-08-01",
+     "rows": [
+      {
+       "amount_minor": 4000,
+       "balance_after": 838021,
+       "date": "2022-08-04",
+       "description": "Withdrawal Online Banking Transfer To Share 0000",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 6131,
+       "balance_after": 831890,
+       "date": "2022-08-08",
+       "description": "Withdrawal Debit Card EXAMPLE GROCER 8",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 121000,
+       "balance_after": 952890,
+       "date": "2022-08-15",
+       "description": "Deposit ACH EXAMPLE EMPLOYER PAYROLL",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 9870,
+       "balance_after": 943020,
+       "date": "2022-08-19",
+       "description": "Withdrawal ACH EXAMPLE UTILITY 8",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 25000,
+       "balance_after": 918020,
+       "date": "2022-08-27",
+       "description": "Withdrawal Check 1042",
+       "direction": "debit"
+      }
+     ],
+     "share": "0040",
+     "start_printed": true
+    }
+   ],
+   "sha256": "4319877c323a3bfad166ca645a3084f054e8a88e2f851177850c3bc75c9cd205",
+   "size": 54660
+  },
+  {
+   "degrade": {
+    "faint": 0.5
+   },
+   "filename": "andrews-v4-2022-09-ocr-amount-digit-faint-scan.pdf",
+   "mode": "scan_text_layer",
+   "pages": 1,
+   "periods": [
+    {
+     "account": "987654321",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": 108189,
+     "currency": "USD",
+     "defects": [
+      "faint_print"
+     ],
+     "expected": "auto",
+     "family": "andrews-share",
+     "holder": "EXAMPLE PERSON",
+     "holder_printed": true,
+     "id": "andrews-v4-2022-09-ocr-amount-digit-faint-scan.pdf#1",
+     "institution": "Andrews",
+     "notes": "share 0000",
+     "opening_minor": 104168,
+     "period_end": "2022-09-30",
+     "period_start": "2022-09-01",
+     "rows": [
+      {
+       "amount_minor": 4000,
+       "balance_after": 108168,
+       "date": "2022-09-04",
+       "description": "Deposit Online Banking Transfer From Share 0040",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 21,
+       "balance_after": 108189,
+       "date": "2022-09-23",
+       "description": "Deposit Dividend",
+       "direction": "credit"
+      }
+     ],
+     "share": "0000",
+     "start_printed": true
+    },
+    {
+     "account": "987654321",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": 994018,
+     "currency": "USD",
+     "defects": [
+      "faint_print",
+      "ocr_amount_digit"
+     ],
+     "expected": "auto",
+     "family": "andrews-share",
+     "holder": "EXAMPLE PERSON",
+     "holder_printed": true,
+     "id": "andrews-v4-2022-09-ocr-amount-digit-faint-scan.pdf#2",
+     "institution": "Andrews",
+     "notes": "share 0040",
+     "opening_minor": 918020,
+     "period_end": "2022-09-30",
+     "period_start": "2022-09-01",
+     "rows": [
+      {
+       "amount_minor": 4000,
+       "balance_after": 914020,
+       "date": "2022-09-04",
+       "description": "Withdrawal Online Banking Transfer To Share 0000",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 6132,
+       "balance_after": 907888,
+       "date": "2022-09-08",
+       "description": "Withdrawal Debit Card EXAMPLE GROCER 9",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 121000,
+       "balance_after": 1028888,
+       "date": "2022-09-15",
+       "description": "Deposit ACH EXAMPLE EMPLOYER PAYROLL",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 9870,
+       "balance_after": 1019018,
+       "date": "2022-09-19",
+       "description": "Withdrawal ACH EXAMPLE UTILITY 9",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 25000,
+       "balance_after": 994018,
+       "date": "2022-09-27",
+       "description": "Withdrawal Check 1042",
+       "direction": "debit"
+      }
+     ],
+     "share": "0040",
+     "start_printed": true
+    }
+   ],
+   "sha256": "8f1a9672c4e5432324917b657ed61fe3f05db56902e01cf4f8c535bb426517e7",
+   "size": 59726
+  },
+  {
+   "filename": "andrews-v4-2022-10-continued-section.pdf",
+   "mode": "digital",
+   "pages": 2,
+   "periods": [
+    {
+     "account": "987654321",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": 112210,
+     "currency": "USD",
+     "defects": [],
+     "expected": "auto",
+     "family": "andrews-share",
+     "holder": "EXAMPLE PERSON",
+     "holder_printed": true,
+     "id": "andrews-v4-2022-10-continued-section.pdf#1",
+     "institution": "Andrews",
+     "notes": "share 0000",
+     "opening_minor": 108189,
+     "period_end": "2022-10-31",
+     "period_start": "2022-10-01",
+     "rows": [
+      {
+       "amount_minor": 4000,
+       "balance_after": 112189,
+       "date": "2022-10-04",
+       "description": "Deposit Online Banking Transfer From Share 0040",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 21,
+       "balance_after": 112210,
+       "date": "2022-10-23",
+       "description": "Deposit Dividend",
+       "direction": "credit"
+      }
+     ],
+     "share": "0000",
+     "start_printed": true
+    },
+    {
+     "account": "987654321",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": 1070015,
+     "currency": "USD",
+     "defects": [
+      "multi_page"
+     ],
+     "expected": "auto",
+     "family": "andrews-share",
+     "holder": "EXAMPLE PERSON",
+     "holder_printed": true,
+     "id": "andrews-v4-2022-10-continued-section.pdf#2",
+     "institution": "Andrews",
+     "notes": "share 0040",
+     "opening_minor": 994018,
+     "period_end": "2022-10-31",
+     "period_start": "2022-10-01",
+     "rows": [
+      {
+       "amount_minor": 4000,
+       "balance_after": 990018,
+       "date": "2022-10-04",
+       "description": "Withdrawal Online Banking Transfer To Share 0000",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 6133,
+       "balance_after": 983885,
+       "date": "2022-10-08",
+       "description": "Withdrawal Debit Card EXAMPLE GROCER 10",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 121000,
+       "balance_after": 1104885,
+       "date": "2022-10-15",
+       "description": "Deposit ACH EXAMPLE EMPLOYER PAYROLL",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 9870,
+       "balance_after": 1095015,
+       "date": "2022-10-19",
+       "description": "Withdrawal ACH EXAMPLE UTILITY 10",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 25000,
+       "balance_after": 1070015,
+       "date": "2022-10-27",
+       "description": "Withdrawal Check 1042",
+       "direction": "debit"
+      }
+     ],
+     "share": "0040",
+     "start_printed": true
+    }
+   ],
+   "sha256": "d48614a3c4ecb780577e926e18d57f0d8341940a325976c193a0ffbe14cec323",
+   "size": 8906
+  },
+  {
+   "filename": "andrews-v4-2022-11-missing-page-2.pdf",
+   "missing_pages": [
+    2
+   ],
+   "mode": "digital",
+   "pages": 1,
+   "periods": [
+    {
+     "account": "987654321",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": 116231,
+     "currency": "USD",
+     "defects": [],
+     "expected": "auto",
+     "family": "andrews-share",
+     "holder": "EXAMPLE PERSON",
+     "holder_printed": true,
+     "id": "andrews-v4-2022-11-missing-page-2.pdf#1",
+     "institution": "Andrews",
+     "notes": "share 0000",
+     "opening_minor": 112210,
+     "period_end": "2022-11-30",
+     "period_start": "2022-11-01",
+     "rows": [
+      {
+       "amount_minor": 4000,
+       "balance_after": 116210,
+       "date": "2022-11-04",
+       "description": "Deposit Online Banking Transfer From Share 0040",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 21,
+       "balance_after": 116231,
+       "date": "2022-11-23",
+       "description": "Deposit Dividend",
+       "direction": "credit"
+      }
+     ],
+     "share": "0000",
+     "start_printed": true
+    },
+    {
+     "account": "987654321",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": 1146011,
+     "currency": "USD",
+     "defects": [
+      "multi_page",
+      "missing_page"
+     ],
+     "expected": "hold",
+     "family": "andrews-share",
+     "holder": "EXAMPLE PERSON",
+     "holder_printed": true,
+     "id": "andrews-v4-2022-11-missing-page-2.pdf#2",
+     "institution": "Andrews",
+     "notes": "share 0040",
+     "opening_minor": 1070015,
+     "period_end": "2022-11-30",
+     "period_start": "2022-11-01",
+     "rows": [
+      {
+       "amount_minor": 4000,
+       "balance_after": 1066015,
+       "date": "2022-11-04",
+       "description": "Withdrawal Online Banking Transfer To Share 0000",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 6134,
+       "balance_after": 1059881,
+       "date": "2022-11-08",
+       "description": "Withdrawal Debit Card EXAMPLE GROCER 11",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 121000,
+       "balance_after": 1180881,
+       "date": "2022-11-15",
+       "description": "Deposit ACH EXAMPLE EMPLOYER PAYROLL",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 9870,
+       "balance_after": 1171011,
+       "date": "2022-11-19",
+       "description": "Withdrawal ACH EXAMPLE UTILITY 11",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 25000,
+       "balance_after": 1146011,
+       "date": "2022-11-27",
+       "description": "Withdrawal Check 1042",
+       "direction": "debit"
+      }
+     ],
+     "share": "0040",
+     "start_printed": true
+    }
+   ],
+   "sha256": "511c32d9dc53e3ee9e392801c32c207fb28435b55e5807b9fe902edfaf2e7b1e",
+   "size": 6343
+  },
+  {
+   "filename": "credit-one-v4-cycle-1-credit-balance.pdf",
+   "mode": "digital",
+   "pages": 1,
+   "periods": [
+    {
+     "account": "4222333344445555",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": -7500,
+     "currency": "USD",
+     "defects": [
+      "credit_balance"
+     ],
+     "expected": "auto",
+     "family": "credit-one-card",
+     "holder": "EXAMPLE PERSON",
+     "holder_printed": true,
+     "id": "credit-one-v4-cycle-1-credit-balance.pdf#1",
+     "institution": "Credit One Bank",
+     "notes": "",
+     "opening_minor": 5000,
+     "period_end": "2024-10-15",
+     "period_start": "2024-09-16",
+     "rows": [
+      {
+       "amount_minor": 2500,
+       "date": "2024-09-20",
+       "description": "EXAMPLE SHOP CB1",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 15000,
+       "date": "2024-09-28",
+       "description": "PAYMENT RECEIVED CB1",
+       "direction": "credit"
+      }
+     ],
+     "start_printed": true
+    }
+   ],
+   "sha256": "59c4246a647c2ea50e824ce20290f6bbaa5683007e9d68cdbf7776ca4c64f5e2",
+   "size": 8935
+  },
+  {
+   "filename": "credit-one-v4-cycle-2-credit-balance.pdf",
+   "mode": "digital",
+   "pages": 1,
+   "periods": [
+    {
+     "account": "4222333344445555",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": -4500,
+     "currency": "USD",
+     "defects": [
+      "credit_balance"
+     ],
+     "expected": "auto",
+     "family": "credit-one-card",
+     "holder": "EXAMPLE PERSON",
+     "holder_printed": true,
+     "id": "credit-one-v4-cycle-2-credit-balance.pdf#1",
+     "institution": "Credit One Bank",
+     "notes": "",
+     "opening_minor": -7500,
+     "period_end": "2024-11-15",
+     "period_start": "2024-10-16",
+     "rows": [
+      {
+       "amount_minor": 3000,
+       "date": "2024-10-22",
+       "description": "EXAMPLE CAFE CB2",
+       "direction": "debit"
+      }
+     ],
+     "start_printed": true
+    }
+   ],
+   "sha256": "41e3da323666bb57b28c7303506c40e301ed26c3e50a936ebf225350919a17b0",
+   "size": 8094
   }
  ],
  "synthetic": true,
- "version": "statement-automation-corpus-v3"
+ "version": "statement-automation-corpus-v4"
 }

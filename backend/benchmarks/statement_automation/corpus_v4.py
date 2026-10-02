@@ -212,6 +212,13 @@ def capital_one_entries():
                         degrade=dict(dpi=150, jpeg=35, noise=6),
                         periods=[period(start, end, balance, truth_rows, closing, 'auto',
                                         ['image_only_scan', 'low_dpi', 'jpeg_noise'])]))
+    balance = closing
+    # 7: an image-only scan at the corpus' usual 200 dpi, no other damage.
+    start, end = date(2025, 3, 16), date(2025, 4, 15)
+    rows = cycle_rows(start, 7)
+    pages, truth_rows, closing = capital_one_pages(ending=ending, start=start, end=end, opening=balance, rows=rows)
+    entries.append(dict(filename='capital-one-2025-04-scan-image-only.pdf', mode='image_only', pages=pages,
+                        periods=[period(start, end, balance, truth_rows, closing, 'auto', ['image_only_scan'])]))
     return entries
 
 
@@ -830,6 +837,305 @@ def receipt_entries():
     return entries
 
 
+# ---------------------------------------------------------------------------
+# Generic labelled statements (no registered layout) under new accounts:
+# degraded scans, overdraft, MXN, ruled grid, multi-page and missing pages.
+# ---------------------------------------------------------------------------
+
+def generic_v4_pages(*, bank, holder, account, currency, start, end, opening, rows, per_page=None,
+                     damage_cells=(), ruled=False):
+    """Return (pages, closing, rules). Negative balances print a leading minus.
+
+    ``per_page`` splits the rows across pages (counts); every page carries
+    "Page n of m" and continuation pages repeat the column headings.
+    """
+    chunks, remaining = [], list(enumerate(rows))
+    for size in (per_page or [len(rows)]):
+        chunks.append(remaining[:size])
+        remaining = remaining[size:]
+    assert not remaining
+    count = len(chunks)
+    columns = [L(40, 'Date'), L(120, 'Description'), R(380, 'Credit'), R(460, 'Debit'), R(560, 'Balance')]
+    balance = opening
+    pages, rules = [], []
+    for number, chunk in enumerate(chunks, start=1):
+        if number == 1:
+            lines = [(40, [L(40, f'Bank: {bank}')]), (54, [L(40, f'Account Name: {holder}')]),
+                     (68, [L(40, f'Account Number: {account}')]), (82, [L(40, f'Currency: {currency}')]),
+                     (96, [L(40, f'Statement Period: {start:%B} {start.day}, {start.year} - '
+                                 f'{end:%B} {end.day}, {end.year}')]),
+                     (130, columns),
+                     (146, [L(40, start.isoformat()), L(120, 'Opening Balance'), R(560, _signed(opening))])]
+            y = 160
+        else:
+            lines = [(40, [L(40, f'{bank} - Account Number: {account}')]), (70, columns)]
+            y = 86
+        # Rules: above the headings, under them (above the opening balance on
+        # page 1), between rows and below the last row.
+        table_top, row_tops = (126 if number == 1 else 66), ([143] if number == 1 else [])
+        for index, item in chunk:
+            balance += item['amount_minor'] if item['direction'] == 'credit' else -item['amount_minor']
+            item['balance_after'] = balance
+            amount = money(item['amount_minor'])
+            ocr = damage(amount) if index in damage_cells else None
+            row_tops.append(y - 3)
+            lines.append((y, [L(40, item['date']), L(120, item['description']),
+                              R(380 if item['direction'] == 'credit' else 460, amount, ocr), R(560, _signed(balance))]))
+            y += 14
+        if number == count:
+            row_tops.append(y - 3)
+            lines.append((y, [L(40, end.isoformat()), L(120, 'Closing Balance'), R(560, _signed(balance))]))
+            y += 14
+        lines.append((760, [L(260, f'Page {number} of {count}')]))
+        pages.append(lines)
+        if ruled:
+            bottom = y - 3
+            xs = [36, 116, 330, 400, 480, 566]
+            segments = [(xs[0], t, xs[-1], t) for t in sorted({table_top, *row_tops, bottom})]
+            segments += [(x, table_top, x, bottom) for x in xs]
+            rules.append(segments)
+    return pages, balance, (rules if ruled else None)
+
+
+def _generic_v4_rows(year, month, seed, *, large_debit=0):
+    base = [('Incoming transfer', 98_000 + seed * 1_000, 'credit'), ('Card purchase hardware', 7_215 + seed, 'debit'),
+            ('Insurance direct debit', 21_450, 'debit'), ('Client payment received', 164_000 + seed, 'credit'),
+            ('Wire to contractor', 77_700 + seed * 10, 'debit')]
+    if large_debit:
+        base.insert(2, ('Wire to property escrow', large_debit, 'debit'))
+    return [row(date(year, month, 2 + 5 * i).isoformat(), f'{desc} {month:02d}-{i}', amount, direction)
+            for i, (desc, amount, direction) in enumerate(base)]
+
+
+DAMAGE_MATRIX = [
+    # label, degrade, defects
+    ('skew-1deg', dict(skew=1.0), ['skew']),
+    ('skew-2-5deg', dict(skew=2.5), ['skew']),
+    ('150dpi', dict(dpi=150), ['low_dpi']),
+    ('100dpi', dict(dpi=100), ['low_dpi']),
+    ('jpeg-noise', dict(jpeg=30, noise=8), ['jpeg_noise']),
+    ('faint', dict(faint=0.45), ['faint_print']),
+    ('combined', dict(dpi=150, skew=1.0, faint=0.6, jpeg=40, noise=6), ['skew', 'low_dpi', 'faint_print', 'jpeg_noise']),
+]
+
+
+def generic_v4_entries():
+    entries = []
+    bank, holder, account = 'Lakeside Synthetic Bank', 'Southwind Synthetic Holdings LLC', '66602345'
+
+    def period(start, end, opening, rows, closing, expected, defects, currency='USD', account=account,
+               holder=holder, bank=bank):
+        return truth(family='generic-labelled', institution=bank, account=account, holder=holder,
+                     currency=currency, start=start.isoformat(), end=end.isoformat(), opening=opening,
+                     closing=closing, rows=rows, expected=expected, defects=defects)
+
+    balance = 500_000
+    months = iter([(2025, m) for m in range(1, 13)] + [(2026, m) for m in range(1, 13)])
+
+    def add(label, mode, defects, expected='auto', degrade=None, per_page=None, drop=None, damage_cells=(),
+            ruled=False, large_debit=0):
+        nonlocal balance
+        year, month = next(months)
+        start, end = date(year, month, 1), _month_end(year, month)
+        rows = _generic_v4_rows(year, month, month, large_debit=large_debit)
+        if per_page:
+            rows += [row(date(year, month, 23 + i).isoformat(), f'Card purchase office {month:02d}-{9 + i}',
+                         3_300 + i, 'debit') for i in range(sum(per_page) - len(rows))]
+        pages, closing, rules = generic_v4_pages(bank=bank, holder=holder, account=account, currency='USD',
+                                                 start=start, end=end, opening=balance, rows=rows,
+                                                 per_page=per_page, damage_cells=damage_cells, ruled=ruled)
+        entry = dict(filename=f'generic-v4-{year}-{month:02d}-{label}.pdf', mode=mode, pages=pages,
+                     periods=[period(start, end, balance, rows, closing, expected, defects)])
+        if degrade:
+            entry['degrade'] = degrade
+        if rules:
+            entry['rules'] = rules
+            entry['ruled'] = True
+        if drop:
+            entry['pages'] = [p for n, p in enumerate(pages, start=1) if n not in drop]
+            entry['missing_pages'] = drop
+        entries.append(entry)
+        balance = closing
+
+    for label, degrade, defects in DAMAGE_MATRIX:
+        add(f'scan-{label}', 'image_only', ['image_only_scan'] + defects, degrade=degrade)
+    add('ocr-amount-digit-poor-scan', 'scan_text_layer', ['ocr_amount_digit', 'low_dpi', 'jpeg_noise'],
+        degrade=dict(dpi=150, jpeg=35, noise=6), damage_cells={1})
+    add('ruled', 'digital', ['ruled_pdf'], ruled=True)
+    add('overdrawn', 'digital', ['negative_balance'], large_debit=balance + 150_000)
+    add('three-pages', 'digital', ['multi_page'], per_page=[4, 4, 3])
+    add('missing-page-2', 'digital', ['missing_page'], expected='hold', per_page=[4, 4, 3], drop=[2])
+    add('missing-last-page', 'digital', ['missing_page'], expected='hold', per_page=[4, 4, 3], drop=[3])
+
+    # Pesos on a generic labelled statement.
+    mx_bank, mx_holder, mx_account = 'Banco Sintetico del Norte', 'Comercial Sintetica del Norte SA de CV', '77703456'
+    start, end = date(2025, 3, 1), date(2025, 3, 31)
+    rows = _generic_v4_rows(2025, 3, 7)
+    pages, closing, _ = generic_v4_pages(bank=mx_bank, holder=mx_holder, account=mx_account, currency='MXN',
+                                         start=start, end=end, opening=2_000_000, rows=rows)
+    entries.append(dict(filename='generic-v4-mxn-2025-03-clean.pdf', mode='digital', pages=pages,
+        periods=[period(start, end, 2_000_000, rows, closing, 'auto', ['mxn'], currency='MXN', account=mx_account,
+                        holder=mx_holder, bank=mx_bank)]))
+    return entries
+
+
+# ---------------------------------------------------------------------------
+# Andrews share statements (the layout that dominates the live batch) under
+# a new account: the degraded-scan matrix, a continued section and a missing
+# continuation page.
+# ---------------------------------------------------------------------------
+
+ANDREWS_V4_ACCOUNT = '987654321'
+
+
+def andrews_v4_entries():
+    from benchmarks.statement_automation.corpus import andrews_page, _andrews_header, _mmdd
+    entries = []
+    account = ANDREWS_V4_ACCOUNT
+    savings, checking = 72_000, 310_000
+    months = iter([(2022, m) for m in range(1, 13)])
+
+    def share_rows(year, month):
+        save = [row(date(year, month, 4).isoformat(), 'Deposit Online Banking Transfer From Share 0040', 4_000, 'credit'),
+                row(date(year, month, 23).isoformat(), 'Deposit Dividend', 21, 'credit')]
+        check = [row(date(year, month, 4).isoformat(), 'Withdrawal Online Banking Transfer To Share 0000', 4_000, 'debit'),
+                 row(date(year, month, 8).isoformat(), f'Withdrawal Debit Card EXAMPLE GROCER {month}', 6_123 + month, 'debit'),
+                 row(date(year, month, 15).isoformat(), 'Deposit ACH EXAMPLE EMPLOYER PAYROLL', 121_000, 'credit'),
+                 row(date(year, month, 19).isoformat(), f'Withdrawal ACH EXAMPLE UTILITY {month}', 9_870, 'debit'),
+                 row(date(year, month, 27).isoformat(), 'Withdrawal Check 1042', 25_000, 'debit')]
+        return save, check
+
+    def truths(start, end, openings, closings, rows_by_share, defects, expected=None):
+        expected = expected or {}
+        return [truth(family='andrews-share', institution='Andrews', account=account, holder='EXAMPLE PERSON',
+                      currency='USD', start=start.isoformat(), end=end.isoformat(), opening=openings[share],
+                      closing=closings[share], rows=rows_by_share[share], expected=expected.get(share, 'auto'),
+                      defects=defects.get(share, []), notes=f'share {share}') | dict(share=share)
+                for share in ('0000', '0040')]
+
+    def standard(label, mode, defects, degrade=None, damage_cells=()):
+        nonlocal savings, checking
+        year, month = next(months)
+        start, end = date(year, month, 1), _month_end(year, month)
+        save, check = share_rows(year, month)
+        lines, closings = andrews_page(account=account, start=start, end=end,
+                                       shares=[('0000', 'BASE SHARE SAVINGS', savings, save),
+                                               ('0040', 'FREE CHECKING', checking, check)],
+                                       damage_cells=damage_cells)
+        share_defects = {'0000': list(defects), '0040': list(defects)}
+        if damage_cells:
+            share_defects['0040'] = share_defects['0040'] + ['ocr_amount_digit']
+        entry = dict(filename=f'andrews-v4-{year}-{month:02d}-{label}.pdf', mode=mode, pages=[lines],
+                     periods=truths(start, end, {'0000': savings, '0040': checking}, closings,
+                                    {'0000': save, '0040': check}, share_defects))
+        if degrade:
+            entry['degrade'] = degrade
+        entries.append(entry)
+        savings, checking = closings['0000'], closings['0040']
+
+    standard('scan-image-only', 'image_only', ['image_only_scan'])
+    for label, degrade, defects in DAMAGE_MATRIX:
+        standard(f'scan-{label}', 'image_only', ['image_only_scan'] + defects, degrade=degrade)
+    standard('ocr-amount-digit-faint-scan', 'scan_text_layer', ['faint_print'], degrade=dict(faint=0.5),
+             damage_cells={('0040', 1, 'amount')})
+
+    # The checking section continues on printed page 2: complete, then the
+    # same shape with page 2 missing (the checking period must be held).
+    for label, drop in (('continued-section', None), ('missing-page-2', [2])):
+        year, month = next(months)
+        start, end = date(year, month, 1), _month_end(year, month)
+        save, check = share_rows(year, month)
+        first = _andrews_header(account, start, end, 1)
+        y = 220
+        closings = {}
+        balance = savings
+        first.append((y, [L(15, f'{start:%m/%d} ID 0000 BASE SHARE SAVINGS Previous Balance'), R(380, money(savings))]))
+        for item in save:
+            y += 12
+            balance += item['amount_minor']
+            item['balance_after'] = balance
+            first.append((y, [L(15, _mmdd(item['date'])), L(75, item['description']), R(340, money(item['amount_minor'])),
+                              R(380, money(balance))]))
+        y += 12
+        first.append((y, [L(15, _mmdd(end.isoformat())), L(75, 'Ending Balance'), R(380, money(balance))]))
+        closings['0000'] = balance
+        y += 12
+        first.append((y, [L(15, f'{start:%m/%d} ID 0040 FREE CHECKING Previous Balance'), R(380, money(checking))]))
+        balance = checking
+        lines_by_index = []
+        for item in check:
+            delta = item['amount_minor'] if item['direction'] == 'credit' else -item['amount_minor']
+            balance += delta
+            item['balance_after'] = balance
+            lines_by_index.append([L(15, _mmdd(item['date'])), L(75, item['description']),
+                                   R(340, ('-' if delta < 0 else '') + money(item['amount_minor'])), R(380, money(balance))])
+        closings['0040'] = balance
+        for cells in lines_by_index[:2]:
+            y += 12
+            first.append((y, cells))
+        first.append((y + 12, [L(15, 'Continued on following page')]))
+        second = _andrews_header(account, start, end, 2, names=False)
+        y = 220
+        for cells in lines_by_index[2:]:
+            second.append((y, cells))
+            y += 12
+        second.append((y, [L(15, _mmdd(end.isoformat())), L(75, 'Ending Balance'), R(380, money(balance))]))
+        defects = {'0040': ['multi_page'] + (['missing_page'] if drop else [])}
+        entry = dict(filename=f'andrews-v4-{year}-{month:02d}-{label}.pdf', mode='digital', pages=[first, second],
+                     periods=truths(start, end, {'0000': savings, '0040': checking}, closings,
+                                    {'0000': save, '0040': check}, defects,
+                                    expected={'0040': 'hold'} if drop else None))
+        if drop:
+            entry['pages'] = [first]
+            entry['missing_pages'] = drop
+        entries.append(entry)
+        savings, checking = closings['0000'], closings['0040']
+    return entries
+
+
+# ---------------------------------------------------------------------------
+# Credit One with a credit balance (an overpayment): the layout prints the
+# balance with a trailing minus, e.g. $75.00-.
+# ---------------------------------------------------------------------------
+
+def credit_one_credit_balance_entries():
+    from benchmarks.statement_automation.corpus import credit_one_page
+    entries = []
+    card = '4222 3333 4444 5555'
+    balance = 5_000
+    for number, (start, end, rows) in enumerate((
+            (date(2024, 9, 16), date(2024, 10, 15),
+             [row('2024-09-20', 'EXAMPLE SHOP CB1', 2_500, 'debit'),
+              row('2024-09-28', 'PAYMENT RECEIVED CB1', 15_000, 'credit')]),
+            (date(2024, 10, 16), date(2024, 11, 15),
+             [row('2024-10-22', 'EXAMPLE CAFE CB2', 3_000, 'debit')]))):
+        lines, truth_rows, closing = credit_one_page(account=card, start=start, end=end, opening=balance, rows=rows,
+                                                     interest=0)
+        patched = []
+        for y, cells in lines:
+            new = []
+            for index, c in enumerate(cells):
+                c = dict(c)
+                label = cells[index - 1]['text'] if index else ''
+                if label == 'Previous Balance' and balance < 0:
+                    c['text'] += '-'
+                elif label == 'New Balance' and closing < 0:
+                    c['text'] += '-'
+                elif label == 'Minimum Payment Due' and closing < 0:
+                    c['text'] = '$0.00'
+                new.append(c)
+            patched.append((y, new))
+        entries.append(dict(filename=f'credit-one-v4-cycle-{number + 1}-credit-balance.pdf', mode='digital',
+                            pages=[patched],
+                            periods=[truth(family='credit-one-card', institution='Credit One Bank',
+                                           account=card.replace(' ', ''), holder='EXAMPLE PERSON', currency='USD',
+                                           start=start.isoformat(), end=end.isoformat(), opening=balance,
+                                           closing=closing, rows=truth_rows, expected='auto',
+                                           defects=['credit_balance'])]))
+        balance = closing
+    return entries
+
+
 def v4_entries():
     entries = []
     entries += capital_one_entries()
@@ -839,4 +1145,7 @@ def v4_entries():
     entries += kapital_entries()
     entries += santander_entries()
     entries += receipt_entries()
+    entries += generic_v4_entries()
+    entries += andrews_v4_entries()
+    entries += credit_one_credit_balance_entries()
     return entries
