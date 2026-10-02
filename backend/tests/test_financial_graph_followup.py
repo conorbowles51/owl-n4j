@@ -129,7 +129,7 @@ class InvokedAfterAdmissionTests(GraphFollowUpTestCase):
     def test_duplicate_ignored_receipt_does_not_request_follow_up(self):
         from services.financial import statement_import
         with patch.object(statement_import, '_write_statement_import', return_value=dict(outcome='duplicate_ignored')):
-            statement_import.confirm_statement_import(session_factory=None, case_id=self.f.case.id,
+            statement_import.confirm_statement_import(session_factory=self.f.SessionLocal, case_id=self.f.case.id,
                 evidence_file_id=uuid4(), request={}, actor=None, resolve_path=None)
         self.assertIsNone(graph_followup.pending_state(self.case))
 
