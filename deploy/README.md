@@ -120,13 +120,27 @@ across checkout changes, including automatic and standalone rollback. Rollback
 uses the same deployment lock as deployment.
 
 These checks are snapshots, not an intake lock: new work can arrive after the
-last check. Existing workers finish their current jobs during graceful shutdown
-(14,430-second worker wait and 14,500-second Docker grace). The backend service
-gets a 14,500-second systemd stop window; Uvicorn waits for requests and the
-application awaits its shielded atomic statement/recovery units. The installer
-reloads this service configuration without restarting a running job. This is a
-bounded graceful transition, not a guarantee for work that exceeds that window
-or for a host forced shutdown.
+last check. Engine workers finish their current jobs during graceful shutdown
+(14,430-second worker wait and 14,500-second Docker grace). The backend stop is
+bounded instead: Uvicorn cancels request tasks still running 20 seconds after
+SIGTERM, the lifespan abandons background financial units 10 seconds later,
+and the application's watchdog ends the process 45 seconds after the first
+stop signal. Abandoned units are durable (leased import batches, pending
+recovery items, revisioned identity-graph sweeps): their open transactions roll
+back and the next start resumes them. The service drop-in sets
+`TimeoutStopSec=90` and `UVICORN_TIMEOUT_GRACEFUL_SHUTDOWN=20`; systemd's
+SIGKILL at 90 seconds is the backstop. The installer reloads this service
+configuration without restarting a running job.
+
+Deploy and rollback never block on `systemctl restart`. The backend is stopped
+without blocking; if it is still running after 60 seconds the deploy records
+the last 80 lines of its journal (which name the requests and tasks still
+pending), sends SIGINT to every process in the unit (Uvicorn's force-quit),
+then SIGKILL after 20 more seconds. The deploy then always reaches its health
+check, writes the last-good marker when healthy, and ends its log with a
+summary block (outcome, commit, how the backend stop went, last-good) on every
+exit, including an interrupted one. `bash deploy/tests/test-backend-stop.sh`
+exercises the escalation with a simulated unit.
 
 The shutdown drop-in is installed from a regular temporary file and atomically
 renamed before `daemon-reload`. It does not depend on `/dev/stdin`, which may be

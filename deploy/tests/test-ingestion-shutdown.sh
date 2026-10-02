@@ -26,7 +26,7 @@ source "${test_root}/deploy/ingestion-safety.sh"
 configure_ingestion_shutdown <&-
 configure_ingestion_shutdown <&-
 unit="${test_root}/units/owl-backend-v2.service.d/ingestion-shutdown.conf"
-printf '[Service]\nTimeoutStopSec=14500\n' > "${test_root}/expected"
+printf '[Service]\nTimeoutStopSec=90\nEnvironment=UVICORN_TIMEOUT_GRACEFUL_SHUTDOWN=20\n' > "${test_root}/expected"
 cmp "${unit}" "${test_root}/expected"
 mode="$(stat -c '%a' "${unit}" 2>/dev/null || stat -f '%Lp' "${unit}")"
 test "${mode}" = 644
