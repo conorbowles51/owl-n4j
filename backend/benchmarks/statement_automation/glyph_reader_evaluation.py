@@ -122,7 +122,7 @@ def _same(a, b):
         and money_value(a) is not None
 
 
-def evaluate(readings_path, corpus_dir, degraded=True):
+def evaluate(readings_path, corpus_dir, degraded=True, kinds=DEGRADATIONS):
     import fitz
     from app.pipeline import statement_glyph_reader as glyphs
     from app.pipeline.statement_money_verification import METHOD, _strip, money_value
@@ -131,8 +131,8 @@ def evaluate(readings_path, corpus_dir, degraded=True):
     clean = Counter()
     clean_disputed = []
     clean_wrong = []
-    independence = {kind: Counter() for kind in DEGRADATIONS} if degraded else {}
-    correlated_examples = []
+    independence = {kind: Counter() for kind in kinds} if degraded else {}
+    correlated_examples, glyph_wrong_examples = [], []
     for path, reading in sorted(readings.items()):
         filename = Path(path).name
         records = [r for location in reading.get('source_locations') or []
@@ -199,6 +199,9 @@ def evaluate(readings_path, corpus_dir, degraded=True):
                                 counts['tesseract_single_reading_wrong_glyph_' + (
                                     'same_wrong' if _same(glyph, text) else 'correct' if g_ok
                                     else 'abstained' if glyph is None else 'other_wrong')] += 1
+                        if glyph is not None and not g_ok:
+                            glyph_wrong_examples.append(dict(kind=kind, file=filename, printed=truth_text,
+                                glyph=glyph, tesseract=tesseract[i], tesseract_readings=tesseract_readings[i][1]))
                         if not t_ok and _same(glyph, tesseract[i]):
                             counts['both_agree_on_wrong_value'] += 1
                             correlated_examples.append(dict(kind=kind, file=filename, printed=truth_text,
@@ -209,7 +212,7 @@ def evaluate(readings_path, corpus_dir, degraded=True):
                     image.close()
     return dict(clean=dict(sorted(clean.items())), disputed=clean_disputed, wrong=clean_wrong,
                 degraded={k: dict(sorted(v.items())) for k, v in independence.items()},
-                correlated_examples=correlated_examples,
+                correlated_examples=correlated_examples, glyph_wrong_examples=glyph_wrong_examples,
                 thresholds=dict(minimum_score=glyphs.MIN_SCORE, minimum_margin=glyphs.MIN_MARGIN))
 
 
@@ -219,15 +222,17 @@ def main(argv=None):
     parser.add_argument('--corpus', default=str(Path(__file__).with_name('corpus')))
     parser.add_argument('--out')
     parser.add_argument('--no-degraded', action='store_true')
+    parser.add_argument('--kinds', nargs='+', choices=DEGRADATIONS, default=list(DEGRADATIONS))
     args = parser.parse_args(argv)
     if str(ENGINE) not in sys.path:
         sys.path.insert(0, str(ENGINE))
-    report = evaluate(args.readings, args.corpus, degraded=not args.no_degraded)
+    report = evaluate(args.readings, args.corpus, degraded=not args.no_degraded, kinds=args.kinds)
     text = json.dumps(report, indent=1)
     if args.out:
         Path(args.out).write_text(text + '\n')
     print(json.dumps(dict(clean=report['clean'], wrong=report['wrong'], degraded=report['degraded'],
-                          correlated_examples=report['correlated_examples'][:20]), indent=1))
+                          correlated_examples=report['correlated_examples'][:20],
+                          glyph_wrong_examples=report['glyph_wrong_examples'][:20]), indent=1))
     for item in report['disputed']:
         print(item['file'], item['page_reading'], '->', item['glyph'], '| printed', item['printed'],
               '| crop', item['crop'], '|', item['reason'] or '')
