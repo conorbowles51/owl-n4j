@@ -13,25 +13,53 @@ sets it itself only when it is genuinely blocked on Neil; see "Halt rules".)
 
 ## ▶ NEXT
 
-**U0 — Establish whether the untested 29 September release is green.**
+**(2026-10-02 19:45) Wave 3 merged into `fin/release-1` (head after the workfile fold, see Log). NOT pushed.**
+Release-1 now: corpus v1–v3 37/49 ready without edits (75.5%), 37/40 recoverable (92.5%); corpus v4 additions
+28/75 (37.3%), 28/67 recoverable (41.8%); 0 wrong admissions anywhere. Suites: financial 5650 / all-tests 6041,
+only the 2 known `unassigned_statement` failures; tsc 0; vitest unit 295/295.
 
-The 29 Sept work (`a48958e0` through `bb3ccef3`) was pushed with builds only, no tests.
-Nothing after it can be trusted until that is known.
+**Next wave (≤3 headless units, each a worktree from fin/release-1, ranked by v4 recoverable periods unlocked):**
+1. **`fin/c-degraded`: degraded-image OCR + deskew** (~19 periods: degraded 12 [15 incl. combined] + skew 7 [10 incl.
+   combined]; they overlap on the combined scans). Detect and correct skew (every skewed scan fails today; 2.5° Andrews
+   not detected), then upscale/contrast-normalise low-dpi, faint and JPEG pages before OCR. Faint print currently holds
+   even a correct text layer. Safety gate unchanged: crop reread + second reader, benchmark must exit 0. Watch the two
+   near misses (wrong date on 1° skewed Andrews, wrong account on 100 dpi generic): they must stay held.
+2. **`fin/c-zero-totals`: printed zero totals as no-activity proof** (11 periods: Scotiabank, Santander, Kapital, Monex).
+   Standing decision taken here (a-corpus2 recommended it): printed zero totals AND equal printed opening/closing
+   balances on the same statement count as source proof, stored with basis `printed_zero_totals`, computed, never set
+   by hand. Reverse with one line if Neil rules that only printed counts of 0 qualify. Scotiabank's
+   `zero_activity_evidence` must reach admission. Also fix the benchmark pairing defect (Open defects) in this unit:
+   its Monex cases are exactly the ones it mis-pairs.
+3. **`fin/c-layouts`: Scotiabank/Monex movements layouts + BBVA/Capital One image reread** (3 + 2 + 1 = 6 periods).
+   The Scotiabank and Monex movements layouts were invented by a-corpus2; build against them only as a scaffold and say
+   so in notes. Lower value until real documents confirm the layout.
 
-1. Backend bootstrap per `CLAUDE.md` → Tests (skip if the packages already import).
-2. A full run already exists (see Log, 2026-10-02): 39 backend failures/errors and 72
-   vitest failures, by module. Start from those modules — run each failing module alone,
-   triage, fix — rather than re-running the whole suite first. Run the full backend suite
-   (command in `CLAUDE.md`) once at the end to confirm. Previous `CLAUDE.md` baseline
-   (3057 OK) predates the 29 Sept work; the suite is now 5544 tests.
-3. Frontend: `tsc -b` and `vitest --project unit` (cache-path rules in `CLAUDE.md`).
-4. Fix every failure that the 29 Sept code caused, each fix a separate commit with its
-   targeted module re-run. A failure that needs a product decision → record it under
-   "Open defects" with a recommendation and move on; do not halt for it.
-5. Record the new baseline counts in this file and in `CLAUDE.md` → Tests.
-
-Done when: suite and frontend checks are green (or every remaining failure is listed
-under Open defects with a cause), committed, pushed.
+**Open Neil decisions (nothing above waits on them; all have a recorded default):**
+- **Disposable PostgreSQL on 127.0.0.1:55434** (or name an instance that may hold throwaway schemas). Without it the
+  b-gate PG rows (two-worker exactly-once, save vs group confirmation, deadlock, removal, recovery prep ×6, concurrent
+  `queue_import` lock order, audit triggers) and b-unique's 4 new PG tests have never executed. Run both
+  `backend/tests/*_postgres.py` files (`LOUPE_TEST_LOCAL_POSTGRES=1`) before deploying the migration below.
+- **Migration `20261002_one_active_statement` runs at deploy** (`alembic upgrade`, single head, down_revision
+  `20260924_statement_recovery`). Deferred EXCLUDE constraint: one active admitted statement copy per case + evidence
+  file + statement id. Takes ACCESS EXCLUSIVE on `financial_source_documents` (~1k rows) briefly; refuses with an
+  offender list (adds nothing) if duplicates exist. Live read-only check 18:40: 0 offenders among 937. Approved in
+  principle by Neil; PG-semantic acceptance unproven (parsed only).
+- **Second reader (c-reader2)**: (1) accept glyph reader + Tesseract crop agreement + page reconciliation as
+  independent evidence for admission (default ON; kill switch `STATEMENT_GLYPH_SECOND_READER=false`); (2) 4-of-6 crop
+  contradiction instead of unanimous (generic-11 depends on it); (3) templates from non-money digits (dates/account
+  numbers; Andrews-05 and Credit One-7 depend on it); (4) show repaired cells beside the machine reading in the UI
+  (not built; design rule on corrections says it should be visible). No hosted vision model (private images).
+- **a-corpus2**: route deposit receipts out of statement batches automatically?; Mexican zero-activity sections treated
+  as `auto` in ground truth (consistent with Andrews quiet periods).
+- **Carried**: Merrick start = previous closing + 1 stored `derived`; c-generic pinned-repair exception to "never
+  substitute a crop value" (revert 13d03dbe to refuse); investigator-typed start recorded as `printed`;
+  `unassigned_statement` (moved continuation pages don't carry balance rows; the only 2 suite failures); U2 Neo4j index
+  auto-creation on first live run; check the suspected duplicate population (232 = 232) before the case's next import
+  auto-projects it; re-read live Andrews sources through the current reader (live data action); read-only audit of
+  admitted image-derived periods for compensating misreads.
+- **Before pushing fin/release-1**: in the live checkout, move the untracked `docs/financial-workflows/automation-workfile.md`
+  and `scripts/headless/` aside (they are now tracked in release-1; the fast-forward fails otherwise), push, then copy
+  the workfile back over the tracked one if it changed. After deploy: run the readiness refresh for the case.
 
 ---
 
@@ -110,7 +138,11 @@ reasoning, proceed. Set `STATUS: HALT — <reason>` only when:
 
 ## Open defects (found, not fixed)
 
-- (none recorded yet)
+- Benchmark pairing (`backend/benchmarks/statement_automation/harness.py` `_score`, ~L158): scores period end, share
+  and row amounts but not currency, so two sections of one file that differ only by currency (Monex 2024-03 MXN/USD
+  zero activity) tie and pair by item order. In release-1-w3 they paired crosswise: 2 false `currency_wrong` and 4
+  extra simulated actions; ready/held outcomes unaffected. Fix: add a currency term to `_score`. Assigned to
+  `fin/c-zero-totals` in ▶ NEXT. (Found 2026-10-02 integrate-3.)
 
 ## Log
 
@@ -130,3 +162,226 @@ reasoning, proceed. Set `STATUS: HALT — <reason>` only when:
     GET via `import_batches.checked_batch_items` → `read_pending`. Secondary: catalog 31 s,
     `review_upgrade.attach_upgrade` 20 s, BBVA `norm` 17 s (17.9M genexpr calls).
     Batch state: 53 ready / 191 attention. No fix written yet.
+- 2026-10-02 (interactive, Neil present) — Order changed with Neil's agreement: U1 first, U0 alongside it.
+  Three background subagents launched from interactive session app-v2-cd, each in its own worktree on
+  `/mnt/owl-data/fin-wt/` (branches `fin/u1-batch-read`, `fin/u0-backend`, `fin/u0-frontend`, all from
+  687da296). Agents commit locally and never push; the coordinator reviews, merges into
+  `integration/evidence-main-reunion`, updates this file, then pushes. Next after these land: U2.
+- 2026-10-02 (Neil: speed up without cutting corners) — U2 and U3 started in parallel too (branches
+  `fin/u2-projection`, `fin/u3-shutdown` from 687da296). U3 owns sweep start/stop only; U2 owns sweep
+  retry/backoff — expect a small merge in identity_graph.py. U1 ships on its own once verified (manual
+  SIGINT stop if U3 not yet merged). U4 deferred until after Alex's first usable release. Target first
+  usable release ~6–7 Oct. Ask Alex for her top 3 blockers.
+- 2026-10-02 — **Neil: automation of system use is THE priority** (investigator should not open/correct
+  statements). U4 (checkpoint A benchmark) is NOT deferred — started now on `fin/a-benchmark`. A read-only
+  agent is ranking why the live batch's 191/244 items need attention (by reason × layout). U0–U3 continue as
+  prerequisites (29 Sept automation code is untested; batch screen must load). When the ranking + baseline
+  land: launch repair-ladder agents (checkpoint C) on the top-ranked reasons/layouts immediately, then D.
+  The headline metric to report to Neil/Alex every release: % periods ready with zero human edits.
+
+### ▶ RESUME AFTER SESSION LOSS (2026-10-02, Neil left for a flight)
+The interactive session that ran 7 background agents was ended (SSH logoff, no tmux). Their work is on
+branches in worktrees under `/mnt/owl-data/fin-wt/` — each has `WIP-NOTES.md` (if it got written) and WIP
+commits: `fin/u1-batch-read`, `fin/u0-backend`, `fin/u0-frontend`, `fin/u2-projection`, `fin/u3-shutdown`,
+`fin/a-benchmark`. The read-only live ranking (why 191/244 need attention) writes to
+`/mnt/owl-data/fin-wt/live-ranking-PARTIAL.md`. To resume: for each worktree read `git log 687da296..HEAD`
++ WIP-NOTES.md, then relaunch one background agent per unfinished unit in the SAME worktree with the same
+brief (briefs = Queue entries above + the 2026-10-02 log lines). Automation is the priority. Never push
+(= live deploy) or run the graph backfill without Neil.
+
+### Live ranking — why 191/244 need attention (read-only batch_status, 2026-10-02, counts only)
+- ALL 191 blocked. One layout dominates: `andrews-share-statement` 232 items (179 blocked) + 12 `deposit_receipt` docs (all blocked).
+- Display reasons (overlapping): reading 170 · balance 87 · holder 34 · assignment 23 · currency 12 (receipts).
+  Per item: 76 one reason, 95 two, 20 three. Single-reason: reading 55, assignment 16, balance 5.
+- Underlying problems → covered by built automation?
+  amount unreadable ~152 → YES (29 Sept Andrews crop reread, reader v10) · running balance unreadable ~83 → YES (same) ·
+  opening/closing balance unavailable 86 → partly · "confirm no activity" 74 → NO · holder missing 34 → grouped decision only ·
+  assignment 23 → NO · date unreadable ~22 → NO · receipts in statement batch 12 → NO · balance/total mismatch 5 → NO.
+- Absent here: missing account/bank/currency/dates, unprinted start, duplicates, conflicts — so those built features do nothing for this batch.
+- **CAVEAT 1:** crop reread is inert until sources are RE-READ (batch read 23 Sept, before reader v10; live sources never reprocessed). Re-reading live sources = live data action → needs Neil.
+- **CAVEAT 2 (check FIRST):** another batch in the same case already has 232 IMPORTED items = same count as the Andrews items here, yet none flagged duplicate/overlap. Possible undetected duplicate population — verify before automating or importing any of these.
+- Top targets: (1) re-read Andrews through v10 [needs Neil ok]; (2) auto-detect no-activity periods (74); (3) Andrews opening/closing balance read (86); (4) auto-assign pages/rows to periods (23); (5) holder from same account's other periods (34) + route receipts out of statement batches (12).
+- Fine per-item split not run (agent's script blocked by permissions); cached result in the old session scratchpad (batch_status.pkl / fine.py).
+
+### U2 DONE on `fin/u2-projection` (commits 03d3e0c1, 4cab5406, fe80adf1, 4a2f65dc, 7f2bcc89) — not merged
+- One hook: `confirm_statement_import` → `graph_followup.request_follow_up` after ledger commit (no I/O, can't fail ledger).
+  Worker loop runs `follow_up_round` (debounce 20 s, max 300 s; backoff 30 s→30 min; one Neo4j txn; marker node per case;
+  idempotent by digest; refuses empty plan). Status: `GET /api/financial/ledger-graph/status?case_id=`. Kill switch
+  `LOUPE_FINANCIAL_GRAPH_FOLLOWUP=0`. Identity sweep backs off 60 s→30 min with `waiting_for_payment_nodes` status.
+- Backfill (from backend/, .venv + .env): dry `python -m scripts.financial_graph_backfill --case <uuid>`; real `... --apply`.
+  Est. 20–75 s for 11.5k txns WITH indexes (Neo4j write unmeasured).
+- Tests: 22 + 8 new pass; targeted before 230 pass/2 fail → after 328 pass/2 fail (same 2 pre-existing).
+- **Decisions for Neil before merge/deploy:** (1) it auto-creates Neo4j indexes on live first run (schema change) — approve, or make
+  backfill-only; (2) next import into the 11.5k case will project the WHOLE case automatically (de facto backfill) — combine with the
+  suspected-duplicate check above first; (4) legacy untagged amount nodes hide provenance — run dry-run first; (5) projected account
+  `name` may override identity-graph labels, projected Document nodes appear in entity lists.
+- Frontend text change in AccountIdentityReview.tsx not type-checked (no node_modules in that worktree) — run tsc at merge.
+
+### U0 backend DONE on `fin/u0-backend` (d4a9725b, e69ce5f7, 60a50f42, a7916723, 32af0139, acf382a2, 5a4a03b1 + WIP-NOTES 2fa76584/f01f76ad — drop WIP-NOTES.md at merge) — not merged
+- 37/39 fixed. Full suite in agent venv: Ran 5544, failures=2, errors=1 (`fitz` missing in env), skipped=29 (12 unexplained — env).
+  Re-run in the normal env before recording a baseline. CLAUDE.md bootstrap fails on this box (Debian typing_extensions); needs
+  venv + python-dotenv, pytest, PyMuPDF — update CLAUDE.md at merge.
+- Code bugs fixed: 22 unregistered 29 Sept modules; KeyError on rows without id (review_arithmetic); restored duplicates still
+  refused on save (pending_duplicates, 29 Sept regression). Others = tests encoding pre-24/29 Sept intent.
+- **OPEN, Neil decision:** `unassigned_statement` (2) — moving a continuation page's payments doesn't move its balance rows, so a
+  statement whose closing balance is on that page can never become ready. Recommend: assignment carries balance rows (or allow a
+  source-referenced closing balance entry). Relevant to the 23 "assignment" items in the live ranking.
+
+### Checkpoint A benchmark DONE on `fin/a-benchmark` (a4192fb4, d3113874, 54a85cd4; d87d76a9 WIP; drop WIP-NOTES.md at merge) — not merged
+- Command: `LOUPE_BENCH_PYTHON=<repo>/.venv/bin/python scripts/run_statement_benchmark.sh [--out DIR]` (exits 1 on any wrong admission).
+  Report: `docs/financial-workflows/baseline-2026-10-02.md`. Fresh-upload track, SQLite (55434 PG not listening), 26 periods, 3 identical runs.
+- **Baseline: 12/26 (46%) ready with zero edits; 12/18 recoverable (67% vs 95% target). Human actions 34 one-by-one / 20 grouped.**
+- **SAFETY FAIL: 1 period wrongly admitted** — Credit One scan, two OCR misreads cancel out (25.11→28.11, 18.79→15.79), reconciles with
+  all printed controls → 2 wrong amounts saved. Endpoint-only card layouts can't catch compensating errors. Must fix before claiming
+  automation is safe (likely live exposure too). 0 duplicate contributions; omitted-row periods held correctly.
+- By family: Andrews 5/6 · Credit One 4/6 · Generic 3/10 · Merrick 0/4 (dates).
+- Biggest levers: (1) Merrick: closing date recognised but bounds left empty → 13 of 34 actions; (2) no image reread for generic layouts;
+  (3) valid-but-wrong readings never trigger reread (the safety fail); (4) genuine decisions (holder absent, quiet periods).
+- Corpus gaps: Capital One, all Mexican families (BBVA, Scotiabank, Monex, Kapital, Intercam, Santander), receipts, MXN, ruled PDFs,
+  missing pages, credit balances. Clean 200 dpi synthetic scans → repair rates are an upper bound.
+- 2026-10-02 (Neil in flight; continuing per "automation is the priority") — started checkpoint C agents from `fin/a-benchmark`:
+  `fin/c-safety` (catch compensating/valid-but-wrong OCR misreads; benchmark must exit 0) and `fin/c-andrews` (source-proven
+  no-activity periods + dedicated Andrews opening/closing balance read; targets live 74 + 86 items). Both commit early.
+
+### U1 DONE on `fin/u1-batch-read` (ac9e51f9, 54bec6f7, 743fac52, bfdd3025, 8829e5fe, fc4b1b83, 254699c1 notes) — not merged
+- Batch list GET never reparses PDFs / never writes. Synthetic 250 items (old-style summaries like live): 19.6 s → 0.4–0.7 s;
+  1,000 items: 68.6 s → ~3 s. Readiness computed write-side with an input fingerprint; stale items held as "Readiness being updated".
+- Refresh: after every input-changing write; background pass every 60 s (20 s budget); backfill
+  `backend/scripts/financial_refresh_batch_readiness.py` (`--dry-run`, `--case`, `--all`).
+- X-Request-ID + Server-Timing on batch endpoints. 7 new equivalence tests vs frozen old implementation; no new failures.
+- After deploy: old batches show "Readiness being updated" until refreshed (~4 min for the 244-item batch) — run the refresh
+  for the case right after deploy. No frontend auto-refresh while items update (user reloads). Live check: Server-Timing total < 3,000 ms.
+
+### U0 frontend DONE on `fin/u0-frontend` (14f34344, 042ab490; 896b46ca WIP-NOTES drop) — not merged
+- Only 2 release-caused failures, both stale tests (standalone import now /queue-import + /confirm-result; retained check
+  history hidden behind a button). Fixed. No component bugs from 29 Sept.
+- Remaining ~70 failures = timeouts on the loaded shared box (load 5–10; 205/207 pass with --testTimeout=60000). Decision for
+  Neil: raise unit testTimeout (~20000) in vitest.config.ts (recommended) or run on a quiet box. tsc -b rc=0.
+- Possible real a11y bug (pre-existing, not 29 Sept): "Find in files" focus never reaches the "N matching files" heading
+  (StatementFilesPanel.tsx ~L102, panel likely unmounts). Check in the real app.
+
+### RELEASE CANDIDATE `fin/release-1` (worktree /mnt/owl-data/fin-wt/release-1, head 41e71707) — NOT pushed
+- = origin/integration/evidence-main-reunion + fin/u0-backend + fin/u0-frontend + fin/u3-shutdown + fin/u1-batch-read +
+  fin/u2-projection; WIP-NOTES.md dropped. Real conflicts resolved: confirm_statement_import now does graph follow-up request
+  THEN file readiness refresh (inner fn `_write_statement_import`); worker loop runs graph follow-up alongside batch turns, then
+  readiness sweep. One test updated for the merge (graph_followup duplicate-ignored test needs a real session factory).
+- Targeted on the merge (live .venv python, loaded box): graph_followup 22 OK · batch_read_stored 7 OK · import_batches 88 OK ·
+  exports 8 OK · statement_import 44 OK · pending_duplicates 20 OK · batch_review_save_scope 2 OK ·
+  identity_graph_backoff + process_shutdown (pytest) 20 passed.
+- NOT yet done: full backend suite, frontend tsc/vitest on the merge. Not including c-safety / c-andrews (still running).
+- Before pushing (Neil): clear the deploy-checkout blocker; decide Neo4j index auto-creation (U2 risk 1); check suspected
+  duplicate population before the case's next import auto-projects it; run readiness refresh for the case right after deploy.
+
+### C-andrews DONE on `fin/c-andrews` (7bd0b31c, 509c7560, 1b9108be, e3ffe944, 39d8dcf3, 80966a73) — not merged, based on fin/a-benchmark
+- Source-proven quiet Andrews periods become ready automatically (Previous + Ending Balance lines on the same page, equal,
+  dated, adjacent with measured line spacing, nothing read between). Proof stored; admission basis source_verified /
+  printed_zero_counts / investigator_confirmed. Unprovable → held with a specific reason; grouped "Confirm no activity" button.
+- Endpoint balances carry provenance; endpoint cell crop reread on fully OCR'd pages. Never derived from arithmetic.
+- Benchmark (corpus v2, 42 periods): ready w/o edits 52.4% → 61.9%; Andrews 68% → 86%; grouped actions 35 → 24; no new
+  wrong admissions (the 1 Credit One case remains — c-safety).
+- Live estimate: ~50–65 of 74 "confirm no activity" IF live layout matches fixtures — only after live sources are re-read (Neil).
+- Corpus manifest will conflict with fin/c-safety — merge carefully.
+- ⚠ TEST HYGIENE: the live .venv has chromadb → importing routers in tests connects to LIVE ChromaDB :8101. Always set
+  `CHROMADB_PORT=1` for test runs on this host. (Add to CLAUDE.md Tests at merge.)
+
+### C-safety DONE on `fin/c-safety` (0f75eddc, ae9981de, f9a754ec, a57a1bab, d056d571) — not merged, based on fin/a-benchmark
+- Every money cell on image-derived pages is crop-reread (300+450 dpi × 3 thresholds, stacked: 6 Tesseract calls/page).
+  ≥4/6 agreeing with the page reading across both resolutions → confirmed; anything else → disputed digits become `?` → held
+  for a person. Crop value never substituted. Native digital text pages skipped. Reader revision → bank-payment-rows-v11.
+- Benchmark corpus v2 (safety): OLD code had 4 wrong admissions / 7 wrong critical fields; NEW code 0 / 0, exit 0.
+  Ready w/o edits 14/33 (only loss on v1 corpus = the wrongly admitted period). Human actions rise (held cells need edits,
+  `?` amount loses its sign).
+- Residual: same-engine shared misreads, amounts embedded in text cells, consistently-damaged print. Real noisy scans may be
+  held more often — measure on held-out documents.
+- Tesseract multi-threading under host load makes repair results load-dependent; OMP_THREAD_LIMIT=1 for all engine OCR is
+  recommended (not yet changed).
+- ⚠ Implication: the LIVE ledger may already contain admitted periods with compensating OCR misreads (scanned card statements
+  with only endpoint controls). Worth an audit once v11 ships: re-read admitted image-derived periods read-only and diff.
+- c-safety and c-andrews BOTH define "corpus v2" — merge by appending one set after the other; re-run benchmark after merge.
+
+### fin/release-1 FULL SUITE: Ran 5579, FAILED (failures=2, skipped=17) in 709 s
+- The 2 = `unassigned_statement` (open product decision: moved continuation pages don't carry balance rows). Nothing else.
+- Isolation: run with CHROMADB_PORT=1 (VectorDBService confirmed on :1), but one unclosed-socket warning to 127.0.0.1:8101
+  still appeared — something reads `CHROMA_PORT` (default 8101) separately. Future runs: set BOTH `CHROMADB_PORT=1 CHROMA_PORT=1`.
+
+### 2026-10-02 14:47 — c-safety + c-andrews merged into fin/release-1; headless units launched
+- Merge commit on fin/release-1: corpus.py conflict resolved (andrews_page takes ocr_lost/endpoint_ocr AND shifts;
+  corpus v2 = v1 + c-andrews entries + c-safety entries), manifest regenerated (36 PDFs / 50 periods, v1 bytes unchanged).
+- Benchmark on merge (OMP_THREAD_LIMIT=1): **25/49 ready w/o edits (51.0%), 25/40 recoverable (62.5%), 0 wrong admissions (exit 0)**.
+  Actions 73 single / 51 grouped. Log: /mnt/owl-data/fin-wt/bench-runs/release-1-merged.log.
+- Frontend on merge: tsc -b rc=0; vitest unit 287/295 files pass, 8 fail (mostly timeouts) → fe-triage.
+- HEADLESS units (claude -p --permission-mode auto in detached screen, survive logoff; never push), each worktree
+  /mnt/owl-data/fin-wt/<unit> on fin/<unit> from fin/release-1: `fe-triage`, `c-merrick` (Merrick dates, biggest lever),
+  `c-generic` (generic-layout image reread, safety-gated). Prompts/logs/launcher: /mnt/owl-data/fin-wt/headless/
+  (`screen -ls`, `<unit>.jsonl`, `<unit>.err`; each writes WIP-NOTES.md on exit). Relaunch: `headless/launch.sh <unit>`.
+
+### 2026-10-02 16:20 — headless units merged into fin/release-1 (8fe5a376)
+- All 3 headless runs exited 0. Merged fe-triage, c-merrick, c-generic (WIP-NOTES.md conflict → dropped from branch;
+  notes archived at /mnt/owl-data/fin-wt/notes/<unit>.md).
+- **Benchmark on merge: 30/49 ready w/o edits (61.2%), 30/40 recoverable (75.0%), 0 wrong admissions, 0 critical-field
+  errors (exit 0).** Actions 54 single / 43 grouped (was 73/51). Log: bench-runs/release-1-r2.log.
+- Targeted: statement_* discover 611 OK; closing_only/generic/merrick/exports 40 OK; engine 81 passed; tsc 0.
+- fe-triage: vitest unit 295/295 twice on its branch (budget fix, no component bugs).
+- Decisions for Neil (from notes): (1) Merrick start = previous closing+1 corroborated by printed balance match, stored
+  `derived`; (2) c-generic pinned-repair exception to "never substitute a crop value" (revert 13d03dbe alone to refuse);
+  (3) investigator-typed start recorded as `printed` (pre-existing); (4) unassigned_statement 2 failures (pre-existing).
+- **Corpus v3 (b-commit on release-1 after 8fe5a376):** c-safety and c-andrews had both put an Andrews 123456789
+  statement in 2020-09 with contradictory content → importer rightly held all 4 periods as conflicting; ground truth
+  said auto. Compensating case moved to 2021-05 (other 35 PDFs byte-identical).
+  **Benchmark corpus v3: 33/49 ready w/o edits (67.3%), 33/40 recoverable (82.5%), 0 wrong admissions.** Log
+  bench-runs/release-1-v3.log. Remaining 7 recoverable holds: 5 compensating OCR misreads held by design (credit-one 6+7,
+  merrick-08, andrews-2021-05#2, generic-11; jointly constrained, need an INDEPENDENT second reader to clear safely),
+  andrews-2020-12#2 (OCR layer lost 2 rows, equal balances), merrick-two-statements#1 (ground truth mislabelled).
+- Full backend suite on merged release-1: Ran 6016, 2 failures (known unassigned_statement decision) + 4 errors in
+  graph_followup BackfillCommandTests = order-dependent `scripts` package shadowing (evidence-engine/scripts is a
+  regular package). Fixed in the test (load by path); module 22 OK standalone and under shadowing. Suite otherwise green.
+
+### 2026-10-02 16:48 — wave 3 launched headless (c-reader2, a-corpus2, b-gate)
+- Worktrees from fin/release-1 @ 6335e4e8; common.md baseline updated to corpus v3 (33/49, 0 wrong).
+- c-reader2 must not touch the corpus; a-corpus2 must not change pipeline code → no merge conflict expected.
+- No external API for statement images (private data) — hosted-model reader only as a Neil decision.
+
+### 2026-10-02 16:55 — deploy blocker 687da296 cleared (Neil: "clear it out if it's not needed")
+- Live checkout reset --mixed to origin (no longer ahead; auto-deploy can fast-forward again). Commit is already in
+  fin/release-1; also kept as branch `backup/687da296` + file copies in /mnt/owl-data/fin-wt/backup-687da296/.
+- This workfile + scripts/headless/ are now UNTRACKED in the live checkout. **Before pushing fin/release-1** (which
+  contains them), move these untracked copies aside (merge their newer content into release-1 first) or the deploy's
+  fast-forward will fail with "untracked working tree files would be overwritten".
+
+### 2026-10-02 18:44 — wave 3 recovered and relaunched
+- c-reader2 + a-corpus2 had exited mid-wait (`-p` exits when the turn ends → background jobs killed). RUN RULE added to
+  common.md + every prompt: never background-wait; nohup + foreground poll. Integrator was stopped before it could merge
+  half-done units; re-armed to require WIP-NOTES from c-reader2, a-corpus2, b-unique.
+- b-gate DONE (4 defects fixed; SQLite gate passes; PG rows UNPROVEN — no PG on 55434). Neil approved the uniqueness
+  constraint → b-unique. Live read-only check: 0 violations among 937 admitted statement_review docs.
+- v4 corpus (92 PDFs/124 periods) baseline on pre-reader code: 49.2% ready w/o edits, 57.0% of recoverable, 0 wrong.
+
+### 2026-10-02 19:30 — wave 4 queued (Neil: "yes queue all three")
+- `fin-wave4-launcher` waits for integrate-3 to exit cleanly, then branches r-recovery / c-image / c-mx-noactivity from the
+  merged fin/release-1 and launches them (log headless/wave4.log). `fin-integrate-4` then merges them (integrate-4.md),
+  benchmark release-1-w4, suites, STATUS-FOR-NEIL.md (overwrites wave-3's; wave-3 status stays in this Log).
+- r-recovery = selective recovery campaign for today's readers (flag default OFF, Neil activates) + live READ-ONLY dry-run
+  estimate of how many held items become ready + read-only ledger audit for compensating misreads.
+
+### 2026-10-02 19:45 — wave 3 merged into fin/release-1 (headless integrate-3)
+- Merged (no conflicts; WIP-NOTES.md dropped; notes archived /mnt/owl-data/fin-wt/notes/{c-reader2,a-corpus2,b-gate,b-unique}.md):
+  `fin/c-reader2` (c6945a42), `fin/a-corpus2` (aa211905), `fin/b-unique` incl. `fin/b-gate` (0241dc5d). None refused:
+  every unit's notes say landed and every unit benchmark exited 0. No merge fixes needed.
+- **Benchmark on merge** (corpus v4 = 92 PDFs / 124 periods, OMP_THREAD_LIMIT=1, exit 0; bench-runs/release-1-w3):
+  - v1–v3 subset: 33/49 → **37/49 ready w/o edits (75.5%)**, recoverable 33/40 → **37/40 (92.5%)**, 0 wrong. Actions
+    51/43 → 30/22. By family: Andrews 21/24 (rec 21/22), Credit One 5/8 (5/6), generic 8/13 (8/8), Merrick 3/5 (3/4).
+  - v4 additions: **28/75 (37.3%)**, recoverable 28/67 (41.8%), must-hold 8/8 kept, 0 wrong — unchanged vs a-corpus2's
+    pre-reader run. Second reader: 4 repaired (v1–v3: andrews-2021-05#2, credit-one-7, generic-11,
+    merrick-08, all saved values printed ones), 15 declined (credit-one-6 + all 14 v4 degraded/skewed pages it tried). By family: Andrews 7/22 (rec 7/21), BBVA 3/7
+    (3/6), Capital One 4/7 (4/6), Credit One 2/2, generic 6/14 (6/12), Intercam 1/1, Kapital 2/4, Monex 0/4,
+    Santander 3/8 (3/7), Scotiabank 0/4, deposit receipts 0/2 (held, correct).
+  - All: 61/124 → **65/124 (52.4%)**, recoverable 57.0% → 60.7%, 0 wrong admissions, 0 critical-field errors.
+  - Monex shows 2 `currency_wrong` proposals not in a-corpus2's run: harness artifact, not pipeline (see Open defects).
+- Suites on merge: financial pattern (CLAUDE.md command, live .venv, CHROMADB_PORT=1 CHROMA_PORT=1) **Ran 5650,
+  failures=2**; all-tests pattern `test_*.py` **Ran 6041, failures=2, errors=0** (was 6016 / 2 / 4). The 2 = known
+  `unassigned_statement`. b-unique's 2 `recovery_preparation` failures under pytest did NOT reproduce under unittest.
+  Frontend tsc -b 0; vitest unit **295/295 files, 2053 tests**. Logs: fin-wt/release-1-w3-{fullsuite,allsuite}.log,
+  bench-runs/release-1-w3{,.log}, bench-runs/release-1-w3-vitest.log.
+- Folded this workfile + `scripts/headless/` (financial-prompt.md identical) into fin/release-1. Live untracked copies
+  left in place: **move them aside right before the push** (see ▶ NEXT).
+- Plain-language status: /mnt/owl-data/fin-wt/headless/STATUS-FOR-NEIL.md.
