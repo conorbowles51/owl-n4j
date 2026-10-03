@@ -64,12 +64,6 @@ async def upload_files(
     """
     if not files:
         raise HTTPException(status_code=400, detail="At least one file is required")
-    if len(files) > settings.max_upload_batch_files:
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail=f"A batch may contain at most {settings.max_upload_batch_files} files",
-        )
-
     batch_id = uuid.uuid4()
     jobs: list[Job] = []
     created_files: list[Path] = []
