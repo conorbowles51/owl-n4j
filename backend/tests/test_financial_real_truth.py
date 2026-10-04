@@ -198,6 +198,26 @@ class HarnessRealCorpusTests(unittest.TestCase):
         self.assertEqual(harness._match_rows(proposal, truth)[0], {'r1': 0})
 
 
+class VisualQueueTests(unittest.TestCase):
+    def test_shards_by_family_with_document_and_page_limits(self):
+        def result(doc, status, family, pages, periods=()):
+            return dict(id=doc, status=status, issuer=family, inventory_family=family, mode='digital', pages=pages,
+                        reason=None, periods=[dict(id=f'{doc}#1', family=family, truth_status=s, truth_reasons=[])
+                                              for s in periods])
+        results = [result(f'a{i:02d}', 'needs_visual', 'big', 5) for i in range(45)]
+        results += [result('b1', 'ocr_reconciled', 'small', 300, ['ocr_reconciled']),
+                    result('b2', 'partly_verified', 'other', 200, ['verified', 'unverified']),
+                    result('c1', 'verified', 'big', 5, ['verified']), result('c2', 'not_statement', 'big', 1)]
+        queue = rt.visual_queue(results)
+        self.assertEqual(queue['documents'], 47)
+        self.assertEqual([(s['families'], s['count']) for s in queue['shards']],
+                         [(['big'], 40), (['big'], 5), (['other'], 1), (['small'], 1)])
+        confirm = next(d for s in queue['shards'] for d in s['documents'] if d['id'] == 'b1')
+        self.assertEqual(confirm['work'], ['confirm'])
+        partly = next(d for s in queue['shards'] for d in s['documents'] if d['id'] == 'b2')
+        self.assertEqual([p['status'] for p in partly['periods']], ['unverified'])
+
+
 class UnprintedDateAndAuditTests(unittest.TestCase):
     def test_a_row_without_a_printed_date_accepts_any_recorded_date(self):
         self.assertTrue(harness._same_date(None, '2024-01-31'))

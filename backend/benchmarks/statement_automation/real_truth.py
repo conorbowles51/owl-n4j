@@ -1755,6 +1755,63 @@ def write_outputs(out, results, docs_dir):
     return manifest, status
 
 
+VISUAL = ('needs_visual', 'needs_parser', 'unverified', 'partly_verified', 'ocr_reconciled', 'incomplete')
+SHARD_SIZE = 40
+SHARD_PAGES = 400  # a shard also closes at about this many pages (some documents run to hundreds)
+POOL_BELOW = 10  # families with fewer documents share pooled shards
+
+
+def _chunks(docs, size, pages):
+    chunk, total = [], 0
+    for doc in docs:
+        if chunk and (len(chunk) >= size or total + (doc['pages'] or 0) > pages):
+            yield chunk
+            chunk, total = [], 0
+        chunk.append(doc)
+        total += doc['pages'] or 0
+    if chunk:
+        yield chunk
+
+
+def visual_queue(results, size=SHARD_SIZE):
+    """Documents whose truth still needs a person reading rendered pages, in shards by family.
+
+    ``work`` per document: ``read`` (no usable text, no parser, or periods that
+    did not reconcile) and/or ``confirm`` (periods reconciled from an OCR
+    layer: the values are known and need visual confirmation).
+    """
+    entries = []
+    for r in sorted(results, key=lambda r: r['id']):
+        if r['status'] not in VISUAL:
+            continue
+        periods = r.get('periods') or []
+        pending = [dict(id=p['id'], status=p['truth_status'], reasons=p['truth_reasons'][:4])
+                   for p in periods if p['truth_status'] != 'verified']
+        work = sorted({'confirm' if p['status'] == 'ocr_reconciled' else 'read' for p in pending}
+                      or {'read'})
+        family = (periods[0]['family'] if periods else r.get('issuer')) or (r.get('inventory_family') or 'unknown').rstrip('?')
+        entries.append(dict(id=r['id'], family=family, status=r['status'], mode=r.get('mode'), pages=r.get('pages'),
+                            reason=r.get('reason'), work=work, periods=pending))
+    by_family = defaultdict(list)
+    for entry in entries:
+        by_family[entry['family']].append(entry)
+    shards, pooled = [], []
+    for family in sorted(by_family):
+        docs = sorted(by_family[family], key=lambda e: (e['work'], e['id']))
+        if len(docs) < POOL_BELOW:
+            pooled.extend(docs)
+            continue
+        for part in _chunks(docs, size, SHARD_PAGES):
+            shards.append(dict(families=[family], documents=part))
+    for part in _chunks(sorted(pooled, key=lambda d: (d['family'], d['id'])), size, SHARD_PAGES):
+        shards.append(dict(families=sorted({d['family'] for d in part}), documents=part))
+    for number, shard in enumerate(shards, 1):
+        shard.update(shard=f'v{number:02d}', count=len(shard['documents']),
+                     pages=sum(d['pages'] or 0 for d in shard['documents']),
+                     work=dict(Counter(w for d in shard['documents'] for w in d['work'])))
+    return dict(shard_size=size, documents=len(entries), shards=shards)
+
+
 def summarise(status):
     """Counts only."""
     by_family = defaultdict(Counter)
@@ -1812,6 +1869,11 @@ def main(argv=None):
                                                   period['truth_status'])
     mark_duplicates(results)
     _, status = write_outputs(args.out, results, docs_dir)
+    queue = visual_queue(results)
+    (args.out / 'visual-queue.json').write_text(json.dumps(queue, indent=1) + '\n')
+    print('Visual queue: ' + json.dumps(dict(documents=queue['documents'], shards=[
+        dict(shard=s['shard'], families=s['families'], count=s['count'], pages=s['pages'], work=s['work'])
+        for s in queue['shards']])))
     print(json.dumps(summarise(status), indent=1))
     print('Truth written.')
 
