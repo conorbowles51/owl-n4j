@@ -76,5 +76,43 @@ class ScoringTests(unittest.TestCase):
         self.assertEqual(block['ready_without_edits'], 1)
 
 
+
+class PairingTests(unittest.TestCase):
+    """Batch items pair with ground truth by content; currency only breaks ties."""
+
+    def truth(self, period_id, currency, amounts=()):
+        return dict(id=period_id, currency=currency, period_end='2024-03-31', share=None,
+                    rows=[dict(amount_minor=a, description=f'row {a}', direction='debit', date='2024-03-05')
+                          for a in amounts], account='1234')
+
+    def proposal(self, currency, amounts=()):
+        rows = [dict(id=str(i), excluded=False, kind='transaction',
+                     fields=dict(amount_minor=str(a), description=f'row {a}', direction='debit', date='2024-03-05'))
+                for i, a in enumerate(amounts)]
+        return dict(currency=currency, metadata={}, rows=rows)
+
+    def test_sections_differing_only_by_currency_pair_by_currency_not_order(self):
+        mxn, usd = self.truth('m.pdf#1', 'MXN'), self.truth('m.pdf#2', 'USD')
+        item = dict(period_end='2024-03-31', currency='USD')
+        self.assertIs(harness.pair_truth(self.proposal('USD'), [mxn, usd], item), usd)
+        item = dict(period_end='2024-03-31', currency='MXN')
+        self.assertIs(harness.pair_truth(self.proposal('MXN'), [usd, mxn], item), mxn)
+
+    def test_a_misread_currency_still_pairs_by_content(self):
+        mxn = self.truth('m.pdf#1', 'MXN', amounts=[1000, 2500])
+        usd = self.truth('m.pdf#2', 'USD')
+        item = dict(period_end='2024-03-31', currency='USD')
+        proposal = self.proposal('USD', amounts=[1000, 2500])
+        self.assertIs(harness.pair_truth(proposal, [mxn, usd], item), mxn)
+        self.assertEqual(harness.proposal_field_errors(proposal, mxn).get('currency_wrong'), 1)
+
+    def test_no_evidence_at_all_leaves_a_multi_period_item_unmatched(self):
+        first, second = self.truth('m.pdf#1', 'MXN'), self.truth('m.pdf#2', 'USD')
+        item = dict(period_end='2024-04-30', currency='')
+        self.assertIsNone(harness.pair_truth(self.proposal(''), [first, second], item))
+        self.assertIs(harness.pair_truth(None, [first], item), first)
+        self.assertIsNone(harness.pair_truth(None, [first, second], item))
+
+
 if __name__ == '__main__':
     unittest.main()
