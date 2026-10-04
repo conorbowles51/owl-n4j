@@ -444,3 +444,14 @@ brief (briefs = Queue entries above + the 2026-10-02 log lines). Automation is t
 - From now on the workfile is TRACKED in the live checkout: never edit it there (a dirty tree blocks deploy.sh).
   Edit it in /mnt/owl-data/fin-wt/release-1 and commit on fin/release-1.
 - After deploy: readiness refresh for the case; close matching error-register items with Alex.
+
+### 2026-10-04 11:25 — REAL-DOCUMENT phase launched (Neil: "use all statements… completely comprehensive")
+- Every number so far was on the SYNTHETIC corpus. From now on the headline is measured on ALL of Alex's real statements
+  (6 cases, ~1,030 source documents, ~4,000 batch items): per-statement comparison of processor output vs independent
+  ground truth, fixes in the processor, residual manual work as batch workflows (Neil's goal, quoted in real-common.md).
+- Self-driving chain in screen `fin-real-driver` (headless/real/driver.sh) + `fin-real-cont` (waves 11–40):
+  wave 0 = r-census (re-read every file in every case with current code, read-only) + t-truth (inventory, pdfplumber
+  tier-A truth, private real benchmark, live-ledger disagreement audit, visual-reading queue) → integrate-0 (waits for
+  wave-5 integration) → planner writes waveN.units + units/*.md → units → integrate-N … until the planner's STOP rule.
+- Private data only under /mnt/owl-data/fin-real (700). State: headless/real/STATE.md; log headless/real/driver.log.
+  Stop it: `touch /mnt/owl-data/fin-wt/headless/real/STOP`. Never pushes or deploys.
