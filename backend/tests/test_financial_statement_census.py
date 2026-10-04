@@ -201,9 +201,9 @@ def test_problem_templates_mask_digits():
     assert census.template('Closing balance 9,999.99 differs by 11.00')[0] == identifier
 
 
-def _item(key, status, start='', end='', review=False, problems=()):
+def _item(key, status, start='', end='', review=False, problems=(), account='1'):
     return dict(statement_key=key, status=status, can_import=status == 'ready', saved_review=review,
-        period_start=start, period_end=end, problems=list(problems))
+        period_start=start, period_end=end, account=account, problems=list(problems))
 
 
 def test_live_periods_count_each_statement_period_once():
@@ -222,6 +222,10 @@ def test_live_periods_count_each_statement_period_once():
         ('2021-01-01', 'imported', 2), ('2021-02-01', 'imported', 2)]
     only_blank, legacy = census.live_periods([_item('', 'imported'), _item('', 'attention')])
     assert [(p['status'], p['items']) for p in only_blank] == [('imported', 2)] and legacy == 0
+    # One statement holding several accounts over the same dates is several periods.
+    shares, _ = census.live_periods([_item('s1', 'ready', '2021-01-01', '2021-01-31', account='1'),
+        _item('s2', 'attention', '2021-01-01', '2021-01-31', account='2')])
+    assert sorted(p['status'] for p in shares) == ['attention', 'ready']
     held, _ = census.live_periods([_item('e', 'ready', review=True)])
     assert held[0]['state'] == 'ready_after_edits'
 

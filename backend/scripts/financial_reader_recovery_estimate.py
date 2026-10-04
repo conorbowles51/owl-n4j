@@ -255,7 +255,7 @@ def scratch_batch(scratch, label, files, readings, *, retained_currency=True):
                 family='unreadable' if choices[file_id] is None else family_of(choices[file_id], item.get('statement_id') or ''),
                 problems=list(item.get('problems') or []), problem_count=item.get('problem_count'),
                 period_start=item.get('period_start') or '', period_end=item.get('period_end') or '',
-                transaction_count=item.get('transaction_count')))
+                account=item.get('account') or '', transaction_count=item.get('transaction_count')))
         file_errors = []
         for entry in status['files']:
             if entry.get('status') == 'error':

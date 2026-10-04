@@ -140,14 +140,15 @@ def live_item(item):
     return dict(statement_key=item.statement_key or '', status=item.status,
         can_import=bool(summary.get('can_import', item.status == 'ready')), saved_review=bool(item.review_request),
         period_start=summary.get('period_start') or '', period_end=summary.get('period_end') or '',
-        problems=list(summary.get('problems') or []))
+        account=summary.get('account') or '', problems=list(summary.get('problems') or []))
 
 
 def live_periods(items):
     """One live period per statement period of an original, however often it was read.
 
     Items are the same period when they share a statement key or both carry the
-    same printed dates (a later reading can key the same period differently).
+    same account and printed dates (a later reading can key the same period
+    differently; one statement can hold several accounts with the same dates).
     An item without key or dates is an earlier whole-file preparation; when
     the original also has keyed periods it is history, not another period.
     The most advanced live state of a period is its state.
@@ -166,7 +167,7 @@ def live_periods(items):
         if item['statement_key']:
             labels.append(('key', item['statement_key']))
         if item['period_start'] and item['period_end']:
-            labels.append(('dates', item['period_start'], item['period_end']))
+            labels.append(('dates', item.get('account', ''), item['period_start'], item['period_end']))
         for label in labels:
             if label in seen:
                 parent[root(index)] = root(seen[label])
@@ -185,7 +186,8 @@ def live_periods(items):
         state = _live_state(best['status'], best['can_import'], best['saved_review'])
         coarse, fine, templates = classify(best['problems']) if state == 'held' else ([], [], {})
         periods.append(dict(statement_key=best['statement_key'], status=best['status'], state=state,
-            period_start=dated['period_start'], period_end=dated['period_end'], items=len(group),
+            period_start=dated['period_start'], period_end=dated['period_end'], account=dated.get('account', ''),
+            items=len(group),
             coarse=coarse, fine=fine, templates=templates))
     return periods, sum(len(group) for group in blank) if real else 0
 
@@ -376,14 +378,14 @@ def _prepared(items):
         by_key[item['key']].append(dict(statement_key=item['statement_key'], status=item['status'], ready=item['ready'],
             outcome=outcome,
             family=item['family'], period_start=item['period_start'], period_end=item['period_end'],
-            transaction_count=item['transaction_count'], coarse=coarse, fine=fine, templates=templates))
+            account=item.get('account', ''), transaction_count=item['transaction_count'], coarse=coarse, fine=fine, templates=templates))
     return by_key
 
 
 def _match(period, candidates, taken):
     for test in (lambda c: c['statement_key'] == period['statement_key'] and period['statement_key'],
-                 lambda c: period['period_start'] and (c['period_start'], c['period_end']) == (
-                     period['period_start'], period['period_end'])):
+                 lambda c: period['period_start'] and (c.get('account', ''), c['period_start'], c['period_end']) == (
+                     period.get('account', ''), period['period_start'], period['period_end'])):
         for index, candidate in enumerate(candidates):
             if index not in taken and test(candidate):
                 taken.add(index)
