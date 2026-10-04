@@ -4,6 +4,7 @@ This assesses parsing, not evidential accuracy. A reread must retain the same
 printed identity, number of payments and balance controls before fewer unreadable
 fields can make it preferable. Arithmetic is never used to manufacture values.
 """
+import re
 
 
 def sources_from_tables(tables):
@@ -293,3 +294,112 @@ def page_controls_reconcile(tables):
             reconciles=(result['flagged_rows'] == 0 and result['balance_status'] == 'matches'
                         and not result['has_difference'])))
     return dict(reconciles=bool(summaries) and all(s['reconciles'] for s in summaries), statements=summaries)
+
+
+def _with_texts(tables, texts):
+    """``tables`` (stored JSON form) with the cell texts in ``texts`` replaced."""
+    result = []
+    for index, item in enumerate(tables):
+        table = item.get('table') or {}
+        values = [{**cell, 'text': texts.get((index, cell['row'], cell['column']), cell.get('text'))}
+                  for cell in table.get('values', [])]
+        result.append({**item, 'table': {**table, 'values': values}})
+    return result
+
+
+def _andrews_equations(rows):
+    """``[(cells, holds)]`` for every printed Andrews control whose cells all parse.
+
+    Each payment gives ``previous balance + signed amount = running balance``
+    and each section ends with ``last balance = ending balance``. A row that
+    does not yield every number, a direction and its measured columns breaks
+    the chain there; no equation spans it. A payment whose sign contradicts
+    its printed verb has no direction, so it yields no equation.
+    """
+    equations, previous = [], None
+    for row in rows:
+        fields = row['fields']
+        if row['kind'] == 'balance':
+            cell = ((row['table_index'], row['row_index'], int(fields['balance_column']))
+                    if 'balance' in fields and fields.get('balance_column') is not None else None)
+            point = (cell, int(fields['balance'])) if cell else None
+            if fields.get('description') == 'Opening Balance':
+                previous = point
+            elif fields.get('description') == 'Closing Balance':
+                if previous and point:
+                    equations.append(([previous[0], point[0]], previous[1] == point[1]))
+                previous = None
+        elif row['kind'] == 'continuation' or row['excluded'] and row['kind'] == 'statement_information':
+            continue
+        else:
+            point = None
+            if (row['kind'] == 'transaction' and not row.get('value_sources')
+                    and all(fields.get(k) is not None for k in
+                            ('amount_minor', 'direction', 'balance', 'amount_column', 'balance_column'))):
+                amount_cell = (row['table_index'], row['row_index'], int(fields['amount_column']))
+                point = ((row['table_index'], row['row_index'], int(fields['balance_column'])), int(fields['balance']))
+                movement = int(fields['amount_minor']) * (1 if fields['direction'] == 'credit' else -1)
+                if previous:
+                    equations.append(([previous[0], amount_cell, point[0]], previous[1] + movement == point[1]))
+            previous = point
+    return equations
+
+
+def pinned_andrews_values(tables, candidates):
+    """The one reading of each disputed Andrews money cell that the page's agreed controls fix.
+
+    ``candidates`` maps ``(table_index, row, column)`` to the readings of that
+    cell that a recogniser actually produced from the print (the page reading,
+    the crop reading, or for a cell whose sign glyph was unreadable, its agreed
+    digits with and without the minus). Arithmetic alone cannot choose between
+    readings that both reconcile, which is what compensating misreads do, so a
+    reading is accepted only when it is pinned: one printed control equation
+    (previous balance, payment, running balance; or last balance and ending
+    balance) contains the cell as its only disputed cell, every other cell of
+    that equation is one the page and the crops read the same way, and the
+    equation holds with that reading. Exactly one candidate of each cell must
+    be pinned, every disputed cell must be resolved, and with all of them in
+    place every printed control on the page must reconcile. Otherwise nothing
+    is accepted and the page stays held.
+
+    Returns ``dict(values={cell: dict(text=..., pinned_by=[cells])}, controls=...)``,
+    ``{}`` when nothing is accepted, or ``None`` when no Andrews layout claims the page.
+    """
+    from services.financial.statement_import_andrews import andrews_catalog, propose_andrews_statement
+    from services.financial.statement_import_proposal import exact_amount
+    found = _page_statement_rows(sources_from_tables(tables))
+    if found is None or found[0][0] != 'andrews-share-statement':
+        return None
+    if not candidates or not all(candidates.values()):
+        return {}
+    disputed = set(candidates)
+
+    def pinning(key, text):
+        sources = sources_from_tables(_with_texts(tables, {key: text}))
+        if len(sources) != 1:
+            return None
+        groups, _, incomplete = andrews_catalog(sources)
+        if not groups or incomplete:
+            return None
+        for group in groups:
+            for cells, holds in _andrews_equations(propose_andrews_statement(sources, 'USD', group)['rows']):
+                if holds and key in cells and not any(other in disputed for other in cells if other != key):
+                    return [list(other) for other in cells if other != key]
+        return None
+
+    accepted = {}
+    for key, texts in candidates.items():
+        by_value = {}
+        for text in texts:
+            try:
+                by_value.setdefault(exact_amount(re.sub(r'[\s,$]', '', text), 'USD'), text)
+            except Exception:
+                return {}
+        fixed = [(text, cells) for text in by_value.values() if (cells := pinning(key, text)) is not None]
+        if len(fixed) != 1:
+            return {}
+        accepted[key] = dict(text=fixed[0][0], pinned_by=fixed[0][1])
+    controls = page_controls_reconcile(_with_texts(tables, {key: value['text'] for key, value in accepted.items()}))
+    if not controls or not controls['reconciles']:
+        return {}
+    return dict(values=accepted, controls=controls)

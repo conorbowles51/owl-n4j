@@ -31,7 +31,7 @@ LOW_CONFIDENCE_THRESHOLD = 60.0
 MIN_OCR_DPI = 150
 MIN_RELIABLE_OSD_CONFIDENCE = 15.0
 MAX_OSD_TIMEOUT_SECONDS = 30.0
-PDF_READING_REVISION = 'bank-payment-rows-v12'
+PDF_READING_REVISION = 'bank-payment-rows-v13'
 OSD_INSUFFICIENT_TEXT_MARKERS = ("too few characters", "skipping this page")
 
 
@@ -325,10 +325,12 @@ def _verify_recognised_money(page, tables, chunks, *, text_origin, extraction_me
     confirm is marked unreadable for review. A crop value replaces it only when
     the statement's own agreed controls pin that value (``repair_pinned_cells``), or
     when an independent glyph reader gives the same value and every printed control
-    on the page reconciles with it (``repair_with_second_reader``).
+    on the page reconciles with it (``repair_with_second_reader``). On an Andrews
+    page, a held cell takes whichever of its printed readings (page or crop) the
+    agreed controls pin (``repair_pinned_readings``).
     """
     from app.pipeline.statement_money_verification import (page_needs_verification, repair_pinned_cells,
-        repair_with_second_reader, verify_money_cells)
+        repair_pinned_readings, repair_with_second_reader, verify_money_cells)
     if not tables or not page_needs_verification(text_origin, extraction_method):
         return chunks, tables, []
     try:
@@ -340,6 +342,13 @@ def _verify_recognised_money(page, tables, chunks, *, text_origin, extraction_me
             records = records + repairs
         except Exception:
             logger.warning('Pinned money repair unavailable; disputed cells stay held', exc_info=True)
+        if not repairs:
+            try:
+                refined, pinned = repair_pinned_readings(page, refined, records[0] if records else None)
+                records = records + pinned
+                repairs = [r for r in pinned if r.get('decision') == 'repaired']
+            except Exception:
+                logger.warning('Pinned reading repair unavailable; disputed cells stay held', exc_info=True)
         if not repairs and settings.statement_glyph_second_reader:
             try:
                 refined, second = repair_with_second_reader(page, refined, records[0] if records else None,

@@ -814,6 +814,17 @@ def endpoint_balance_provenance(rows, page_locations):
                             observations=len(repaired.get('observations') or []), reason=repaired.get('reason'),
                             second_reading=(repaired.get('second_reading') or {}).get('method')))
                         break
+                # A held cell given the one printed reading (page or crop) that the
+                # page's agreed controls pin: keep the page reading beside it.
+                if record.get('method') == 'statement_money_pinned_reading' and record.get('decision') == 'repaired':
+                    repaired = next((c for c in record.get('cells') or [] if isinstance(c.get('rect'), list)
+                                     and len(c['rect']) == 4 and _overlap(c['rect'], rect) >= .5), None)
+                    if repaired:
+                        result.update(method='pinned_reading_repair', reread=dict(method=record['method'],
+                            original_text=repaired.get('page_reading'), text=repaired.get('text'),
+                            observations=len(repaired.get('observations') or []), reason=repaired.get('reason'),
+                            accepted_reading=repaired.get('accepted_reading')))
+                        break
                 source_rect = ((record.get('source_locator') or {}).get('rect')
                                if record.get('method') == 'tesseract_native_statement_cell_consensus' else record.get('rect'))
                 if (record.get('method') in ('tesseract_native_statement_cell_consensus', 'tesseract_amount_crop_consensus')
