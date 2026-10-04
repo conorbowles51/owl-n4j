@@ -149,8 +149,27 @@ def engine_reread(paths, scratch, python, concurrency):
     return {named[path]: value for path, value in data['readings'].items()}
 
 
-def evaluate(scratch, label, files, readings):
-    """Prepare one disposable batch from the given readings with current code."""
+def family_of(proposal_choices, statement_key):
+    """The reader family of one prepared period: its layout, a payment document, or generic."""
+    if not proposal_choices:
+        return 'no_statement_found'
+    choice = next((c for c in proposal_choices if c.get('id') == statement_key), None)
+    if choice is None and len(proposal_choices) == 1:
+        choice = proposal_choices[0]
+    if choice is None:
+        return 'unmatched_period'
+    return choice.get('layout_id') or choice.get('document_kind') or 'generic-statement'
+
+
+def scratch_batch(scratch, label, files, readings, *, retained_currency=True):
+    """Prepare one disposable batch from the given readings with current code.
+
+    Returns every prepared period (keyed by the file's opaque key and its
+    statement key) and every file the preparation could not finish. With
+    ``retained_currency`` the investigator's recorded currency choice is
+    applied, as the live batch would; without it the batch sees only what the
+    source establishes.
+    """
     import asyncio
     from benchmarks.statement_automation.harness import _database
     from postgres.models.case import Case
@@ -159,7 +178,6 @@ def evaluate(scratch, label, files, readings):
     from postgres.models.user import User
     from services.evidence_db_storage import EvidenceDBStorage
     from services.financial import import_batches as batches
-    from services.financial.batch_review_summary import reason as review_reason
     from services.financial.decisions import Actor
     from services.financial.statement_import import read_statement_import
     engine, factory, _ = _database(scratch / f'{label}.db')
@@ -171,7 +189,11 @@ def evaluate(scratch, label, files, readings):
         folder = EvidenceFolder(id=uuid.uuid4(), case_id=case.id, name='Selected statements')
         db.add_all([user, case, folder])
         db.flush()
-        usable = [file for file in files if file['key'] in readings and 'error' not in readings[file['key']]]
+        usable = []
+        for file in files:
+            reading = readings.get(file['key']) if file['key'] in readings else None
+            if reading is not None and 'error' not in reading:
+                usable.append(file)
         created = EvidenceDBStorage.add_files(db, case.id, [dict(original_filename=f'statement-{file["key"]}.pdf',
             stored_path=str(scratch / f'statement-{file["key"]}.pdf'), sha256=file['sha256'], size=0)
             for file in usable], folder_id=folder.id, created_by_id=user.id)
@@ -180,18 +202,22 @@ def evaluate(scratch, label, files, readings):
             reading = readings[file['key']]
             record.status = 'processed'
             job = uuid.uuid4()
-            db.add(EvidenceDocumentText(evidence_file_id=record.id, engine_job_id=job, content=reading['content'],
+            stored = [EvidenceDocumentText(evidence_file_id=record.id, engine_job_id=job, content=reading['content'],
                 content_sha256=reading['content_sha256'], character_count=reading['character_count'],
-                source_locations=reading['source_locations'], processing_manifest=reading['processing_manifest']))
-            for page, payload in reading['geometry'].items():
-                db.add(EvidenceTableGeometry(evidence_file_id=record.id, page_number=int(page), engine_job_id=job, payload=payload))
+                source_locations=reading['source_locations'], processing_manifest=reading['processing_manifest'])]
+            stored += [EvidenceTableGeometry(evidence_file_id=record.id, page_number=int(page), engine_job_id=job, payload=payload)
+                for page, payload in reading['geometry'].items()]
+            db.add_all(stored)
             record.engine_job_id = str(job)
             by_id[record.id] = file
+            db.flush()
+            for row in stored:  # Readings can be large; a whole case need not stay in memory.
+                db.expunge(row)
         db.commit()
         case_id, folder_id, actor = case.id, folder.id, Actor(user.name, user.email, user.id)
     if not by_id:
         engine.dispose()
-        return dict(periods=0, ready=0, by_family={}, reasons={}, files=0)
+        return dict(items=[], files=0, file_errors=[])
     with factory() as db:
         batch_id = batches.create_batch(db, case_id=case_id, request_id=uuid.uuid4(), file_ids=[],
             folder_ids=[folder_id], actor=actor)
@@ -199,7 +225,7 @@ def evaluate(scratch, label, files, readings):
         entries = [dict(entry) for entry in batch.files]
         for entry in entries:
             file = by_id.get(uuid.UUID(entry['source_id']))
-            if file and file['currency']:
+            if retained_currency and file and file.get('currency'):
                 entry['currency'] = file['currency']  # The investigator's retained currency choice.
         batch.files = entries
         db.commit()
@@ -211,29 +237,50 @@ def evaluate(scratch, label, files, readings):
         with factory() as db:
             if batches.batch_for(db, case_id, batch_id).status != 'preparing':
                 break
-    by_family, reasons = defaultdict(Counter), Counter()
+    items, choices = [], {}
     with factory() as db:
         status = batches.batch_status(db, case_id=case_id, batch_id=batch_id, limit=100_000)
         for item in status['items']:
-            try:
-                proposal = read_statement_import(db, case_id=case_id, evidence_file_id=uuid.UUID(item['file_id']),
-                    currency=item.get('currency') or None, statement_id=item.get('statement_id'))
-                choice = next((c for c in proposal.get('statement_choices') or []
-                    if c.get('id') == proposal.get('statement_id')), None)
-                family = (choice or {}).get('layout_id') or ('document_review' if proposal.get('document_review') else 'generic-statement')
-            except Exception:
-                family = 'unreadable'
-            ready = item['status'] == 'ready' and bool(item.get('can_import'))
-            by_family[family]['periods'] += 1
-            by_family[family]['ready'] += int(ready)
-            if not ready:
-                reasons.update({review_reason(problem) for problem in item.get('problems', [])} or {'unspecified'})
-        errors = Counter('file_error' for entry in status['files'] if entry.get('status') == 'error')
+            file_id = uuid.UUID(item['file_id'])
+            if file_id not in choices:
+                try:
+                    choices[file_id] = read_statement_import(db, case_id=case_id, evidence_file_id=file_id,
+                        currency=item.get('currency') or None).get('statement_choices') or []
+                except Exception:
+                    choices[file_id] = None
+            source = by_id.get(file_id) or by_id.get(uuid.UUID(item.get('source_id') or item['file_id']))
+            items.append(dict(key=source['key'] if source else None, statement_key=item.get('statement_id') or '',
+                status=item['status'], can_import=bool(item.get('can_import')),
+                ready=item['status'] == 'ready' and bool(item.get('can_import')),
+                family='unreadable' if choices[file_id] is None else family_of(choices[file_id], item.get('statement_id') or ''),
+                problems=list(item.get('problems') or []), problem_count=item.get('problem_count'),
+                period_start=item.get('period_start') or '', period_end=item.get('period_end') or '',
+                transaction_count=item.get('transaction_count')))
+        file_errors = []
+        for entry in status['files']:
+            if entry.get('status') == 'error':
+                source = by_id.get(uuid.UUID(entry['source_id']))
+                file_errors.append(dict(key=source['key'] if source else None, error=entry.get('error') or ''))
     engine.dispose()
+    return dict(items=items, files=len(by_id), file_errors=file_errors)
+
+
+def evaluate(scratch, label, files, readings):
+    """Counts only: periods ready without edits by family and blocking reason."""
+    from services.financial.batch_review_summary import reason as review_reason
+    prepared = scratch_batch(scratch, label, files, readings)
+    if not prepared['files']:
+        return dict(periods=0, ready=0, by_family={}, reasons={}, files=0)
+    by_family, reasons = defaultdict(Counter), Counter()
+    for item in prepared['items']:
+        by_family[item['family']]['periods'] += 1
+        by_family[item['family']]['ready'] += int(item['ready'])
+        if not item['ready']:
+            reasons.update({review_reason(problem) for problem in item['problems']} or {'unspecified'})
     return dict(periods=sum(c['periods'] for c in by_family.values()),
         ready=sum(c['ready'] for c in by_family.values()),
         by_family={family: dict(counts) for family, counts in sorted(by_family.items())},
-        reasons=dict(sorted(reasons.items())), files=len(by_id), file_errors=sum(errors.values()))
+        reasons=dict(sorted(reasons.items())), files=prepared['files'], file_errors=len(prepared['file_errors']))
 
 
 def render(report):
