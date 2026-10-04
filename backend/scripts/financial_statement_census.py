@@ -647,13 +647,29 @@ def _code_text():
 
 
 def _label(identifier, masked, code):
-    if masked and '#' not in masked and len(masked) >= 12 and masked in code:
-        return masked
-    if masked and '#' in masked:
-        parts = [part.strip() for part in re.split(r'[^A-Za-z ,.;:()\'-]+', masked) if len(part.strip()) >= 12]
-        if parts and all(part in code for part in parts):
-            return masked
+    """A readable label only when every word of the message occurs in the backend source.
+
+    Messages are composed from f-strings, so whole sentences need not appear
+    literally; every word must. Quoted cell text is replaced by an ellipsis:
+    it is what was read from the document and can carry case data even with
+    its digits masked.
+    """
+    text = re.sub(r'"[^"]*"', '"…"', masked or '')
+    words = re.findall(r'[A-Za-z]+', text)
+    vocabulary = _vocabulary(code)
+    if words and all(word.lower() in vocabulary for word in words):
+        return text
     return f'template {identifier}'
+
+
+_VOCABULARY = {}
+
+
+def _vocabulary(code):
+    key = id(code)
+    if key not in _VOCABULARY:
+        _VOCABULARY[key] = {word.lower() for word in re.findall(r'[A-Za-z]+', code)}
+    return _VOCABULARY[key]
 
 
 def summarize(out, target, examples=3):

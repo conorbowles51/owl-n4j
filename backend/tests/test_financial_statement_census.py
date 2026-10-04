@@ -264,3 +264,12 @@ def test_an_undivided_file_matches_its_live_period():
         account='', transaction_count=3)], file_errors=[])
     rows = census.join(files, prepared, dict(items=[], file_errors=[]), {})
     assert [(r['current']['outcome'], r['live']['state']) for r in rows] == [('held', 'imported')]
+
+
+def test_summary_labels_only_product_text():
+    census = load()
+    code = 'Check the printed fee total. It could not be compared with the selected payments. Loupe could not read  as an amount.'
+    assert census._label('x', 'Check the printed fee total. It could not be compared with the selected payments.', code).startswith('Check')
+    assert census._label('x', 'Loupe could not read "SMITH #,###" as an amount.', code) == 'Loupe could not read "…" as an amount.'
+    assert census._label('x', 'Paid to SMITHERSON on ##/##.', code) == 'template x'
+    assert census._label('x', 'Check the printed interest total.', code + ' interest') == 'Check the printed interest total.'
