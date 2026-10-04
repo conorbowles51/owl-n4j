@@ -179,6 +179,8 @@ def _score(proposal, truth, summary):
     score = 0
     if truth['period_end'] and summary.get('period_end') == truth['period_end']:
         score += 5
+    if truth.get('added_in') == 'real' and truth.get('account') and truth['account'] in _digits(summary.get('account')):
+        score += 5  # real documents hold sub-accounts with the same dates
     if truth.get('share') and truth['share'] in json.dumps(proposal.get('metadata', {})):
         score += 5
     amounts = Counter(r['fields'].get('amount_minor') for r in _payment_rows(proposal))
@@ -459,7 +461,8 @@ def run(out, python, concurrency, corpus=CORPUS):
     with factory() as db:
         final = batches.batch_status(db, case_id=case_id, batch_id=batch_id, limit=10_000)
         final_items = {i['id']: i for i in final['items']}
-        ledger = verify_ledger(db, periods, final_items, truths, FinancialTransaction, FinancialAccount, select)
+        ledger = verify_ledger(db, periods, final_items, truths, FinancialTransaction, FinancialAccount, select,
+                               _incomplete(manifest))
 
     repairs = {name: repair_summary(r.get('source_locations')) for name, r in readings.items() if 'error' not in r}
     result = dict(
@@ -502,6 +505,95 @@ def _scored(truth):
     return truth is None or truth.get('truth_status', 'verified') in SCORED_TRUTH
 
 
+def _incomplete(manifest):
+    return {f['filename'] for f in manifest['files'] if f.get('truth_complete') is False}
+
+
+def _rematch(periods, truths):
+    """Re-pair batch items with real truth periods of the same file by closing date, account and share
+    (from what each item read). Returns how many pairings changed; their stored proposal checks and
+    simulated corrections belong to the earlier pairing and are dropped."""
+    by_file = defaultdict(list)
+    for truth in truths.values():
+        if truth.get('added_in') == 'real':
+            by_file[truth['filename']].append(truth)
+    changed = 0
+    for filename, candidates in by_file.items():
+        items = [p for p in periods if p['filename'] == filename and p.get('item_id')]
+
+        def fit(item, truth):
+            read = item.get('read') or {}
+            return ((read.get('period_end') == truth['period_end']) * 5
+                    + bool(truth.get('account') and truth['account'] in _digits(read.get('account'))) * 5
+                    + bool(truth.get('share') and truth['share'] in (read.get('account') or '')) * 5)
+        pairs = sorted(((fit(i, t), n, t['id']) for n, i in enumerate(items) for t in candidates), reverse=True)
+        taken, assignment = set(), {}
+        for score, n, truth_id in pairs:
+            if score < 5 or n in assignment or truth_id in taken:
+                continue
+            assignment[n] = truth_id
+            taken.add(truth_id)
+        for n, item in enumerate(items):
+            new, old = assignment.get(n), item['truth_id']
+            if new is None and (old is None or old not in taken):
+                continue  # no confident pairing: keep the run's own
+            if new == old:
+                continue
+            changed += 1
+            item['truth_id'] = new
+            item.pop('proposal_checks', None)
+            item.pop('correction', None)
+            if new is None:
+                item.update(family='unmatched', expected=None, defects=[], scored=True)
+    return changed
+
+
+def rescore(out, corpus):
+    """Re-judge a finished run against the corpus manifest as it is now, using the run's own database.
+
+    For truth corrections (a convention fixed, a period re-verified) without
+    re-reading every document. Batch outcomes, proposal checks and simulated
+    corrections are the original run's; the ledger comparison and all metrics
+    are recomputed. Writes results-rescored.json and summary-rescored.md.
+    """
+    from sqlalchemy import create_engine, select
+    from sqlalchemy.orm import sessionmaker
+    from postgres.models.financial import FinancialTransaction, FinancialAccount
+    from postgres.models.financial_import_batches import FinancialImportBatchItem
+    _load_models()
+    manifest = json.loads((corpus / 'manifest.json').read_text())
+    result = json.loads((out / 'results.json').read_text())
+    truths = {p['id']: dict(p, filename=f['filename']) for f in manifest['files'] for p in f['periods']}
+    rematched = _rematch(result['periods'], truths)
+    for period in result['periods']:
+        truth = truths.get(period['truth_id']) if period['truth_id'] else None
+        if truth is not None:
+            period.update(scored=_scored(truth), expected=truth['expected'], family=truth['family'],
+                          defects=truth['defects'])
+        elif period['truth_id']:
+            period.update(scored=False, expected=None)
+    engine = create_engine(f"sqlite+pysqlite:///{out / 'benchmark.db'}", future=True)
+    factory = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+    with factory() as db:
+        final_items = {str(item.id): dict(status=item.status, source_document_id=(item.summary or {}).get('source_document_id'))
+                       for item in db.scalars(select(FinancialImportBatchItem))}
+        result['ledger'] = verify_ledger(db, result['periods'], final_items, truths, FinancialTransaction,
+                                         FinancialAccount, select, _incomplete(manifest))
+    engine.dispose()
+    result['corpus'].update(periods=len(truths), path=str(corpus))
+    result['rescored'] = dict(at=datetime.now(timezone.utc).isoformat(timespec='seconds'), code=_git('rev-parse', 'HEAD'),
+                              scored_truth=sorted(SCORED_TRUTH), rematched_items=rematched)
+    result['metrics'] = metrics(result)
+    (out / 'results-rescored.json').write_text(json.dumps(result, indent=1, default=str) + '\n')
+    text = render_summary(result).replace('# Statement automation benchmark', '# Statement automation benchmark (rescored)', 1)
+    text += ('\nRescored ' + result['rescored']['at'] + ' at code ' + result['rescored']['code'][:10] +
+             ' against the current manifest: ledger comparison and metrics recomputed; batch outcomes, proposal '
+             'checks and simulated corrections are from the original run (dropped for the '
+             + str(rematched) + ' items whose truth pairing changed).\n')
+    (out / 'summary-rescored.md').write_text(text)
+    return result
+
+
 def proposal_field_errors(proposal, truth):
     """Critical fields as proposed before any human action (no edits applied)."""
     errors = Counter()
@@ -531,8 +623,13 @@ def proposal_field_errors(proposal, truth):
     return {k: v for k, v in errors.items() if v}
 
 
-def verify_ledger(db, periods, final_items, truths, Transaction, Account, select):
-    """Compare every saved transaction with the period it was admitted from."""
+def verify_ledger(db, periods, final_items, truths, Transaction, Account, select, incomplete_files=()):
+    """Compare every saved transaction with the period it was admitted from.
+
+    ``incomplete_files``: real documents whose truth did not find or verify every
+    statement; an admitted item there that matches no truth period is counted
+    as admitted-unscored, not as a wrong admission.
+    """
     report = dict(admitted_periods=0, transactions=0, critical_errors=Counter(), wrongly_admitted=[],
                   duplicate_contributions=0, by_period={})
     seen = Counter()
@@ -545,6 +642,9 @@ def verify_ledger(db, periods, final_items, truths, Transaction, Account, select
         rows = list(db.scalars(select(Transaction).where(
             Transaction.source_document_id == uuid.UUID(item['source_document_id']))))
         truth = truths.get(period['truth_id'])
+        if truth is None and period.get('filename') in incomplete_files:
+            report['admitted_unscored'] = report.get('admitted_unscored', 0) + 1
+            continue
         if truth is not None and not _scored(truth):
             # The truth for this period did not reconcile, so its saved rows
             # cannot be judged; they are counted, not scored.
@@ -807,11 +907,19 @@ def main(argv=None):
     parser.add_argument('--concurrency', type=int, default=2)
     parser.add_argument('--corpus', default=str(CORPUS),
                         help='Corpus directory with manifest.json (default: the committed corpus).')
+    parser.add_argument('--rescore', action='store_true',
+                        help='re-judge the finished run in --out against the current --corpus manifest (no re-reading)')
     parser.add_argument('--score', default='verified',
                         help='comma-separated real truth statuses to score (default: verified)')
     args = parser.parse_args(argv)
     SCORED_TRUTH.clear()
     SCORED_TRUTH.update(s.strip() for s in args.score.split(',') if s.strip())
+    if args.rescore:
+        if not args.out:
+            parser.error('--rescore needs --out (the finished run directory)')
+        result = rescore(Path(args.out), Path(args.corpus))
+        print((Path(args.out) / 'summary-rescored.md').read_text())
+        return 0 if not result['ledger']['wrongly_admitted'] else 1
     out = Path(args.out) if args.out else Path(os.environ.get('TMPDIR', '/tmp')) / (
         f"loupe-statement-benchmark-{os.environ.get('USER') or os.getuid()}-{datetime.now():%Y%m%d-%H%M%S}")
     result = run(out, args.engine_python, args.concurrency, Path(args.corpus))

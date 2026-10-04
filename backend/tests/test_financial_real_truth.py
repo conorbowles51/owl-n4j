@@ -189,6 +189,47 @@ class HarnessRealCorpusTests(unittest.TestCase):
         self.assertFalse(harness._scored(dict(truth_status='ocr_reconciled')))
         self.assertFalse(harness._scored(dict(truth_status='unverified')))
 
+    def test_unmatched_admission_in_a_document_with_incomplete_truth_is_not_judged(self):
+        class Query:
+            def where(self, *_):
+                return self
+
+        class Column:
+            def __eq__(self, other):
+                return True
+
+        class Transaction:
+            source_document_id = Column()
+
+        class Session:
+            def scalars(self, *_):
+                return []
+        item = dict(item_id='i1', filename='d1.pdf', truth_id=None, status='ready', can_import=True)
+        final = {'i1': dict(status='imported', source_document_id='00000000-0000-0000-0000-000000000001')}
+        judged = harness.verify_ledger(Session(), [dict(item)], final, {}, Transaction, None, lambda _: Query())
+        self.assertEqual(len(judged['wrongly_admitted']), 1)
+        unjudged = harness.verify_ledger(Session(), [dict(item)], final, {}, Transaction, None, lambda _: Query(),
+                                         incomplete_files={'d1.pdf'})
+        self.assertEqual((unjudged['wrongly_admitted'], unjudged['admitted_unscored']), ([], 1))
+
+    def test_real_matching_uses_the_account(self):
+        cheque = dict(id='d#1', period_end='2025-03-31', account='65500012340', added_in='real', rows=[])
+        savings = dict(id='d#2', period_end='2025-03-31', account='66500012340', added_in='real', rows=[])
+        proposal = dict(rows=[], metadata={})
+        item = dict(period_end='2025-03-31', account='66-50001234-0')
+        self.assertGreater(harness._score(proposal, savings, item), harness._score(proposal, cheque, item))
+
+    def test_rescore_rematch_pairs_items_by_date_account_and_share(self):
+        truths = {t['id']: dict(t, filename='d.pdf', added_in='real') for t in (
+            dict(id='d#1', period_end='2021-12-31', account='123456789', share='0000'),
+            dict(id='d#2', period_end='2021-12-31', account='123456789', share='0040'))}
+        periods = [dict(item_id='a', filename='d.pdf', truth_id='d#1', read=dict(period_end='2021-12-31',
+                                                                                   account='123456789 / Share 0040')),
+                   dict(item_id='b', filename='d.pdf', truth_id='d#2', read=dict(period_end='2021-12-31',
+                                                                                   account='123456789 / Share 0000'))]
+        self.assertEqual(harness._rematch(periods, truths), 2)
+        self.assertEqual([p['truth_id'] for p in periods], ['d#2', 'd#1'])
+
     def test_rows_pair_by_value_before_description(self):
         truth = [dict(description='SPEI ENVIADO A', amount_minor=100, direction='debit', date='2024-01-02'),
                  dict(description='SPEI ENVIADO B', amount_minor=200, direction='debit', date='2024-01-03')]

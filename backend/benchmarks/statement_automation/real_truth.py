@@ -945,8 +945,10 @@ def _santander_run(run):
             opened = re.match(r'^(?:\d{2}-[A-Z]{3}-\d{4}\s+)?SALDO FINAL DEL PERIODO ANTERIOR:?\s*\$?\s*(-?[\d,. ]+\.\s?\d\s?\d)\s*$',
                               line.text)
             if opened and is_money(opened.group(1).replace(' ', '')):
+                # Full digits: a cheque account and its investment sub-account share the last four.
                 period = Period(family='santander-mexico', institution='Santander', holder=holder,
-                                account=last4(account), period_start=start, period_end=end, currency=currency,
+                                account=re.sub(r'\D', '', account or '') or None, period_start=start,
+                                period_end=end, currency=currency,
                                 page_sequence=run['seq'], page_total=run['total'], pages=[page.number])
                 period.opening_minor = money_minor(opened.group(1).replace(' ', ''))
                 period.controls['account_printed'] = account
@@ -1081,7 +1083,7 @@ def parse_santander_query(pages):
 # Kapital Bank (ex Autofin; "ESTADO DE CUENTA ÚNICO", one section per account)
 # ---------------------------------------------------------------------------
 
-KAPITAL_ACCOUNT = re.compile(r'(\d{3}-\d{5}-\d{3}-\d)\s+CLABE\s+(\d{3})')
+KAPITAL_ACCOUNT = re.compile(r'(\d{3}-\d{5}-\d{3}-\d)\s+CLABE\s+((\d{3})\d{15})')
 # The same "ESTADO DE CUENTA ÚNICO" layout is issued under two bank codes.
 UNICO_FAMILIES = {'128': ('kapital-mexico', 'Kapital'), '136': ('intercam-mexico', 'Intercam')}
 
@@ -1122,9 +1124,11 @@ def _kapital_run(run):
         for line in page.lines:
             found = KAPITAL_ACCOUNT.search(line.text)
             if found:
-                family, institution = UNICO_FAMILIES.get(found.group(2), ('unico-unknown-bank', 'unknown'))
+                family, institution = UNICO_FAMILIES.get(found.group(3), ('unico-unknown-bank', 'unknown'))
                 period = Period(family=family, institution=institution, holder=holder, period_start=start,
-                                period_end=end, account=last4(found.group(1)), page_sequence=run['seq'],
+                                # Both the account number and the CLABE are printed; the account is
+                                # identified by its CLABE, as in the synthetic corpus and the pipeline.
+                                period_end=end, account=last4(found.group(2)), page_sequence=run['seq'],
                                 page_total=run['total'], pages=[page.number])
                 period.controls['account_printed'] = found.group(1)
                 periods.append(period)
@@ -1742,8 +1746,11 @@ def write_outputs(out, results, docs_dir):
         link = out / name
         if not link.exists():
             link.symlink_to(Path(docs_dir).resolve() / name)
+        # truth_complete: every statement the document holds was found and verified, so a
+        # batch item matching none of them is wrong rather than a gap in the truth.
         files.append(dict(filename=name, sha256=result['sha256'], size=(Path(docs_dir) / name).stat().st_size,
-                          pages=result['pages'], mode=result['mode'], periods=[manifest_period(p) for p in periods]))
+                          pages=result['pages'], mode=result['mode'], truth_complete=result['status'] == 'verified',
+                          periods=[manifest_period(p) for p in periods]))
     manifest = dict(version='real-tier-a', synthetic=False, files=files)
     (out / 'manifest.json').write_text(json.dumps(manifest, indent=1, sort_keys=True) + '\n')
     status = [dict(id=r['id'], status=r['status'], issuer=r.get('issuer'), inventory_family=r.get('inventory_family'),
