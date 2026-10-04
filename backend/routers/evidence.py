@@ -65,11 +65,6 @@ _ARCHIVE_SKIP_NAMES = {".DS_Store", "Thumbs.db", "desktop.ini"}
 _CELLEBRITE_NS_MARKER = b"http://pa.cellebrite.com/report/2.0"
 
 
-# Hard limit on file IDs per single processing request.
-# Clients must split larger batches into chunks of this size.
-MAX_BATCH_SIZE = 50
-
-
 def _evidence_case_permission(request: Request, payload: dict) -> tuple[str, str]:
     if request.method == "GET":
         return ("case", "view")
@@ -1320,12 +1315,6 @@ async def process_evidence_background(
     """
     if not request.file_ids:
         raise HTTPException(status_code=400, detail="No file_ids provided")
-
-    if len(request.file_ids) > MAX_BATCH_SIZE:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Too many files ({len(request.file_ids)}). Maximum {MAX_BATCH_SIZE} files per request. Please batch your requests.",
-        )
 
     try:
         if request.case_id:

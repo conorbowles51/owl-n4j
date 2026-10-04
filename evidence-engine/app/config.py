@@ -70,7 +70,6 @@ class Settings(BaseSettings):
     storage_path: str = "/data/files"
     cellebrite_data_root: str = "evidence-data"
     max_upload_file_bytes: int = 1_073_741_824
-    max_upload_batch_files: int = 50
     max_upload_batch_bytes: int = 5_368_709_120
     upload_read_chunk_bytes: int = 1_048_576
     batch_file_max_concurrency: int = 4
