@@ -12,7 +12,8 @@ closing date:
   date column), or a balance kept with the opposite sign;
 * ``disagrees``: missing, extra or different rows, or different balances. This
   is a wrong admission, unless the truth itself is only ``ocr_reconciled``;
-* ``no_truth_period``: the document has truth, but no truth period matches.
+* ``no_truth_period``: the document has truth, but no judged truth period matches;
+* ``live_period_undated``: the live period was admitted without period dates.
 
 The live database is read inside a READ ONLY transaction. The shareable
 summary holds counts only; per-period detail goes to the private ``--out``.
@@ -40,6 +41,12 @@ def _digits(value):
     return re.sub(r'\D', '', value or '')
 
 
+def _printed_share(printed):
+    """A credit-union share number printed at the end of the account identifier ('... Share 0040')."""
+    match = re.search(r'(?:share|ID)\s*(\d{4})\s*$', printed or '', re.I) or re.search(r'\s(\d{4})\s*$', printed or '')
+    return match.group(1) if match else None
+
+
 def live_periods(session, evidence_file_ids):
     """Admitted statement periods and their admitted transactions for the given evidence files."""
     from sqlalchemy import bindparam, text
@@ -47,7 +54,7 @@ def live_periods(session, evidence_file_ids):
         return []
     rows = session.execute(text(
         "SELECT p.id, d.evidence_file_id, d.id, p.period_start, p.period_end, p.currency, p.opening_balance_minor, "
-        "p.closing_balance_minor, a.identifier_normalised, a.identifier_as_printed, d.case_id "
+        "p.closing_balance_minor, a.identifier_normalised, a.identifier_as_printed, d.case_id, a.metadata->>'share' "
         "FROM financial_statement_periods p JOIN financial_source_documents d ON d.id = p.source_document_id "
         "LEFT JOIN financial_accounts a ON a.id = p.account_id "
         "WHERE d.status = 'admitted' AND d.evidence_file_id IN :files").bindparams(
@@ -55,7 +62,8 @@ def live_periods(session, evidence_file_ids):
     periods = {r[0]: dict(period_id=str(r[0]), evidence_file_id=str(r[1]), source_document_id=str(r[2]),
                           period_start=r[3].isoformat() if r[3] else None, period_end=r[4].isoformat() if r[4] else None,
                           currency=r[5], opening_minor=r[6], closing_minor=r[7],
-                          account=_digits(r[8] or r[9]), case_id=str(r[10]), rows=[]) for r in rows}
+                          account=_digits(r[8] or r[9]), case_id=str(r[10]),
+                          share=r[11] or _printed_share(r[9]), rows=[]) for r in rows}
     if not periods:
         return []
     for r in session.execute(text(
@@ -135,14 +143,20 @@ def best_truth(live, candidates):
         a = Counter((r['amount_minor'], r['direction']) for r in truth['rows'])
         b = Counter((amount, direction) for amount, direction, _ in live['rows'])
         return sum((a & b).values())
+    # A credit-union share (savings, checking) is its own period: never pair across shares.
     same = [t for t in candidates if t['period_end'] == live['period_end']
-            and (not live['currency'] or t['currency'] == live['currency'])]
+            and (not live['currency'] or t['currency'] == live['currency'])
+            and (not live.get('share') or not t.get('share') or t['share'] == live['share'])]
     if not same:
         return None
     if len(same) > 1:
         accounts = [t for t in same if t.get('account') and t['account'] in live['account']]
         same = accounts or same
-    return max(same, key=overlap)
+
+    def balances(truth):  # sub-accounts can share the last digits; recorded balances tell them apart
+        return sum(1 for name in ('opening_minor', 'closing_minor')
+                   if live[name] is not None and abs(live[name]) == abs(truth[name] or 0))
+    return max(same, key=lambda truth: (overlap(truth), balances(truth)))
 
 
 def audit(truth_dir, inventory, session):
@@ -162,7 +176,10 @@ def audit(truth_dir, inventory, session):
     for period in live:
         doc = by_file.get(period['evidence_file_id'])
         truth = best_truth(period, truths[doc]['periods'])
-        if truth is None:
+        if period['period_end'] is None:
+            # Admitted without a printed period: nothing to pair it with.
+            entry = dict(outcome='live_period_undated', family=truths[doc]['family'])
+        elif truth is None:
             entry = dict(outcome='no_truth_period', family=truths[doc]['family'])
         else:
             entry = dict(compare(period, truth), family=truth['family'], truth_id=truth['id'],
@@ -175,13 +192,13 @@ def audit(truth_dir, inventory, session):
         detail.append(entry)
         key = entry['family'] + (' (OCR-layer truth)' if entry.get('truth_status') == 'ocr_reconciled' else '')
         counts[key][entry['outcome']] += 1
-        if entry['outcome'] != 'no_truth_period':
+        if entry['outcome'] not in ('no_truth_period', 'live_period_undated'):
             details[key][f"rows {entry['rows']}"] += 1
             for name in entry['balances']:
                 details[key][name] += 1
     rows = Counter()
     for entry in detail:
-        if entry['outcome'] != 'no_truth_period':
+        if entry['outcome'] not in ('no_truth_period', 'live_period_undated'):
             rows['live_rows'] += entry['live_rows']
             rows['missing_rows'] += entry['missing_rows']
             rows['extra_rows'] += entry['extra_rows']
