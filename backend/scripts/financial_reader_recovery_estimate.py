@@ -195,7 +195,9 @@ def scratch_batch(scratch, label, files, readings, *, retained_currency=True):
             if reading is not None and 'error' not in reading:
                 usable.append(file)
         created = EvidenceDBStorage.add_files(db, case.id, [dict(original_filename=f'statement-{file["key"]}.pdf',
-            stored_path=str(scratch / f'statement-{file["key"]}.pdf'), sha256=file['sha256'], size=0)
+            stored_path=str(scratch / f'statement-{file["key"]}.pdf'),
+            # An original no longer in the case can still have a retained reading.
+            sha256=file['sha256'] or hashlib.sha256(file['key'].encode()).hexdigest(), size=0)
             for file in usable], folder_id=folder.id, created_by_id=user.id)
         db.flush()
         for file, record in zip(usable, created):

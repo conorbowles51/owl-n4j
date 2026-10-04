@@ -257,15 +257,8 @@ def live_files(session, case_id, resolve_path, retained_dir=None):
 # --- cached engine re-read ---------------------------------------------------
 
 def engine_revision():
-    """The evidence-engine code the readings come from: tree hash, plus any uncommitted change."""
-    try:
-        tree = subprocess.run(['git', 'rev-parse', 'HEAD:evidence-engine'], cwd=BACKEND.parent, capture_output=True,
-            text=True, check=True).stdout.strip()
-        dirty = subprocess.run(['git', 'diff', 'HEAD', '--', 'evidence-engine'], cwd=BACKEND.parent,
-            capture_output=True, check=True).stdout
-    except (OSError, subprocess.SubprocessError):
-        return 'unknown'
-    return tree[:12] + ('-' + hashlib.sha256(dirty).hexdigest()[:8] if dirty else '')
+    """The evidence-engine code the readings come from."""
+    return tree_revision('evidence-engine')
 
 
 def _read_chunk(chunk, workdir, python, timeout):
@@ -526,19 +519,13 @@ def census(factory, case_id, out, *, cache=None, python=sys.executable, workers=
     scratch = Path(tempfile.mkdtemp(prefix=f'census-{os.getuid()}-', dir=scratch_root))
     try:
         os.chmod(scratch, 0o700)
-        started = time.monotonic()
-        current = estimate.scratch_batch(scratch, 'current', [f for f in readable if f['key'] in paths], readings,
-            retained_currency=False)
-        log(f'current readings prepared in {time.monotonic() - started:.0f} s')
-        started = time.monotonic()
-        retained = estimate.scratch_batch(scratch, 'retained', [f for f in files if f['retained']],
-            CachedReadings({f['key']: retained_dir / f"{f['key']}.json" for f in files if f['retained']}),
-            retained_currency=False)
-        log(f'retained readings prepared in {time.monotonic() - started:.0f} s')
+        current = _prepare_side(estimate, scratch, case_dir, 'current', [f for f in readable if f['key'] in paths],
+            readings, log)
+        retained_files = [f for f in files if f['retained']]
+        retained = _prepare_side(estimate, scratch, case_dir, 'retained', retained_files,
+            CachedReadings({f['key']: retained_dir / f"{f['key']}.json" for f in retained_files}), log)
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
-    _write_json(case_dir / 'prepared-current.json', current)
-    _write_json(case_dir / 'prepared-retained.json', retained)
     _write_json(case_dir / 'run.json', dict(case=str(case_id), code=estimate._code(), engine=engine_revision(),
         generated_at=datetime.now(timezone.utc).isoformat(timespec='seconds'), read_seconds=round(read_seconds),
         original_problems=dict(problems), file_problems=file_problems))
@@ -583,12 +570,61 @@ def rejoin(case_dir):
     (case_dir / 'templates.json').write_text(json.dumps(templates, indent=1, sort_keys=True))
     report = dict(tally(rows, files), **{k: v for k, v in run.items() if k != 'file_problems'},
         file_problems=dict(Counter(v.split(':', 1)[0] for v in run['file_problems'].values())),
-        current_file_errors=len(current['file_errors']), retained_file_errors=len(retained['file_errors']))
+        current_file_errors=len(current['file_errors']), retained_file_errors=len(retained['file_errors']),
+        retained_failed=retained.get('failed'))
     previous = case_dir / 'report.json'
     if previous.is_file() and 'audit' in json.loads(previous.read_text()):
         report['audit'] = json.loads(previous.read_text())['audit']
     previous.write_text(json.dumps(report, indent=1, sort_keys=True) + '\n')
     return report
+
+
+def tree_revision(path):
+    """The committed tree of a repository path, plus a digest of any uncommitted change to it."""
+    try:
+        tree = subprocess.run(['git', 'rev-parse', f'HEAD:{path}'], cwd=BACKEND.parent, capture_output=True,
+            text=True, check=True).stdout.strip()
+        dirty = subprocess.run(['git', 'diff', 'HEAD', '--', path], cwd=BACKEND.parent,
+            capture_output=True, check=True).stdout
+    except (OSError, subprocess.SubprocessError):
+        return 'unknown'
+    return tree[:12] + ('-' + hashlib.sha256(dirty).hexdigest()[:8] if dirty else '')
+
+
+def _prepare_side(estimate, scratch, case_dir, label, files, readings, log):
+    """One prepared batch, stored at once and reused while its inputs and the backend are unchanged.
+
+    The fingerprint covers the backend services tree, the scripts, and every
+    input reading's bytes. A failure of the retained side is recorded, not
+    fatal: the new reading is the census.
+    """
+    digest = hashlib.sha256(json.dumps([label, tree_revision('backend/services'), tree_revision('backend/scripts')]).encode())
+    for file in sorted(files, key=lambda f: f['key']):
+        digest.update(f"{file['key']}:{file['sha256']}:".encode())
+        path = getattr(readings, 'paths', {}).get(file['key'])
+        if path is not None and Path(path).is_file():
+            digest.update(hashlib.sha256(Path(path).read_bytes()).digest())
+        else:
+            digest.update(json.dumps(readings.get(file['key']), sort_keys=True, default=str).encode())
+    fingerprint = digest.hexdigest()
+    target = case_dir / f'prepared-{label}.json'
+    if target.is_file():
+        stored = json.loads(target.read_text())
+        if stored.get('fingerprint') == fingerprint:
+            log(f'{label} readings: stored preparation reused')
+            return stored
+    started = time.monotonic()
+    try:
+        result = estimate.scratch_batch(scratch, label, files, readings, retained_currency=False)
+    except Exception as error:
+        if label == 'current':
+            raise
+        log(f'{label} readings could not be prepared: {type(error).__name__}')
+        result = dict(items=[], files=0, file_errors=[], failed=type(error).__name__)
+    result.update(fingerprint=fingerprint, seconds=round(time.monotonic() - started))
+    _write_json(target, result)
+    log(f'{label} readings prepared in {result["seconds"]} s')
+    return result
 
 
 def _audit_module():
@@ -632,7 +668,8 @@ def summarize(out, target, examples=3):
     code = _code_text()
     lines = ['# Real-statement census (counts only)', '',
         f"Generated {datetime.now(timezone.utc).isoformat(timespec='seconds')}. Periods by opaque id "
-        '(original sha256 prefix # statement hash). Private detail stays under the census directory.', '',
+        '(case prefix : original sha256 prefix # statement hash). The same original filed in several cases is counted '
+        'in each case. Private detail stays under the census directory.', '',
         '"Ready" = ready without any human edit, prepared by the current backend from the source alone '
         '(no investigator currency choice applied). Live = stored batch state.', '',
         '## By case', '', '| case | originals | periods | ready (new reading) | ready (retained reading) | '
@@ -666,11 +703,11 @@ def summarize(out, target, examples=3):
             outcome = _outcome(current, row.get('current_file_state'))
             reasons = current['coarse'] if outcome == 'held' else [outcome]
             for reason in reasons:
-                ranking[(family, reason)].append(row['period'])
+                ranking[(family, reason)].append(f"{case[:8]}:{row['period']}")
             if len(reasons) == 1:
                 single[(family, reasons[0])] += 1
             for fine in (current['fine'] if outcome == 'held' else []):
-                fine_ranking[(family, fine)].append(row['period'])
+                fine_ranking[(family, fine)].append(f"{case[:8]}:{row['period']}")
     lines += ['', '## By statement family (new reading)', '', '| family | periods | ready | % |', '|---|---|---|---|']
     for family, counts in sorted(family_rows.items(), key=lambda pair: -pair[1]['periods']):
         lines.append(f"| {family} | {counts['periods']} | {counts['ready']} | {100 * counts['ready'] / counts['periods']:.0f}% |")

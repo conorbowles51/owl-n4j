@@ -145,6 +145,15 @@ def test_census_covers_every_batch_file_without_writing(tmp_path, corpus, monkey
     assert report['live_states']['imported'] == 1
     assert report['audit']['considered'] == 0  # nothing admitted in this case
 
+    # A rerun with unchanged inputs reuses both stored preparations.
+    estimate = census._estimate()
+    monkeypatch.setattr(estimate, 'scratch_batch', lambda *a, **k: pytest.fail('stored preparation not reused'))
+    monkeypatch.setattr(census, '_estimate', lambda: estimate)
+    again = census.census(factory, case_id, out, cache=corpus['cache'], resolve_path=Path, log=lambda *_: None,
+        scratch_root=tmp_path / 'scratch', audit=False)
+    assert (again['periods'], again['ready_current'], again['ready_retained']) == (
+        report['periods'], report['ready_current'], report['ready_retained'])
+
     summary = census.summarize(out, tmp_path / 'summary.md')
     shared = summary + json.dumps(report)
     for name, file_id in names.items():
@@ -236,3 +245,12 @@ def test_a_system_set_aside_is_not_a_held_period():
     assert census.prepared_outcome(base) == 'duplicate_set_aside'
     assert census.prepared_outcome(dict(base, status='attention')) == 'held'
     assert census.prepared_outcome(dict(base, ready=True, status='ready')) == 'ready'
+
+
+def test_a_retained_reading_without_its_original_is_still_prepared(tmp_path, corpus):
+    census = load()
+    estimate = census._estimate()
+    sha = next(sha for sha, path in corpus['originals'].items() if path.name == 'generic-01-clean.pdf')
+    prepared = estimate.scratch_batch(tmp_path, 'retained', [dict(key='gone', sha256=None, currency=None)],
+        {'gone': corpus['readings'][sha]}, retained_currency=False)
+    assert prepared['files'] == 1 and [item['ready'] for item in prepared['items']] == [True]
