@@ -316,6 +316,60 @@ def _prefer_statement_image(original, image):
     return prefer_image_reading(original, image)
 
 
+UNREAD_LINE_DPI = 100
+
+
+def _unread_printed_lines(page):
+    """``[(top, bottom)]`` in page points where the image prints a text line no embedded word covers.
+
+    An embedded OCR layer can drop whole printed lines. The page image is
+    rendered once at 100 dpi (embedded invisible text is not drawn) and split
+    into horizontal ink bands. A band counts only when it lies strictly
+    between the first and last embedded word, is as tall as the page's other
+    text lines (0.6 to 1.6 times their median ink height), its ink falls into
+    at least six separate runs across the page (characters, not a rule or a
+    smudge), and no embedded word overlaps it by 30% of its height. Rotated
+    pages and pages with too few words are not measured. This never changes
+    a reading; it only sends the page to the image reading, whose result is
+    accepted on its own conditions.
+    """
+    import numpy as np
+    words = page.get_text('words')
+    if page.rotation or len(words) < MIN_MEANINGFUL_WORDS:
+        return []
+    pix = page.get_pixmap(dpi=UNREAD_LINE_DPI, colorspace=fitz.csGRAY, alpha=False)
+    ink = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.stride)[:, :pix.width] < 128
+    scale = UNREAD_LINE_DPI / 72
+    rows = ink.any(axis=1)
+    bands, y = [], 0
+    while y < len(rows):
+        if not rows[y]:
+            y += 1
+            continue
+        start = y
+        while y < len(rows) and rows[y]:
+            y += 1
+        top, bottom = start / scale, y / scale
+        covered = any(min(w[3], bottom) - max(w[1], top) > (bottom - top) * .3 for w in words)
+        columns = ink[start:y].any(axis=0)
+        runs = int(columns[0]) + int(np.count_nonzero(columns[1:] & ~columns[:-1]))
+        bands.append((top, bottom, covered, runs))
+    heights = sorted(b - t for t, b, covered, _ in bands if covered and b - t > 1)
+    if not heights:
+        return []
+    line = heights[len(heights) // 2]
+    first, last = min(w[1] for w in words), max(w[3] for w in words)
+    return [(round(top, 2), round(bottom, 2)) for top, bottom, covered, runs in bands
+            if not covered and runs >= 6 and first < top and bottom < last
+            and line * .6 <= bottom - top <= line * 1.6]
+
+
+def _recovered_unread_lines(original, image_tables):
+    from services.financial.statement_reading_quality import recovers_unread_lines
+    return recovers_unread_lines(original['quality'], [table.to_json() for table in image_tables],
+                                 original['unread_lines'])
+
+
 def _verify_recognised_money(page, tables, chunks, *, text_origin, extraction_method, rotation=0):
     """Hold recognised money cells that the page image does not confirm.
 
@@ -414,7 +468,8 @@ def _retain_native_statement(page_result, original, table_chunks, extracted_tabl
     page_result.ocr_status = 'native_retained'
     page_result.ocr_geometry_status = 'native_retained'
     page_result.ocr_refinements.append(dict(field='statement_page_reading', decision='native_retained',
-        reason=reason, original_quality=original['quality']))
+        reason=reason, original_quality=original['quality'],
+        **({'unread_lines': [list(b) for b in original['unread_lines']]} if original.get('unread_lines') else {})))
     table_chunks.extend(original['chunks'])
     extracted_tables.extend(original['tables'])
 
@@ -968,7 +1023,16 @@ def _read_ocr_page(document, page_index, page_result, prepared, page_cache, nati
 
     original = native_alternatives.get(page_index)
     quality = _statement_reading_quality(ocr_tables) if original else None
-    if original and not _prefer_statement_image(original['quality'], quality):
+    preferred = bool(original) and _prefer_statement_image(original['quality'], quality)
+    recovered = None
+    if original and not preferred and original.get('unread_lines'):
+        # The embedded layer left printed lines unread: the image reading may
+        # replace it only by adding exactly those lines (``recovers_unread_lines``).
+        try:
+            recovered = _recovered_unread_lines(original, ocr_tables)
+        except Exception:
+            logger.warning('Unread line recovery unavailable; embedded reading kept', exc_info=True)
+    if original and not preferred and not recovered:
         # A whole-page image reading can omit a row. Keep that page's
         # original geometry and try only demonstrably unreadable statement
         # money cells; crop disagreement never replaces a value.
@@ -1000,7 +1064,9 @@ def _read_ocr_page(document, page_index, page_result, prepared, page_cache, nati
         if original:
             page_result.ocr_refinements.append(dict(field='statement_page_reading', decision='image_selected',
                 original_quality=original['quality'], image_quality=quality,
-                original_text_sha256=hashlib.sha256(original['text'].encode()).hexdigest()))
+                original_text_sha256=hashlib.sha256(original['text'].encode()).hexdigest(),
+                **(dict(reason='recovered_unread_lines', unread_lines=[list(b) for b in original['unread_lines']],
+                        added_rows=recovered['added']) if recovered else {})))
     return False
 
 
@@ -1067,11 +1133,18 @@ def _extract_pdf_sync(
                 )
                 page_chunks, page_tables = _extract_native_tables(page, page_number)
                 quality = _statement_reading_quality(page_tables)
-                if quality and quality['unreadable']:
+                unread = []
+                if quality and not quality['unreadable'] and page_result.text_origin == 'recognised_glyphs':
+                    try:
+                        unread = _unread_printed_lines(page)
+                    except Exception:
+                        logger.debug('Unread printed line check unavailable', exc_info=True)
+                if quality and (quality['unreadable'] or unread):
                     native_alternatives[page_index] = dict(text=native_text, origin=page_result.text_origin,
-                        chunks=page_chunks, tables=page_tables, quality=quality)
+                        chunks=page_chunks, tables=page_tables, quality=quality, unread_lines=unread)
                     page_result.extraction_method = 'tesseract_ocr'
-                    page_result.detection_reason = 'unreadable_statement_fields'
+                    page_result.detection_reason = ('unreadable_statement_fields' if quality['unreadable']
+                                                    else 'unread_printed_lines')
                     ocr_indexes.append(page_index)
                 else:
                     from app.pipeline.statement_money_verification import page_needs_verification

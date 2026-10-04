@@ -105,6 +105,12 @@ def _page_statement_rows(sources):
 
 
 def assess_statement_reading(tables):
+    assessed = _assess(tables)
+    return assessed[0] if assessed else None
+
+
+def _assess(tables):
+    """``(assessment, rows behind known_rows)`` for one page reading, or ``None``."""
     found = _page_statement_rows(sources_from_tables(tables))
     if found is None:
         return None
@@ -131,12 +137,12 @@ def assess_statement_reading(tables):
         zero_charge_rows=zero_charges, balances=len(balances), missing_fields=missing, unreadable=sum(missing.values()))
     # Preserve readable facts across every supported family, not just counts.
     # One repaired cell must not silently alter another payment or control.
+    known = [r for r in rows if r in payments or r['kind'] in ('zero_charge', 'balance', 'statement_total')]
     result['known_rows'] = [{key: r['fields'][key] for key in
         ('date', 'booking_date', 'value_date', 'amount_minor', 'direction',
          'description', 'bank_reference', 'balance', 'additional_printed_date')
-        if key in r['fields']} for r in rows
-        if r in payments or r['kind'] in ('zero_charge', 'balance', 'statement_total')]
-    return result
+        if key in r['fields']} for r in known]
+    return result, known
 
 
 def prefer_image_reading(original, image):
@@ -403,3 +409,58 @@ def pinned_andrews_values(tables, candidates):
     if not controls or not controls['reconciles']:
         return {}
     return dict(values=accepted, controls=controls)
+
+
+def recovers_unread_lines(original, image_tables, bands):
+    """Whether an image reading adds only the printed lines an embedded OCR layer left unread.
+
+    ``original`` is the assessment of the embedded reading; ``bands`` are the
+    vertical extents (page points, top to bottom) where the page image shows
+    a printed text line that no embedded word covers. The image reading is
+    accepted only when it claims the same statement identity and balance
+    controls, every field of both readings is readable, every row of the
+    embedded reading appears in it unchanged and in the same order, and each
+    row it adds is a payment with an amount, a direction and (where the
+    layout prints one) a running balance, every cell of which lies inside one
+    unread band. Nothing is derived; the added rows are what the image shows,
+    and they are still crop-verified and must reconcile like any other row.
+
+    Returns ``dict(added=[...])`` describing each added row, or ``None``.
+    """
+    assessed = _assess(image_tables) if original and bands else None
+    if not assessed:
+        return None
+    image, known = assessed
+    if (original['identity'] != image['identity'] or original['balances'] != image['balances']
+            or original.get('unreadable') or image['unreadable'] or 'known_rows' not in original
+            or image['payments'] <= original['payments']):
+        return None
+    remaining = list(zip(image['known_rows'], known))
+    added = []
+    for row in original['known_rows']:
+        while remaining and remaining[0][0] != row:
+            added.append(remaining.pop(0))
+        if not remaining:
+            return None
+        remaining.pop(0)
+    added.extend(remaining)
+    if len(added) != image['payments'] - original['payments']:
+        return None
+    described = []
+    for fields, row in added:
+        if (row['kind'] not in ('transaction', 'unresolved') or row['excluded']
+                or not all(fields.get(k) for k in ('date', 'amount_minor', 'direction'))
+                or ('balance_column' in row['fields'] or row['fields'].get('statement_layout') == 'andrews-share-statement')
+                and not fields.get('balance')):
+            return None
+        centres = []
+        for cell in row['source_cells'] + [c for extra in row.get('continuation_sources') or [] for c in extra['source_cells']]:
+            rect = (cell.get('locator') or {}).get('rect')
+            if (cell.get('locator') or {}).get('units') != 'millipoints' or not isinstance(rect, list) or len(rect) != 4:
+                return None
+            centres.append((rect[1] + rect[3]) / 2000)
+        band = next((b for b in bands if all(b[0] <= c <= b[1] for c in centres)), None)
+        if not centres or band is None:
+            return None
+        described.append(dict(fields, row_id=row['id'], band=list(band)))
+    return dict(added=described)
