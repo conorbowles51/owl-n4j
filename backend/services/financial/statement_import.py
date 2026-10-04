@@ -247,7 +247,7 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
                         period=(selected['period_start'] + ' - ' + selected['period_end']) if selected['period_start'] else selected.get('printed_statement_date') or selected.get('printed_closing_date', ''))
         if selected.get('layout_id') in ('capital-one-card', 'merrick-card', 'credit-one-card'):
             metadata['balance_convention'] = 'liability_owed'
-        if selected.get('layout_id') in ('bbva-mexico-cash-management', 'scotiabank-mexico-zero-activity', 'monex-mexico-currency-summary', 'kapital-mexico-product-statement', 'intercam-mexico-product-statement', 'santander-mexico-movements'):
+        if selected.get('layout_id') in ('bbva-mexico-cash-management', 'scotiabank-mexico-zero-activity', 'scotiabank-mexico-movements', 'monex-mexico-currency-summary', 'kapital-mexico-product-statement', 'intercam-mexico-product-statement', 'santander-mexico-movements'):
             metadata['balance_convention'] = 'asset_balance'
         # A selected account must not inherit a name from a different section
         # elsewhere in the same PDF.
@@ -402,6 +402,14 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
         rows.extend(proposal['rows'])
         no_activity_evidence = scotiabank_no_activity_evidence(sources, selected, proposal['rows'], chosen_currency)
         _check_review_size(rows)
+    if selected and selected.get('layout_id') == 'scotiabank-mexico-movements':
+        # Scaffold, off by default: see statement_movement_scaffold.
+        from services.financial.statement_import_scotiabank import propose_scotiabank_movements
+        try:
+            rows.extend(propose_scotiabank_movements(sources, chosen_currency, selected)['rows'])
+        except ValueError as exc:
+            raise PdfMappingError(str(exc), 422) from exc
+        _check_review_size(rows)
     transaction_header_pages = {s['page_number'] for s in sources if has_transaction_header(s)} if not selected else set()
     if selected and selected.get('layout_id') == 'monex-mexico-currency-summary':
         from services.financial.statement_import_monex import propose_monex_statement, monex_no_activity_evidence
@@ -423,7 +431,7 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
         # proof is bound to the cited rows and checked again at admission.
         no_activity_evidence = santander_no_activity_evidence(sources, selected, proposed, chosen_currency)
         _check_review_size(rows)
-    for source in ([] if selected and selected.get('layout_id') in ('andrews-share-statement', 'bbva-mexico-cash-management', 'scotiabank-mexico-zero-activity', 'monex-mexico-currency-summary', 'kapital-mexico-product-statement', 'intercam-mexico-product-statement', 'santander-mexico-movements') else sources):
+    for source in ([] if selected and selected.get('layout_id') in ('andrews-share-statement', 'bbva-mexico-cash-management', 'scotiabank-mexico-zero-activity', 'scotiabank-mexico-movements', 'monex-mexico-currency-summary', 'kapital-mexico-product-statement', 'intercam-mexico-product-statement', 'santander-mexico-movements') else sources):
         try:
             if selected and selected.get('layout_id') == 'credit-one-card':
                 from services.financial.statement_import_credit_one import propose_credit_one_table
@@ -467,6 +475,8 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
         snapshot['bbva_statement_v1'] = rows
     if selected and selected.get('layout_id') == 'scotiabank-mexico-zero-activity':
         snapshot['scotiabank_zero_activity_v1'] = rows
+    if selected and selected.get('layout_id') == 'scotiabank-mexico-movements':
+        snapshot['scotiabank_movements_scaffold_v1'] = rows
     if selected and selected.get('layout_id') == 'monex-mexico-currency-summary':
         snapshot['monex_currency_summary_v1'] = rows
     if selected and selected.get('layout_id') in ('kapital-mexico-product-statement', 'intercam-mexico-product-statement'):

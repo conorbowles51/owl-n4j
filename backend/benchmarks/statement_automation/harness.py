@@ -165,7 +165,23 @@ def _score(proposal, truth, summary):
     for item in truth['rows']:
         if amounts.get(str(item['amount_minor'])):
             score += 1
-    return score
+    # Currency only breaks ties. Two sections of one file can differ by
+    # nothing else (Monex MXN and USD zero-activity sections); without it they
+    # pair by item order, possibly crosswise. As a tie-breaker it can never
+    # outweigh content evidence, so a misread currency still pairs by content
+    # and is still reported as currency_wrong.
+    currency = (summary.get('currency') or proposal.get('currency') or '').upper()
+    return score, int(bool(currency) and currency == (truth.get('currency') or '').upper())
+
+
+def pair_truth(proposal, candidates, summary):
+    """The unused ground-truth period a batch item describes, or None."""
+    if proposal is None or not candidates:
+        return candidates[0] if proposal is None and len(candidates) == 1 else None
+    truth = max(candidates, key=lambda t: _score(proposal, t, summary))
+    if len(candidates) > 1 and not any(_score(proposal, truth, summary)):
+        return None
+    return truth
 
 
 def simulate_correction(proposal, truth, assess, initial_request):
@@ -372,13 +388,7 @@ def run(out, python, concurrency, corpus=CORPUS):
                 proposal = None
                 proposal_error = f'{type(error).__name__}: {error}'
             candidates = [t for t in by_file.get(filename, []) if t['id'] not in used]
-            truth = None
-            if proposal is not None and candidates:
-                truth = max(candidates, key=lambda t: _score(proposal, t, item))
-                if len(candidates) > 1 and _score(proposal, truth, item) == 0:
-                    truth = None
-            elif len(candidates) == 1:
-                truth = candidates[0]
+            truth = pair_truth(proposal, candidates, item)
             if truth:
                 used.add(truth['id'])
             reasons = Counter(review_reason(p) for p in item.get('problems', []))
