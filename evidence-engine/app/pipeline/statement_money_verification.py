@@ -42,6 +42,18 @@ the page and the crops both read identically. That is a second, independent
 line of evidence (the agreed printed balances) that the page reading
 contradicts and the crop reading satisfies. Compensating misreads that only
 fix a sum of disputed cells stay held.
+
+On an Andrews page, ``repair_pinned_readings`` applies the same test to every
+reading of a held cell that a recogniser produced from the print: the page
+reading (when crops at both resolutions also give it), the crop reading, or,
+for a cell whose sign glyph no reader could name, its agreed digits with
+either sign. A reading is accepted only when a printed control equation whose
+other cells were confirmed fixes it and no other candidate. Majority does not
+decide: on a 100 dpi corpus scan four of six crops dropped a minus and misread
+a digit, while the page reading was the printed value.
+
+A cell whose page reading is an unsigned amount behind one glyph that is not a
+sign (``“61.27``) is reread like any money cell, but is never confirmed.
 """
 from __future__ import annotations
 
@@ -83,6 +95,28 @@ def money_value(text):
         return None
     negative = bool(match['open']) or (bool(signs) and signs[0] in '-−')
     return negative, re.sub(r'\D', '', match['number'])
+
+
+# Glyphs a recogniser has been measured to put where a statement prints a
+# minus sign (corpus: ``“61.27`` for ``-61.27`` on 150 dpi scans).
+_SIGN_LOOKALIKES = '“”„"‘’\'`´~—–‒―‐‑_='
+
+
+def sign_garbled_money(text):
+    """The digits of an unsigned amount preceded by one glyph that is not a sign, else ``None``.
+
+    Such a cell is not a readable amount: its sign position holds a mark the
+    recogniser could not read as a sign. It is still a money cell, so it is
+    reread like one, but its page reading can never be confirmed.
+    """
+    stripped = (text or '').strip()
+    if len(stripped) < 2 or stripped[0] not in _SIGN_LOOKALIKES:
+        return None
+    rest = stripped[1:].strip()
+    value = money_value(rest)
+    if value is None or value[0] or rest[:1] in '+-−(':
+        return None
+    return value[1]
 
 
 def page_needs_verification(text_origin, extraction_method):
@@ -240,7 +274,8 @@ def _dispute_marked(original, reading):
 def classify(original, observations):
     """``(status, contradicting reading)`` for one cell's crop observations."""
     expected = money_value(original)
-    agreeing = [o for o in observations if money_value(o['text']) == expected]
+    # A page reading that is not an amount (an unreadable sign glyph) is never confirmed.
+    agreeing = [o for o in observations if expected is not None and money_value(o['text']) == expected]
     if len(agreeing) >= MIN_AGREEING and {o['dpi'] for o in agreeing} == {dpi for dpi, _ in PROFILES}:
         return 'confirmed', None
     others = Counter(money_value(o['text']) for o in observations
@@ -270,7 +305,7 @@ def verify_money_cells(page, tables, *, rotation=0, deadline, language, chunk=No
     for table_index, table in enumerate(tables):
         geometry = getattr(table, 'geometry', None)
         for cell in getattr(geometry, 'cells', None) or ():
-            if money_value(cell.text) is not None:
+            if money_value(cell.text) is not None or sign_garbled_money(cell.text) is not None:
                 targets.append((table_index, cell, _cell_rect(cell, page) if rects_available else None))
     if not targets:
         return tables, []
@@ -297,6 +332,8 @@ def verify_money_cells(page, tables, *, rotation=0, deadline, language, chunk=No
         status, contradiction = classify(cell.text, observations) if rect else ('unconfirmed', None)
         entry = dict(table_index=table_index, row_index=cell.row, column_index=cell.column,
             original_text=cell.text, status=status, rect=rect, observations=observations)
+        if money_value(cell.text) is None:
+            entry['page_sign_unreadable'] = True
         if status != 'confirmed':
             entry['marked_text'] = replacements[key] = _dispute_marked(cell.text, contradiction)
             entry['reason'] = ('crop_readings_contradict_page_reading' if status == 'contradicted'
@@ -391,6 +428,115 @@ def repair_pinned_cells(page, tables, record, *, chunk=None):
                     page_reading=by_key[key]['original_text'], held_text=by_key[key]['marked_text'],
                     text=value['text'], pinned_by=value['pinned_by'], observations=by_key[key]['observations'],
                     reason='crop_reading_pinned_by_agreed_controls')
+               for key, value in sorted(accepted.items())])]
+
+
+
+PINNED_READING_METHOD = 'statement_money_pinned_reading'
+
+
+def _both_resolutions(observations):
+    return {o['dpi'] for o in observations} == {dpi for dpi, _ in PROFILES}
+
+
+def _printed_readings(cell):
+    """``[(text, source)]``: the readings of one held cell that came from the print.
+
+    * ``page_reading``: the page's own amount, when crop readings at both
+      resolutions also give it (at least two of the six);
+    * ``crop_reading``: the amount at least four crop readings at both
+      resolutions agree on, character for character, when it differs from
+      the page reading. If the page reading is an unreadable sign glyph
+      followed by digits, the crops must give exactly those digits;
+    * ``crop_digits_signed_by_controls``: for such a cell whose crops read the
+      agreed digits without any sign, the same digits with a minus. The page
+      shows a mark in the sign position that no reader could name, so both
+      signs stay candidates and only the agreed controls may choose.
+
+    Every observation profile must be present (no time-out), or nothing is offered.
+    """
+    observations = cell.get('observations') or []
+    if len(observations) != len(PROFILES) or not cell.get('rect'):
+        return []
+    found = []
+    page_value = money_value(cell['original_text'])
+    if page_value is not None:
+        support = [o for o in observations if money_value(o['text']) == page_value]
+        if len(support) >= 2 and _both_resolutions(support):
+            found.append((cell['original_text'].strip(), 'page_reading'))
+    values = Counter(money_value(o['text']) for o in observations if money_value(o['text']) not in (None, page_value))
+    for value, count in values.most_common(1):
+        supporters = [o for o in observations if money_value(o['text']) == value]
+        if count < MIN_AGREEING or not _both_resolutions(supporters) or len({_compact(o['text']) for o in supporters}) != 1:
+            break
+        text = supporters[0]['text'].strip()
+        if page_value is None:
+            if sign_garbled_money(cell['original_text']) != value[1]:
+                break
+            found.append((text, 'crop_reading'))
+            if not value[0] and text[:1] not in '+(':
+                found.append(('-' + text, 'crop_digits_signed_by_controls'))
+        else:
+            found.append((text, 'crop_reading'))
+    return found
+
+
+def repair_pinned_readings(page, tables, record, *, chunk=None):
+    """Accept, for each held Andrews money cell, the one printed reading the agreed controls fix.
+
+    Considered only on a page held by this check alone, without error. Every
+    held cell must offer at least one reading that a recogniser produced from
+    the print (``_printed_readings``): the page reading, the crop reading, or
+    for an unreadable sign glyph the agreed digits with either sign. The
+    statement reader then accepts a reading only when one printed control
+    equation contains the cell as its only disputed cell, every other cell of
+    that equation is one the page and the crops read identically, the
+    equation holds with that reading and with no other candidate, and with
+    every cell resolved all of the page's printed controls reconcile
+    (``pinned_andrews_values``). Compensating misreads that only fix a sum of
+    disputed cells stay held.
+
+    All or nothing per page. An accepted page carries one ``repaired`` record
+    listing, per cell, the page reading, the held text, the accepted text and
+    which reading it was, every crop reading and the cells that pin it, so the
+    machine reading stays visible beside the accepted one. Otherwise a
+    ``declined`` record says why and the tables are returned unchanged; a
+    page no Andrews layout claims gets no record.
+    """
+    if chunk is None:
+        from services.financial.pdf_tables import _chunk as chunk
+    if not record or record.get('method') != METHOD or record.get('decision') != 'held':
+        return tables, []
+
+    def declined(reason):
+        return tables, [dict(method=PINNED_READING_METHOD, page=page.number + 1, decision='declined', reason=reason)]
+
+    candidates, by_key = {}, {}
+    for cell in record['cells']:
+        if cell['status'] == 'confirmed':
+            continue
+        key = (cell['table_index'], cell['row_index'], cell['column_index'])
+        candidates[key], by_key[key] = dict(_printed_readings(cell)), cell
+    from services.financial.statement_reading_quality import pinned_andrews_values
+    result = pinned_andrews_values([table.to_json() for table in tables],
+        {} if record.get('error') else {key: list(readings) for key, readings in candidates.items()})
+    if result is None:
+        return tables, []
+    if record.get('error'):
+        return declined('verification_incomplete')
+    if not all(candidates.values()):
+        return declined('held_cell_without_printed_reading')
+    if not result or result['values'].keys() != candidates.keys():
+        return declined('not_every_held_cell_is_pinned_by_agreed_controls')
+    accepted = result['values']
+    repaired = _with_cells(page, tables, {key: value['text'] for key, value in accepted.items()}, chunk)
+    return repaired, [dict(method=PINNED_READING_METHOD, page=page.number + 1, decision='repaired',
+        controls=result['controls'],
+        cells=[dict(table_index=key[0], row_index=key[1], column_index=key[2], rect=by_key[key]['rect'],
+                    page_reading=by_key[key]['original_text'], held_text=by_key[key].get('marked_text'),
+                    text=value['text'], accepted_reading=candidates[key][value['text']],
+                    pinned_by=value['pinned_by'], observations=by_key[key]['observations'],
+                    reason='printed_reading_pinned_by_agreed_controls')
                for key, value in sorted(accepted.items())])]
 
 

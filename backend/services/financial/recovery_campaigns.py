@@ -54,15 +54,19 @@ READER_RECOVERY_FLAG = 'LOUPE_FINANCIAL_READER_RECOVERY'
 # Exact SHA-256 of every committed evidence-engine pdf_extraction.py that wrote
 # a PDF processing record (the record exists from 7b0013fb, 10 Sept), oldest
 # first, up to and including 41e64eca (2 Oct, scan preparation for degraded
-# and tilted scans). The current file (c-image-fields: reading revision v13,
-# BBVA and Capital One unreadable money cells reread from their own cell)
-# is deliberately absent so a reading made by this release is never selected
-# again. Since 29 Sept the engine gained: Andrews amount/balance crop reread
-# (bb3ccef3), money-cell crop verification (0f75eddc), the pinned generic
-# repair (13d03dbe), the glyph second reader (7bd84c16), scan preparation
-# (41e64eca) and the BBVA / Capital One cell reread (c-image-fields).
-# Unknown or unrecorded fingerprints are never swept. If a later change edits
-# pdf_extraction.py, add the digest of the c-image-fields file here.
+# and tilted scans), plus c-image-fields' file (cc9c6224, revision v13, only
+# ever read the benchmark corpus). The current file (wave 5 merged: identical
+# to c-andrews-residue's 3f00cf5d, revision v13; BBVA and Capital One
+# unreadable money cells reread from their own cell, held Andrews money cells
+# take the printed reading their agreed controls pin, embedded OCR layers that
+# left printed lines unread replaced by the page image) is deliberately absent
+# so a reading made by this release is never selected again. Since 29 Sept the
+# engine gained: Andrews amount/balance crop reread (bb3ccef3), money-cell crop
+# verification (0f75eddc), the pinned generic repair (13d03dbe), the glyph
+# second reader (7bd84c16), scan preparation (41e64eca), the BBVA / Capital One
+# cell reread and the pinned Andrews reading (wave 5). Unknown or unrecorded
+# fingerprints are never swept. If a later change edits pdf_extraction.py, add
+# the digest of the current file (6d388613...) here.
 AFFECTED_EXTRACTION_SHA256 = (
     '838372af7b656fa02f655aaa564582ff7ba15c5c17ff46020935ce3356152495',  # 7b0013fb
     '8f9e668367c9c3c9f577e1357cd8130952d9206742a653b6a0a42b1da1d62489',  # 14edbfec
@@ -80,6 +84,7 @@ AFFECTED_EXTRACTION_SHA256 = (
     '1084b5e6882ec589595bd4fe5ab4a07618e12797e803e837995c2324aa8686c3',  # 13d03dbe
     'e6526e20f4c5f001281a019c2242a355340dd35fac4af1e361fe08d8c4b4ff5f',  # 7bd84c16
     '003d53a6ec546adf97032e01ac476e4dd1bada96073a1ee9efc3de987f4a44df',  # 41e64eca
+    'f0afcaf91e36bfec1577d6d2ace6e693c421fb0b72055d5e55e41921bf87a835',  # cc9c6224 (c-image-fields)
 )
 READER_RECOVERY = RecoveryCampaign(READER_RECOVERY_RELEASE, {'pdf_extraction.py': AFFECTED_EXTRACTION_SHA256},
     batch_reread=True)

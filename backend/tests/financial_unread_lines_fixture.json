@@ -1,0 +1,1370 @@
+{
+ "embedded": [
+  {
+   "geometry_source": "cell_rectangles",
+   "table": {
+    "page": 1,
+    "table": {
+     "kind": "page_rectangle",
+     "page": 1,
+     "page_size": [
+      600000,
+      800000
+     ],
+     "rect": [
+      15000,
+      19474,
+      479144,
+      313093
+     ],
+     "space": "pdf_displayed",
+     "units": "millipoints"
+    },
+    "unlocated_values": 0,
+    "values": [
+     {
+      "column": 0,
+      "locator": {
+       "kind": "page_rectangle",
+       "page": 1,
+       "page_size": [
+        600000,
+        800000
+       ],
+       "rect": [
+        420000,
+        19474,
+        479144,
+        29094
+       ],
+       "space": "pdf_displayed",
+       "units": "millipoints"
+      },
+      "row": 0,
+      "text": "Account Statement"
+     },
+     {
+      "column": 0,
+      "locator": {
+       "kind": "page_rectangle",
+       "page": 1,
+       "page_size": [
+        600000,
+        800000
+       ],
+       "rect": [
+        40000,
+        31474,
+        67231,
+        41093
+       ],
+       "space": "pdf_displayed",
+       "units": "millipoints"
+      },
+      "row": 1,
+      "text": "Andrews"
+     },
+     {
+      "column": 0,
+      "locator": {
+       "kind": "page_rectangle",
+       "page": 1,
+       "page_size": [
+        600000,
+        800000
+       ],
+       "rect": [
+        300000,
+        43474,
+        335028,
+        53093
+       ],
+       "space": "pdf_displayed",
+       "units": "millipoints"
+      },
+      "row": 2,
+      "text": "123456789"
+     },
+     {
+      "column": 0,
+      "locator": {
+       "kind": "page_rectangle",
+       "page": 1,
+       "page_size": [
+        600000,
+        800000
+       ],
+       "rect": [
+        300000,
+        55474,
+        356435,
+        65094
+       ],
+       "space": "pdf_displayed",
+       "units": "millipoints"
+      },
+      "row": 3,
+      "text": "12/01/20 12/31/20"
+     },
+     {
+      "column": 0,
+      "locator": {
+       "kind": "page_rectangle",
+       "page": 1,
+       "page_size": [
+        600000,
+        800000
+       ],
+       "rect": [
+        300000,
+        67474,
+        303892,
+        77094
+       ],
+       "space": "pdf_displayed",
+       "units": "millipoints"
+      },
+      "row": 4,
+      "text": "1"
+     },
+     {
+      "column": 0,
+      "locator": {
+       "kind": "page_rectangle",
+       "page": 1,
+       "page_size": [
+        600000,
+        800000
+       ],
+       "rect": [
+        20000,
+        79474,
+        67097,
+        89094
+       ],
+       "space": "pdf_displayed",
+       "units": "millipoints"
+      },
+      "row": 5,
+      "text": ">1234567890<"
+     },
+     {
+      "column": 0,
+      "locator": {
+       "kind": "page_rectangle",
+       "page": 1,
+       "page_size": [
+        600000,
+        800000
+       ],
+       "rect": [
+        20000,
+        91474,
+        84576,
+        101094
+       ],
+       "space": "pdf_displayed",
+       "units": "millipoints"
+      },
+      "row": 6,
+      "text": "EXAMPLE PERSON"
+     },
+     {
+      "column": 0,
+      "locator": {
+       "kind": "page_rectangle",
+       "page": 1,
+       "page_size": [
+        600000,
+        800000
+       ],
+       "rect": [
+        20000,
+        103474,
+        71731,
+        113094
+       ],
+       "space": "pdf_displayed",
+       "units": "millipoints"
+      },
+      "row": 7,
+      "text": "JOINT PERSON"
+     },
+     {
+      "column": 0,
+      "locator": {
+       "kind": "page_rectangle",
+       "page": 1,
+       "page_size": [
+        600000,
+        800000
+       ],
+       "rect": [
+        20000,
+        115474,
+        73292,
+        125094
+       ],
+       "space": "pdf_displayed",
+       "units": "millipoints"
+      },
+      "row": 8,
+      "text": "1 TEST STREET"
+     },
+     {
+      "column": 0,
+      "locator": {
+       "kind": "page_rectangle",
+       "page": 1,
+       "page_size": [
+        600000,
+        800000
+       ],
+       "rect": [
+        15000,
+        219475,
+        195139,
+        229094
+       ],
+       "space": "pdf_displayed",
+       "units": "millipoints"
+      },
+      "row": 9,
+      "text": "12/01 ID 0000 BASE SHARE SAVINGS Previous Balance"
+     },
+     {
+      "column": 1,
+      "locator": {
+       "kind": "page_rectangle",
+       "page": 1,
+       "page_size": [
+        600000,
+        800000
+       ],
+       "rect": [
+        358593,
+        219475,
+        380000,
+        229094
+       ],
+       "space": "pdf_displayed",
+       "units": "millipoints"
+      },
+      "row": 9,
+      "text": "700.51"
+     },
+     {
+      "column": 0,
+      "locator": {
+       "kind": "page_rectangle",
+       "page": 1,
+       "page_size": [
+        600000,
+        800000
+       ],
+       "rect": [
+        15000,
+        231475,
+        32515,
+        241094
+       ],
+       "space": "pdf_displayed",
+       "units": "millipoints"
+      },
+      "row": 10,
+      "text": "12/04"
+     },
+     {
+      "column": 1,
+      "locator": {
+       "kind": "page_rectangle",
+       "page": 1,
+       "page_size": [
+        600000,
+        800000
+       ],
+       "rect": [
+        75000,
+        231475,
+        232563,
+        241094
+       ],
+       "space": "pdf_displayed",
+       "units": "millipoints"
+      },
+      "row": 10,
+      "text": "Deposit Online Banking Transfer From Share 0040"
+     },
+     {
+      "column": 2,
+      "locator": {
+       "kind": "page_rectangle",
+       "page": 1,
+       "page_size": [
+        600000,
+        800000
+       ],
+       "rect": [
+        322485,
+        231475,
+        340000,
+        241094
+       ],
+       "space": "pdf_displayed",
+       "units": "millipoints"
+      },
+      "row": 10,
+      "text": "30.00"
+     },
+     {
+      "column": 3,
+      "locator": {
+       "kind": "page_rectangle",
+       "page": 1,
+       "page_size": [
+        600000,
+        800000
+       ],
+       "rect": [
+        358593,
+        231475,
+        380000,
+        241094
+       ],
+       "space": "pdf_displayed",
+       "units": "millipoints"
+      },
+      "row": 10,
+      "text": "730.51"
+     },
+     {
+      "column": 0,
+      "locator": {
+       "kind": "page_rectangle",
+       "page": 1,
+       "page_size": [
+        600000,
+        800000
+       ],
+       "rect": [
+        15000,
+        243475,
+        32515,
+        253094
+       ],
+       "space": "pdf_displayed",
+       "units": "millipoints"
+      },
+      "row": 11,
+      "text": "12/22"
+     },
+     {
+      "column": 1,
+      "locator": {
+       "kind": "page_rectangle",
+       "page": 1,
+       "page_size": [
+        600000,
+        800000
+       ],
+       "rect": [
+        75000,
+        243475,
+        127906,
+        253094
+       ],
+       "space": "pdf_displayed",
+       "units": "millipoints"
+      },
+      "row": 11,
+      "text": "Deposit Dividend"
+     },
+     {
+      "column": 2,
+      "locator": {
+       "kind": "page_rectangle",
+       "page": 1,
+       "page_size": [
+        600000,
+        800000
+       ],
+       "rect": [
+        326377,
+        243475,
+        340000,
+        253094
+       ],
+       "space": "pdf_displayed",
+       "units": "millipoints"
+      },
+      "row": 11,
+      "text": "0.17"
+     },
+     {
+      "column": 3,
+      "locator": {
+       "kind": "page_rectangle",
+       "page": 1,
+       "page_size": [
+        600000,
+        800000
+       ],
+       "rect": [
+        358593,
+        243475,
+        380000,
+        253094
+       ],
+       "space": "pdf_displayed",
+       "units": "millipoints"
+      },
+      "row": 11,
+      "text": "730.68"
+     },
+     {
+      "column": 0,
+      "locator": {
+       "kind": "page_rectangle",
+       "page": 1,
+       "page_size": [
+        600000,
+        800000
+       ],
+       "rect": [
+        15000,
+        255475,
+        32515,
+        265093
+       ],
+       "space": "pdf_displayed",
+       "units": "millipoints"
+      },
+      "row": 12,
+      "text": "12/31"
+     },
+     {
+      "column": 1,
+      "locator": {
+       "kind": "page_rectangle",
+       "page": 1,
+       "page_size": [
+        600000,
+        800000
+       ],
+       "rect": [
+        75000,
+        255475,
+        124028,
+        265093
+       ],
+       "space": "pdf_displayed",
+       "units": "millipoints"
+      },
+      "row": 12,
+      "text": "Ending Balance"
+     },
+     {
+      "column": 2,
+      "locator": {
+       "kind": "page_rectangle",
+       "page": 1,
+       "page_size": [
+        600000,
+        800000
+       ],
+       "rect": [
+        358593,
+        255475,
+        380000,
+        265093
+       ],
+       "space": "pdf_displayed",
+       "units": "millipoints"
+      },
+      "row": 12,
+      "text": "730.68"
+     },
+     {
+      "column": 0,
+      "locator": {
+       "kind": "page_rectangle",
+       "page": 1,
+       "page_size": [
+        600000,
+        800000
+       ],
+       "rect": [
+        15000,
+        267475,
+        174894,
+        277093
+       ],
+       "space": "pdf_displayed",
+       "units": "millipoints"
+      },
+      "row": 13,
+      "text": "12/01 ID 0040 FREE CHECKING Previous Balance"
+     },
+     {
+      "column": 1,
+      "locator": {
+       "kind": "page_rectangle",
+       "page": 1,
+       "page_size": [
+        600000,
+        800000
+       ],
+       "rect": [
+        352756,
+        267475,
+        380001,
+        277093
+       ],
+       "space": "pdf_displayed",
+       "units": "millipoints"
+      },
+      "row": 13,
+      "text": "2,300.00"
+     },
+     {
+      "column": 0,
+      "locator": {
+       "kind": "page_rectangle",
+       "page": 1,
+       "page_size": [
+        600000,
+        800000
+       ],
+       "rect": [
+        15000,
+        303475,
+        32515,
+        313093
+       ],
+       "space": "pdf_displayed",
+       "units": "millipoints"
+      },
+      "row": 14,
+      "text": "12/31"
+     },
+     {
+      "column": 1,
+      "locator": {
+       "kind": "page_rectangle",
+       "page": 1,
+       "page_size": [
+        600000,
+        800000
+       ],
+       "rect": [
+        75000,
+        303475,
+        124028,
+        313093
+       ],
+       "space": "pdf_displayed",
+       "units": "millipoints"
+      },
+      "row": 14,
+      "text": "Ending Balance"
+     },
+     {
+      "column": 2,
+      "locator": {
+       "kind": "page_rectangle",
+       "page": 1,
+       "page_size": [
+        600000,
+        800000
+       ],
+       "rect": [
+        352756,
+        303475,
+        380001,
+        313093
+       ],
+       "space": "pdf_displayed",
+       "units": "millipoints"
+      },
+      "row": 14,
+      "text": "2,300.00"
+     }
+    ]
+   },
+   "table_source": "text_alignment"
+  }
+ ],
+ "image": [
+  {
+   "geometry_source": "cell_rectangles",
+   "table": {
+    "page": 1,
+    "table": {
+     "kind": "page_rectangle",
+     "page": 1,
+     "page_size": [
+      600000,
+      800000
+     ],
+     "rect": [
+      15600,
+      21835,
+      479040,
+      313378
+     ],
+     "space": "pdf_displayed",
+     "units": "millipoints"
+    },
+    "unlocated_values": 0,
+    "values": [
+     {
+      "column": 0,
+      "locator": {
+       "kind": "page_rectangle",
+       "page": 1,
+       "page_size": [
+        600000,
+        800000
+       ],
+       "rect": [
+        420000,
+        21835,
+        479040,
+        27355
+       ],
+       "space": "pdf_displayed",
+       "units": "millipoints"
+      },
+      "row": 0,
+      "text": "Account Statement"
+     },
+     {
+      "column": 0,
+      "locator": {
+       "kind": "page_rectangle",
+       "page": 1,
+       "page_size": [
+        600000,
+        800000
+       ],
+       "rect": [
+        40080,
+        33833,
+        66960,
+        39113
+       ],
+       "space": "pdf_displayed",
+       "units": "millipoints"
+      },
+      "row": 1,
+      "text": "Andrews"
+     },
+     {
+      "column": 0,
+      "locator": {
+       "kind": "page_rectangle",
+       "page": 1,
+       "page_size": [
+        600000,
+        800000
+       ],
+       "rect": [
+        300480,
+        46070,
+        334800,
+        51350
+       ],
+       "space": "pdf_displayed",
+       "units": "millipoints"
+      },
+      "row": 2,
+      "text": "123456789"
+     },
+     {
+      "column": 0,
+      "locator": {
+       "kind": "page_rectangle",
+       "page": 1,
+       "page_size": [
+        600000,
+        800000
+       ],
+       "rect": [
+        300480,
+        57828,
+        356160,
+        63108
+       ],
+       "space": "pdf_displayed",
+       "units": "millipoints"
+      },
+      "row": 3,
+      "text": "12/01/20 12/31/20"
+     },
+     {
+      "column": 0,
+      "locator": {
+       "kind": "page_rectangle",
+       "page": 1,
+       "page_size": [
+        600000,
+        800000
+       ],
+       "rect": [
+        300480,
+        69826,
+        302400,
+        74866
+       ],
+       "space": "pdf_displayed",
+       "units": "millipoints"
+      },
+      "row": 4,
+      "text": "1"
+     },
+     {
+      "column": 0,
+      "locator": {
+       "kind": "page_rectangle",
+       "page": 1,
+       "page_size": [
+        600000,
+        800000
+       ],
+       "rect": [
+        20160,
+        82063,
+        66720,
+        87343
+       ],
+       "space": "pdf_displayed",
+       "units": "millipoints"
+      },
+      "row": 5,
+      "text": ">1234567890<"
+     },
+     {
+      "column": 0,
+      "locator": {
+       "kind": "page_rectangle",
+       "page": 1,
+       "page_size": [
+        600000,
+        800000
+       ],
+       "rect": [
+        20400,
+        93821,
+        84240,
+        99101
+       ],
+       "space": "pdf_displayed",
+       "units": "millipoints"
+      },
+      "row": 6,
+      "text": "EXAMPLE PERSON"
+     },
+     {
+      "column": 0,
+      "locator": {
+       "kind": "page_rectangle",
+       "page": 1,
+       "page_size": [
+        600000,
+        800000
+       ],
+       "rect": [
+        20160,
+        105578,
+        71280,
+        111098
+       ],
+       "space": "pdf_displayed",
+       "units": "millipoints"
+      },
+      "row": 7,
+      "text": "JOINT PERSON"
+     },
+     {
+      "column": 0,
+      "locator": {
+       "kind": "page_rectangle",
+       "page": 1,
+       "page_size": [
+        600000,
+        800000
+       ],
+       "rect": [
+        20640,
+        117816,
+        73200,
+        123336
+       ],
+       "space": "pdf_displayed",
+       "units": "millipoints"
+      },
+      "row": 8,
+      "text": "1 TEST STREET"
+     },
+     {
+      "column": 0,
+      "locator": {
+       "kind": "page_rectangle",
+       "page": 1,
+       "page_size": [
+        600000,
+        800000
+       ],
+       "rect": [
+        15600,
+        221955,
+        194880,
+        227235
+       ],
+       "space": "pdf_displayed",
+       "units": "millipoints"
+      },
+      "row": 9,
+      "text": "12/01 ID 0000 BASE SHARE SAVINGS Previous Balance"
+     },
+     {
+      "column": 1,
+      "locator": {
+       "kind": "page_rectangle",
+       "page": 1,
+       "page_size": [
+        600000,
+        800000
+       ],
+       "rect": [
+        358800,
+        221955,
+        378720,
+        227235
+       ],
+       "space": "pdf_displayed",
+       "units": "millipoints"
+      },
+      "row": 9,
+      "text": "700.51"
+     },
+     {
+      "column": 0,
+      "locator": {
+       "kind": "page_rectangle",
+       "page": 1,
+       "page_size": [
+        600000,
+        800000
+       ],
+       "rect": [
+        15840,
+        232993,
+        32400,
+        241632
+       ],
+       "space": "pdf_displayed",
+       "units": "millipoints"
+      },
+      "row": 10,
+      "text": "12/04"
+     },
+     {
+      "column": 1,
+      "locator": {
+       "kind": "page_rectangle",
+       "page": 1,
+       "page_size": [
+        600000,
+        800000
+       ],
+       "rect": [
+        75600,
+        233713,
+        232320,
+        240432
+       ],
+       "space": "pdf_displayed",
+       "units": "millipoints"
+      },
+      "row": 10,
+      "text": "Deposit Online Banking Transfer From Share 0040"
+     },
+     {
+      "column": 2,
+      "locator": {
+       "kind": "page_rectangle",
+       "page": 1,
+       "page_size": [
+        600000,
+        800000
+       ],
+       "rect": [
+        322560,
+        233953,
+        339840,
+        239233
+       ],
+       "space": "pdf_displayed",
+       "units": "millipoints"
+      },
+      "row": 10,
+      "text": "30.00"
+     },
+     {
+      "column": 3,
+      "locator": {
+       "kind": "page_rectangle",
+       "page": 1,
+       "page_size": [
+        600000,
+        800000
+       ],
+       "rect": [
+        358800,
+        233953,
+        378720,
+        239233
+       ],
+       "space": "pdf_displayed",
+       "units": "millipoints"
+      },
+      "row": 10,
+      "text": "730.51"
+     },
+     {
+      "column": 0,
+      "locator": {
+       "kind": "page_rectangle",
+       "page": 1,
+       "page_size": [
+        600000,
+        800000
+       ],
+       "rect": [
+        15600,
+        244751,
+        32160,
+        253390
+       ],
+       "space": "pdf_displayed",
+       "units": "millipoints"
+      },
+      "row": 11,
+      "text": "12/22"
+     },
+     {
+      "column": 1,
+      "locator": {
+       "kind": "page_rectangle",
+       "page": 1,
+       "page_size": [
+        600000,
+        800000
+       ],
+       "rect": [
+        75600,
+        245710,
+        127440,
+        252430
+       ],
+       "space": "pdf_displayed",
+       "units": "millipoints"
+      },
+      "row": 11,
+      "text": "Deposit Dividend"
+     },
+     {
+      "column": 2,
+      "locator": {
+       "kind": "page_rectangle",
+       "page": 1,
+       "page_size": [
+        600000,
+        800000
+       ],
+       "rect": [
+        326400,
+        245710,
+        339840,
+        250990
+       ],
+       "space": "pdf_displayed",
+       "units": "millipoints"
+      },
+      "row": 11,
+      "text": "0.17"
+     },
+     {
+      "column": 3,
+      "locator": {
+       "kind": "page_rectangle",
+       "page": 1,
+       "page_size": [
+        600000,
+        800000
+       ],
+       "rect": [
+        358800,
+        245710,
+        379680,
+        250990
+       ],
+       "space": "pdf_displayed",
+       "units": "millipoints"
+      },
+      "row": 11,
+      "text": "730.68"
+     },
+     {
+      "column": 0,
+      "locator": {
+       "kind": "page_rectangle",
+       "page": 1,
+       "page_size": [
+        600000,
+        800000
+       ],
+       "rect": [
+        15600,
+        256988,
+        31200,
+        265627
+       ],
+       "space": "pdf_displayed",
+       "units": "millipoints"
+      },
+      "row": 12,
+      "text": "12/31"
+     },
+     {
+      "column": 1,
+      "locator": {
+       "kind": "page_rectangle",
+       "page": 1,
+       "page_size": [
+        600000,
+        800000
+       ],
+       "rect": [
+        75600,
+        257948,
+        123840,
+        264668
+       ],
+       "space": "pdf_displayed",
+       "units": "millipoints"
+      },
+      "row": 12,
+      "text": "Ending Balance"
+     },
+     {
+      "column": 2,
+      "locator": {
+       "kind": "page_rectangle",
+       "page": 1,
+       "page_size": [
+        600000,
+        800000
+       ],
+       "rect": [
+        358800,
+        257948,
+        379680,
+        263228
+       ],
+       "space": "pdf_displayed",
+       "units": "millipoints"
+      },
+      "row": 12,
+      "text": "730.68"
+     },
+     {
+      "column": 0,
+      "locator": {
+       "kind": "page_rectangle",
+       "page": 1,
+       "page_size": [
+        600000,
+        800000
+       ],
+       "rect": [
+        15840,
+        269706,
+        174720,
+        275225
+       ],
+       "space": "pdf_displayed",
+       "units": "millipoints"
+      },
+      "row": 13,
+      "text": "12/01 ID 0040 FREE CHECKING Previous Balance"
+     },
+     {
+      "column": 1,
+      "locator": {
+       "kind": "page_rectangle",
+       "page": 1,
+       "page_size": [
+        600000,
+        800000
+       ],
+       "rect": [
+        353040,
+        269946,
+        379680,
+        275945
+       ],
+       "space": "pdf_displayed",
+       "units": "millipoints"
+      },
+      "row": 13,
+      "text": "2,300.00"
+     },
+     {
+      "column": 0,
+      "locator": {
+       "kind": "page_rectangle",
+       "page": 1,
+       "page_size": [
+        600000,
+        800000
+       ],
+       "rect": [
+        15600,
+        280743,
+        32400,
+        289383
+       ],
+       "space": "pdf_displayed",
+       "units": "millipoints"
+      },
+      "row": 14,
+      "text": "12/07"
+     },
+     {
+      "column": 1,
+      "locator": {
+       "kind": "page_rectangle",
+       "page": 1,
+       "page_size": [
+        600000,
+        800000
+       ],
+       "rect": [
+        75600,
+        281703,
+        168480,
+        288423
+       ],
+       "space": "pdf_displayed",
+       "units": "millipoints"
+      },
+      "row": 14,
+      "text": "Deposit Mobile Check Deposit"
+     },
+     {
+      "column": 2,
+      "locator": {
+       "kind": "page_rectangle",
+       "page": 1,
+       "page_size": [
+        600000,
+        800000
+       ],
+       "rect": [
+        322800,
+        281703,
+        339840,
+        286983
+       ],
+       "space": "pdf_displayed",
+       "units": "millipoints"
+      },
+      "row": 14,
+      "text": "50.00"
+     },
+     {
+      "column": 3,
+      "locator": {
+       "kind": "page_rectangle",
+       "page": 1,
+       "page_size": [
+        600000,
+        800000
+       ],
+       "rect": [
+        353040,
+        281703,
+        379680,
+        287943
+       ],
+       "space": "pdf_displayed",
+       "units": "millipoints"
+      },
+      "row": 14,
+      "text": "2,350.00"
+     },
+     {
+      "column": 0,
+      "locator": {
+       "kind": "page_rectangle",
+       "page": 1,
+       "page_size": [
+        600000,
+        800000
+       ],
+       "rect": [
+        15600,
+        292741,
+        32160,
+        301860
+       ],
+       "space": "pdf_displayed",
+       "units": "millipoints"
+      },
+      "row": 15,
+      "text": "12/09"
+     },
+     {
+      "column": 1,
+      "locator": {
+       "kind": "page_rectangle",
+       "page": 1,
+       "page_size": [
+        600000,
+        800000
+       ],
+       "rect": [
+        75120,
+        293941,
+        225600,
+        299221
+       ],
+       "space": "pdf_displayed",
+       "units": "millipoints"
+      },
+      "row": 15,
+      "text": "Withdrawal Debit Card EXAMPLE OUTFITTERS"
+     },
+     {
+      "column": 2,
+      "locator": {
+       "kind": "page_rectangle",
+       "page": 1,
+       "page_size": [
+        600000,
+        800000
+       ],
+       "rect": [
+        320400,
+        293941,
+        339840,
+        299221
+       ],
+       "space": "pdf_displayed",
+       "units": "millipoints"
+      },
+      "row": 15,
+      "text": "-50.00"
+     },
+     {
+      "column": 3,
+      "locator": {
+       "kind": "page_rectangle",
+       "page": 1,
+       "page_size": [
+        600000,
+        800000
+       ],
+       "rect": [
+        353040,
+        293941,
+        379680,
+        300180
+       ],
+       "space": "pdf_displayed",
+       "units": "millipoints"
+      },
+      "row": 15,
+      "text": "2,300.00"
+     },
+     {
+      "column": 0,
+      "locator": {
+       "kind": "page_rectangle",
+       "page": 1,
+       "page_size": [
+        600000,
+        800000
+       ],
+       "rect": [
+        15840,
+        304979,
+        31200,
+        313378
+       ],
+       "space": "pdf_displayed",
+       "units": "millipoints"
+      },
+      "row": 16,
+      "text": "12/31"
+     },
+     {
+      "column": 1,
+      "locator": {
+       "kind": "page_rectangle",
+       "page": 1,
+       "page_size": [
+        600000,
+        800000
+       ],
+       "rect": [
+        75600,
+        305698,
+        123840,
+        312418
+       ],
+       "space": "pdf_displayed",
+       "units": "millipoints"
+      },
+      "row": 16,
+      "text": "Ending Balance"
+     },
+     {
+      "column": 2,
+      "locator": {
+       "kind": "page_rectangle",
+       "page": 1,
+       "page_size": [
+        600000,
+        800000
+       ],
+       "rect": [
+        353040,
+        305938,
+        379680,
+        311938
+       ],
+       "space": "pdf_displayed",
+       "units": "millipoints"
+      },
+      "row": 16,
+      "text": "2,300.00"
+     }
+    ]
+   },
+   "table_source": "text_alignment"
+  }
+ ],
+ "unread_lines": [
+  [
+   282.24,
+   288.72
+  ],
+  [
+   294.48,
+   299.52
+  ]
+ ]
+}
