@@ -584,3 +584,47 @@ class BbvaNormTests(TestCase):
         for sample in samples:
             self.assertEqual(norm(sample), reference(sample), sample)
             self.assertEqual(norm(sample), reference(sample), sample)  # cached result
+
+
+class BbvaScannedLabelTests(TestCase):
+    """OCR without an accented ó may misread only that one position."""
+
+    def test_accented_o_misreadings_name_only_their_own_label(self):
+        from services.financial.statement_import_bbva import control_norm
+        for value, label in (('Saldo de Operacidn Inicial', 'SALDO DE OPERACION INICIAL'),
+                             ('Saldo de Operacidon Inicial', 'SALDO DE OPERACION INICIAL'),
+                             ('Saldo de Operacién Final', 'SALDO DE OPERACION FINAL'),
+                             ('SALDO DE OPERACIEN FINAL', 'SALDO DE OPERACION FINAL'),
+                             ('Saldo de Liquidaci6n Inicial', 'SALDO DE LIQUIDACION INICIAL'),
+                             ("Saldo de Liquidacién Inicial'", 'SALDO DE LIQUIDACION INICIAL'),
+                             ('Depdsitos / Abonos (+)', 'DEPOSITOS / ABONOS (+)'),
+                             ('Saldo de Operación Inicial', 'SALDO DE OPERACION INICIAL'),
+                             ('Saldo Final (+)', 'SALDO FINAL (+)')):
+            with self.subTest(value=value):
+                self.assertEqual(control_norm(value), label)
+
+    def test_other_damage_is_never_normalised_into_a_balance_label(self):
+        from services.financial.statement_import_bbva import control_norm
+        labels = {'SALDO DE OPERACION INICIAL', 'SALDO DE OPERACION FINAL', 'SALDO DE LIQUIDACION INICIAL',
+                  'DEPOSITOS / ABONOS (+)'}
+        for value in ('Saldo de Operacin Inicial', 'Saldo de Operacixyzn Inicial', 'Saldo de Operaci n Inicial',
+                      'Saldo de Operacidn Inicia1', 'Saldo de Operacidn lnicial', 'Saldo de 0peracidn Inicial',
+                      'Saldo de Operacidn Final (+)', 'Saldo de Liquidacidn Final', 'Saldo Operacidn Inicial',
+                      'Saldo de Operacidnn Inicial', 'Depdsitos / Abonos (-)', 'Depdsitos / Cargos (+)',
+                      'Retiros / Abonos (+)', 'Saldo de Operacidn Inicial 2'):
+            with self.subTest(value=value):
+                self.assertNotIn(control_norm(value), labels)
+
+    def test_scanned_balance_labels_supply_the_operational_opening_balance(self):
+        sources = statement()
+        for row in sources[1]['rows']:
+            text = row['cells'][0]['expected_text']
+            row['cells'][0]['expected_text'] = {'Saldo de Operación Inicial': 'Saldo de Operacidon Inicial',
+                'Saldo de Liquidación Inicial': 'Saldo de Liquidaci6n Inicial',
+                'Saldo de Operación Final': 'Saldo de Operacidn Final'}.get(text, text)
+        choices, _ = bbva_catalog(sources)
+        proposal = propose_bbva_statement(sources, 'EUR', choices[0])
+        self.assertEqual(proposal['balance_basis'], 'operation')
+        self.assertEqual([(r['fields']['description'], r['fields']['balance']) for r in proposal['rows'] if r['kind'] == 'balance'],
+                         [('Opening Balance', '6000'), ('Closing Balance', '2520')])
+        self.assertEqual(check_statement_rows(proposal['rows'])['balance_status'], 'matches')
