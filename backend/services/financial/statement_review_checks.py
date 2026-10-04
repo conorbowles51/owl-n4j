@@ -63,6 +63,9 @@ def add_period_checks(choices, sources, currency):
             elif layout == 'bbva-mexico-cash-management':
                 from services.financial.statement_import_bbva import propose_bbva_statement
                 rows = propose_bbva_statement(selected, chosen_currency, choice)['rows']
+            elif layout == 'scotiabank-mexico-movements':
+                from services.financial.statement_import_scotiabank import propose_scotiabank_movements
+                rows = propose_scotiabank_movements(selected, chosen_currency, choice)['rows']
             elif layout == 'monex-mexico-currency-summary':
                 from services.financial.statement_import_monex import propose_monex_statement
                 rows = propose_monex_statement(selected, chosen_currency, choice)['rows']

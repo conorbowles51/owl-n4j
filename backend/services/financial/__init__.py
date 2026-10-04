@@ -2170,3 +2170,5 @@ from services.financial.recovery_readers import reading_fingerprint
 __all__ += ["reading_fingerprint"]
 from services.financial.statement_printed_no_activity import zero_totals_evidence
 __all__ += ["zero_totals_evidence"]
+from services.financial.statement_movement_scaffold import movement_scaffold_enabled
+__all__ += ["movement_scaffold_enabled"]

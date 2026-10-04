@@ -87,9 +87,21 @@ def monex_catalog(sources):
         count = next(iter(counts))
         if set(numbered) != set(range(first+1, first+count)):
             continue
-        candidates, understood = [], True
+        from services.financial.statement_movement_scaffold import movement_scaffold_enabled
+        scaffold = movement_scaffold_enabled()
+        candidates, understood, awaiting = [], True, None
         for page, (_, raw) in sorted(numbered.items()):
             group = pages[page]
+            if awaiting is not None:
+                # Scaffold only: the section's movement table must be the very
+                # next page, headed with that section's own currency label.
+                table = _movement_table(group, awaiting[3]) if page == awaiting[0] + 1 else None
+                if table is None:
+                    understood = False
+                    break
+                candidates.append((*awaiting[:3], page))
+                awaiting = None
+                continue
             if any(marker in raw for marker in ('REFERENCIAS BANCARIAS', 'AVISO DE SEGURIDAD DE LA INFORMACION', 'ESTIMADO CLIENTE:')):
                 continue
             if 'RESUMEN CUENTA' not in raw or re.search(r'\b(?:MOVIMIENTOS|FECHA\s+(?:OPERACION|CONCEPTO))\b', raw):
@@ -110,23 +122,29 @@ def monex_catalog(sources):
             try:
                 amounts = {role: exact_amount(entry[2]['expected_text'], currency) for role, entry in controls.items()}
                 if amounts['credit'] != '0' or amounts['debit'] != '0' or amounts['opening'] != amounts['closing']:
+                    if scaffold and (amounts['credit'] != '0' or amounts['debit'] != '0'):
+                        # Activity: only a following movement table can explain it.
+                        awaiting = (page, currency, controls, norm(labels[0]['expected_text']))
+                        continue
                     understood = False
                     break
             except ValueError:
                 understood = False
                 break
-            candidates.append((page, currency, controls))
-        if not understood or not candidates or len({c[1] for c in candidates}) != len(candidates):
+            candidates.append((page, currency, controls, None))
+        if awaiting is not None or not understood or not candidates or len({c[1] for c in candidates}) != len(candidates):
             continue
         all_items = [s for p in range(first, first+count) for s in pages[p]]
-        for page, currency, controls in candidates:
+        for page, currency, controls, movement_page in candidates:
             identity = dict(layout_id=LAYOUT, institution='Monex', account_reference=contract,
                 currency=currency, period_start=start, period_end=end)
+            section_pages = [page] + ([movement_page] if movement_page else [])
             groups.append(dict(id=_digest(identity), **identity, account_type='checking', holder=next(iter(names)) if len(names) == 1 else '',
                 summary_page=page, currency_source='printed_account_section',
                 account_reference_kind='multi_currency_contract',
+                **(dict(movement_page=movement_page) if movement_page else {}),
                 section_sources=[dict(page_number=s['page_number'], table_index=s['table_index'],
-                    row_indices=[r['row_index'] for r in s['rows']]) for s in pages[page]],
+                    row_indices=[r['row_index'] for r in s['rows']]) for p in section_pages for s in pages[p]],
                 sources=[dict(page_number=s['page_number'], table_index=s['table_index'], source_revision=s['source_revision']) for s in all_items],
                 page_numbers=list(range(first, first+count))))
         handled.update((s['page_number'], s['table_index']) for s in all_items)
@@ -139,6 +157,18 @@ def propose_monex_statement(sources, currency, choice):
         raise ValueError('The currency summary controls could not be read. Review this statement again.')
     addresses = {(s['page_number'], s['table_index'], r['row_index']): (role, cell)
         for role, (s, r, cell) in controls.items()}
+    body, columns = set(), None
+    if choice.get('movement_page'):
+        # Scaffold only (statement_movement_scaffold); the catalog emits a
+        # movement page only when the switch is on.
+        summary = [s for s in sources if s['page_number'] == choice['summary_page']]
+        label = next(norm(c['expected_text']) for s in summary for r in s['rows'] for c in r['cells']
+            if norm(c['expected_text']) in CURRENCIES and CURRENCIES[norm(c['expected_text'])] == choice['currency'])
+        table = _movement_table([s for s in sources if s['page_number'] == choice['movement_page']], label)
+        if table is None:
+            raise ValueError('The movement table for this currency could not be read. Review this statement again.')
+        columns = table['columns']
+        body = {(s['page_number'], s['table_index'], r['row_index']) for s, r in table['body']}
     result = []
     for source in sources:
         for raw in source['rows']:
@@ -146,6 +176,12 @@ def propose_monex_statement(sources, currency, choice):
             item = dict(id=':'.join(map(str, address)), page_number=address[0], table_index=address[1], row_index=address[2],
                 source_revision=source['source_revision'], source_cells=raw['cells'], fields={}, issues=[], excluded=True, kind='header')
             result.append(item)
+            if address in body:
+                fields, issues = _movement_row(raw, columns, currency, choice)
+                if issues and not fields.get('description'):
+                    fields['description'] = text(raw)
+                item.update(kind='unresolved' if issues else 'transaction', excluded=False, fields=fields, issues=issues)
+                continue
             if address not in addresses:
                 continue
             role, cell = addresses[address]
@@ -183,3 +219,90 @@ def monex_no_activity_evidence(sources, choice, rows, currency):
         return None
 
     return zero_totals_evidence(rows, choice, currency, family='monex-mexico', guard=guard)
+
+
+AMOUNT = r'-?[\d,]+\.\d{2}'
+
+
+def _movement_table(items, label):
+    """One currency section's movement table: scaffold, off by default.
+
+    Modelled by the benchmark corpus, not on a real Monex page (see
+    statement_movement_scaffold). The page must hold, in order, only the
+    contract line, the heading Movimientos <section currency>, the five
+    column headings, dated body rows and the Hoja n de m footer. Anything
+    else, or any unplaced cell, returns None and the contract stays refused.
+    """
+    located = [(s, r) for s in items for r in s['rows'] if r['cells']]
+    if not located or any(not box(c) for _, r in located for c in r['cells']):
+        return None
+    located.sort(key=lambda pair: (min(box(c)[1] for c in pair[1]['cells']), pair[0]['table_index'], pair[1]['row_index']))
+    lines = [norm(text(r)) for _, r in located]
+    if len(lines) < 5 or not re.fullmatch(r'MONEX CONTRATO: \d{5,20}', lines[0]) or lines[1] != 'MOVIMIENTOS ' + label:
+        return None
+    names = ('FECHA', 'CONCEPTO', 'ABONOS', 'CARGOS', 'SALDO')
+    header = located[2][1]
+    if tuple(norm(c['expected_text']) for c in header['cells']) != names:
+        return None
+    if not re.fullmatch(r'HOJA \d+ DE \d+', lines[-1]):
+        return None
+    body = located[3:-1]
+    if not body or not all(re.match(r'\d{2}/\d{2}/\d{4}\b', line) for line in lines[3:-1]):
+        return None
+    return dict(columns=dict(zip(names, header['cells'])), body=body)
+
+
+def _movement_row(raw, columns, currency, choice):
+    """Fields and issues for one body row; columns come from the printed headings."""
+    fields, issues = {}, []
+    money = {name: [] for name in ('ABONOS', 'CARGOS', 'SALDO')}
+    other = []
+    for cell in raw['cells']:
+        if re.fullmatch(AMOUNT, cell['expected_text'].strip()) and box(cell)[0] > box(columns['FECHA'])[2]:
+            money[min(money, key=lambda n: abs(box(cell)[2] - box(columns[n])[2]))].append(cell)
+        else:
+            other.append(cell)
+    match = re.fullmatch(r'(\d{2})/(\d{2})/(\d{4})', other[0]['expected_text'].strip()) if other else None
+    try:
+        day = date(int(match[3]), int(match[2]), int(match[1])).isoformat() if match else None
+    except ValueError:
+        day = None
+    if day is None:
+        return fields, ['Check the printed date and amount for this payment beside the PDF.']
+    fields['date_column'] = str(other[0]['column_index'])
+    if choice['period_start'] <= day <= choice['period_end']:
+        fields['date'] = day
+    else:
+        issues.append('Check this payment date against the printed statement period.')
+    if len(other) != 2:
+        issues.append('Check the printed description for this payment beside the PDF.')
+    if len(other) > 1:
+        fields['description'] = ' '.join(c['expected_text'].strip() for c in other[1:])
+        fields['description_column'] = str(other[1]['column_index'])
+    directions = [(name, d) for name, d in (('ABONOS', 'credit'), ('CARGOS', 'debit')) if money[name]]
+    if len(directions) != 1 or len(money[directions[0][0]]) != 1:
+        issues.append('Choose the printed credit or debit amount for this payment.')
+    else:
+        name, direction = directions[0]
+        cell = money[name][0]
+        fields['direction'] = direction
+        fields[direction + '_column'] = str(cell['column_index'])
+        try:
+            amount = exact_amount(cell['expected_text'].strip(), currency)
+            if cell['expected_text'].strip().startswith('-') or int(amount) <= 0:
+                raise ValueError('The payment amount must be positive; the column supplies direction.')
+            fields['amount_minor'] = amount
+        except ValueError as exc:
+            issues.append(str(exc))
+    if len(money['SALDO']) != 1:
+        issues.append('Check the printed balance after this payment.')
+    else:
+        cell = money['SALDO'][0]
+        fields['balance_column'] = str(cell['column_index'])
+        try:
+            value = cell['expected_text'].strip()
+            amount = exact_amount(value.lstrip('-'), currency)
+            fields['balance'] = str(-int(amount)) if value.startswith('-') else amount
+        except ValueError as exc:
+            issues.append(str(exc))
+    return fields, issues
