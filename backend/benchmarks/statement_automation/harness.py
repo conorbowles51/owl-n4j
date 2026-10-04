@@ -366,9 +366,13 @@ def run(out, python, concurrency, corpus=CORPUS):
         batch_id = batches.create_batch(db, case_id=case_id, request_id=uuid.uuid4(), file_ids=[],
                                         folder_ids=[folder_id], actor=actor)
 
+    # A worker turn checks or imports a handful of items; a large real corpus
+    # needs more turns than the synthetic one (whose limit stays 400).
+    turn_limit = max(MAX_WORKER_TURNS, 2 * len(manifest['files']) + sum(len(f['periods']) for f in manifest['files']))
+
     def drain(label):
         started, turns = time.monotonic(), 0
-        while turns < MAX_WORKER_TURNS:
+        while turns < turn_limit:
             asyncio.run(batches.advance_batch(factory, batch_id, Path, process_files))
             turns += 1
             with factory() as db:

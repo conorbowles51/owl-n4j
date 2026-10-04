@@ -83,7 +83,10 @@ def guess_family(text, institution=None):
 
 
 def classify_page(page):
-    """``digital`` | ``scan_text_layer`` | ``image_only`` | ``blank`` for one PyMuPDF page.
+    """``digital`` | ``scan_text_layer`` | ``image_only`` | ``vector_text`` | ``blank`` for one PyMuPDF page.
+
+    ``vector_text``: no font at all, but the page is drawn (text printed as
+    outlines), so only OCR or a person can read it.
 
     Inventory metadata only (which pages need OCR or visual truth), so the
     fast reader is used here; ground truth itself is read with pdfplumber.
@@ -101,7 +104,9 @@ def classify_page(page):
         return 'scan_text_layer' if chars >= 20 else 'image_only'
     if chars >= 20:
         return 'digital'
-    return 'image_only' if covered > 0.05 else 'blank'
+    if covered > 0.05:
+        return 'image_only'
+    return 'vector_text' if len(page.get_drawings()) >= 40 else 'blank'
 
 
 def document_mode(kinds):
