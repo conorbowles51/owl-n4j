@@ -124,40 +124,70 @@ def classify(problems):
 
 # --- live inventory (read only) --------------------------------------------
 
-def _live_state(item):
-    summary = item.summary or {}
-    if item.status == 'ready' and summary.get('can_import', True):
-        return 'ready_after_edits' if item.review_request else 'ready_no_edits'
-    if item.status in ('imported', 'pending_import'):
-        return 'imported_saved_review' if item.review_request else 'imported'
-    if item.status in LEFT_UNIMPORTED:
+def _live_state(status, can_import, saved_review):
+    if status == 'ready' and can_import:
+        return 'ready_after_edits' if saved_review else 'ready_no_edits'
+    if status in ('imported', 'pending_import'):
+        return 'imported_saved_review' if saved_review else 'imported'
+    if status in LEFT_UNIMPORTED:
         return 'left_unimported'
     return 'held'
 
 
-def _period_key(statement_key, start, end):
-    return ('dates', start, end) if start and end else ('key', statement_key or '')
+def live_item(item):
+    """The stored state of one live batch item, as plain data (private detail)."""
+    summary = item.summary or {}
+    return dict(statement_key=item.statement_key or '', status=item.status,
+        can_import=bool(summary.get('can_import', item.status == 'ready')), saved_review=bool(item.review_request),
+        period_start=summary.get('period_start') or '', period_end=summary.get('period_end') or '',
+        problems=list(summary.get('problems') or []))
 
 
 def live_periods(items):
-    """One live period per statement period of an original, however often it was read."""
-    chosen = {}
-    for item in items:
-        if item.status not in LIVE_PRIORITY:
-            continue  # superseded readings are history
-        summary = item.summary or {}
-        key = _period_key(item.statement_key, summary.get('period_start'), summary.get('period_end'))
-        rank = LIVE_PRIORITY.index(item.status)
-        if key not in chosen or rank < chosen[key][0]:
-            chosen[key] = (rank, item)
+    """One live period per statement period of an original, however often it was read.
+
+    Items are the same period when they share a statement key or both carry the
+    same printed dates (a later reading can key the same period differently).
+    An item without key or dates is an earlier whole-file preparation; when
+    the original also has keyed periods it is history, not another period.
+    The most advanced live state of a period is its state.
+    """
+    items = [item for item in items if item['status'] in LIVE_PRIORITY]  # superseded readings are history
+    parent = list(range(len(items)))
+
+    def root(index):
+        while parent[index] != index:
+            parent[index] = parent[parent[index]]
+            index = parent[index]
+        return index
+    seen = {}
+    for index, item in enumerate(items):
+        labels = []
+        if item['statement_key']:
+            labels.append(('key', item['statement_key']))
+        if item['period_start'] and item['period_end']:
+            labels.append(('dates', item['period_start'], item['period_end']))
+        for label in labels:
+            if label in seen:
+                parent[root(index)] = root(seen[label])
+            else:
+                seen[label] = index
+    groups = defaultdict(list)
+    for index, item in enumerate(items):
+        groups[root(index)].append(item)
+    blank = [group for group in groups.values()
+             if not any(i['statement_key'] or i['period_start'] or i['period_end'] for i in group)]
+    real = [group for group in groups.values() if group not in blank]
     periods = []
-    for _, item in chosen.values():
-        summary = item.summary or {}
-        coarse, fine, templates = classify(summary.get('problems')) if _live_state(item) == 'held' else ([], [], {})
-        periods.append(dict(statement_key=item.statement_key or '', status=item.status, state=_live_state(item),
-            period_start=summary.get('period_start') or '', period_end=summary.get('period_end') or '',
+    for group in (real or ([[item for group in blank for item in group]] if blank else [])):
+        best = min(group, key=lambda i: LIVE_PRIORITY.index(i['status']))
+        dated = next((i for i in group if i['period_start'] and i['period_end']), best)
+        state = _live_state(best['status'], best['can_import'], best['saved_review'])
+        coarse, fine, templates = classify(best['problems']) if state == 'held' else ([], [], {})
+        periods.append(dict(statement_key=best['statement_key'], status=best['status'], state=state,
+            period_start=dated['period_start'], period_end=dated['period_end'], items=len(group),
             coarse=coarse, fine=fine, templates=templates))
-    return periods
+    return periods, sum(len(group) for group in blank) if real else 0
 
 
 def live_files(session, case_id, resolve_path, retained_dir=None):
@@ -196,7 +226,7 @@ def live_files(session, case_id, resolve_path, retained_dir=None):
             entry_statuses=dict(Counter(entry.get('status') or 'unknown' for entry in entries)),
             entry_errors=sorted({entry.get('error') for entry in entries if entry.get('error')}),
             batches=len(entries), currency=next((e.get('currency') for e in reversed(entries) if e.get('currency')), None),
-            live=live_periods(items), retained=False)
+            live_items=[live_item(item) for item in items], retained=False)
         if source is not None:
             path = resolve_path(source.stored_path)
             record['path'] = str(path) if path else None
@@ -327,11 +357,24 @@ def period_id(key, statement_key, start='', end=''):
     return f"{key}#{hashlib.sha256(label.encode()).hexdigest()[:6]}"
 
 
+def prepared_outcome(item):
+    """ready; set aside by the system (a duplicate or assigned rows: correct when true); or held."""
+    if item['ready']:
+        return 'ready'
+    if item['status'] == 'duplicate_ignored':
+        return 'duplicate_set_aside'
+    if item['status'] == 'assigned':
+        return 'assigned'
+    return 'held'
+
+
 def _prepared(items):
     by_key = defaultdict(list)
     for item in items:
-        coarse, fine, templates = classify(item['problems']) if not item['ready'] else ([], [], {})
+        outcome = prepared_outcome(item)
+        coarse, fine, templates = classify(item['problems']) if outcome == 'held' else ([], [], {})
         by_key[item['key']].append(dict(statement_key=item['statement_key'], status=item['status'], ready=item['ready'],
+            outcome=outcome,
             family=item['family'], period_start=item['period_start'], period_end=item['period_end'],
             transaction_count=item['transaction_count'], coarse=coarse, fine=fine, templates=templates))
     return by_key
@@ -356,7 +399,9 @@ def join(files, current, retained, file_problems):
     rows = []
     for file in files:
         key = file['key']
-        live, taken_live, taken_before = file['live'], set(), set()
+        live, legacy = live_periods(file['live_items'])
+        file['legacy_file_items'] = legacy
+        taken_live, taken_before = set(), set()
         prepared_now = now.get(key, [])
         file_state = file_problems.get(key) or (f'file_error: {errors_now[key]}' if key in errors_now else None) or (
             'identical_bytes' if '.' in key else None)  # a byte-identical copy is not selected again
@@ -389,7 +434,7 @@ def join(files, current, retained, file_problems):
 def _outcome(side, state=None):
     if side is None:
         return state.split(':', 1)[0] if state else 'no_period'
-    return 'ready' if side['ready'] else 'held'
+    return side['outcome']
 
 
 def tally(rows, files):
@@ -409,7 +454,11 @@ def tally(rows, files):
         counts['live_ready_or_imported_no_edits'] += int(live in ('ready_no_edits', 'imported'))
         report['live_states'][live] += 1
         report['transitions'][f'{live} -> {now}'] += 1
-        if row['current'] and not row['current']['ready']:
+        if row['current'] and now != 'held':
+            if now != 'ready':
+                report['reasons_current'][now] += 1
+                report['single_reason_current'][now] += 1
+        elif row['current']:
             report['reasons_current'].update(row['current']['coarse'])
             report['fine_current'].update(row['current']['fine'])
             if len(row['current']['coarse']) == 1:
@@ -417,7 +466,7 @@ def tally(rows, files):
         elif not row['current']:
             report['reasons_current'][now] += 1
             report['single_reason_current'][now] += 1
-        if row['retained'] and not row['retained']['ready']:
+        if row['retained'] and old == 'held':
             report['reasons_retained'].update(row['retained']['coarse'])
     report['by_family'] = {family: dict(counts) for family, counts in sorted(by_family.items())}
     report['ready_current'] = sum(c['ready_current'] for c in by_family.values())
@@ -427,6 +476,9 @@ def tally(rows, files):
         report[name] = dict(sorted(report[name].items()))
     report['file_states'] = dict(Counter(
         'unavailable' if not f['available'] else 'not_pdf' if not f['pdf'] else 'listed' for f in files))
+    report['legacy_file_items'] = sum(f.get('legacy_file_items', 0) for f in files)
+    report['outcomes_current'] = dict(sorted(Counter(
+        _outcome(row['current'], row.get('current_file_state')) for row in rows).items()))
     return report
 
 
@@ -444,9 +496,7 @@ def census(factory, case_id, out, *, cache=None, python=sys.executable, workers=
         files = live_files(db, case_id, resolve_path or estimate._resolver(), retained_dir)
         db.rollback()
     log(f'{len(files)} originals listed in {time.monotonic() - started:.0f} s')
-    with (case_dir / 'files.jsonl').open('w') as stream:
-        for file in files:
-            stream.write(json.dumps({k: v for k, v in file.items() if k != 'live'}, default=str) + '\n')
+    _write_jsonl(case_dir / 'files.jsonl', files)
     readable = [file for file in files if file['available'] and file['pdf']]
     paths, problems = estimate.verified_paths(readable)
     file_problems = {}
@@ -485,19 +535,12 @@ def census(factory, case_id, out, *, cache=None, python=sys.executable, workers=
         log(f'retained readings prepared in {time.monotonic() - started:.0f} s')
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
-    rows = join(files, current, retained, file_problems)
-    templates = {}
-    with (case_dir / 'periods.jsonl').open('w') as stream:
-        for row in rows:
-            for side in ('current', 'retained', 'live'):
-                if row[side]:
-                    templates.update(row[side].pop('templates', {}))
-            stream.write(json.dumps(row, default=str) + '\n')
-    (case_dir / 'templates.json').write_text(json.dumps(templates, indent=1, sort_keys=True))
-    report = dict(tally(rows, files), case=str(case_id), code=estimate._code(), engine=engine_revision(),
+    _write_json(case_dir / 'prepared-current.json', current)
+    _write_json(case_dir / 'prepared-retained.json', retained)
+    _write_json(case_dir / 'run.json', dict(case=str(case_id), code=estimate._code(), engine=engine_revision(),
         generated_at=datetime.now(timezone.utc).isoformat(timespec='seconds'), read_seconds=round(read_seconds),
-        original_problems=dict(problems), file_problems=dict(Counter(v.split(':', 1)[0] for v in file_problems.values())),
-        current_file_errors=len(current['file_errors']), retained_file_errors=len(retained['file_errors']))
+        original_problems=dict(problems), file_problems=file_problems))
+    report = rejoin(case_dir)
     if audit:
         misread = _audit_module()
         started = time.monotonic()
@@ -510,6 +553,39 @@ def census(factory, case_id, out, *, cache=None, python=sys.executable, workers=
             outcomes=result.get('outcomes', {}), cells=result.get('cells', {}),
             original_problems=result.get('original_problems', {}), seconds=round(time.monotonic() - started))
     (case_dir / 'report.json').write_text(json.dumps(report, indent=1, sort_keys=True) + '\n')
+    return report
+
+
+def _write_jsonl(path, rows):
+    partial = path.with_name(path.name + '.partial')
+    with partial.open('w') as stream:
+        for row in rows:
+            stream.write(json.dumps(row, default=str) + '\n')
+    partial.replace(path)
+
+
+def rejoin(case_dir):
+    """Periods and counts from a case's stored census inputs; no database, no reading."""
+    case_dir = Path(case_dir)
+    files = [json.loads(line) for line in (case_dir / 'files.jsonl').open()]
+    run = json.loads((case_dir / 'run.json').read_text())
+    current = json.loads((case_dir / 'prepared-current.json').read_text())
+    retained = json.loads((case_dir / 'prepared-retained.json').read_text())
+    rows = join(files, current, retained, run['file_problems'])
+    templates = {}
+    for row in rows:
+        for side in ('current', 'retained', 'live'):
+            if row.get(side):
+                templates.update(row[side].pop('templates', {}))
+    _write_jsonl(case_dir / 'periods.jsonl', rows)
+    (case_dir / 'templates.json').write_text(json.dumps(templates, indent=1, sort_keys=True))
+    report = dict(tally(rows, files), **{k: v for k, v in run.items() if k != 'file_problems'},
+        file_problems=dict(Counter(v.split(':', 1)[0] for v in run['file_problems'].values())),
+        current_file_errors=len(current['file_errors']), retained_file_errors=len(retained['file_errors']))
+    previous = case_dir / 'report.json'
+    if previous.is_file() and 'audit' in json.loads(previous.read_text()):
+        report['audit'] = json.loads(previous.read_text())['audit']
+    previous.write_text(json.dumps(report, indent=1, sort_keys=True) + '\n')
     return report
 
 
@@ -585,12 +661,13 @@ def summarize(out, target, examples=3):
             transitions[(live, _outcome(current, row.get('current_file_state')))] += 1
             if current and current['ready']:
                 continue
-            reasons = current['coarse'] if current else [_outcome(None, row.get('current_file_state'))]
+            outcome = _outcome(current, row.get('current_file_state'))
+            reasons = current['coarse'] if outcome == 'held' else [outcome]
             for reason in reasons:
                 ranking[(family, reason)].append(row['period'])
             if len(reasons) == 1:
                 single[(family, reasons[0])] += 1
-            for fine in (current['fine'] if current else []):
+            for fine in (current['fine'] if outcome == 'held' else []):
                 fine_ranking[(family, fine)].append(row['period'])
     lines += ['', '## By statement family (new reading)', '', '| family | periods | ready | % |', '|---|---|---|---|']
     for family, counts in sorted(family_rows.items(), key=lambda pair: -pair[1]['periods']):
@@ -631,8 +708,12 @@ def main(argv=None):
     parser.add_argument('--no-audit', action='store_true')
     parser.add_argument('--scratch', type=Path, default=None)
     parser.add_argument('--summarize', type=Path, default=None, help='write the counts-only summary here')
+    parser.add_argument('--rejoin', action='store_true', help='recount every case under --out from its stored inputs')
     args = parser.parse_args(argv)
     _private_dir(args.out)
+    if args.rejoin:
+        for run in sorted(args.out.glob('*/run.json')):
+            rejoin(run.parent)
     if args.case:
         from postgres.session import _get_session_local
         factory = _get_session_local()

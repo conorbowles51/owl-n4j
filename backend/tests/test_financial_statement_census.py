@@ -199,3 +199,36 @@ def test_problem_templates_mask_digits():
     identifier, masked = census.template('Closing balance 1,234.56 differs by 10.00')
     assert masked == 'Closing balance #,###.## differs by ##.##'
     assert census.template('Closing balance 9,999.99 differs by 11.00')[0] == identifier
+
+
+def _item(key, status, start='', end='', review=False, problems=()):
+    return dict(statement_key=key, status=status, can_import=status == 'ready', saved_review=review,
+        period_start=start, period_end=end, problems=list(problems))
+
+
+def test_live_periods_count_each_statement_period_once():
+    census = load()
+    items = [
+        _item('', 'imported'),  # an earlier whole-file preparation of the same original
+        _item('a', 'imported', '2021-01-01', '2021-01-31'),
+        _item('b', 'attention', '2021-01-01', '2021-01-31'),  # a later reading keys the same period anew
+        _item('c', 'imported'),  # a summary stored without dates
+        _item('c', 'attention', '2021-02-01', '2021-02-28', problems=[dict(message='x')]),
+        _item('d', 'superseded_reading', '2021-03-01', '2021-03-31'),  # history
+    ]
+    periods, legacy = census.live_periods(items)
+    assert legacy == 1
+    assert sorted((p['period_start'], p['status'], p['items']) for p in periods) == [
+        ('2021-01-01', 'imported', 2), ('2021-02-01', 'imported', 2)]
+    only_blank, legacy = census.live_periods([_item('', 'imported'), _item('', 'attention')])
+    assert [(p['status'], p['items']) for p in only_blank] == [('imported', 2)] and legacy == 0
+    held, _ = census.live_periods([_item('e', 'ready', review=True)])
+    assert held[0]['state'] == 'ready_after_edits'
+
+
+def test_a_system_set_aside_is_not_a_held_period():
+    census = load()
+    base = dict(ready=False, problems=[], status='duplicate_ignored')
+    assert census.prepared_outcome(base) == 'duplicate_set_aside'
+    assert census.prepared_outcome(dict(base, status='attention')) == 'held'
+    assert census.prepared_outcome(dict(base, ready=True, status='ready')) == 'ready'
