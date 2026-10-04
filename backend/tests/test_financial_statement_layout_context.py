@@ -70,3 +70,42 @@ class LayoutContextTests(unittest.TestCase):
         self.assertEqual(row['posting_date_source']['expected_text'],'May 30')
         self.assertEqual(row['date_header_source']['expected_text'],'Trans Date')
         self.assertEqual(row['posting_date_header_source']['expected_text'],'Post Date')
+
+    def test_scanned_marker_tolerates_only_its_final_punctuation(self):
+        # A 150 dpi JPEG scan read the closing full stop as a colon. Every
+        # word and the domain must still be exact.
+        for marker in ('Visit capitalone.com to see detailed transactions:',
+                       'Visit capitalone.com to see detailed transactions',
+                       'Visit www.capitalone.com to see detailed transactions,',
+                       'Visit capitalone.com to see detailed transactions ;',
+                       '  Visit capitalone.com to see detailed transactions.  '):
+            source=self.source();source[2]['cells'][0]['expected_text']=marker
+            with self.subTest(marker=marker):
+                result=statement_layout_context(source)
+                self.assertEqual([r['row_index'] for r in result['rows']],[5,8])
+                self.assertEqual(result['institution_source']['expected_text'],marker)
+
+    def test_marker_with_other_words_domain_or_noise_is_unmatched(self):
+        for marker in ('Visit capitalone.com to see detailed transactions..',
+                       'Visit capitalone.com to see detailed transactions:.',
+                       'Visit capitalone.com to see detailed transaction.',
+                       'Visit capitalone.com to see transactions.',
+                       'Visit capitalone.co to see detailed transactions.',
+                       'Visit capitalonee.com to see detailed transactions.',
+                       'Visit capital0ne.com to see detailed transactions.',
+                       'Visit wwwcapitalone.com to see detailed transactions.',
+                       'Visit example.com to see detailed transactions.',
+                       'Visit capitalone.com to see detailed transactions: Payments',
+                       'Please visit capitalone.com to see detailed transactions.',
+                       'visit capitalone.com to see detailed transactions.',
+                       'Visit capitalone.com to see detailed transactions | 4821',
+                       'Visit  capitalone.com to see detailed transactions.',
+                       'Visit capitalone.com to see detailed transactions  .'):
+            source=self.source();source[2]['cells'][0]['expected_text']=marker
+            with self.subTest(marker=marker):self.assertIsNone(statement_layout_context(source))
+
+    def test_tolerant_marker_still_refuses_a_continuation_or_a_second_marker(self):
+        source=self.source();source[2]['cells'][0]['expected_text']='Visit capitalone.com to see detailed transactions:'
+        self.assertIsNone(statement_layout_context(source,continuation_statement={'layout_id':'capital-one-card'}))
+        source.append(dict(row_index=50,cells=[dict(column_index=0,expected_text='Visit capitalone.com to see detailed transactions.',locator={'kind':'page','page':3})]))
+        self.assertIsNone(statement_layout_context(source))

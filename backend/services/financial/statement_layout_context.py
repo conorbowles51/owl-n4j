@@ -23,6 +23,13 @@ CAPITAL_ONE_CARD_HEADING = re.compile(
     r'Quicksilver Credit Card \| World Elite Mastercard ending in|'
     r'(?:Platinum Card|Secured Card|Platinum Secured Card) \| Platinum Mastercard ending in) (\d{4})')
 
+# The printed sentence that introduces the card sections. OCR of a scanned
+# page can read its full stop as a colon, comma or semicolon, drop it, or
+# space it off. Only that final punctuation and spacing are tolerated: every
+# word, the domain and the order must still be read exactly as printed.
+CAPITAL_ONE_DETAIL_MARKER = re.compile(
+    r'Visit (?:www\.)?capitalone\.com to see detailed transactions ?[.:;,]?')
+
 
 def _cycle(text):
     match = _CYCLE.fullmatch(text)
@@ -77,9 +84,7 @@ def card_row_dates(text, posting_text, start, end):
 def statement_layout_context(rows, *, continuation_statement=None):
     """Return None unless institution, unique cycle and printed card agree."""
     flat = [(r['row_index'], c) for r in rows for c in r['cells']]
-    marks = [(i,c) for i,c in flat if c['expected_text'].strip() in (
-        'Visit www.capitalone.com to see detailed transactions.',
-        'Visit capitalone.com to see detailed transactions.')]
+    marks = [(i,c) for i,c in flat if CAPITAL_ONE_DETAIL_MARKER.fullmatch(c['expected_text'].strip())]
     if continuation_statement is not None and marks:
         return None  # This fallback only handles the verified continuation layout.
     cycles = []
