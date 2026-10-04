@@ -376,7 +376,8 @@ def _prepared(items):
 
 
 def _match(period, candidates, taken):
-    for test in (lambda c: c['statement_key'] == period['statement_key'] and period['statement_key'],
+    # An empty statement key is the file's one undivided period, on either side.
+    for test in (lambda c: c['statement_key'] == period['statement_key'],
                  lambda c: period['period_start'] and (c.get('account', ''), c['period_start'], c['period_end']) == (
                      period.get('account', ''), period['period_start'], period['period_end'])):
         for index, candidate in enumerate(candidates):

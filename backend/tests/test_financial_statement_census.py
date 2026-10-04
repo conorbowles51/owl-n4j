@@ -254,3 +254,13 @@ def test_a_retained_reading_without_its_original_is_still_prepared(tmp_path, cor
     prepared = estimate.scratch_batch(tmp_path, 'retained', [dict(key='gone', sha256=None, currency=None)],
         {'gone': corpus['readings'][sha]}, retained_currency=False)
     assert prepared['files'] == 1 and [item['ready'] for item in prepared['items']] == [True]
+
+
+def test_an_undivided_file_matches_its_live_period():
+    census = load()
+    files = [dict(key='k1', retained=False, live_items=[_item('', 'imported', '2021-01-01', '2021-01-31')])]
+    prepared = dict(items=[dict(key='k1', statement_key='', status='attention', ready=False, family='generic-statement',
+        problems=[dict(message='Enter the account holder shown on the statement.')], period_start='', period_end='',
+        account='', transaction_count=3)], file_errors=[])
+    rows = census.join(files, prepared, dict(items=[], file_errors=[]), {})
+    assert [(r['current']['outcome'], r['live']['state']) for r in rows] == [('held', 'imported')]
