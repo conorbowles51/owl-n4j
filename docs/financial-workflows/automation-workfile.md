@@ -13,7 +13,7 @@ sets it itself only when it is genuinely blocked on Neil; see "Halt rules".)
 
 ## ▶ NEXT
 
-**(2026-10-02 21:55) Wave 4 merged into `fin/release-1` (head after the workfile fold, see Log). NOT pushed.**
+**(2026-10-04) Release 1 (waves 1–4) pushed to `integration/evidence-main-reunion`; wave 5 running — see Log.**
 Release-1 now (corpus v4, 124 distinct periods): **93/124 ready without edits (75.0%)**, 93/107 recoverable (86.9%),
 0 wrong admissions, 0 critical-field errors. v1–v3 subset 37/49 (unchanged); v4 additions 56/75 (was 28/75).
 Suites: financial 5669 / all-tests 6060, only the 2 known `unassigned_statement` failures; tsc 0; vitest unit 295/295.
@@ -430,3 +430,17 @@ brief (briefs = Queue entries above + the 2026-10-02 log lines). Automation is t
   failures (identical on 1c840355, per its notes); not run here.
 - r-recovery live dry-run estimate and live ledger audit: **NOT run** (no counts exist); see ▶ NEXT for the commands.
 - Plain-language status: /mnt/owl-data/fin-wt/headless/STATUS-FOR-NEIL.md.
+
+### 2026-10-04 10:40 — wave 5 launched headless
+- `fin/c-image-fields`, `fin/c-andrews-residue`, `fin/c-mx-layouts` (worktrees /mnt/owl-data/fin-wt/<unit>, from
+  fin/release-1 @ 73cbc888) via headless/launch.sh (now also appends run-rule.md). Prompts headless/<unit>.md.
+- `fin-integrate-5` watcher (headless/after-wave5.sh) runs integrate-5.md when all three exit with WIP-NOTES.md:
+  merge, benchmark bench-runs/release-1-w5, suites, rewrite ▶ NEXT, STATUS-FOR-NEIL.md. Never pushes.
+
+### 2026-10-04 — release 1 pushed (Neil)
+- Merged origin `7d04cb24` (remove 50-file ingestion batch caps, Conor) into fin/release-1 (97878ff8, clean).
+- Live checkout's untracked workfile + scripts/headless moved to /mnt/owl-data/fin-wt/live-untracked-aside-20261004
+  (now tracked; the copies here are authoritative). fin/release-1 pushed to `integration/evidence-main-reunion`.
+- From now on the workfile is TRACKED in the live checkout: never edit it there (a dirty tree blocks deploy.sh).
+  Edit it in /mnt/owl-data/fin-wt/release-1 and commit on fin/release-1.
+- After deploy: readiness refresh for the case; close matching error-register items with Alex.
