@@ -61,6 +61,50 @@ def propose_labelled_rows(sources, statement):
         statement['currency'], page_has_transaction_table=source['page_number'] in header_pages)['rows']]
 
 
+def bbva_page_statement(sources):
+    """``(identity, rows)`` for a BBVA page that prints its own period, or ``None``.
+
+    Only a page the BBVA catalog groups on its own printed bank, product,
+    account, page sequence and period is assessed; a continuation page
+    without its period is not. Its dollar product reads as USD, the national
+    one as MXN; both have two decimal places.
+    """
+    from services.financial.statement_import_bbva import bbva_catalog, propose_bbva_statement
+    groups, _ = bbva_catalog(sources)
+    if len(groups) != 1:
+        return None
+    group = groups[0]
+    pages = set(group['page_numbers'])
+    scoped = [s for s in sources if s['page_number'] in pages]
+    texts = {cell['expected_text'].upper() for s in scoped for r in s['rows'] for cell in r['cells']}
+    currency = 'USD' if any('DOLARES' in t for t in texts) else 'MXN'
+    identity = [group[key] for key in ('layout_id', 'account_reference', 'period_start', 'period_end')]
+    return identity, propose_bbva_statement(scoped, currency, group)['rows']
+
+
+def capital_one_page_statement(sources):
+    """``(identity, rows)`` for a branded Capital One card page, or ``None``.
+
+    The page must establish exactly one printed card ending and billing cycle
+    with the issuer's own name or address, as the statement catalog requires.
+    """
+    from services.financial.statement_import_catalog import _capital_page_contexts
+    from services.financial.statement_import_card import propose_card_table
+    from services.financial.statement_layout_context import statement_layout_context
+    contexts, _ = _capital_page_contexts(sources)
+    if len(set(contexts.values())) != 1:
+        return None
+    card, start, end = next(iter(contexts.values()))
+    statement = dict(layout_id='capital-one-card', institution='Capital One', account_reference='****' + card,
+                     period_start=start, period_end=end)
+    # The same layout context the stored source and the statement review bind.
+    scoped = [{**s, 'layout_context': statement_layout_context(s['rows'])
+               or statement_layout_context(s['rows'], continuation_statement=statement)}
+              for s in sources if s['page_number'] in contexts]
+    identity = [statement[key] for key in ('layout_id', 'account_reference', 'period_start', 'period_end')]
+    return identity, [r for s in scoped for r in propose_card_table(s, 'USD', statement)['rows']]
+
+
 def _page_statement_rows(sources):
     """``(identity, rows)`` for one recognised page reading, or ``None``.
 
@@ -78,6 +122,10 @@ def _page_statement_rows(sources):
         card = cards[0]
         identity = [card[key] for key in ('layout_id', 'account_reference', 'period_start', 'period_end')]
         rows = [r for s in sources for r in propose_credit_one_table(s, 'USD', card)['rows']]
+    elif (bbva := bbva_page_statement(sources)) is not None:
+        identity, rows = bbva
+    elif (capital := capital_one_page_statement(sources)) is not None:
+        identity, rows = capital
     elif merrick:
         # A missing identity needs explicit identity recovery, not a payment
         # reread whose candidate happens to have the same empty identifier.
@@ -115,7 +163,10 @@ def assess_statement_reading(tables):
         or 'date_column' in r['fields'] or 'amount_column' in r['fields'])]
     balances = [r for r in rows if r['kind'] == 'balance']
     # Valid but different balances require review, not another guess at digits.
-    missing = {field: sum(not r['fields'].get(field) for r in payments)
+    # A card interest charge prints no date of its own; the statement end
+    # only orders it. That absence is the printed fact, not an unreadable date.
+    missing = {field: sum(not r['fields'].get(field) and not (field == 'date'
+        and r['fields'].get('date_basis') == 'statement_end_ordering_only') for r in payments)
         for field in ('date', 'amount_minor', 'direction')}
     missing['booking_date'] = sum('booking_date_column' in r['fields'] and not r['fields'].get('booking_date') for r in payments)
     # Andrews prints a running balance on every payment. Its parser can only

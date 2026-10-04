@@ -29,15 +29,22 @@ def norm(text):
                            if not unicodedata.combining(c)).split())
 
 
+# Tesseract's English model has no accented ó. On scanned pages it reads the
+# ó of Operación, Liquidación and Depósitos as one or two other glyphs (é,
+# d, 6, do). Only that position is tolerated: every other letter, the
+# words Saldo de, Inicial and Final, and the Abonos (+) suffix must be read
+# exactly, so one balance label can never be taken for another.
+_ACCENTED_CONTROLS = (
+    (re.compile(r'SALDO DE OPERACI[^\sN]{1,2}N INICIAL'), 'SALDO DE OPERACION INICIAL'),
+    (re.compile(r'SALDO DE OPERACI[^\sN]{1,2}N FINAL'), 'SALDO DE OPERACION FINAL'),
+    (re.compile(r'SALDO DE LIQUIDACI[^\sN]{1,2}N INICIAL'), 'SALDO DE LIQUIDACION INICIAL'),
+    (re.compile(r'DEP[^\sS]{1,2}SITOS / ABONOS \(\+\)'), 'DEPOSITOS / ABONOS (+)'))
+
+
 def control_norm(value):
     # These are label readings, never edits to a printed date or amount.
-    # Tesseract's English model can read the accented ó as é or d.
     value = norm(value).strip(" '_~|\"")
-    return {'SALDO DE OPERACIEN INICIAL': 'SALDO DE OPERACION INICIAL',
-            'SALDO DE OPERACIEN FINAL': 'SALDO DE OPERACION FINAL',
-            'SALDO DE LIQUIDACIEN INICIAL': 'SALDO DE LIQUIDACION INICIAL',
-            'DEPDSITOS / ABONOS (+)': 'DEPOSITOS / ABONOS (+)',
-            'DEPESITOS / ABONOS (+)': 'DEPOSITOS / ABONOS (+)'}.get(value, value)
+    return next((label for pattern, label in _ACCENTED_CONTROLS if pattern.fullmatch(value)), value)
 
 
 def text(row):

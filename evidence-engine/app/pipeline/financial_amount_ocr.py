@@ -136,7 +136,12 @@ def _endpoint_balance_candidate(row, box, width, height, words, used):
                 reason='unreadable_endpoint_balance')
 
 
-def _cleaned_line_readings(page, rect, rotation, deadline, language):
+def _dollar_money(text):
+    """A complete dollar amount as a card issuer prints it, e.g. ``- $40.00``."""
+    return bool(re.fullmatch(r'(?:-\s?)?\$(?:\d{1,3}(?:,\d{3})+|\d+)\.\d{2}', text))
+
+
+def _cleaned_line_readings(page, rect, rotation, deadline, language, whitelist='0123456789.,-+'):
     """Read a measured money line at two sizes and three ink thresholds.
 
     Raw-line mode misreads signs on these small scanned cells. Use ordinary
@@ -161,7 +166,7 @@ def _cleaned_line_readings(page, rect, rotation, deadline, language):
                             oriented = bordered.rotate(-rotation, expand=True, fillcolor=255) if rotation else bordered
                             try:
                                 value = pytesseract.image_to_string(oriented, lang=language,
-                                    config=f'--oem 1 --psm 7 --dpi {dpi} -c tessedit_char_whitelist=0123456789.,-+',
+                                    config=f'--oem 1 --psm 7 --dpi {dpi} -c tessedit_char_whitelist={whitelist}',
                                     timeout=min(5, remaining)).strip()
                             finally:
                                 if oriented is not bordered:
@@ -184,7 +189,7 @@ def refine_statement_native_cells(page, tables, *, deadline, language):
     from services.financial.statement_import_merrick import merrick_statement, propose_merrick_table
     from services.financial.statement_import_andrews import andrews_page, propose_andrews_statement
     from services.financial.statement_reading_quality import (sources_from_tables, assess_statement_reading,
-        prefer_image_reading, labelled_statement, propose_labelled_rows)
+        prefer_image_reading, labelled_statement, propose_labelled_rows, bbva_page_statement, capital_one_page_statement)
     if page.rotation or deadline - time.monotonic() < 2:
         return tables, []
     sources = sources_from_tables([table.to_json() for table in tables])
@@ -193,8 +198,26 @@ def refine_statement_native_cells(page, tables, *, deadline, language):
     cards, _ = credit_one_catalog(sources)
     merrick = merrick_statement(sources[0]) if len(sources) == 1 else None
     labelled = None
+    # Layouts whose rows name their money column per row rather than one
+    # amount column: (field, column key) pairs to try for a payment row.
+    payment_columns = None
+    # How a complete reading of the cell must look, and the characters the
+    # reread may produce. Card amounts print their dollar sign inside the
+    # cell, so it must be readable there rather than taken for a digit.
+    valid_money, whitelist = _money, '0123456789.,-+'
     if len(cards) == 1:
         propose = lambda source: propose_credit_one_table(source, 'USD', cards[0])
+    elif (bbva := bbva_page_statement(sources)) is not None:
+        # The Cargos or Abonos column holding the payment's only amount.
+        rows = bbva[1]
+        propose = lambda source: dict(rows=[r for r in rows if r['table_index'] == source['table_index']])
+        payment_columns = [('amount_minor', 'debit_column'), ('amount_minor', 'credit_column'), ('balance', 'balance_column')]
+    elif (capital := capital_one_page_statement(sources)) is not None:
+        # The printed Amount column cited by the card layout for that row.
+        rows = [{**r, 'fields': {**r['fields'], 'amount_column': str(r['layout_context']['amount_source']['column_index'])}}
+                if (r.get('layout_context') or {}).get('amount_source') else r for r in capital[1]]
+        propose = lambda source: dict(rows=[r for r in rows if r['table_index'] == source['table_index']])
+        valid_money, whitelist = _dollar_money, '0123456789.,-+$'
     elif merrick:
         propose = lambda source: propose_merrick_table(source, 'USD', merrick)
     elif (labelled := None if any(andrews_page(s, allow_unbranded=True) for s in sources)
@@ -225,6 +248,7 @@ def refine_statement_native_cells(page, tables, *, deadline, language):
             candidates = [('balance', 'balance_column')] if row['kind'] == 'balance' else (
                 [('credit', 'credit_column'), ('debit', 'debit_column'), ('amount', 'amount_column'),
                  ('balance', 'balance_column')] if labelled and payment else
+                payment_columns if payment and payment_columns else
                 [('amount_minor', 'amount_column'), ('balance', 'balance_column')] if payment else [])
             if (row['kind'] == 'balance' and fields.get('statement_layout') == 'andrews-share-statement'
                     and sum(1 for c in row['source_cells'] if (c.get('locator') or {}).get('rect')
@@ -253,14 +277,18 @@ def refine_statement_native_cells(page, tables, *, deadline, language):
                 or rect[2] - rect[0] > size[0] * .13 or len(cell['expected_text']) > 24):
             continue
         try:
-            observations = _cleaned_line_readings(page, rect, 0, deadline, language)
+            observations = _cleaned_line_readings(page, rect, 0, deadline, language, whitelist)
         except (RuntimeError, pytesseract.TesseractError):
             continue
-        valid = [o for o in observations if _money(o['text'])]
-        if (len(observations) != 6 or not _money(observations[0]['text']) or len(valid) < 4
+        valid = [o for o in observations if valid_money(o['text'])]
+        if (len(observations) != 6 or not valid_money(observations[0]['text']) or len(valid) < 4
                 or len({o['dpi'] for o in valid}) != 2 or len({o['text'] for o in valid}) != 1):
             continue
         value = valid[0]['text']
+        if valid_money is _dollar_money and value.startswith('-') != cell['expected_text'].strip().startswith('-'):
+            # The printed sign decides payment or purchase; the reread may
+            # only supply the digits the page reading lost, never the sign.
+            continue
         replacements[(source['table_index'], row['row_index'], int(column))] = value
         records.append(dict(method='tesseract_native_statement_cell_consensus', page=page.number + 1,
             table_index=source['table_index'], row_index=row['row_index'], column_index=int(column),
