@@ -142,10 +142,30 @@ def _payment_rows(proposal):
     return [r for r in proposal['rows'] if not r['excluded'] and r['kind'] in ('transaction', 'unresolved')]
 
 
-def _match_rows(proposal_rows, truth_rows):
-    """Pair proposal rows with truth rows by printed description, then order."""
+def _same_date(printed, recorded):
+    """A truth row whose statement prints no date (``None``) accepts whatever date was recorded."""
+    return printed is None or printed == recorded
+
+
+def _match_rows(proposal_rows, truth_rows, by_value=False):
+    """Pair proposal rows with truth rows by printed description, then order.
+
+    ``by_value`` (real corpora, whose truth descriptions come from another
+    reader) first pairs rows whose amount, direction and date all agree.
+    """
     pairs, unmatched = {}, list(range(len(truth_rows)))
+    if by_value:
+        for row in proposal_rows:
+            f = row['fields']
+            best = next((i for i in unmatched if str(truth_rows[i]['amount_minor']) == f.get('amount_minor')
+                         and truth_rows[i]['direction'] == f.get('direction')
+                         and _same_date(truth_rows[i]['date'], f.get('date'))), None)
+            if best is not None:
+                pairs[row['id']] = best
+                unmatched.remove(best)
     for row in proposal_rows:
+        if row['id'] in pairs:
+            continue
         text = _norm(row['fields'].get('description', '')) or _norm(' '.join(c['expected_text'] for c in row['source_cells']))
         best = next((i for i in unmatched if _norm(truth_rows[i]['description']) in text
                      or (text and text in _norm(truth_rows[i]['description']))), None)
@@ -159,6 +179,8 @@ def _score(proposal, truth, summary):
     score = 0
     if truth['period_end'] and summary.get('period_end') == truth['period_end']:
         score += 5
+    if truth.get('added_in') == 'real' and truth.get('account') and truth['account'] in _digits(summary.get('account')):
+        score += 5  # real documents hold sub-accounts with the same dates
     if truth.get('share') and truth['share'] in json.dumps(proposal.get('metadata', {})):
         score += 5
     amounts = Counter(r['fields'].get('amount_minor') for r in _payment_rows(proposal))
@@ -219,7 +241,7 @@ def simulate_correction(proposal, truth, assess, initial_request):
         act('decision', 'period_start_unprinted')
     rows = {r['id']: r for r in raw['rows']}
     payments = _payment_rows(proposal)
-    pairs, missing = _match_rows(payments, truth['rows'])
+    pairs, missing = _match_rows(payments, truth['rows'], by_value=truth.get('added_in') == 'real')
     for original in payments:
         edit = rows[original['id']]
         index = pairs.get(original['id'])
@@ -228,7 +250,7 @@ def simulate_correction(proposal, truth, assess, initial_request):
             act('edit', 'exclude_row', original['id'])
             continue
         expected = truth['rows'][index]
-        if edit.get('date') != expected['date']:
+        if not _same_date(expected['date'], edit.get('date')):
             edit['date'] = expected['date']
             act('edit', 'row_date', original['id'])
         if edit.get('amount_minor') != str(expected['amount_minor']):
@@ -280,11 +302,24 @@ def run(out, python, concurrency, corpus=CORPUS):
     source_dir = out / 'sources'
     source_dir.mkdir(exist_ok=True)
     corpus_problems = []
+    # A real corpus is private and large: its files are verified and linked in
+    # place, never copied. The synthetic corpus is copied as before.
+    in_place = manifest.get('synthetic') is False
     for record in manifest['files']:
-        data = (corpus / record['filename']).read_bytes()
-        if hashlib.sha256(data).hexdigest() != record['sha256']:
+        source = (corpus / record['filename']).resolve()
+        digest = hashlib.sha256()
+        with source.open('rb') as stream:
+            for chunk in iter(lambda: stream.read(1 << 20), b''):
+                digest.update(chunk)
+        if digest.hexdigest() != record['sha256']:
             corpus_problems.append(record['filename'])
-        (source_dir / record['filename']).write_bytes(data)
+        target = source_dir / record['filename']
+        if in_place:
+            if target.is_symlink() or target.exists():
+                target.unlink()
+            target.symlink_to(source)
+        else:
+            target.write_bytes(source.read_bytes())
     if corpus_problems:
         raise RuntimeError('Corpus files differ from the manifest: ' + ', '.join(corpus_problems))
 
@@ -354,9 +389,13 @@ def run(out, python, concurrency, corpus=CORPUS):
         batch_id = batches.create_batch(db, case_id=case_id, request_id=uuid.uuid4(), file_ids=[],
                                         folder_ids=[folder_id], actor=actor)
 
+    # A worker turn checks or imports a handful of items; a large real corpus
+    # needs more turns than the synthetic one (whose limit stays 400).
+    turn_limit = max(MAX_WORKER_TURNS, 2 * len(manifest['files']) + sum(len(f['periods']) for f in manifest['files']))
+
     def drain(label):
         started, turns = time.monotonic(), 0
-        while turns < MAX_WORKER_TURNS:
+        while turns < turn_limit:
             asyncio.run(batches.advance_batch(factory, batch_id, Path, process_files))
             turns += 1
             with factory() as db:
@@ -395,6 +434,7 @@ def run(out, python, concurrency, corpus=CORPUS):
             if item.get('problem_count', 0) > len(item.get('problems', [])):
                 reasons['additional'] += item['problem_count'] - len(item['problems'])
             entry = dict(item_id=item['id'], filename=filename, statement_id=item.get('statement_id'),
+                         scored=_scored(truth),
                          status=item['status'], can_import=bool(item.get('can_import')),
                          truth_id=truth['id'] if truth else None, family=truth['family'] if truth else 'unmatched',
                          expected=truth['expected'] if truth else None, defects=truth['defects'] if truth else [],
@@ -414,7 +454,7 @@ def run(out, python, concurrency, corpus=CORPUS):
     missing = [t for t in truths.values() if t['id'] not in used]
     for truth in missing:
         periods.append(dict(item_id=None, filename=truth['filename'], statement_id=None, status='not_detected',
-            can_import=False, truth_id=truth['id'], family=truth['family'], expected=truth['expected'],
+            scored=_scored(truth), can_import=False, truth_id=truth['id'], family=truth['family'], expected=truth['expected'],
             defects=truth['defects'], added_in=truth.get('added_in', 'v1-v3'), reasons={'not_detected': 1},
             problems=[], read={}))
 
@@ -431,7 +471,8 @@ def run(out, python, concurrency, corpus=CORPUS):
     with factory() as db:
         final = batches.batch_status(db, case_id=case_id, batch_id=batch_id, limit=10_000)
         final_items = {i['id']: i for i in final['items']}
-        ledger = verify_ledger(db, periods, final_items, truths, FinancialTransaction, FinancialAccount, select)
+        ledger = verify_ledger(db, periods, final_items, truths, FinancialTransaction, FinancialAccount, select,
+                               _incomplete(manifest))
 
     repairs = {name: repair_summary(r.get('source_locations')) for name, r in readings.items() if 'error' not in r}
     result = dict(
@@ -465,10 +506,108 @@ def run(out, python, concurrency, corpus=CORPUS):
     return result
 
 
+SCORED_TRUTH = {'verified'}  # ``--score`` adds e.g. ``ocr_reconciled`` for a secondary figure
+
+
+def _scored(truth):
+    """Only periods whose ground truth reconciled are scored. Synthetic truth is always scored;
+    a real period carries ``truth_status`` and counts only when it is in ``SCORED_TRUTH``."""
+    return truth is None or truth.get('truth_status', 'verified') in SCORED_TRUTH
+
+
+def _incomplete(manifest):
+    return {f['filename'] for f in manifest['files'] if f.get('truth_complete') is False}
+
+
+def _rematch(periods, truths):
+    """Re-pair batch items with real truth periods of the same file by closing date, account and share
+    (from what each item read). Returns how many pairings changed; their stored proposal checks and
+    simulated corrections belong to the earlier pairing and are dropped."""
+    by_file = defaultdict(list)
+    for truth in truths.values():
+        if truth.get('added_in') == 'real':
+            by_file[truth['filename']].append(truth)
+    changed = 0
+    for filename, candidates in by_file.items():
+        items = [p for p in periods if p['filename'] == filename and p.get('item_id')]
+
+        def fit(item, truth):
+            read = item.get('read') or {}
+            return ((read.get('period_end') == truth['period_end']) * 5
+                    + bool(truth.get('account') and truth['account'] in _digits(read.get('account'))) * 5
+                    + bool(truth.get('share') and truth['share'] in (read.get('account') or '')) * 5)
+        pairs = sorted(((fit(i, t), n, t['id']) for n, i in enumerate(items) for t in candidates), reverse=True)
+        taken, assignment = set(), {}
+        for score, n, truth_id in pairs:
+            if score < 5 or n in assignment or truth_id in taken:
+                continue
+            assignment[n] = truth_id
+            taken.add(truth_id)
+        for n, item in enumerate(items):
+            new, old = assignment.get(n), item['truth_id']
+            if new is None and (old is None or old not in taken):
+                continue  # no confident pairing: keep the run's own
+            if new == old:
+                continue
+            changed += 1
+            item['truth_id'] = new
+            item.pop('proposal_checks', None)
+            item.pop('correction', None)
+            if new is None:
+                item.update(family='unmatched', expected=None, defects=[], scored=True)
+    return changed
+
+
+def rescore(out, corpus):
+    """Re-judge a finished run against the corpus manifest as it is now, using the run's own database.
+
+    For truth corrections (a convention fixed, a period re-verified) without
+    re-reading every document. Batch outcomes, proposal checks and simulated
+    corrections are the original run's; the ledger comparison and all metrics
+    are recomputed. Writes results-rescored.json and summary-rescored.md.
+    """
+    from sqlalchemy import create_engine, select
+    from sqlalchemy.orm import sessionmaker
+    from postgres.models.financial import FinancialTransaction, FinancialAccount
+    from postgres.models.financial_import_batches import FinancialImportBatchItem
+    _load_models()
+    manifest = json.loads((corpus / 'manifest.json').read_text())
+    result = json.loads((out / 'results.json').read_text())
+    truths = {p['id']: dict(p, filename=f['filename']) for f in manifest['files'] for p in f['periods']}
+    rematched = _rematch(result['periods'], truths)
+    for period in result['periods']:
+        truth = truths.get(period['truth_id']) if period['truth_id'] else None
+        if truth is not None:
+            period.update(scored=_scored(truth), expected=truth['expected'], family=truth['family'],
+                          defects=truth['defects'])
+        elif period['truth_id']:
+            period.update(scored=False, expected=None)
+    engine = create_engine(f"sqlite+pysqlite:///{out / 'benchmark.db'}", future=True)
+    factory = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+    with factory() as db:
+        final_items = {str(item.id): dict(status=item.status, source_document_id=(item.summary or {}).get('source_document_id'))
+                       for item in db.scalars(select(FinancialImportBatchItem))}
+        result['ledger'] = verify_ledger(db, result['periods'], final_items, truths, FinancialTransaction,
+                                         FinancialAccount, select, _incomplete(manifest))
+    engine.dispose()
+    result['corpus'].update(periods=len(truths), path=str(corpus))
+    result['rescored'] = dict(at=datetime.now(timezone.utc).isoformat(timespec='seconds'), code=_git('rev-parse', 'HEAD'),
+                              scored_truth=sorted(SCORED_TRUTH), rematched_items=rematched)
+    result['metrics'] = metrics(result)
+    (out / 'results-rescored.json').write_text(json.dumps(result, indent=1, default=str) + '\n')
+    text = render_summary(result).replace('# Statement automation benchmark', '# Statement automation benchmark (rescored)', 1)
+    text += ('\nRescored ' + result['rescored']['at'] + ' at code ' + result['rescored']['code'][:10] +
+             ' against the current manifest: ledger comparison and metrics recomputed; batch outcomes, proposal '
+             'checks and simulated corrections are from the original run (dropped for the '
+             + str(rematched) + ' items whose truth pairing changed).\n')
+    (out / 'summary-rescored.md').write_text(text)
+    return result
+
+
 def proposal_field_errors(proposal, truth):
     """Critical fields as proposed before any human action (no edits applied)."""
     errors = Counter()
-    pairs, missing = _match_rows(_payment_rows(proposal), truth['rows'])
+    pairs, missing = _match_rows(_payment_rows(proposal), truth['rows'], by_value=truth.get('added_in') == 'real')
     for row in _payment_rows(proposal):
         index = pairs.get(row['id'])
         if index is None:
@@ -481,9 +620,9 @@ def proposal_field_errors(proposal, truth):
             errors['amount_missing'] += 1
         if fields.get('direction') and fields['direction'] != expected['direction']:
             errors['direction_wrong'] += 1
-        if fields.get('date') and fields['date'] != expected['date']:
+        if fields.get('date') and not _same_date(expected['date'], fields['date']):
             errors['date_wrong'] += 1
-        elif not fields.get('date'):
+        elif not fields.get('date') and expected['date'] is not None:
             errors['date_missing'] += 1
     errors['missing_row'] += len(missing)
     if proposal.get('currency') and proposal['currency'] != truth['currency']:
@@ -494,8 +633,13 @@ def proposal_field_errors(proposal, truth):
     return {k: v for k, v in errors.items() if v}
 
 
-def verify_ledger(db, periods, final_items, truths, Transaction, Account, select):
-    """Compare every saved transaction with the period it was admitted from."""
+def verify_ledger(db, periods, final_items, truths, Transaction, Account, select, incomplete_files=()):
+    """Compare every saved transaction with the period it was admitted from.
+
+    ``incomplete_files``: real documents whose truth did not find or verify every
+    statement; an admitted item there that matches no truth period is counted
+    as admitted-unscored, not as a wrong admission.
+    """
     report = dict(admitted_periods=0, transactions=0, critical_errors=Counter(), wrongly_admitted=[],
                   duplicate_contributions=0, by_period={})
     seen = Counter()
@@ -508,6 +652,14 @@ def verify_ledger(db, periods, final_items, truths, Transaction, Account, select
         rows = list(db.scalars(select(Transaction).where(
             Transaction.source_document_id == uuid.UUID(item['source_document_id']))))
         truth = truths.get(period['truth_id'])
+        if truth is None and period.get('filename') in incomplete_files:
+            report['admitted_unscored'] = report.get('admitted_unscored', 0) + 1
+            continue
+        if truth is not None and not _scored(truth):
+            # The truth for this period did not reconcile, so its saved rows
+            # cannot be judged; they are counted, not scored.
+            report['admitted_unscored'] = report.get('admitted_unscored', 0) + 1
+            continue
         canonical = truth.get('duplicate_of') if truth else None
         errors = Counter()
         if truth is None:
@@ -525,8 +677,9 @@ def verify_ledger(db, periods, final_items, truths, Transaction, Account, select
             key = (truth['family'] if truth else '', truth['account'] if truth else '', row.amount_minor, row.direction,
                    str(row.transaction_date or row.posted_date))
             seen[key] += 1
+            recorded = str(identity[3]) if identity[3] is not None else None
             match = next((r for r in remaining if r['amount_minor'] == row.amount_minor and r['direction'] == row.direction
-                          and str(identity[3]) == r['date']), None)
+                          and _same_date(r['date'], recorded)), None)
             if match is not None:
                 remaining.remove(match)
                 if match.get('posted_date') and str(row.posted_date) != match['posted_date']:
@@ -541,7 +694,7 @@ def verify_ledger(db, periods, final_items, truths, Transaction, Account, select
                         errors['amount'] += 1
                     if near['direction'] != row.direction:
                         errors['direction'] += 1
-                    if near['date'] != str(identity[3]):
+                    if not _same_date(near['date'], recorded):
                         errors['date'] += 1
             if truth and row.currency != truth['currency']:
                 errors['currency'] += 1
@@ -596,7 +749,9 @@ def _period_effort(p):
 
 
 def metrics(result):
-    periods = result['periods']
+    everything = result['periods']
+    periods = [p for p in everything if p.get('scored', True)]
+    unscored = [p for p in everything if not p.get('scored', True)]
     families = sorted({p['family'] for p in periods})
 
     def block(subset):
@@ -654,7 +809,10 @@ def metrics(result):
                     unmatched_items_offered_for_import=sum(p['can_import'] for p in unmatched_items))
     defects = sorted({d for p in periods for d in p['defects']} | {'(none)'})
     subsets = sorted({p.get('added_in') or 'unmatched' for p in periods})
-    return dict(overall=block(periods), by_family={f: block([p for p in periods if p['family'] == f]) for f in families},
+    return dict(overall=block(periods), unscored=dict(periods=len(unscored),
+                    offered_for_import=sum(p['can_import'] for p in unscored),
+                    by_status=dict(Counter(p['status'] for p in unscored))),
+                by_family={f: block([p for p in periods if p['family'] == f]) for f in families},
                 by_defect={d: block([p for p in periods if d in p['defects'] or (d == '(none)' and not p['defects'])])
                            for d in defects},
                 by_corpus_version={v: block([p for p in periods if (p.get('added_in') or 'unmatched') == v])
@@ -683,6 +841,10 @@ def render_summary(result):
              f"proposed before review (any period): {sum(o['valid_but_wrong_values_proposed'].values())}. Batch items "
              f"matched to no ground-truth period: {o['unmatched_items']} ({o['unmatched_items_offered_for_import']} "
              f"offered for import).", '',
+             *([f"Real corpus: only periods whose truth reconciled are scored. Unscored truth periods matched or "
+                f"listed: {m['unscored']['periods']} ({m['unscored']['offered_for_import']} offered for import; "
+                f"{ledger.get('admitted_unscored', 0)} admitted, not judged).", '']
+               if m.get('unscored', {}).get('periods') or ledger.get('admitted_unscored') else []),
              f"Human actions to make every blocked period ready or decided: {o['human_actions_per_period']} "
              f"one statement at a time; {o['human_actions_grouped']} using today's grouped decisions "
              f"({', '.join(o['shared_decisions']) or 'none'}). Field edits {o['field_edits']}, decisions {o['decisions']}, "
@@ -708,6 +870,8 @@ def render_summary(result):
     lines += ['', '| Period | Expected | Defects | Batch status | Importable | Blocking reasons | Simulated actions |',
               '|---|---|---|---|---|---|---|']
     for p in sorted(result['periods'], key=lambda p: p['truth_id'] or ''):
+        if not p.get('scored', True):
+            continue
         correction = p.get('correction')
         acted = ''
         if correction and not p['can_import'] and p['status'] != 'duplicate_ignored':
@@ -753,7 +917,19 @@ def main(argv=None):
     parser.add_argument('--concurrency', type=int, default=2)
     parser.add_argument('--corpus', default=str(CORPUS),
                         help='Corpus directory with manifest.json (default: the committed corpus).')
+    parser.add_argument('--rescore', action='store_true',
+                        help='re-judge the finished run in --out against the current --corpus manifest (no re-reading)')
+    parser.add_argument('--score', default='verified',
+                        help='comma-separated real truth statuses to score (default: verified)')
     args = parser.parse_args(argv)
+    SCORED_TRUTH.clear()
+    SCORED_TRUTH.update(s.strip() for s in args.score.split(',') if s.strip())
+    if args.rescore:
+        if not args.out:
+            parser.error('--rescore needs --out (the finished run directory)')
+        result = rescore(Path(args.out), Path(args.corpus))
+        print((Path(args.out) / 'summary-rescored.md').read_text())
+        return 0 if not result['ledger']['wrongly_admitted'] else 1
     out = Path(args.out) if args.out else Path(os.environ.get('TMPDIR', '/tmp')) / (
         f"loupe-statement-benchmark-{os.environ.get('USER') or os.getuid()}-{datetime.now():%Y%m%d-%H%M%S}")
     result = run(out, args.engine_python, args.concurrency, Path(args.corpus))
