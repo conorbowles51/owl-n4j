@@ -142,10 +142,25 @@ def _payment_rows(proposal):
     return [r for r in proposal['rows'] if not r['excluded'] and r['kind'] in ('transaction', 'unresolved')]
 
 
-def _match_rows(proposal_rows, truth_rows):
-    """Pair proposal rows with truth rows by printed description, then order."""
+def _match_rows(proposal_rows, truth_rows, by_value=False):
+    """Pair proposal rows with truth rows by printed description, then order.
+
+    ``by_value`` (real corpora, whose truth descriptions come from another
+    reader) first pairs rows whose amount, direction and date all agree.
+    """
     pairs, unmatched = {}, list(range(len(truth_rows)))
+    if by_value:
+        for row in proposal_rows:
+            f = row['fields']
+            best = next((i for i in unmatched if str(truth_rows[i]['amount_minor']) == f.get('amount_minor')
+                         and truth_rows[i]['direction'] == f.get('direction') and truth_rows[i]['date'] == f.get('date')),
+                        None)
+            if best is not None:
+                pairs[row['id']] = best
+                unmatched.remove(best)
     for row in proposal_rows:
+        if row['id'] in pairs:
+            continue
         text = _norm(row['fields'].get('description', '')) or _norm(' '.join(c['expected_text'] for c in row['source_cells']))
         best = next((i for i in unmatched if _norm(truth_rows[i]['description']) in text
                      or (text and text in _norm(truth_rows[i]['description']))), None)
@@ -203,7 +218,7 @@ def simulate_correction(proposal, truth, assess, initial_request):
         act('decision', 'period_start_unprinted')
     rows = {r['id']: r for r in raw['rows']}
     payments = _payment_rows(proposal)
-    pairs, missing = _match_rows(payments, truth['rows'])
+    pairs, missing = _match_rows(payments, truth['rows'], by_value=truth.get('added_in') == 'real')
     for original in payments:
         edit = rows[original['id']]
         index = pairs.get(original['id'])
@@ -264,11 +279,24 @@ def run(out, python, concurrency, corpus=CORPUS):
     source_dir = out / 'sources'
     source_dir.mkdir(exist_ok=True)
     corpus_problems = []
+    # A real corpus is private and large: its files are verified and linked in
+    # place, never copied. The synthetic corpus is copied as before.
+    in_place = manifest.get('synthetic') is False
     for record in manifest['files']:
-        data = (corpus / record['filename']).read_bytes()
-        if hashlib.sha256(data).hexdigest() != record['sha256']:
+        source = (corpus / record['filename']).resolve()
+        digest = hashlib.sha256()
+        with source.open('rb') as stream:
+            for chunk in iter(lambda: stream.read(1 << 20), b''):
+                digest.update(chunk)
+        if digest.hexdigest() != record['sha256']:
             corpus_problems.append(record['filename'])
-        (source_dir / record['filename']).write_bytes(data)
+        target = source_dir / record['filename']
+        if in_place:
+            if target.is_symlink() or target.exists():
+                target.unlink()
+            target.symlink_to(source)
+        else:
+            target.write_bytes(source.read_bytes())
     if corpus_problems:
         raise RuntimeError('Corpus files differ from the manifest: ' + ', '.join(corpus_problems))
 
@@ -385,6 +413,7 @@ def run(out, python, concurrency, corpus=CORPUS):
             if item.get('problem_count', 0) > len(item.get('problems', [])):
                 reasons['additional'] += item['problem_count'] - len(item['problems'])
             entry = dict(item_id=item['id'], filename=filename, statement_id=item.get('statement_id'),
+                         scored=_scored(truth),
                          status=item['status'], can_import=bool(item.get('can_import')),
                          truth_id=truth['id'] if truth else None, family=truth['family'] if truth else 'unmatched',
                          expected=truth['expected'] if truth else None, defects=truth['defects'] if truth else [],
@@ -404,7 +433,7 @@ def run(out, python, concurrency, corpus=CORPUS):
     missing = [t for t in truths.values() if t['id'] not in used]
     for truth in missing:
         periods.append(dict(item_id=None, filename=truth['filename'], statement_id=None, status='not_detected',
-            can_import=False, truth_id=truth['id'], family=truth['family'], expected=truth['expected'],
+            scored=_scored(truth), can_import=False, truth_id=truth['id'], family=truth['family'], expected=truth['expected'],
             defects=truth['defects'], added_in=truth.get('added_in', 'v1-v3'), reasons={'not_detected': 1},
             problems=[], read={}))
 
@@ -455,10 +484,19 @@ def run(out, python, concurrency, corpus=CORPUS):
     return result
 
 
+SCORED_TRUTH = {'verified'}  # ``--score`` adds e.g. ``ocr_reconciled`` for a secondary figure
+
+
+def _scored(truth):
+    """Only periods whose ground truth reconciled are scored. Synthetic truth is always scored;
+    a real period carries ``truth_status`` and counts only when it is in ``SCORED_TRUTH``."""
+    return truth is None or truth.get('truth_status', 'verified') in SCORED_TRUTH
+
+
 def proposal_field_errors(proposal, truth):
     """Critical fields as proposed before any human action (no edits applied)."""
     errors = Counter()
-    pairs, missing = _match_rows(_payment_rows(proposal), truth['rows'])
+    pairs, missing = _match_rows(_payment_rows(proposal), truth['rows'], by_value=truth.get('added_in') == 'real')
     for row in _payment_rows(proposal):
         index = pairs.get(row['id'])
         if index is None:
@@ -498,6 +536,11 @@ def verify_ledger(db, periods, final_items, truths, Transaction, Account, select
         rows = list(db.scalars(select(Transaction).where(
             Transaction.source_document_id == uuid.UUID(item['source_document_id']))))
         truth = truths.get(period['truth_id'])
+        if truth is not None and not _scored(truth):
+            # The truth for this period did not reconcile, so its saved rows
+            # cannot be judged; they are counted, not scored.
+            report['admitted_unscored'] = report.get('admitted_unscored', 0) + 1
+            continue
         canonical = truth.get('duplicate_of') if truth else None
         errors = Counter()
         if truth is None:
@@ -586,7 +629,9 @@ def _period_effort(p):
 
 
 def metrics(result):
-    periods = result['periods']
+    everything = result['periods']
+    periods = [p for p in everything if p.get('scored', True)]
+    unscored = [p for p in everything if not p.get('scored', True)]
     families = sorted({p['family'] for p in periods})
 
     def block(subset):
@@ -644,7 +689,10 @@ def metrics(result):
                     unmatched_items_offered_for_import=sum(p['can_import'] for p in unmatched_items))
     defects = sorted({d for p in periods for d in p['defects']} | {'(none)'})
     subsets = sorted({p.get('added_in') or 'unmatched' for p in periods})
-    return dict(overall=block(periods), by_family={f: block([p for p in periods if p['family'] == f]) for f in families},
+    return dict(overall=block(periods), unscored=dict(periods=len(unscored),
+                    offered_for_import=sum(p['can_import'] for p in unscored),
+                    by_status=dict(Counter(p['status'] for p in unscored))),
+                by_family={f: block([p for p in periods if p['family'] == f]) for f in families},
                 by_defect={d: block([p for p in periods if d in p['defects'] or (d == '(none)' and not p['defects'])])
                            for d in defects},
                 by_corpus_version={v: block([p for p in periods if (p.get('added_in') or 'unmatched') == v])
@@ -673,6 +721,10 @@ def render_summary(result):
              f"proposed before review (any period): {sum(o['valid_but_wrong_values_proposed'].values())}. Batch items "
              f"matched to no ground-truth period: {o['unmatched_items']} ({o['unmatched_items_offered_for_import']} "
              f"offered for import).", '',
+             *([f"Real corpus: only periods whose truth reconciled are scored. Unscored truth periods matched or "
+                f"listed: {m['unscored']['periods']} ({m['unscored']['offered_for_import']} offered for import; "
+                f"{ledger.get('admitted_unscored', 0)} admitted, not judged).", '']
+               if m.get('unscored', {}).get('periods') or ledger.get('admitted_unscored') else []),
              f"Human actions to make every blocked period ready or decided: {o['human_actions_per_period']} "
              f"one statement at a time; {o['human_actions_grouped']} using today's grouped decisions "
              f"({', '.join(o['shared_decisions']) or 'none'}). Field edits {o['field_edits']}, decisions {o['decisions']}, "
@@ -698,6 +750,8 @@ def render_summary(result):
     lines += ['', '| Period | Expected | Defects | Batch status | Importable | Blocking reasons | Simulated actions |',
               '|---|---|---|---|---|---|---|']
     for p in sorted(result['periods'], key=lambda p: p['truth_id'] or ''):
+        if not p.get('scored', True):
+            continue
         correction = p.get('correction')
         acted = ''
         if correction and not p['can_import'] and p['status'] != 'duplicate_ignored':
@@ -743,7 +797,11 @@ def main(argv=None):
     parser.add_argument('--concurrency', type=int, default=2)
     parser.add_argument('--corpus', default=str(CORPUS),
                         help='Corpus directory with manifest.json (default: the committed corpus).')
+    parser.add_argument('--score', default='verified',
+                        help='comma-separated real truth statuses to score (default: verified)')
     args = parser.parse_args(argv)
+    SCORED_TRUTH.clear()
+    SCORED_TRUTH.update(s.strip() for s in args.score.split(',') if s.strip())
     out = Path(args.out) if args.out else Path(os.environ.get('TMPDIR', '/tmp')) / (
         f"loupe-statement-benchmark-{os.environ.get('USER') or os.getuid()}-{datetime.now():%Y%m%d-%H%M%S}")
     result = run(out, args.engine_python, args.concurrency, Path(args.corpus))
