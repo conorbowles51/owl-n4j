@@ -64,6 +64,11 @@ _STAGE_CHUNK_SIZE = 1024 * 1024
 _ARCHIVE_SKIP_NAMES = {".DS_Store", "Thumbs.db", "desktop.ini"}
 _CELLEBRITE_NS_MARKER = b"http://pa.cellebrite.com/report/2.0"
 
+# Most file ids one ``/route-check`` request may ask about. Only that read
+# endpoint is limited; processing requests are uncapped since 7d04cb24. The
+# frontend splits its pages to ROUTE_CHECK_BATCH_LIMIT, which must match.
+MAX_BATCH_SIZE = 50
+
 
 def _evidence_case_permission(request: Request, payload: dict) -> tuple[str, str]:
     if request.method == "GET":
