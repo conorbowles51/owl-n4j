@@ -13,72 +13,86 @@ sets it itself only when it is genuinely blocked on Neil; see "Halt rules".)
 
 ## ▶ NEXT
 
-**(2026-10-04) Release 1 (waves 1–4) pushed to `integration/evidence-main-reunion`; wave 5 running — see Log.**
-Release-1 now (corpus v4, 124 distinct periods): **93/124 ready without edits (75.0%)**, 93/107 recoverable (86.9%),
-0 wrong admissions, 0 critical-field errors. v1–v3 subset 37/49 (unchanged); v4 additions 56/75 (was 28/75).
-Suites: financial 5669 / all-tests 6060, only the 2 known `unassigned_statement` failures; tsc 0; vitest unit 295/295.
+**(2026-10-04 12:00) Wave 5 merged into fin/release-1 (head after this commit; NOT pushed). The real-document chain
+(`fin-real-driver`, see Log 11:25) resumes on its own once this integration's screen exits; its planner owns the
+real-document waves. Everything below is the synthetic corpus.**
+Release-1 now (corpus v4, 124 distinct periods, bench-runs/release-1-w5, exit 0): **102/124 ready without edits (82.3%)**,
+102/107 recoverable (95.3%), 0 wrong admissions, 0 critical-field errors (347 saved), 0 valid-looking wrong values
+proposed, held kept out 10/10. v1–v3 subset 38/49 (was 37); v4 additions 64/75 (was 56). Baseline was 93/124 (75.0%);
+c-mx-layouts' corrected-pairing rerun of that baseline is also 93/124, 93/107, 37/49, with 0 false `currency_wrong`.
+Suites: financial 5710 (only the 2 known `unassigned_statement` failures; 3 load timeouts rerun OK, see Log); engine
+selection 167 passed; tsc 0; vitest unit 295/295 after the route-check fix 41a306a8.
 
-**Next wave (≤3 headless units, each a worktree from fin/release-1, ranked by recoverable periods still held):**
-1. **`fin/c-image-fields`: BBVA and Capital One image pages** (5 periods). bbva-2024-07 image-only and bbva-2024-08
-   skewed (both `balance`: BBVA image-only reason), bbva-2024-09 ocr amount digit (reading 1, balance 3),
-   capital-one-2025-03 150 dpi+JPEG (every money cell confirmed; OCR reads the layout marker as
-   "...detailed transactions**:**" and `statement_layout_context.py:80` matches the phrase exactly, so section and
-   holder are lost), capital-one-2025-01 ocr amount digit. Safety gate unchanged; benchmark must exit 0.
-2. **`fin/c-andrews-residue`: last Andrews holds** (4 periods). 2022-04 150 dpi #2 (minus read as `“`), 2022-05 100 dpi #2
-   (crop rereads contradict page: 4 of 6 crops `61.28` vs page `-61.28`; `7,150.20` vs `7,180.20`), 2022-08 combined #2
-   (one row not separated), 2020-12 OCR-lost lines with equal balances (no_activity). Any fix that admits must do so on
-   printed values only; holding stays correct where readers disagree.
-3. **`fin/c-mx-layouts`: Scotiabank with-movements + Monex peso-movements, and the benchmark pairing defect** (3 periods).
-   **First commit: fix the harness pairing defect (Open defects)** — the two Monex 2024-03 zero-activity periods are now
-   ADMITTED and the harness pairs them crosswise by currency, so their scoring is not trustworthy until it is fixed.
-   The movements layouts were invented by a-corpus2: scaffold only, say so in notes.
-Not in a unit: credit-one-6 (compensating misreads, held by design until an independent reader agrees);
-merrick-two-statements#1 (earlier note: ground truth mislabelled — corpus fix, not pipeline).
+**Next synthetic wave (≤3 headless units from fin/release-1, ranked by recoverable periods still held; only 5 remain):**
+1. **`fin/c-mx-real-fit`: Scotiabank with-movements + Monex peso-movements on REAL pages** (3 periods:
+   scotiabank-2024-06-with-movements, monex-2024-04 #1 and #2). The c-mx-layouts scaffolds (switch
+   `LOUPE_FINANCIAL_MX_MOVEMENT_SCAFFOLD`, default OFF) were written against invented layouts; switched on they admit
+   scotiabank-2024-06 only, which proves nothing. Launch only once the real-document census (r-census) has located a
+   real Scotiabank statement with movements or a real Monex contract with a movements page; fit the readers to it and
+   regenerate the two invented corpus files from it. Without a real page this unit does not run.
+2. **`fin/a-merrick-truth`: merrick-two-statements #1** (1 period, `dates 2`, period_start_unprinted). Earlier note says
+   the ground truth is mislabelled. Verify against the PDF; fix the corpus truth if so (scoring only), the pipeline if not.
+3. **`fin/c-cancelling-reader`: credit-one-cycle-6** (1 period, compensating misreads). Held by design until an
+   independent reader agrees; the glyph second reader declines it. Only admit on agreement of an independent reading
+   with the printed values; holding stays correct otherwise.
+Correctly held and not in a unit: 10 must-hold (omitted rows, missing pages, deposit receipts) and 7 genuine decisions
+(holder/account not printed, no activity, quiet section across pages).
 
 **Open Neil decisions (nothing above waits on them; all have a recorded default):**
-- **Live reader-recovery dry run + ledger audit (r-recovery) — NOT run.** The headless session was blocked from reading the
-  service DB configuration and did not work around it. Both scripts are read-only (READ ONLY transaction, verified
-  evidence hashes, private scratch dir). From `backend/` with the service env loaded:
-  `OMP_THREAD_LIMIT=1 python3 scripts/financial_reader_recovery_estimate.py --case <case> --select-only` (seconds), then
-  without `--select-only` and `--out /mnt/owl-data/fin-wt/r-recovery-estimate` (minutes per Andrews file);
+- **Deploy needed for the route-check fix (41a306a8).** The pushed release has merge 97878ff8, in which Conor's batch-cap
+  removal deleted `MAX_BATCH_SIZE` that our `/route-check` still uses: every non-empty route-check request returns 500
+  (the evidence list cannot label bank files before processing). Fixed on fin/release-1 only; live until the next push.
+- **Engine and backend deploy together (wave 5 and c-image).** The engine's money-cell reread imports new backend
+  functions (`bbva_page_statement`, `capital_one_page_statement`); an engine without the matching backend skips the
+  cell reread for every layout (held, never wrong, but repairs lost). The engine also records scan preparation, which an
+  older backend rejects.
+- **Live reader-recovery dry run + ledger audit (r-recovery) — NOT run.** Both scripts are read-only (READ ONLY
+  transaction, verified evidence hashes, private scratch dir). From `backend/` with the service env loaded:
+  `OMP_THREAD_LIMIT=1 python3 scripts/financial_reader_recovery_estimate.py --case <case> --select-only`, then without
+  `--select-only` and `--out /mnt/owl-data/fin-wt/r-recovery-estimate`;
   `OMP_THREAD_LIMIT=1 python3 scripts/financial_ledger_misread_audit.py --case <case> --out /mnt/owl-data/fin-wt/r-recovery-audit`.
-  Then decide `LOUPE_FINANCIAL_READER_RECOVERY=1` (default OFF). Corpus simulation: 7 of 44 held periods became ready
-  with 0 wrong (23 Sept engine); audit flagged all 5 wrong admissions, "disagrees" 4/4 true, "disputed now" 3–4 false of 4–5.
+  Then decide `LOUPE_FINANCIAL_READER_RECOVERY=1` (default OFF). Live sources gain nothing from waves 3–5 until re-read.
+  Wave 5 added c-image-fields' engine file (f0afcaf9) to `AFFECTED_EXTRACTION_SHA256`; the current file (6d388613) is
+  absent by design.
 - **Disposable PostgreSQL on 127.0.0.1:55434** (or name an instance that may hold throwaway schemas). Without it the
   b-gate PG rows (two-worker exactly-once, save vs group confirmation, deadlock, removal, recovery prep ×6, concurrent
-  `queue_import` lock order, audit triggers), b-unique's 4 new PG tests and r-recovery's PG-only paths (row locks,
-  `SHOW transaction_read_only`) have never executed. Run both `backend/tests/*_postgres.py` files
+  `queue_import` lock order, audit triggers), b-unique's 4 PG tests and r-recovery's PG-only paths (row locks,
+  `SHOW transaction_read_only`) have never executed: they are UNPROVEN. Run both `backend/tests/*_postgres.py` files
   (`LOUPE_TEST_LOCAL_POSTGRES=1`) before deploying the migration below.
-- **Migration `20261002_one_active_statement` runs at deploy** (`alembic upgrade`, single head, down_revision
+- **Migration `20261002_one_active_statement` to apply at deploy** (`alembic upgrade`, single head, down_revision
   `20260924_statement_recovery`). Deferred EXCLUDE constraint: one active admitted statement copy per case + evidence
   file + statement id. Takes ACCESS EXCLUSIVE on `financial_source_documents` (~1k rows) briefly; refuses with an
-  offender list (adds nothing) if duplicates exist. Live read-only check 18:40: 0 offenders among 937. Approved in
-  principle by Neil; PG-semantic acceptance unproven (parsed only). Wave 4 added no migration.
-- **Engine and backend must deploy together (c-image):** the engine now records scan preparation in the processing
-  manifest; a backend without it rejects those records ("Stored table provenance is malformed").
-- **c-image**: (1) geometry kept in the straightened frame, so highlights on turned pages sit up to ~9 pt (1°) / ~22 pt
-  (2.5°) off near corners until the viewer applies the recorded `deskew_degrees` (not built); (2) words over blank paper
-  dropped on prepared scans when confidence < 60 and no ink within 4 px (recorded as `ocr_inkless_words`); kill switch
-  `PDF_SCAN_PREPROCESSING=false`. All numbers are on synthetic damage; real productions unmeasured.
-- **c-mx-noactivity**: printed zero totals + equal printed balances count as source proof (basis `printed_zero_totals`,
-  computed) — implemented yes; reverse if only printed counts of 0 qualify. Monex contracts with any movements page keep
-  failing closed until a real page is seen. Layouts modelled from reader code, not real documents.
-- **r-recovery**: system re-reads attributed to the batch owner (as the 25 Sept campaign did); files with any ready
-  period are left alone.
-- **Second reader (c-reader2)**: (1) glyph reader + Tesseract crop agreement + page reconciliation as independent
-  evidence for admission (default ON; kill switch `STATEMENT_GLYPH_SECOND_READER=false`); (2) 4-of-6 crop contradiction
-  instead of unanimous; (3) templates from non-money digits; (4) show repaired cells beside the machine reading in the UI
-  (not built). No hosted vision model (private images).
+  offender list (adds nothing) if duplicates exist. Live read-only check 2 Oct: 0 offenders among 937. Approved in
+  principle; PG-semantic acceptance unproven (parsed only). Waves 4 and 5 added no migration.
+- **Wave 5 reader rules (each decided; reverse in one place):**
+  - c-image-fields: BBVA labels accept one or two non-N glyphs where `ó` prints (reverse: an explicit list of observed
+    misreadings); Capital One `$` cell reread allowed, printed sign must be kept (reverse: drop the Capital One branch of
+    cc9c6224; capital-one-2025-01 returns to held).
+  - c-andrews-residue: (1) a sign no reader named is accepted only when two confirmed balances fix it and the verb is
+    "Withdrawal" (reverse: drop `crop_digits_signed_by_controls` in `_printed_readings`; 2022-08 held); (2) the page
+    reading may beat a 4-of-6 crop majority when crops at both dpis also read it and confirmed neighbours fix it
+    (reverse: drop the `page_reading` candidate; 2022-05 held); (3) an image reading may replace an embedded OCR layer by
+    adding lines only where the layer left printed ink unread and every existing row is reproduced exactly (reverse:
+    remove `or unread` from the routing condition in `_extract_pdf_sync`; 2020-12 held).
+  - c-mx-layouts: keep `LOUPE_FINANCIAL_MX_MOVEMENT_SCAFFOLD` OFF in production until fitted to a real page; do not quote
+    the switch-on 94/124 as a release number.
+- **c-image**: geometry in the straightened frame (highlights up to ~9 pt / ~22 pt off near corners on turned pages until
+  the viewer applies `deskew_degrees`, not built); inkless words dropped on prepared scans (`ocr_inkless_words`); kill
+  switch `PDF_SCAN_PREPROCESSING=false`. Synthetic damage only.
+- **c-mx-noactivity**: printed zero totals + equal printed balances count as source proof (`printed_zero_totals`);
+  reverse if only printed counts of 0 qualify.
+- **r-recovery**: system re-reads attributed to the batch owner; files with any ready period are left alone.
+- **Second reader (c-reader2)**: glyph reader + crop agreement + page reconciliation as independent evidence (default ON;
+  kill switch `STATEMENT_GLYPH_SECOND_READER=false`); 4-of-6 crop contradiction; templates from non-money digits; show
+  repaired cells beside the machine reading in the UI (not built, now also for the wave-5 Andrews pinned repairs).
 - **a-corpus2**: route deposit receipts out of statement batches automatically?; Mexican zero-activity sections treated
-  as `auto` in ground truth.
+  as `auto` in ground truth; regenerate the invented Monex/Scotiabank movement corpus files from real pages.
 - **Carried**: Merrick start = previous closing + 1 stored `derived`; c-generic pinned-repair exception to "never
   substitute a crop value" (revert 13d03dbe to refuse); investigator-typed start recorded as `printed`;
   `unassigned_statement` (moved continuation pages don't carry balance rows; the only 2 suite failures); U2 Neo4j index
   auto-creation on first live run; check the suspected duplicate population (232 = 232) before the case's next import
-  auto-projects it; re-read live Andrews sources through the current reader (now = the r-recovery campaign above).
-- **Before pushing fin/release-1**: in the live checkout, move the untracked `docs/financial-workflows/automation-workfile.md`
-  and `scripts/headless/` aside (they are tracked in release-1; the fast-forward fails otherwise), push, then copy
-  the workfile back over the tracked one if it changed. After deploy: run the readiness refresh for the case.
+  auto-projects it.
+- **After the next deploy:** readiness refresh for the case; close matching error-register items with Alex.
 
 ---
 
@@ -157,12 +171,14 @@ reasoning, proceed. Set `STATUS: HALT — <reason>` only when:
 
 ## Open defects (found, not fixed)
 
-- Benchmark pairing (`backend/benchmarks/statement_automation/harness.py` `_score`, ~L158): scores period end, share
-  and row amounts but not currency, so two sections of one file that differ only by currency (Monex 2024-03 MXN/USD
-  zero activity) tie and pair by item order. In release-1-w3 they paired crosswise: 2 false `currency_wrong` and 4
-  extra simulated actions; ready/held outcomes unaffected. Fix: add a currency term to `_score`. Found 2026-10-02
-  integrate-3. Still open after wave 4 (c-zero-totals was superseded by c-mx-noactivity, which did not take it); both
-  Monex 2024-03 periods are now admitted and still pair crosswise. Assigned to `fin/c-mx-layouts` (first commit).
+- `tests.test_financial_extraction_release` (3 of 4 tests) spawns `scripts/check_financial_extraction_release.py`
+  with a 20 s subprocess timeout; each spawn takes ~14 s at load 5–6 and times out at load ~13 (full suite during a
+  benchmark, integrate-5). Reruns alone OK. Not a code fault; raise the timeout or run the suite without a concurrent
+  benchmark. Found 2026-10-04 integrate-5.
+- (closed) Benchmark pairing by currency: fixed by c-mx-layouts 78acd7b5, merged 3b125433. Monex 2024-03 now pairs
+  #1→MXN, #2→USD; false `currency_wrong` 2 → 0.
+- (closed) `/route-check` NameError on `MAX_BATCH_SIZE` after merge 97878ff8: fixed 41a306a8 on fin/release-1; live until
+  pushed.
 
 ## Log
 
@@ -455,3 +471,41 @@ brief (briefs = Queue entries above + the 2026-10-02 log lines). Automation is t
   wave-5 integration) → planner writes waveN.units + units/*.md → units → integrate-N … until the planner's STOP rule.
 - Private data only under /mnt/owl-data/fin-real (700). State: headless/real/STATE.md; log headless/real/driver.log.
   Stop it: `touch /mnt/owl-data/fin-wt/headless/real/STOP`. Never pushes or deploys.
+
+### 2026-10-04 12:00 — wave 5 merged into fin/release-1 (headless integrate-5)
+- Merged, none refused (every unit's notes say landed; every unit benchmark exited 0; WIP-NOTES.md dropped; notes archived
+  /mnt/owl-data/fin-wt/notes/{c-image-fields,c-andrews-residue,c-mx-layouts}.md): `fin/c-mx-layouts` (3b125433),
+  `fin/c-image-fields` (560a10de), `fin/c-andrews-residue` (7a89e656). One conflict, in `recovery_campaigns.py`: both
+  units bumped `PDF_READING_REVISION` to `bank-payment-rows-v13` and rewrote the digest comment. Neither v13 file was
+  deployed (live is v12), so v13 stays. c-image-fields changed `pdf_extraction.py` only by that bump (its engine work
+  is in `financial_amount_ocr.py`), so the merged file is byte-identical to c-andrews-residue's (`6d388613…`) and stays
+  off `AFFECTED_EXTRACTION_SHA256`; c-image-fields' file `f0afcaf9…` joins it. recovery_readers 18 passed.
+- **Merge breakage fixed, 41a306a8:** vitest `use-route-checks.test.tsx` failed: `MAX_BATCH_SIZE` no longer declared in
+  `backend/routers/evidence.py`. Cause is NOT wave 5: merge 97878ff8 (origin 7d04cb24, remove 50-file ingestion caps)
+  deleted the constant while our `/route-check` still uses it, so every non-empty route-check request raised NameError
+  and returned 500. **This is in the pushed release.** Restored the constant scoped to route-check only (processing
+  stays uncapped). Backend route_check tests (33) never call the endpoint, which is why only the frontend guard caught it.
+- **Benchmark on merge** (corpus v4, OMP_THREAD_LIMIT=1, **BENCH_EXIT=0**, bench-runs/release-1-w5{,.log}; code 7a89e656):
+  - Baseline: wave-4 93/124 (75.0%). c-mx-layouts corrected the harness pairing; its rerun of the same code
+    (bench-runs/c-mx-layouts-harness) restates the baseline identically: 93/124, 93/107, v1–v3 37/49, 0 wrong, but 0
+    (not 2) valid-looking wrong values proposed.
+  - All: 93/124 → **102/124 ready w/o edits (82.3%)**; recoverable 93/107 → **102/107 (95.3%)**; 0 wrong admissions,
+    0 critical-field errors (347 saved from 102 periods), held kept out 10/10, valid-looking wrong values proposed 0.
+    Actions 122/114 → 59/51. Gains exactly additive, per-period diff vs release-1-w4 shows only the 9 target periods
+    moved: c-image-fields +5 (bbva-2024-07, -08, -09; capital-one-2025-01, -03), c-andrews-residue +4 (2020-12#2,
+    v4 2022-04/05/08 #2), c-mx-layouts 0 (scaffold off by default).
+  - v1–v3 subset: 37/49 → **38/49 (77.6%)**, recoverable 37/40 → 38/40 (andrews-2020-12). Andrews 22/24 (rec 22/22), Credit One 5/8 (5/6),
+    generic 8/12 distinct (8/8; earlier logs said 8/13, counting the exact copy), Merrick 3/5 (3/4).
+  - v4 additions: 56/75 → **64/75 (85.3%)**, recoverable 56/67 → 64/67. By family: Andrews 18 → 21/22 (rec 21/21), BBVA
+    3 → 6/7 (6/6), Capital One 4 → 6/7 (6/6); unchanged generic 12/14, Santander 7/8, Kapital 4/4, Monex 2/4,
+    Scotiabank 3/4, Credit One 2/2, Intercam 1/1, deposit receipts 0/2 (held, correct).
+  - All families: Andrews share 43/46 (rec 43/43), BBVA 6/7, Capital One 6/7, Credit One 7/10 (7/8), generic 20/26
+    (20/20), Merrick 3/5 (3/4), Monex 2/4 (2/4), Santander 7/8, Scotiabank 3/4 (3/4), Kapital 4/4, Intercam 1/1.
+  - 5 recoverable still held: credit-one-6 (by design), merrick-two-statements#1, scotiabank-2024-06-with-movements,
+    monex-2024-04 #1/#2 (invented layouts). Engine read 722 s wall at load up to 13 (not comparable).
+- Suites on merge (live .venv, CHROMADB_PORT=1 CHROMA_PORT=1): financial **Ran 5710, failures=2, errors=3, skipped=17**;
+  the 2 = known `unassigned_statement`; the 3 errors = `test_financial_extraction_release` 20 s subprocess timeouts at
+  load ~13, module rerun alone **4 OK** (Open defects). Engine pytest (wave-5 + reader modules, 10 files) **167 passed**.
+  tsc -b 0; vitest unit 294/295 with the route-check guard failing, fixed by 41a306a8 (that file 12/12 after). Logs
+  fin-wt/release-1-w5-fullsuite.log, bench-runs/release-1-w5-vitest.log. All-tests pattern not run.
+- Plain-language status: /mnt/owl-data/fin-wt/headless/STATUS-FOR-NEIL.md (overwrites wave 4's).
