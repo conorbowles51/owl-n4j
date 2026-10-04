@@ -142,6 +142,11 @@ def _payment_rows(proposal):
     return [r for r in proposal['rows'] if not r['excluded'] and r['kind'] in ('transaction', 'unresolved')]
 
 
+def _same_date(printed, recorded):
+    """A truth row whose statement prints no date (``None``) accepts whatever date was recorded."""
+    return printed is None or printed == recorded
+
+
 def _match_rows(proposal_rows, truth_rows, by_value=False):
     """Pair proposal rows with truth rows by printed description, then order.
 
@@ -153,8 +158,8 @@ def _match_rows(proposal_rows, truth_rows, by_value=False):
         for row in proposal_rows:
             f = row['fields']
             best = next((i for i in unmatched if str(truth_rows[i]['amount_minor']) == f.get('amount_minor')
-                         and truth_rows[i]['direction'] == f.get('direction') and truth_rows[i]['date'] == f.get('date')),
-                        None)
+                         and truth_rows[i]['direction'] == f.get('direction')
+                         and _same_date(truth_rows[i]['date'], f.get('date'))), None)
             if best is not None:
                 pairs[row['id']] = best
                 unmatched.remove(best)
@@ -227,7 +232,7 @@ def simulate_correction(proposal, truth, assess, initial_request):
             act('edit', 'exclude_row', original['id'])
             continue
         expected = truth['rows'][index]
-        if edit.get('date') != expected['date']:
+        if not _same_date(expected['date'], edit.get('date')):
             edit['date'] = expected['date']
             act('edit', 'row_date', original['id'])
         if edit.get('amount_minor') != str(expected['amount_minor']):
@@ -513,9 +518,9 @@ def proposal_field_errors(proposal, truth):
             errors['amount_missing'] += 1
         if fields.get('direction') and fields['direction'] != expected['direction']:
             errors['direction_wrong'] += 1
-        if fields.get('date') and fields['date'] != expected['date']:
+        if fields.get('date') and not _same_date(expected['date'], fields['date']):
             errors['date_wrong'] += 1
-        elif not fields.get('date'):
+        elif not fields.get('date') and expected['date'] is not None:
             errors['date_missing'] += 1
     errors['missing_row'] += len(missing)
     if proposal.get('currency') and proposal['currency'] != truth['currency']:
@@ -562,8 +567,9 @@ def verify_ledger(db, periods, final_items, truths, Transaction, Account, select
             key = (truth['family'] if truth else '', truth['account'] if truth else '', row.amount_minor, row.direction,
                    str(row.transaction_date or row.posted_date))
             seen[key] += 1
+            recorded = str(identity[3]) if identity[3] is not None else None
             match = next((r for r in remaining if r['amount_minor'] == row.amount_minor and r['direction'] == row.direction
-                          and str(identity[3]) == r['date']), None)
+                          and _same_date(r['date'], recorded)), None)
             if match is not None:
                 remaining.remove(match)
                 if match.get('posted_date') and str(row.posted_date) != match['posted_date']:
@@ -578,7 +584,7 @@ def verify_ledger(db, periods, final_items, truths, Transaction, Account, select
                         errors['amount'] += 1
                     if near['direction'] != row.direction:
                         errors['direction'] += 1
-                    if near['date'] != str(identity[3]):
+                    if not _same_date(near['date'], recorded):
                         errors['date'] += 1
             if truth and row.currency != truth['currency']:
                 errors['currency'] += 1

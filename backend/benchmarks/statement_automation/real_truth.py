@@ -1328,6 +1328,7 @@ def _capital_one_run(run):
         row.pop('group', None)
         if not row.pop('date_printed', True):
             row['date_outside_ok'] = True
+            row['date_unprinted'] = True  # the statement prints no date for it (interest at cycle end)
     return period
 
 
@@ -1721,8 +1722,9 @@ def manifest_period(period):
                 closing_minor=period['closing_minor'], expected=period['expected'], defects=[],
                 notes='', share=period.get('share'), added_in='real', truth_status=period['truth_status'],
                 duplicate_of=period.get('duplicate_of'),
-                rows=[{k: v for k, v in r.items() if k in ('date', 'description', 'amount_minor', 'direction',
-                                                            'balance_after', 'posted_date')} for r in period['rows']])
+                rows=[dict({k: v for k, v in r.items() if k in ('date', 'description', 'amount_minor', 'direction',
+                                                                 'balance_after', 'posted_date')},
+                           **({'date': None} if r.get('date_unprinted') else {})) for r in period['rows']])
 
 
 def write_outputs(out, results, docs_dir):

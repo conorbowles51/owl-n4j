@@ -198,6 +198,31 @@ class HarnessRealCorpusTests(unittest.TestCase):
         self.assertEqual(harness._match_rows(proposal, truth)[0], {'r1': 0})
 
 
+class UnprintedDateAndAuditTests(unittest.TestCase):
+    def test_a_row_without_a_printed_date_accepts_any_recorded_date(self):
+        self.assertTrue(harness._same_date(None, '2024-01-31'))
+        self.assertTrue(harness._same_date(None, None))
+        self.assertFalse(harness._same_date('2024-01-30', '2024-01-31'))
+        p = dict(period(kind='card', rows=[dict(row(500, 'debit'), date_unprinted=True, date='2024-01-31')]).__dict__,
+                 id='d#1', truth_status='verified', truth_reasons=[], expected='auto')
+        self.assertIsNone(rt.manifest_period(p)['rows'][0]['date'])
+
+    def test_audit_tells_conventions_from_disagreement(self):
+        from benchmarks.statement_automation import real_ledger_audit as audit
+        truth = dict(opening_minor=1000, closing_minor=1300, account='1234',
+                     rows=[dict(amount_minor=500, direction='debit', date='2024-01-05'),
+                           dict(amount_minor=200, direction='credit', date='2024-01-09'),
+                           dict(amount_minor=7, direction='debit', date='2024-01-31', date_unprinted=True)])
+        live = dict(opening_minor=1000, closing_minor=1300, account='999991234',
+                    rows=[(500, 'debit', '2024-01-05'), (200, 'credit', '2024-01-09'), (7, 'debit', None)])
+        self.assertEqual(audit.compare(live, truth)['outcome'], 'agrees')
+        flipped = dict(live, opening_minor=-1000, closing_minor=-1300)
+        self.assertEqual(audit.compare(flipped, truth)['outcome'], 'convention_only')
+        wrong = dict(live, rows=[(800, 'debit', '2024-01-05'), (200, 'credit', '2024-01-09'), (7, 'debit', None)])
+        result = audit.compare(wrong, truth)
+        self.assertEqual((result['outcome'], result['missing_rows'], result['extra_rows']), ('disagrees', 1, 1))
+
+
 class InventoryTests(unittest.TestCase):
     def test_family_guess_and_opaque_id(self):
         self.assertEqual(real_inventory.guess_family('BBVA MEXICO, S.A.'), 'bbva-mexico')
