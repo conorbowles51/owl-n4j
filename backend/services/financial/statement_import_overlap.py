@@ -75,9 +75,17 @@ def same_printed_period(left, right):
     It nominates a copy for comparison and holds an exact-period overlap. It
     never sets a copy aside by itself; only identical payments and balances do.
     """
-    digits = lambda scope: re.sub(r'\D', '', (scope or {}).get('account_reference') or '')
-    return bool(left and right and digits(left) and digits(left) == digits(right)
+    reference = _printed_reference(left)
+    return bool(left and right and reference and any(ch.isdigit() for ch in reference)
+        and reference == _printed_reference(right)
         and all(left.get(key) == right.get(key) for key in ('currency', 'start', 'end', 'account_type')))
+
+
+def _printed_reference(scope):
+    """The printed reference without a leading mask (``****1234``, ``xxxx1234``,
+    ``...1234`` all read ``1234``); letters and every other character are kept."""
+    value = re.sub(r'^(?:[*\u2022.#]+|x{2,})', '', (scope or {}).get('account_reference') or '')
+    return re.sub(r'[^0-9a-z]', '', value)
 
 
 def overlaps(left, right):

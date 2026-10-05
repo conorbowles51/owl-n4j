@@ -468,6 +468,11 @@ class ReproducedStatementTests(TestCase):
         base = dict(identity='x', account_reference='****1234', currency='USD', start='2020-05-12',
                     end='2020-06-11', account_type='credit_card', holder='a', full_reference=False)
         self.assertTrue(same_printed_period(base, {**base, 'holder': 'b', 'identity': 'y', 'account_reference': '...1234'}))
+        self.assertTrue(same_printed_period(base, {**base, 'account_reference': 'xxxx1234'}))
+        letters = {**base, 'account_reference': 'gater1'}
+        for other in ('gates1', 'gateh1', '1', '****1'):
+            with self.subTest(other=other):
+                self.assertFalse(same_printed_period(letters, {**letters, 'account_reference': other}))
         for key, value in [('account_reference', '****1235'), ('currency', 'EUR'), ('start', '2020-05-13'),
                            ('end', '2020-06-12'), ('account_type', 'checking'), ('account_reference', '')]:
             with self.subTest(key=key):

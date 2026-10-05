@@ -63,8 +63,9 @@ class CheckpointBGateTests(TestCase):
     def statement(self, account, *, holder_printed=True, revised=False):
         """A separate synthetic PDF for its own account, optionally without a printed holder.
 
-        `revised` reads one payment description differently, as a second reading
-        or version of the same account and period would.
+        `revised` reads one payment description and its date differently, as a
+        second reading or version of the same account and period would. (Equal
+        money with other wording is a duplicate since r1-reproduced.)
         """
         f = self.f
         name = account + ('-revised' if revised else '')
@@ -86,6 +87,8 @@ class CheckpointBGateTests(TestCase):
         if revised:
             cell = next(v for v in payload[0]['table']['values'] if v['row'] == 2 and v['column'] == 1)
             cell['text'] = 'Revised source payment detail'
+            cell = next(v for v in payload[0]['table']['values'] if v['row'] == 2 and v['column'] == 0)
+            cell['text'] = '2023-03-19'
         f.db.add(EvidenceTableGeometry(evidence_file_id=file.id, page_number=1,
             engine_job_id=geometry.engine_job_id, payload=payload))
         f.db.commit()
