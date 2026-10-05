@@ -12,6 +12,8 @@ closing date:
   date column), or a balance kept with the opposite sign;
 * ``disagrees``: missing, extra or different rows, or different balances. This
   is a wrong admission, unless the truth itself is only ``ocr_reconciled``;
+* ``must_be_held``: the truth period must not be in the ledger at all (printed
+  pages missing, or contradicted by another printed statement), whatever its rows;
 * ``no_truth_period``: the document has truth, but no judged truth period matches;
 * ``live_period_undated``: the live period was admitted without period dates.
 
@@ -34,7 +36,7 @@ from collections import Counter, defaultdict
 from pathlib import Path
 
 BACKEND = Path(__file__).resolve().parents[2]
-JUDGED = ('verified', 'ocr_reconciled')
+JUDGED = ('verified', 'ocr_reconciled', 'incomplete')
 
 
 def _digits(value):
@@ -123,6 +125,15 @@ def compare(live, truth):
                 account_agrees=bool(truth.get('account')) and truth['account'] in live['account'])
 
 
+def judge(live, truth):
+    """One live period against its truth period: ``compare`` plus the truth's identity, and
+    ``must_be_held`` when the truth says the period must not be in the ledger at all."""
+    entry = dict(compare(live, truth), family=truth['family'], truth_id=truth['id'], truth_status=truth['truth_status'])
+    if truth.get('expected') == 'hold' or truth['truth_status'] == 'incomplete':
+        entry['outcome'] = 'must_be_held'
+    return entry
+
+
 def _day_offsets(live_rows, truth_rows):
     """Live date minus printed date, in days, for rows paired by amount and direction (in order)."""
     from datetime import date
@@ -182,8 +193,7 @@ def audit(truth_dir, inventory, session):
         elif truth is None:
             entry = dict(outcome='no_truth_period', family=truths[doc]['family'])
         else:
-            entry = dict(compare(period, truth), family=truth['family'], truth_id=truth['id'],
-                         truth_status=truth['truth_status'])
+            entry = judge(period, truth)
         entry.update(doc=doc, live_period_id=period['period_id'], live_rows=len(period['rows']), case=period['case_id'],
                      live_rows_without_transaction_or_posted_date=sum(1 for r in period['rows'] if r[2] is None),
                      of_which_with_another_date=period.get('undated_with_other_date', 0))
@@ -225,7 +235,8 @@ def audit(truth_dir, inventory, session):
                    comparison_by_family={k: dict(v) for k, v in sorted(details.items())},
                    live_periods_per_truth_period=dict(Counter(Counter(e.get('truth_id') for e in detail
                                                                       if e.get('truth_id')).values())),
-                   disagreeing_examples=[e['truth_id'] for e in detail if e['outcome'] == 'disagrees'][:10])
+                   disagreeing_examples=[e['truth_id'] for e in detail if e['outcome'] == 'disagrees'][:10],
+                   must_be_held_examples=[e['truth_id'] for e in detail if e['outcome'] == 'must_be_held'][:10])
     return summary, detail
 
 

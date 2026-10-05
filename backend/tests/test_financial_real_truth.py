@@ -283,6 +283,11 @@ class UnprintedDateAndAuditTests(unittest.TestCase):
         wrong = dict(live, rows=[(800, 'debit', '2024-01-05'), (200, 'credit', '2024-01-09'), (7, 'debit', None)])
         result = audit.compare(wrong, truth)
         self.assertEqual((result['outcome'], result['missing_rows'], result['extra_rows']), ('disagrees', 1, 1))
+        held = dict(truth, id='d#2', family='f', truth_status='verified', expected='hold')
+        self.assertEqual(audit.judge(live, held)['outcome'], 'must_be_held')  # rows agree, but it must not be there
+        self.assertEqual(audit.judge(live, dict(held, truth_status='incomplete', expected='auto'))['outcome'],
+                         'must_be_held')
+        self.assertEqual(audit.judge(live, dict(held, expected='auto'))['outcome'], 'agrees')
 
 
 class InventoryTests(unittest.TestCase):

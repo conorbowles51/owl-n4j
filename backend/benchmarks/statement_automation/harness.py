@@ -48,6 +48,8 @@ from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 
+from benchmarks.statement_automation import real_compare
+
 HERE = Path(__file__).resolve().parent
 BACKEND = HERE.parents[1]
 REPO = BACKEND.parent
@@ -294,7 +296,7 @@ def simulate_correction(proposal, truth, assess, initial_request):
 # The run
 # ---------------------------------------------------------------------------
 
-def run(out, python, concurrency, corpus=CORPUS):
+def run(out, python, concurrency, corpus=CORPUS, compare=None):
     from sqlalchemy import select
     out.mkdir(parents=True, exist_ok=True)
     run_started = time.monotonic()
@@ -417,6 +419,7 @@ def run(out, python, concurrency, corpus=CORPUS):
 
     periods = []
     used = set()
+    views = {}  # item id -> what its proposal offers, for the per-statement comparison
     with factory() as db:
         for item in status['items']:
             filename = file_names.get(uuid.UUID(item['file_id'])) or item.get('filename')
@@ -444,6 +447,7 @@ def run(out, python, concurrency, corpus=CORPUS):
                                    institution=item.get('institution'), currency=item.get('currency'),
                                    period_start=item.get('period_start'), period_end=item.get('period_end'),
                                    transactions=item.get('transaction_count')))
+            views[item['id']] = real_compare.proposal_view(proposal) if proposal is not None else None
             if proposal is None:
                 entry['proposal_error'] = proposal_error
             elif truth:
@@ -500,6 +504,11 @@ def run(out, python, concurrency, corpus=CORPUS):
         ledger=ledger,
     )
     result['metrics'] = metrics(result)
+    compare = compare or _default_compare(manifest, corpus)
+    if compare:
+        result['compare'] = dict(directory=str(compare), **_compare_counts(real_compare.write(
+            compare, real_compare.build(periods, truths, manifest, views), corpus,
+            f'Run {out.name} at code {result["code"]["commit"][:10]}.')))
     (out / 'results.json').write_text(json.dumps(result, indent=1, default=str) + '\n')
     (out / 'summary.md').write_text(render_summary(result))
     engine.dispose()
@@ -560,7 +569,47 @@ def _rematch(periods, truths):
     return changed
 
 
-def rescore(out, corpus):
+def _default_compare(manifest, corpus):
+    """Real corpora write per-statement comparisons beside the truth (``<corpus>/../compare``)."""
+    return Path(corpus).resolve().parent / 'compare' if manifest.get('synthetic') is False else None
+
+
+def _compare_counts(summary):
+    return {k: summary[k] for k in ('statements_compared', 'statement_documents', 'periods_and_items',
+                                     'without_disagreement')}
+
+
+def rescore_views(out, periods):
+    """Proposals re-read from a finished run's database, opened read-only, keyed by item id."""
+    from sqlalchemy import create_engine, select
+    from sqlalchemy.orm import sessionmaker
+    from postgres.models.evidence import EvidenceFile
+    from postgres.models.financial_import_batches import FinancialImportBatchItem
+    from services.financial.statement_import import read_statement_import
+    engine = create_engine(f"sqlite+pysqlite:///file:{out / 'benchmark.db'}?mode=ro&uri=true", future=True)
+    factory = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+    views, caches, errors = {}, {}, Counter()
+    wanted = {p['item_id'] for p in periods if p.get('item_id')}
+    with factory() as db:
+        for item in db.scalars(select(FinancialImportBatchItem)):
+            if str(item.id) not in wanted:
+                continue
+            file = db.get(EvidenceFile, item.file_id)
+            summary = item.summary or {}
+            try:
+                proposal = read_statement_import(db, case_id=file.case_id, evidence_file_id=item.file_id,
+                    currency=summary.get('currency') or None, statement_id=item.statement_key or None,
+                    _cache=caches.setdefault(item.file_id, {}))
+                views[str(item.id)] = real_compare.proposal_view(proposal)
+            except Exception as error:  # recorded per item as proposal_not_read
+                views[str(item.id)] = None
+                errors[type(error).__name__] += 1
+            db.rollback()
+    engine.dispose()
+    return views, dict(errors)
+
+
+def rescore(out, corpus, compare=None):
     """Re-judge a finished run against the corpus manifest as it is now, using the run's own database.
 
     For truth corrections (a convention fixed, a period re-verified) without
@@ -596,6 +645,12 @@ def rescore(out, corpus):
     result['rescored'] = dict(at=datetime.now(timezone.utc).isoformat(timespec='seconds'), code=_git('rev-parse', 'HEAD'),
                               scored_truth=sorted(SCORED_TRUTH), rematched_items=rematched)
     result['metrics'] = metrics(result)
+    compare = compare or _default_compare(manifest, corpus)
+    if compare:
+        views, errors = rescore_views(out, result['periods'])
+        result['compare'] = dict(directory=str(compare), proposal_read_errors=errors, **_compare_counts(real_compare.write(
+            compare, real_compare.build(result['periods'], truths, manifest, views), corpus,
+            f'Rescore of {out.name} at code {result["rescored"]["code"][:10]}.')))
     (out / 'results-rescored.json').write_text(json.dumps(result, indent=1, default=str) + '\n')
     text = render_summary(result).replace('# Statement automation benchmark', '# Statement automation benchmark (rescored)', 1)
     text += ('\nRescored ' + result['rescored']['at'] + ' at code ' + result['rescored']['code'][:10] +
@@ -921,6 +976,8 @@ def main(argv=None):
                         help='Corpus directory with manifest.json (default: the committed corpus).')
     parser.add_argument('--rescore', action='store_true',
                         help='re-judge the finished run in --out against the current --corpus manifest (no re-reading)')
+    parser.add_argument('--compare', help='per-statement comparison directory (default for a real corpus: '
+                                          '<corpus>/../compare; none for the synthetic corpus)')
     parser.add_argument('--score', default='verified,incomplete',
                         help='comma-separated real truth statuses to score (default: verified,incomplete)')
     args = parser.parse_args(argv)
@@ -929,12 +986,12 @@ def main(argv=None):
     if args.rescore:
         if not args.out:
             parser.error('--rescore needs --out (the finished run directory)')
-        result = rescore(Path(args.out), Path(args.corpus))
+        result = rescore(Path(args.out), Path(args.corpus), Path(args.compare) if args.compare else None)
         print((Path(args.out) / 'summary-rescored.md').read_text())
         return 0 if not result['ledger']['wrongly_admitted'] else 1
     out = Path(args.out) if args.out else Path(os.environ.get('TMPDIR', '/tmp')) / (
         f"loupe-statement-benchmark-{os.environ.get('USER') or os.getuid()}-{datetime.now():%Y%m%d-%H%M%S}")
-    result = run(out, args.engine_python, args.concurrency, Path(args.corpus))
+    result = run(out, args.engine_python, args.concurrency, Path(args.corpus), Path(args.compare) if args.compare else None)
     print((out / 'summary.md').read_text())
     print(f'Full results: {out / "results.json"}')
     return 0 if not result['ledger']['wrongly_admitted'] else 1
