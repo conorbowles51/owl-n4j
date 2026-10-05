@@ -603,6 +603,30 @@ def _only_separator(text: str) -> Optional[str]:
 #: band rather than through a cluster.
 FULL_PAGE_IMAGE_COVERAGE = 0.8
 
+#: Fraction of a page's characters drawn invisibly (PDF text render mode 3)
+#: above which the text is treated as recognised whatever the image coverage.
+#: Text nobody can see was laid over a picture of the page by a recogniser:
+#: third-party OCR over a page cut into small image tiles covers a tenth of
+#: the page with images and would otherwise pass as written text. Decision
+#: (r1-reproduced): reverse by returning to the coverage rule alone.
+INVISIBLE_TEXT_SHARE = 0.5
+
+_INVISIBLE_RENDER_MODE = 3
+
+
+def _invisible_share(page) -> Optional[float]:
+    """Share of characters drawn invisibly, or ``None`` when not measurable."""
+    trace = getattr(page, "get_texttrace", None)
+    if trace is None:
+        return None
+    drawn = invisible = 0
+    for span in trace() or ():
+        count = len(span.get("chars") or ())
+        drawn += count
+        if span.get("type") == _INVISIBLE_RENDER_MODE:
+            invisible += count
+    return invisible / drawn if drawn else None
+
 
 def page_text_origin(page) -> TextOrigin:
     """Whether this page's text was written by a generator or read off an image.
@@ -612,7 +636,9 @@ def page_text_origin(page) -> TextOrigin:
     is: so it can be exercised without a PDF.
 
     A page covered by a raster that also carries text is a scan with a
-    recognised layer over it.  Any failure to measure returns
+    recognised layer over it.  So is a page whose text is mostly invisible
+    (render mode 3), whatever its image coverage: see
+    :data:`INVISIBLE_TEXT_SHARE`.  Any failure to measure returns
     :attr:`TextOrigin.unknown`, which is treated as fallible everywhere, so a
     page this cannot read costs caution rather than confidence.
 
@@ -626,6 +652,9 @@ def page_text_origin(page) -> TextOrigin:
         area = float(page.rect.width) * float(page.rect.height)
         if area <= 0:
             return TextOrigin.unknown
+        invisible = _invisible_share(page)
+        if invisible is not None and invisible > INVISIBLE_TEXT_SHARE:
+            return TextOrigin.recognised_glyphs
         covered = 0.0
         for image in page.get_images(full=True):
             for rectangle in page.get_image_rects(image[0]) or ():

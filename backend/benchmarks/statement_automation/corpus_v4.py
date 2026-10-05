@@ -966,6 +966,10 @@ def generic_v4_entries():
     add('three-pages', 'digital', ['multi_page'], per_page=[4, 4, 3])
     add('missing-page-2', 'digital', ['missing_page'], expected='hold', per_page=[4, 4, 3], drop=[2])
     add('missing-last-page', 'digital', ['missing_page'], expected='hold', per_page=[4, 4, 3], drop=[3])
+    # r1-reproduced: line-strip image tiles under an invisible OCR layer that
+    # misread one amount digit. The tiles cover a small share of the page, so
+    # only the invisible text shows that the characters were recognised.
+    add('tiled-ocr-amount-digit', 'tiled_text_layer', ['tiled_ocr_layer', 'ocr_amount_digit'], damage_cells={1})
 
     # Pesos on a generic labelled statement.
     mx_bank, mx_holder, mx_account = 'Banco Sintetico del Norte', 'Comercial Sintetica del Norte SA de CV', '77703456'

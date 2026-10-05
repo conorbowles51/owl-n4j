@@ -109,3 +109,35 @@ class LayoutContextTests(unittest.TestCase):
         self.assertIsNone(statement_layout_context(source,continuation_statement={'layout_id':'capital-one-card'}))
         source.append(dict(row_index=50,cells=[dict(column_index=0,expected_text='Visit capitalone.com to see detailed transactions.',locator={'kind':'page','page':3})]))
         self.assertIsNone(statement_layout_context(source))
+
+
+class PurchaseBeforeCycleTests(unittest.TestCase):
+    """A one-date card table lists a purchase made just before its cycle."""
+
+    def test_a_single_date_table_resolves_the_month_and_day_just_before_the_cycle(self):
+        source = LayoutContextTests().source()
+        source[8]['cells'][0]['expected_text'] = 'May 11'
+        row = statement_layout_context(source)['rows'][1]
+        self.assertEqual(row['date_proposals'], ['2020-05-11'])
+        self.assertEqual(row['date_basis'], 'printed_before_cycle')
+
+    def test_dates_further_back_or_after_the_cycle_stay_unresolved(self):
+        for text in ('Apr 10', 'Jun 12', 'Feb 30'):
+            with self.subTest(text=text):
+                source = LayoutContextTests().source()
+                source[8]['cells'][0]['expected_text'] = text
+                self.assertEqual(statement_layout_context(source)['rows'][1]['date_proposals'], [])
+
+    def test_a_year_boundary_names_the_previous_year(self):
+        from datetime import date
+        from services.financial.statement_layout_context import card_row_dates
+        _, dates, _, basis = card_row_dates('Dec 31', None, date(2021, 1, 1), date(2021, 1, 31))
+        self.assertEqual((dates, basis), (['2020-12-31'], 'printed_before_cycle'))
+
+    def test_a_table_with_a_posting_column_still_needs_that_posting_date(self):
+        from datetime import date
+        from services.financial.statement_layout_context import card_row_dates
+        start, end = date(2020, 5, 12), date(2020, 6, 11)
+        self.assertEqual(card_row_dates('May 11', '', start, end)[1], [])
+        self.assertEqual(card_row_dates('May 11', 'Jun 30', start, end)[1], [])
+        self.assertEqual(card_row_dates('May 11', 'May 13', start, end)[1:4:2], (['2020-05-11'], 'printed_posting_date'))

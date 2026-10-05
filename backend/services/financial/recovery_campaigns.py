@@ -65,8 +65,11 @@ READER_RECOVERY_FLAG = 'LOUPE_FINANCIAL_READER_RECOVERY'
 # verification (0f75eddc), the pinned generic repair (13d03dbe), the glyph
 # second reader (7bd84c16), scan preparation (41e64eca), the BBVA / Capital One
 # cell reread and the pinned Andrews reading (wave 5). Unknown or unrecorded
-# fingerprints are never swept. If a later change edits pdf_extraction.py, add
-# the digest of the current file (6d388613...) here.
+# fingerprints are never swept. r1-reproduced (revision v14) added the wave-5
+# file 6d388613: its readings called pages of small image tiles under an
+# invisible OCR layer born-digital, so their money cells were never
+# crop-verified. If a later change edits pdf_extraction.py, add the digest of
+# the current file here.
 AFFECTED_EXTRACTION_SHA256 = (
     '838372af7b656fa02f655aaa564582ff7ba15c5c17ff46020935ce3356152495',  # 7b0013fb
     '8f9e668367c9c3c9f577e1357cd8130952d9206742a653b6a0a42b1da1d62489',  # 14edbfec
@@ -85,6 +88,7 @@ AFFECTED_EXTRACTION_SHA256 = (
     'e6526e20f4c5f001281a019c2242a355340dd35fac4af1e361fe08d8c4b4ff5f',  # 7bd84c16
     '003d53a6ec546adf97032e01ac476e4dd1bada96073a1ee9efc3de987f4a44df',  # 41e64eca
     'f0afcaf91e36bfec1577d6d2ace6e693c421fb0b72055d5e55e41921bf87a835',  # cc9c6224 (c-image-fields)
+    '6d388613fcdb471890f68921103ad8db18f1a4db91bedc44049e9d28a394db1e',  # wave 5 (v13)
 )
 READER_RECOVERY = RecoveryCampaign(READER_RECOVERY_RELEASE, {'pdf_extraction.py': AFFECTED_EXTRACTION_SHA256},
     batch_reread=True)

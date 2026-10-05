@@ -78,6 +78,15 @@ def card_row_dates(text, posting_text, start, end):
             possible = _dates_within(text, posted - timedelta(days=31), min(start - timedelta(days=1), posted))[1]
             if possible:
                 basis = 'printed_posting_date'
+    elif posting_text is None and not possible:
+        # A table that prints one date column has no posting date to anchor
+        # an earlier purchase, yet the issuer lists it in this cycle's table
+        # and counts it in the printed totals. Its month and day name exactly
+        # one date in the 31 days before the cycle. The printed balances must
+        # still reconcile with it before the period can be imported.
+        possible = _dates_within(text, start - timedelta(days=31), start - timedelta(days=1))[1]
+        if possible:
+            basis = 'printed_before_cycle'
     return reading, possible, postings, basis
 
 

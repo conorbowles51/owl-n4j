@@ -14,6 +14,9 @@ Three render modes:
   text is an invisible OCR layer. Defects live in the OCR layer only; the image
   shows the true values, exactly as a scanned production with poor OCR does.
 * ``image_only``: the raster image with no text layer, forcing full-page OCR.
+* ``tiled_text_layer`` (r1-reproduced): the printed lines are small image
+  strips that cover a fraction of the page, under an invisible OCR layer; the
+  shape of a third-party OCR production that does not raster the whole page.
 
 Run ``python -m benchmarks.statement_automation.corpus --out DIR`` from
 ``backend/`` to regenerate. Output is byte-stable for a given PyMuPDF version;
@@ -138,6 +141,12 @@ def _degraded_scan(source, degrade, seed):
     return buffer.getvalue()
 
 
+def _line_strips(lines):
+    """One image strip per printed line, just tall enough for its text."""
+    import fitz
+    return [fitz.Rect(30, y - 2, PAGE_WIDTH - 30, y + FONT_SIZE + 3) for y, cells in lines if cells]
+
+
 def render(pages, mode, degrade=None, rules=None):
     """Return PDF bytes. ``pages`` is a list of line lists.
 
@@ -157,6 +166,13 @@ def render(pages, mode, degrade=None, rules=None):
         source = printed.new_page(width=PAGE_WIDTH, height=PAGE_HEIGHT)
         _draw(source, lines, use_ocr=False)
         _rule(source, segments)
+        if mode == 'tiled_text_layer':
+            for strip in _line_strips(lines):
+                pixmap = source.get_pixmap(dpi=SCAN_DPI, colorspace=fitz.csGRAY, alpha=False, clip=strip)
+                page.insert_image(strip, stream=pixmap.tobytes('png'))
+            printed.close()
+            _draw(page, lines, use_ocr=True, render_mode=3)
+            continue
         if degrade:
             page.insert_image(page.rect, stream=_degraded_scan(source, degrade, seed=number + 1))
         else:

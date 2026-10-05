@@ -73,6 +73,10 @@ class StatementOverlapTests(TestCase):
             payload = deepcopy(copied.payload)
             value = next(item for item in payload[0]['table']['values'] if item['row'] == 2 and item['column'] == 1)
             value['text'] = 'Revised source payment detail'
+            # A revised copy differs in its money, not only its wording: equal
+            # payments and balances would make it a duplicate of the original.
+            value = next(item for item in payload[0]['table']['values'] if item['row'] == 2 and item['column'] == 0)
+            value['text'] = '2023-03-19'
             copied.payload = payload
         f.db.commit()
         return file

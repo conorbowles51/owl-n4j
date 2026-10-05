@@ -103,6 +103,13 @@ def assess(proposal, request=None):
     if proposal.get('reading_failure'):
         can_import = False
         problems.append(dict(message=proposal['reading_failure'], row_id=None))
+    printed_copies = proposal.get('printed_copies')
+    if printed_copies and not printed_copies['identical'] and not (raw.get('coverage_review_reason') or '').strip():
+        # Never pick one printing silently when their money differs.
+        can_import = False
+        problems.append(dict(kind='printed_copies', row_id=None, message=(
+            'This statement period is printed more than once in this PDF and the printed copies read differently. '
+            'Compare the copies in the PDF before importing either.')))
     recovery = proposal.get('review_recovery')
     if recovery and recovery['required'] and not recovery['acknowledged']:
         problems.append(dict(message='Compare the earlier saved reviews for this file before importing. Saved corrections may belong to different statement periods in the new reading.', row_id=None))

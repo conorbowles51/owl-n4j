@@ -5437,6 +5437,74 @@
    "size": 9922
   },
   {
+   "filename": "generic-v4-2026-02-tiled-ocr-amount-digit.pdf",
+   "mode": "tiled_text_layer",
+   "pages": 1,
+   "periods": [
+    {
+     "account": "66602345",
+     "account_printed": true,
+     "added_in": "v4",
+     "closing_minor": 604370,
+     "currency": "USD",
+     "defects": [
+      "tiled_ocr_layer",
+      "ocr_amount_digit"
+     ],
+     "expected": "auto",
+     "family": "generic-labelled",
+     "holder": "Southwind Synthetic Holdings LLC",
+     "holder_printed": true,
+     "id": "generic-v4-2026-02-tiled-ocr-amount-digit.pdf#1",
+     "institution": "Lakeside Synthetic Bank",
+     "notes": "",
+     "opening_minor": 446755,
+     "period_end": "2026-02-28",
+     "period_start": "2026-02-01",
+     "rows": [
+      {
+       "amount_minor": 100000,
+       "balance_after": 546755,
+       "date": "2026-02-02",
+       "description": "Incoming transfer 02-0",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 7217,
+       "balance_after": 539538,
+       "date": "2026-02-07",
+       "description": "Card purchase hardware 02-1",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 21450,
+       "balance_after": 518088,
+       "date": "2026-02-12",
+       "description": "Insurance direct debit 02-2",
+       "direction": "debit"
+      },
+      {
+       "amount_minor": 164002,
+       "balance_after": 682090,
+       "date": "2026-02-17",
+       "description": "Client payment received 02-3",
+       "direction": "credit"
+      },
+      {
+       "amount_minor": 77720,
+       "balance_after": 604370,
+       "date": "2026-02-22",
+       "description": "Wire to contractor 02-4",
+       "direction": "debit"
+      }
+     ],
+     "start_printed": true
+    }
+   ],
+   "sha256": "d4cd08dd1d174d93fbf7f2a76ce16ca260664943c60f7862ce5fcb2746c0ff3b",
+   "size": 52291
+  },
+  {
    "filename": "generic-v4-mxn-2025-03-clean.pdf",
    "mode": "digital",
    "pages": 1,
