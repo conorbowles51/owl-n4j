@@ -274,6 +274,31 @@ class StatementOverlapTests(TestCase):
         raw['statement_id'] = 'b' * 64
         self.assertEqual(self.review(self.primary, raw)['candidates'], [])
 
+    def test_a_second_printed_statement_in_the_same_file_is_compared(self):
+        # One file printing two statements for the same account, holder and dates
+        # (one of them contradicting the other) must not admit either unseen.
+        batch = self.create(self.primary)
+        with self.f.SessionLocal() as db:
+            item = db.scalar(select(Item).where(Item.batch_id == batch))
+            item.statement_key = 'a' * 64
+            item.summary = {**item.summary, 'page_number': 23}
+            db.commit()
+        raw = self.f.request()
+        raw['statement_id'] = 'b' * 64
+        review = self.review(self.primary, {**raw, 'page_number': 1})  # the file's other statements start on page 1
+        self.assertEqual([c['page_number'] for c in review['candidates']], [23])
+        self.assertTrue(review['matching_statement'])
+        self.assertTrue(review['same_file_statement'])
+        self.assertTrue(overlap.duplicate_hold(review, raw))
+        # The same start page is the same printed statement read under a new key;
+        # an unknown start page keeps the earlier behaviour.
+        with self.f.SessionLocal() as db:
+            item = db.scalar(select(Item).where(Item.batch_id == batch))
+            item.summary = {**item.summary, 'page_number': 1}
+            db.commit()
+        self.assertEqual(self.review(self.primary, {**raw, 'page_number': 1})['candidates'], [])
+        self.assertEqual(self.review(self.primary, raw)['candidates'], [])
+
     def test_false_lineage_with_different_bytes_still_requires_comparison(self):
         self.create(self.primary)
         other = self.copy_file()

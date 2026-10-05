@@ -633,7 +633,10 @@ def _checked_batch_items(session, case_id, items, *, validate_reviews=False, rea
                 continue
             raw = {**(projected_request or prepared.get(item.id) or summary_request(summary)),
                 'statement_id': item.statement_key or None,
-                'account_type': summary.get('account_type', (prepared.get(item.id) or {}).get('account_type', ''))}
+                'account_type': summary.get('account_type', (prepared.get(item.id) or {}).get('account_type', '')),
+                # Where the statement starts in its file: a second printed statement
+                # for the same account and dates in the same file is compared.
+                'page_number': summary.get('page_number') or item.summary.get('page_number')}
             review = coverage_review(session, case_id=case_id, file_id=item.file_id, request=raw, sources=sources)
             problems = [p for p in summary.get('problems', []) if p.get('kind') not in ('coverage', 'coverage_load', 'readiness_pending')]
             extra_count = max(0, summary.get('problem_count', 0) - len(summary.get('problems', [])))
@@ -641,7 +644,9 @@ def _checked_batch_items(session, case_id, items, *, validate_reviews=False, rea
                 problems.append(dict(kind='coverage_load', row_id=None, message=raw['_coverage_error']))
             if requires_decision(review, raw):
                 problems.append(dict(kind='coverage', matching_statement=duplicate_hold(review, raw), row_id=None,
-                    message=('A separate file matches this bank, full account, holder, currency and statement period. Compare the existing statement before importing another copy.'
+                    message=('This file prints another statement for the same bank, full account, holder, currency and statement period on a different page. Compare the two before importing either.'
+                        if duplicate_hold(review, raw) and review.get('same_file_statement') else
+                        'A separate file matches this bank, full account, holder, currency and statement period. Compare the existing statement before importing another copy.'
                         if duplicate_hold(review, raw) else 'Another statement covers some of these dates. You can compare their payments now or after importing.')))
             if duplicate_hold(review, raw):
                 summary['can_import'] = False

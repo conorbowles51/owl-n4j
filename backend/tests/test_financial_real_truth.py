@@ -211,6 +211,7 @@ class HarnessRealCorpusTests(unittest.TestCase):
         self.assertTrue(harness._scored(dict(truth_status='verified')))
         self.assertFalse(harness._scored(dict(truth_status='ocr_reconciled')))
         self.assertFalse(harness._scored(dict(truth_status='unverified')))
+        self.assertTrue(harness._scored(dict(truth_status='incomplete')))  # must be held: admitting it is wrong
 
     def test_unmatched_admission_in_a_document_with_incomplete_truth_is_not_judged(self):
         class Query:
@@ -252,6 +253,48 @@ class HarnessRealCorpusTests(unittest.TestCase):
                                                                                    account='123456789 / Share 0000'))]
         self.assertEqual(harness._rematch(periods, truths), 2)
         self.assertEqual([p['truth_id'] for p in periods], ['d#2', 'd#1'])
+
+    def test_run_pairs_shares_by_the_share_printed_with_the_account(self):
+        def t(i, share):
+            return dict(id=f'd#{i}', period_end='2021-12-31', account='123456789', share=share, added_in='real',
+                        currency='USD', rows=[])
+        truths = [t(1, '0000'), t(2, '0040')]
+        proposal = dict(metadata=dict(holder_reference='>2000000000<', account_number='123456789'), rows=[],
+                        currency='USD')  # '0000' appears in the metadata, not as the share
+        summary = dict(period_end='2021-12-31', account='123456789 / Share 0040', currency='USD')
+        self.assertEqual(harness.pair_truth(proposal, truths, summary)['id'], 'd#2')
+        self.assertEqual(harness.pair_truth(proposal, truths, dict(summary, account='123456789 / Share 0000'))['id'],
+                         'd#1')
+
+    def test_closing_date_outranks_many_repeated_amounts(self):
+        def row(amount):
+            return dict(amount_minor=amount, direction='debit', date=None, description='x')
+        short = dict(id='d#1', period_end='2021-02-28', account='1', share=None, added_in='real', currency='USD',
+                     rows=[row(1059), row(500)])
+        long = dict(id='d#2', period_end='2022-07-31', account='1', share=None, added_in='real', currency='USD',
+                    rows=[row(1059)] * 12 + [row(777)])
+        proposal = dict(metadata={}, currency='USD', rows=[
+            dict(id=str(i), kind='transaction', excluded=False, fields=dict(amount_minor=a))
+            for i, a in enumerate(['1059', '500'])])
+        summary = dict(period_end='2021-02-28', account='1', currency='USD')
+        self.assertEqual(harness.pair_truth(proposal, [long, short], summary)['id'], 'd#1')
+        # Without a matching closing date, payments in common decide, each counted once.
+        self.assertEqual(harness.pair_truth(proposal, [long, short], dict(summary, period_end='2021-03-31'))['id'],
+                         'd#1')
+
+    def test_rescore_refreshes_not_detected_entries_for_the_current_truth(self):
+        def t(i):
+            return dict(id=f'd#{i}', filename='d.pdf', family='f', expected='auto', defects=[], truth_status='verified')
+        truths = {x['id']: x for x in (t(1), t(2), t(3))}
+        periods = [dict(item_id='a', filename='d.pdf', truth_id='d#1'),
+                   dict(item_id=None, filename='d.pdf', truth_id='d#1', status='not_detected'),  # now paired
+                   dict(item_id=None, filename='d.pdf', truth_id='d#2', status='not_detected'),  # still missing
+                   dict(item_id=None, filename='d.pdf', truth_id='d#9', status='not_detected')]  # gone
+        kept, added = harness._refresh_not_detected(periods, truths)
+        self.assertEqual(added, 1)
+        self.assertEqual([(p['item_id'], p['truth_id']) for p in kept],
+                         [('a', 'd#1'), (None, 'd#2'), (None, 'd#3')])
+        self.assertTrue(kept[-1]['scored'])
 
     def test_rows_pair_by_value_before_description(self):
         truth = [dict(description='SPEI ENVIADO A', amount_minor=100, direction='debit', date='2024-01-02'),
@@ -305,6 +348,11 @@ class UnprintedDateAndAuditTests(unittest.TestCase):
         wrong = dict(live, rows=[(800, 'debit', '2024-01-05'), (200, 'credit', '2024-01-09'), (7, 'debit', None)])
         result = audit.compare(wrong, truth)
         self.assertEqual((result['outcome'], result['missing_rows'], result['extra_rows']), ('disagrees', 1, 1))
+        held = dict(truth, id='d#2', family='f', truth_status='verified', expected='hold')
+        self.assertEqual(audit.judge(live, held)['outcome'], 'must_be_held')  # rows agree, but it must not be there
+        self.assertEqual(audit.judge(live, dict(held, truth_status='incomplete', expected='auto'))['outcome'],
+                         'must_be_held')
+        self.assertEqual(audit.judge(live, dict(held, expected='auto'))['outcome'], 'agrees')
 
 
 class InventoryTests(unittest.TestCase):

@@ -48,6 +48,8 @@ from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 
+from benchmarks.statement_automation import real_compare
+
 HERE = Path(__file__).resolve().parent
 BACKEND = HERE.parents[1]
 REPO = BACKEND.parent
@@ -189,24 +191,35 @@ def _match_rows(proposal_rows, truth_rows, by_value=False):
 
 
 def _score(proposal, truth, summary):
+    """``(identity, shared amounts, currency)``, compared in that order.
+
+    Identity (closing date, account, share as read) decides first; payments in
+    common only break ties, each proposed amount counted at most once. Counted
+    per truth row without that bound, a long statement of repeated recurring
+    charges outscored the period whose closing date and share matched, and
+    one wrong pick cascaded through the file."""
     score = 0
     if truth['period_end'] and summary.get('period_end') == truth['period_end']:
         score += 5
     if truth.get('added_in') == 'real' and truth.get('account') and truth['account'] in _digits(summary.get('account')):
         score += 5  # real documents hold sub-accounts with the same dates
-    if truth.get('share') and truth['share'] in json.dumps(proposal.get('metadata', {})):
-        score += 5
+    if truth.get('share'):
+        # A share number printed with the account ('... / Share 0040') decides between the shares of
+        # one member, which share dates and account: any other mention of the digits does not.
+        printed = re.search(r'(?:share|ID)\s*(\d{4})\b', summary.get('account') or '', re.I)
+        if printed:
+            score += 5 if printed.group(1) == truth['share'] else -5
+        elif truth['share'] in json.dumps(proposal.get('metadata', {})):
+            score += 5
     amounts = Counter(r['fields'].get('amount_minor') for r in _payment_rows(proposal))
-    for item in truth['rows']:
-        if amounts.get(str(item['amount_minor'])):
-            score += 1
+    shared = sum((Counter(str(item['amount_minor']) for item in truth['rows']) & amounts).values())
     # Currency only breaks ties. Two sections of one file can differ by
     # nothing else (Monex MXN and USD zero-activity sections); without it they
     # pair by item order, possibly crosswise. As a tie-breaker it can never
     # outweigh content evidence, so a misread currency still pairs by content
     # and is still reported as currency_wrong.
     currency = (summary.get('currency') or proposal.get('currency') or '').upper()
-    return score, int(bool(currency) and currency == (truth.get('currency') or '').upper())
+    return score, shared, int(bool(currency) and currency == (truth.get('currency') or '').upper())
 
 
 def pair_truth(proposal, candidates, summary):
@@ -307,7 +320,7 @@ def simulate_correction(proposal, truth, assess, initial_request):
 # The run
 # ---------------------------------------------------------------------------
 
-def run(out, python, concurrency, corpus=CORPUS, readings=None):
+def run(out, python, concurrency, corpus=CORPUS, readings=None, compare=None):
     from sqlalchemy import select
     out.mkdir(parents=True, exist_ok=True)
     run_started = time.monotonic()
@@ -430,6 +443,7 @@ def run(out, python, concurrency, corpus=CORPUS, readings=None):
 
     periods = []
     used = set()
+    views = {}  # item id -> what its proposal offers, for the per-statement comparison
     with factory() as db:
         for item in status['items']:
             filename = file_names.get(uuid.UUID(item['file_id'])) or item.get('filename')
@@ -457,6 +471,7 @@ def run(out, python, concurrency, corpus=CORPUS, readings=None):
                                    institution=item.get('institution'), currency=item.get('currency'),
                                    period_start=item.get('period_start'), period_end=item.get('period_end'),
                                    transactions=item.get('transaction_count')))
+            views[item['id']] = real_compare.proposal_view(proposal) if proposal is not None else None
             if proposal is None:
                 entry['proposal_error'] = proposal_error
             elif truth:
@@ -513,13 +528,20 @@ def run(out, python, concurrency, corpus=CORPUS, readings=None):
         ledger=ledger,
     )
     result['metrics'] = metrics(result)
+    compare = compare or _default_compare(manifest, corpus)
+    if compare:
+        result['compare'] = dict(directory=str(compare), **_compare_counts(real_compare.write(
+            compare, real_compare.build(periods, truths, manifest, views), corpus,
+            f'Run {out.name} at code {result["code"]["commit"][:10]}.')))
     (out / 'results.json').write_text(json.dumps(result, indent=1, default=str) + '\n')
     (out / 'summary.md').write_text(render_summary(result))
     engine.dispose()
     return result
 
 
-SCORED_TRUTH = {'verified'}  # ``--score`` adds e.g. ``ocr_reconciled`` for a secondary figure
+# ``incomplete``: printed pages are missing, so the period must be held; scoring it makes an
+# admission of it a wrong admission. ``--score`` adds e.g. ``ocr_reconciled`` for a secondary figure.
+SCORED_TRUTH = {'verified', 'incomplete'}
 
 
 def _scored(truth):
@@ -571,7 +593,66 @@ def _rematch(periods, truths):
     return changed
 
 
-def rescore(out, corpus):
+def _default_compare(manifest, corpus):
+    """Real corpora write per-statement comparisons beside the truth (``<corpus>/../compare``)."""
+    return Path(corpus).resolve().parent / 'compare' if manifest.get('synthetic') is False else None
+
+
+def _compare_counts(summary):
+    return {k: summary[k] for k in ('statements_compared', 'statement_documents', 'periods_and_items',
+                                     'without_disagreement')}
+
+
+def rescore_views(out, periods):
+    """Proposals re-read from a finished run's database, opened read-only, keyed by item id."""
+    from sqlalchemy import create_engine, select
+    from sqlalchemy.orm import sessionmaker
+    from postgres.models.evidence import EvidenceFile
+    from postgres.models.financial_import_batches import FinancialImportBatchItem
+    from services.financial.statement_import import read_statement_import
+    engine = create_engine(f"sqlite+pysqlite:///file:{out / 'benchmark.db'}?mode=ro&uri=true", future=True)
+    factory = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+    views, caches, errors = {}, {}, Counter()
+    wanted = {p['item_id'] for p in periods if p.get('item_id')}
+    with factory() as db:
+        for item in db.scalars(select(FinancialImportBatchItem)):
+            if str(item.id) not in wanted:
+                continue
+            file = db.get(EvidenceFile, item.file_id)
+            summary = item.summary or {}
+            try:
+                proposal = read_statement_import(db, case_id=file.case_id, evidence_file_id=item.file_id,
+                    currency=summary.get('currency') or None, statement_id=item.statement_key or None,
+                    _cache=caches.setdefault(item.file_id, {}))
+                views[str(item.id)] = real_compare.proposal_view(proposal)
+            except Exception as error:  # recorded per item as proposal_not_read
+                views[str(item.id)] = None
+                errors[type(error).__name__] += 1
+            db.rollback()
+    engine.dispose()
+    return views, dict(errors)
+
+
+def _refresh_not_detected(periods, truths):
+    """Not-detected entries for the truth as it is now: an entry for a truth period that no longer
+    exists, or that an item now pairs with, is dropped; a truth period no item pairs with (one
+    added or renumbered since the run) gets one. Returns ``(periods, added)``."""
+    paired = {p['truth_id'] for p in periods if p.get('item_id') and p.get('truth_id')}
+    kept = [p for p in periods if p.get('item_id') or (p.get('truth_id') in truths and p['truth_id'] not in paired)]
+    present = {p['truth_id'] for p in kept if p.get('truth_id')}
+    added = 0
+    for truth in truths.values():
+        if truth['id'] in present:
+            continue
+        kept.append(dict(item_id=None, filename=truth['filename'], statement_id=None, status='not_detected',
+                         scored=_scored(truth), can_import=False, truth_id=truth['id'], family=truth['family'],
+                         expected=truth['expected'], defects=truth['defects'], added_in=truth.get('added_in', 'v1-v3'),
+                         reasons={'not_detected': 1}, problems=[], read={}))
+        added += 1
+    return kept, added
+
+
+def rescore(out, corpus, compare=None):
     """Re-judge a finished run against the corpus manifest as it is now, using the run's own database.
 
     For truth corrections (a convention fixed, a period re-verified) without
@@ -588,6 +669,7 @@ def rescore(out, corpus):
     result = json.loads((out / 'results.json').read_text())
     truths = {p['id']: dict(p, filename=f['filename']) for f in manifest['files'] for p in f['periods']}
     rematched = _rematch(result['periods'], truths)
+    result['periods'], added_not_detected = _refresh_not_detected(result['periods'], truths)
     for period in result['periods']:
         truth = truths.get(period['truth_id']) if period['truth_id'] else None
         if truth is not None:
@@ -605,8 +687,15 @@ def rescore(out, corpus):
     engine.dispose()
     result['corpus'].update(periods=len(truths), path=str(corpus))
     result['rescored'] = dict(at=datetime.now(timezone.utc).isoformat(timespec='seconds'), code=_git('rev-parse', 'HEAD'),
-                              scored_truth=sorted(SCORED_TRUTH), rematched_items=rematched)
+                              scored_truth=sorted(SCORED_TRUTH), rematched_items=rematched,
+                              not_detected_refreshed=added_not_detected)
     result['metrics'] = metrics(result)
+    compare = compare or _default_compare(manifest, corpus)
+    if compare:
+        views, errors = rescore_views(out, result['periods'])
+        result['compare'] = dict(directory=str(compare), proposal_read_errors=errors, **_compare_counts(real_compare.write(
+            compare, real_compare.build(result['periods'], truths, manifest, views), corpus,
+            f'Rescore of {out.name} at code {result["rescored"]["code"][:10]}.')))
     (out / 'results-rescored.json').write_text(json.dumps(result, indent=1, default=str) + '\n')
     text = render_summary(result).replace('# Statement automation benchmark', '# Statement automation benchmark (rescored)', 1)
     text += ('\nRescored ' + result['rescored']['at'] + ' at code ' + result['rescored']['code'][:10] +
@@ -934,20 +1023,23 @@ def main(argv=None):
                         help='re-judge the finished run in --out against the current --corpus manifest (no re-reading)')
     parser.add_argument('--readings',
                         help='reuse this engine-readings.json instead of reading with the engine (backend-only changes)')
-    parser.add_argument('--score', default='verified',
-                        help='comma-separated real truth statuses to score (default: verified)')
+    parser.add_argument('--compare', help='per-statement comparison directory (default for a real corpus: '
+                                          '<corpus>/../compare; none for the synthetic corpus)')
+    parser.add_argument('--score', default='verified,incomplete',
+                        help='comma-separated real truth statuses to score (default: verified,incomplete)')
     args = parser.parse_args(argv)
     SCORED_TRUTH.clear()
     SCORED_TRUTH.update(s.strip() for s in args.score.split(',') if s.strip())
     if args.rescore:
         if not args.out:
             parser.error('--rescore needs --out (the finished run directory)')
-        result = rescore(Path(args.out), Path(args.corpus))
+        result = rescore(Path(args.out), Path(args.corpus), Path(args.compare) if args.compare else None)
         print((Path(args.out) / 'summary-rescored.md').read_text())
         return 0 if not result['ledger']['wrongly_admitted'] else 1
     out = Path(args.out) if args.out else Path(os.environ.get('TMPDIR', '/tmp')) / (
         f"loupe-statement-benchmark-{os.environ.get('USER') or os.getuid()}-{datetime.now():%Y%m%d-%H%M%S}")
-    result = run(out, args.engine_python, args.concurrency, Path(args.corpus), args.readings)
+    result = run(out, args.engine_python, args.concurrency, Path(args.corpus), args.readings,
+                 Path(args.compare) if args.compare else None)
     print((out / 'summary.md').read_text())
     print(f'Full results: {out / "results.json"}')
     return 0 if not result['ledger']['wrongly_admitted'] else 1

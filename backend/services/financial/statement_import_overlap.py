@@ -265,6 +265,7 @@ def coverage_review(session, *, case_id, file_id, request, sources=None):
         families = {str(v.id): root for root, versions in case_lineage(session, case_id).items() for v in versions}
     root = families.get(str(file.id), str(file.id))
     own_key = (root, request.get('statement_id') or '')
+    own_page = request.get('page_number')
     candidates = {}
     for other in sources.get((own['identity'], own['currency']), []):
         identifier = other['key']
@@ -274,22 +275,31 @@ def coverage_review(session, *, case_id, file_id, request, sources=None):
         # reference and exact printed period is still another copy of this
         # statement until its payments show otherwise, so it is held, not warned.
         exact = same_statement(own, other.get('scope')) or same_printed_period(own, other.get('scope'))
-        # Reader upgrades can change section keys. A verified internal version
-        # of this exact account/period is still the same source, not another PDF.
+        same_file = False
         if identifier[0] == own_key[0] and exact:
-            continue
+            # Reader upgrades can change section keys. A verified internal version
+            # of this exact account/period is still the same source, not another PDF.
+            # A statement of the file's current reading that starts on another
+            # printed page is not that: the file prints a second statement for
+            # the same account and dates (a reprint, or a copy whose balances
+            # and payments contradict the first), and the two must be compared.
+            if not (other['status'] == 'awaiting_import' and own_page and other.get('page_number')
+                    and int(other['page_number']) != int(own_page)):
+                continue
+            same_file = True
         if own['start'] > other['period_end'] or other['period_start'] > own['end']:
             continue
         # Prefer the imported record if the same source is in another batch.
         if identifier not in candidates or other['status'] == 'imported':
             candidates[identifier] = {**{k: v for k, v in other.items() if k not in ('key', 'scope')},
-                'matching_statement': exact}
+                'matching_statement': exact, 'same_file_statement': same_file}
     ordered = sorted(candidates.items())
     revision = _digest(dict(version='statement-coverage-review-v1', scope=own,
         reading=request.get('expected_revision'), candidates=[dict(key=k, start=v['period_start'], end=v['period_end'],
             matching_statement=v['matching_statement']) for k,v in ordered]))
     return dict(available=True, revision=revision, candidates=[v for _,v in ordered],
-                matching_statement=any(v['matching_statement'] for _, v in ordered))
+                matching_statement=any(v['matching_statement'] for _, v in ordered),
+                same_file_statement=any(v['same_file_statement'] for _, v in ordered))
 
 
 def duplicate_hold(review, request):

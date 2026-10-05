@@ -1733,14 +1733,17 @@ def ocr_layer_pages(path):
 
 
 def mark_duplicates(results):
-    """The same printed period (issuer, account, dates, balances) read from two documents."""
+    """The same printed period (issuer, account and share, dates, balances) read from two documents.
+
+    The share is part of the key: two shares of one member with no activity
+    and equal balances (often 0.00) are different printed periods."""
     seen = {}
     for result in sorted(results, key=lambda r: r['id']):
         for period in result.get('periods', []):
             if period['truth_status'] not in ('verified', 'ocr_reconciled'):
                 continue
-            key = (period['family'], period['account'], period['period_start'], period['period_end'],
-                   period['opening_minor'], period['closing_minor'], len(period['rows']))
+            key = (period['family'], period['account'], period.get('share'), period['period_start'],
+                   period['period_end'], period['opening_minor'], period['closing_minor'], len(period['rows']))
             if key in seen:
                 period['duplicate_of'] = seen[key]
                 period['expected'] = 'duplicate'
@@ -1780,7 +1783,7 @@ def write_outputs(out, results, docs_dir):
         # truth_complete: every statement the document holds was found and verified, so a
         # batch item matching none of them is wrong rather than a gap in the truth.
         files.append(dict(filename=name, sha256=result['sha256'], size=(Path(docs_dir) / name).stat().st_size,
-                          pages=result['pages'], mode=result['mode'], truth_complete=result['status'] == 'verified',
+                          pages=result['pages'], mode=result['mode'], truth_complete=result['status'] == 'verified' or bool(result.get('statements_complete')),
                           periods=[manifest_period(p) for p in periods]))
     manifest = dict(version='real-tier-a', synthetic=False, files=files)
     (out / 'manifest.json').write_text(json.dumps(manifest, indent=1, sort_keys=True) + '\n')
@@ -1811,16 +1814,25 @@ def _chunks(docs, size, pages):
         yield chunk
 
 
-def visual_queue(results, size=SHARD_SIZE):
+def visual_queue(results, size=SHARD_SIZE, previous=None):
     """Documents whose truth still needs a person reading rendered pages, in shards by family.
 
     ``work`` per document: ``read`` (no usable text, no parser, or periods that
     did not reconcile) and/or ``confirm`` (periods reconciled from an OCR
     layer: the values are known and need visual confirmation).
+
+    With ``previous`` (the queue as last written) shard numbers stay stable,
+    because units are assigned by shard: a document whose reviewed visual
+    reading is complete is marked ``done`` in its shard, a shard whose
+    documents are all done is marked ``done``, and only documents that were
+    in no shard yet are sharded afresh, numbered after the existing shards.
     """
+    reviewed = {r['id'] for r in results if r.get('truth_source') == 'visual'}
+    if previous is not None:
+        return _requeue(results, previous, reviewed, size)
     entries = []
     for r in sorted(results, key=lambda r: r['id']):
-        if r['status'] not in VISUAL:
+        if r['status'] not in VISUAL or r['id'] in reviewed:
             continue
         periods = r.get('periods') or []
         pending = [dict(id=p['id'], status=p['truth_status'], reasons=p['truth_reasons'][:4])
@@ -1848,6 +1860,21 @@ def visual_queue(results, size=SHARD_SIZE):
                      pages=sum(d['pages'] or 0 for d in shard['documents']),
                      work=dict(Counter(w for d in shard['documents'] for w in d['work'])))
     return dict(shard_size=size, documents=len(entries), shards=shards)
+
+
+def _requeue(results, previous, reviewed, size):
+    shards = [dict(shard) for shard in previous['shards']]
+    queued = set()
+    for shard in shards:
+        shard['documents'] = [dict(d, done=d['id'] in reviewed) for d in shard['documents']]
+        shard['done'] = all(d['done'] for d in shard['documents'])
+        queued |= {d['id'] for d in shard['documents']}
+    fresh = visual_queue([r for r in results if r['id'] not in queued], size)
+    for number, shard in enumerate(fresh['shards'], len(shards) + 1):
+        shards.append(dict(shard, shard=f'v{number:02d}', done=False,
+                           documents=[dict(d, done=False) for d in shard['documents']]))
+    return dict(shard_size=size, documents=sum(len(s['documents']) for s in shards), shards=shards,
+                done=sum(d['done'] for s in shards for d in s['documents']))
 
 
 def summarise(status):
@@ -1883,7 +1910,10 @@ def main(argv=None):
     parser.add_argument('--jobs', type=int, default=2)
     parser.add_argument('--cache', type=Path, help='private pdfplumber word cache directory')
     parser.add_argument('--only', help='comma-separated document ids (others reuse periods/<id>.json)')
+    parser.add_argument('--visual', type=Path, help='reviewed visual readings (default: <out>/visual; real_visual.py)')
     args = parser.parse_args(argv)
+    from .real_visual import apply_visual, load_visual
+    visual_dir = args.visual or args.out / 'visual'
     inventory = json.loads(args.inventory.read_text())
     docs_dir = args.docs or args.inventory.parent / 'docs'
     only = set(args.only.split(',')) if args.only else None
@@ -1900,18 +1930,21 @@ def main(argv=None):
             results.append(result)
             if count % 25 == 0:
                 print(f'{count}/{len(todo)} documents read', flush=True)
+    # A person's reading of the rendered pages replaces the text-layer reading of the same document.
+    results = [apply_visual(result, load_visual(visual_dir, result['id'])) for result in results]
     for result in results:  # recomputed every run, since it depends on all documents
         for period in result.get('periods', []):
             period.pop('duplicate_of', None)
-            period['expected'] = expected_outcome(Period(**{k: period[k] for k in Period.__dataclass_fields__}),
-                                                  period['truth_status'])
+            period['expected'] = period.get('expected_override') or expected_outcome(
+                Period(**{k: period[k] for k in Period.__dataclass_fields__}), period['truth_status'])
     mark_duplicates(results)
     _, status = write_outputs(args.out, results, docs_dir)
-    queue = visual_queue(results)
+    previous = args.out / 'visual-queue.json'
+    queue = visual_queue(results, previous=json.loads(previous.read_text()) if previous.exists() else None)
     (args.out / 'visual-queue.json').write_text(json.dumps(queue, indent=1) + '\n')
-    print('Visual queue: ' + json.dumps(dict(documents=queue['documents'], shards=[
-        dict(shard=s['shard'], families=s['families'], count=s['count'], pages=s['pages'], work=s['work'])
-        for s in queue['shards']])))
+    print('Visual queue: ' + json.dumps(dict(documents=queue['documents'], done=queue.get('done', 0), shards=[
+        dict(shard=s['shard'], families=s['families'], count=s['count'], pages=s['pages'], work=s['work'],
+             done=s.get('done', False)) for s in queue['shards']])))
     print(json.dumps(summarise(status), indent=1))
     print('Truth written.')
 
