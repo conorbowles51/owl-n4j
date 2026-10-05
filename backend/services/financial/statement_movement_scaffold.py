@@ -1,10 +1,11 @@
-"""Switch for the unvalidated Scotiabank and Monex movement-table readers.
+"""Switch for the unvalidated Scotiabank movement-table reader.
 
-Both readers were written against layouts the benchmark corpus invented
-(modelled on the zero-activity readers, not on a real statement with
-movements). They are scaffolds: off unless explicitly switched on, so the
-existing fail-closed behaviour (a movement table refuses the statement) stays
-in force everywhere by default. Even when on, a section is admitted only when
+The reader was written against a layout the benchmark corpus invented
+(modelled on the zero-activity reader, not on a real statement with
+movements). The Monex reader no longer uses this switch: it was fitted to
+real Monex productions (statement_import_monex). It is a scaffold: off
+unless explicitly switched on, so the existing fail-closed behaviour (a
+movement table refuses the statement) stays in force by default. Even when on, a section is admitted only when
 its rows close against every printed control: opening and closing balance,
 printed credit and debit totals and the running balance on each row.
 Switch on only after the layout has been checked against a real statement.

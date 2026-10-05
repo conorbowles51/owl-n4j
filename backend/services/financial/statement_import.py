@@ -245,7 +245,7 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
         metadata.update(account_type=selected.get('account_type', 'credit_card'), institution=selected['institution'], account_number=selected['account_reference'],
                         period_start=selected['period_start'], period_end=selected['period_end'],
                         period=(selected['period_start'] + ' - ' + selected['period_end']) if selected['period_start'] else selected.get('printed_statement_date') or selected.get('printed_closing_date', ''))
-        if selected.get('layout_id') in ('capital-one-card', 'merrick-card', 'credit-one-card'):
+        if selected.get('layout_id') in ('capital-one-card', 'merrick-card', 'credit-one-card', 'citi-card'):
             metadata['balance_convention'] = 'liability_owed'
         if selected.get('layout_id') in ('bbva-mexico-cash-management', 'scotiabank-mexico-zero-activity', 'scotiabank-mexico-movements', 'monex-mexico-currency-summary', 'kapital-mexico-product-statement', 'intercam-mexico-product-statement', 'santander-mexico-movements'):
             metadata['balance_convention'] = 'asset_balance'
@@ -423,6 +423,13 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
         rows.extend(proposed)
         no_activity_evidence = kapital_no_activity_evidence(sources, selected, proposed, chosen_currency)
         _check_review_size(rows)
+    if selected and selected.get('layout_id') == 'citi-card':
+        from services.financial.statement_import_citi import propose_citi_statement, citi_no_activity_evidence
+        proposed = propose_citi_statement(sources, chosen_currency, selected)['rows']
+        rows.extend(proposed)
+        # Every Account Summary movement printed as zero proves a quiet cycle.
+        no_activity_evidence = citi_no_activity_evidence(sources, selected, proposed, chosen_currency)
+        _check_review_size(rows)
     if selected and selected.get('layout_id') == 'santander-mexico-movements':
         from services.financial.statement_import_santander import propose_santander_statement, santander_no_activity_evidence
         proposed = propose_santander_statement(sources, chosen_currency, selected)['rows']
@@ -431,7 +438,7 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
         # proof is bound to the cited rows and checked again at admission.
         no_activity_evidence = santander_no_activity_evidence(sources, selected, proposed, chosen_currency)
         _check_review_size(rows)
-    for source in ([] if selected and selected.get('layout_id') in ('andrews-share-statement', 'bbva-mexico-cash-management', 'scotiabank-mexico-zero-activity', 'scotiabank-mexico-movements', 'monex-mexico-currency-summary', 'kapital-mexico-product-statement', 'intercam-mexico-product-statement', 'santander-mexico-movements') else sources):
+    for source in ([] if selected and selected.get('layout_id') in ('andrews-share-statement', 'bbva-mexico-cash-management', 'scotiabank-mexico-zero-activity', 'scotiabank-mexico-movements', 'monex-mexico-currency-summary', 'kapital-mexico-product-statement', 'intercam-mexico-product-statement', 'santander-mexico-movements', 'citi-card') else sources):
         try:
             if selected and selected.get('layout_id') == 'credit-one-card':
                 from services.financial.statement_import_credit_one import propose_credit_one_table

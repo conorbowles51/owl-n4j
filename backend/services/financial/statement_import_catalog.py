@@ -88,6 +88,9 @@ def statement_catalog(sources):
     from services.financial.statement_import_scotiabank import scotiabank_catalog
     scotiabank, scotiabank_handled = scotiabank_catalog(sources)
     groups.update({statement['id']: statement for statement in scotiabank})
+    from services.financial.statement_import_citi import citi_catalog
+    citi, citi_handled = citi_catalog(sources)
+    groups.update({statement['id']: statement for statement in citi})
     from services.financial.statement_import_monex import monex_catalog
     monex, monex_handled = monex_catalog(sources)
     groups.update({statement['id']: statement for statement in monex})
@@ -107,7 +110,7 @@ def statement_catalog(sources):
     capital_printings = _capital_printings(sources, capital_pages)
     for source in sources:
         address = (source['page_number'], source['table_index'])
-        if address in credit_one_handled or address in bbva_handled or address in scotiabank_handled or address in monex_handled or address in kapital_handled or address in intercam_handled or address in santander_handled:
+        if address in citi_handled or address in credit_one_handled or address in bbva_handled or address in scotiabank_handled or address in monex_handled or address in kapital_handled or address in intercam_handled or address in santander_handled:
             continue
         if address in handled:
             if address in incomplete:

@@ -7,7 +7,8 @@ rates are an upper bound. v4 appends, without touching any earlier file:
   Capital One, BBVA Mexico, Scotiabank Mexico, Monex, Kapital, Intercam,
   Santander Mexico, and Andrews teller deposit receipts (not statements);
 * the same institutions printing what their readers do not handle
-  (Scotiabank and Monex statements with movements);
+  (Scotiabank statements with movements; the Monex files were regenerated in
+  real wave 1 from the structure of real Monex productions);
 * MXN, credit balances on cards, overdrawn bank balances;
 * ruled (drawn-grid) digital PDFs;
 * statements with a missing page, which must be held;
@@ -17,9 +18,9 @@ Every layout is modelled on the printed labels and positions that the
 readers in ``backend/services/financial`` and their synthetic tests expect.
 Every name, account number, CLABE, RFC and amount is invented; nothing is
 copied from a case. Where an institution prints something no reader handles
-(a Scotiabank or Monex movements table), the layout is a plausible invention
-and is labelled ``layout_not_supported`` in its defects: it measures the
-gap, not a regression.
+(a Scotiabank movements table), the layout is a plausible invention and is
+labelled ``layout_not_supported`` in its defects: it measures the gap, not a
+regression.
 
 Expected outcomes follow the corpus convention: ``auto`` when the source
 alone establishes every fact, ``decision`` when a person must supply a fact
@@ -493,67 +494,128 @@ def scotiabank_entries():
 
 
 # ---------------------------------------------------------------------------
-# Monex (statement_import_monex): one contract, a summary page per currency.
-# The reader handles balance-only (zero-activity) sections; a section with
-# movements has no reader.
+# Monex (statement_import_monex): one contract, one section per currency.
+# Structure taken from real Monex productions (2021+ layout), scaled to the
+# corpus page: a cover; a peso summary ("Resumen Divisas Peso Mexicano al ...")
+# listing the other currencies; the peso movement table on the next page,
+# bounded by printed "Saldo inicial:" / "Saldo final:" lines, each movement a
+# dated line with six amounts and its description centred on it; one
+# "Resumen cuenta" page per other currency; then routing, notice and security
+# pages. Every name, number and amount is invented.
 # ---------------------------------------------------------------------------
 
 MONEX_HOLDER = 'IMPORTADORA EJEMPLO SA DE CV'
 _MONEX_MONTHS = ('Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre',
                  'Octubre', 'Noviembre', 'Diciembre')
+# Right edges of credit, debit, guarantee movement, guarantee balance,
+# available balance and total balance.
+_MONEX_MONEY = (275, 335, 400, 457, 516, 573)
+
+
+def _monex_furniture(contract, number, count):
+    return [(20, [L(470, 'Estado de Cuenta | Banco')]), (28, [L(500, f'CONTRATO: {contract}')])], \
+           [(770, [R(573, f'Hoja {number} de {count}')])]
+
+
+def _monex_amounts(values):
+    return [R(right, value) for right, value in zip(_MONEX_MONEY, values)]
 
 
 def monex_pages(*, contract, start, end, sections):
-    """``sections`` is a list of (currency label, opening, rows)."""
-    count = 1 + len(sections) + 3 + sum(1 for _, _, rows in sections if rows)
-    cover = _lines(20, 20, [
-        [L(20, 'Monex'), L(300, 'Estado de Cuenta')],
-        [L(300, MONEX_HOLDER)], [L(300, 'CALLE EJEMPLO 300')], [L(300, 'C.P.'), L(420, '06000')],
-        [L(300, 'TIPO DE CONTRATO:'), L(420, 'PERSONA MORAL')],
-        [L(300, 'CONTRATO:'), L(420, contract)],
-        [L(300, 'CTA. CLABE:'), L(420, '112180000012345678')],
-        [L(300, 'RFC TITULAR:'), L(420, 'IEJ010101AB1')],
-        [L(300, 'PERIODO:'), L(420, f'Del {start.day} {_MONEX_MONTHS[start.month - 1]} {start.year} '
-                                     f'al {end.day} {_MONEX_MONTHS[end.month - 1]} {end.year}')]])
+    """``sections`` is a list of (currency label, opening, rows); the first is pesos."""
+    count = 2 + len(sections) + (1 if sections[0][2] else 0) + 2
+    as_of = f'al {end.day} {_MONEX_MONTHS[end.month - 1]} {end.year}'
+    clabe = f'112180{int(contract):011d}9'
+    cover = _lines(60, 14, [
+        [L(370, 'Estado de Cuenta')], [L(370, 'Banco')],
+        [L(60, 'Estimado Cliente, en Monex le ofrecemos')], [L(60, 'herramientas digitales de ejemplo.')]]) + _lines(230, 9, [
+        [L(370, MONEX_HOLDER)], [L(370, 'CALLE EJEMPLO 300 COLONIA EJEMPLO')], [L(370, 'CIUDAD DE MEXICO MEXICO')],
+        [L(370, 'C.P.'), L(450, '06000')]]) + _lines(290, 13, [
+        [L(370, 'FOLIO:'), L(450, 'D-0000000')],
+        [L(370, 'TIPO DE CONTRATO:'), L(450, 'SERVICIOS BANCARIOS PERSONA MORAL')],
+        [L(370, 'CLIENTE No.'), L(450, '1234567')],
+        [L(370, 'CONTRATO:'), L(450, contract)],
+        [L(370, 'CTA. CLABE:'), L(450, clabe)],
+        [L(370, 'RFC TITULAR:'), L(450, 'IEJ010101AB1')],
+        [L(370, 'PERIODO:'), L(450, f'Del {start.day} {_MONEX_MONTHS[start.month - 1]} {start.year} '
+                                     f'al {end.day} {_MONEX_MONTHS[end.month - 1].lower()} {end.year}')]])
     pages = [cover]
-    closings = []
-    number = 2
-    for label, opening, rows in sections:
+    closings, number = [], 2
+    for index, (label, opening, rows) in enumerate(sections):
         credits = sum(r['amount_minor'] for r in rows if r['direction'] == 'credit')
         debits = sum(r['amount_minor'] for r in rows if r['direction'] == 'debit')
         closing = opening + credits - debits
         closings.append(closing)
-        page = _lines(20, 20, [
-            [L(20, 'MONEX'), L(400, f'CONTRATO: {contract}')], [L(20, 'Resumen Cuenta')], [L(20, label)],
-            [L(20, 'Saldo inicial:'), L(200, money(opening))],
-            [L(20, '+ Total abonos:'), L(200, money(credits))],
-            [L(20, '- Total cargos:'), L(200, money(debits))],
-            [L(20, 'Saldo vista:'), L(200, money(closing))],
-            [L(20, 'Saldo promedio:'), L(200, money(opening))]])
-        page.append((700, [L(440, f'Hoja {number} de {count}')]))
-        pages.append(page)
-        number += 1
-        if rows:
-            balance = opening
-            table = [[L(20, 'MONEX'), L(400, f'CONTRATO: {contract}')], [L(20, f'Movimientos {label}')],
-                     [L(20, 'Fecha'), L(80, 'Concepto'), R(420, 'Abonos'), R(490, 'Cargos'), R(560, 'Saldo')]]
-            for item in rows:
-                balance += item['amount_minor'] if item['direction'] == 'credit' else -item['amount_minor']
-                item['balance_after'] = balance
-                value = date.fromisoformat(item['date'])
-                table.append([L(20, f'{value:%d/%m/%Y}'), L(80, item['description']),
-                              R(420 if item['direction'] == 'credit' else 490, money(item['amount_minor'])),
-                              R(560, money(balance))])
-            page = _lines(20, 20, table)
-            page.append((700, [L(440, f'Hoja {number} de {count}')]))
-            pages.append(page)
+        head, foot = _monex_furniture(contract, number, count)
+        if index == 0:
+            listed = [[L(22, other.lower()), R(152, money(o)), R(200, money(0)), R(258, money(0)), R(330, money(o))]
+                      for other, o, _ in sections[1:]]
+            body = _lines(52, 13, [
+                [L(22, 'Cuenta'), L(355, 'Resumen Cuenta')],
+                [L(22, 'Resumen Divisas'), L(355, label), L(500, as_of)],
+                [L(22, 'Divisa'), L(80, 'Saldo inicial'), L(355, 'Saldo inicial:'), R(590, money(opening))]]
+                + [cells + ([L(357, '+ Total abonos:'), R(590, money(credits))] if n == 0 else []) for n, cells in enumerate(listed)]
+                + ([] if listed else [[L(357, '+ Total abonos:'), R(590, money(credits))]])
+                + [[L(357, '- Total cargos:'), R(590, money(debits))],
+                   [L(355, 'Saldo vista:'), R(590, money(closing))],
+                   [L(22, 'Saldo promedio (Intereses):'), R(200, money(opening))],
+                   [L(355, 'Saldo total:'), R(590, money(closing))]])
+            footer = _lines(700, 9, [[L(300, 'Banco Monex, S. A. Institucion de Banca Multiple,')],
+                                     [L(300, 'Monex Grupo Financiero R.F.C. EJE000000AA0')]])
+            pages.append(head + body + footer + foot)
+            number += 1
+            if rows:
+                head, foot = _monex_furniture(contract, number, count)
+                pages.append(head + _lines(50, 12, [[L(22, f'Movimientos de {_MONEX_MONTHS[end.month - 1].lower()}')]])
+                             + _monex_table(opening, rows, 70) + foot)
+                number += 1
+        else:
+            body = _lines(45, 13, [
+                [L(22, 'Cuenta Vista')], [L(22, 'Resumen cuenta')], [L(22, label.lower()), L(130, as_of)],
+                [L(22, 'Saldo inicial:'), R(185, money(opening))],
+                [L(22, '+ Total abonos:'), R(185, money(credits))],
+                [L(22, '- Total cargos:'), R(185, money(debits))],
+                [L(22, 'Saldo vista:'), R(185, money(closing))],
+                [L(22, 'Saldo total:'), R(185, money(closing))]])
+            pages.append(head + body + (_lines(170, 12, [[L(22, 'Movimientos')]]) + _monex_table(opening, rows, 190)
+                                        if rows else []) + foot)
             number += 1
     for label in ('Referencias bancarias', 'Estimado cliente:', 'Aviso de seguridad de la informacion'):
-        pages.append(_lines(20, 20, [[L(20, 'MONEX'), L(400, f'CONTRATO: {contract}')], [L(20, label)],
-                                     [L(20, 'Instrucciones de deposito USD EUR GBP MXN')]])
-                     + [(700, [L(440, f'Hoja {number} de {count}')])])
+        head, foot = _monex_furniture(contract, number, count)
+        pages.append(head + _lines(50, 12, [[L(22, label)], [L(22, 'Instrucciones de deposito USD EUR GBP MXN')]]) + foot)
         number += 1
     return pages, closings
+
+
+def _monex_table(opening, rows, y):
+    """A movement table: heading, printed opening, centred descriptions, printed closing."""
+    lines = _lines(y, 9, [
+        [R(400, 'Movimiento'), R(457, 'Saldo en'), R(516, 'Saldo'), R(573, 'Saldo')],
+        [L(22, 'Fecha'), L(71, 'Descripcion'), L(172, 'Referencia'), L(252, 'Abonos'), L(313, 'Cargos')],
+        [R(400, 'garantia'), R(457, 'garantia'), R(516, 'disponible'), R(573, 'total')],
+        [L(360, 'Saldo inicial:'), R(457, money(0)), R(516, money(opening)), R(573, money(opening))]])
+    y += 52
+    balance = opening
+    # A dated line without money (interest net of its tax), as Monex prints it.
+    lines += _lines(y, 9, [[L(71, 'Deposito de intereses por saldo')],
+                           [L(22, f"{rows[0]['date'][8:10]}/{_MONEX_MONTHS[int(rows[0]['date'][5:7]) - 1][:3]}"),
+                            L(71, 'del periodo anterior'), L(172, '0'), *_monex_amounts([money(0)] * 4 + [money(balance)] * 2)],
+                           [L(71, 'Intereses $0.00')]])
+    y += 34
+    for n, item in enumerate(rows):
+        balance += item['amount_minor'] if item['direction'] == 'credit' else -item['amount_minor']
+        item['balance_after'] = balance
+        value = date.fromisoformat(item['date'])
+        amounts = ([money(item['amount_minor']), money(0)] if item['direction'] == 'credit'
+                   else [money(0), money(item['amount_minor'])]) + [money(0), money(0), money(balance), money(balance)]
+        lines += _lines(y, 9, [
+            [L(71, 'Deposito Emisor: BANCO EJEMPLO' if item['direction'] == 'credit' else 'RETIRO Nombre Receptor:')],
+            [L(22, f'{value.day:02d}/{_MONEX_MONTHS[value.month - 1][:3]}'), L(71, item['description']),
+             L(172, f'{60000000 + 1111 * (n + 1)}'), *_monex_amounts(amounts)],
+            [L(71, f'Referencia Numerica:{n + 1}')]])
+        y += 34
+    lines.append((y, [L(360, 'Saldo final:'), R(457, money(0)), R(516, money(balance)), R(573, money(balance))]))
+    return lines
 
 
 def monex_entries():
@@ -579,8 +641,8 @@ def monex_entries():
     pages, closings = monex_pages(contract=contract, start=start, end=end,
                                   sections=[('Peso Mexicano', 3_214_550, rows), ('Dolar Americano', 7_900, [])])
     entries.append(dict(filename='monex-2024-04-peso-movements.pdf', mode='digital', pages=pages,
-        periods=[period(start, end, 3_214_550, rows, closings[0], 'MXN', 'auto', ['layout_not_supported'],
-                        'currency section Peso Mexicano'),
+        periods=[period(start, end, 3_214_550, rows, closings[0], 'MXN', 'auto', [],
+                        'currency section Peso Mexicano, movement table fitted to the real layout'),
                  period(start, end, 7_900, [], closings[1], 'USD', 'auto', ['no_activity_source_proven'],
                         'currency section Dolar Americano')]))
     return entries

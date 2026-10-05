@@ -187,20 +187,30 @@ class MonexNoActivityTests(TestCase):
                 self.assertEqual(result['no_activity_basis'], 'printed_zero_totals')
         self.assertEqual(sources, before)
 
-    def test_nonzero_total_or_dated_line_on_the_summary_stays_held(self):
+    def test_nonzero_total_or_unequal_endpoints_stay_held(self):
         choice = currencies_by_statement(monex_catalog(monex.statement())[0], monex.statement())[0]
-        s = monex.statement(); s[1]['rows'][4]['cells'][-1]['expected_text'] = '12.00'
-        self.assertEqual(monex_quiet(s, choice=choice)[2]['reason'], 'totals_not_zero')
-        s = monex.statement(); s[1]['rows'][6]['cells'][-1]['expected_text'] = '310.45'
-        self.assertEqual(monex_quiet(s, choice=choice)[2]['reason'], 'endpoints_differ')
-        s = monex.statement()
-        s[1]['rows'].append(monex.source(2, [[(20000, 400000, 60000, '15/05/2026'), (90000, 400000, 200000, 'TRASPASO')]])['rows'][0])
-        s[1]['rows'][-1]['row_index'] = len(s[1]['rows']) - 1
-        self.assertEqual(monex_quiet(s, choice=choice)[2]['reason'], 'dated_line')
 
-    def test_a_movement_page_anywhere_in_the_contract_still_prevents_detection(self):
-        s = monex.statement(); s[3]['rows'][1]['cells'][0]['expected_text'] = 'Movimientos Peso Mexicano'
+        def changed(value, *labels):
+            s = monex.statement()
+            for label in labels:
+                next(r for r in s[1]['rows'] if any(c['expected_text'] == label for c in r['cells']))['cells'][-1]['expected_text'] = value
+            return s
+        self.assertEqual(monex_quiet(changed('12.00', '+ Total abonos:'), choice=choice)[2]['reason'], 'totals_not_zero')
+        self.assertEqual(monex_quiet(changed('310.45', 'Saldo vista:', 'Saldo total:'), choice=choice)[2]['reason'], 'endpoints_differ')
+        # A total balance that differs from the available balance is itself held for a person.
+        self.assertIsNone(monex_quiet(changed('310.45', 'Saldo vista:'), choice=choice)[2])
+
+    def test_a_dated_line_with_money_outside_a_movement_table_refuses_the_contract(self):
+        s = monex.statement()
+        s[1]['rows'].append(monex.source(2, [[(20000, 400000, 60000, '15/May'), (90000, 400000, 200000, 'TRASPASO'),
+                                              (340000, 400000, 30000, '5.00'), (420000, 400000, 30000, '0.00')]])['rows'][0])
+        s[1]['rows'][-1]['row_index'] = len(s[1]['rows']) - 1
         self.assertEqual(monex_catalog(s), ([], set()))
+
+    def test_a_section_with_movements_is_not_a_quiet_question(self):
+        sources = monex.landscape()
+        peso = currencies_by_statement(monex_catalog(sources)[0], sources)[0]
+        self.assertIsNone(monex_quiet(sources, choice=peso)[2])
 
 
 class ScotiabankNoActivityTests(TestCase):

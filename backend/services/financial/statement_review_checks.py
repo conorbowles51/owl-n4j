@@ -72,6 +72,9 @@ def add_period_checks(choices, sources, currency):
             elif layout in ('kapital-mexico-product-statement', 'intercam-mexico-product-statement'):
                 from services.financial.statement_import_kapital import propose_kapital_statement
                 rows = propose_kapital_statement(selected, chosen_currency, choice)['rows']
+            elif layout == 'citi-card':
+                from services.financial.statement_import_citi import propose_citi_statement
+                rows = propose_citi_statement(selected, chosen_currency, choice)['rows']
             elif layout == 'santander-mexico-movements':
                 from services.financial.statement_import_santander import propose_santander_statement
                 rows = propose_santander_statement(selected, chosen_currency, choice)['rows']
@@ -85,7 +88,7 @@ def add_period_checks(choices, sources, currency):
             else:
                 result.append(choice)
                 continue
-            checks = check_statement_rows(rows, liability=layout in ('capital-one-card', 'merrick-card', 'credit-one-card'))
+            checks = check_statement_rows(rows, liability=layout in ('capital-one-card', 'merrick-card', 'credit-one-card', 'citi-card'))
         except ValueError:
             # One unreadable period must not hide the remaining periods.
             checks = dict(balance_status='unavailable', flagged_rows=1)

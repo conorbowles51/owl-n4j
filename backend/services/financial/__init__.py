@@ -2082,6 +2082,7 @@ from services.financial.source_lineage import lineage_groups
 from services.financial.spei_description import kapital_spei
 from services.financial.statement_import_kapital import kapital_catalog
 from services.financial.statement_import_monex import monex_catalog
+from services.financial.statement_import_citi import citi_catalog
 from services.financial.account_selection import apply_account_selection
 from services.financial.batch_import_history import current_imports
 from services.financial.category_library import category_library
@@ -2109,7 +2110,7 @@ __all__ += [
     "upgrade_request", "detect_statement_currency", "change_currency", "update_statement_details",
     "bbva_catalog", "scotiabank_catalog", "transaction_search",
     "ownership_suggestions", "AccountRelationshipInput", "TrailRequest", "preview_trail", "save_trail", "list_trails",
-    "operation_view", "lineage_groups", "kapital_spei", "kapital_catalog", "monex_catalog",
+    "operation_view", "lineage_groups", "kapital_spei", "kapital_catalog", "monex_catalog", "citi_catalog",
     "imported_batch_scope", "card_row_columns", "resolve_financial_selection",
     "financial_file_visibility", "set_financial_file_visibility", "create_batch",
     "batch_status", "check_proposed_rows", "saved_ancestor_reviews", "acknowledge_recovery",
