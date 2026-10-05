@@ -188,6 +188,7 @@ class HarnessRealCorpusTests(unittest.TestCase):
         self.assertTrue(harness._scored(dict(truth_status='verified')))
         self.assertFalse(harness._scored(dict(truth_status='ocr_reconciled')))
         self.assertFalse(harness._scored(dict(truth_status='unverified')))
+        self.assertTrue(harness._scored(dict(truth_status='incomplete')))  # must be held: admitting it is wrong
 
     def test_unmatched_admission_in_a_document_with_incomplete_truth_is_not_judged(self):
         class Query:

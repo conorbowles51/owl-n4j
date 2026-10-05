@@ -6,7 +6,8 @@
 #   scripts/run_real_benchmark.sh --out /mnt/owl-data/fin-real/bench/<label> [--corpus DIR]
 #                                 [--score verified[,ocr_reconciled]] [harness options]
 #
-# Only periods whose truth status is in --score are scored (default: verified).
+# Only periods whose truth status is in --score are scored (default: verified,incomplete; an
+# incomplete period must be held).
 # --out must lie inside the private real-data root (LOUPE_REAL_ROOT, default
 # /mnt/owl-data/fin-real): results.json and the run database hold what was read
 # from real statements. summary.md holds counts and opaque ids only.

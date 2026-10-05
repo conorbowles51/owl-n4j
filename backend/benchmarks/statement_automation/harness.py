@@ -506,7 +506,9 @@ def run(out, python, concurrency, corpus=CORPUS):
     return result
 
 
-SCORED_TRUTH = {'verified'}  # ``--score`` adds e.g. ``ocr_reconciled`` for a secondary figure
+# ``incomplete``: printed pages are missing, so the period must be held; scoring it makes an
+# admission of it a wrong admission. ``--score`` adds e.g. ``ocr_reconciled`` for a secondary figure.
+SCORED_TRUTH = {'verified', 'incomplete'}
 
 
 def _scored(truth):
@@ -919,8 +921,8 @@ def main(argv=None):
                         help='Corpus directory with manifest.json (default: the committed corpus).')
     parser.add_argument('--rescore', action='store_true',
                         help='re-judge the finished run in --out against the current --corpus manifest (no re-reading)')
-    parser.add_argument('--score', default='verified',
-                        help='comma-separated real truth statuses to score (default: verified)')
+    parser.add_argument('--score', default='verified,incomplete',
+                        help='comma-separated real truth statuses to score (default: verified,incomplete)')
     args = parser.parse_args(argv)
     SCORED_TRUTH.clear()
     SCORED_TRUTH.update(s.strip() for s in args.score.split(',') if s.strip())
