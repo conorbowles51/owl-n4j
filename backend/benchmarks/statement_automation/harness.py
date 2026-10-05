@@ -609,6 +609,25 @@ def rescore_views(out, periods):
     return views, dict(errors)
 
 
+def _refresh_not_detected(periods, truths):
+    """Not-detected entries for the truth as it is now: an entry for a truth period that no longer
+    exists, or that an item now pairs with, is dropped; a truth period no item pairs with (one
+    added or renumbered since the run) gets one. Returns ``(periods, added)``."""
+    paired = {p['truth_id'] for p in periods if p.get('item_id') and p.get('truth_id')}
+    kept = [p for p in periods if p.get('item_id') or (p.get('truth_id') in truths and p['truth_id'] not in paired)]
+    present = {p['truth_id'] for p in kept if p.get('truth_id')}
+    added = 0
+    for truth in truths.values():
+        if truth['id'] in present:
+            continue
+        kept.append(dict(item_id=None, filename=truth['filename'], statement_id=None, status='not_detected',
+                         scored=_scored(truth), can_import=False, truth_id=truth['id'], family=truth['family'],
+                         expected=truth['expected'], defects=truth['defects'], added_in=truth.get('added_in', 'v1-v3'),
+                         reasons={'not_detected': 1}, problems=[], read={}))
+        added += 1
+    return kept, added
+
+
 def rescore(out, corpus, compare=None):
     """Re-judge a finished run against the corpus manifest as it is now, using the run's own database.
 
@@ -626,6 +645,7 @@ def rescore(out, corpus, compare=None):
     result = json.loads((out / 'results.json').read_text())
     truths = {p['id']: dict(p, filename=f['filename']) for f in manifest['files'] for p in f['periods']}
     rematched = _rematch(result['periods'], truths)
+    result['periods'], added_not_detected = _refresh_not_detected(result['periods'], truths)
     for period in result['periods']:
         truth = truths.get(period['truth_id']) if period['truth_id'] else None
         if truth is not None:
@@ -643,7 +663,8 @@ def rescore(out, corpus, compare=None):
     engine.dispose()
     result['corpus'].update(periods=len(truths), path=str(corpus))
     result['rescored'] = dict(at=datetime.now(timezone.utc).isoformat(timespec='seconds'), code=_git('rev-parse', 'HEAD'),
-                              scored_truth=sorted(SCORED_TRUTH), rematched_items=rematched)
+                              scored_truth=sorted(SCORED_TRUTH), rematched_items=rematched,
+                              not_detected_refreshed=added_not_detected)
     result['metrics'] = metrics(result)
     compare = compare or _default_compare(manifest, corpus)
     if compare:

@@ -231,6 +231,20 @@ class HarnessRealCorpusTests(unittest.TestCase):
         self.assertEqual(harness._rematch(periods, truths), 2)
         self.assertEqual([p['truth_id'] for p in periods], ['d#2', 'd#1'])
 
+    def test_rescore_refreshes_not_detected_entries_for_the_current_truth(self):
+        def t(i):
+            return dict(id=f'd#{i}', filename='d.pdf', family='f', expected='auto', defects=[], truth_status='verified')
+        truths = {x['id']: x for x in (t(1), t(2), t(3))}
+        periods = [dict(item_id='a', filename='d.pdf', truth_id='d#1'),
+                   dict(item_id=None, filename='d.pdf', truth_id='d#1', status='not_detected'),  # now paired
+                   dict(item_id=None, filename='d.pdf', truth_id='d#2', status='not_detected'),  # still missing
+                   dict(item_id=None, filename='d.pdf', truth_id='d#9', status='not_detected')]  # gone
+        kept, added = harness._refresh_not_detected(periods, truths)
+        self.assertEqual(added, 1)
+        self.assertEqual([(p['item_id'], p['truth_id']) for p in kept],
+                         [('a', 'd#1'), (None, 'd#2'), (None, 'd#3')])
+        self.assertTrue(kept[-1]['scored'])
+
     def test_rows_pair_by_value_before_description(self):
         truth = [dict(description='SPEI ENVIADO A', amount_minor=100, direction='debit', date='2024-01-02'),
                  dict(description='SPEI ENVIADO B', amount_minor=200, direction='debit', date='2024-01-03')]
