@@ -13,9 +13,22 @@ sets it itself only when it is genuinely blocked on Neil; see "Halt rules".)
 
 ## ▶ NEXT
 
-**(2026-10-04 12:00) Wave 5 merged into fin/release-1 (head after this commit; NOT pushed). The real-document chain
-(`fin-real-driver`, see Log 11:25) resumes on its own once this integration's screen exits; its planner owns the
-real-document waves. Everything below is the synthetic corpus.**
+**(2026-10-05 07:30) REAL-DOCUMENT wave 0 integrated into fin/release-1 (t-truth 423f8003, r-census e07ff7bd; NOT
+pushed). The real-document driver owns the next waves; running state, counts and history in
+/mnt/owl-data/fin-wt/headless/real/STATE.md (counts only).**
+Real headline (verified truth, 485 documents, bench /mnt/owl-data/fin-real/bench/wave0, exit 0): **484/761 ready without
+edits (63.6%)**, recoverable 484/760, **0 wrong admissions**, 0 critical-field errors (10,484 rows), 0 valid-looking wrong
+values. Unchanged from the release-1 baseline (484/760): wave 5's reader work moves nothing on real statements.
+Biggest gaps: Monex 0/167 and Citi 0/46 not detected; 142 of 145 exact repeats not held (1,691 duplicate ledger rows).
+Live (read-only audit): 5 admitted periods disagree with truth, 107 printed periods admitted twice in case 49494305.
+Truth coverage: 495/729 statement documents final; 250 in the visual queue (14 shards). Compare files: 0 (wave 1).
+Actions per 100 statements: 545 one at a time / 514 grouped.
+**Wave 1 (headless/real/wave1.units, prompts headless/real/units/):** `r1-reproduced` (re-produced statements set aside
+as duplicates, in-file reprints, pre-cycle card rows, invisible-OCR pages treated as recognised text),
+`r1-monex-citi` (real Monex + Citi readers; supersedes synthetic `c-mx-real-fit` below), `t-visual-v10` (Andrews visual
+truth for 256 periods + per-statement compare files). Acceptance for every unit: 0 wrong admissions real and synthetic,
+synthetic ≥ 102/124.
+**Everything below in this section is the synthetic track (wave 5 state), parked behind the real waves.**
 Release-1 now (corpus v4, 124 distinct periods, bench-runs/release-1-w5, exit 0): **102/124 ready without edits (82.3%)**,
 102/107 recoverable (95.3%), 0 wrong admissions, 0 critical-field errors (347 saved), 0 valid-looking wrong values
 proposed, held kept out 10/10. v1–v3 subset 38/49 (was 37); v4 additions 64/75 (was 56). Baseline was 93/124 (75.0%);
@@ -39,6 +52,11 @@ Correctly held and not in a unit: 10 must-hold (omitted rows, missing pages, dep
 (holder/account not printed, no activity, quiet section across pages).
 
 **Open Neil decisions (nothing above waits on them; all have a recorded default):**
+- **Live double admission (real wave 0): case 49494305 has 107 printed periods admitted twice (~929–943 transactions
+  counted twice)**, from two productions of the same card statements. Recommend removing one copy of each pair through
+  the product's removal path once it is settled which production is authoritative. r1-reproduced stops new ones.
+- **5 live periods disagree with verified truth** (3 printed statements; opaque ids in headless/real/STATE.md). Recommend
+  correcting them through the product after wave 1's readers re-read them. Not touched (no live writes).
 - **Deploy needed for the route-check fix (41a306a8).** The pushed release has merge 97878ff8, in which Conor's batch-cap
   removal deleted `MAX_BATCH_SIZE` that our `/route-check` still uses: every non-empty route-check request returns 500
   (the evidence list cannot label bank files before processing). Fixed on fin/release-1 only; live until the next push.
@@ -509,3 +527,25 @@ brief (briefs = Queue entries above + the 2026-10-02 log lines). Automation is t
   tsc -b 0; vitest unit 294/295 with the route-check guard failing, fixed by 41a306a8 (that file 12/12 after). Logs
   fin-wt/release-1-w5-fullsuite.log, bench-runs/release-1-w5-vitest.log. All-tests pattern not run.
 - Plain-language status: /mnt/owl-data/fin-wt/headless/STATUS-FOR-NEIL.md (overwrites wave 4's).
+
+### 2026-10-05 07:30 — REAL-DOCUMENT wave 0 merged into fin/release-1 (headless integrate-0)
+- Merged, none refused (both units' notes say complete; diffs are benchmark/script code and tests only, scanned for real
+  identifiers: none; WIP-NOTES.md dropped; notes archived /mnt/owl-data/fin-wt/notes/{t-truth,r-census}.md):
+  `fin/t-truth` (423f8003: real_inventory, real_truth tier-A pdfplumber reader, harness private-corpus mode with
+  `--rescore`/`--score`, real_ledger_audit, scripts/run_real_benchmark.sh) and `fin/r-census` (e07ff7bd:
+  scripts/financial_statement_census.py, all-files read-only census). No conflicts; harness.py auto-merged with wave 5.
+- **Real benchmark on merge** (verified truth, 485 documents, OMP_THREAD_LIMIT=1, REAL_EXIT=0,
+  /mnt/owl-data/fin-real/bench/wave0; engine read 3.9 h + import 2.9 h): **484/761 ready w/o edits (63.6%)**, recoverable
+  484/760, 0 wrong, 0 critical-field errors (10,484 rows from 695 periods), 0 valid-looking wrong values (the baseline's
+  38 `account_wrong` came from proposal checks the rescore does not recompute), exact repeats held 3/145, duplicate
+  ledger contributions 1,691. Baseline release-1 rescored 484/760: wave 5 moved nothing on real statements (5 periods
+  changed state, none to ready or wrong). Monex 0/167 and Citi 0/46 not detected; Santander 9/41 (currency 24).
+- Live ledger audit rerun read-only (/mnt/owl-data/fin-real/audit-wave0): unchanged — 5 disagree, 107 printed periods
+  admitted twice in one case. Census not rerun (r-census figures on a3691d2c: 709/1,811 = 39.1%).
+- Synthetic (bench-runs/real-wave0, BENCH_EXIT=0): 102/124, 102/107, 0 wrong — equal to wave 5.
+- Suites (live .venv, CHROMADB_PORT=1 CHROMA_PORT=1): financial **Ran 5740, failures=2** (known unassigned_statement),
+  skipped 20; tsc -b 0; vitest unit 2052/2053 — LedgerTracingWorkbench failed under benchmark load, alone 7/7, no
+  frontend change in this wave. Logs fin-wt/release-1-realw0-fullsuite.log, bench-runs/real-wave0-frontend.log.
+- Decided (reversible in one line; recorded in headless/real/STATE.md): identical-transaction overlap between files =
+  duplicate set-aside; mostly-invisible text pages = recognised text whatever the image coverage.
+- Wave 1 planned: r1-reproduced, r1-monex-citi, t-visual-v10. STATUS-FOR-NEIL.md rewritten.
