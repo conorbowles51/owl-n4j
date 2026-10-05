@@ -10,6 +10,7 @@ from unittest import TestCase
 from sqlalchemy import select
 from postgres.models.evidence import EvidenceDocumentText, EvidenceFile, EvidenceTableGeometry
 from postgres.models.financial import FinancialTransaction
+from services.financial.batch_review_summary import reason
 from services.financial.import_batches import assess, initial_request
 from services.financial.pdf_candidates import PdfMappingError
 from services.financial.pending_statement_duplicates import apply_duplicate_disposition
@@ -118,6 +119,7 @@ class StatementReprintTests(TestCase):
             state, summary = assess(proposal)
             self.assertFalse(summary['can_import'])
             self.assertTrue(any(problem.get('kind') == 'printed_copies' for problem in summary['problems']))
+            self.assertIn('reprint', {reason(problem) for problem in summary['problems']})
         self.assertEqual(self.disposition(second)['status'], 'needs_comparison')
         with self.assertRaisesRegex(PdfMappingError, 'printed more than once'):
             self.confirm(initial_request(first))
