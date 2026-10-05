@@ -66,6 +66,28 @@ def same_statement(left, right):
         and all(left.get(key) == right.get(key) for key in ('identity', 'account_reference', 'currency', 'start', 'end', 'account_type')))
 
 
+def same_printed_period(left, right):
+    """The same printed account reference, currency, product and exact dates.
+
+    Unlike ``same_statement`` this does not need a full account number or an
+    equal holder: a card statement prints only its last four digits, and two
+    productions of one statement can read the holder or bank name differently.
+    It nominates a copy for comparison and holds an exact-period overlap. It
+    never sets a copy aside by itself; only identical payments and balances do.
+    """
+    reference = _printed_reference(left)
+    return bool(left and right and reference and any(ch.isdigit() for ch in reference)
+        and reference == _printed_reference(right)
+        and all(left.get(key) == right.get(key) for key in ('currency', 'start', 'end', 'account_type')))
+
+
+def _printed_reference(scope):
+    """The printed reference without a leading mask (``****1234``, ``xxxx1234``,
+    ``...1234`` all read ``1234``); letters and every other character are kept."""
+    value = re.sub(r'^(?:[*\u2022.#]+|x{2,})', '', (scope or {}).get('account_reference') or '')
+    return re.sub(r'[^0-9a-z]', '', value)
+
+
 def overlaps(left, right):
     return bool(left and right and left['identity'] == right['identity'] and left['currency'] == right['currency']
                 and left['start'] <= right['end'] and right['start'] <= left['end'])
@@ -248,7 +270,10 @@ def coverage_review(session, *, case_id, file_id, request, sources=None):
         identifier = other['key']
         if identifier == own_key or (other['source_document_id'] and other['source_document_id'] == str(request.get('replaces_source_document_id', ''))):
             continue
-        exact = same_statement(own, other.get('scope'))
+        # A masked card reference cannot meet ``same_statement``. The same bank,
+        # reference and exact printed period is still another copy of this
+        # statement until its payments show otherwise, so it is held, not warned.
+        exact = same_statement(own, other.get('scope')) or same_printed_period(own, other.get('scope'))
         # Reader upgrades can change section keys. A verified internal version
         # of this exact account/period is still the same source, not another PDF.
         if identifier[0] == own_key[0] and exact:

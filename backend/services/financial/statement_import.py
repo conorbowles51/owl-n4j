@@ -129,7 +129,7 @@ def _existing_statement(session, case_id, file, statement_id, addresses=(), row_
     return matches[0] if matches else None
 
 
-def read_statement_import(session, *, case_id, evidence_file_id, currency=None, statement_id=None, _cache=None, _include_period_checks=True, _apply_assignments=True, _include_duplicate_disposition=True):
+def read_statement_import(session, *, case_id, evidence_file_id, currency=None, statement_id=None, _cache=None, _include_period_checks=True, _apply_assignments=True, _include_duplicate_disposition=True, _compare_printings=True):
     file = session.scalar(select(EvidenceFile).where(EvidenceFile.id == evidence_file_id,
                                                     EvidenceFile.case_id == case_id))
     if file is None:
@@ -561,10 +561,43 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
         if replacement['refresh_available'] or replacement['refresh_review_required']:
             replacement['refresh_transaction_count'] = refresh_payment_count(current, result)
             replacement['refresh_admission'], replacement['refresh_requires_reconciliation'] = refresh_assessment(current, result)
+    if selected and len(selected.get('printings') or []) > 1 and _compare_printings:
+        result['printed_copies'] = _printed_copies(session, case_id, file, selected, result, chosen_currency, cache,
+            _include_period_checks, _apply_assignments)
     if _include_duplicate_disposition:
         from services.financial.pending_statement_duplicates import read_duplicate_disposition
         result['duplicate_disposition'] = read_duplicate_disposition(session, file, result)
     return result
+
+
+def _printed_copies(session, case_id, file, selected, result, currency, cache, period_checks, assignments):
+    """Compare the printings of one statement inside this file.
+
+    Outside the revision: it is derived from the other printing's reading of
+    the same file. Equal payments and balances make a later printing a copy
+    of the first; any difference holds every printing for comparison.
+    """
+    from services.financial.pending_statement_duplicates import statement_content
+    own = statement_content(result)[0]
+    readings, identical = {}, True
+    for identifier in selected['printings']:
+        if identifier == selected['id']:
+            readings[identifier] = result
+            continue
+        try:
+            other = read_statement_import(session, case_id=case_id, evidence_file_id=file.id, currency=currency or None,
+                statement_id=identifier, _cache=cache, _include_period_checks=period_checks,
+                _apply_assignments=assignments, _include_duplicate_disposition=False, _compare_printings=False)
+        except PdfMappingError:
+            identical = False
+            continue
+        readings[identifier] = other
+        identical = identical and not other.get('reading_failure') and statement_content(other)[0] == own
+    first = selected['printings'][0]
+    return dict(printing=selected['printings'].index(selected['id']) + 1, count=len(selected['printings']),
+        first=first, first_revision=readings[first]['revision'] if first in readings else None,
+        first_page=min(readings[first].get('statement_page_numbers') or [1]) if first in readings else 1,
+        identical=bool(identical and not result.get('reading_failure')))
 
 # A single confirmation carries all reviewed rows. The original proposal stays
 # separate from edits in the stored source record.
@@ -920,6 +953,9 @@ def _write_statement_import_once(*, session_factory, case_id, evidence_file_id, 
                     if disposition['status'] == 'ignored':
                         _commit_statement(session)
                         return ignored_receipt(case_id, file, disposition)
+                printed_copies = proposal.get('printed_copies')
+                if printed_copies and not printed_copies['identical'] and not request.coverage_review_reason.strip():
+                    raise PdfMappingError('This statement period is printed more than once in this PDF and the printed copies read differently. Compare the copies, then record why this printing should be imported.', 409)
                 from services.financial.statement_import_overlap import coverage_review, requires_decision, duplicate_hold
                 coverage_request = {**request.model_dump(mode='json'), 'account_type': proposal['metadata'].get('account_type') or ''}
                 coverage = coverage_review(session, case_id=case_id, file_id=evidence_file_id,

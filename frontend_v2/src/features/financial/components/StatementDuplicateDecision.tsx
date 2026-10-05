@@ -34,6 +34,9 @@ const fields: Record<string, string> = {
   period_end: "End date",
   currency: "Currency",
   account_type: "Account type",
+  account_reference: "Account reference as printed",
+  payments_and_balances: "Payments and balances",
+  source_file: "Same PDF",
 }
 
 const titles: Record<StatementDuplicateDisposition["status"], string> = {
