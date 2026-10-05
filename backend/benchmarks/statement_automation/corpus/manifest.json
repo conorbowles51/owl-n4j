@@ -3605,8 +3605,8 @@
      "start_printed": true
     }
    ],
-   "sha256": "51e3f2cb8215bac986e8c799490a230b8f5c7bdb89417c478b343e6e6d6788bd",
-   "size": 8771
+   "sha256": "a38bfa2c90297039f648ec20d8394cd04d2198bf290d702d494f64ab2fcf4c31",
+   "size": 14273
   },
   {
    "filename": "monex-2024-04-peso-movements.pdf",
@@ -3619,16 +3619,14 @@
      "added_in": "v4",
      "closing_minor": 2464550,
      "currency": "MXN",
-     "defects": [
-      "layout_not_supported"
-     ],
+     "defects": [],
      "expected": "auto",
      "family": "monex-mexico",
      "holder": "IMPORTADORA EJEMPLO SA DE CV",
      "holder_printed": true,
      "id": "monex-2024-04-peso-movements.pdf#1",
      "institution": "Monex",
-     "notes": "currency section Peso Mexicano",
+     "notes": "currency section Peso Mexicano, movement table fitted to the real layout",
      "opening_minor": 3214550,
      "period_end": "2024-04-30",
      "period_start": "2024-04-01",
@@ -3673,8 +3671,8 @@
      "start_printed": true
     }
    ],
-   "sha256": "1310a1a3da195d7eedfb083538028ad2078337fa5859f245076f61c5986eb776",
-   "size": 11803
+   "sha256": "392aea8b683ce8c689b9cc27a9c498144007a038c55642a2d7987565610965cb",
+   "size": 24020
   },
   {
    "filename": "kapital-2024-03-two-products.pdf",

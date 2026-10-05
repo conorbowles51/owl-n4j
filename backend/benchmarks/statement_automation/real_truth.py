@@ -634,7 +634,7 @@ MONEX_CURRENCIES = (('MXN', r'peso\s+mexicano'), ('USD', r'd[oó]lar\s+americano
                     ('JPY', r'\byen\b'))
 MONEX_SECTION = re.compile(r'(Resumen\s+Divisas\s+|Resumen\s+cuenta\s+|CUENTA\s+VISTA\s+|Movimientos\s+)?'
                            r'(peso\s+mexicano|d[oó]lar\s+americano|euros?|d[oó]lar\s+canad[aá]|libra\s+esterlina|'
-                           r'franco\s+suizo)\s+al\s+\d', re.I)
+                           r'franco\s+suizo|yen\s+japon[eé]s)\s+al\s+\d', re.I)
 
 
 def _monex_dates(text):
@@ -763,7 +763,8 @@ def parse_monex(pages):
         periods.append(period)
     # The peso summary lists every other currency with its opening, credits,
     # debits and balance; each must match a section read above.
-    listed = re.findall(r'^(d[oó]lar\s+americano|euros?|d[oó]lar\s+canad[aá]|libra\s+esterlina|franco\s+suizo)\s+'
+    listed = re.findall(r'^(d[oó]lar\s+americano|euros?|d[oó]lar\s+canad[aá]|libra\s+esterlina|franco\s+suizo|'
+                        r'yen\s+japon[eé]s)\s+'
                         r'(\S+)\s+(\S+)\s+(\S+)\s+(\S+)', text, re.I | re.M)
     for name, *values in listed:
         if not all(is_money(v) for v in values):
@@ -776,7 +777,37 @@ def parse_monex(pages):
             target = next((p for p in periods if p.currency == code), periods[0] if periods else None)
             if target is not None:
                 target.problems.append('currency listed in the summary does not match a section read')
+    for period in periods:
+        if period.currency in ZERO_DECIMAL_CURRENCIES:
+            _whole_units(period)
     return periods
+
+
+# ISO 4217 currencies without a minor unit that Monex prints with ".00": the
+# truth is kept in the currency's own minor unit, as the ledger stores it.
+ZERO_DECIMAL_CURRENCIES = frozenset({'JPY'})
+
+
+def _whole_units(period):
+    """Printed hundredths -> whole units; a non-zero fraction is a problem, never rounded."""
+    def whole(value):
+        if value is None:
+            return None
+        if value % 100:
+            period.problems.append('fraction printed for a currency without minor units')
+            return value
+        return value // 100
+    period.opening_minor, period.closing_minor = whole(period.opening_minor), whole(period.closing_minor)
+    for row in period.rows:
+        row['amount_minor'] = whole(row['amount_minor'])
+        if row.get('balance_after') is not None:
+            row['balance_after'] = whole(row['balance_after'])
+    summary = period.controls.get('summary') or {}
+    for key in list(summary):
+        summary[key] = whole(summary[key])
+    for key in ('credits_total', 'debits_total'):
+        if key in period.controls:
+            period.controls[key] = whole(period.controls[key])
 
 
 def _monex_rows(period):

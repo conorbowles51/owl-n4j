@@ -1,7 +1,9 @@
-"""Scotiabank and Monex movement-table scaffolds; synthetic fixtures only.
+"""Scotiabank movement-table scaffold; synthetic fixtures only.
 
-The movement layouts were modelled by the benchmark corpus, not taken from a
-real statement. These tests pin the scaffold's contract: off by default (a
+The movement layout was modelled by the benchmark corpus, not taken from a
+real statement (the Monex reader has since been fitted to real productions and
+no longer uses the scaffold; see test_financial_statement_import_monex).
+These tests pin the scaffold's contract: off by default (a
 movement table refuses the statement, as before), and when switched on a
 section is read only when every row and printed control can be placed.
 """
@@ -9,12 +11,10 @@ from copy import deepcopy
 from unittest import TestCase
 from unittest.mock import patch
 
-from services.financial.statement_import_monex import monex_catalog, propose_monex_statement
 from services.financial.statement_import_scotiabank import (
     MOVEMENTS_LAYOUT, LAYOUT, propose_scotiabank_movements, scotiabank_catalog)
 from services.financial.statement_movement_scaffold import MOVEMENT_SCAFFOLD_FLAG, movement_scaffold_enabled
 from services.financial.statement_review_checks import check_statement_rows
-from tests.test_financial_statement_import_monex import statement as monex_statement
 from tests.test_financial_statement_import_scotiabank import source, statement as scotiabank_zero_statement
 
 ON = patch.dict('os.environ', {MOVEMENT_SCAFFOLD_FLAG: '1'})
@@ -69,39 +69,6 @@ def scotiabank_statement(body=None):
             for cell in row['cells']:
                 cell['expected_text'] = cell['expected_text'].replace('00001234567', '00087654321')
     return [source(1, rows)] + pages[1:]
-
-
-def monex_with_movements(table=None):
-    """Peso section with activity and its movement page; euro section quiet."""
-    pages = monex_statement()
-    peso = pages[1]
-    for row, value in ((4, '150.00'), (5, '225.00'), (6, '246.45')):
-        peso['rows'][row]['cells'][-1]['expected_text'] = value
-    table = table or [
-        [(20000,20000,100000,'MONEX'),(400000,20000,150000,'CONTRATO: 7654321')],
-        [(20000,50000,140000,'Movimientos Peso Mexicano')],
-        [(20000,70000,30000,'Fecha'),(80000,70000,50000,'Concepto'),(390000,70000,30000,'Abonos'),
-         (460000,70000,30000,'Cargos'),(530000,70000,30000,'Saldo')],
-        [(20000,90000,50000,'08/05/2026'),(80000,90000,150000,'TRASPASO RECIBIDO EJEMPLO'),
-         (370000,90000,50000,'150.00'),(510000,90000,50000,'471.45')],
-        [(20000,110000,50000,'19/05/2026'),(80000,110000,150000,'PAGO INTERNACIONAL EJEMPLO'),
-         (440000,110000,50000,'225.00'),(510000,110000,50000,'246.45')],
-        [(440000,700000,100000,'Hoja 3 de 7')],
-    ]
-    renumbered = [pages[0], peso, source(3, table)]
-    for number, page in enumerate(pages[2:], start=4):
-        page = deepcopy(page)
-        page['page_number'] = number
-        for row in page['rows']:
-            for cell in row['cells']:
-                cell['locator']['page'] = number
-                cell['expected_text'] = cell['expected_text'].replace(f'Hoja {number - 1} de 6', f'Hoja {number} de 7')
-        renumbered.append(page)
-    for page in renumbered[1:3]:
-        for row in page['rows']:
-            for cell in row['cells']:
-                cell['expected_text'] = cell['expected_text'].replace('de 6', 'de 7')
-    return renumbered
 
 
 class SwitchTests(TestCase):
@@ -192,64 +159,3 @@ class ScotiabankMovementTests(TestCase):
             groups, _ = scotiabank_catalog(scotiabank_zero_statement())
         self.assertEqual([g['layout_id'] for g in groups], [LAYOUT])
         self.assertIn('zero_activity_evidence', groups[0])
-
-
-class MonexMovementTests(TestCase):
-    def test_switched_off_a_movement_page_still_refuses_the_whole_contract(self):
-        with patch.dict('os.environ', {MOVEMENT_SCAFFOLD_FLAG: ''}):
-            self.assertEqual(monex_catalog(monex_with_movements()), ([], set()))
-
-    def test_switched_on_the_active_section_reconciles_and_the_quiet_one_is_unchanged(self):
-        sources = monex_with_movements()
-        before = deepcopy(sources)
-        with ON:
-            groups, handled = monex_catalog(sources)
-        self.assertEqual(sources, before)
-        self.assertEqual([(g['currency'], g.get('movement_page')) for g in groups], [('MXN', 3), ('EUR', None)])
-        self.assertEqual(len(handled), 7)
-        peso, euro = groups
-        self.assertEqual(sorted({s['page_number'] for s in peso['section_sources']}), [2, 3])
-        self.assertEqual(sorted({s['page_number'] for s in euro['section_sources']}), [4])
-        rows = propose_monex_statement(sources, 'MXN', peso)['rows']
-        payments = [r for r in rows if not r['excluded']]
-        self.assertEqual([(r['kind'], r['fields']['date'], r['fields']['direction'], r['fields']['amount_minor'],
-                           r['fields']['balance'], r['fields']['description']) for r in payments], [
-            ('transaction', '2026-05-08', 'credit', '15000', '47145', 'TRASPASO RECIBIDO EJEMPLO'),
-            ('transaction', '2026-05-19', 'debit', '22500', '24645', 'PAGO INTERNACIONAL EJEMPLO')])
-        self.assertEqual({c['kind']: c['status'] for c in check_statement_rows(rows)['checks']},
-                         {'closing_balance': 'matches', 'running_balance': 'matches',
-                          'credit_total': 'matches', 'debit_total': 'matches'})
-        quiet = propose_monex_statement(sources, 'EUR', euro)['rows']
-        self.assertTrue(all(r['excluded'] for r in quiet))
-        self.assertEqual(check_statement_rows(quiet)['balance_status'], 'matches')
-
-    def test_switched_on_a_contract_that_cannot_be_placed_is_still_refused_whole(self):
-        variants = []
-        # The corpus engine merges tightly spaced columns: no column, no reading.
-        s = monex_with_movements(); s[2]['rows'][2]['cells'][3:] = []
-        s[2]['rows'][2]['cells'][2]['expected_text'] = 'Abonos Cargos Saldo'; variants.append(s)
-        s = monex_with_movements(); s[2]['rows'][1]['cells'][0]['expected_text'] = 'Movimientos euro'; variants.append(s)
-        s = monex_with_movements(); s[2]['rows'][3]['cells'][0]['expected_text'] = 'Saldo anterior'; variants.append(s)
-        s = monex_with_movements(); s[2]['rows'].insert(5, deepcopy(s[2]['rows'][4]))
-        s[2]['rows'][5]['cells'][0]['expected_text'] = 'Total'; variants.append(s)
-        s = monex_with_movements(); del s[2]; variants.append(s)
-        s = monex_with_movements(); s[3]['rows'][4]['cells'][-1]['expected_text'] = '1.00'; variants.append(s)
-        s = monex_with_movements(); s[2]['rows'][3]['cells'][1]['locator'] = None; variants.append(s)
-        with ON:
-            for i, s in enumerate(variants):
-                with self.subTest(i=i):
-                    self.assertEqual(monex_catalog(s)[0], [])
-
-    def test_switched_on_a_merged_amount_cell_is_an_unresolved_payment(self):
-        s = monex_with_movements()
-        cells = s[2]['rows'][4]['cells']
-        cells[2:] = [deepcopy(cells[2])]
-        cells[2].update(expected_text='225.00 246.45', column_index=2)
-        cells[2]['locator']['rect'] = [440000, 110000, 560000, 116000]
-        with ON:
-            peso = monex_catalog(s)[0][0]
-        rows = propose_monex_statement(s, 'MXN', peso)['rows']
-        merged = next(r for r in rows if r['id'] == '3:0:4')
-        self.assertEqual((merged['kind'], merged['excluded']), ('unresolved', False))
-        self.assertIn('Choose the printed credit or debit amount for this payment.', merged['issues'])
-        self.assertNotIn('amount_minor', merged['fields'])

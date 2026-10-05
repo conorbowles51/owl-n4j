@@ -98,9 +98,22 @@ def _norm(value):
 # Reading
 # ---------------------------------------------------------------------------
 
-def read_corpus(python, files, out, concurrency):
+def read_corpus(python, files, out, concurrency, readings=None):
     target = out / 'engine-readings.json'
     started = time.monotonic()
+    if readings is not None:
+        # Reuse a finished engine reading (only backend code changed). Every
+        # corpus file must be present: a missing one is a refused run, not a
+        # silently smaller corpus.
+        data = json.loads(Path(readings).read_text())
+        by_name = {Path(path).name: value for path, value in data['readings'].items()}
+        missing = sorted(Path(f).name for f in files if Path(f).name not in by_name)
+        if missing:
+            raise RuntimeError(f'{len(missing)} corpus files have no reading in ' + str(readings))
+        chosen = {str(f): by_name[Path(f).name] for f in files}
+        target.write_text(json.dumps(dict(readings=chosen, reused_from=str(readings)), default=str))
+        (out / 'engine-read.log').write_text('Engine reading reused from ' + str(readings) + '\n')
+        return chosen, 0.0, 0.0
     completed = subprocess.run([python, str(HERE / 'engine_read.py'), str(target), str(concurrency),
                                 *[str(path) for path in files]],
                                capture_output=True, text=True, env={**os.environ, 'PYTHONDONTWRITEBYTECODE': '1'})
@@ -294,7 +307,7 @@ def simulate_correction(proposal, truth, assess, initial_request):
 # The run
 # ---------------------------------------------------------------------------
 
-def run(out, python, concurrency, corpus=CORPUS):
+def run(out, python, concurrency, corpus=CORPUS, readings=None):
     from sqlalchemy import select
     out.mkdir(parents=True, exist_ok=True)
     run_started = time.monotonic()
@@ -325,7 +338,7 @@ def run(out, python, concurrency, corpus=CORPUS):
 
     load_before = os.getloadavg()
     readings, read_wall, read_cpu = read_corpus(python, [source_dir / f['filename'] for f in manifest['files']],
-                                                out, concurrency)
+                                                out, concurrency, readings)
     readings = {Path(path).name: value for path, value in readings.items()}
 
     from postgres.models.user import User
@@ -919,6 +932,8 @@ def main(argv=None):
                         help='Corpus directory with manifest.json (default: the committed corpus).')
     parser.add_argument('--rescore', action='store_true',
                         help='re-judge the finished run in --out against the current --corpus manifest (no re-reading)')
+    parser.add_argument('--readings',
+                        help='reuse this engine-readings.json instead of reading with the engine (backend-only changes)')
     parser.add_argument('--score', default='verified',
                         help='comma-separated real truth statuses to score (default: verified)')
     args = parser.parse_args(argv)
@@ -932,7 +947,7 @@ def main(argv=None):
         return 0 if not result['ledger']['wrongly_admitted'] else 1
     out = Path(args.out) if args.out else Path(os.environ.get('TMPDIR', '/tmp')) / (
         f"loupe-statement-benchmark-{os.environ.get('USER') or os.getuid()}-{datetime.now():%Y%m%d-%H%M%S}")
-    result = run(out, args.engine_python, args.concurrency, Path(args.corpus))
+    result = run(out, args.engine_python, args.concurrency, Path(args.corpus), args.readings)
     print((out / 'summary.md').read_text())
     print(f'Full results: {out / "results.json"}')
     return 0 if not result['ledger']['wrongly_admitted'] else 1

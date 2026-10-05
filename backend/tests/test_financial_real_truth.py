@@ -120,6 +120,29 @@ class ReconcileTests(unittest.TestCase):
         self.assertEqual(rt.expected_outcome(period(holder=None), 'verified'), 'decision')
 
 
+class MonexTruthTests(unittest.TestCase):
+    LINES = ['CONTRATO: 7654321', 'PERIODO: 1 al 30 de ABRIL de 2019', 'HOJA 1 DE 1',
+             'CUENTA VISTA YEN JAPONES al 30 de ABRIL de 2019 DEL PERIODO ACUMULADO',
+             'SALDO INICIAL: 0.00 SALDO PROMEDIO (INTERESES): 0.00', '+ ABONOS: 5,000.00', '- CARGOS: 5,000.00',
+             'SALDO FINAL: 0.00', 'Saldo Inicial: 0.00 0.00 0.00',
+             '03/Abr Compra 45629016 5,000.00 0.00 0.00 0.00 5,000.00 5,000.00',
+             '03/Abr Retiro 61585153 0.00 5,000.00 0.00 0.00 0.00 0.00', 'Saldo Final: 0.00 0.00 0.00']
+
+    def test_a_yen_section_is_its_own_period_in_whole_yen(self):
+        (found,) = rt.parse_monex([page(1, self.LINES)])
+        self.assertEqual((found.currency, found.opening_minor, found.closing_minor), ('JPY', 0, 0))
+        self.assertEqual([(r['amount_minor'], r['direction'], r['balance_after']) for r in found.rows],
+                         [(5000, 'credit', 5000), (5000, 'debit', 0)])
+        self.assertEqual((found.controls['credits_total'], found.controls['debits_total']), (5000, 5000))
+        self.assertEqual(rt.reconcile(found)[0], 'verified')
+
+    def test_a_printed_fraction_of_a_yen_is_never_rounded(self):
+        lines = [l.replace('5,000.00', '5,000.50') for l in self.LINES]
+        (found,) = rt.parse_monex([page(1, lines)])
+        self.assertIn('fraction printed for a currency without minor units', found.problems)
+        self.assertNotEqual(rt.reconcile(found)[0], 'verified')
+
+
 class PageNumberingTests(unittest.TestCase):
     def test_an_unnumbered_insert_stands_for_its_printed_number(self):
         pages = [page(1, ['advert']), page(2, ['PAGINA 2 / 3']), page(3, ['PAGINA 3 / 3'])]
