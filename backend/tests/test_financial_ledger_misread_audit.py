@@ -102,3 +102,18 @@ def test_native_text_statements_are_skipped(f, tmp_path):
     report = audit.audit(f.SessionLocal, f.case.id, scratch_root=tmp_path, resolve_path=Path,
         reader=lambda *args: (_ for _ in ()).throw(AssertionError('native text must not be re-read')))
     assert report['skipped'] == {'native_text_only': 1} and report['periods'] == []
+
+
+def test_native_reading_over_invisible_text_is_audited_with_the_current_origin_rule(f, tmp_path):
+    """A retained reading that called a page born-digital is audited when the
+    original, measured now, has mostly invisible text (r1-reproduced)."""
+    import fitz
+    audit = load()
+    admitted(f, image=False)
+    document = fitz.open()
+    page = document.new_page(width=200, height=200)
+    page.insert_text((20, 100), 'Purchase 12.34', render_mode=3)
+    Path(f.file.stored_path).write_bytes(document.tobytes())
+    report = audit.audit(f.SessionLocal, f.case.id, scratch_root=tmp_path, resolve_path=Path, reader=retained_reader(f))
+    assert 'native_text_only' not in report['skipped']
+    assert report['considered'] == 1

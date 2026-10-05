@@ -12,7 +12,9 @@ For each admitted statement review of the case (READ ONLY transaction, ORM
 writes refused, nothing written to the case):
 
 * statements whose retained reading is native PDF text only are skipped
-  (the money-cell checks apply to image-derived pages);
+  (the money-cell checks apply to image-derived pages), unless the original
+  measured now has a page the current rule calls recognised (for example
+  mostly invisible text over small image tiles, r1-reproduced);
 * the original is verified against its evidence hash and re-read in a
   separate process with the current engine (single-threaded OCR);
 * the same statement is read from the new reading in a disposable SQLite
@@ -57,6 +59,24 @@ def _estimate():
     return module
 
 
+def _now_recognised(path, measured):
+    """Whether the original, measured now with the current origin rule, has a
+    page of recognised text. A file that cannot be measured keeps its stored
+    verdict; reading it would fail its own checks later."""
+    if path is None:
+        return False
+    key = str(path)
+    if key not in measured:
+        try:
+            import fitz
+            from services.financial.suspect_amounts import page_text_origin, TextOrigin
+            with fitz.open(key) as document:
+                measured[key] = any(page_text_origin(page) is TextOrigin.recognised_glyphs for page in document)
+        except Exception:
+            measured[key] = False
+    return measured[key]
+
+
 def admitted_sources(session, case_id, resolve_path, limit=None):
     from sqlalchemy import select
     from postgres.models.evidence import EvidenceDocumentText, EvidenceFile
@@ -64,7 +84,7 @@ def admitted_sources(session, case_id, resolve_path, limit=None):
     query = select(FinancialSourceDocument).where(FinancialSourceDocument.case_id == case_id,
         FinancialSourceDocument.status == 'admitted', FinancialSourceDocument.document_type == 'statement_review'
     ).order_by(FinancialSourceDocument.id)
-    sources, skipped = [], Counter()
+    sources, skipped, measured = [], Counter(), {}
     for document in session.scalars(query):
         metadata = document.metadata_ or {}
         request, original = metadata.get('statement_import_request'), metadata.get('statement_import_original')
@@ -74,13 +94,13 @@ def admitted_sources(session, case_id, resolve_path, limit=None):
             skipped['no_retained_reading'] += 1
             continue
         origins = {location.get('text_origin') for location in text.source_locations or []}
-        if origins and origins <= {NATIVE}:
+        path = resolve_path(file.stored_path)
+        if origins and origins <= {NATIVE} and not _now_recognised(path, measured):
             skipped['native_text_only'] += 1
             continue
         if limit is not None and len(sources) >= limit:
             skipped['over_limit'] += 1
             continue
-        path = resolve_path(file.stored_path)
         sources.append(dict(key=str(len(sources)), source_document_id=str(document.id), evidence_file_id=str(file.id),
             sha256=document.sha256_at_ingestion or file.sha256, path=str(path) if path else None,
             statement_id=request.get('statement_id'), currency=request.get('currency'),
