@@ -231,6 +231,34 @@ class HarnessRealCorpusTests(unittest.TestCase):
         self.assertEqual(harness._rematch(periods, truths), 2)
         self.assertEqual([p['truth_id'] for p in periods], ['d#2', 'd#1'])
 
+    def test_run_pairs_shares_by_the_share_printed_with_the_account(self):
+        def t(i, share):
+            return dict(id=f'd#{i}', period_end='2021-12-31', account='123456789', share=share, added_in='real',
+                        currency='USD', rows=[])
+        truths = [t(1, '0000'), t(2, '0040')]
+        proposal = dict(metadata=dict(holder_reference='>2000000000<', account_number='123456789'), rows=[],
+                        currency='USD')  # '0000' appears in the metadata, not as the share
+        summary = dict(period_end='2021-12-31', account='123456789 / Share 0040', currency='USD')
+        self.assertEqual(harness.pair_truth(proposal, truths, summary)['id'], 'd#2')
+        self.assertEqual(harness.pair_truth(proposal, truths, dict(summary, account='123456789 / Share 0000'))['id'],
+                         'd#1')
+
+    def test_closing_date_outranks_many_repeated_amounts(self):
+        def row(amount):
+            return dict(amount_minor=amount, direction='debit', date=None, description='x')
+        short = dict(id='d#1', period_end='2021-02-28', account='1', share=None, added_in='real', currency='USD',
+                     rows=[row(1059), row(500)])
+        long = dict(id='d#2', period_end='2022-07-31', account='1', share=None, added_in='real', currency='USD',
+                    rows=[row(1059)] * 12 + [row(777)])
+        proposal = dict(metadata={}, currency='USD', rows=[
+            dict(id=str(i), kind='transaction', excluded=False, fields=dict(amount_minor=a))
+            for i, a in enumerate(['1059', '500'])])
+        summary = dict(period_end='2021-02-28', account='1', currency='USD')
+        self.assertEqual(harness.pair_truth(proposal, [long, short], summary)['id'], 'd#1')
+        # Without a matching closing date, payments in common decide, each counted once.
+        self.assertEqual(harness.pair_truth(proposal, [long, short], dict(summary, period_end='2021-03-31'))['id'],
+                         'd#1')
+
     def test_rescore_refreshes_not_detected_entries_for_the_current_truth(self):
         def t(i):
             return dict(id=f'd#{i}', filename='d.pdf', family='f', expected='auto', defects=[], truth_status='verified')

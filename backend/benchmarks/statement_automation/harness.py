@@ -178,24 +178,35 @@ def _match_rows(proposal_rows, truth_rows, by_value=False):
 
 
 def _score(proposal, truth, summary):
+    """``(identity, shared amounts, currency)``, compared in that order.
+
+    Identity (closing date, account, share as read) decides first; payments in
+    common only break ties, each proposed amount counted at most once. Counted
+    per truth row without that bound, a long statement of repeated recurring
+    charges outscored the period whose closing date and share matched, and
+    one wrong pick cascaded through the file."""
     score = 0
     if truth['period_end'] and summary.get('period_end') == truth['period_end']:
         score += 5
     if truth.get('added_in') == 'real' and truth.get('account') and truth['account'] in _digits(summary.get('account')):
         score += 5  # real documents hold sub-accounts with the same dates
-    if truth.get('share') and truth['share'] in json.dumps(proposal.get('metadata', {})):
-        score += 5
+    if truth.get('share'):
+        # A share number printed with the account ('... / Share 0040') decides between the shares of
+        # one member, which share dates and account: any other mention of the digits does not.
+        printed = re.search(r'(?:share|ID)\s*(\d{4})\b', summary.get('account') or '', re.I)
+        if printed:
+            score += 5 if printed.group(1) == truth['share'] else -5
+        elif truth['share'] in json.dumps(proposal.get('metadata', {})):
+            score += 5
     amounts = Counter(r['fields'].get('amount_minor') for r in _payment_rows(proposal))
-    for item in truth['rows']:
-        if amounts.get(str(item['amount_minor'])):
-            score += 1
+    shared = sum((Counter(str(item['amount_minor']) for item in truth['rows']) & amounts).values())
     # Currency only breaks ties. Two sections of one file can differ by
     # nothing else (Monex MXN and USD zero-activity sections); without it they
     # pair by item order, possibly crosswise. As a tie-breaker it can never
     # outweigh content evidence, so a misread currency still pairs by content
     # and is still reported as currency_wrong.
     currency = (summary.get('currency') or proposal.get('currency') or '').upper()
-    return score, int(bool(currency) and currency == (truth.get('currency') or '').upper())
+    return score, shared, int(bool(currency) and currency == (truth.get('currency') or '').upper())
 
 
 def pair_truth(proposal, candidates, summary):
