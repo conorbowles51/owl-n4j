@@ -254,6 +254,22 @@ class HarnessRealCorpusTests(unittest.TestCase):
         self.assertEqual(harness._rematch(periods, truths), 2)
         self.assertEqual([p['truth_id'] for p in periods], ['d#2', 'd#1'])
 
+    def test_rescore_rematch_pairs_currency_sections_by_currency(self):
+        truths = {t['id']: dict(t, filename='m.pdf', added_in='real') for t in (
+            dict(id='m#1', period_end='2022-11-30', account='1977', currency='MXN'),
+            dict(id='m#2', period_end='2022-11-30', account='1977', currency='USD'),
+            dict(id='m#3', period_end='2022-11-30', account='1977', currency='EUR'))}
+        def item(name, truth_id, currency):
+            return dict(item_id=name, filename='m.pdf', truth_id=truth_id,
+                        read=dict(period_end='2022-11-30', account='CONTRATO 3041977', currency=currency))
+        # Batch items need not arrive in section order; date and account alone tie on every section.
+        periods = [item('b', 'm#2', 'usd'), item('a', 'm#1', 'MXN'), item('c', 'm#3', 'EUR')]
+        self.assertEqual(harness._rematch(periods, truths), 0)  # the run's own pairing is kept
+        self.assertEqual([p['truth_id'] for p in periods], ['m#2', 'm#1', 'm#3'])
+        swapped = [item('c', 'm#1', 'EUR'), item('a', 'm#2', 'MXN'), item('b', 'm#3', 'USD')]
+        self.assertEqual(harness._rematch(swapped, truths), 3)
+        self.assertEqual([p['truth_id'] for p in swapped], ['m#3', 'm#1', 'm#2'])
+
     def test_run_pairs_shares_by_the_share_printed_with_the_account(self):
         def t(i, share):
             return dict(id=f'd#{i}', period_end='2021-12-31', account='123456789', share=share, added_in='real',

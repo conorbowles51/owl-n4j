@@ -36,6 +36,19 @@ Transcription format (one statement fact per line, ``#`` starts a comment)::
                            another printed statement of the same account and dates contradicts)
     page 3 cont            (no new statement header: continues the open statement)
 
+Any other issuer (the defaults above are Andrews share statements) is named
+once, before the first ``page`` line, and a statement or section with no
+share number uses ``-``::
+
+    issuer bbva-mexico BBVA Mexico     (family slug, then the institution as printed)
+    currency MXN           (before any page: the document default; inside a share: that period's)
+    kind card              (balances are amounts owed; purchases raise them)
+    form not_statement <reason>   (the document holds no statement: no periods, status not_statement)
+    page 1 stmt 2024-01-01 2024-01-31 no 1 member 4321   (``member`` = account as printed, ``?`` if not)
+    share - open 1000.00
+    r 2024-01-05 -20.00 - | ...   (ISO date where the year is printed; ``-`` = no running balance printed)
+    control credits_total 50.00   (printed totals and counts: credits_/debits_total, credits_/debits_/rows_count)
+
 A ``page`` line whose ``stmt`` dates, ``no 1`` or member differ from the open
 statement starts a new statement; ``cont`` and same-statement pages continue
 the share that was open. Rows before any ``share`` on a page belong to it.
@@ -50,7 +63,8 @@ import sys
 from collections import Counter
 from pathlib import Path
 
-from .real_truth import ANDREWS_DATES, ANDREWS_TAIL, Period, iso, ocr_money, read_pages, reconcile, year_for
+from .real_truth import (ANDREWS_DATES, ANDREWS_TAIL, Period, document_status, iso, ocr_money, read_pages,
+                         reconcile, year_for)
 
 VERSION = 'visual-v1'
 MONEY = re.compile(r'^-?\d+\.\d{2}$')
@@ -172,6 +186,9 @@ class Transcription:
         self.pages = set()
         self.periods = []  # dicts: statement, share, opening, closing, rows, pages, hold, unverified, unread
         self.marks = {}  # page -> what it prints, in order: ('header',), ('open', share, v), ('row', ...), ('close', v)
+        self.issuer = dict(family='andrews-share', institution='Andrews Federal Credit Union', currency='USD',
+                           kind='deposit')
+        self.form = None  # (status, reason) when the document holds no statement
         self._parse(text)
 
     def _parse(self, text):
@@ -183,6 +200,22 @@ class Transcription:
             word, _, rest = line.partition(' ')
             if word == 'doc':
                 self.doc = rest.strip()
+            elif word in ('issuer', 'kind', 'form') or word == 'currency' and page is None:
+                if page is not None:
+                    raise ValueError(f'line {number}: {word} belongs before the first page line')
+                self._document_line(word, rest.strip(), number)
+            elif word == 'currency':
+                if period is None:
+                    raise ValueError(f'line {number}: currency inside a statement follows its share line')
+                if not re.fullmatch(r'[A-Z]{3}', rest.strip()):
+                    raise ValueError(f'line {number}: currency needs a three-letter code')
+                period['currency'] = rest.strip()
+            elif word == 'control':
+                fields = rest.split()
+                if period is None or len(fields) != 2 or fields[0] not in CONTROLS:
+                    raise ValueError(f'line {number}: control needs a share open and one of {", ".join(CONTROLS)}')
+                period['controls'][fields[0]] = (_minor(fields[1], number) if fields[0].endswith('_total')
+                                                 else _count(fields[1], number))
             elif word == 'done':
                 self.done |= page_set(rest)
             elif word == 'page':
@@ -217,7 +250,7 @@ class Transcription:
                     raise ValueError(f'line {number}: share line not understood')
                 period = dict(statement=statement, share=fields.group(1), opening=None, closing=None, rows=[],
                               pages=[statement['pages'][-1]], hold=[], unverified=[], expect=None, unread=0,
-                              line=number)
+                              line=number, currency=None, controls={})
                 if fields.group(2) == '??':
                     period['unread'] += 1
                 else:
@@ -228,7 +261,7 @@ class Transcription:
                 if period is None and not self.strict and statement is not None:
                     period = dict(statement=statement, share='?', opening=None, closing=None, rows=[],
                                   pages=[statement['pages'][-1]], hold=[], unverified=[], expect=None, unread=0,
-                                  line=number)
+                                  line=number, currency=None, controls={})
                     self.periods.append(period)
                 if period is None:
                     raise ValueError(f'line {number}: {word} outside a share')
@@ -238,9 +271,14 @@ class Transcription:
                     if len(fields) != 3:
                         raise ValueError(f'line {number}: row needs date, amount and balance')
                     row = dict(date=fields[0], amount=None, balance=None, description=description.strip())
+                    if not re.fullmatch(r'\d{2}/\d{2}|\d{4}-\d{2}-\d{2}', fields[0]):
+                        raise ValueError(f'line {number}: row date must be MM/DD or YYYY-MM-DD')
                     for key, value in (('amount', fields[1]), ('balance', fields[2])):
+                        if key == 'balance' and value == '-':
+                            continue  # no running balance printed on this row
                         if value == '??':
                             period['unread'] += 1
+                            row['unread'] = True
                         else:
                             row[key] = _minor(value, number)
                     period['rows'].append(row)
@@ -260,28 +298,73 @@ class Transcription:
                     period[word].append(rest.strip())
             else:
                 raise ValueError(f'line {number}: unknown line {word!s}')
+        if self.form and self.periods:
+            raise ValueError('a document marked not_statement cannot hold statement periods')
+
+    def _document_line(self, word, rest, number):
+        if word == 'issuer':
+            family, _, institution = rest.partition(' ')
+            if not re.fullmatch(r'[a-z0-9]+(?:-[a-z0-9]+)+', family) or not institution.strip():
+                raise ValueError(f'line {number}: issuer needs a family slug and the institution')
+            self.issuer.update(family=family, institution=institution.strip())
+        elif word == 'currency':
+            if not re.fullmatch(r'[A-Z]{3}', rest):
+                raise ValueError(f'line {number}: currency needs a three-letter code')
+            self.issuer['currency'] = rest
+        elif word == 'kind':
+            if rest not in ('deposit', 'card'):
+                raise ValueError(f'line {number}: kind is deposit or card')
+            self.issuer['kind'] = rest
+        else:
+            form, _, reason = rest.partition(' ')
+            if form != 'not_statement' or not reason.strip():
+                raise ValueError(f'line {number}: form needs not_statement and a reason')
+            self.form = (form, reason.strip())
+
+
+CONTROLS = ('credits_total', 'debits_total', 'credits_count', 'debits_count', 'rows_count')
+
+
+def _count(text, line_no):
+    if not re.fullmatch(r'\d+', text):
+        raise ValueError(f'line {line_no}: not a printed count: {text!s}')
+    return int(text)
 
 
 def _row_iso(text, start, end):
+    if '-' in text:
+        return text
     month, day = map(int, text.split('/'))
     return iso(year_for(month, start, end), month, day)
 
 
-def to_period(item, institution='Andrews Federal Credit Union', family='andrews-share', currency='USD'):
+ANDREWS = dict(family='andrews-share', institution='Andrews Federal Credit Union', currency='USD', kind='deposit')
+
+
+def to_period(item, issuer=None):
+    issuer = issuer or ANDREWS
     s = item['statement']
-    period = Period(family=family, institution=institution, currency=currency, holder=s['holder'] or None,
+    andrews = issuer['family'] == 'andrews-share'
+    share = item['share'] if re.fullmatch(r'\d{4}', item['share']) else None
+    period = Period(family=issuer['family'], institution=issuer['institution'],
+                    currency=item.get('currency') or issuer['currency'], holder=s['holder'] or None,
                     account=s['member'] if s['member'] != '?' else None, period_start=s['start'],
                     period_end=s['end'], opening_minor=item['opening'], closing_minor=item['closing'],
-                    pages=sorted(set(item['pages'])), share=item['share'] if re.fullmatch(r'\d{4}', item['share']) else None)
+                    pages=sorted(set(item['pages'])), share=share if andrews else None, kind=issuer['kind'],
+                    controls=dict(item.get('controls') or {}))
+    if not andrews and item['share'] not in ('-', '?'):
+        period.notes.append(f"section {item['share']}")
     for row in item['rows']:
-        if row['amount'] is None or row['balance'] is None:
-            continue
-        period.rows.append(dict(date=_row_iso(row['date'], s['start'], s['end']), description=row['description'],
-                                amount_minor=abs(row['amount']), direction='debit' if row['amount'] < 0 else 'credit',
-                                balance_after=row['balance']))
+        if row.get('unread') or andrews and row['balance'] is None:
+            continue  # an unread value is counted in ``unread``; Andrews prints a balance on every row
+        record = dict(date=_row_iso(row['date'], s['start'], s['end']), description=row['description'],
+                      amount_minor=abs(row['amount']), direction='debit' if row['amount'] < 0 else 'credit')
+        if row['balance'] is not None:
+            record['balance_after'] = row['balance']
+        period.rows.append(record)
     if item['unread']:
         period.problems.append('value not legible on the page image')
-    if period.share is None:
+    if andrews and period.share is None:
         period.problems.append('share id not read')
     period.problems.extend(item['unverified'])
     return period
@@ -340,7 +423,7 @@ def compile_document(reviewed_text, ocr_text=None, page_count=None):
     pending = sorted(total - reviewed.done)
     periods = []
     for index, item in enumerate(reviewed.periods, 1):
-        period = to_period(item)
+        period = to_period(item, reviewed.issuer)
         status, reasons = reconcile(period)
         if item['hold']:
             status, reasons = 'incomplete', list(item['hold'])
@@ -350,7 +433,8 @@ def compile_document(reviewed_text, ocr_text=None, page_count=None):
             record.update(expected_override=item['expect'][0], expected_reason=item['expect'][1])
         periods.append(record)
     return dict(version=VERSION, doc=reviewed.doc, pages_done=sorted(reviewed.done), pages_pending=pending,
-                complete=not pending, periods=periods,
+                complete=not pending, periods=periods, issuer=reviewed.issuer['family'],
+                form=dict(status=reviewed.form[0], reason=reviewed.form[1]) if reviewed.form else None,
                 misreads=misreads(Transcription(ocr_text, strict=False), reviewed) if ocr_text else {},
                 period_status=dict(Counter(p['truth_status'] for p in periods)))
 
@@ -368,23 +452,21 @@ def apply_visual(result, visual):
     """
     if not visual or not visual.get('complete') or visual.get('doc') != result.get('id'):
         return result
+    issuer = visual.get('issuer') or result.get('issuer')
+    if visual.get('form'):
+        return dict(result, status=visual['form']['status'], reason=visual['form']['reason'], periods=[],
+                    period_status={}, issuer=issuer, truth_source='visual', statements_complete=True,
+                    visual_misreads=visual.get('misreads', {}))
     periods = [dict(p) for p in visual['periods']]
     statuses = Counter(p['truth_status'] for p in periods)
-    if not periods:
-        status = 'unverified'
-    elif statuses.get('verified', 0) + statuses.get('incomplete', 0) == len(periods) and statuses.get('verified'):
-        status = 'verified' if statuses.get('verified') == len(periods) else 'partly_verified'
-    elif statuses.get('verified'):
-        status = 'partly_verified'
-    elif statuses.get('incomplete') == len(periods):
-        status = 'incomplete'
-    else:
-        status = 'unverified'
+    # Every page was read, so every period's status is final: verified, incomplete
+    # (printed pages absent) or unverified with the reason the image cannot settle.
+    status = document_status(statuses, reviewed=True)
     # Every page was read, so every statement the document holds is known even
     # where a period is incomplete (held by design): an admitted item matching
     # none of them is wrong, not a gap in the truth.
     return dict(result, status=status, periods=periods, period_status=dict(statuses), truth_source='visual',
-                statements_complete=all(p['truth_status'] in ('verified', 'incomplete') for p in periods),
+                issuer=issuer, statements_complete=all(p['truth_status'] in ('verified', 'incomplete') for p in periods),
                 visual_misreads=visual.get('misreads', {}))
 
 

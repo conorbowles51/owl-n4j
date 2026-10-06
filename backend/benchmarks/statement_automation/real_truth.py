@@ -1707,21 +1707,44 @@ def document_truth(doc, docs_dir, cache_dir=None):
             return dict(result, status='not_statement', reason=form)
         if issuer == 'bbva-mexico' and re.search(r'FONDOS DE INVERSI[OÓ]N', text):
             return dict(result, status='needs_parser', reason='BBVA investment fund statement (no tier-A parser)')
-        status = 'unverified'
         result['reason'] = 'parser found no statement period'
-    elif statuses.get('verified') == len(out):
-        status = 'verified'
-    elif statuses.get('verified'):
-        status = 'partly_verified'
-    elif statuses.get('ocr_reconciled'):
-        status = 'ocr_reconciled'
-    elif statuses.get('incomplete') == len(out):
-        status = 'incomplete'
-    else:
-        status = 'unverified'
+    status = document_status(statuses)
     if doc.get('mode') == 'mixed' and status != 'verified':
         result['image_pages'] = doc.get('page_kinds', {}).get('image_only', 0)
     return dict(result, status=status, periods=out, period_status=dict(statuses))
+
+
+# A document whose truth is settled: nothing further a person or a parser can add.
+# ``settled`` = every period final but not all verified (e.g. verified + incomplete).
+FINAL = ('verified', 'settled', 'unverified', 'incomplete', 'not_statement')
+
+
+def document_status(statuses, reviewed=False):
+    """The document's status from its periods' statuses (a Counter).
+
+    A period that is verified or incomplete (printed pages absent: held by
+    design) is final whatever read it. ``reviewed``: every page was read by a
+    person, so an unverified period is final too (the image cannot settle it)
+    and the document is settled; from a text layer it may be the truth reader's
+    own gap, so the document stays ``partly_verified`` and in the visual queue.
+    """
+    total = sum(statuses.values())
+    verified, incomplete = statuses.get('verified', 0), statuses.get('incomplete', 0)
+    if not total:
+        return 'unverified'
+    if verified == total:
+        return 'verified'
+    if incomplete == total:
+        return 'incomplete'
+    if verified and verified + incomplete == total or reviewed and verified:
+        return 'settled'
+    if reviewed:
+        return 'unverified'
+    if verified:
+        return 'partly_verified'
+    if statuses.get('ocr_reconciled'):
+        return 'ocr_reconciled'
+    return 'unverified'
 
 
 def ocr_layer_pages(path):
@@ -1888,6 +1911,7 @@ def summarise(status):
         periods[family].update(row['period_status'])
         reasons.update(row['period_reasons'])
     return dict(documents=dict(Counter(r['status'] for r in status)),
+                documents_final=sum(r['status'] in FINAL for r in status),
                 documents_by_family={k: dict(v) for k, v in sorted(by_family.items())},
                 periods_by_family={k: dict(v) for k, v in sorted(periods.items())},
                 periods=dict(sum(periods.values(), Counter())), unverified_reasons=dict(reasons.most_common()))
