@@ -589,6 +589,16 @@ def _us_dollars(rows):
     return dollars and us
 
 
+def _heading_pages(segment_pages, facts):
+    """The statement's first pages, up to and including the first page printing its period."""
+    heading = []
+    for page in segment_pages[:3]:
+        heading.append(page)
+        if facts[page]['periods']:
+            break
+    return heading
+
+
 def _section_holder(section_pages, pages, facts):
     """Holder from the statement's heading pages only (A8): up to the first page printing the period.
 
@@ -596,11 +606,7 @@ def _section_holder(section_pages, pages, facts):
     officer as "Titular"), so labels elsewhere never count. A labelled name and
     the addressee block that disagree give no holder (a person decides).
     """
-    heading = []
-    for page in section_pages[:3]:
-        heading.append(page)
-        if facts[page]['periods']:
-            break
+    heading = _heading_pages(section_pages, facts)
     labelled = set()
     for page in heading:
         for row in pages[page]:
@@ -918,8 +924,10 @@ def _read_section(rows, segment, pages, facts, style, sources, profile, shared=F
                 _accounts(row, own)
         accounts = own
     else:
-        for item in f:
-            for value, ranks in item['accounts'].items():
+        # Only the statement's heading pages: account numbers on later pages describe
+        # counterparties of transfers, not this account (A6, A10).
+        for page in _heading_pages(segment['pages'], facts):
+            for value, ranks in facts[page]['accounts'].items():
                 accounts.setdefault(value, set()).update(ranks)
     account = ''
     if accounts:

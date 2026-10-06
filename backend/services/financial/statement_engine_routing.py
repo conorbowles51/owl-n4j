@@ -73,6 +73,14 @@ def reading_key(rows):
     return (tuple(opening), tuple(closing), tuple(moves))
 
 
+def closing_reconciles(rows, liability):
+    from services.financial.statement_review_checks import check_statement_rows
+    return check_statement_rows(rows, liability=liability)['checks'][0]['status'] == 'matches'
+
+
+IDENTITY = ('institution', 'account_reference', 'holder', 'currency')
+
+
 def proved_rows(rows, liability):
     """A reader's rows prove their period: closing reconciles and nothing is left unresolved."""
     from services.financial.statement_review_checks import check_statement_rows
@@ -81,6 +89,12 @@ def proved_rows(rows, liability):
     checks = check_statement_rows(rows, liability=liability)
     closing = checks['checks'][0]
     return closing['status'] == 'matches' and not checks['has_difference']
+
+
+def _same_account(a, b):
+    da, db = ''.join(ch for ch in a if ch.isdigit()), ''.join(ch for ch in b if ch.isdigit())
+    shorter, longer = sorted((da, db), key=len)
+    return len(shorter) >= 4 and shorter in longer
 
 
 def disagreement_row(rows, choice):
@@ -180,9 +194,23 @@ def route_catalog(sources, library_catalog):
                 logger.warning('Engine/library disagreement on statement %s (layout %s, fingerprint %s).',
                                group['id'], group.get('layout_id'), statement['layout_fingerprint'])
             continue
-        # The library holds this period and the engine proves it: the engine serves under the library id.
-        replacements[group['id']] = dict(public, id=group['id'], engine_id=statement['id'],
-                                         replaced_layout=group.get('layout_id'))
+        if closing_reconciles(library_rows, is_liability(group)):
+            # The library's reading reconciles its balances (it may still be held for another reason,
+            # or be ready): it keeps the period. The engine replaces only a reading that cannot reconcile.
+            continue
+        conflicts = [field for field in IDENTITY if public.get(field) and group.get(field)
+                     and public[field] != group[field] and not (field == 'account_reference' and _same_account(public[field], group[field]))]
+        if conflicts:
+            continue
+        # The library cannot reconcile this period and the engine proves it: the engine serves under the
+        # library id, with the library's identity facts where the engine read none.
+        replaced = dict(public, id=group['id'], engine_id=statement['id'], replaced_layout=group.get('layout_id'))
+        for field in IDENTITY:
+            if not replaced.get(field) and group.get(field):
+                replaced[field] = group[field]
+                if field == 'currency':
+                    replaced['currency_source'] = 'printed_account_section'
+        replacements[group['id']] = replaced
         routing['replaced'].append(group['id'])
         routing['engine_served'] += 1
     statements = [replacements.get(g['id'], g) for g in groups] + served

@@ -317,7 +317,7 @@ class EngineRoutingTests(unittest.TestCase):
         self.assertTrue(any(r.get('engine_hold') == 'route_library_first' and not r['excluded'] for r in rows))
 
     def _library(self, sources, proved_rows):
-        group = dict(id='LIB', layout_id='fake-library', institution='X', account_reference='1', period_start='2024-03-01',
+        group = dict(id='LIB', layout_id='fake-library', institution='', account_reference='0012345678', period_start='2024-03-01',
                      period_end='2024-03-31', currency='MXN', sources=[dict(page_number=1, table_index=0, source_revision='r1')],
                      page_numbers=[1])
         return group, (lambda s: dict(statements=[group], unclassified_sources=[], information_sources=[],
@@ -359,6 +359,27 @@ class EngineRoutingTests(unittest.TestCase):
         served = catalog['statements'][0]
         self.assertEqual((served['id'], served['layout_id'], served['replaced_layout']), ('LIB', 'generic', 'fake-library'))
         self.assertEqual(catalog['engine_routing']['replaced'], ['LIB'])
+
+    def test_a_library_reading_that_reconciles_is_never_replaced(self):
+        sources = mx_statement(MOVES, closing='1,250.00')
+        rows = [dict(r, fields=dict(r['fields'])) for r in read_statements(sources)[0]['_rows']]
+        # The library reconciles but is held today for another reason (a flagged control line): it keeps the period.
+        rows.append(dict(rows[0], id='x', kind='statement_total', excluded=True, issues=['check'], fields=dict(description='Total credit')))
+        catalog, group = self._route(sources, rows)
+        self.assertEqual(catalog['statements'], [group])
+        self.assertEqual(catalog['engine_routing']['replaced'], [])
+
+    def test_conflicting_identity_keeps_the_library_period(self):
+        from services.financial import statement_engine_routing as R
+        sources = mx_statement(MOVES, closing='1,250.00')
+        rows = [dict(r, fields=dict(r['fields'])) for r in read_statements(sources)[0]['_rows']]
+        [r for r in rows if not r['excluded']][0]['fields']['amount_minor'] = '1'
+        group, library = self._library(sources, rows)
+        group['account_reference'] = '9999999999'
+        with mock.patch.dict(os.environ, {'LOUPE_FINANCIAL_GENERIC_READER': '1'}), \
+                mock.patch('services.financial.statement_review_checks.statement_rows', return_value=rows):
+            catalog = R.route_catalog(sources, library)
+        self.assertEqual(catalog['statements'], [group])
 
 
 if __name__ == '__main__':
