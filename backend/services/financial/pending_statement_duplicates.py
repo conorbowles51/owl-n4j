@@ -319,6 +319,9 @@ def apply_duplicate_disposition(session, *, case_id, file, proposal, request=Non
         return previous
     own = scope({**request, 'account_type': proposal.get('metadata', {}).get('account_type') or ''})
     current = proposal.get('current_import') or {}
+    if current.get('excluded_as_duplicate') and current.get('duplicate_disposition'):
+        # A saved copy set aside after admission: its document decision governs.
+        return deepcopy(current['duplicate_disposition'])
     if current.get('evidence_file_id') == str(file.id):
         return _persist(file, proposal, request, dict(status='retained', label='Retained statement', basis=None,
             retained=_own_link(file, proposal, current.get('source_document_id')), reason='This statement already has a saved import.'), actor)

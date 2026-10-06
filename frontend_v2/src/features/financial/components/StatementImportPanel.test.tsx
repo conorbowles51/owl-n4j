@@ -949,6 +949,97 @@ it("opens an excluded duplicate as a source without offering another import", as
   expect(sent).toEqual([])
   expect(done).not.toHaveBeenCalled()
 })
+it("names the retained file and page of a copy the system set aside and offers to keep it instead", async () => {
+  const base = vi.mocked(fetchAPI).getMockImplementation()!
+  const retained = {
+    evidence_file_id: "10000000-0000-4000-8000-000000000003",
+    statement_id: null,
+    source_document_id: "10000000-0000-4000-8000-000000000004",
+    filename: "000100-000299 Statements.pdf",
+    page_number: 7,
+  }
+  vi.mocked(fetchAPI).mockImplementation(async (url, options) =>
+    String(url).includes("statement-import")
+      ? ({
+          ...data,
+          current_import: {
+            source_document_id: "excluded",
+            evidence_file_id: "file",
+            revision: "b".repeat(64),
+            transaction_count: 0,
+            excluded_as_duplicate: true,
+            retained_filename: retained.filename,
+            duplicate_disposition: {
+              policy: "admitted-statement-duplicate-v1",
+              reading_revision: "b".repeat(64),
+              revision: "b".repeat(64),
+              status: "ignored",
+              label: "Duplicate - Ignored by system",
+              reason:
+                "Same statement as 000100-000299 Statements.pdf, page 7. Its payments and printed balances are equal, so they are counted once, from that copy.",
+              current: true,
+              admitted_copy: true,
+              matched_fields: ["payments_and_balances"],
+              basis: "identical_financial_reading",
+              retained,
+            },
+          },
+        } as never)
+      : base(url, options)
+  )
+  mount()
+  fireEvent.click(screen.getByRole("button", { name: "Import a statement" }))
+  await screen.findByRole("option", { name: "statement.pdf" })
+  fireEvent.change(screen.getByLabelText("Uploaded statement"), {
+    target: { value: "file" },
+  })
+  await screen.findByText("Review statement.pdf")
+  expect(screen.getByText("Duplicate - Ignored by system")).toBeVisible()
+  expect(
+    screen.getByText(/Same statement as 000100-000299 Statements.pdf, page 7/)
+  ).toBeVisible()
+  expect(
+    screen.getByRole("form", { name: "Keep this copy instead" })
+  ).toBeVisible()
+  expect(
+    screen.queryByRole("button", { name: /Confirm import/ })
+  ).not.toBeInTheDocument()
+})
+it("lists the copies set aside for a retained statement", async () => {
+  const base = vi.mocked(fetchAPI).getMockImplementation()!
+  vi.mocked(fetchAPI).mockImplementation(async (url, options) =>
+    String(url).includes("statement-import")
+      ? ({
+          ...data,
+          current_import: {
+            source_document_id: "retained",
+            evidence_file_id: "other",
+            revision: "b".repeat(64),
+            transaction_count: 3,
+            duplicate_copies: [
+              {
+                evidence_file_id: "10000000-0000-4000-8000-000000000005",
+                statement_id: null,
+                source_document_id: "10000000-0000-4000-8000-000000000006",
+                filename: "000500-000699 Statements.pdf",
+                page_number: 4,
+              },
+            ],
+          },
+        } as never)
+      : base(url, options)
+  )
+  mount()
+  fireEvent.click(screen.getByRole("button", { name: "Import a statement" }))
+  await screen.findByRole("option", { name: "statement.pdf" })
+  fireEvent.change(screen.getByLabelText("Uploaded statement"), {
+    target: { value: "file" },
+  })
+  await screen.findByText("Review statement.pdf")
+  expect(
+    screen.getByLabelText("Copies set aside as duplicates")
+  ).toHaveTextContent("000500-000699 Statements.pdf, page 4")
+})
 it("opens and focuses a flagged row's import choice while retaining another correction", async () => {
   const flagged = {
     ...data,

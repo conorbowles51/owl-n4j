@@ -2173,3 +2173,7 @@ from services.financial.statement_printed_no_activity import zero_totals_evidenc
 __all__ += ["zero_totals_evidence"]
 from services.financial.statement_movement_scaffold import movement_scaffold_enabled
 __all__ += ["movement_scaffold_enabled"]
+from services.financial.admitted_statement_duplicates import (
+    find_admitted_duplicates, set_aside_admitted_duplicates, set_aside_copy, restore_copy, keep_copy,
+)
+__all__ += ["find_admitted_duplicates", "set_aside_admitted_duplicates", "set_aside_copy", "restore_copy", "keep_copy"]

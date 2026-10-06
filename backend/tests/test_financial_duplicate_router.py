@@ -72,3 +72,42 @@ class DuplicateDecisionRouterTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(router._require_adjudication_case_access, calls)
         self.assertEqual(router._adjudication_case_permission(None, {}), ("case", "edit"))
         self.assertEqual(route.methods, {"POST"})
+
+
+class KeepDuplicateCopyRouterTests(unittest.IsolatedAsyncioTestCase):
+    async def test_keep_copy_passes_actor_and_reason_and_maps_refusals(self):
+        from types import SimpleNamespace
+        from routers import financial_adjudication as router
+        from services.financial import admitted_statement_duplicates as admitted
+        case_id, document_id = uuid.uuid4(), uuid.uuid4()
+        user = SimpleNamespace(id=uuid.uuid4(), name="Reviewer", email="reviewer@example.test")
+        body = router.KeepDuplicateCopyRequest(reason="This production carries the cited range")
+        with patch.object(admitted, "keep_copy", return_value={"applied": True}) as call:
+            self.assertTrue((await router.keep_duplicate_copy(document_id, body, case_id, user, "db"))["applied"])
+        self.assertEqual(call.call_args.kwargs["actor"].user_id, user.id)
+        self.assertEqual((call.call_args.kwargs["case_id"], call.call_args.kwargs["document_id"]), (case_id, document_id))
+        for error, status in [(admitted.AdmittedDuplicateError("Not set aside"), 409), (RuntimeError("private detail"), 500)]:
+            with self.subTest(status=status), patch.object(admitted, "keep_copy", side_effect=error):
+                with self.assertRaises(HTTPException) as caught:
+                    await router.keep_duplicate_copy(document_id, body, case_id, user, "db")
+                self.assertEqual(caught.exception.status_code, status)
+                self.assertNotIn("private detail", caught.exception.detail)
+
+    async def test_register_decision_brings_batch_items_along(self):
+        from types import SimpleNamespace
+        from routers import financial_adjudication as router
+        from services.financial import admitted_statement_duplicates as admitted
+        case_id, document_id = uuid.uuid4(), uuid.uuid4()
+        user = SimpleNamespace(id=uuid.uuid4(), name="Reviewer", email="reviewer@example.test")
+        body = router.DuplicateDecisionRequest(action="restore", reason="Reviewed", expected_revision="a" * 64)
+        with patch.object(router, "decide_duplicate", return_value={"applied": True}), \
+                patch.object(admitted, "sync_batch_items") as sync:
+            await router.record_duplicate_decision(document_id, body, case_id, user, "db")
+        sync.assert_called_once_with("db", case_id=case_id, document_id=document_id)
+
+    def test_keep_route_requires_adjudication_case_access(self):
+        from routers import financial_adjudication as router
+        route = next(r for r in router.router.routes if r.path == "/api/financial/documents/{document_id}/keep-duplicate-copy")
+        calls = {dependency.call for dependency in route.dependant.dependencies}
+        self.assertIn(router._require_adjudication_case_access, calls)
+        self.assertEqual(route.methods, {"POST"})

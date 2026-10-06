@@ -191,6 +191,11 @@ def assess(proposal, request=None):
             and duplicate.get('signature') == review_signature(proposal, raw)):
         summary.update(duplicate_disposition=duplicate, can_import=False, problems=[], problem_count=0)
         return 'duplicate_ignored', summary
+    if current and current.get('excluded_as_duplicate') and current.get('duplicate_disposition'):
+        # A saved copy set aside as a duplicate after admission counts nothing.
+        summary.update(duplicate_disposition=current['duplicate_disposition'], can_import=False, problems=[],
+            problem_count=0, transaction_count=0, record_count=0, incomplete_count=0)
+        return 'duplicate_ignored', summary
     if current:
         retained = current.get('issues', problems)
         details = current.get('details', {})
