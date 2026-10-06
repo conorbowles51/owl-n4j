@@ -41,7 +41,7 @@ from itertools import product
 from services.financial.pdf_candidates import _digest
 from services.financial.statement_engine_vocabulary import (
     ACCOUNT_LABELS, CURRENCY_LABELS, CURRENCY_NAMES, COLUMN_INDEX, HOLDER_LABELS, INDEX, INSTITUTION_WORDS,
-    LIABILITY_EVIDENCE, MONTHS, PAGE_NUMBERING, PERIOD_WORDS, UNDATED_CHARGES, FUZZY_INDEX, fold, label)
+    LIABILITY_EVIDENCE, MONTHS, NOT_A_NAME, PAGE_NUMBERING, PERIOD_WORDS, UNDATED_CHARGES, FUZZY_INDEX, fold, label)
 
 LAYOUT = 'generic'
 # The library profile applied to the current reading (None for the plain engine).
@@ -669,9 +669,9 @@ def _holder_label(row, found):
     cells = row['raw']['cells']
     joined = ' '.join(c['expected_text'].strip() for c in cells)
     for name in HOLDER_LABELS:
-        m = re.match(r'^\s*' + re.escape(name) + r'\s*:\s*(.{3,120})$', fold(joined))
+        # "Label: value" printed in one line; keep the printed text (not folded) of the value.
+        m = re.match(r'^\s*' + re.escape(name) + r'\s*:\s*(.{3,120})$', ' '.join(joined.upper().split()))
         if m:
-            # Keep the printed text (not folded) of the value.
             raw = re.split(r':\s*', joined, maxsplit=1)
             if len(raw) == 2 and raw[1].strip():
                 found.add(' '.join(raw[1].split()))
@@ -720,7 +720,8 @@ def address_holder(rows):
             name = ' '.join(t['t'] for t in sorted(top['tokens'], key=lambda t: (t['line'], t['x0']))
                             if id(t['cell']) in aligned and t['line'] == 0)
             if (re.search(r'[A-Za-z]{2}', name) and not re.search(r'\d', name) and len(name.split()) >= 2
-                    and not any(word in fold(name) for word in ('BANCO', 'BANK', 'ESTADO DE CUENTA', 'STATEMENT'))):
+                    and not name.rstrip().endswith(':')
+                    and not any(re.search(r'\b' + re.escape(word) + r'\b', fold(name)) for word in NOT_A_NAME)):
                 found.append((top['y0'], name))
     # The addressee block is the topmost one; a second (fiscal) address block below it is not the holder.
     return min(found)[1] if found else ''
@@ -908,7 +909,7 @@ def _sections(segment, pages, style):
     for section in sections:
         if merged and not any(_row_is_movement(r, style, 2) for r in section):
             previous, here = _endpoints(merged[-1], style), _endpoints(section, style)
-            if here['opening'] and here['closing'] and here['opening'] <= previous['opening'] and here['closing'] <= previous['closing']:
+            if here['opening'] and here['opening'] <= previous['opening'] and here['closing'] <= previous['closing']:
                 merged[-1] = merged[-1] + section
                 continue
         merged.append(section)
