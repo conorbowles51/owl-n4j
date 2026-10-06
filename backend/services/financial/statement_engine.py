@@ -504,7 +504,7 @@ def _accounts(row, found):
         if '\n' in text:
             continue
         folded = fold(text)
-        for name, rank in ACCOUNT_LABELS:
+        for name, rank in _ACCOUNT_LABELS_LONGEST:
             key = fold(name)
             m = re.match(r'^' + re.escape(key) + r'\s*(?:NO\.?\s*)?:?\s*(.+)$', folded)
             if not m:
@@ -515,8 +515,14 @@ def _accounts(row, found):
             if ending:
                 found.setdefault('****' + ending[1], set()).add(rank)
                 break
-            first = value.split()[0] if value.split() else ''
-            candidate = value if _ACCOUNT_VALUE.fullmatch(value) else first if _ACCOUNT_VALUE.fullmatch(first) else ''
+            # The whole leading run of digit groups: OCR and print both split long numbers (CLABE) into groups.
+            run = []
+            for part in value.split():
+                if not re.fullmatch(r'[\d-]+|(?:\*{2,}|X{2,})\d{3,6}', part):
+                    break
+                run.append(part)
+            first = ''.join(run)
+            candidate = first if _ACCOUNT_VALUE.fullmatch(first) else ''
             digits = re.sub(r'\D', '', candidate)
             if candidate and 6 <= len(digits) <= 20 or candidate.startswith(('*', 'X')):
                 found.setdefault(candidate.replace(' ', ''), set()).add(rank)
@@ -525,13 +531,23 @@ def _accounts(row, found):
     raw = row['raw']['cells']
     for index, cell in enumerate(raw[:-1]):
         folded = label(cell['expected_text'])
-        for name, rank in ACCOUNT_LABELS:
+        for name, rank in _ACCOUNT_LABELS_LONGEST:
             if folded == label(name):
-                value = raw[index + 1]['expected_text'].strip()
+                # The value can continue in the next cells as further digit groups.
+                groups = []
+                for following in raw[index + 1:]:
+                    text_value = following['expected_text'].strip()
+                    if not re.fullmatch(r'[\d -]+', text_value):
+                        break
+                    groups.append(text_value.replace(' ', ''))
+                value = ''.join(groups)
                 digits = re.sub(r'\D', '', value)
-                if _ACCOUNT_VALUE.fullmatch(value) and 6 <= len(digits) <= 20:
-                    found.setdefault(value.replace(' ', ''), set()).add(rank)
+                if value and _ACCOUNT_VALUE.fullmatch(value) and 6 <= len(digits) <= 20:
+                    found.setdefault(value, set()).add(rank)
                 break
+
+
+_ACCOUNT_LABELS_LONGEST = sorted(ACCOUNT_LABELS, key=lambda item: len(item[0]), reverse=True)
 
 
 def _zipped_labels(source_rows):
@@ -685,20 +701,24 @@ def address_holder(rows):
             if abs(ex - x) > row['width'] * 0.015 or earlier['y0'] > block[-1]['y0']:
                 continue
             # The issuer's own legal-name or heading line above is not part of the addressee block.
-            first_words = fold(' '.join(t['t'] for t in earlier['tokens'] if t['x0'] < x + row['width'] * 0.45))
+            # Only the cells aligned with the block's left edge count (the issuer's name can share the row).
+            aligned = {id(t['cell']) for t in earlier['tokens'] if abs(t['x0'] - x) <= row['width'] * 0.015 and t['first']}
+            first_words = fold(' '.join(t['t'] for t in earlier['tokens'] if id(t['cell']) in aligned))
             if any(word in first_words for word in INSTITUTION_WORDS) or 'ESTADO DE CUENTA' in first_words or 'STATEMENT' in first_words:
                 break
             gap = block[-1]['y0'] - earlier['y0']
             height = max(t['y1'] - t['y0'] for t in block[-1]['tokens'])
-            if gap > height * 2.2:
+            previous_gap = (block[-2]['y0'] - block[-1]['y0']) if len(block) > 1 else 0
+            if gap > max(height * 2.6, previous_gap * 1.6):
                 break
             block.append(earlier)
             if len(block) >= 7:
                 break
         if 3 <= len(block) <= 7:
             top = block[-1]
-            name = ' '.join(t['t'] for t in sorted(top['tokens'], key=lambda t: t['x0'])
-                            if t['x0'] < x + row['width'] * 0.45)
+            aligned = {id(t['cell']) for t in top['tokens'] if abs(t['x0'] - x) <= row['width'] * 0.015 and t['first']}
+            name = ' '.join(t['t'] for t in sorted(top['tokens'], key=lambda t: (t['line'], t['x0']))
+                            if id(t['cell']) in aligned and t['line'] == 0)
             if (re.search(r'[A-Za-z]{2}', name) and not re.search(r'\d', name) and len(name.split()) >= 2
                     and not any(word in fold(name) for word in ('BANCO', 'BANK', 'ESTADO DE CUENTA', 'STATEMENT'))):
                 found.append((top['y0'], name))
@@ -916,11 +936,20 @@ def _read_section(rows, segment, pages, facts, style, sources, profile, shared=F
     inside its own rows count (A6, A7, C2)."""
     section_pages = sorted({row['page'] for row in rows})
     f = [facts[p] for p in section_pages]
+    # The section's own heading area: everything before its first movement line, ending at its
+    # own closing balance (later pages are not its heading).
+    head = []
+    for row in rows:
+        if row['tokens'] and _row_is_movement(row, style or 'dot', 2):
+            break
+        head.append(row)
+        if row['tokens'] and any(_role_of(text, False) == 'closing' for text, values in label_pairs(row, style or 'dot', 2) if values):
+            break
     accounts = {}
     if shared:
         own = {}
-        for row in rows:
-            if row['tokens'] and not _row_is_movement(row, style or 'dot', 2):
+        for row in head:
+            if row['tokens']:
                 _accounts(row, own)
         accounts = own
     else:
@@ -934,15 +963,6 @@ def _read_section(rows, segment, pages, facts, style, sources, profile, shared=F
         top = max(max(r) for r in accounts.values())
         best = {v for v, r in accounts.items() if top in r}
         account = next(iter(best)) if len(best) == 1 else ''
-    # The section's own heading area: everything before its first movement line.
-    head = []
-    for row in rows:
-        if row['tokens'] and _row_is_movement(row, style or 'dot', 2):
-            break
-        head.append(row)
-        # A section's heading area also ends at its own closing balance (later pages are not its heading).
-        if row['tokens'] and any(_role_of(text, False) == 'closing' for text, values in label_pairs(row, style or 'dot', 2) if values):
-            break
     own_currencies = set()
     for row in head:
         if row['tokens']:
@@ -1305,6 +1325,10 @@ def _reading(rows, statement, style, exponent, liability, period):
                                else 'no_independent_control' if near else 'not_reconciled')
     if chosen is None:
         chosen = _best_effort(candidates, hints)
+        # A held period keeps a column reading as its prefill only when that reading reconciles the
+        # printed balances; otherwise guessed amounts and directions would look valid and be wrong.
+        if chosen is not None and not chosen.get('closing_ok'):
+            chosen = dict(chosen, values=None)
     proof['assignment'] = chosen['assignment'] if chosen else None
     result['rows'] = _rows(rows, all_moves, resolved if not date_problem else None, chosen, controls,
                            column_totals, statement, style or 'dot', exponent, liability, proof, unplaced)
@@ -1537,7 +1561,7 @@ def _rows(rows, moves, resolved, chosen, controls, column_totals, statement, sty
         item = _item(row)
         items[row['_index']] = item
         order.append(item)
-    if chosen and chosen.get('values') is not None:
+    if chosen and chosen.get('values') is not None and moves:
         dates = iter(resolved or [])
         for move, value in zip(moves, chosen['values']):
             item = items[move['row']['_index']]
@@ -1599,7 +1623,7 @@ def _rows(rows, moves, resolved, chosen, controls, column_totals, statement, sty
                               balance_column=str(token['cell']['column_index']), **extra)
         return item
 
-    if chosen and chosen.get('opening_item') is not None:
+    if chosen and chosen.get('opening_item') is not None and chosen.get('values') is not None:
         control(chosen['opening_item'], 'Opening Balance', 'opening')
         control(chosen['closing_item'], 'Closing Balance', 'closing')
     else:
