@@ -363,3 +363,61 @@ class EngineRoutingTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class EngineProfileTests(unittest.TestCase):
+    PROFILE = dict(name='invented-bank', match=dict(any=['banco ejemplo del norte']), institution='Banco Ejemplo',
+                   labels=dict(opening=['SALDO DE APERTURA']), date_order='dmy')
+
+    def sources(self):
+        sources = mx_statement(MOVES, closing='1,250.00')
+        for row in sources[0]['rows']:
+            for c in row['cells']:
+                if c['expected_text'] == 'SALDO ANTERIOR':
+                    c['expected_text'] = 'SALDO DE APERTURA'
+        return sources
+
+    def test_profile_format_is_validated(self):
+        from services.financial.statement_engine_profiles import PROFILES, validate
+        self.assertEqual(len({p['name'] for p in PROFILES}), len(PROFILES))
+        for bad in (dict(name='x', match={}, colour='red'), dict(name='x', match={}, convention='owed'),
+                    dict(name='x', match={}, labels=dict(opening_balance=['A'])), dict(name='x', match={}, currency='XYZ')):
+            with self.assertRaises(Exception):
+                validate(bad)
+
+    def test_two_existing_families_are_expressed_as_profiles(self):
+        from services.financial.statement_engine_profiles import PROFILES
+        self.assertTrue({'capital-one-card', 'bbva-mexico-cash-management'} <= {p['name'] for p in PROFILES})
+
+    def test_matching_needs_exactly_one_profile(self):
+        from services.financial import statement_engine_profiles as P
+        with mock.patch.object(P, 'PROFILES', (self.PROFILE,)):
+            self.assertEqual(P.matching_profile('BANCO EJEMPLO DEL NORTE, S.A.')['name'], 'invented-bank')
+            self.assertIsNone(P.matching_profile('another bank'))
+        with mock.patch.object(P, 'PROFILES', (self.PROFILE, dict(self.PROFILE, name='twin'))):
+            self.assertIsNone(P.matching_profile('BANCO EJEMPLO DEL NORTE'))
+
+    def test_a_profile_label_reads_a_layout_the_plain_engine_cannot(self):
+        plain = read_statements(self.sources())[0]
+        self.assertFalse(plain['engine']['proved'])
+        self.assertEqual(plain['engine']['reason'], 'no_opening')
+        profiled = read_statements(self.sources(), profile=self.PROFILE)[0]
+        self.assertTrue(profiled['engine']['proved'], profiled['engine'])
+        self.assertEqual(profiled['engine_profile'], 'invented-bank')
+        # The profile's institution is used only when no legal-name line is printed.
+        self.assertEqual(profiled['institution'], 'BANCO EJEMPLO DEL NORTE')
+
+    def test_routing_applies_a_matching_profile_and_proposals_reread_with_it(self):
+        from services.financial import statement_engine_profiles as P
+        from services.financial import statement_engine_routing as R
+        from services.financial.statement_engine import propose_engine_statement
+        sources = self.sources()
+        with mock.patch.object(P, 'PROFILES', (self.PROFILE,)), \
+                mock.patch.dict(os.environ, {'LOUPE_FINANCIAL_GENERIC_READER': '1'}):
+            catalog = R.route_catalog(sources, lambda s: dict(statements=[], unclassified_sources=[
+                dict(page_number=1, table_index=0)], information_sources=[], complete_coverage=False))
+            self.assertEqual(catalog['engine_routing']['profile'], 'invented-bank')
+            statement = catalog['statements'][0]
+            rows = propose_engine_statement(sources, 'MXN', statement)['rows']
+        self.assertEqual(sum(not r['excluded'] for r in rows), 3)
+        self.assertFalse(any(r.get('engine_hold') for r in rows))

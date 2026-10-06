@@ -33,6 +33,7 @@ is not proved is returned with its best reading and a named reason; the reason
 is carried by an unresolved line so the existing review gate holds it.
 """
 import re
+from contextvars import ContextVar
 from datetime import date, timedelta
 from functools import lru_cache
 from itertools import product
@@ -40,9 +41,11 @@ from itertools import product
 from services.financial.pdf_candidates import _digest
 from services.financial.statement_engine_vocabulary import (
     ACCOUNT_LABELS, CURRENCY_LABELS, CURRENCY_NAMES, COLUMN_INDEX, HOLDER_LABELS, INDEX, INSTITUTION_WORDS,
-    LIABILITY_EVIDENCE, MONTHS, PAGE_NUMBERING, PERIOD_WORDS, UNDATED_CHARGES, fold, label)
+    LIABILITY_EVIDENCE, MONTHS, PAGE_NUMBERING, PERIOD_WORDS, UNDATED_CHARGES, FUZZY_INDEX, fold, label)
 
 LAYOUT = 'generic'
+# The library profile applied to the current reading (None for the plain engine).
+_PROFILE = ContextVar('statement_engine_profile', default=None)
 ENGINE_VERSION = 'statement-engine-v1'
 MAX_ASSIGNMENTS = 4000
 MAX_PERIOD_DAYS = 95
@@ -263,6 +266,8 @@ _FULL = (r'(?:\d{1,2}[/.-]\d{1,2}[/.-]\d{4}|\d{4}-\d{2}-\d{2}|\d{1,2}[/.-][A-Z]{
          r'|\d{1,2}[/.-]\d{1,2}[/.-]\d{2})')
 _RANGE = re.compile(r'(?:^|\b)(' + _FULL + r')\s*(?:AL|A|-|TO|THROUGH|THRU|HASTA)\s+(' + _FULL + r')(?:\b|$)')
 _RANGE_TIGHT = re.compile(r'(' + _FULL + r')\s*-\s*(' + _FULL + r')')
+# "03 FEB 26/27 FEB 26": two day-month-year dates joined by a slash.
+_SLASH_RANGE = re.compile(r'\b(\d{1,2}\s+[A-Z]{3,10}\.?\s+\d{2}(?:\d{2})?)\s*/\s*(\d{1,2}\s+[A-Z]{3,10}\.?\s+\d{2}(?:\d{2})?)\b')
 _SHARED_MONTH = re.compile(r'\b(\d{1,2})\s+AL\s+(\d{1,2})\s+DE\s+([A-Z]{3,10})\s+(?:DE\s+|DEL\s+)?(\d{4})\b')
 
 
@@ -290,6 +295,14 @@ def period_ranges(text, order=None):
                     options.add((start, end))
             if len(options) == 1:
                 found.append(options.pop())
+    for m in _SLASH_RANGE.finditer(f):
+        dates = []
+        for part in (m[1], m[2]):
+            d, month, year = part.split()[0], part.split()[1].rstrip('.'), part.split()[2]
+            year = int(year) + (2000 if len(year) == 2 else 0)
+            dates.append(_calendar(year, MONTHS.get(month, 0), int(d)) if month in MONTHS else None)
+        if all(dates) and dates[0] <= dates[1] and (dates[1] - dates[0]).days <= MAX_PERIOD_DAYS:
+            found.append(tuple(dates))
     for m in _SHARED_MONTH.finditer(f):
         if m[3] in MONTHS:
             start = _calendar(int(m[4]), MONTHS[m[3]], int(m[1]))
@@ -399,7 +412,31 @@ def _control_value(tokens):
     return max(tokens, key=lambda t: t['x1']) if len(tokens) > 1 else tokens[0]
 
 
+def _profile_role(text, liability):
+    profile = _PROFILE.get()
+    if not profile:
+        return None
+    for role, phrases in (profile.get('labels') or {}).items():
+        if role.endswith('_component') and not liability:
+            continue
+        if text in {label(p) for p in phrases}:
+            return role
+    return None
+
+
+def column_role(text):
+    """A movement-heading word's role: the shared vocabulary, then the active profile's words."""
+    role = COLUMN_INDEX.get(text)
+    profile = _PROFILE.get()
+    if role is None and profile:
+        role = next((r for r, words in (profile.get('columns') or {}).items() if text in {label(w) for w in words}), None)
+    return role
+
+
 def _role_of(text, liability):
+    extra = _profile_role(text, liability)
+    if extra:
+        return extra
     if liability:
         # Card summaries print components per direction, not one total (D7).
         if text in INDEX['credit_component']:
@@ -408,6 +445,9 @@ def _role_of(text, liability):
             return 'debit_component'
     for role in ('opening', 'closing', 'subtotal', 'column_total', 'credit_total', 'debit_total'):
         if text in INDEX[role]:
+            return role
+    for role in ('opening', 'closing', 'subtotal', 'credit_total', 'debit_total'):
+        if any(pattern.fullmatch(text) for pattern in FUZZY_INDEX[role]):
             return role
     return None
 
@@ -743,7 +783,11 @@ def read_statements(sources, *, profile=None):
            profile and profile.get('name'))
     if all(k[2] for k in key[0]) and key in _READINGS:
         return _READINGS[key]
-    result = _read_statements(sources, profile=profile)
+    token = _PROFILE.set(profile)
+    try:
+        result = _read_statements(sources, profile=profile)
+    finally:
+        _PROFILE.reset(token)
     if all(k[2] for k in key[0]):
         if len(_READINGS) >= 8:
             _READINGS.pop(next(iter(_READINGS)))
@@ -914,9 +958,17 @@ def _read_section(rows, segment, pages, facts, style, sources, profile, shared=F
     except MoneyError:
         exponent = 2
     liability = any(item['liability'] for item in f)
+    if profile and profile.get('convention'):
+        liability = profile['convention'] == 'liability_owed'
+    if profile and profile.get('currency') and not currency and not shared:
+        currency, currency_basis = profile['currency'], 'library_profile'
+        try:
+            exponent = get_currency(currency).exponent
+        except MoneyError:
+            exponent = 2
     # The holder belongs to the statement, printed on its first pages, for every one of its sections.
     holder = _section_holder(segment['pages'], pages, facts)
-    institution = _institution([item['legal'] for item in f])
+    institution = _institution([item['legal'] for item in f]) or (profile or {}).get('institution', '')
     period = segment['period']
     statement = dict(layout_id=LAYOUT, institution=institution, account_reference=account,
                      period_start=period[0].isoformat() if period else '', period_end=period[1].isoformat() if period else '',
@@ -940,6 +992,8 @@ def _read_section(rows, segment, pages, facts, style, sources, profile, shared=F
                                      end=statement['period_end'], currency=currency, first_page=section_pages[0],
                                      first_row=reading['first_row'])),
                      layout_fingerprint=reading['fingerprint'], engine=reading['proof'])
+    if profile:
+        statement['engine_profile'] = profile['name']
     if not _numbering_complete(segment['pages'], facts) and reading['proof']['proved']:
         reading['proof'].update(proved=False, reason='pages_missing')
     if segment.get('conflict') and reading['proof']['proved']:
@@ -989,6 +1043,9 @@ def _resolve_dates(movements, period, liability):
             for d, mth, y, kind in _date_parts(token['t']):
                 if kind in ('dmy', 'mdy') and (d > 12) != (mth > 12) and 1 <= d <= 31 and 1 <= mth <= 12:
                     orders.add(kind)
+    fixed = (_PROFILE.get() or {}).get('date_order')
+    if fixed and not orders - {fixed}:
+        orders = {fixed}
     choices = [orders.pop()] if len(orders) == 1 else (['dmy', 'mdy'] if not orders else [])
     if not choices:
         return None, 'date_order_ambiguous'
@@ -1059,7 +1116,7 @@ def _hints(header_rows, columns, width):
                 group = tokens[index:index + size]
                 if len(group) < size:
                     continue
-                role = COLUMN_INDEX.get(label(' '.join(t['t'] for t in group)))
+                role = column_role(label(' '.join(t['t'] for t in group)))
                 if role:
                     words.append((role, group[0]['x0'], group[-1]['x1'], row['width'] or width))
                     break
@@ -1110,11 +1167,9 @@ def _reading(rows, statement, style, exponent, liability, period):
         if not row['tokens']:
             continue
         words = {label(t['t']) for t in row['tokens']}
-        column_words = {COLUMN_INDEX.get(w) for w in words} | {
-            COLUMN_INDEX.get(label(a['t'] + ' ' + b['t'])) for a, b in zip(row['tokens'], row['tokens'][1:])}
         if _is_header(row):
             headers.append(row)
-            labels_seen.update(w for w in words if w in COLUMN_INDEX)
+            labels_seen.update(w for w in words if column_role(w))
             region = True
             continue
         if _row_is_movement(row, style or 'dot', exponent):
@@ -1265,7 +1320,7 @@ def _is_header(row):
     while index < len(tokens):
         for size in (3, 2, 1):
             group = tokens[index:index + size]
-            role = COLUMN_INDEX.get(label(' '.join(t['t'] for t in group))) if len(group) == size else None
+            role = column_role(label(' '.join(t['t'] for t in group))) if len(group) == size else None
             if role:
                 roles.append(role)
                 covered += size
@@ -1596,8 +1651,15 @@ def _hold_row(rows, reason):
 
 def propose_engine_statement(sources, currency, choice):
     """The chosen period's rows. ``sources`` must be every source of the document:
-    the period is found again by its id in a reading of the whole document."""
-    for statement in read_statements(sources):
+    the period is found again by its id in a reading of the whole document (with the
+    same library profile when one served it)."""
+    profile = None
+    if choice.get('engine_profile'):
+        from services.financial.statement_engine_profiles import PROFILES
+        profile = next((p for p in PROFILES if p['name'] == choice['engine_profile']), None)
+        if profile is None:
+            raise ValueError('The reading profile of this statement period is no longer available. Reload the document.')
+    for statement in read_statements(sources, profile=profile):
         if statement['id'] == choice['id'] or statement['id'] == choice.get('engine_id'):
             rows = _copy_rows(statement['_rows'])
             reason = (choice.get('engine') or {}).get('reason')

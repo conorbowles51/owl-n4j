@@ -33,7 +33,7 @@ def label(text):
 OPENING = (
     'SALDO ANTERIOR', 'SALDO INICIAL', 'SALDO FINAL DEL PERIODO ANTERIOR', 'SALDO DEL PERIODO ANTERIOR',
     'SALDO DE OPERACION INICIAL', 'SALDO DE LIQUIDACION INICIAL', 'SALDO INICIAL DEL PERIODO',
-    'SALDO AL INICIO DEL PERIODO', 'SALDO MES ANTERIOR',
+    'SALDO AL INICIO DEL PERIODO', 'SALDO MES ANTERIOR', 'SALDO INICIAL DEL PERIODO',
     'PREVIOUS BALANCE', 'OPENING BALANCE', 'BEGINNING BALANCE', 'BALANCE FORWARD', 'BALANCE BROUGHT FORWARD',
     'STARTING BALANCE', 'BEGINNING BALANCE ON', 'PREVIOUS STATEMENT BALANCE',
 )
@@ -143,6 +143,28 @@ UNDATED_CHARGES = ('INTEREST CHARGE', 'INTEREST CHARGED', 'INTEREST CHARGE ON PU
                    'INTEREST CHARGE ON CASH ADVANCES', 'LATE FEE', 'ANNUAL FEE', 'FINANCE CHARGE')
 
 
+# Accent-bearing label words (F1): OCR without Spanish glyphs reads the
+# accented vowel as one or two other characters (OPERACIÓN -> OPERACIEN,
+# DEPÓSITOS -> DEPDSITOS). Only that position is tolerated; every other letter
+# must be read exactly, so one label can never become another.
+ACCENTED = ('OPERACI_N', 'LIQUIDACI_N', 'DEP_SITOS', 'DEP_SITO', 'CR_DITOS', 'CR_DITO', 'PER_ODO', 'DESCRIPCI_N',
+            'L_MITE', 'M_NIMO', 'COMISI_N', 'RETENCI_N', 'D_LARES', 'D_LAR', 'N_MERO', 'TERMINACI_N', 'RAZ_N', 'CR_DITO')
+
+
+def _fuzzy(phrase):
+    words = phrase.split()
+    pattern, fuzzy = [], False
+    for word in words:
+        match = next((a for a in ACCENTED if len(a) == len(word) and all(a[i] in ('_', word[i]) for i in range(len(word)))), None)
+        if match:
+            i = match.index('_')
+            pattern.append(re.escape(word[:i]) + r'[^\s]{1,2}' + re.escape(word[i + 1:]))
+            fuzzy = True
+        else:
+            pattern.append(re.escape(word))
+    return re.compile(r'\s'.join(pattern)) if fuzzy else None
+
+
 def _index(phrases):
     return {label(p) for p in phrases}
 
@@ -153,3 +175,4 @@ INDEX = dict(
     credit_component=_index(LIABILITY_CREDIT_COMPONENTS), debit_component=_index(LIABILITY_DEBIT_COMPONENTS),
 )
 COLUMN_INDEX = {label(word): role for role, words in COLUMN_WORDS.items() for word in words}
+FUZZY_INDEX = {role: [compiled for phrase in phrases if (compiled := _fuzzy(phrase))] for role, phrases in INDEX.items()}

@@ -112,6 +112,18 @@ def route_catalog(sources, library_catalog):
         return library
     started = time.monotonic()
     engine = read_statements(sources)
+    routing_profile = None
+    # A library profile (data) that matches the document is used only if it keeps every period the
+    # plain engine proves, with the identical money reading, and proves at least as many.
+    from services.financial.statement_engine_profiles import matching_profile, profile_text
+    profile = matching_profile(profile_text(sources))
+    if profile is not None:
+        profiled = read_statements(sources, profile=profile)
+        plain_keys = {(st['period_start'], st['period_end'], reading_key(st['_rows'])) for st in engine if st['engine']['proved']}
+        profiled_keys = {(st['period_start'], st['period_end'], reading_key(st['_rows'])) for st in profiled if st['engine']['proved']}
+        if plain_keys <= profiled_keys and profiled_keys:
+            engine = profiled
+            routing_profile = profile['name']
     table = routes()
     groups = list(library['statements'])
     library_pages = {p for g in groups if not g.get('document_kind') for p in _pages(g)}
@@ -119,6 +131,7 @@ def route_catalog(sources, library_catalog):
     served, routing = [], dict(mode='engine_primary', engine_served=0, library_served=0, agreements=0,
                                disagreements=[], replaced=[], library_first=0, held_engine=0)
     replacements = {}
+    routing['profile'] = routing_profile
     for statement in engine:
         pages = _pages(statement)
         proved = statement['engine']['proved']
