@@ -94,8 +94,9 @@ def detect_statement_currency(sources, *, layout_id=None, header_text=''):
 
 def currencies_by_statement(choices, sources):
     by_address = {(s['page_number'], s['table_index']): s for s in sources}
-    return [{**choice, 'currency': choice['currency'] if choice.get('currency_source') == 'printed_account_section'
-        and choice.get('layout_id') in ('monex-mexico-currency-summary', 'kapital-mexico-product-statement', 'intercam-mexico-product-statement', 'santander-mexico-movements')
+    return [{**choice, 'currency': choice['currency'] if (choice.get('currency_source') == 'printed_account_section'
+        or choice.get('layout_id') == 'generic' and choice.get('currency_source') == 'dollar_us_address')
+        and choice.get('layout_id') in ('monex-mexico-currency-summary', 'kapital-mexico-product-statement', 'intercam-mexico-product-statement', 'santander-mexico-movements', 'generic')
         else detect_statement_currency(
         [by_address[(s['page_number'], s['table_index'])] for s in choice['sources']],
         layout_id=choice.get('layout_id'))} if not choice.get('document_kind') else choice
