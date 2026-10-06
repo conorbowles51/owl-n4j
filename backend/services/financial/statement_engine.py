@@ -797,6 +797,15 @@ def _numbering_complete(pages, facts):
 _READINGS = {}
 
 
+def _source_signature(sources):
+    """Identity of a document's stored sources: revisions plus every cell's text and position (None if a
+    revision is missing, in which case nothing is cached)."""
+    parts = tuple((s['page_number'], s['table_index'], s.get('source_revision'),
+                   hash(tuple((c['expected_text'], tuple((c.get('locator') or {}).get('rect') or ()))
+                              for r in s['rows'] for c in r['cells']))) for s in sources)
+    return parts if all(part[2] for part in parts) else None
+
+
 def read_statements(sources, *, profile=None):
     """Every statement section the engine finds, proved or not.
 
@@ -804,18 +813,16 @@ def read_statements(sources, *, profile=None):
     last few documents' readings are kept: proposing each period re-reads the
     whole document, never a subset of its pages.
     """
-    key = (tuple((s['page_number'], s['table_index'], s.get('source_revision'),
-                  hash(tuple((c['expected_text'], tuple((c.get('locator') or {}).get('rect') or ()))
-                             for r in s['rows'] for c in r['cells']))) for s in sources),
-           profile and profile.get('name'))
-    if all(k[2] for k in key[0]) and key in _READINGS:
+    signature = _source_signature(sources)
+    key = (signature, profile and profile.get('name'))
+    if signature is not None and key in _READINGS:
         return _READINGS[key]
     token = _PROFILE.set(profile)
     try:
         result = _read_statements(sources, profile=profile)
     finally:
         _PROFILE.reset(token)
-    if all(k[2] for k in key[0]):
+    if signature is not None:
         if len(_READINGS) >= 8:
             _READINGS.pop(next(iter(_READINGS)))
         _READINGS[key] = result
