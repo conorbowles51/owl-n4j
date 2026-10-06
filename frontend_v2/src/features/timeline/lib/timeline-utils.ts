@@ -1,22 +1,35 @@
 import type { TimelineEvent } from "../api"
 import type { EntityType } from "@/lib/theme"
 
-/** Returns true if the string parses to a valid Date */
+/** Validate the calendar day without silently rolling impossible dates forward. */
 export function isValidDate(dateStr: string | null | undefined): boolean {
-  if (!dateStr) return false
   const dateKey = normaliseDateKey(dateStr)
-  const ts = new Date(`${dateKey}T00:00:00`).getTime()
-  return !Number.isNaN(ts)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) return false
+  const date = new Date(`${dateKey}T00:00:00Z`)
+  return (
+    Number.isFinite(date.getTime()) &&
+    date.toISOString().slice(0, 10) === dateKey
+  )
 }
 
-function normaliseDateKey(dateStr: string): string {
+function normaliseDateKey(dateStr: string | null | undefined): string {
+  if (typeof dateStr !== "string") return ""
   return dateStr.includes("T") ? dateStr.split("T")[0] : dateStr.slice(0, 10)
 }
 
 function normaliseTimeValue(timeStr: string | null | undefined): string | null {
   if (!timeStr) return null
-  const match = String(timeStr).match(/^(\d{2}:\d{2})/)
-  return match ? match[1] : null
+  const match = String(timeStr)
+    .trim()
+    .match(/^(\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?$/)
+  if (
+    !match ||
+    Number(match[1]) > 23 ||
+    Number(match[2]) > 59 ||
+    Number(match[3] ?? 0) > 59
+  )
+    return null
+  return `${match[1]}:${match[2]}`
 }
 
 function getEmbeddedIsoTime(dateStr: string | null | undefined): string | null {
@@ -45,7 +58,7 @@ export function getEventTimestamp(
   unknownTimeAtEnd = false
 ): number {
   const date = getEventDateKey(event)
-  if (!date) return Number.NaN
+  if (!isValidDate(date)) return Number.NaN
   const time =
     getEventTimeValue(event) || (unknownTimeAtEnd ? "23:59:59" : "00:00:00")
   const normalizedTime = time.length === 5 ? `${time}:00` : time
@@ -56,7 +69,12 @@ export function compareTimelineEvents(
   a: TimelineEvent,
   b: TimelineEvent
 ): number {
-  const delta = getEventTimestamp(a, true) - getEventTimestamp(b, true)
+  const aTs = getEventTimestamp(a, true)
+  const bTs = getEventTimestamp(b, true)
+  if (!Number.isFinite(aTs))
+    return Number.isFinite(bTs) ? 1 : a.key.localeCompare(b.key)
+  if (!Number.isFinite(bTs)) return -1
+  const delta = aTs - bTs
   if (delta !== 0) return delta
   return a.key.localeCompare(b.key)
 }
@@ -84,9 +102,16 @@ export interface TimelineCluster {
 export function getDateRange(events: TimelineEvent[]): DateRange {
   if (events.length === 0) return { min: "", max: "" }
 
-  const timestamps = events.map((e) => getEventTimestamp(e))
-  const minTs = Math.min(...timestamps)
-  const maxTs = Math.max(...timestamps)
+  let minTs = Infinity
+  let maxTs = -Infinity
+  for (const event of events) {
+    const ts = getEventTimestamp(event)
+    if (!Number.isFinite(ts)) continue
+    minTs = Math.min(minTs, ts)
+    maxTs = Math.max(maxTs, ts)
+  }
+  if (!Number.isFinite(minTs) || !Number.isFinite(maxTs))
+    return { min: "", max: "" }
   const span = maxTs - minTs || 86400000 // at least 1 day
   const padding = span * 0.05
 
@@ -131,6 +156,7 @@ function autoGapThreshold(events: TimelineEvent[]): number {
 
   const sorted = events
     .map((e) => getEventTimestamp(e, true))
+    .filter(Number.isFinite)
     .sort((a, b) => a - b)
 
   const intervals: number[] = []
@@ -154,7 +180,10 @@ export function detectClusters(
   if (events.length === 0) return []
 
   const threshold = minGapMs ?? autoGapThreshold(events)
-  const sorted = [...events].sort(compareTimelineEvents)
+  const sorted = events
+    .filter((event) => isValidDate(event.date))
+    .sort(compareTimelineEvents)
+  if (sorted.length === 0) return []
 
   const clusters: TimelineCluster[] = []
   let clusterStartDate = getEventDateKey(sorted[0])
@@ -227,6 +256,7 @@ function parseDateKey(dateStr: string): Date {
 }
 
 function formatDateHeader(dateStr: string): string {
+  if (!isValidDate(dateStr)) return "Date unavailable"
   return parseDateKey(dateStr).toLocaleDateString("en-US", {
     weekday: "short",
     month: "short",
@@ -248,7 +278,7 @@ export function groupEventsByDate(events: TimelineEvent[]): DateGroup[] {
   for (const event of sorted) {
     const groupKey = getEventDateKey(event)
 
-    if (groupKey !== currentKey) {
+    if (!currentGroup || groupKey !== currentKey) {
       if (currentGroup) groups.push(currentGroup)
       currentKey = groupKey
       currentGroup = {
@@ -285,6 +315,7 @@ export function buildDensityHistogram(
   if (allEvents.length === 0) return []
 
   const range = getDateRange(allEvents)
+  if (!range.min || !range.max) return []
   const minTs = new Date(range.min).getTime()
   const maxTs = new Date(range.max).getTime()
   const span = maxTs - minTs || DAY_MS
@@ -302,6 +333,7 @@ export function buildDensityHistogram(
 
   for (const event of allEvents) {
     const ts = getEventTimestamp(event, true)
+    if (!Number.isFinite(ts)) continue
     const idx = Math.min(
       Math.floor((ts - minTs) / bucketWidth),
       bucketCount - 1
@@ -313,6 +345,7 @@ export function buildDensityHistogram(
   for (const event of allEvents) {
     if (!filteredSet.has(event.key)) continue
     const ts = getEventTimestamp(event, true)
+    if (!Number.isFinite(ts)) continue
     const idx = Math.min(
       Math.floor((ts - minTs) / bucketWidth),
       bucketCount - 1
