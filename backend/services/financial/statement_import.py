@@ -351,6 +351,11 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
             retained_file = session.get(EvidenceFile, retained.evidence_file_id) if retained else None
             current_import['retained_filename'] = retained_file.original_filename if retained_file else None
             current_import['transaction_count'] = 0
+            from services.financial.admitted_statement_duplicates import excluded_copy_disposition
+            current_import['duplicate_disposition'] = excluded_copy_disposition(session, excluded_copy, current_import['revision'])
+        else:
+            from services.financial.admitted_statement_duplicates import duplicate_copies
+            current_import['duplicate_copies'] = duplicate_copies(session, current)
     # Opening an already saved statement must reach its correction controls even
     # when a newer currency detector is deliberately uncertain. Reuse only this
     # exact saved statement's denomination, never another account in the PDF.
@@ -573,7 +578,8 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
             _include_period_checks, _apply_assignments)
     if _include_duplicate_disposition:
         from services.financial.pending_statement_duplicates import read_duplicate_disposition
-        result['duplicate_disposition'] = read_duplicate_disposition(session, file, result)
+        result['duplicate_disposition'] = ((current_import or {}).get('duplicate_disposition')
+            or read_duplicate_disposition(session, file, result))
     return result
 
 

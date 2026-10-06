@@ -83,13 +83,24 @@ def _revision(document, fingerprint, rows, sequence):
 
 
 def decide_duplicate(session, *, case_id, document_id, action, expected_revision,
-                     actor, reason, primary_id=None, expected_primary_revision=None):
-    """Commit one confirmed exclusion or exact reversal, or roll back everything."""
+                     actor, reason, primary_id=None, expected_primary_revision=None,
+                     match="identical_reading", basis=None, commit=True):
+    """Commit one confirmed exclusion or exact reversal, or roll back everything.
+
+    ``match="same_printed_statement"`` excludes a copy whose stored reading is
+    worded differently but whose money is equal (the rule of
+    ``admitted_statement_duplicates``, checked again under these locks).
+    ``basis`` is recorded on the decision. ``commit=False`` leaves the commit
+    to a caller combining several decisions; any failure still rolls back.
+    """
+    if match not in ("identical_reading", "same_printed_statement"):
+        raise DuplicateDecisionError("Unknown duplicate comparison.", 422)
     try:
         return _decide(session, case_id=case_id, document_id=document_id,
                        action=action, expected_revision=expected_revision,
                        actor=actor, reason=reason, primary_id=primary_id,
-                       expected_primary_revision=expected_primary_revision)
+                       expected_primary_revision=expected_primary_revision,
+                       match=match, basis=basis, commit=commit)
     except Exception as error:
         session.rollback()
         from services.financial.statement_import import active_statement_conflict
@@ -102,7 +113,8 @@ def decide_duplicate(session, *, case_id, document_id, action, expected_revision
 
 
 def _decide(session, *, case_id, document_id, action, expected_revision,
-            actor, reason, primary_id, expected_primary_revision):
+            actor, reason, primary_id, expected_primary_revision,
+            match="identical_reading", basis=None, commit=True):
     if not isinstance(actor, Actor) or not isinstance(reason, str) or not reason.strip():
         raise DuplicateDecisionError("A named actor and a stated reason are required.", 422)
     if action not in ("exclude", "restore"):
@@ -161,7 +173,12 @@ def _decide(session, *, case_id, document_id, action, expected_revision,
             raise DuplicateDecisionError("Other documents depend on this primary. Restore them first.")
         source = fingerprint_document(session, document)
         retained = fingerprint_document(session, primary)
-        if not source.content_fingerprint or source != retained:
+        if match == "same_printed_statement":
+            from services.financial.admitted_statement_duplicates import same_admitted_statement
+            refusal = same_admitted_statement(session, document, primary)
+            if refusal:
+                raise DuplicateDecisionError(refusal)
+        elif not source.content_fingerprint or source != retained:
             raise DuplicateDecisionError("The stored readings do not match; exclusion was refused.")
         # Confirmed PDF imports participate in working totals at P3. Keeping
         # one such copy does not require promoting either copy to verified.
@@ -226,6 +243,8 @@ def _decide(session, *, case_id, document_id, action, expected_revision,
         decision = AdjudicationDecision.restore_document
     before["rows"] = {str(r.id): r.ledger_status for r in changed}
     after["rows"] = {str(r.id): target_status for r in changed}
+    if basis:
+        before["basis"], after["basis"] = None, basis
     event = record(session, case_id=case_id, subject=document,
                    subject_type=AdjudicationSubject.source_document,
                    decision=decision, reason=reason, actor=actor,
@@ -241,5 +260,8 @@ def _decide(session, *, case_id, document_id, action, expected_revision,
     response = {"case_id": str(case_id), "document_id": str(document_id),
                 "action": action, "applied": True, "changed_rows": len(changed),
                 "adjudication_id": str(event.id)}
-    session.commit()
+    if commit:
+        session.commit()
+    else:
+        session.flush()
     return response

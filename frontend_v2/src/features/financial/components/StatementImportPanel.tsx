@@ -25,9 +25,11 @@ import { StatementArithmeticChecks } from "./StatementArithmeticChecks"
 import { StatementReconciliationSummary } from "./StatementReconciliationSummary"
 import { StatementDuplicateDecision } from "./StatementDuplicateDecision"
 import {
+  retainedStatement,
   statementDuplicateDisposition,
   statementDuplicateResponse,
 } from "../lib/statement-duplicate"
+import { KeepDuplicateCopy } from "./KeepDuplicateCopy"
 import {
   statementAssessment,
   statementBlocker,
@@ -257,6 +259,8 @@ const proposalSchema = z.object({
         .optional(),
       excluded_as_duplicate: z.boolean().default(false),
       retained_filename: z.string().nullable().optional(),
+      duplicate_disposition: statementDuplicateDisposition.nullish(),
+      duplicate_copies: z.array(retainedStatement).default([]),
       details_reason: z.string().default(""),
       review_decisions: z
         .array(
@@ -809,14 +813,23 @@ function StatementReview({
           aria-label="Excluded statement copy"
         >
           <h3 className="font-semibold">
-            This copy was excluded as a duplicate
+            {query.data.current_import.duplicate_disposition?.label ??
+              "This copy was excluded as a duplicate"}
           </h3>
-          <p>
-            Its original statement is kept for reference. Its payments do not
-            count in Transactions.
-          </p>
-          {query.data.current_import.retained_filename && (
-            <p>Retained file: {query.data.current_import.retained_filename}</p>
+          {query.data.current_import.duplicate_disposition ? (
+            <p>{query.data.current_import.duplicate_disposition.reason}</p>
+          ) : (
+            <>
+              <p>
+                Its original statement is kept for reference. Its payments do
+                not count in Transactions.
+              </p>
+              {query.data.current_import.retained_filename && (
+                <p>
+                  Retained file: {query.data.current_import.retained_filename}
+                </p>
+              )}
+            </>
           )}
           <p>
             Open the recorded decision to check why this copy was excluded or to
@@ -829,6 +842,15 @@ function StatementReview({
               Review duplicate decision
             </a>
           </Button>
+          {canEdit &&
+            !batchReview?.readOnly &&
+            query.data.current_import.duplicate_disposition?.admitted_copy ===
+              true && (
+              <KeepDuplicateCopy
+                caseId={caseId}
+                sourceDocumentId={query.data.current_import.source_document_id}
+              />
+            )}
         </section>
       ) : (
         !batchReview && (
@@ -870,6 +892,22 @@ function StatementReview({
                 !!query.data.current_import.incomplete_count &&
                 " The PDF is retained, but those readings are not payments in Transactions."}
             </p>
+            {query.data.current_import.duplicate_copies.length > 0 && (
+              <div aria-label="Copies set aside as duplicates">
+                <p>
+                  The same statement was also saved from another copy. Those
+                  copies stay in the case as evidence and their payments are
+                  not counted:
+                </p>
+                <ul className="list-disc pl-5">
+                  {query.data.current_import.duplicate_copies.map((copy) => (
+                    <li key={copy.source_document_id ?? copy.evidence_file_id}>
+                      {copy.filename}, page {copy.page_number}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
             {!!(
               query.data.current_import.transaction_count ||
               query.data.current_import.incomplete_count
