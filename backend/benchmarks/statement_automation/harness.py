@@ -555,9 +555,13 @@ def _incomplete(manifest):
 
 
 def _rematch(periods, truths):
-    """Re-pair batch items with real truth periods of the same file by closing date, account and share
-    (from what each item read). Returns how many pairings changed; their stored proposal checks and
-    simulated corrections belong to the earlier pairing and are dropped."""
+    """Re-pair batch items with real truth periods of the same file by closing date, account, share and
+    currency (from what each item read). Returns how many pairings changed; their stored proposal checks
+    and simulated corrections belong to the earlier pairing and are dropped.
+
+    Currency decides between sections of one statement that share the closing date and the account (a
+    Monex contract prints a peso, a dollar and a euro section); without it the pairing of such items was
+    an arbitrary tie and swapped sections were judged wrong admissions."""
     by_file = defaultdict(list)
     for truth in truths.values():
         if truth.get('added_in') == 'real':
@@ -570,7 +574,8 @@ def _rematch(periods, truths):
             read = item.get('read') or {}
             return ((read.get('period_end') == truth['period_end']) * 5
                     + bool(truth.get('account') and truth['account'] in _digits(read.get('account'))) * 5
-                    + bool(truth.get('share') and truth['share'] in (read.get('account') or '')) * 5)
+                    + bool(truth.get('share') and truth['share'] in (read.get('account') or '')) * 5
+                    + bool(truth.get('currency') and (read.get('currency') or '').upper() == truth['currency']) * 3)
         pairs = sorted(((fit(i, t), n, t['id']) for n, i in enumerate(items) for t in candidates), reverse=True)
         taken, assignment = set(), {}
         for score, n, truth_id in pairs:
