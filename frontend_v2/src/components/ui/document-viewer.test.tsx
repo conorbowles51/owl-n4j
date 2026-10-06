@@ -11,8 +11,8 @@ vi.mock("@/lib/protected-file", () => ({
     error: null,
   }),
 }))
-vi.mock("./evidence-pdf-page", () => ({
-  EvidencePdfPage: ({
+vi.mock("./evidence-pdf-document", () => ({
+  EvidencePdfDocument: ({
     evidenceId,
     page,
     onPageCount,
