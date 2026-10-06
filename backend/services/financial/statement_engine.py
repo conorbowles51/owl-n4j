@@ -359,22 +359,44 @@ _MERGED = {}
 
 
 def label_pairs(row, style, exponent):
-    """[(folded label, [value tokens])] read left to right on one row."""
+    """[(folded label, [value tokens])] read left to right on one row.
+
+    A label restarts where a new cell begins after a clear horizontal gap: one
+    printed row can hold two side-by-side blocks, and only the words right
+    before a value are its label.
+    """
     pairs, words, values = [], [], []
+    previous = None
+    width = row.get('width') or 1
     for token in merged_dates(row['tokens']):
         kind = _value_kind(token, style, exponent)
         if kind == 'date' or ' ' in token['t'] and is_date_token(token['t']):
             continue
         if kind in ('money', 'count'):
             values.append((kind, token))
+            previous = token
+            continue
+        if not label(token['t']):
+            # Printed signs between a label and its value ("=", "+") are neither.
             continue
         if values:
             pairs.append((label(' '.join(words)), values))
             words, values = [], []
+        elif (words and previous is not None and token['cell'] is not previous['cell']
+              and token['line'] == previous['line'] and token['x0'] - previous['x1'] > 0.015 * width):
+            pairs.append((label(' '.join(words)), []))
+            words = []
         words.append(token['t'])
+        previous = token
     if words or values:
         pairs.append((label(' '.join(words)), values))
     return pairs
+
+
+def _control_value(tokens):
+    """The value of a labelled control. One amount is its value; a line printing several
+    (a table's endpoint line repeats every column) carries the balance in its rightmost one."""
+    return max(tokens, key=lambda t: t['x1']) if len(tokens) > 1 else tokens[0]
 
 
 def _role_of(text, liability):
@@ -559,7 +581,7 @@ def _section_holder(section_pages, pages, facts):
     return addressed
 
 
-_HEADING_CURRENCIES = sorted((name for name in CURRENCY_NAMES if ' ' in name or len(name) == 3), key=len, reverse=True)
+_HEADING_CURRENCIES = sorted(CURRENCY_NAMES, key=len, reverse=True)
 
 
 def _heading_currencies(rows, style):
@@ -707,8 +729,31 @@ def _numbering_complete(pages, facts):
     return total is None or total - (expected - 1) <= loose
 
 
+_READINGS = {}
+
+
 def read_statements(sources, *, profile=None):
-    """Every statement section the engine finds, proved or not."""
+    """Every statement section the engine finds, proved or not.
+
+    A reading depends only on the stored sources (their revisions), so the
+    last few documents' readings are kept: proposing each period re-reads the
+    whole document, never a subset of its pages.
+    """
+    key = (tuple((s['page_number'], s['table_index'], s.get('source_revision'),
+                  hash(tuple((c['expected_text'], tuple((c.get('locator') or {}).get('rect') or ()))
+                             for r in s['rows'] for c in r['cells']))) for s in sources),
+           profile and profile.get('name'))
+    if all(k[2] for k in key[0]) and key in _READINGS:
+        return _READINGS[key]
+    result = _read_statements(sources, profile=profile)
+    if all(k[2] for k in key[0]):
+        if len(_READINGS) >= 8:
+            _READINGS.pop(next(iter(_READINGS)))
+        _READINGS[key] = result
+    return result
+
+
+def _read_statements(sources, *, profile=None):
     pages = _pages(sources)
     if not pages:
         return []
@@ -729,15 +774,40 @@ def read_statements(sources, *, profile=None):
                         facts[page]['periods'].add(period)
     statements = []
     for segment in _segments(pages, facts):
+        ordered = [row for page in segment['pages'] for row in pages[page]]
+        mentions = []
+        for position, row in enumerate(ordered):
+            row['_seg'] = position
+            if row['tokens'] and not _row_is_movement(row, style or 'dot', 2):
+                named = set()
+                _currency(row, named)
+                named |= _heading_currencies([row], style or 'dot')
+                mentions.extend((position, code) for code in named)
+        segment['currency_mentions'] = mentions
         sections = _sections(segment, pages, style or 'dot')
         page_use = {}
         for section in sections:
             for page in {row['page'] for row in section}:
                 page_use[page] = page_use.get(page, 0) + 1
+        read = []
         for section in sections:
             shared = any(page_use[row['page']] > 1 for row in section)
-            statements.append(_read_section(section, segment, pages, facts, style, sources, profile, shared=shared))
+            read.append(_read_section(section, segment, pages, facts, style, sources, profile, shared=shared))
+        if len(read) > 1:
+            # A section with no movement, zero balances and no currency or account of its own is not a
+            # period anyone could act on (annex and reference pages print zero lines too).
+            read = [st for st in read if not _empty_section(st)] or read[:1]
+        statements.extend(read)
     return statements
+
+
+def _empty_section(statement):
+    rows = statement['_rows']
+    if any(r['kind'] == 'transaction' for r in rows) or statement['engine']['proved']:
+        return False
+    balances = [r['fields'].get('balance') for r in rows if r['kind'] in ('balance', 'statement_total')]
+    return (not statement['currency'] and not statement['account_reference']
+            and all(value in (None, '0') for value in balances))
 
 
 def _sections(segment, pages, style):
@@ -745,8 +815,12 @@ def _sections(segment, pages, style):
     rows = [row for page in segment['pages'] for row in pages[page]]
     sections, current, closed, moved, after_close = [], [], False, False, None
     for row in rows:
-        roles = {_role_of(text, False) for text, values in label_pairs(row, style, 2) if values}
-        if 'opening' in roles and closed and moved and current:
+        pairs = [(text, values) for text, values in label_pairs(row, style, 2) if values]
+        roles = {_role_of(text, False) for text, values in pairs}
+        new_opening = {money(_control_value([t for kind, t in values if kind == 'money'])['t'], style)
+                       for text, values in pairs if _role_of(text, False) == 'opening'
+                       and any(kind == 'money' for kind, _ in values)}
+        if 'opening' in roles and closed and current and (moved or not new_opening <= _endpoints(current, style)['opening']):
             # Lines printed after the closing balance (the next section's heading) open the next section.
             carried = current[after_close:] if after_close is not None else []
             sections.append(current[:after_close] if after_close is not None else current)
@@ -778,8 +852,8 @@ def _endpoints(rows, style):
     for row in rows:
         for text, values in label_pairs(row, style, 2):
             role = _role_of(text, False)
-            if role in found:
-                found[role].update(money(t['t'], style) for kind, t in values if kind == 'money')
+            if role in found and any(kind == 'money' for kind, _ in values):
+                found[role].add(money(_control_value([t for kind, t in values if kind == 'money'])['t'], style))
     return found
 
 
@@ -816,6 +890,9 @@ def _read_section(rows, segment, pages, facts, style, sources, profile, shared=F
         if row['tokens'] and _row_is_movement(row, style or 'dot', 2):
             break
         head.append(row)
+        # A section's heading area also ends at its own closing balance (later pages are not its heading).
+        if row['tokens'] and any(_role_of(text, False) == 'closing' for text, values in label_pairs(row, style or 'dot', 2) if values):
+            break
     own_currencies = set()
     for row in head:
         if row['tokens']:
@@ -853,6 +930,12 @@ def _read_section(rows, segment, pages, facts, style, sources, profile, shared=F
     statement['sources'] = [dict(page_number=s['page_number'], table_index=s['table_index'],
                                  source_revision=s['source_revision'])
                             for s in sources if s['page_number'] in section_pages]
+    # Sections can share a page: the rows, not the page, bound this period's import and overlap checks.
+    scope = {}
+    for row in rows:
+        scope.setdefault((row['page'], row['source']['table_index']), []).append(row['raw']['row_index'])
+    statement['section_sources'] = [dict(page_number=page, table_index=table, row_indices=sorted(indices))
+                                    for (page, table), indices in sorted(scope.items())]
     reading = _reading(rows, statement, style, exponent, liability, period)
     statement.update(id=_digest(dict(layout_id=LAYOUT, account=account, start=statement['period_start'],
                                      end=statement['period_end'], currency=currency, first_page=section_pages[0],
@@ -864,6 +947,29 @@ def _read_section(rows, segment, pages, facts, style, sources, profile, shared=F
         reading['proof'].update(proved=False, reason='no_period')
     if not period and reading['proof']['proved']:
         reading['proof'].update(proved=False, reason='no_period')
+    named = {code for _, code in segment.get('currency_mentions', [])}
+    if len(named) > 1:
+        # Several currencies are printed in this statement: the section's own is the nearest one
+        # named inside the section above its opening balance; otherwise it stays unread (C2, A7).
+        opening = next((r for r in reading['rows'] if r['kind'] == 'balance'
+                        and r['fields'].get('description') == 'Opening Balance'), None)
+        rows_by_id = {(r['page'], r['source']['table_index'], r['raw']['row_index']): r for r in rows}
+        anchor = rows_by_id.get((opening['page_number'], opening['table_index'], opening['row_index'])) if opening else None
+        start, stop = rows[0]['_seg'], (anchor['_seg'] if anchor else rows[-1]['_seg'])
+        own = [code for position, code in segment['currency_mentions'] if start <= position <= stop]
+        attributed = own[-1] if own and len(set(own[-1:])) == 1 else ''
+        if attributed != currency:
+            statement.update(currency=attributed, currency_source='printed_account_section')
+            try:
+                new_exponent = get_currency(attributed).exponent if attributed else 2
+            except MoneyError:
+                new_exponent = 2
+            if new_exponent != exponent:
+                reading = _reading(rows, statement, style, new_exponent, liability, period)
+                statement.update(layout_fingerprint=reading['fingerprint'], engine=reading['proof'])
+            statement['id'] = _digest(dict(layout_id=LAYOUT, account=account, start=statement['period_start'],
+                                           end=statement['period_end'], currency=attributed, first_page=section_pages[0],
+                                           first_row=reading['first_row']))
     statement['_rows'] = reading['rows']
     return statement
 
@@ -1049,7 +1155,7 @@ def _reading(rows, statement, style, exponent, liability, period):
                 continue
             if role in ('opening', 'closing', 'credit_total', 'debit_total', 'credit_component', 'debit_component') and money_values:
                 count = counts[0]['t'] if role.endswith('_total') and len(counts) == 1 and values[0][0] == 'count' else None
-                controls[role].append(dict(row=row, value_token=money_values[0], count=count))
+                controls[role].append(dict(row=row, value_token=_control_value(money_values), count=count))
                 labels_seen.add(text)
                 handled = True
                 if role == 'closing':
@@ -1477,6 +1583,10 @@ def engine_catalog(sources, *, profile=None):
     return result
 
 
+def _copy_rows(rows):
+    return [dict(row, fields=dict(row['fields']), issues=list(row['issues'])) for row in rows]
+
+
 def _hold_row(rows, reason):
     anchor = next((r for r in rows if r['kind'] == 'balance'), rows[0])
     return dict(anchor, id=anchor['id'] + ':engine_hold', fields=dict(description=HOLD_MESSAGES.get(reason, reason)),
@@ -1486,9 +1596,11 @@ def _hold_row(rows, reason):
 
 
 def propose_engine_statement(sources, currency, choice):
+    """The chosen period's rows. ``sources`` must be every source of the document:
+    the period is found again by its id in a reading of the whole document."""
     for statement in read_statements(sources):
         if statement['id'] == choice['id'] or statement['id'] == choice.get('engine_id'):
-            rows = statement['_rows']
+            rows = _copy_rows(statement['_rows'])
             reason = (choice.get('engine') or {}).get('reason')
             if reason == 'route_library_first' and rows and not any(r.get('engine_hold') for r in rows):
                 rows = rows + [_hold_row(rows, reason)]

@@ -437,7 +437,8 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
         from services.financial.statement_engine import propose_engine_statement
         from services.financial.statement_printed_no_activity import zero_totals_evidence
         try:
-            proposed = propose_engine_statement(sources, chosen_currency, selected)['rows']
+            # The engine finds the period again in its reading of the whole document.
+            proposed = propose_engine_statement(all_sources, chosen_currency, selected)['rows']
         except ValueError as exc:
             raise PdfMappingError(str(exc), 409) from exc
         rows.extend(proposed)

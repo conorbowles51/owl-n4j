@@ -56,7 +56,7 @@ def add_period_checks(choices, sources, currency):
             continue
         selected = [by_address[(s['page_number'], s['table_index'])] for s in choice['sources']]
         try:
-            rows = statement_rows(choice, selected, chosen_currency)
+            rows = statement_rows(choice, selected, chosen_currency, sources)
             if rows is None:
                 result.append(choice)
                 continue
@@ -75,12 +75,16 @@ def is_liability(choice):
     return layout in ('capital-one-card', 'merrick-card', 'credit-one-card', 'citi-card')
 
 
-def statement_rows(choice, selected, chosen_currency):
-    """The reading of one recognised period by its reader (engine or library); None for unread layouts."""
+def statement_rows(choice, selected, chosen_currency, all_sources=None):
+    """The reading of one recognised period by its reader (engine or library); None for unread layouts.
+
+    The engine finds its period again in a reading of the whole document
+    (``all_sources``); library readers read only the period's own sources.
+    """
     layout = choice.get('layout_id')
     if layout == 'generic':
         from services.financial.statement_engine import propose_engine_statement
-        rows = propose_engine_statement(selected, chosen_currency, choice)['rows']
+        rows = propose_engine_statement(all_sources if all_sources is not None else selected, chosen_currency, choice)['rows']
     elif layout == 'andrews-share-statement':
         from services.financial.statement_import_andrews import propose_andrews_statement
         rows = propose_andrews_statement(selected, chosen_currency, choice)['rows']
