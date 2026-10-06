@@ -633,8 +633,6 @@ def address_holder(rows):
         if not _POSTAL.search(fold(row['text'])):
             continue
         x = min(t['x0'] for t in row['tokens'])
-        if x > row['width'] * 0.5:
-            continue
         block = [row]
         for earlier in reversed(located[:index]):
             ex = min(t['x0'] for t in earlier['tokens'])
@@ -916,7 +914,8 @@ def _read_section(rows, segment, pages, facts, style, sources, profile, shared=F
     except MoneyError:
         exponent = 2
     liability = any(item['liability'] for item in f)
-    holder = _section_holder(section_pages, pages, facts)
+    # The holder belongs to the statement, printed on its first pages, for every one of its sections.
+    holder = _section_holder(segment['pages'], pages, facts)
     institution = _institution([item['legal'] for item in f])
     period = segment['period']
     statement = dict(layout_id=LAYOUT, institution=institution, account_reference=account,
