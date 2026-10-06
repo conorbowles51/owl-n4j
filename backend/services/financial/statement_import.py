@@ -242,6 +242,7 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
             # and include their source context in the saved review revision.
             sources = [{**source, 'layout_context': source.get('layout_context') or
                 statement_layout_context(source['rows'], continuation_statement=selected)} for source in sources]
+        document_labels = dict(metadata)
         metadata.update(account_type=selected.get('account_type', 'credit_card'), institution=selected['institution'], account_number=selected['account_reference'],
                         period_start=selected['period_start'], period_end=selected['period_end'],
                         period=(selected['period_start'] + ' - ' + selected['period_end']) if selected['period_start'] else selected.get('printed_statement_date') or selected.get('printed_closing_date', ''))
@@ -249,9 +250,20 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
             metadata['balance_convention'] = 'liability_owed'
         if selected.get('layout_id') in ('bbva-mexico-cash-management', 'scotiabank-mexico-zero-activity', 'scotiabank-mexico-movements', 'monex-mexico-currency-summary', 'kapital-mexico-product-statement', 'intercam-mexico-product-statement', 'santander-mexico-movements'):
             metadata['balance_convention'] = 'asset_balance'
+        if selected.get('layout_id') == 'generic':
+            # The general engine read the convention from the printed wording (amounts owed or a balance).
+            metadata['balance_convention'] = selected.get('balance_convention') or 'asset_balance'
         # A selected account must not inherit a name from a different section
         # elsewhere in the same PDF.
         metadata['holder'] = selected.get('holder', '')
+        if selected.get('layout_id') == 'generic' and len(choices) == 1:
+            # The only statement in the document: its printed "Label: value" header lines (the
+            # reading used before the general engine existed) fill what the engine left empty.
+            for field, label_value in (('holder', document_labels.get('holder')),
+                                       ('account_number', document_labels.get('account_number')),
+                                       ('institution', document_labels.get('institution'))):
+                if not metadata.get(field) and label_value:
+                    metadata[field] = label_value
         if selected.get('account_reference_kind'):
             metadata['account_reference_kind'] = selected['account_reference_kind']
         if selected.get('statement_reference'):
@@ -435,6 +447,18 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
         # Every Account Summary movement printed as zero proves a quiet cycle.
         no_activity_evidence = citi_no_activity_evidence(sources, selected, proposed, chosen_currency)
         _check_review_size(rows)
+    if selected and selected.get('layout_id') == 'generic':
+        from services.financial.statement_engine import propose_engine_statement
+        from services.financial.statement_printed_no_activity import zero_totals_evidence
+        try:
+            # The engine finds the period again in its reading of the whole document.
+            proposed = propose_engine_statement(all_sources, chosen_currency, selected)['rows']
+        except ValueError as exc:
+            raise PdfMappingError(str(exc), 409) from exc
+        rows.extend(proposed)
+        # Printed zero totals and equal balances of this period only (B7).
+        no_activity_evidence = zero_totals_evidence(proposed, selected, chosen_currency, family='generic')
+        _check_review_size(rows)
     if selected and selected.get('layout_id') == 'santander-mexico-movements':
         from services.financial.statement_import_santander import propose_santander_statement, santander_no_activity_evidence
         proposed = propose_santander_statement(sources, chosen_currency, selected)['rows']
@@ -443,7 +467,7 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
         # proof is bound to the cited rows and checked again at admission.
         no_activity_evidence = santander_no_activity_evidence(sources, selected, proposed, chosen_currency)
         _check_review_size(rows)
-    for source in ([] if selected and selected.get('layout_id') in ('andrews-share-statement', 'bbva-mexico-cash-management', 'scotiabank-mexico-zero-activity', 'scotiabank-mexico-movements', 'monex-mexico-currency-summary', 'kapital-mexico-product-statement', 'intercam-mexico-product-statement', 'santander-mexico-movements', 'citi-card') else sources):
+    for source in ([] if selected and selected.get('layout_id') in ('andrews-share-statement', 'bbva-mexico-cash-management', 'scotiabank-mexico-zero-activity', 'scotiabank-mexico-movements', 'monex-mexico-currency-summary', 'kapital-mexico-product-statement', 'intercam-mexico-product-statement', 'santander-mexico-movements', 'citi-card', 'generic') else sources):
         try:
             if selected and selected.get('layout_id') == 'credit-one-card':
                 from services.financial.statement_import_credit_one import propose_credit_one_table
@@ -462,6 +486,11 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
         rows.extend(proposal['rows'])
         issues.extend(proposal.get('issues', []))
         _check_review_size(rows)
+    if selected and selected.get('engine_disagreement') and rows:
+        # The general engine and this library reader both reconcile the
+        # period but read it differently: hold it, never pick one silently.
+        from services.financial.statement_engine_routing import disagreement_row
+        rows.append(disagreement_row(rows, selected))
     if metadata.get('balance_convention') == 'liability_owed':
         for role in ('opening', 'closing'):
             controls = [row for row in rows if row['kind'] == 'balance'
@@ -495,6 +524,10 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
         snapshot['kapital_product_statement_v1'] = rows
     if selected and selected.get('layout_id') == 'santander-mexico-movements':
         snapshot['santander_movements_v1'] = rows
+    if selected and selected.get('layout_id') == 'generic':
+        snapshot['generic_statement_v1'] = dict(rows=rows, layout_fingerprint=selected.get('layout_fingerprint'))
+    if selected and selected.get('engine_disagreement'):
+        snapshot['engine_disagreement_v1'] = selected['engine_disagreement']
     undated_charges = [row['id'] for row in rows if row['fields'].get('date_basis') == 'statement_end_ordering_only']
     if undated_charges:
         snapshot['undated_statement_charges_v1'] = undated_charges

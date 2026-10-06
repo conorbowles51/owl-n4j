@@ -76,6 +76,16 @@ def _capital_printings(sources, capital_pages):
 
 
 def statement_catalog(sources):
+    """Statements in these sources: the general engine first, the family readers as the fallback library.
+
+    Routing lives in statement_engine_routing; with the engine switched off
+    this is exactly the library catalog.
+    """
+    from services.financial.statement_engine_routing import route_catalog
+    return route_catalog(sources, library_catalog)
+
+
+def library_catalog(sources):
     from services.financial.statement_import_andrews import andrews_catalog, is_andrews_fee_summary, unassigned_andrews_groups
     andrews, handled, incomplete = andrews_catalog(sources)
     groups = {statement['id']: statement for statement in andrews}

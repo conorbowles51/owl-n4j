@@ -1,6 +1,8 @@
 """Synthetic BBVA layout regressions; no customer document or account data."""
+import os
 from copy import deepcopy
 from unittest import TestCase
+from unittest.mock import patch as patch_env
 from uuid import UUID
 from sqlalchemy import select
 
@@ -406,6 +408,8 @@ class BbvaImportTests(TestCase):
             self.assertEqual(next(c for c in controls['controls'] if c['role'] == 'opening')['original_text'], original['controls'][0]['original_text'])
             self.assertEqual(next(c for c in controls['controls'] if c['role'] == 'closing')['reviewed_value'], '2500')
 
+    # Simulates a document no family reader claims (legacy recovery): the general engine is switched off.
+    @patch_env.dict(os.environ, {'LOUPE_FINANCIAL_GENERIC_READER': '0'})
     def test_reprocessed_import_replaces_incomplete_rows_and_preserves_the_old_reading(self):
         from pathlib import Path
         from uuid import uuid4
@@ -455,6 +459,8 @@ class BbvaImportTests(TestCase):
             self.assertEqual(len(retained.metadata_['statement_incomplete_records']), old['incomplete_count'])
             self.assertEqual(imported_records(db, case_id=f.case.id, account_id=None, start_date=None, end_date=None)['total'], 0)
 
+    # Simulates a document no family reader claims (legacy recovery): the general engine is switched off.
+    @patch_env.dict(os.environ, {'LOUPE_FINANCIAL_GENERIC_READER': '0'})
     def test_legacy_empty_import_can_be_refreshed_in_place_without_reupload(self):
         from pathlib import Path
         from unittest.mock import patch

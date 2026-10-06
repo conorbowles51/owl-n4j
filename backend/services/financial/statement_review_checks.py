@@ -55,42 +55,67 @@ def add_period_checks(choices, sources, currency):
             result.append(choice)
             continue
         selected = [by_address[(s['page_number'], s['table_index'])] for s in choice['sources']]
-        layout = choice.get('layout_id')
         try:
-            if layout == 'andrews-share-statement':
-                from services.financial.statement_import_andrews import propose_andrews_statement
-                rows = propose_andrews_statement(selected, chosen_currency, choice)['rows']
-            elif layout == 'bbva-mexico-cash-management':
-                from services.financial.statement_import_bbva import propose_bbva_statement
-                rows = propose_bbva_statement(selected, chosen_currency, choice)['rows']
-            elif layout == 'scotiabank-mexico-movements':
-                from services.financial.statement_import_scotiabank import propose_scotiabank_movements
-                rows = propose_scotiabank_movements(selected, chosen_currency, choice)['rows']
-            elif layout == 'monex-mexico-currency-summary':
-                from services.financial.statement_import_monex import propose_monex_statement
-                rows = propose_monex_statement(selected, chosen_currency, choice)['rows']
-            elif layout in ('kapital-mexico-product-statement', 'intercam-mexico-product-statement'):
-                from services.financial.statement_import_kapital import propose_kapital_statement
-                rows = propose_kapital_statement(selected, chosen_currency, choice)['rows']
-            elif layout == 'citi-card':
-                from services.financial.statement_import_citi import propose_citi_statement
-                rows = propose_citi_statement(selected, chosen_currency, choice)['rows']
-            elif layout == 'santander-mexico-movements':
-                from services.financial.statement_import_santander import propose_santander_statement
-                rows = propose_santander_statement(selected, chosen_currency, choice)['rows']
-            elif layout in ('capital-one-card', 'merrick-card', 'credit-one-card'):
-                from services.financial.statement_import_card import propose_card_table
-                from services.financial.statement_import_merrick import propose_merrick_table
-                from services.financial.statement_import_credit_one import propose_credit_one_table
-                propose = {'capital-one-card': propose_card_table, 'merrick-card': propose_merrick_table,
-                    'credit-one-card': propose_credit_one_table}[layout]
-                rows = [row for source in selected for row in propose(source, chosen_currency, choice)['rows']]
-            else:
+            rows = statement_rows(choice, selected, chosen_currency, sources)
+            if rows is None:
                 result.append(choice)
                 continue
-            checks = check_statement_rows(rows, liability=layout in ('capital-one-card', 'merrick-card', 'credit-one-card', 'citi-card'))
+            checks = check_statement_rows(rows, liability=is_liability(choice))
         except ValueError:
             # One unreadable period must not hide the remaining periods.
             checks = dict(balance_status='unavailable', flagged_rows=1)
         result.append({**choice, 'checks': checks})
     return result
+
+
+def is_liability(choice):
+    layout = choice.get('layout_id')
+    if layout == 'generic':
+        return choice.get('balance_convention') == 'liability_owed'
+    return layout in ('capital-one-card', 'merrick-card', 'credit-one-card', 'citi-card')
+
+
+def statement_rows(choice, selected, chosen_currency, all_sources=None):
+    """The reading of one recognised period by its reader (engine or library); None for unread layouts.
+
+    The engine finds its period again in a reading of the whole document
+    (``all_sources``); library readers read only the period's own sources.
+    """
+    layout = choice.get('layout_id')
+    if layout == 'generic':
+        from services.financial.statement_engine import propose_engine_statement
+        rows = propose_engine_statement(all_sources if all_sources is not None else selected, chosen_currency, choice)['rows']
+    elif layout == 'andrews-share-statement':
+        from services.financial.statement_import_andrews import propose_andrews_statement
+        rows = propose_andrews_statement(selected, chosen_currency, choice)['rows']
+    elif layout == 'bbva-mexico-cash-management':
+        from services.financial.statement_import_bbva import propose_bbva_statement
+        rows = propose_bbva_statement(selected, chosen_currency, choice)['rows']
+    elif layout == 'scotiabank-mexico-movements':
+        from services.financial.statement_import_scotiabank import propose_scotiabank_movements
+        rows = propose_scotiabank_movements(selected, chosen_currency, choice)['rows']
+    elif layout == 'monex-mexico-currency-summary':
+        from services.financial.statement_import_monex import propose_monex_statement
+        rows = propose_monex_statement(selected, chosen_currency, choice)['rows']
+    elif layout in ('kapital-mexico-product-statement', 'intercam-mexico-product-statement'):
+        from services.financial.statement_import_kapital import propose_kapital_statement
+        rows = propose_kapital_statement(selected, chosen_currency, choice)['rows']
+    elif layout == 'citi-card':
+        from services.financial.statement_import_citi import propose_citi_statement
+        rows = propose_citi_statement(selected, chosen_currency, choice)['rows']
+    elif layout == 'santander-mexico-movements':
+        from services.financial.statement_import_santander import propose_santander_statement
+        rows = propose_santander_statement(selected, chosen_currency, choice)['rows']
+    elif layout in ('capital-one-card', 'merrick-card', 'credit-one-card'):
+        from services.financial.statement_import_card import propose_card_table
+        from services.financial.statement_import_merrick import propose_merrick_table
+        from services.financial.statement_import_credit_one import propose_credit_one_table
+        propose = {'capital-one-card': propose_card_table, 'merrick-card': propose_merrick_table,
+            'credit-one-card': propose_credit_one_table}[layout]
+        rows = [row for source in selected for row in propose(source, chosen_currency, choice)['rows']]
+    else:
+        return None
+    if choice.get('engine_disagreement'):
+        from services.financial.statement_engine_routing import disagreement_row
+        rows = rows + [disagreement_row(rows, choice)]
+    return rows

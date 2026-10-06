@@ -2177,3 +2177,8 @@ from services.financial.admitted_statement_duplicates import (
     find_admitted_duplicates, set_aside_admitted_duplicates, set_aside_copy, restore_copy, keep_copy,
 )
 __all__ += ["find_admitted_duplicates", "set_aside_admitted_duplicates", "set_aside_copy", "restore_copy", "keep_copy"]
+from services.financial.statement_engine import read_statements, propose_engine_statement
+from services.financial.statement_engine_vocabulary import COLUMN_WORDS
+from services.financial.statement_engine_routing import route_catalog
+from services.financial.statement_engine_profiles import matching_profile
+__all__ += ["read_statements", "propose_engine_statement", "COLUMN_WORDS", "route_catalog", "matching_profile"]
