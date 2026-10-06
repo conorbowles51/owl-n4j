@@ -93,5 +93,3 @@ def matching_profile(text):
 def profile_text(sources):
     return '\n'.join(c['expected_text'] for s in sources for r in s['rows'] for c in r['cells'])
 
-
-__all__ = ['PROFILES', 'matching_profile', 'profile_text', 'validate']

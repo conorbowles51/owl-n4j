@@ -24,11 +24,11 @@ CITI citi, CR1 credit_one, KAP kapital/intercam, MER merrick, MON monex, SAN san
 | A1 | Several statements (cycles) in one PDF | A statement is keyed by its printed period (and account when printed); pages printing a different period start another statement | C1, CITI, CR1, MER, AND, BBVA (one per sequence), SAN, KAP (11 / 10 families) | covered (`_segments`) |
 | A2 | Continuation pages do not repeat the period | A page without its own period continues the previous page's statement only when nothing on it contradicts (no other period) | C1, BBVA, SAN, MON, AND, CITI (6) | covered |
 | A3 | Missing pages | Printed page numbering ("Página n de m", "Page n of m", "Hoja n de m", "n / m") must be complete for the run; a gap refuses the period | BBVA, MON, CITI, AND, SAN, KAP, C1 (7) | covered (`page_numbering`) |
-| A4 | Reprint of the same statement inside a file | A second run that restarts at page 1 with the same identity is a separate printing; compared, never merged | C1, AND (2) | partial: a restart at "page 1" starts a new segment; equal segments are left to the existing duplicate set-aside |
+| A4 | Reprint of the same statement inside a file | A second run that restarts at page 1 with the same identity is a separate printing; compared, never merged | C1, AND (2) | partial: printed numbering restarting at 1 starts a new segment (its own id: first page); equal copies are left to the existing duplicate set-aside |
 | A5 | Blank numbered pages | A page printed only with its number between two correctly numbered pages is part of the run | MON (1) + format convention (page numbering) | covered (numbering counts the page; no rows needed) |
-| A6 | Account reference | Labelled value: "No. de cuenta", "Número de cuenta", "Cuenta", "Contrato", "Account number", "Account ending in", masked "****1234"; label value in the next cell, the same cell after the label, or a vertically merged label column zipped with its values | BBVA, MON, SAN, KAP, C1, CITI, CR1, MER, AND (9) | covered (labels table) |
-| A7 | Several accounts or currency sections in one statement | A section is bounded by its own controls; each section is its own period | MON, KAP, SAN, AND (4) | partial: segments are split at each new opening-balance control that follows a closing one on a later row; per-section accounts not read separately (held when ambiguous) |
-| A8 | Holder | Top line of the address block that ends with a postal-code line, or a labelled name ("Nombre del Receptor", "Titular", "Account Name") | BBVA, MON, CR1, MER, AND, SAN, KAP, SCO, CITI (9) | covered (label, then address block); absent -> left empty (grouped decision) |
+| A6 | Account reference | Labelled value: "No. de cuenta", "Número de cuenta", "Cuenta", "Contrato", "Account number", "Account ending in", masked "****1234"; label value in the next cell(s), the same cell after the label, or a vertically merged label column zipped with its values; the whole run of digit groups (a CLABE prints in groups); longest label first; only from the statement's heading pages (later pages name counterparty accounts) | BBVA, MON, SAN, KAP, C1, CITI, CR1, MER, AND (9) | covered |
+| A7 | Several accounts or currency sections in one statement | A section is bounded by its own controls; each section is its own period | MON, KAP, SAN, AND (4) | covered: a new section starts at an opening that follows a closing and either movement lines or a different opening value; heading lines after a closing open the next section; a movement-free section repeating the previous balances is a second summary; sections sharing a page take account and currency only from their own heading area (the nearest currency named inside the section above its opening when the statement names several) and are imported and overlap-checked by row (section_sources) |
+| A8 | Holder | Top line of the address block that ends with a postal-code line, or a labelled name ("Nombre del Receptor", "Titular", "Account Name") | BBVA, MON, CR1, MER, AND, SAN, KAP, SCO, CITI (9) | covered: only on the statement's heading pages (legal pages name other people under the same labels); topmost addressee block on either side of the page; issuer and heading words never a name; a label and a block that disagree give no holder (grouped decision) |
 | A9 | Institution | Legal-name furniture line repeated on the statement's pages ("Banco ..., S.A.", "... Bank, N.A.", "Institución de Banca Múltiple", "Credit Union") | all 10 | covered (repeated legal-name line); absent -> empty (grouped decision) |
 | A10 | Counterparty bank names in descriptions are not the issuer | Issuer identity only from furniture/legal-name lines, never from movement descriptions | KAP, BBVA, SAN (3) | covered (movement rows excluded from institution search) |
 | A11 | Information pages (rewards, fee summaries, legal text, tax certificates) | Pages without controls or movements contribute nothing and do not break a run | C1, AND, MER, BBVA, KAP, MON (6) | covered (no rows taken) |
@@ -51,7 +51,7 @@ CITI citi, CR1 credit_one, KAP kapital/intercam, MER merrick, MON monex, SAN san
 | # | Problem | General rule | Families | Engine |
 |---|---|---|---|---|
 | C1 | Grouping/decimal separators | 1,234.56 (US/MX) or 1.234,56 (EU); decided per document from unambiguous tokens; mixed evidence -> hold | SAN, KAP (mixed-separator documents), all others dot-decimal (10) | covered |
-| C2 | Currency markers | Leading `$`/code or trailing code ("MN", "MXN", "USD") stripped only when consistent with the statement currency | KAP (MN), MON, C1, CITI, SAN, CR1 (6) | covered |
+| C2 | Currency markers | Leading `$`/code or trailing code ("MN", "MXN", "USD") stripped; currency from a printed label or currency heading; a bare `$` is USD only with a US mailing address and no peso wording | KAP (MN), MON, C1, CITI, SAN, CR1 (6) | covered |
 | C3 | Whole-unit currencies | Yen has no minor unit: amounts without decimals are valid only when the currency exponent is 0 | MON (1) + ISO 4217 convention | covered (exponent from `money.get_currency`) |
 | C4 | Trailing minus / CR / parentheses | A trailing `-`, `CR` or `( )` marks a negative/credit value; a detached minus cell belongs to the amount on its right | CR1, MER, C1, AND, SAN, BBVA, SCO (7) | covered (signed tokens) |
 | C5 | Card sign convention (amounts owed) | Balances are amounts owed: charges raise them, payments lower them; a signed amount's sign gives direction; equation open + debits - credits = close | C1, CITI, CR1, MER (4) | covered (liability convention tried by proof; chosen only with printed card-vocabulary evidence or a unique proof) |
@@ -73,7 +73,7 @@ CITI citi, CR1 credit_one, KAP kapital/intercam, MER merrick, MON monex, SAN san
 | D4 | Credit / debit totals with counts | "Depósitos / Abonos (+) n amount", "Retiros / Cargos (-)", "Total abonos", "Total deposits/withdrawals", "Payments", "Purchases": printed totals and counts must equal what was read | BBVA, MON, SAN, KAP, CITI, C1, MER, SCO (8) | covered |
 | D5 | Page subtotals / carried-forward lines | A subtotal or "carried forward"/"brought forward" line is a control, never a payment | AND, CR1, CITI, C1 (4) | covered (control labels never become movements) |
 | D6 | Table endpoints repeat the summary | "Saldo inicial:"/"Saldo final:" lines bounding the movement table must equal the summary | MON, SAN (2) | covered (equal values merge; unequal values -> both candidates, proof decides, two proofs -> hold) |
-| D7 | Summary components (fees, interest, purchases) | Every printed component must equal what was read | CITI, MER, C1 (3) | partial: total labels for credit/debit are compared; fee/interest components are not yet modelled (library) |
+| D7 | Summary components (fees, interest, purchases) | Every printed component must equal what was read | CITI, MER, C1 (3) | covered for cards: components printed between the previous and the new balance are summed per direction and must equal what was read; separate fee/interest section totals are not modelled |
 | D8 | Fail-closed proof | opening + credits - debits = closing to the cent AND (running chain holds on every printed balance OR every printed total/count matches) | all families' admission gate (`statement_admission`) | covered (`_prove`) |
 
 ## E. Movement table structure
@@ -94,19 +94,36 @@ CITI citi, CR1 credit_one, KAP kapital/intercam, MER merrick, MON monex, SAN san
 
 | # | Problem | General rule | Families | Engine |
 |---|---|---|---|---|
-| F1 | OCR glyph substitutions in labels | Labels match after accent folding; only a documented set of glyph confusions in fixed labels | BBVA, AND, C1 (3) | covered (accent/case folding only; no glyph repair of values) |
+| F1 | OCR glyph substitutions in labels | Labels match after accent folding; in known accent-bearing label words the accented vowel may be read as one or two other characters (OPERACIÓN -> OPERACIEN); every other letter exact | BBVA, AND, C1 (3) | covered (labels only, never values) |
 | F2 | Invisible producer OCR layers | Treated as recognised text so crop checks apply | all image families (pipeline rule, r1-reproduced) | inherited (engine reads the same sources) |
 | F3 | Vector-outline text (no text layer) | Pages must go to image reading | real unread set (inventory `vector_text`) | see "Vector text" below |
 
 ## Counts
 
-- Rules: **47** (A 12, B 7, C 12, D 8, E 9, F 3 — counting F2/F3 as pipeline rules).
-- Engine covers fully: **38**; partially: **4** (A4, A7, D7, E8); library only: **5** (C11, E4, E5, E7 and
-  the institution-specific label vocabularies that cannot be expressed in the shared table).
-- Rules justified by one family only and kept in the library: C11, E4, E5, E7. One-family rules that the engine
-  covers are covered as consequences of a format convention (A5 page numbering, C3 ISO exponent, C12 split columns).
+- Rules: **47** (A 12, B 7, C 12, D 8, E 9, F 3).
+- Engine covers fully: **41**; partially: **2** (A4 reprints left to the duplicate set-aside, E8 rewards
+  column handled only by band exclusion); library only: **4** (C11 split digits, E4 two-line entries, E5
+  descriptions wrapping above the dated line, E7 prior-period settlement blocks), plus institution vocabularies
+  that live in library profiles.
+- One-family rules covered by the engine only as consequences of a format convention: A5 (page numbering),
+  C3 (ISO exponent), C12 (split columns).
+
+## Rules added while measuring (each justified by two or more families or a format convention)
+
+- Money tokens never carry leading zeros and never more than 13 digits (references are text).
+- A numeric token outside every amount column inside a movement region is description text.
+- A label is the whole text printed before its value and restarts at a gap between cells; printed signs
+  between a label and its value are ignored; a control line printing several amounts takes its rightmost.
+- A held engine period keeps a column reading as prefill only when it reconciles the printed balances.
+
+## Profiles (library, data)
+
+`backend/services/financial/statement_engine_profiles.py`: name, match phrases, institution, bare-symbol
+currency, convention, date order, extra labels per role, extra column words per role. Capital One and BBVA
+Mexico are expressed as profiles; their code readers stay in the library.
 
 ## Vector text
 
-Inventory mode `vector_text` = the page has drawn glyph outlines and no extractable text layer. See WIP-NOTES for
-the pipeline routing finding and counts.
+Inventory mode `vector_text` = glyph outlines, no extractable text layer. All 125 such documents (1,013 pages)
+are already read through image recognition by the evidence engine (`recognised_glyphs` on every page, every
+page has text), so no routing change was needed; see WIP notes for engine counts on them.

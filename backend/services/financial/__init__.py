@@ -2173,3 +2173,8 @@ from services.financial.statement_printed_no_activity import zero_totals_evidenc
 __all__ += ["zero_totals_evidence"]
 from services.financial.statement_movement_scaffold import movement_scaffold_enabled
 __all__ += ["movement_scaffold_enabled"]
+from services.financial.statement_engine import read_statements, propose_engine_statement
+from services.financial.statement_engine_vocabulary import COLUMN_WORDS
+from services.financial.statement_engine_routing import route_catalog
+from services.financial.statement_engine_profiles import matching_profile
+__all__ += ["read_statements", "propose_engine_statement", "COLUMN_WORDS", "route_catalog", "matching_profile"]
