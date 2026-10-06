@@ -99,6 +99,113 @@ class TranscriptionTests(unittest.TestCase):
         self.assertNotIn('PERSON', repr(counts))
 
 
+GENERIC = """doc dgen
+done 1-2
+issuer acme-bank Acme Bank SA
+currency MXN
+page 1 stmt 2024-01-01 2024-01-31 no 1 member 4321 holder A COMPANY SA
+share - open 1000.00
+r 2024-01-05 -200.00 800.00 | SPEI sent
+r 01/09 50.25 - | Deposit (no running balance printed)
+control credits_total 50.25
+control debits_total 200.00
+control credits_count 1
+control debits_count 1
+close 850.25
+share USD open 10.00
+currency USD
+close 10.00
+page 2 skip  # tax letter
+"""
+
+
+class GenericIssuerTests(unittest.TestCase):
+    def test_issuer_currency_sections_and_rows_without_balances(self):
+        result = rv.compile_document(GENERIC, page_count=2)
+        self.assertEqual(result['period_status'], {'verified': 2})
+        self.assertEqual(result['issuer'], 'acme-bank')
+        pesos, dollars = result['periods']
+        self.assertEqual((pesos['family'], pesos['institution'], pesos['currency'], pesos['account'], pesos['share']),
+                         ('acme-bank', 'Acme Bank SA', 'MXN', '4321', None))
+        self.assertEqual([(r['date'], r['amount_minor'], r['direction'], r.get('balance_after')) for r in pesos['rows']],
+                         [('2024-01-05', 20000, 'debit', 80000), ('2024-01-09', 5025, 'credit', None)])
+        self.assertEqual(pesos['controls'], dict(credits_total=5025, debits_total=20000, credits_count=1,
+                                                 debits_count=1))
+        self.assertEqual((dollars['currency'], dollars['notes']), ('USD', ['section USD']))
+        self.assertEqual(pesos['truth_reasons'], [])  # no share number is needed outside Andrews
+
+    def test_a_printed_total_that_disagrees_is_unverified(self):
+        period = rv.compile_document(GENERIC.replace('control debits_total 200.00', 'control debits_total 210.00'),
+                                     page_count=2)['periods'][0]
+        self.assertEqual((period['truth_status'], period['truth_reasons']),
+                         ('unverified', ['debit total differs from printed total']))
+        period = rv.compile_document(GENERIC.replace('control credits_count 1', 'control credits_count 2'),
+                                     page_count=2)['periods'][0]
+        self.assertIn('credit count differs from printed count', period['truth_reasons'])
+
+    def test_card_balances_rise_with_purchases(self):
+        text = ('doc dcard\ndone 1\nissuer acme-card Acme Card\nkind card\ncurrency USD\n'
+                'page 1 stmt 2024-01-01 2024-01-31 no 1 member 9999\nshare - open 100.00\n'
+                'r 01/03 -40.00 - | purchase\nr 01/20 100.00 - | payment\nclose 40.00\n')
+        period = rv.compile_document(text, page_count=1)['periods'][0]
+        self.assertEqual((period['kind'], period['truth_status']), ('card', 'verified'))
+
+    def test_an_unprinted_account_or_holder_makes_a_decision(self):
+        text = GENERIC.replace('member 4321 holder A COMPANY SA', 'member ?')
+        period = rv.compile_document(text, page_count=2)['periods'][0]
+        self.assertEqual((period['account'], period['truth_status']), (None, 'unverified'))
+        text = GENERIC.replace(' holder A COMPANY SA', '')
+        period = rv.compile_document(text, page_count=2)['periods'][0]
+        self.assertEqual(rt.expected_outcome(rt.Period(**{k: period[k] for k in rt.Period.__dataclass_fields__}),
+                                             period['truth_status']), 'decision')
+
+    def test_document_lines_are_refused_after_the_first_page_and_when_malformed(self):
+        bad = (GENERIC.replace('close 10.00', 'close 10.00\nissuer other-bank Other'),
+               GENERIC.replace('issuer acme-bank Acme Bank SA', 'issuer Acme'),
+               GENERIC.replace('currency USD', 'currency dollars'),
+               GENERIC.replace('control debits_count 1', 'control debit_rows 1'),
+               GENERIC.replace('control debits_count 1', 'control debits_count 1.5'),
+               GENERIC.replace('r 01/09', 'r 9 Jan'),
+               GENERIC.replace('currency MXN', 'form not_statement letter'))
+        for text in bad:
+            with self.assertRaises(ValueError):
+                rv.Transcription(text)
+
+    def test_andrews_defaults_are_unchanged(self):
+        period = rv.compile_document(REVIEWED, page_count=3)['periods'][1]
+        self.assertEqual((period['family'], period['institution'], period['currency'], period['kind']),
+                         ('andrews-share', 'Andrews Federal Credit Union', 'USD', 'deposit'))
+
+
+class DocumentStatusTests(unittest.TestCase):
+    def status(self, reviewed=False, **counts):
+        from collections import Counter
+        return rt.document_status(Counter(counts), reviewed=reviewed)
+
+    def test_verified_and_incomplete_periods_settle_the_document_from_any_reader(self):
+        for reviewed in (False, True):
+            self.assertEqual(self.status(reviewed, verified=3, incomplete=1), 'settled')
+            self.assertEqual(self.status(reviewed, verified=3), 'verified')
+            self.assertEqual(self.status(reviewed, incomplete=2), 'incomplete')
+            self.assertEqual(self.status(reviewed), 'unverified')
+
+    def test_an_unverified_text_layer_period_keeps_the_document_open(self):
+        self.assertEqual(self.status(verified=2, unverified=1), 'partly_verified')
+        self.assertNotIn('partly_verified', rt.FINAL)
+        self.assertEqual(self.status(ocr_reconciled=2, unverified=1), 'ocr_reconciled')
+        self.assertEqual(self.status(True, verified=2, unverified=1), 'settled')
+        self.assertEqual(self.status(True, unverified=1, incomplete=1), 'unverified')
+
+    def test_settled_documents_leave_the_visual_queue_and_count_as_final(self):
+        settled = dict(id='s1', status='settled', issuer='fam', inventory_family='fam', mode='digital', pages=2,
+                       reason=None, period_status={'verified': 1, 'incomplete': 1}, period_reasons={},
+                       periods=[dict(id='s1#1', family='fam', truth_status='verified', truth_reasons=[]),
+                                dict(id='s1#2', family='fam', truth_status='incomplete', truth_reasons=['x'])])
+        self.assertEqual(rt.visual_queue([settled])['documents'], 0)
+        partly = dict(settled, id='p1', status='partly_verified')
+        self.assertEqual(rt.summarise([settled, partly])['documents_final'], 1)
+
+
 class DraftTests(unittest.TestCase):
     def test_draft_keeps_every_movement_line_and_marks_unread_values(self):
         pages = [page(1, ['Account Statement', '123456789', '03/01/21 03/31/21', '1', '>2000<', 'A PERSON',
@@ -138,8 +245,22 @@ class MergeTests(unittest.TestCase):
     def test_incomplete_period_keeps_the_document_truth_complete(self):
         text = REVIEWED.replace('close 100.00\n', 'hold printed page 3 is not in the file\nclose 100.00\n')
         merged = rv.apply_visual(self.result(), rv.compile_document(text, page_count=3))
-        self.assertEqual(merged['status'], 'partly_verified')
+        self.assertEqual(merged['status'], 'settled')  # every period final: the document is too
+        self.assertIn(merged['status'], rt.FINAL)
         self.assertTrue(merged['statements_complete'])
+
+    def test_a_period_the_image_cannot_settle_still_leaves_the_document_final(self):
+        text = REVIEWED.replace('r 03/05 50.00 130.00', 'r 03/05 ?? 130.00')
+        merged = rv.apply_visual(self.result(), rv.compile_document(text, page_count=3))
+        self.assertEqual((merged['status'], merged['period_status']), ('settled', {'verified': 1, 'unverified': 1}))
+        self.assertFalse(merged['statements_complete'])
+
+    def test_not_statement_form_replaces_the_reading_with_no_periods(self):
+        text = 'doc dtest\ndone 1-3\nissuer acme-bank Acme Bank\nform not_statement a letter about tax details\n'
+        merged = rv.apply_visual(self.result(), rv.compile_document(text, page_count=3))
+        self.assertEqual((merged['status'], merged['reason'], merged['periods'], merged['issuer']),
+                         ('not_statement', 'a letter about tax details', [], 'acme-bank'))
+        self.assertIn(merged['status'], rt.FINAL)
 
     def test_incomplete_truth_is_scored_so_its_admission_is_wrong(self):
         self.assertTrue(harness._scored(dict(truth_status='incomplete')))
