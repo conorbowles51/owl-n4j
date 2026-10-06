@@ -18,7 +18,7 @@
 
 Switches (environment):
 * ``LOUPE_FINANCIAL_GENERIC_READER``: '1' runs the engine with the library as
-  fallback, '0' runs the library alone. Default: see ``DEFAULT_ENABLED``.
+  fallback, '0' runs the library alone. Default: on (``DEFAULT_ENABLED``).
 * ``LOUPE_FINANCIAL_GENERIC_ONLY=1``: benchmark-only measurement switch; every
   family reader is skipped. Never a production path.
 """
@@ -30,7 +30,10 @@ from pathlib import Path
 
 from services.financial.statement_engine import HOLD_MESSAGES, engine_catalog, read_statements
 
-DEFAULT_ENABLED = False
+# On by default (r2-any-layout ship decision, 2026-10-06): every measured mode admitted 0 wrong periods,
+# the 20-period visual sample agreed to the cent, and no period ready with the library alone was lost.
+# Reverse: set False (or LOUPE_FINANCIAL_GENERIC_READER=0) to run the library alone.
+DEFAULT_ENABLED = True
 ROUTES = Path(__file__).with_name('statement_engine_routes.json')
 logger = logging.getLogger(__name__)
 

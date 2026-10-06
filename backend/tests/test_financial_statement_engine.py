@@ -292,6 +292,17 @@ class EngineRoutingTests(unittest.TestCase):
         self.assertEqual(catalog['unclassified_sources'], [])
         self.assertEqual(catalog['engine_routing']['engine_served'], 1)
 
+    def test_engine_is_on_by_default_and_can_be_switched_off(self):
+        from services.financial import statement_engine_routing as R
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop('LOUPE_FINANCIAL_GENERIC_READER', None)
+            self.assertTrue(R.generic_enabled())
+        with mock.patch.dict(os.environ, {'LOUPE_FINANCIAL_GENERIC_READER': '0'}):
+            self.assertFalse(R.generic_enabled())
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop('LOUPE_FINANCIAL_GENERIC_ONLY', None)
+            self.assertFalse(R.generic_only())
+
     def test_generic_only_switch_skips_every_library_reader(self):
         from services.financial.statement_import_catalog import statement_catalog
         with mock.patch.dict(os.environ, {'LOUPE_FINANCIAL_GENERIC_ONLY': '1'}), \
