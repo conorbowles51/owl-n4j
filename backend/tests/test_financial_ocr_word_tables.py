@@ -183,6 +183,25 @@ class UprightFrameTests(unittest.TestCase):
             # Without the reading orientation the same stored rectangles do not read as this statement.
             self.assertNotEqual(key(read_statements([self.source(tables)])), key(reference), rotation)
 
+    def test_sections_of_a_turned_page_do_not_overlap_in_their_reading_frame(self):
+        from services.financial.pdf_tables import upright_ocr_words, displayed_tables
+        from services.financial.statement_import_andrews import andrews_source_regions, source_regions_overlap
+        upright = self.upright_words()
+        turned, size = upright_ocr_words(self.displayed(upright, 90, self.WIDTH, self.HEIGHT),
+                                         rotation=90, page_width=self.HEIGHT, page_height=self.WIDTH)
+        tables = displayed_tables(read_positioned_ocr_words(turned, page_number=1, page_width=size[0],
+                                                            page_height=size[1]), rotation=90)
+        source = self.source(tables, 90)
+        indices = sorted(r['row_index'] for r in source['rows'])
+        upper, lower = indices[:5], indices[5:]
+        scope = lambda rows: dict(sources=[dict(page_number=1, table_index=0, row_indices=rows)])
+        a, b = andrews_source_regions([source], scope(upper)), andrews_source_regions([source], scope(lower))
+        self.assertIs(source_regions_overlap(a, b), False)
+        flat = dict(source); flat.pop('reading_rotation')
+        # Measured in displayed space, every printed row of the sideways page spans its whole height.
+        self.assertIs(source_regions_overlap(andrews_source_regions([flat], scope(upper)),
+                                             andrews_source_regions([flat], scope(lower))), True)
+
 
 class ReadingRotationMarkerTests(unittest.TestCase):
     def test_only_pages_whose_tables_were_grouped_upright_carry_a_reading_rotation(self):
@@ -195,3 +214,4 @@ class ReadingRotationMarkerTests(unittest.TestCase):
         # Page 1 was read before the upright frame existed: its stored reading is unchanged.
         self.assertEqual([reading_rotation(locations, n) for n in (1, 2, 3, 4)], [0, 90, 0, 0])
         self.assertEqual(reading_rotation(None, 1), 0)
+
