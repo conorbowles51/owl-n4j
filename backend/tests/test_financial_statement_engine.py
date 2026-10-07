@@ -549,6 +549,27 @@ class IdentityReadingTests(unittest.TestCase):
         for lines, expected in cases:
             self.assertEqual(E._institution([set(lines)], set(lines)), expected, lines)
 
+    def test_a_zip_plus_four_address_anchors_the_addressee_and_the_issuer_is_never_the_holder(self):
+        def card(postal):
+            pages = card_statement()
+            for row in pages[0]['rows']:
+                for c in row['cells']:
+                    if c['expected_text'] == 'SPRINGFIELD, IL 62701':
+                        c['expected_text'] = postal
+            return pages
+        self.assertEqual(self.one(card('SPRINGFIELD, IL 62701-1234'))['holder'], 'JANE Q SAMPLE')
+        issuer = card('SPRINGFIELD, IL 62701-1234')
+        for row in issuer[0]['rows']:
+            for c in row['cells']:
+                if c['expected_text'] == 'JANE Q SAMPLE':
+                    c['expected_text'] = 'Example Card'
+        profile = dict(name='invented-card', match=dict(any=['example card']), institution='Example Card')
+        self.assertEqual(read_statements(issuer, profile=profile)[0]['holder'], '')
+
+    def test_a_lone_word_is_not_a_bank_name(self):
+        self.assertEqual(E._institution([{'ONE, N.A. YOU MAY CONTINUE TO SEE SOME REFERENCES'}], set()), '')
+        self.assertEqual(E._institution([{'CITIBANK, N.A.'}], set()), 'CITIBANK')
+
     def test_a_currency_value_repeating_the_label_word_is_read(self):
         st = self.one(mx_statement(MOVES, closing='1,250.00', currency_line=('MONEDA', 'MONEDA NACIONAL')))
         self.assertEqual(st['currency'], 'MXN')

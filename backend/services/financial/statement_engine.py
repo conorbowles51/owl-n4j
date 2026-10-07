@@ -697,7 +697,8 @@ def _holder_label(row, found):
                 found.add(value)
 
 
-_POSTAL = re.compile(r'(?:\bC\.?\s?P\.?\s*\d{5}\b|\b\d{5}(?:-\d{4})?\s*$|^\d{5}\s)')
+# Folding turns a ZIP+4 hyphen into a space ("20009 6857").
+_POSTAL = re.compile(r'(?:\bC\.?\s?P\.?\s*\d{5}\b|\b\d{5}(?:[- ]\d{4})?\s*$|^\d{5}\s)')
 
 
 def address_holder(rows):
@@ -825,6 +826,8 @@ def _institution(legal_by_page, statement_first=()):
         short = _TRAILING_FORM.sub('', short).strip(' .')
         words = short.split()
         if (not 3 <= len(short) <= 80 or len(words) > 6 or _DESIGNATION_ONLY.match(short)
+                # A one-word name carries its bank word ("CITIBANK"); a lone word is a wrapped sentence's tail.
+                or (len(words) == 1 and not any(word in short for word in INSTITUTION_WORDS))
                 or _CONNECTOR_START.match(short) or any(word in short for word in ('ESTADO DE CUENTA', 'STATEMENT'))
                 or not any(word in short or word in line for word in INSTITUTION_WORDS)):
             continue
@@ -1140,6 +1143,9 @@ def _read_section(rows, segment, pages, facts, style, sources, profile, shared=F
                                 {line for page in set(_heading_pages(segment['pages'], facts)) | set(segment['pages'][:2])
                                  for line in facts[page]['legal']})
                    or (profile or {}).get('institution', ''))
+    if holder and fold(holder) in {fold(name) for name in (institution, (profile or {}).get('institution')) if name}:
+        # The issuer's own name (its remittance address block) is never the holder.
+        holder = ''
     period = segment['period']
     statement = dict(layout_id=LAYOUT, institution=institution, account_reference=account,
                      period_start=period[0].isoformat() if period else '', period_end=period[1].isoformat() if period else '',
