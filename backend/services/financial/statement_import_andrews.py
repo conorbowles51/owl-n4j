@@ -17,13 +17,26 @@ _DATE = r'\d\s*\d\s*/\s*\d\s*\d'
 _SPACED_MONEY = r'[+-]?\s*(?:\d{1,3}(?:,\d{3})+|\d+)\s*\.\s*\d{2}'
 _FULL_DATE = r'\d\s*\d\s*/\s*\d\s*\d\s*/\s*(?:2\s*0\s*)?\d\s*\d'
 _TYPES = {'BASE SHARE SAVINGS': 'savings', 'FREE CHECKING': 'checking', 'VISA PAYMENT': 'other'}
+# Printed share labels. A club share (HOLIDAY CLUB, VACATION CLUB) is a savings
+# share the member pays into for a dated purpose; its section prints exactly
+# like the base share's, with its own ID and Previous Balance heading.
+_LABELS = r'BASE SHARE SAVINGS|FREE CHECKING|VISA PAYMENT|[A-Z]+(?: [A-Z]+)? CLUB'
+
+
+def _share_type(label):
+    return _TYPES.get(label) or ('savings' if label.endswith(' CLUB') else 'other')
+
 # OCR may insert spaces inside a fixed printed label. Match its letters exactly;
 # this does not repair account numbers, dates, amounts or substituted glyphs.
 _PREVIOUS = re.compile(r'(?<![A-Za-z])' + r'\s*'.join('PreviousBalance') + r'(?![A-Za-z])')
-_SHARE = re.compile(r'^(\d{2}/\d{2}) ID (\d{4}) (BASE SHARE SAVINGS|FREE CHECKING|VISA PAYMENT) ' + _PREVIOUS.pattern + r'(?: |$)')
-_SHARE_LABEL = re.compile(r'^\d{2}/\d{2} ID \S+ (BASE SHARE SAVINGS|FREE CHECKING|VISA PAYMENT)(?: |$)')
+# OCR may put spaces inside the heading's date or share ID (``06 / 01``,
+# ``ID 001 0``); only the spacing is ignored, never a glyph.
+_HEADING_DATE = r'\d\s?\d\s?/\s?\d\s?\d'
+_SHARE_ID = r'\d\s?\d\s?\d\s?\d'
+_SHARE = re.compile(r'^(' + _HEADING_DATE + r') ID (' + _SHARE_ID + r') (' + _LABELS + ') ' + _PREVIOUS.pattern + r'(?: |$)')
+_SHARE_LABEL = re.compile(r'^' + _HEADING_DATE + r' ID \S+(?: \S+)? (' + _LABELS + ')(?: |$)')
 
-_CLOSED = re.compile(r'^(\d{2}/\d{2}) ID (\d{4}) (BASE SHARE SAVINGS|FREE CHECKING|VISA PAYMENT) Closed$')
+_CLOSED = re.compile(r'^(' + _HEADING_DATE + r') ID (' + _SHARE_ID + r') (' + _LABELS + ') Closed$')
 _WITHDRAWAL = r'\s*'.join('Withdrawal')
 _DEPOSIT = r'\s*'.join('Deposit')
 _RECURRING = r'\s*'.join('Recurring')
@@ -96,7 +109,8 @@ def andrews_page(source, *, allow_unbranded=False):
     rows = source['rows']
     cells = [c for r in rows for c in r['cells']]
     marks = [c for c in cells if re.fullmatch(r'\.?Andrews', c['expected_text'].strip()) and _box(c)]
-    titles = [c for c in cells if re.fullmatch(r'Account[-·]?Statement', re.sub(r'\s+', '', c['expected_text'])) and _box(c)]
+    # OCR can put a stray mark between the two printed words; their letters must be exact.
+    titles = [c for c in cells if re.fullmatch(r'Account[-·.,]?Statement', re.sub(r'\s+', '', c['expected_text'])) and _box(c)]
     if len(titles) != 1 or len(marks) > 1 or (not marks and not allow_unbranded):
         return None
     size = titles[0]['locator'].get('page_size', [])
@@ -108,8 +122,10 @@ def andrews_page(source, *, allow_unbranded=False):
             any(_box(c)[0] >= width * .4 or _box(c)[3] > height * .15 for c in marks)):
         return None
     top = [r for r in rows if r['cells'] and all(_box(c) and _box(c)[3] < height * .2 for c in r['cells'])]
-    accounts = [(r, c) for r in top for c in r['cells'] if re.fullmatch(r'\d{9}', c['expected_text'].strip())
-                and _box(c)[0] > width * .4]
+    # The printed account number is nine digits; OCR may split them with
+    # spaces (``1234 56 789``). Only spaces are removed, never a glyph.
+    accounts = [(r, c) for r in top for c in r['cells']
+                if re.fullmatch(r'(?:\d\s*){8}\d', c['expected_text'].strip()) and _box(c)[0] > width * .4]
     cycles = []
     for row in top:
         m = re.fullmatch(r'(' + _FULL_DATE + r')\s+(' + _FULL_DATE + r')', _text(row))
@@ -128,14 +144,69 @@ def andrews_page(source, *, allow_unbranded=False):
     if following and re.fullmatch(r'\d{1,3}', _text(following)):
         page_number = int(_text(following))
     body = following['row_index'] + 1 if page_number is not None else cycle_row['row_index'] + 1
-    return dict(account=account['expected_text'].strip(), start=start.isoformat(), end=end.isoformat(),
-                branded=bool(marks),
+    return dict(account=re.sub(r'\s+', '', account['expected_text']), start=start.isoformat(), end=end.isoformat(),
+                branded=bool(marks), account_spaced=bool(re.search(r'\s', account['expected_text'].strip())),
                 printed_page=page_number, body_start=body, width=width,
                 heading_rows=[r['row_index'] for r in rows if r['row_index'] < body])
 
 
-def _holder(rows):
-    """The addressee lines immediately following the printed mailing marker."""
+_NAME_LINE = re.compile(r'[A-Z][A-Z .\'-]{3,95}')
+_STREET_LINE = re.compile(r'\d+ [A-Z0-9 .#\'-]+')
+_CITY_LINE = re.compile(r"[A-Z][A-Z .'-]+ [A-Z]{2} \d{5}(?:-\d{4})?")
+
+
+def _unmarked_holder(rows, page):
+    """The addressee lines of a mailing block whose marker is absent or damaged.
+
+    Some statement runs print the address block with no ``>digits<`` line
+    above it, and OCR can damage the line where it is printed. The block is
+    then accepted only in its complete printed form, as the first lines below
+    the account/period heading: one to three name lines, one street line and
+    one city/state/ZIP line, all at the left of the page, followed directly by
+    the first share heading. Above the names only two lines may be passed
+    over, each at most once: the printed page number when it was not read as
+    a number (one to three characters), and the mailing code line (its eight
+    to twelve digits, whatever the brackets were read as). Nothing is taken
+    from either line. Anything else (a damaged name, street or city line,
+    other text in between) reads no holder, so the account still needs a
+    person's confirmation.
+    """
+    if page is None:
+        return ''
+    body = [r for r in rows if r['row_index'] >= page['body_start'] and r['cells']]
+    if body and page['printed_page'] is None and re.fullmatch(r'\S{1,3}', _text(body[0])):
+        body = body[1:]
+    if body and re.fullmatch(r'[^A-Za-z0-9\s]?\s*(?:\d\s*){8,12}[^A-Za-z0-9\s]{0,2}', _text(body[0])):
+        body = body[1:]
+    names = []
+    for index, row in enumerate(body):
+        text = _text(row)
+        if not all(_box(c) and _box(c)[0] < page['width'] * .4 for c in row['cells']):
+            return ''
+        if _NAME_LINE.fullmatch(text) and not _STREET_LINE.fullmatch(text) and len(names) < 3:
+            names.append(text)
+            continue
+        if (not names or index + 2 >= len(body) or not _STREET_LINE.fullmatch(text)
+                or not _CITY_LINE.fullmatch(_text(body[index + 1]))):
+            return ''
+        heading = _text(body[index + 2])
+        if not (_SHARE_LABEL.match(heading) or _PREVIOUS.search(heading)):
+            return ''
+        value = ' / '.join(names)
+        return value if len(value) <= 128 else ''
+    return ''
+
+
+def _holder(rows, page=None):
+    """The addressee lines immediately following the printed mailing marker.
+
+    When no marker reading yields a holder, the complete mailing block below
+    the heading is read instead (``_unmarked_holder``), given the page heading.
+    """
+    return _marked_holder(rows) or _unmarked_holder(rows, page)
+
+
+def _marked_holder(rows):
     names = []
     active = False
     relaxed_marker = False
@@ -213,6 +284,29 @@ def _opening_corroborated_by_next_page(source, page, following):
             and all(next_page[k] == page[k] for k in ('account', 'start', 'end')))
 
 
+def _account_corroborated(page, ordered, index):
+    """An account number read with spaces inside needs an adjacent page printing it exactly.
+
+    Spaces in the account cell show the reading struggled there; a digit
+    could be misread too. Such a page may open a section only when the PDF
+    page before or after it is an Andrews statement page (of any period)
+    whose account cell reads, without any space, the same nine digits. A
+    misread digit then shows as a different number and the page is not read.
+    """
+    source = ordered[index][0]
+    for step in (-1, 1):
+        if not 0 <= index + step < len(ordered):
+            continue
+        other = ordered[index + step][0]
+        if (other['page_number'] != source['page_number'] + step or other['table_index'] != source['table_index']):
+            continue
+        neighbour = andrews_page(other, allow_unbranded=True)
+        if (neighbour is not None and not neighbour['account_spaced']
+                and neighbour['account'] == page['account']):
+            return True
+    return False
+
+
 def andrews_catalog(sources):
     groups = {}
     handled = set()
@@ -236,6 +330,10 @@ def andrews_catalog(sources):
                           or page['printed_page'] == previous['printed_page'] + 1)
                      and page['printed_page'] != 1)
         following = ordered[index + 1][0] if index + 1 < len(ordered) else None
+        if page['account_spaced'] and not continues and not _account_corroborated(page, ordered, index):
+            active = None
+            previous = None
+            continue
         # Exact printed account/period details and a branded next page can
         # establish an opening whose logo OCR missed. Never infer its dates.
         if not page['branded'] and not continues and not _opening_corroborated_by_next_page(source, page, following):
@@ -257,15 +355,15 @@ def andrews_catalog(sources):
                 active = None
                 if match:
                     identity = dict(layout_id=_LAYOUT, institution='Andrews Federal Credit Union',
-                        account_reference=page['account'] + ' / Share ' + match[2],
-                        main_account_reference=page['account'], share_reference=match[2],
-                        account_label=match[3], account_type=_TYPES[match[3]],
+                        account_reference=page['account'] + ' / Share ' + re.sub(r'\s+', '', match[2]),
+                        main_account_reference=page['account'], share_reference=re.sub(r'\s+', '', match[2]),
+                        account_label=match[3], account_type=_share_type(match[3]),
                         period_start=page['start'], period_end=page['end'])
                     # Another opening heading is another statement occurrence,
                     # even when account and dates match an earlier copy.
                     identifier = _digest(dict(**identity, opening_source=[*key, row['row_index']]))
                     active = groups.setdefault(identifier, dict(id=identifier, **identity,
-                        holder=_holder(source['rows']), sources=[], page_numbers=[]))
+                        holder=_holder(source['rows'], page), sources=[], page_numbers=[]))
                 else:
                     unknown = True
             if active is not None:
@@ -284,7 +382,8 @@ def andrews_catalog(sources):
             closure = _CLOSED.fullmatch(text)
             if closure and active:
                 closed_on = _period_date(closure[1], active)
-                if closure[2] == active['share_reference'] and closure[3] == active['account_label'] and closed_on:
+                if (re.sub(r'\s+', '', closure[2]) == active['share_reference'] and closure[3] == active['account_label']
+                        and closed_on):
                     active['account_closure'] = dict(date=closed_on, page_number=source['page_number'], table_index=source['table_index'],
                         row_index=row['row_index'], source_cells=row['cells'])
                 else:
@@ -299,6 +398,33 @@ def andrews_catalog(sources):
         previous = dict(**page, pdf_page=key[0], table_index=key[1], order_group=order_group,
                         continues=any('Continued on following page' in _text(r) for r in source['rows']))
     return list(groups.values()), handled, incomplete
+
+
+def leading_continuation_rows(source, page):
+    """Row indices of the payments a page carries over from the previous page.
+
+    A continuation page opens with the payments of a section whose share
+    heading is on an earlier page, up to that section's Ending Balance (or a
+    continuation notice) and before any share heading of its own. Returns
+    those rows, ending balance included, or ``[]`` when the page opens with a
+    heading or an address block (no payment before the first heading).
+    Identity is not established here: the rows belong to whichever section
+    the previous page leaves open.
+    """
+    rows = []
+    for row in source['rows']:
+        if row['row_index'] < page['body_start']:
+            continue
+        text = _text(row)
+        if _PREVIOUS.search(text) or _SHARE_LABEL.match(text) or 'Continued on following page' in text:
+            break
+        rows.append(row)
+        if re.match(r'^\d{2}/\d{2} Ending Balance(?: |$)', text) or _ending_balance(row, page['width']):
+            break
+    if not any(row['cells'] and _box(row['cells'][0]) and _box(row['cells'][0])[0] < page['width'] * .08
+               and (_PAYMENT.match(_text(row)) or _DAMAGED_DATE_PAYMENT.match(_text(row))) for row in rows):
+        return []
+    return [row['row_index'] for row in rows]
 
 
 def unassigned_andrews_groups(sources, handled):
@@ -649,7 +775,7 @@ def propose_andrews_statement(sources, currency, statement):
 
 
 # Exact printed letters; only OCR spacing is ignored, as in the reader itself.
-_QUIET_OPENING = re.compile(r'\d{2}/\d{2}ID\d{4}(?:BASESHARESAVINGS|FREECHECKING|VISAPAYMENT)PreviousBalance')
+_QUIET_OPENING = re.compile(r'\d{2}/\d{2}ID\d{4}(?:BASESHARESAVINGS|FREECHECKING|VISAPAYMENT|[A-Z]+CLUB)PreviousBalance')
 _QUIET_CLOSING = re.compile(r'\d{2}/\d{2}EndingBalance')
 NO_ACTIVITY_METHOD = 'andrews-adjacent-endpoint-rows-v1'
 
