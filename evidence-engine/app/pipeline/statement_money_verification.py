@@ -98,8 +98,9 @@ def money_value(text):
 
 
 # Glyphs a recogniser has been measured to put where a statement prints a
-# minus sign (corpus: ``“61.27`` for ``-61.27`` on 150 dpi scans).
-_SIGN_LOOKALIKES = '“”„"‘’\'`´~—–‒―‐‑_='
+# minus sign (corpus: ``“61.27`` for ``-61.27`` on 150 dpi scans; real
+# text-layer scans: ``·13.01`` for ``-13.01``).
+_SIGN_LOOKALIKES = '“”„"‘’\'`´~—–‒―‐‑_=·•'
 
 
 def sign_garbled_money(text):
@@ -117,6 +118,109 @@ def sign_garbled_money(text):
     if value is None or value[0] or rest[:1] in '+-−(':
         return None
     return value[1]
+
+
+_CROP_MONEY = re.compile(
+    r'(?P<open>\()?(?P<lead>[+\-−])?\$?(?P<sign2>[+\-−])?'
+    r'(?P<whole>\d{1,3}(?:,\d{3})+|\d+)[.,](?P<cents>\d{2})[.,]?(?P<trail>-)?(?P<close>\))?')
+
+
+def crop_money_value(text):
+    """``(negative, digits)`` for an image reading of one money amount, else ``None``.
+
+    As ``money_value``, except that the decimal point may have been read as a
+    comma and one stray point or comma after the cents is ignored. Measured on
+    real text-layer scans: Tesseract reads the small printed point of these
+    cells as ``,`` at most crop profiles (``-13,01`` for ``-13.01``) and a
+    speck after the cents as ``.`` or ``,``. A two-digit decimal part has one
+    reading whichever mark separates it, because a grouping comma is always
+    followed by three digits; ``1,234`` and ``12,345`` are therefore not
+    amounts here. Digits and sign are never changed. Spaces are ignored.
+    """
+    match = _CROP_MONEY.fullmatch(re.sub(r'\s+', '', text or ''))
+    if not match or bool(match['open']) != bool(match['close']):
+        return None
+    signs = [s for s in (match['lead'], match['sign2'], match['trail']) if s]
+    if len(signs) > 1:
+        return None
+    negative = bool(match['open']) or (bool(signs) and signs[0] in '-−')
+    return negative, re.sub(r'\D', '', match['whole']) + match['cents']
+
+
+def separator_garbled_money(text):
+    """``(negative, digits)`` for a page reading whose only fault is its decimal mark, else ``None``.
+
+    ``-13,01`` or ``56.78,``: the digits and sign read completely, the point
+    as a comma or with a stray mark after the cents. Such a cell is not a
+    readable amount and is never confirmed, but it is reread like one.
+    """
+    if money_value(text) is not None or sign_garbled_money(text) is not None:
+        return None
+    return crop_money_value(text)
+
+
+# Letters an embedded OCR layer was measured to put for printed digits in
+# Andrews money cells (``-B7.65`` for ``-87.65``, ``o.oo``, ``-S6.OD``,
+# ``l.234.56``), by the digit each stands for.
+_DIGIT_LOOKALIKES = {'O': '0', 'o': '0', 'D': '0', 'Q': '0', 'B': '8', 'S': '5', 'l': '1', 'I': '1', 'i': '1',
+                     '|': '1', 'Z': '2'}
+
+
+def lookalike_money(text, kind='single'):
+    """The amount(s) a page reading states once letters measured to stand for digits are read as those digits.
+
+    ``None`` unless the text holds at least one such letter and then reads as
+    an amount (``kind='pair'``: two). The result is an interpretation of the
+    page's glyphs, never accepted on its own: only the agreed controls may pin it.
+    """
+    if not any(ch in _DIGIT_LOOKALIKES for ch in text or ''):
+        return None
+    mapped = ''.join(_DIGIT_LOOKALIKES.get(ch, ch) for ch in text)
+    return crop_money_pair(mapped) if kind == 'pair' else crop_money_value(mapped)
+
+
+def _split_pair(text, parse):
+    """The two amounts of a cell printing an amount and a running balance side by side, else ``None``.
+
+    The text must split at exactly one run of spaces into two parts that
+    ``parse`` reads as amounts; a text that splits in two ways is not read.
+    """
+    stripped = (text or '').strip()
+    found = []
+    for gap in re.finditer(r'\s+', stripped):
+        left, right = parse(stripped[:gap.start()]), parse(stripped[gap.end():])
+        if left is not None and right is not None:
+            found.append((left, right))
+    return found[0] if len(found) == 1 else None
+
+
+def money_pair(text):
+    """The two amounts of a joined amount and balance cell, each a complete page amount, else ``None``."""
+    return _split_pair(text, money_value)
+
+
+def crop_money_pair(text):
+    """The two amounts of an image reading of a joined amount and balance cell, else ``None``.
+
+    The crop of such a cell is usually read as one word (``-56.781234.56``):
+    each amount ends two digits after its decimal mark, so the reading is
+    split wherever both sides read as amounts, and accepted only when exactly
+    one split gives two amounts.
+    """
+    compact = re.sub(r'\s+', '', text or '')
+    found = {(left, right) for i in range(1, len(compact))
+             if re.search(r'[.,]\d{2}$', compact[:i])
+             and (left := crop_money_value(compact[:i])) is not None
+             and (right := crop_money_value(compact[i:])) is not None}
+    return found.pop() if len(found) == 1 else None
+
+
+def money_text(value):
+    """Canonical text of one amount or of a joined pair: ``-13.01`` or ``-13.01 1234.56``."""
+    if value and isinstance(value[0], tuple):
+        return ' '.join(money_text(part) for part in value)
+    negative, digits = value
+    return ('-' if negative else '') + (digits[:-2].lstrip('0') or '0') + '.' + digits[-2:]
 
 
 def page_needs_verification(text_origin, extraction_method):
@@ -271,20 +375,137 @@ def _dispute_marked(original, reading):
     return original.rstrip() + '?'
 
 
-def classify(original, observations):
-    """``(status, contradicting reading)`` for one cell's crop observations."""
-    expected = money_value(original)
+def _spaced_money_value(text):
+    """``money_value`` of a page reading once the spaces OCR put between its digits are removed."""
+    return money_value(re.sub(r'\s+', '', text or ''))
+
+
+def _readers(kind):
+    """``(page reading parser, image reading parser)`` for a cell of this kind.
+
+    ``spaced``: an Andrews money cell whose page reading is a complete amount
+    once spaces are removed (``123. 4 5``), which the Andrews reader parses
+    as such in a measured money cell.
+    """
+    if kind == 'pair':
+        return money_pair, crop_money_pair
+    return (_spaced_money_value if kind == 'spaced' else money_value), crop_money_value
+
+
+def classify(original, observations, kind='single'):
+    """``(status, contradicting reading)`` for one cell's crop observations.
+
+    The page reading must be a complete amount (for a ``pair`` cell, two);
+    crop readings are compared by the amount they state, whatever mark they
+    show for the decimal point (``crop_money_value``).
+    """
+    page, image = _readers(kind)
+    expected = page(original)
     # A page reading that is not an amount (an unreadable sign glyph) is never confirmed.
-    agreeing = [o for o in observations if expected is not None and money_value(o['text']) == expected]
+    agreeing = [o for o in observations if expected is not None and image(o['text']) == expected]
     if len(agreeing) >= MIN_AGREEING and {o['dpi'] for o in agreeing} == {dpi for dpi, _ in PROFILES}:
         return 'confirmed', None
-    others = Counter(money_value(o['text']) for o in observations
-                     if money_value(o['text']) not in (None, expected))
+    others = Counter(image(o['text']) for o in observations if image(o['text']) not in (None, expected))
     for value, count in others.most_common(1):
-        supporters = [o for o in observations if money_value(o['text']) == value]
+        supporters = [o for o in observations if image(o['text']) == value]
         if count >= MIN_AGREEING and {o['dpi'] for o in supporters} == {dpi for dpi, _ in PROFILES}:
             return 'contradicted', supporters[0]['text']
     return 'unconfirmed', None
+
+
+PAIR_PARTS = ('amount', 'balance')
+
+
+def _page_pair(original):
+    """The two amounts a joined cell's page reading states, its decimal marks read as points, else ``None``."""
+    return money_pair(original) or crop_money_pair(original)
+
+
+def confirmed_parts(original, observations):
+    """``['amount' and/or 'balance']``: the parts of a joined cell the crops confirm on their own.
+
+    A joined cell states two printed amounts. Each part counts as confirmed
+    when at least four crop readings at both resolutions state that part as
+    the page reading does, exactly as a whole cell is confirmed; the other
+    part may still be disputed. Letters read for digits are never confirmed.
+    """
+    page = _page_pair(original)
+    if page is None:
+        return []
+    parsed = [(o, crop_money_pair(o['text'])) for o in observations]
+    found = []
+    for index, name in enumerate(PAIR_PARTS):
+        agreeing = [o for o, value in parsed if value is not None and value[index] == page[index]]
+        if len(agreeing) >= MIN_AGREEING and _both_resolutions(agreeing):
+            found.append(name)
+    return found
+
+
+def _normalised_reading(original, observations, kind):
+    """The canonical text of a page reading whose only fault is its decimal mark, when the crops confirm it.
+
+    ``-13,01`` with at least four crop readings at both resolutions stating
+    -13.01 (whatever mark they read for the point) is the same printed amount
+    a confirmed ``-13.01`` would be: the page and the image agree on every
+    digit and the sign. The cell then takes ``-13.01`` (for a joined amount
+    and balance cell, both amounts) and the record keeps the page reading.
+    Letters standing for digits (``-B7.65``) are not confirmed here: the page
+    did not state those digits, so only the agreed controls may pin them.
+    """
+    if kind == 'pair':
+        value = crop_money_pair(original) if money_pair(original) is None else None
+    elif kind == 'single':
+        value = separator_garbled_money(original)
+    else:
+        value = None
+    if value is None:
+        return None
+    _, image = _readers(kind)
+    agreeing = [o for o in observations if image(o['text']) == value]
+    if len(agreeing) < MIN_AGREEING or not _both_resolutions(agreeing):
+        return None
+    return money_text(value)
+
+
+def _andrews_page(tables):
+    try:
+        from services.financial.statement_reading_quality import andrews_page_reading
+        return andrews_page_reading([table.to_json() for table in tables])
+    except Exception:
+        return False
+
+
+def _money_column(cell, page):
+    rect = _cell_rect(cell, page)
+    return rect is not None and rect[0] >= page.rect.width * 1000 * .46
+
+
+def _target_kind(cell, page, andrews):
+    """``single``, ``pair`` or ``None``: whether and how a table cell is reread as money.
+
+    Every cell whose text is one amount (or one amount behind an unreadable
+    sign glyph) is reread. On an Andrews page, whose payment rows print an
+    amount and a running balance in the right half of the page, two more
+    kinds are: a money cell whose only fault is its decimal mark, and a cell
+    in which the reading joined the amount and the balance (``pair``). The
+    Andrews reader parses both of the joined amounts, so they are checked
+    against the image like any other money it reads.
+    """
+    if money_value(cell.text) is not None or sign_garbled_money(cell.text) is not None:
+        return 'single'
+    if not andrews or not _money_column(cell, page):
+        return None
+    if _spaced_money_value(cell.text) is not None:
+        return 'spaced'
+    if separator_garbled_money(cell.text) is not None:
+        return 'single'
+    if crop_money_pair(cell.text) is not None:
+        return 'pair'
+    if lookalike_money(cell.text) is not None:
+        return 'single'
+    if lookalike_money(cell.text, 'pair') is not None:
+        return 'pair'
+    return None
 
 
 def verify_money_cells(page, tables, *, rotation=0, deadline, language, chunk=None, measure=True):
@@ -301,12 +522,14 @@ def verify_money_cells(page, tables, *, rotation=0, deadline, language, chunk=No
     # caller whose verification failed passes ``measure=False``. Either way
     # the money cells stay unverified and are held rather than admitted.
     rects_available = measure and not page.rotation
+    andrews = _andrews_page(tables)
     targets = []
     for table_index, table in enumerate(tables):
         geometry = getattr(table, 'geometry', None)
         for cell in getattr(geometry, 'cells', None) or ():
-            if money_value(cell.text) is not None or sign_garbled_money(cell.text) is not None:
-                targets.append((table_index, cell, _cell_rect(cell, page) if rects_available else None))
+            kind = _target_kind(cell, page, andrews)
+            if kind:
+                targets.append((table_index, cell, _cell_rect(cell, page) if rects_available else None, kind))
     if not targets:
         return tables, []
     measured = [t for t in targets if t[2] is not None]
@@ -314,26 +537,43 @@ def verify_money_cells(page, tables, *, rotation=0, deadline, language, chunk=No
     error = None
     if measured:
         try:
-            readings = stacked_readings(page, [rect for _, _, rect in measured], rotation=rotation,
+            readings = stacked_readings(page, [rect for _, _, rect, _ in measured], rotation=rotation,
                 deadline=deadline, language=language)
         except (RuntimeError, pytesseract.TesseractError) as exc:
             error = str(exc)[:200]
             readings = {}
     observations_by_cell = {}
-    for position, (table_index, cell, _) in enumerate(measured):
+    for position, (table_index, cell, _, _) in enumerate(measured):
         observations_by_cell[(table_index, cell.row, cell.column)] = [
             dict(dpi=PROFILES[i][0], threshold=PROFILES[i][1], text=readings[i][position][0],
                  confidence=readings[i][position][1])
             for i in sorted(readings) if position < len(readings[i])]
-    replacements, cells_record = {}, []
-    for table_index, cell, rect in targets:
+    replacements, normalisations, cells_record = {}, {}, []
+    for table_index, cell, rect, kind in targets:
         key = (table_index, cell.row, cell.column)
         observations = observations_by_cell.get(key, [])
-        status, contradiction = classify(cell.text, observations) if rect else ('unconfirmed', None)
+        status, contradiction = classify(cell.text, observations, kind) if rect else ('unconfirmed', None)
         entry = dict(table_index=table_index, row_index=cell.row, column_index=cell.column,
             original_text=cell.text, status=status, rect=rect, observations=observations)
-        if money_value(cell.text) is None:
+        if kind in ('pair', 'spaced'):
+            entry['kind'] = kind
+            if kind == 'pair' and money_pair(cell.text) is None:
+                entry['page_decimal_mark_unreadable'] = True
+        elif separator_garbled_money(cell.text) is not None:
+            entry['page_decimal_mark_unreadable'] = True
+        elif lookalike_money(cell.text) is not None:
+            entry['page_digit_lookalikes'] = True
+        elif money_value(cell.text) is None:
             entry['page_sign_unreadable'] = True
+        normalised = _normalised_reading(cell.text, observations, kind) if rect and status != 'confirmed' else None
+        if normalised is not None:
+            status = entry['status'] = 'confirmed'
+            entry.update(normalised_text=normalised, reason='page_decimal_mark_confirmed_by_crops')
+            normalisations[key] = normalised
+        if status != 'confirmed' and kind == 'pair' and rect:
+            parts = confirmed_parts(cell.text, observations)
+            if parts:
+                entry['confirmed_parts'] = parts
         if status != 'confirmed':
             entry['marked_text'] = replacements[key] = _dispute_marked(cell.text, contradiction)
             entry['reason'] = ('crop_readings_contradict_page_reading' if status == 'contradicted'
@@ -349,9 +589,9 @@ def verify_money_cells(page, tables, *, rotation=0, deadline, language, chunk=No
         seconds=round(time.monotonic() - started, 3), cells=cells_record)
     if error:
         record['error'] = error
-    if not replacements:
+    if not replacements and not normalisations:
         return tables, [record]
-    return _with_cells(page, tables, replacements, chunk), [record]
+    return _with_cells(page, tables, {**normalisations, **replacements}, chunk), [record]
 
 
 def _with_cells(page, tables, replacements, chunk):
@@ -442,12 +682,23 @@ def _both_resolutions(observations):
 def _printed_readings(cell):
     """``[(text, source)]``: the readings of one held cell that came from the print.
 
-    * ``page_reading``: the page's own amount, when crop readings at both
-      resolutions also give it (at least two of the six);
+    Crop readings are compared by the amount they state (``crop_money_value``;
+    for a joined amount and balance cell, both amounts).
+
+    * ``page_reading``: the page's own amount, when at least one crop reading
+      gives it (at either resolution: on real scans the 300 dpi crops read a
+      printed minus as ``+`` while the 450 dpi crops and the page agree). The
+      page reading comes from a recogniser independent of these crops, and it
+      is only ever accepted when two confirmed printed balances fix exactly
+      that amount;
+    * ``page_reading_normalised``: the same for a page reading whose only fault
+      is its decimal mark (``-13,01``), offered in its canonical form;
     * ``crop_reading``: the amount at least four crop readings at both
-      resolutions agree on, character for character, when it differs from
-      the page reading. If the page reading is an unreadable sign glyph
-      followed by digits, the crops must give exactly those digits;
+      resolutions agree on, when it differs from the page reading (the crop
+      text itself when those readings are character for character the same
+      complete amount, else its canonical form). If the page reading is an
+      unreadable sign glyph followed by digits, the crops must give exactly
+      those digits;
     * ``crop_digits_signed_by_controls``: for such a cell whose crops read the
       agreed digits without any sign, the same digits with a minus. The page
       shows a mark in the sign position that no reader could name, so both
@@ -458,50 +709,68 @@ def _printed_readings(cell):
     observations = cell.get('observations') or []
     if len(observations) != len(PROFILES) or not cell.get('rect'):
         return []
+    pair = cell.get('kind') == 'pair'
+    page_parse, image = _readers(cell.get('kind') or 'single')
+    original = cell['original_text']
     found = []
-    page_value = money_value(cell['original_text'])
-    if page_value is not None:
-        support = [o for o in observations if money_value(o['text']) == page_value]
-        if len(support) >= 2 and _both_resolutions(support):
-            found.append((cell['original_text'].strip(), 'page_reading'))
-    values = Counter(money_value(o['text']) for o in observations if money_value(o['text']) not in (None, page_value))
+    page_value = page_parse(original)
+    normalised = None
+    if page_value is None:
+        normalised = crop_money_pair(original) if pair else separator_garbled_money(original)
+        if normalised is None:
+            normalised = lookalike_money(original, 'pair' if pair else 'single')
+    for value, source in ((page_value, 'page_reading'), (normalised, 'page_reading_normalised')):
+        if value is not None and any(image(o['text']) == value for o in observations):
+            found.append((original.strip() if source == 'page_reading' else money_text(value), source))
+    known = page_value if page_value is not None else normalised
+    values = Counter(image(o['text']) for o in observations if image(o['text']) not in (None, known))
     for value, count in values.most_common(1):
-        supporters = [o for o in observations if money_value(o['text']) == value]
-        if count < MIN_AGREEING or not _both_resolutions(supporters) or len({_compact(o['text']) for o in supporters}) != 1:
+        supporters = [o for o in observations if image(o['text']) == value]
+        if count < MIN_AGREEING or not _both_resolutions(supporters):
             break
-        text = supporters[0]['text'].strip()
-        if page_value is None:
-            if sign_garbled_money(cell['original_text']) != value[1]:
+        texts = {_compact(o['text']) for o in supporters}
+        exact = page_parse(supporters[0]['text'].strip())
+        text = supporters[0]['text'].strip() if len(texts) == 1 and exact == value else money_text(value)
+        if page_value is None and normalised is None:
+            if sign_garbled_money(original) != value[1]:
                 break
             found.append((text, 'crop_reading'))
             if not value[0] and text[:1] not in '+(':
                 found.append(('-' + text, 'crop_digits_signed_by_controls'))
         else:
             found.append((text, 'crop_reading'))
+    parts = cell.get('confirmed_parts') or []
+    if pair and parts:
+        # A part the crops confirmed keeps the page's value in every candidate.
+        page = _page_pair(original)
+        found = [(text, source) for text, source in found
+                 if (value := crop_money_pair(text)) is not None
+                 and all(value[PAIR_PARTS.index(name)] == page[PAIR_PARTS.index(name)] for name in parts)]
     return found
 
 
 def repair_pinned_readings(page, tables, record, *, chunk=None):
     """Accept, for each held Andrews money cell, the one printed reading the agreed controls fix.
 
-    Considered only on a page held by this check alone, without error. Every
-    held cell must offer at least one reading that a recogniser produced from
-    the print (``_printed_readings``): the page reading, the crop reading, or
-    for an unreadable sign glyph the agreed digits with either sign. The
-    statement reader then accepts a reading only when one printed control
-    equation contains the cell as its only disputed cell, every other cell of
-    that equation is one the page and the crops read identically, the
-    equation holds with that reading and with no other candidate, and with
-    every cell resolved all of the page's printed controls reconcile
-    (``pinned_andrews_values``). Compensating misreads that only fix a sum of
-    disputed cells stay held.
+    Considered only on a page held by this check, without error. Each held
+    cell offers the readings a recogniser produced from the print
+    (``_printed_readings``): the page reading, the crop reading, or for an
+    unreadable sign glyph the agreed digits with either sign. The statement
+    reader then accepts a reading only when one printed control equation
+    contains the cell as its only disputed cell, every other cell of that
+    equation was confirmed here (the page and the crops read it the same
+    way), the equation holds with that reading and with no other candidate,
+    and with every held cell of its account section resolved, every control
+    of that section on this page holds (``pinned_andrews_values``).
+    Compensating misreads that only fix a sum of disputed cells stay held.
 
-    All or nothing per page. An accepted page carries one ``repaired`` record
-    listing, per cell, the page reading, the held text, the accepted text and
-    which reading it was, every crop reading and the cells that pin it, so the
-    machine reading stays visible beside the accepted one. Otherwise a
-    ``declined`` record says why and the tables are returned unchanged; a
-    page no Andrews layout claims gets no record.
+    All or nothing per account section. A page with any accepted cell carries
+    one ``repaired`` record listing, per cell, the page reading, the held
+    text, the accepted text and which reading it was, every crop reading and
+    the cells that pin it, so the machine reading stays visible beside the
+    accepted one, and the cells left held (``unresolved``). Otherwise a
+    ``declined`` record says why and the tables are returned unchanged; a page
+    no Andrews layout claims gets no record.
     """
     if chunk is None:
         from services.financial.pdf_tables import _chunk as chunk
@@ -511,32 +780,37 @@ def repair_pinned_readings(page, tables, record, *, chunk=None):
     def declined(reason):
         return tables, [dict(method=PINNED_READING_METHOD, page=page.number + 1, decision='declined', reason=reason)]
 
-    candidates, by_key = {}, {}
+    candidates, by_key, confirmed, context = {}, {}, set(), {}
     for cell in record['cells']:
-        if cell['status'] == 'confirmed':
-            continue
         key = (cell['table_index'], cell['row_index'], cell['column_index'])
+        if cell['status'] == 'confirmed':
+            confirmed.add(key)
+            continue
+        if cell.get('confirmed_parts') and _page_pair(cell['original_text']) is not None:
+            confirmed.update(key + (name,) for name in cell['confirmed_parts'])
+            context[key] = money_text(_page_pair(cell['original_text']))
         candidates[key], by_key[key] = dict(_printed_readings(cell)), cell
     from services.financial.statement_reading_quality import pinned_andrews_values
     result = pinned_andrews_values([table.to_json() for table in tables],
-        {} if record.get('error') else {key: list(readings) for key, readings in candidates.items()})
+        {} if record.get('error') else {key: list(readings) for key, readings in candidates.items()}, confirmed,
+        context)
     if result is None:
         return tables, []
     if record.get('error'):
         return declined('verification_incomplete')
-    if not all(candidates.values()):
-        return declined('held_cell_without_printed_reading')
-    if not result or result['values'].keys() != candidates.keys():
-        return declined('not_every_held_cell_is_pinned_by_agreed_controls')
+    if not result:
+        return declined('not_every_held_cell_is_pinned_by_agreed_controls' if all(candidates.values())
+                        else 'held_cell_without_printed_reading')
     accepted = result['values']
     repaired = _with_cells(page, tables, {key: value['text'] for key, value in accepted.items()}, chunk)
     return repaired, [dict(method=PINNED_READING_METHOD, page=page.number + 1, decision='repaired',
-        controls=result['controls'],
+        controls=result['controls'], unresolved=result['controls'].get('unresolved', []),
         cells=[dict(table_index=key[0], row_index=key[1], column_index=key[2], rect=by_key[key]['rect'],
                     page_reading=by_key[key]['original_text'], held_text=by_key[key].get('marked_text'),
                     text=value['text'], accepted_reading=candidates[key][value['text']],
                     pinned_by=value['pinned_by'], observations=by_key[key]['observations'],
-                    reason='printed_reading_pinned_by_agreed_controls')
+                    reason='printed_reading_pinned_by_agreed_controls',
+                    **({'kind': 'pair'} if by_key[key].get('kind') == 'pair' else {}))
                for key, value in sorted(accepted.items())])]
 
 
@@ -569,7 +843,8 @@ def _template_cells(page, tables, record, *, rotation, deadline, language):
     both resolutions give exactly the page's characters.
     """
     found = [((c['table_index'], c['row_index'], c['column_index']), c['rect'], c['original_text'], 'money_cell')
-             for c in record['cells'] if c['status'] == 'confirmed' and c.get('rect')]
+             for c in record['cells'] if c['status'] == 'confirmed' and c.get('rect') and c.get('kind') not in ('pair', 'spaced')
+             and 'normalised_text' not in c]
     known = {(c['table_index'], c['row_index'], c['column_index']) for c in record['cells']}
     extra = []
     for table_index, table in enumerate(tables):

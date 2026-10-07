@@ -27,6 +27,12 @@ def held_record(name, **changes):
                   original_text=h['page_reading'], status='contradicted', marked_text=h['marked_text'],
                   rect=h['rect'], observations=copy.deepcopy(h['observations']))
              for h in FIXTURE[name]['held']]
+    held = {tuple(h['cell']) for h in FIXTURE[name]['held']}
+    # Every other money cell on the page was confirmed by the crops, as in the engine's record.
+    cells += [dict(table_index=index, row_index=v['row'], column_index=v['column'], original_text=v['text'],
+                   status='confirmed', rect=v['locator']['rect'], observations=[])
+              for index, item in enumerate(FIXTURE[name]['tables']) for v in item['table']['values']
+              if verification.money_value(v['text']) is not None and (index, v['row'], v['column']) not in held]
     return {**dict(method=verification.METHOD, page=1, decision='held', cells=cells), **changes}
 
 
@@ -66,11 +72,16 @@ def test_printed_readings_offer_page_and_crop_readings_with_support_at_both_reso
 
 
 @pytest.mark.parametrize('texts, expected', [
-    # The page reading needs crop support at both resolutions.
-    (['61.28'] * 3 + ['-61.28'] + ['61.28'] * 2, [('61.28', 'crop_reading')]),
+    # The page reading needs the support of at least one crop reading.
+    (['61.28'] * 3 + ['-61.28'] + ['61.28'] * 2, [('-61.28', 'page_reading'), ('61.28', 'crop_reading')]),
+    (['61.28'] * 6, [('61.28', 'crop_reading')]),
     # Fewer than four agreeing crops, or crops split across one resolution, offer no crop reading.
     (['-61.28', '61.28', '61.28', '-61.28', '61.28', '61.88'], [('-61.28', 'page_reading')]),
-    (['61.28'] * 3 + ['-61.28'] * 3, []),
+    # Real scans: the 300 dpi crops read the printed minus as a plus or drop it,
+    # the 450 dpi crops agree with the page. Only the agreed controls may choose.
+    (['61.28'] * 3 + ['-61.28'] * 3, [('-61.28', 'page_reading')]),
+    (['+61.28'] * 3 + ['-61.28'] * 3, [('-61.28', 'page_reading')]),
+    (['61.28'] * 5 + ['-61.28'], [('-61.28', 'page_reading'), ('61.28', 'crop_reading')]),
     # A time-out (fewer than six readings) offers nothing.
     (['-61.28'] * 5, []),
 ])

@@ -368,10 +368,12 @@ def _andrews_equations(rows):
     """``[(cells, holds)]`` for every printed Andrews control whose cells all parse.
 
     Each payment gives ``previous balance + signed amount = running balance``
-    and each section ends with ``last balance = ending balance``. A row that
-    does not yield every number, a direction and its measured columns breaks
-    the chain there; no equation spans it. A payment whose sign contradicts
-    its printed verb has no direction, so it yields no equation.
+    and each section ends with ``last balance = ending balance``. A payment
+    whose amount or direction cannot be read gives no equation of its own,
+    but its readable running balance is still the previous balance of the
+    next payment. A row without a readable running balance breaks the chain
+    there; no equation spans it. A payment whose sign contradicts its printed
+    verb has no direction, so it yields no equation.
     """
     equations, previous = [], None
     for row in rows:
@@ -391,75 +393,200 @@ def _andrews_equations(rows):
         else:
             point = None
             if (row['kind'] == 'transaction' and not row.get('value_sources')
-                    and all(fields.get(k) is not None for k in
-                            ('amount_minor', 'direction', 'balance', 'amount_column', 'balance_column'))):
-                amount_cell = (row['table_index'], row['row_index'], int(fields['amount_column']))
+                    and all(fields.get(k) is not None for k in ('balance', 'balance_column'))):
                 point = ((row['table_index'], row['row_index'], int(fields['balance_column'])), int(fields['balance']))
-                movement = int(fields['amount_minor']) * (1 if fields['direction'] == 'credit' else -1)
-                if previous:
+                if previous and all(fields.get(k) is not None for k in ('amount_minor', 'direction', 'amount_column')):
+                    amount_cell = (row['table_index'], row['row_index'], int(fields['amount_column']))
+                    movement = int(fields['amount_minor']) * (1 if fields['direction'] == 'credit' else -1)
                     equations.append(([previous[0], amount_cell, point[0]], previous[1] + movement == point[1]))
             previous = point
     return equations
 
 
-def pinned_andrews_values(tables, candidates):
+def andrews_page_reading(tables):
+    """Whether the Andrews share-statement layout claims this one page reading."""
+    found = _page_statement_rows(sources_from_tables(tables))
+    return bool(found) and found[0][0] == 'andrews-share-statement'
+
+
+def _andrews_page_sections(tables):
+    """``[rows]`` for every account section printed on one Andrews page reading, or ``None``.
+
+    The sections are the share sections the catalog finds on this page and,
+    when the page opens with payments carried over from the previous page,
+    that leading block up to its Ending Balance. ``None`` when the page holds
+    anything else the catalog cannot place (an unreadable share heading, a
+    dated line outside every section), so nothing on it is pinned.
+    """
+    from services.financial.statement_import_andrews import (andrews_catalog, andrews_page,
+        leading_continuation_rows, propose_andrews_statement)
+    sources = sources_from_tables(tables)
+    if len(sources) != 1:
+        return None
+    source = sources[0]
+    page = andrews_page(source, allow_unbranded=True)
+    if page is None:
+        return None
+    leading = leading_continuation_rows(source, page)
+    rest = dict(source, rows=[row for row in source['rows'] if row['row_index'] not in leading])
+    groups, _, incomplete = andrews_catalog([rest])
+    if incomplete:
+        return None
+    sections = [propose_andrews_statement([rest], 'USD', group)['rows'] for group in groups]
+    if leading:
+        scope = dict(page_number=source['page_number'], table_index=source['table_index'],
+                     source_revision=source['source_revision'], row_indices=leading, heading_rows=page['heading_rows'])
+        sections.append(propose_andrews_statement([source], 'USD', dict(
+            period_start=page['start'], period_end=page['end'], sources=[scope]))['rows'])
+    return sections
+
+
+def _section_cells(rows):
+    return {(row['table_index'], row['row_index'], cell['column_index'])
+            for row in rows if not (row['kind'] == 'statement_information' and row['excluded'])
+            for cell in row['source_cells']}
+
+
+def _andrews_reading(text):
+    """The amounts a candidate reading states: one, or two for a joined amount and balance cell.
+
+    Spaces inside one amount (``-13 .01``) are ignored, as the reader ignores
+    them in a measured money cell. Two amounts are the two sides of exactly
+    one space at which both sides read as amounts (``-56.78 1234. 56``).
+    """
+    from services.financial.statement_import_proposal import exact_amount
+    try:
+        return (exact_amount(re.sub(r'[\s,$]', '', text or ''), 'USD'),)
+    except Exception:
+        pass
+    parts, found = (text or '').split(), set()
+    for i in range(1, len(parts)):
+        try:
+            found.add(tuple(exact_amount(re.sub(r'[,$]', '', ''.join(side)), 'USD') for side in (parts[:i], parts[i:])))
+        except Exception:
+            continue
+    if len(found) != 1:
+        raise ValueError('not a money reading')
+    return found.pop()
+
+
+def pinned_andrews_values(tables, candidates, confirmed=None, context=None):
     """The one reading of each disputed Andrews money cell that the page's agreed controls fix.
 
     ``candidates`` maps ``(table_index, row, column)`` to the readings of that
     cell that a recogniser actually produced from the print (the page reading,
     the crop reading, or for a cell whose sign glyph was unreadable, its agreed
-    digits with and without the minus). Arithmetic alone cannot choose between
-    readings that both reconcile, which is what compensating misreads do, so a
-    reading is accepted only when it is pinned: one printed control equation
-    (previous balance, payment, running balance; or last balance and ending
-    balance) contains the cell as its only disputed cell, every other cell of
-    that equation is one the page and the crops read the same way, and the
-    equation holds with that reading. Exactly one candidate of each cell must
-    be pinned, every disputed cell must be resolved, and with all of them in
-    place every printed control on the page must reconcile. Otherwise nothing
-    is accepted and the page stays held.
+    digits with and without the minus). A cell holding the amount and running
+    balance together is one cell, and each of its readings states both.
+    Arithmetic alone cannot choose between readings that both reconcile,
+    which is what compensating misreads do, so a reading is accepted only when
+    it is pinned: one printed control equation (previous balance, payment,
+    running balance; or last balance and ending balance) contains the cell as
+    its only disputed cell, every other cell of that equation is one the page
+    and the crops read the same way (in ``confirmed``, when given), and the
+    equation holds with that reading. Exactly one candidate of a cell may be
+    pinned.
+
+    Each account section on the page is then decided on its own, all or
+    nothing: its readings are accepted only when every disputed cell of the
+    section is pinned and, with them in place, every control equation of the
+    section on this page holds (its ending balance included when printed
+    here). A section that continues from or to another page is judged on the
+    equations this page prints; the period is still reconciled as a whole
+    before it can be imported. Sections with a cell that is not pinned keep
+    every cell held.
+
+    ``context`` maps a held joined cell whose amount or balance the crops
+    confirmed (``confirmed`` lists ``(cell, 'amount'|'balance')``) to its
+    page reading, so that the confirmed part can be read while a neighbour
+    is pinned; its other part never counts.
 
     Returns ``dict(values={cell: dict(text=..., pinned_by=[cells])}, controls=...)``,
     ``{}`` when nothing is accepted, or ``None`` when no Andrews layout claims the page.
     """
-    from services.financial.statement_import_andrews import andrews_catalog, propose_andrews_statement
-    from services.financial.statement_import_proposal import exact_amount
     found = _page_statement_rows(sources_from_tables(tables))
     if found is None or found[0][0] != 'andrews-share-statement':
         return None
-    if not candidates or not all(candidates.values()):
+    if not candidates or _andrews_page_sections(tables) is None:
         return {}
     disputed = set(candidates)
+    confirmed_parts = {cell[:3] + (cell[3],) for cell in confirmed or () if len(cell) == 4}
+
+    def agreed(cell, role):
+        """Whether a cell's value in this role (``amount`` or ``balance``) is one the page and crops agree on.
+
+        A joined amount and balance cell can have one part confirmed while the
+        other is disputed; only the confirmed part may fix a neighbour.
+        """
+        if (cell + (role,)) in confirmed_parts:
+            return True
+        return cell not in disputed and (confirmed is None or cell in confirmed)
+
+    def roles(cells):
+        return ('balance', 'amount', 'balance') if len(cells) == 3 else ('balance', 'balance')
 
     def pinning(key, text):
-        sources = sources_from_tables(_with_texts(tables, {key: text}))
-        if len(sources) != 1:
-            return None
-        groups, _, incomplete = andrews_catalog(sources)
-        if not groups or incomplete:
-            return None
-        for group in groups:
-            for cells, holds in _andrews_equations(propose_andrews_statement(sources, 'USD', group)['rows']):
-                if holds and key in cells and not any(other in disputed for other in cells if other != key):
-                    return [list(other) for other in cells if other != key]
-        return None
+        """The agreed cells that fix this reading, or ``None``.
 
-    accepted = {}
+        A cell holding one amount is fixed by one holding equation whose other
+        cells are agreed. A cell joining amount and running balance states two
+        amounts; each part the crops did not confirm needs an equation: the
+        amount its own payment's (previous balance + amount = balance), the
+        balance its own payment's or one that uses it (the next payment or the
+        ending balance). With neither part confirmed, both kinds are needed.
+        """
+        sections = _andrews_page_sections(_with_texts(tables, {**(context or {}), key: text}))
+        found = [cells for rows in sections or () for cells, holds in _andrews_equations(rows)
+                 if holds and key in cells
+                 and all(agreed(other, role) for other, role in zip(cells, roles(cells)) if other != key)]
+        if len(_andrews_reading(text)) == 2:
+            own = [cells for cells in found if cells.count(key) == 2]
+            onward = [cells for cells in found if cells.count(key) == 1 and cells[0] == key]
+            amount_ok, balance_ok = ((key + (name,)) in confirmed_parts for name in ('amount', 'balance'))
+            if amount_ok and balance_ok:
+                found = own or onward
+            elif amount_ok:
+                found = own or onward
+            elif balance_ok:
+                found = own
+            elif own and onward:
+                found = [own[0] + onward[0]]
+            else:
+                found = []
+        if not found:
+            return None
+        return sorted({tuple(other) for other in found[0] if other != key})
+
+    pinned = {}
     for key, texts in candidates.items():
         by_value = {}
         for text in texts:
             try:
-                by_value.setdefault(exact_amount(re.sub(r'[\s,$]', '', text), 'USD'), text)
+                by_value.setdefault(_andrews_reading(text), text)
             except Exception:
-                return {}
+                by_value = {}
+                break
         fixed = [(text, cells) for text in by_value.values() if (cells := pinning(key, text)) is not None]
-        if len(fixed) != 1:
-            return {}
-        accepted[key] = dict(text=fixed[0][0], pinned_by=fixed[0][1])
-    controls = page_controls_reconcile(_with_texts(tables, {key: value['text'] for key, value in accepted.items()}))
-    if not controls or not controls['reconciles']:
+        if len(fixed) == 1:
+            pinned[key] = dict(text=fixed[0][0], pinned_by=[list(cell) for cell in fixed[0][1]])
+    if not pinned:
         return {}
-    return dict(values=accepted, controls=controls)
+    sections = _andrews_page_sections(_with_texts(tables, {key: value['text'] for key, value in pinned.items()}))
+    accepted, summaries = {}, []
+    for rows in sections or ():
+        cells = _section_cells(rows)
+        held = disputed & cells
+        if not held or not held <= pinned.keys():
+            continue
+        equations = _andrews_equations(rows)
+        if not equations or not all(holds for _, holds in equations):
+            continue
+        accepted.update({key: pinned[key] for key in held})
+        summaries.append(dict(cells=sorted(list(key) for key in held), equations=len(equations), reconciles=True))
+    if not accepted:
+        return {}
+    return dict(values=accepted, controls=dict(reconciles=True, sections=summaries,
+        unresolved=sorted(list(key) for key in disputed - accepted.keys())))
 
 
 def recovers_unread_lines(original, image_tables, bands):

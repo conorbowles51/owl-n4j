@@ -4,6 +4,7 @@ Amounts come from the source image, never from balancing arithmetic. Complete
 matching visual readings are required; conflicting signs or digits stay flagged.
 """
 from copy import deepcopy
+from datetime import date
 from decimal import Decimal
 import re
 import time
@@ -100,7 +101,7 @@ def _candidates(tables, words, width, height):
     return candidates[:40]
 
 
-_ENDPOINT_LABEL = re.compile(r'(?:\S{4,7} ID \d{4} (?:BASE SHARE SAVINGS|FREE CHECKING|VISA PAYMENT) Previous Balance'
+_ENDPOINT_LABEL = re.compile(r'(?:\S{4,7} ID \d{4} (?:BASE SHARE SAVINGS|FREE CHECKING|VISA PAYMENT|[A-Z]+(?: [A-Z]+)? CLUB) Previous Balance'
                              r'|\S{4,7} Ending Balance)')
 
 
@@ -176,6 +177,52 @@ def _cleaned_line_readings(page, rect, rotation, deadline, language, whitelist='
     return observations
 
 
+# Glyphs an embedded OCR layer was measured to put for a printed digit in an
+# Andrews row date (``O3/l5`` for ``03/15``), by the digit they stand for.
+_DATE_LOOKALIKES = {'0': 'OoDQ', '1': 'lIi|!L', '2': 'Z', '5': 'S', '8': 'B'}
+
+
+def _row_date_in_period(text, period):
+    match = re.fullmatch(r'(\d{2})/(\d{2})', text or '')
+    if not match:
+        return False
+    for year in range(period[0].year, period[1].year + 1):
+        try:
+            if period[0] <= date(year, int(match[1]), int(match[2])) <= period[1]:
+                return True
+        except ValueError:
+            pass
+    return False
+
+
+def _reread_row_date(page, rect, original, period, deadline, language):
+    """``(MM/DD, observations)`` for an unreadable Andrews row date its own cell shows, else ``(None, ...)``.
+
+    The measured date cell is read at two sizes and three ink thresholds with
+    only digits and ``/`` allowed. Accepted only when all six readings were
+    made, the first and at least four (at both sizes) are one identical date
+    inside the printed statement period, and that date accounts for every
+    character the page reading shows: each is the same digit or ``/``, or a
+    letter measured to stand in for that digit (``O`` for 0, ``l`` for 1).
+    Spaces in the page reading are ignored. Anything else keeps the cell
+    unreadable for a person.
+    """
+    try:
+        observations = _cleaned_line_readings(page, rect, 0, deadline, language, '0123456789/')
+    except (RuntimeError, pytesseract.TesseractError):
+        return None, []
+    valid = [o for o in observations if _row_date_in_period(o['text'], period)]
+    if (len(observations) != 6 or not _row_date_in_period(observations[0]['text'], period) or len(valid) < 4
+            or len({o['dpi'] for o in valid}) != 2 or len({o['text'] for o in valid}) != 1):
+        return None, observations
+    value = valid[0]['text']
+    printed = re.sub(r'\s+', '', original or '')
+    if len(printed) != len(value) or not all(a == b or a in _DATE_LOOKALIKES.get(b, '')
+                                             for a, b in zip(printed, value)):
+        return None, observations
+    return value, observations
+
+
 def refine_statement_native_cells(page, tables, *, deadline, language):
     """Recover missing statement money from its original measured cell.
 
@@ -198,6 +245,8 @@ def refine_statement_native_cells(page, tables, *, deadline, language):
     cards, _ = credit_one_catalog(sources)
     merrick = merrick_statement(sources[0]) if len(sources) == 1 else None
     labelled = None
+    # Andrews only: the printed statement period that bounds a reread row date.
+    period = None
     # Layouts whose rows name their money column per row rather than one
     # amount column: (field, column key) pairs to try for a payment row.
     payment_columns = None
@@ -235,6 +284,7 @@ def refine_statement_native_cells(page, tables, *, deadline, language):
                 if r['row_index'] >= andrews['body_start']])
         statement = dict(period_start=andrews['start'], period_end=andrews['end'], sources=[scope])
         propose = lambda source: propose_andrews_statement([source], 'USD', statement)
+        period = (date.fromisoformat(andrews['start']), date.fromisoformat(andrews['end']))
     before = assess_statement_reading([table.to_json() for table in tables])
     if not before or not before['unreadable']:
         return tables, []
@@ -256,6 +306,8 @@ def refine_statement_native_cells(page, tables, *, deadline, language):
                 # A balance split across several money cells is not one
                 # measured target; a fragment could read as a complete value.
                 candidates = []
+            if period and payment and row['kind'] == 'transaction':
+                candidates = [*candidates, ('date', 'date_column')]
             for field, column_key in candidates:
                 column = fields.get(column_key)
                 if field not in fields and column is not None:
@@ -275,6 +327,15 @@ def refine_statement_native_cells(page, tables, *, deadline, language):
                 or not 0 <= rect[0] < rect[2] <= size[0] or not 0 <= rect[1] < rect[3] <= size[1]
                 or abs(size[0] - page.rect.width * 1000) > 2 or abs(size[1] - page.rect.height * 1000) > 2
                 or rect[2] - rect[0] > size[0] * .13 or len(cell['expected_text']) > 24):
+            continue
+        if field == 'date':
+            value, observations = _reread_row_date(page, rect, cell['expected_text'], period, deadline, language)
+            if value:
+                replacements[(source['table_index'], row['row_index'], int(column))] = value
+                records.append(dict(method='tesseract_native_statement_cell_consensus', page=page.number + 1,
+                    table_index=source['table_index'], row_index=row['row_index'], column_index=int(column),
+                    field='date', original_text=cell['expected_text'], text=value, source_locator=locator,
+                    observations=observations, reason='unreadable_native_statement_date'))
             continue
         try:
             observations = _cleaned_line_readings(page, rect, 0, deadline, language, whitelist)

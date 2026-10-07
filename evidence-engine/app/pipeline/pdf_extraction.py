@@ -33,7 +33,10 @@ MIN_RELIABLE_OSD_CONFIDENCE = 15.0
 MAX_OSD_TIMEOUT_SECONDS = 30.0
 # v14 (r1-reproduced): pages whose text is mostly invisible are recognised text
 # (backend page_text_origin), so their money cells are crop-verified.
-PDF_READING_REVISION = 'bank-payment-rows-v14'
+# v15 (r3-andrews): on Andrews scans, joined amount/balance cells and cells whose
+# only fault is the decimal mark are crop-verified, crop readings are compared by
+# amount, and the pinned reading is decided per account section.
+PDF_READING_REVISION = 'bank-payment-rows-v15'
 OSD_INSUFFICIENT_TEXT_MARKERS = ("too few characters", "skipping this page")
 
 
@@ -398,16 +401,24 @@ def _verify_recognised_money(page, tables, chunks, *, text_origin, extraction_me
             records = records + repairs
         except Exception:
             logger.warning('Pinned money repair unavailable; disputed cells stay held', exc_info=True)
+        remaining = records[0] if records else None
         if not repairs:
             try:
                 refined, pinned = repair_pinned_readings(page, refined, records[0] if records else None)
                 records = records + pinned
                 repairs = [r for r in pinned if r.get('decision') == 'repaired']
+                if repairs and repairs[0].get('unresolved'):
+                    # Sections the agreed controls resolved are repaired; the
+                    # cells still held go to the independent reader as before.
+                    done = {(c['table_index'], c['row_index'], c['column_index']) for c in repairs[0]['cells']}
+                    remaining = dict(remaining, cells=[c for c in remaining['cells']
+                        if (c['table_index'], c['row_index'], c['column_index']) not in done])
+                    repairs = []
             except Exception:
                 logger.warning('Pinned reading repair unavailable; disputed cells stay held', exc_info=True)
         if not repairs and settings.statement_glyph_second_reader:
             try:
-                refined, second = repair_with_second_reader(page, refined, records[0] if records else None,
+                refined, second = repair_with_second_reader(page, refined, remaining,
                     rotation=rotation, deadline=time.monotonic() + 20, language=settings.tesseract_lang)
                 records = records + second
             except Exception:
