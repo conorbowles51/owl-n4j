@@ -296,6 +296,34 @@ class EngineReadingTests(unittest.TestCase):
         self.assertEqual([s['account_reference'] for s in profiled], ['4455667', '4455667'])
         self.assertTrue(all(s['engine']['proved'] for s in profiled))
 
+    def test_a_balance_column_that_does_not_chain_cannot_prove_and_the_chaining_one_is_kept(self):
+        lines = [
+            [('BANCO EJEMPLO DEL NORTE, S.A., INSTITUCION DE BANCA MULTIPLE', 20000, 400000)],
+            [('PERIODO', 330000, 380000), ('DEL 01/03/2024 AL 31/03/2024', 390000, 590000)],
+            [('NO. DE CUENTA', 330000, 400000), ('0012345678', 410000, 500000)],
+            [('MONEDA', 330000, 380000), ('PESOS', 390000, 450000)],
+            [('SALDO ANTERIOR', 330000, 430000), ('1,000.00', 500000, 560000)],
+            [('DEPOSITOS', 330000, 400000), ('500.00', 500000, 560000)],
+            [('RETIROS', 330000, 400000), ('250.00', 500000, 560000)],
+            [('SALDO FINAL', 330000, 400000), ('1,250.00', 500000, 560000)],
+            [('FECHA', 20000, 60000), ('CONCEPTO', 80000, 160000), ('ABONOS', 250000, 290000), ('CARGOS', 320000, 360000),
+             ('SALDO GARANTIA', 400000, 470000), ('SALDO', 520000, 560000)],
+        ]
+        for day, text, credit, debit, balance in MOVES:
+            line = [(day, 20000, 60000), (text, 80000, 230000)]
+            if credit:
+                line.append((credit, 290000 - 6000 * len(credit), 290000))
+            if debit:
+                line.append((debit, 360000 - 6000 * len(debit), 360000))
+            line.append(('0.00', 446000, 470000))
+            line.append((balance, 560000 - 6000 * len(balance), 560000))
+            lines.append(line)
+        st = read_statements([page(1, lines)])[0]
+        self.assertTrue(st['engine']['proved'], st['engine'])
+        self.assertEqual(st['engine']['basis'], 'running_balance')
+        self.assertEqual([r['fields'].get('balance') for r in st['_rows'] if r['kind'] == 'transaction'],
+                         ['150000', '130000', '125000'])
+
     def test_layout_fingerprint_carries_no_values(self):
         a = self.one(mx_statement(MOVES, closing='1,250.00'))
         moves = [(d, t, c and c.replace('5', '7'), dbt, b) for d, t, c, dbt, b in MOVES]

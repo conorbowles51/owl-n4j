@@ -1477,7 +1477,8 @@ def _reading(rows, statement, style, exponent, liability, period):
     dated = [m for m in all_moves if not m.get('undated')]
     resolved, date_problem = _resolve_dates(dated, period, liability) if dated else ([], None if period else 'no_period')
     candidates = _search(all_moves, columns, hints, controls, column_totals, style or 'dot', exponent, liability)
-    proving = [c for c in candidates if c['proved']]
+    # Among readings with the same money, keep one whose running balance chains (its balances are printed values).
+    proving = sorted((c for c in candidates if c['proved']), key=lambda c: not c.get('chain_ok'))
     readings = {}
     for candidate in proving:
         readings.setdefault(candidate['key'], candidate)
@@ -1709,7 +1710,10 @@ def _search(moves, columns, hints, controls, column_totals, style, exponent, lia
                         previous, pending = value['balance'], 0
                 chains.append(compared > 0 and not mismatch)
             chain_ok = any(chains)
-            proved = closing_ok and totals_ok and (chain_ok or (totals_found > 0 and totals_ok))
+            # A column read as the running balance that does not chain contradicts this reading: printed
+            # totals cannot prove it (the same reading without that column still can).
+            contradicted = any(v['balance'] is not None for v in values) and not chain_ok
+            proved = closing_ok and totals_ok and (chain_ok or (totals_found > 0 and totals_ok and not contradicted))
             basis = 'running_balance' if chain_ok else 'printed_totals'
             key = (opening, closing, tuple((m['row']['_index'], v.get('direction'), v.get('amount')) for m, v in zip(moves, values)))
             results.append(dict(proved=proved, closing_ok=closing_ok, totals_failed=totals_failed, chain_ok=chain_ok,
