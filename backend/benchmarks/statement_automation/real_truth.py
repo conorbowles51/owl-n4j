@@ -1865,9 +1865,10 @@ def visual_queue(results, size=SHARD_SIZE, previous=None):
     """
     reviewed = {r['id'] for r in results if r.get('truth_source') == 'visual'}
     if previous is not None:
-        # A queued document whose truth became final by any reader (e.g. a parser added since it was
-        # queued) needs no reading either.
-        reviewed |= {r['id'] for r in results if r.get('status') in FINAL}
+        # A queued document whose truth became settled by any reader (e.g. a parser added since it was
+        # queued) needs no reading either. A text-layer 'unverified' document stays queued: that is the
+        # reason it needs a person reading its pages.
+        reviewed |= {r['id'] for r in results if r.get('status') in ('verified', 'settled', 'incomplete', 'not_statement')}
         return _requeue(results, previous, reviewed, size)
     entries = []
     for r in sorted(results, key=lambda r: r['id']):

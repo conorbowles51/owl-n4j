@@ -291,8 +291,9 @@ class QueueAndDuplicateTests(unittest.TestCase):
         first = rt.visual_queue([self.result('a1'), self.result('a2')])
         again = rt.visual_queue([dict(self.result('a1'), status='verified'), self.result('a2')], previous=first)
         self.assertEqual([(d['id'], d['done']) for d in again['shards'][0]['documents']], [('a1', True), ('a2', False)])
-        partly = rt.visual_queue([dict(self.result('a1'), status='partly_verified'), self.result('a2')], previous=first)
-        self.assertEqual(partly['done'], 0)
+        for status in ('partly_verified', 'unverified', 'ocr_reconciled', 'needs_visual'):
+            still = rt.visual_queue([dict(self.result('a1'), status=status), self.result('a2')], previous=first)
+            self.assertEqual(still['done'], 0, status)
 
     def test_reviewed_documents_never_enter_a_fresh_queue(self):
         queue = rt.visual_queue([self.result('a1', source='visual'), self.result('a2')])
