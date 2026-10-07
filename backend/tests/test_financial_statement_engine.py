@@ -324,6 +324,30 @@ class EngineReadingTests(unittest.TestCase):
         self.assertEqual([r['fields'].get('balance') for r in st['_rows'] if r['kind'] == 'transaction'],
                          ['150000', '130000', '125000'])
 
+    def test_a_second_date_under_a_posting_heading_is_the_posting_date(self):
+        def card(heading_above):
+            pages = card_statement()
+            rows = pages[0]['rows']
+            for row in rows:
+                texts = [c['expected_text'] for c in row['cells']]
+                if texts[:1] == ['Date']:
+                    row['cells'][0]['expected_text'] = 'date date' if heading_above else 'Trans date Post date'
+                elif texts[:1] and texts[0] in ('Feb 20', 'Mar 2', 'Mar 9'):
+                    row['cells'][0]['expected_text'] = texts[0] + ' ' + {'Feb 20': 'Feb 21', 'Mar 2': 'Mar 3', 'Mar 9': 'Mar 10'}[texts[0]]
+            if heading_above:
+                index = next(i for i, r in enumerate(rows) if r['cells'][0]['expected_text'] == 'date date')
+                rows.insert(index, dict(row_index=950, cells=[dict(rows[index]['cells'][0], expected_text='Trans. Post',
+                    locator=dict(rows[index]['cells'][0]['locator'], rect=[20000, rows[index]['cells'][0]['locator']['rect'][1] - 6000,
+                                                                        60000, rows[index]['cells'][0]['locator']['rect'][1] - 1000]))]))
+            return pages
+        for heading_above in (False, True):
+            st = read_statements(card(heading_above))[0]
+            moves = [(r['fields'].get('date'), r['fields'].get('booking_date'), r['fields'].get('value_date'))
+                     for r in st['_rows'] if r['kind'] == 'transaction']
+            self.assertEqual(moves[0], ('2024-02-20', '2024-02-21', None), heading_above)
+        plain = read_statements(mx_statement([('05/MAR 06/MAR', 'TRANSFERENCIA RECIBIDA', '500.00', None, '1,500.00')], closing='1,500.00'))[0]
+        self.assertEqual([r['fields'].get('value_date') for r in plain['_rows'] if r['kind'] == 'transaction'], ['2024-03-06'])
+
     def test_layout_fingerprint_carries_no_values(self):
         a = self.one(mx_statement(MOVES, closing='1,250.00'))
         moves = [(d, t, c and c.replace('5', '7'), dbt, b) for d, t, c, dbt, b in MOVES]

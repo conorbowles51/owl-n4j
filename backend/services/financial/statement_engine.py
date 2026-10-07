@@ -1512,8 +1512,16 @@ def _reading(rows, statement, style, exponent, liability, period):
         if chosen is not None and not chosen.get('closing_ok'):
             chosen = dict(chosen, values=None)
     proof['assignment'] = chosen['assignment'] if chosen else None
+    # Two dates on a movement line (B5): the second is the posting (booking) date when the movement headings
+    # name one ("Trans date / Post date" on card statements); otherwise a value date.
+    # A heading can print on two lines ("Trans. Post" above "date date Description Amount").
+    heading_lines = headers + [rows[h['_index'] - 1] for h in headers
+                               if h['_index'] > 0 and rows[h['_index'] - 1]['page'] == h['page']]
+    second_date = ('booking_date' if any(label(t['t']) in _POSTING_WORDS for h in heading_lines for t in h['tokens'])
+                   else 'value_date')
     result['rows'] = _rows(rows, all_moves, resolved if not date_problem else None, chosen, controls,
-                           column_totals, statement, style or 'dot', exponent, liability, proof, unplaced)
+                           column_totals, statement, style or 'dot', exponent, liability, proof, unplaced,
+                           second_date=second_date)
     return result
 
 
@@ -1738,7 +1746,11 @@ def _item(row, suffix=''):
                 excluded=True, kind='header')
 
 
-def _rows(rows, moves, resolved, chosen, controls, column_totals, statement, style, exponent, liability, proof, unplaced):
+_POSTING_WORDS = {'POST', 'POSTED', 'POSTING'}
+
+
+def _rows(rows, moves, resolved, chosen, controls, column_totals, statement, style, exponent, liability, proof, unplaced,
+          second_date='value_date'):
     """Every source row of the section, in the shared proposal format."""
     items = {}
     order = []
@@ -1769,7 +1781,7 @@ def _rows(rows, moves, resolved, chosen, controls, column_totals, statement, sty
                 if printed:
                     fields['date'] = printed[0].isoformat()
                     if len(printed) > 1:
-                        fields['value_date'] = printed[1].isoformat()
+                        fields[second_date] = printed[1].isoformat()
                 else:
                     item['issues'].append('Check the printed date of this movement.')
             if move['description']:
