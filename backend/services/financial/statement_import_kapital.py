@@ -10,7 +10,8 @@ from services.financial.statement_import_bbva import box, norm, text
 from services.financial.statement_import_proposal import exact_amount
 
 LAYOUT = 'kapital-mexico-product-statement'
-PRODUCT = re.compile(r'SERVICIO EMPRESARIAL FX(?: USD)? KAPITAL\b')
+# OCR can drop the final letter where the heading meets its account number ("KAPITA 123-...").
+PRODUCT = re.compile(r'SERVICIO EMPRESARIAL FX(?: USD)? KAPITAL?\b')
 INTERCAM_PRODUCT = re.compile(r'SERVICIO EMPRESARIAL FX(?: USD)?\s+\d{3}-\d+-\d{3}-\d\b')
 
 
@@ -99,12 +100,18 @@ def kapital_catalog(sources, *, institution='Kapital', product=PRODUCT, layout=L
         for index,(top,clabe,_,_) in enumerate(headings):
             bottom=headings[index+1][0] if index+1<len(headings) else float('inf')
             scoped=[(s,r) for s,r in located if top<=min(box(c)[1] for c in r['cells'] if box(c))<bottom]
-            currencies=set()
-            for _,r in scoped:
+            # The product's currency is the first Moneda line under its own heading; a later product on
+            # the page (an investment line) prints its own Moneda further down.
+            printed=[]
+            for _,r in sorted(scoped,key=lambda item:min(box(c)[1] for c in item[1]['cells'] if box(c))):
                 for i,c in enumerate(r['cells'][:-1]):
                     if norm(c['expected_text'])=='MONEDA':
-                        value=norm(r['cells'][i+1]['expected_text'])
-                        if value in ('MN','M.N.','MXN','USD'): currencies.add('MXN' if value in ('MN','M.N.') else value)
+                        printed.append((norm(r['cells'][i+1]['expected_text']),min(box(c)[1] for c in r['cells'] if box(c))))
+            if len(printed)>1:
+                # The section ends where the next product prints its own currency line.
+                scoped=[(s,r) for s,r in scoped if min(box(c)[1] for c in r['cells'] if box(c))<printed[1][1]]
+            printed=[value for value,_ in printed]
+            currencies={'MXN' if printed[0] in ('MN','M.N.') else printed[0]} if printed and printed[0] in ('MN','M.N.','MXN','USD') else set()
             if len(currencies)!=1: continue
             recognised += 1
             currency=next(iter(currencies))
