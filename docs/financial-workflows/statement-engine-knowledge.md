@@ -97,11 +97,12 @@ CITI citi, CR1 credit_one, KAP kapital/intercam, MER merrick, MON monex, SAN san
 | F1 | OCR glyph substitutions in labels | Labels match after accent folding; in known accent-bearing label words the accented vowel may be read as one or two other characters (OPERACIÓN -> OPERACIEN); every other letter exact | BBVA, AND, C1 (3) | covered (labels only, never values) |
 | F2 | Invisible producer OCR layers | Treated as recognised text so crop checks apply | all image families (pipeline rule, r1-reproduced) | inherited (engine reads the same sources) |
 | F3 | Vector-outline text (no text layer) | Pages must go to image reading | real unread set (inventory `vector_text`) | see "Vector text" below |
+| F4 | Pages printed sideways (content turned on a portrait page, no /Rotate flag) | Rows and columns are grouped in the frame the OCR read the text upright in; stored rectangles stay in displayed page space; a reader of positions turns them by the page's reading rotation (r3) | MON (8 docs), and 199 of 525 truth documents have a page read turned (format convention) | covered: evidence engine `table_frame=upright` refinement + `pdf_tables.upright_ocr_words`/`displayed_tables`; backend source `reading_rotation`; engine `_rect(cell, rotation)` |
 
 ## Counts
 
-- Rules: **47** (A 12, B 7, C 12, D 8, E 9, F 3).
-- Engine covers fully: **41**; partially: **2** (A4 reprints left to the duplicate set-aside, E8 rewards
+- Rules: **48** (A 12, B 7, C 12, D 8, E 9, F 4).
+- Engine covers fully: **42** (F4 added by r3); partially: **2** (A4 reprints left to the duplicate set-aside, E8 rewards
   column handled only by band exclusion); library only: **4** (C11 split digits, E4 two-line entries, E5
   descriptions wrapping above the dated line, E7 prior-period settlement blocks), plus institution vocabularies
   that live in library profiles.
@@ -120,7 +121,18 @@ CITI citi, CR1 credit_one, KAP kapital/intercam, MER merrick, MON monex, SAN san
 
 `backend/services/financial/statement_engine_profiles.py`: name, match phrases, institution, bare-symbol
 currency, convention, date order, extra labels per role, extra column words per role. Capital One and BBVA
-Mexico are expressed as profiles; their code readers stay in the library.
+Mexico are expressed as profiles; their code readers stay in the library. r3 added institution-only
+profiles for Monex ('monex grupo financiero'), Santander ('grupo financiero santander'), Intercam
+('intercam grupo financiero') and Citi ('citibank, n.a'): each phrase is printed by every statement of its
+family in the real collection and by no other family. The printed legal name always wins. Generic-only
+measurement mode applies profiles exactly as normal routing does.
+
+## Engine/library cross-check (routing)
+
+Exact page sets (r2), plus row-level scope (r3): an engine section and exactly one library period that
+share pages and print the same period, currency, printed account (both print one) and printed opening
+balance are cross-checked. Agreement recorded; disagreement held. Replacement only for identical page
+sets. Real truth set: 94 -> 485 cross-checked periods, 0 disagreements.
 
 ## Layout memory (r3)
 
@@ -134,6 +146,10 @@ Fail closed: no printed account -> no memory; other evidence -> other key; fills
 money still proved per period; withdrawal re-reads and holds again.
 
 ## Open (single family, not engine rules yet)
+
+- Santander: a section on shared pages takes the main account's heading printed at the foot of page 1
+  (zero-balance product section gets the main account number; the real detail section on page 2 gets
+  none). Exposed by the row-level cross-check; the opening-balance pairing rule keeps it harmless.
 
 - Drawn-table rows that fuse the last movement with the printed TOTAL line below it (multi-line cells
   'description\nTOTAL', 'amount\ntotal'): SAN only (3 truth documents). Needs the image path's line
