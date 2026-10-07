@@ -890,3 +890,36 @@ async def test_sideways_table_rows_are_grouped_upright_and_stored_in_displayed_s
     # Every printed line keeps its date and its amount together in one row.
     for day in range(1, 9):
         assert any(f"2026-01-{day:02d}" in row and f"{day * 111}.{day:02d}" in row for row in joined), joined
+
+
+def test_words_run_vertically_counts_only_real_words():
+    on_end = [(10, 10, 20, 80, "2026-01-01"), (30, 10, 40, 60, "12.34"), (50, 10, 60, 30, "a")]
+    flat = [(10, 10, 80, 20, "2026-01-01"), (10, 30, 60, 40, "12.34")]
+    assert pdf_extraction._words_run_vertically(on_end) is True
+    assert pdf_extraction._words_run_vertically(flat) is False
+    assert pdf_extraction._words_run_vertically([]) is False
+
+
+@pytest.mark.parametrize("stands_on_end", [True, False])
+async def test_a_recorded_turn_groups_rows_upright_only_when_the_words_stand_on_end(tmp_path, monkeypatch, stands_on_end):
+    """OSD reports a 90 degree turn. Words that lie flat on the displayed page (Tesseract turned the
+    image back itself) keep the displayed-frame grouping; words on end are grouped upright."""
+    pdf_path = tmp_path / "turned.pdf"
+    _write_scanned_pdf(pdf_path, ["Synthetic turned page"])
+    monkeypatch.setattr(pytesseract, "image_to_osd", lambda *_a, **_k: {"rotate": 90, "orientation_conf": 20.0})
+    # Boxes are in the turned image (3300 x 2550 at 300 dpi): wide there = on end on the displayed page.
+    width, height = (220, 40) if stands_on_end else (40, 220)
+    monkeypatch.setattr(pytesseract, "image_to_data", lambda *_a, **_k: {
+        "text": ["2026-01-01", "12.34", "2026-01-02", "56.78"], "conf": ["95"] * 4,
+        "block_num": [1] * 4, "par_num": [1] * 4, "line_num": [1, 1, 2, 2],
+        "left": [100, 800, 100, 800] if stands_on_end else [100, 100, 400, 400],
+        "top": [100, 100, 300, 300] if stands_on_end else [100, 800, 100, 800],
+        "width": [width] * 4, "height": [height] * 4,
+    })
+    from app.pipeline import statement_money_verification
+    monkeypatch.setattr(statement_money_verification, "verify_money_cells", lambda page, tables, **_k: (tables, []))
+    monkeypatch.setattr(settings, "pdf_scan_preprocessing", False)
+    result = await extract_text(str(pdf_path), pdf_path.name)
+    refinements = result.metadata["page_spans"][0].get("ocr_refinements", [])
+    assert any(r.get("field") == "page_orientation" and r.get("rotation") == 90 for r in refinements)
+    assert any(r.get("field") == "table_frame" for r in refinements) is stands_on_end

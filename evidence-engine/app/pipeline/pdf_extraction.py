@@ -956,6 +956,27 @@ def _restore_page_tables(values):
     return result
 
 
+def _words_run_vertically(words):
+    """Whether most recognised words stand on end on the displayed page (text printed sideways).
+
+    A recorded page orientation alone does not say this: Tesseract's own layout
+    analysis can turn the image back, and a landscape page with upright text is
+    then recorded as read at 90 degrees while its words lie flat on the page.
+    Only words of three or more characters count; a word is on end when its box
+    is at least 1.5 times taller than wide.
+    """
+    tall = wide = 0
+    for x0, y0, x1, y1, text in words or []:
+        if len(text.strip()) < 3:
+            continue
+        width, height = x1 - x0, y1 - y0
+        if height > 1.5 * width:
+            tall += 1
+        elif width > 1.5 * height:
+            wide += 1
+    return tall > wide
+
+
 def _read_ocr_page(document, page_index, page_result, prepared, page_cache, native_alternatives,
                    table_chunks, extracted_tables):
     """Read one page selected for OCR into ``page_result`` and the table lists.
@@ -1015,7 +1036,7 @@ def _read_ocr_page(document, page_index, page_result, prepared, page_cache, nati
     if words is not None and reader is not None:
         try:
             rotation = _page_rotation(page_result.ocr_refinements)
-            if rotation and hasattr(reader, 'upright_ocr_words'):
+            if rotation in (90, 270) and hasattr(reader, 'upright_ocr_words') and _words_run_vertically(words):
                 # A page OCR read turned: group its rows and columns in the frame the text reads
                 # upright in, then store every rectangle in displayed page space as always.
                 upright, (width, height) = reader.upright_ocr_words(words, rotation=rotation,
