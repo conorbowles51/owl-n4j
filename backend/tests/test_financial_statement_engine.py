@@ -453,3 +453,43 @@ class EngineProfileTests(unittest.TestCase):
             rows = propose_engine_statement(sources, 'MXN', statement)['rows']
         self.assertEqual(sum(not r['excluded'] for r in rows), 3)
         self.assertFalse(any(r.get('engine_hold') for r in rows))
+
+
+class IdentityReadingTests(unittest.TestCase):
+    """r3: identity facts read generically (holder names with letter-digit tokens, legal-name tiers,
+    repeated currency label words)."""
+
+    def one(self, sources):
+        statements = read_statements(sources)
+        self.assertEqual(len(statements), 1)
+        return statements[0]
+
+    def replaced(self, old, new, **kwargs):
+        pages = mx_statement(MOVES, closing='1,250.00', **kwargs)
+        for row in pages[0]['rows']:
+            for cell in row['cells']:
+                if cell['expected_text'] == old:
+                    cell['expected_text'] = new
+        return pages
+
+    def test_a_company_name_with_a_letter_digit_token_is_a_holder_but_a_street_number_is_not(self):
+        st = self.one(self.replaced('EMPRESA DE PRUEBA SA DE CV', 'SERVICIOS X9 SA DE CV'))
+        self.assertEqual(st['holder'], 'SERVICIOS X9 SA DE CV')
+        st = self.one(self.replaced('EMPRESA DE PRUEBA SA DE CV', 'AVENIDA CENTRAL 450'))
+        self.assertEqual(st['holder'], '')
+
+    def test_the_designated_legal_name_wins_over_headings_and_narrative_lines(self):
+        legal = ['BANCO EJEMPLO DEL NORTE, S.A., INSTITUCION DE BANCA MULTIPLE']
+        cases = (
+            (['ESTADO DE CUENTA BANCO'] + legal, 'BANCO EJEMPLO DEL NORTE'),
+            (['DE BANCO EJEMPLO Y EJEMPLO CASA DE BOLSA'] + legal, 'BANCO EJEMPLO DEL NORTE'),
+            (['INSTITUCION DE BANCA MULTIPLE, ESTADO DE CUENTA', 'BANCO EJEMPLO DEL NORTE S.A.'], 'BANCO EJEMPLO DEL NORTE'),
+            (['2024 EJEMPLO BANK, N.A.'], 'EJEMPLO BANK'),
+            (['TRANSFERENCIA BANCO OTRO, S.A. CUENTA 001234567890'], ''),
+        )
+        for lines, expected in cases:
+            self.assertEqual(E._institution([set(lines)], set(lines)), expected, lines)
+
+    def test_a_currency_value_repeating_the_label_word_is_read(self):
+        st = self.one(mx_statement(MOVES, closing='1,250.00', currency_line=('MONEDA', 'MONEDA NACIONAL')))
+        self.assertEqual(st['currency'], 'MXN')

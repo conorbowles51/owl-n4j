@@ -573,8 +573,8 @@ def _currency(row, found):
     folded = fold(row['text'])
     for name in CURRENCY_LABELS:
         key = fold(name)
-        m = re.match(r'^(?:.*\s)?' + re.escape(key) + r'\s*:?\s+(.+)$', folded)
-        if m:
+        # Every occurrence of the label counts: its value can repeat the label word ("MONEDA: MONEDA NACIONAL").
+        for m in re.finditer(r'(?:^|(?<=\s))' + re.escape(key) + r'\s*:?\s+(?=(.+)$)', folded):
             value = m[1].strip()
             for size in (3, 2, 1):
                 head = ' '.join(value.split()[:size])
@@ -726,7 +726,9 @@ def _address_tops(rows):
             aligned = {id(t['cell']) for t in top['tokens'] if abs(t['x0'] - x) <= row['width'] * 0.015 and t['first']}
             name = ' '.join(t['t'] for t in sorted(top['tokens'], key=lambda t: (t['line'], t['x0']))
                             if id(t['cell']) in aligned and t['line'] == 0)
-            accepted = bool(re.search(r'[A-Za-z]{2}', name) and not re.search(r'\d', name) and len(name.split()) >= 2
+            # A name may hold a letter-digit token (company names); a bare number is an address or a reference.
+            accepted = bool(re.search(r'[A-Za-z]{2}', name) and not any(re.fullmatch(r'[\d#.,/-]+', w) or w.startswith('#')
+                                                                          for w in name.split()) and len(name.split()) >= 2
                             and not name.rstrip().endswith(':')
                             and not any(re.search(r'\b' + re.escape(word) + r'\b', fold(name)) for word in NOT_A_NAME))
             if name.strip():
@@ -774,16 +776,54 @@ def _repeated_legal(legal_by_page):
     return [line for line, count in counts.items() if count >= max(1, (pages + 1) // 2)]
 
 
-def _institution(legal_by_page):
-    """A legal-name furniture line repeated on most pages (A9), short form before its first comma."""
-    best = [line for line in _repeated_legal(legal_by_page)
-            if re.search(r'\b(?:S\.?\s?A\.?|N\.?\s?A\.?|INC\.?|INSTITUCION DE BANCA MULTIPLE|CREDIT UNION|BANK|BANCO)\b', line)]
-    names = set()
-    for line in best:
-        short = line.split(',')[0].strip(' .')
-        if 3 <= len(short) <= 80 and any(word in short or word in line for word in INSTITUTION_WORDS):
-            names.add(short)
-    return next(iter(names)) if len(names) == 1 else ''
+_LEGAL_FORM = re.compile(r'\b(?:S\.?\s?A\.?|N\.?\s?A\.?|INC\.?|INSTITUCION DE BANCA MULTIPLE|CREDIT UNION|BANK|BANCO)\b')
+# Designations a bank prints next to its legal name (they are not the name itself).
+_DESIGNATION = re.compile(r'\b(?:INSTITUCION DE BANCA MULTIPLE|N\.?\s?A\.?|CREDIT UNION|CASA DE BOLSA)\b')
+_DESIGNATION_ONLY = re.compile(r'^(?:INSTITUCION DE BANCA MULTIPLE|GRUPO FINANCIERO|CASA DE BOLSA|SOCIEDAD ANONIMA)\b')
+_TRAILING_FORM = re.compile(r'[\s,]+(?:S\.?\s?A\.?(?:\s+DE\s+C\.?\s?V\.?)?|N\.?\s?A\.?|INC\.?)$')
+
+
+_CONNECTOR_START = re.compile(r'^(?:DE|DEL|Y|E|A|AL|LA|EL|LOS|LAS|POR|PARA|CON|EN|OF|THE|FROM|TO|BY|AND|FOR)\b')
+
+
+def _institution(legal_by_page, statement_first=()):
+    """The issuer's name from its legal-name line (A9): short form before its first comma and legal form.
+
+    Two tiers. First, lines printing a banking designation ("Institucion de Banca
+    Multiple", "N.A.", "Credit Union", "Casa de Bolsa") on the statement's first
+    pages or repeated on most of its pages. Otherwise, a line repeated on most
+    pages whose short form starts or ends with a bank word, has at most six words
+    and no number, on a line naming no account (transfer lines name counterparty banks). One name in a tier is the institution; none or several give no
+    name (a person decides). Designation-only fragments, headings ("Estado de
+    cuenta ...") and narrative lines (starting with a connector word) are never names.
+    """
+    repeated = set(_repeated_legal(legal_by_page))
+    designated, plain = set(), set()
+    for line in repeated | {line for line in statement_first if _DESIGNATION.search(line)}:
+        if not _LEGAL_FORM.search(line):
+            continue
+        # A leading year or copyright mark is not part of the name; the legal form ends it.
+        short = re.sub(r'^(?:\(C\)|©)?\s*(?:\d{4}\s+)?', '', line.split(',')[0].strip(' .'))
+        short = _TRAILING_FORM.sub('', _NAME_END.split(short)[0]).strip(' .')
+        words = short.split()
+        if (not 3 <= len(short) <= 80 or len(words) > 6 or _DESIGNATION_ONLY.match(short)
+                or _CONNECTOR_START.match(short) or any(word in short for word in ('ESTADO DE CUENTA', 'STATEMENT'))
+                or not any(word in short or word in line for word in INSTITUTION_WORDS)):
+            continue
+        if _DESIGNATION.search(line):
+            designated.add(short)
+        elif (line in repeated and not re.search(r'\d', short) and not re.search(r'\d{6,}', line)
+              and not {'CUENTA', 'ACCOUNT', 'CLABE', 'CONTRATO'} & set(line.split())
+              and any(words[0] == w or words[-1] == w or short.startswith(w) or short.endswith(w)
+                      for w in ('BANCO', 'BANK', 'CREDIT UNION', 'BANCA', 'CASA DE BOLSA'))):
+            plain.add(short)
+    for names in (designated, plain):
+        if names:
+            return next(iter(names)) if len(names) == 1 else ''
+    return ''
+
+
+_NAME_END = re.compile(r'\s+(?=S\.?\s?A\.?\b|S\.?\s?P\.?\s?A\.?\b|N\.?\s?A\.?\b|INSTITUCION DE BANCA MULTIPLE\b)')
 
 
 # ---------------------------------------------------------------------------
@@ -1055,7 +1095,10 @@ def _read_section(rows, segment, pages, facts, style, sources, profile, shared=F
             exponent = 2
     # The holder belongs to the statement, printed on its first pages, for every one of its sections.
     holder = _section_holder(segment['pages'], pages, facts)
-    institution = _institution([item['legal'] for item in f]) or (profile or {}).get('institution', '')
+    institution = (_institution([item['legal'] for item in f],
+                                {line for page in set(_heading_pages(segment['pages'], facts)) | set(segment['pages'][:2])
+                                 for line in facts[page]['legal']})
+                   or (profile or {}).get('institution', ''))
     period = segment['period']
     statement = dict(layout_id=LAYOUT, institution=institution, account_reference=account,
                      period_start=period[0].isoformat() if period else '', period_end=period[1].isoformat() if period else '',
