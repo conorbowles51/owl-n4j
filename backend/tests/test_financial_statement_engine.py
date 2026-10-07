@@ -589,6 +589,30 @@ class IdentityReadingTests(unittest.TestCase):
         profile = dict(name='invented-card', match=dict(any=['example card']), institution='Example Card')
         self.assertEqual(read_statements(issuer, profile=profile)[0]['holder'], '')
 
+    def test_addressee_merged_with_the_right_column_and_a_blank_line_before_the_postcode(self):
+        lines = [
+            [('BANCO EJEMPLO DEL NORTE, S.A., INSTITUCION DE BANCA MULTIPLE', 20000, 400000)],
+            [('EMPRESA DE PRUEBA SA DE CV CLIENTE No. 1234567', 6000, 330000)],
+            [('CALLE FALSA 124 PISO 2', 6000, 200000), ('CONTRATO:', 400000, 450000), ('7654321', 460000, 520000)],
+            [('CIUDAD DE MEXICO MEXICO', 6000, 160000), ('PERIODO DEL 01/03/2024 AL 31/03/2024', 400000, 590000)],
+            [('CTA. SPID:', 400000, 450000), ('999000000012345678', 460000, 590000)],
+            [('C.P.: 06000', 10000, 80000), ('FOLIO: D-0000001', 190000, 300000)],
+            [('SALDO ANTERIOR', 330000, 430000), ('1,000.00', 500000, 560000)],
+            [('SALDO FINAL', 330000, 400000), ('1,250.00', 500000, 560000)],
+            [('FECHA', 20000, 60000), ('CONCEPTO', 80000, 160000), ('ABONOS', 330000, 380000), ('CARGOS', 410000, 460000), ('SALDO', 520000, 560000)],
+        ]
+        for day, text, credit, debit, balance in MOVES:
+            line = [(day, 20000, 60000), (text, 80000, 300000)]
+            if credit:
+                line.append((credit, 380000 - 6000 * len(credit), 380000))
+            if debit:
+                line.append((debit, 460000 - 6000 * len(debit), 460000))
+            line.append((balance, 560000 - 6000 * len(balance), 560000))
+            lines.append(line)
+        st = self.one([page(1, lines)])
+        self.assertEqual(st['holder'], 'EMPRESA DE PRUEBA SA DE CV')
+        self.assertTrue(st['engine']['proved'], st['engine'])
+
     def test_a_lone_word_is_not_a_bank_name(self):
         self.assertEqual(E._institution([{'ONE, N.A. YOU MAY CONTINUE TO SEE SOME REFERENCES'}], set()), '')
         self.assertEqual(E._institution([{'CITIBANK, N.A.'}], set()), 'CITIBANK')

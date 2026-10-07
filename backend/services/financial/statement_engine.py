@@ -701,6 +701,18 @@ def _holder_label(row, found):
 _POSTAL = re.compile(r'(?:\bC\.?\s?P\.?\s*\d{5}\b|\b\d{5}(?:[- ]\d{4})?\s*$|^\d{5}\s)')
 
 
+_LABEL_WORDS = {fold(word) for word in NOT_A_NAME} | {'NO', 'NUM', 'NUMERO', 'RFC', 'CONTRATO', 'CLIENTE'}
+
+
+def _name_like(name):
+    """A holder name: letters, at least two words, no label words; a letter-digit token is allowed
+    (company names), a bare number (address, reference) is not."""
+    return bool(re.search(r'[A-Za-z]{2}', name) and not any(re.fullmatch(r'[\d#.,/-]+', w) or w.startswith('#')
+                                                            for w in name.split()) and len(name.split()) >= 2
+                and not name.rstrip().endswith(':')
+                and not any(re.search(r'\b' + re.escape(word) + r'\b', fold(name)) for word in NOT_A_NAME))
+
+
 def address_holder(rows):
     """The top line of the left address block ending with a postal-code line (A8)."""
     found = [(y0, name) for y0, name, accepted in _address_tops(rows) if accepted]
@@ -732,7 +744,10 @@ def _address_tops(rows):
             gap = block[-1]['y0'] - earlier['y0']
             height = max(t['y1'] - t['y0'] for t in block[-1]['tokens'])
             previous_gap = (block[-2]['y0'] - block[-1]['y0']) if len(block) > 1 else 0
-            if gap > max(height * 2.6, previous_gap * 1.6):
+            # One blank line in the address column is allowed where the page prints other columns
+            # beside it (the space is not a gap between blocks).
+            beside = any(earlier['y0'] < other['y0'] < block[-1]['y0'] for other in located)
+            if gap > max(height * (4 if beside else 2.6), previous_gap * 1.6):
                 break
             block.append(earlier)
             if len(block) >= 7:
@@ -742,11 +757,14 @@ def _address_tops(rows):
             aligned = {id(t['cell']) for t in top['tokens'] if abs(t['x0'] - x) <= row['width'] * 0.015 and t['first']}
             name = ' '.join(t['t'] for t in sorted(top['tokens'], key=lambda t: (t['line'], t['x0']))
                             if id(t['cell']) in aligned and t['line'] == 0)
-            # A name may hold a letter-digit token (company names); a bare number is an address or a reference.
-            accepted = bool(re.search(r'[A-Za-z]{2}', name) and not any(re.fullmatch(r'[\d#.,/-]+', w) or w.startswith('#')
-                                                                          for w in name.split()) and len(name.split()) >= 2
-                            and not name.rstrip().endswith(':')
-                            and not any(re.search(r'\b' + re.escape(word) + r'\b', fold(name)) for word in NOT_A_NAME))
+            accepted = _name_like(name)
+            if not accepted:
+                # A row recognised as one cell can run into the right-hand column ("<name> CLIENTE No. 123"):
+                # the words before the first label word are the name when they read as one.
+                words = name.split()
+                cut = next((i for i, w in enumerate(words) if fold(w).strip(':') in _LABEL_WORDS), None)
+                if cut is not None and cut >= 2 and _name_like(' '.join(words[:cut])):
+                    name, accepted = ' '.join(words[:cut]), True
             if name.strip():
                 found.append((top['y0'], name, accepted))
     return found
