@@ -479,6 +479,25 @@ class EngineProfileTests(unittest.TestCase):
         # The profile's institution is used only when no legal-name line is printed.
         self.assertEqual(profiled['institution'], 'BANCO EJEMPLO DEL NORTE')
 
+    def test_account_heading_profile_reads_an_account_printed_after_the_product_name(self):
+        def pages(*extra):
+            sources = mx_statement(MOVES, closing='1,250.00')
+            rows = sources[0]['rows']
+            rows[:] = [r for r in rows if not any(c['expected_text'] in ('NO. DE CUENTA', '0012345678') for c in r['cells'])]
+            for index, text in enumerate(extra):
+                rows.insert(1, dict(row_index=900 + index, cells=[dict(column_index=0, expected_text=text, locator=dict(
+                    page=1, rect=[20000, 30000 + index * 1000, 300000, 30900 + index * 1000], page_size=[612000, 792000]))]))
+            return sources
+        profile = dict(name='invented-heading', match=dict(any=['banco ejemplo']), account_heading=True)
+        self.assertEqual(read_statements(pages('CUENTA EJEMPLO PYME 12-34567890-1'))[0]['account_reference'], '')
+        st = read_statements(pages('CUENTA EJEMPLO PYME 12-34567890-1'), profile=profile)[0]
+        self.assertEqual(st['account_reference'], '12-34567890-1')
+        self.assertTrue(st['engine']['proved'])
+        # Two different heading numbers, a telephone or a date: no account.
+        for extra in (('CUENTA EJEMPLO PYME 12-34567890-1', 'INVERSION EJEMPLO 66-34567890-2'),
+                      ('TELEFONO 55-5169-4300-12',), ('CORTE AL 31-03-2024',)):
+            self.assertEqual(read_statements(pages(*extra), profile=profile)[0]['account_reference'], '', extra)
+
     def test_routing_applies_a_matching_profile_and_proposals_reread_with_it(self):
         from services.financial import statement_engine_profiles as P
         from services.financial import statement_engine_routing as R

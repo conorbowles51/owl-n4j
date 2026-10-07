@@ -1041,6 +1041,19 @@ def _fingerprint(header_words, columns, labels_seen, convention):
                         columns=[round(c / 0.02) for c in columns], convention=convention))[:16]
 
 
+_HEADING_ACCOUNT = re.compile(r'^([A-Z][A-Z .]{2,60}?)\s+(\d{2,4}(?:-\d{1,8}){1,3})$')
+_HEADING_ACCOUNT_NOT = ('TEL', 'TELEFONO', 'FAX', 'RFC', 'R.F.C', 'CLIENTE', 'CODIGO', 'FOLIO', 'SUCURSAL', 'PLAZA',
+                        'REFERENCIA', 'PERIODO', 'CP', 'C.P')
+
+
+def _heading_account(row):
+    """'<product name> <hyphenated account number>' as a whole heading line, or ''."""
+    m = _HEADING_ACCOUNT.match(_dnorm(row['text']))
+    if not m or is_date_token(m[2]) or any(w.strip('.:') in _HEADING_ACCOUNT_NOT for w in m[1].split()):
+        return ''
+    return m[2] if 9 <= len(re.sub(r'\D', '', m[2])) <= 14 else ''
+
+
 def layout_key(header_words, convention):
     """The layout as a person recognises it: its movement headings and balance convention.
 
@@ -1083,6 +1096,13 @@ def _read_section(rows, segment, pages, facts, style, sources, profile, shared=F
         top = max(max(r) for r in accounts.values())
         best = {v for v, r in accounts.items() if top in r}
         account = next(iter(best)) if len(best) == 1 else ''
+    if not account and not accounts and profile and profile.get('account_heading'):
+        # Library profile (data): this layout prints the account only after the product name in a
+        # section heading ("<product name> 12-34567890-1"). One distinct heading number or none.
+        heading_pages = set(_heading_pages(segment['pages'], facts))
+        scope = head if shared else [row for row in rows if row['page'] in heading_pages]
+        found = {_heading_account(row) for row in scope if row['tokens']} - {''}
+        account = found.pop() if len(found) == 1 else ''
     own_currencies = set()
     for row in head:
         if row['tokens']:
