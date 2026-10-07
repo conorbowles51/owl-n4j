@@ -172,6 +172,21 @@ class KapitalNoActivityTests(TestCase):
         s[1]['rows'][-1]['row_index'] = len(s[1]['rows']) - 1
         self.assertEqual(kapital_quiet(s)[2]['reason'], 'payment_line')
 
+    def test_the_tables_own_zero_total_line_is_a_printed_control_not_a_payment(self):
+        _, rows, _ = kapital_quiet(kapital.statement())
+        closing = int(next(r for r in rows if r['fields'].get('description') == 'Closing Balance')['fields']['balance'])
+        printed = f'{closing // 100:,}.{closing % 100:02d} USD'
+        for cells, reason in ((['Total', '0.00 USD', '0.00 USD', printed], 'printed_zero_totals'),
+                              (['Total', '0.00 USD', '5.00 USD', printed], 'payment_line'),
+                              (['Total', '0.00 USD', '0.00 USD', '999.99 USD'], 'payment_line'),
+                              (['Total', '0.00 USD', '0.00 USD'], 'payment_line')):
+            s = kapital.statement()
+            line = [(370000 + 90000 * i, 600000, 40000, text) for i, text in enumerate(cells)]
+            s[1]['rows'].append(kapital.source(2, [line])['rows'][0])
+            s[1]['rows'][-1]['row_index'] = len(s[1]['rows']) - 1
+            with self.subTest(cells=cells):
+                self.assertEqual(kapital_quiet(s)[2]['reason'], reason)
+
 
 class MonexNoActivityTests(TestCase):
     def test_each_currency_summary_with_zero_totals_proves_its_section_quiet(self):

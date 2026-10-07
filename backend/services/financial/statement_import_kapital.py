@@ -264,11 +264,22 @@ def kapital_no_activity_evidence(sources, choice, rows, currency):
 
     Beyond the shared printed-control checks, the product section must print
     no movement table (CONCEPTO/DEPOSITOS/RETIROS/SALDO heading), no Total
-    line and no line that starts like a payment (day then folio). Any of them
-    could carry an unread payment and keeps the period held.
+    line other than the table's zero Total (0.00 deposits, 0.00 withdrawals,
+    the closing balance), and no line that starts like a payment (day then
+    folio). Any of them could carry an unread payment and keeps the period held.
     """
     from services.financial.statement_printed_no_activity import zero_totals_evidence
     scopes = {(s['page_number'], s['table_index']): set(s['row_indices']) for s in choice.get('section_sources') or []}
+    closing = {r['fields'].get('balance') for r in rows if r['kind'] == 'balance'
+               and r['fields'].get('description') == 'Closing Balance'}
+
+    def zero_total(joined):
+        # The movement table's own Total line printing zero deposits, zero withdrawals and the
+        # closing balance is a printed zero control, not a payment (real Intercam/Kapital USD
+        # sections print it under an empty table).
+        amounts = [int(a.replace(',', '').replace('.', '')) for a in re.findall(r'\d{1,3}(?:,\d{3})*\.\d{2}', joined)]
+        return (len(amounts) == 3 and amounts[:2] == [0, 0] and len(closing) == 1
+                and str(amounts[2]) == next(iter(closing)) and not re.search(r'\d{4,}(?![\d,.])', joined))
 
     def guard():
         for s in sources:
@@ -278,7 +289,7 @@ def kapital_no_activity_evidence(sources, choice, rows, currency):
                 joined = norm(text(raw))
                 if any(label in joined for label in ('CONCEPTO', 'FOLIO')) or re.search(r'\bDEPOSITOS\b.*\bRETIROS\b', joined):
                     return ('movement_table', 'A movement table was read in this product section. Check it before confirming that the section contains no transactions.')
-                if joined.startswith('TOTAL') or re.match(r'^\d{1,2}\s+\d{4,}', joined):
+                if (joined.startswith('TOTAL') and not zero_total(joined)) or re.match(r'^\d{1,2}\s+\d{4,}', joined):
                     return ('payment_line', 'A line that may be a payment was read in this product section. Check it before confirming that the section contains no transactions.')
         return None
 
