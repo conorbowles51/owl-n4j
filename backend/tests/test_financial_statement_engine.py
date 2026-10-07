@@ -392,6 +392,46 @@ class EngineRoutingTests(unittest.TestCase):
             catalog = R.route_catalog(sources, library)
         self.assertEqual(catalog['statements'], [group])
 
+    def _scoped(self, library_rows, **group_changes):
+        """The library period also claims a continuation page the engine section does not use (row-level scope)."""
+        from services.financial import statement_engine_routing as R
+        sources = mx_statement(MOVES, closing='1,250.00') + [dict(page_number=2, table_index=0, source_revision='r2', rows=[])]
+        group, library = self._library(sources, library_rows)
+        group.update(sources=group['sources'] + [dict(page_number=2, table_index=0, source_revision='r2')], page_numbers=[1, 2],
+                     **group_changes)
+        with mock.patch.dict(os.environ, {'LOUPE_FINANCIAL_GENERIC_READER': '1'}), \
+                mock.patch('services.financial.statement_review_checks.statement_rows', return_value=library_rows):
+            return R.route_catalog(sources, library), group
+
+    def test_row_level_scope_cross_checks_the_same_printed_period(self):
+        rows = read_statements(mx_statement(MOVES, closing='1,250.00'))[0]['_rows']
+        catalog, group = self._scoped(rows)
+        self.assertEqual(catalog['statements'], [group])
+        self.assertTrue(group.get('engine_agrees'))
+        self.assertEqual((catalog['engine_routing']['agreements'], catalog['engine_routing'].get('scoped_agreements')), (1, 1))
+
+    def test_row_level_scope_disagreement_holds_and_other_sections_are_not_paired(self):
+        base = read_statements(mx_statement(MOVES, closing='1,250.00'))[0]['_rows']
+        rows = [dict(r, fields=dict(r['fields'])) for r in base]
+        [r for r in rows if not r['excluded']][1]['fields'].update(amount_minor='20000', date='2024-03-11')
+        catalog, _ = self._scoped(rows)
+        self.assertEqual(catalog['engine_routing']['disagreements'], ['LIB'])
+        # Another printed opening balance: another section of the period, never compared.
+        other = [dict(r, fields=dict(r['fields'])) for r in base]
+        next(r for r in other if r['fields'].get('description') == 'Opening Balance')['fields']['balance'] = '0'
+        catalog, _ = self._scoped(other)
+        self.assertEqual((catalog['engine_routing']['disagreements'], catalog['engine_routing'].get('scoped_unpaired')), ([], 1))
+        # No printed account on the library side: not paired by dates alone.
+        catalog, _ = self._scoped(rows, account_reference='')
+        self.assertEqual((catalog['engine_routing']['disagreements'], catalog['engine_routing']['agreements']), ([], 0))
+
+    def test_row_level_scope_never_replaces_a_library_period(self):
+        rows = [dict(r, fields=dict(r['fields'])) for r in read_statements(mx_statement(MOVES, closing='1,250.00'))[0]['_rows']]
+        [r for r in rows if not r['excluded']][0]['fields']['amount_minor'] = '1'
+        catalog, group = self._scoped(rows)
+        self.assertEqual(catalog['statements'], [group])
+        self.assertEqual((catalog['engine_routing']['replaced'], catalog['engine_routing'].get('scoped_unchecked')), ([], 1))
+
 
 if __name__ == '__main__':
     unittest.main()

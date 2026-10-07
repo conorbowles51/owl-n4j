@@ -5,14 +5,15 @@
   it (as before the engine existed), else the engine's held reading when the
   file has no library statement at all (so the period is listed, held, with
   its best reading and a named reason), else the pages stay unclassified.
-* The engine and a library reader BOTH prove the same pages:
+* The engine and a library reader BOTH prove the same pages, or the same printed
+  period (dates, currency, account) on overlapping pages (row-level scope):
   - equal readings -> the library serves (its statement id and reviews stay
     exactly as they were) and the agreement is recorded;
   - different readings -> the period is held as an engine/library
     disagreement (a defect in one of them; never picked silently).
 * The library claims the pages but does not prove them and the engine does
-  -> the engine serves, under the library statement's id, so saved reviews of
-  that period stay attached.
+  (same pages only) -> the engine serves, under the library statement's id, so
+  saved reviews of that period stay attached.
 * A layout fingerprint routed ``library_first`` in the route table (data,
   filled from the benchmark's verified truth) is never served by the engine.
 
@@ -175,8 +176,22 @@ def route_catalog(sources, library_catalog):
         if not proved:
             continue
         matching = [g for g in groups if not g.get('document_kind') and _pages(g) & pages]
-        if len(matching) != 1 or _pages(matching[0]) != pages:
-            continue
+        exact = len(matching) == 1 and _pages(matching[0]) == pages
+        if not exact:
+            # Row-level scope: the engine section and the library period share pages but not all of them
+            # (sections sharing a page, covers, continuation pages). Exactly one library period of the same
+            # printed period, currency, printed account and printed opening balance is cross-checked;
+            # nothing is replaced in this case.
+            same = [g for g in matching if g.get('period_start') == statement['period_start']
+                    and g.get('period_end') == statement['period_end']
+                    and not (statement.get('currency') and g.get('currency') and g['currency'] != statement['currency'])
+                    # Both print an account and it is the same one: sections of one period on shared pages
+                    # (a zero product beside the main account) are never paired by their dates alone.
+                    and statement.get('account_reference') and g.get('account_reference')
+                    and _same_account(statement['account_reference'], g['account_reference'])]
+            if len(same) != 1 or not statement['period_start']:
+                continue
+            matching = same
         group = matching[0]
         currency = statement.get('currency') or group.get('currency') or ''
         try:
@@ -193,16 +208,26 @@ def route_catalog(sources, library_catalog):
             continue
         library_proved = proved_rows(library_rows, is_liability(group))
         engine_rows = statement['_rows']
+        if not exact and reading_key(library_rows)[0] != reading_key(engine_rows)[0]:
+            # Shared pages can hold several sections of one period; a different printed opening
+            # balance means a different section, not a different reading of this one.
+            routing['scoped_unpaired'] = routing.get('scoped_unpaired', 0) + 1
+            continue
         if library_proved:
             if reading_key(library_rows) == reading_key(engine_rows):
                 group['engine_agrees'] = True
                 routing['agreements'] += 1
+                if not exact:
+                    routing['scoped_agreements'] = routing.get('scoped_agreements', 0) + 1
             else:
                 group['engine_disagreement'] = dict(engine_id=statement['id'],
                                                     layout_fingerprint=statement['layout_fingerprint'])
                 routing['disagreements'].append(group['id'])
                 logger.warning('Engine/library disagreement on statement %s (layout %s, fingerprint %s).',
                                group['id'], group.get('layout_id'), statement['layout_fingerprint'])
+            continue
+        if not exact:
+            routing['scoped_unchecked'] = routing.get('scoped_unchecked', 0) + 1
             continue
         if closing_reconciles(library_rows, is_liability(group)):
             # The library's reading reconciles its balances (it may still be held for another reason,
