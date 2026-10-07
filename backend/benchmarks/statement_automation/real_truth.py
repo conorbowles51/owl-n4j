@@ -696,7 +696,10 @@ def parse_monex(pages):
     text = '\n'.join(p.text for p in pages)
     start, end = _monex_dates(text)
     contract = find(r'CONTRATO:\s*(\d{5,})', text)
-    holder = _monex_holder(pages[0]) if pages else None
+    # The holder's address block is on the cover (the page listing the contract type); a production
+    # may put a notice page before it, and later pages print the bank's own postcode.
+    cover = next((p for p in pages if re.search(r'TIPO DE CONTRATO', p.text)), pages[0] if pages else None)
+    holder = _monex_holder(cover) if cover else None
     sequence, total, _ = printed_sequence(pages, r'Hoja\s+(\d+)\s+de\s+(\d+)')
     sections, section = [], None
     for page in pages:
@@ -1852,6 +1855,9 @@ def visual_queue(results, size=SHARD_SIZE, previous=None):
     """
     reviewed = {r['id'] for r in results if r.get('truth_source') == 'visual'}
     if previous is not None:
+        # A queued document whose truth became final by any reader (e.g. a parser added since it was
+        # queued) needs no reading either.
+        reviewed |= {r['id'] for r in results if r.get('status') in FINAL}
         return _requeue(results, previous, reviewed, size)
     entries = []
     for r in sorted(results, key=lambda r: r['id']):

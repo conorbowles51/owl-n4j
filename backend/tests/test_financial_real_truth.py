@@ -136,6 +136,18 @@ class MonexTruthTests(unittest.TestCase):
         self.assertEqual((found.controls['credits_total'], found.controls['debits_total']), (5000, 5000))
         self.assertEqual(rt.reconcile(found)[0], 'verified')
 
+    def test_the_holder_comes_from_the_cover_even_after_a_notice_page(self):
+        notice = page(1, ['Estimado Cliente', 'una actualizacion de datos fiscales'])
+        cover = page(2, ['ACME SA DE CV', 'CALLE UNO 1', 'C.P. 11000',
+                         'TIPO DE CONTRATO: SERVICIOS BANCARIOS'])
+        bank = page(4, ['Estimado cliente', 'BANCO EJEMPLO SA', 'C.P. 06600'])
+        (found,) = rt.parse_monex([notice, cover, page(3, self.LINES), bank])
+        self.assertEqual(found.holder, 'ACME SA DE CV')
+        (first,) = rt.parse_monex([cover, page(3, self.LINES)])
+        self.assertEqual(first.holder, 'ACME SA DE CV')
+        (none,) = rt.parse_monex([notice, page(3, self.LINES), bank])  # no cover: page 1 only, as before
+        self.assertIsNone(none.holder)
+
     def test_a_printed_fraction_of_a_yen_is_never_rounded(self):
         lines = [l.replace('5,000.00', '5,000.50') for l in self.LINES]
         (found,) = rt.parse_monex([page(1, lines)])

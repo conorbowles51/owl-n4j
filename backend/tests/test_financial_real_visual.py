@@ -287,6 +287,13 @@ class QueueAndDuplicateTests(unittest.TestCase):
         mixed = rt.visual_queue(reviewed[:9] + big[9:] + [self.result('a1')], previous=first)
         self.assertFalse(mixed['shards'][0]['done'])  # a shard is done only when every document is
 
+    def test_a_queued_document_whose_truth_became_final_by_any_reader_is_done(self):
+        first = rt.visual_queue([self.result('a1'), self.result('a2')])
+        again = rt.visual_queue([dict(self.result('a1'), status='verified'), self.result('a2')], previous=first)
+        self.assertEqual([(d['id'], d['done']) for d in again['shards'][0]['documents']], [('a1', True), ('a2', False)])
+        partly = rt.visual_queue([dict(self.result('a1'), status='partly_verified'), self.result('a2')], previous=first)
+        self.assertEqual(partly['done'], 0)
+
     def test_reviewed_documents_never_enter_a_fresh_queue(self):
         queue = rt.visual_queue([self.result('a1', source='visual'), self.result('a2')])
         self.assertEqual(queue['documents'], 1)
