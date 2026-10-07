@@ -116,6 +116,10 @@ CITI citi, CR1 credit_one, KAP kapital/intercam, MER merrick, MON monex, SAN san
 - A label is the whole text printed before its value and restarts at a gap between cells; printed signs
   between a label and its value are ignored; a control line printing several amounts takes its rightmost.
 - A held engine period keeps a column reading as prefill only when it reconciles the printed balances.
+- (r3) A reading that assigns a running-balance column whose values do not chain is contradicted and cannot
+  be proved by printed totals; among equal readings the one whose balance chains is kept.
+- (r3) Row-scoped section regions (the import overlap guard) are measured in the frame a page reads upright
+  in when its source carries `reading_rotation`.
 
 ## Profiles (library, data)
 
