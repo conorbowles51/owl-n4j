@@ -1014,10 +1014,20 @@ def _read_ocr_page(document, page_index, page_result, prepared, page_cache, nati
     ocr_tables = []
     if words is not None and reader is not None:
         try:
-            ocr_tables = reader.read_positioned_ocr_words(words,
-                page_number=page_result.page_number,
-                page_width=page.rect.width,
-                page_height=page.rect.height)
+            rotation = _page_rotation(page_result.ocr_refinements)
+            if rotation and hasattr(reader, 'upright_ocr_words'):
+                # A page OCR read turned: group its rows and columns in the frame the text reads
+                # upright in, then store every rectangle in displayed page space as always.
+                upright, (width, height) = reader.upright_ocr_words(words, rotation=rotation,
+                    page_width=page.rect.width, page_height=page.rect.height)
+                ocr_tables = reader.displayed_tables(reader.read_positioned_ocr_words(upright,
+                    page_number=page_result.page_number, page_width=width, page_height=height), rotation=rotation)
+                page_result.ocr_refinements.append(dict(field='table_frame', frame='upright', rotation=rotation))
+            else:
+                ocr_tables = reader.read_positioned_ocr_words(words,
+                    page_number=page_result.page_number,
+                    page_width=page.rect.width,
+                    page_height=page.rect.height)
             if any(table.geometry_source.value == "cell_rectangles" for table in ocr_tables):
                 page_result.ocr_geometry_status = "available"
         except Exception:

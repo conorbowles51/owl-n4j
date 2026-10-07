@@ -860,3 +860,33 @@ async def test_ocr_word_boxes_produce_source_cells_with_ocr_provenance(tmp_path,
     assert tables[0]["table_source"] == "text_alignment"
     assert {v["text"] for v in tables[0]["table"]["values"]} == {"2026-01-01", "12.34", "2026-01-02", "56.78"}
     assert all(v["locator"]["space"] == "pdf_displayed" for v in tables[0]["table"]["values"])
+
+
+@pytest.mark.skipif(
+    shutil.which("tesseract") is None,
+    reason="real OCR integration requires the Tesseract executable",
+)
+@pytest.mark.parametrize("rotation", [90, 270])
+async def test_sideways_table_rows_are_grouped_upright_and_stored_in_displayed_space(tmp_path, monkeypatch, rotation) -> None:
+    pdf_path = tmp_path / f"sideways-{rotation}.pdf"
+    lines = [f"2026-01-{day:02d} TRANSFER RECEIVED {day * 111}.{day:02d}" for day in range(1, 9)]
+    _write_scanned_pdf(pdf_path, ["\n".join(["ACCOUNT STATEMENT EXAMPLE", *lines])], rotation=rotation)
+    from app.pipeline import statement_money_verification
+    monkeypatch.setattr(statement_money_verification, "verify_money_cells",
+        lambda page, tables, **_kwargs: (tables, []))
+    result = await extract_text(str(pdf_path), pdf_path.name)
+    span = result.metadata["page_spans"][0]
+    frames = [r for r in span.get("ocr_refinements", []) if r.get("field") == "table_frame"]
+    assert frames and frames[0]["frame"] == "upright" and frames[0]["rotation"] in (90, 270)
+    values = [v for table in result.metadata["table_geometry"]["per_table"] for v in table["table"]["values"]]
+    rows = {}
+    for value in values:
+        rows.setdefault(value["row"], []).append(value["text"])
+        assert value["locator"]["space"] == "pdf_displayed"
+        x0, y0, x1, y1 = value["locator"]["rect"]
+        width, height = value["locator"]["page_size"]
+        assert 0 <= x0 < x1 <= width and 0 <= y0 < y1 <= height
+    joined = [" ".join(texts) for texts in rows.values()]
+    # Every printed line keeps its date and its amount together in one row.
+    for day in range(1, 9):
+        assert any(f"2026-01-{day:02d}" in row and f"{day * 111}.{day:02d}" in row for row in joined), joined

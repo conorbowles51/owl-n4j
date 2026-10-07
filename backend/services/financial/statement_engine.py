@@ -75,21 +75,36 @@ HOLD_MESSAGES = {
 # Located tokens
 # ---------------------------------------------------------------------------
 
-def _rect(cell):
+def _rect(cell, rotation=0):
+    """The cell's rectangle and page width in the frame its text reads upright in.
+
+    Stored rectangles are in displayed page space; a page whose text reads turned
+    (``reading_rotation`` on its source) is read in its upright frame.
+    """
     locator = cell.get('locator') or {}
     rect, size = locator.get('rect'), locator.get('page_size')
     if (not isinstance(rect, list) or len(rect) != 4 or not all(type(v) is int for v in rect)
             or not rect[0] < rect[2] or not rect[1] < rect[3]):
         return None, None
-    width = size[0] if isinstance(size, list) and len(size) == 2 and type(size[0]) is int and size[0] > 0 else None
+    valid = isinstance(size, list) and len(size) == 2 and all(type(v) is int and v > 0 for v in size)
+    if rotation and valid:
+        x0, y0, x1, y1 = rect
+        width, height = size
+        if rotation == 90:
+            rect, size = [height - y1, x0, height - y0, x1], [height, width]
+        elif rotation == 180:
+            rect = [width - x1, height - y1, width - x0, height - y0]
+        elif rotation == 270:
+            rect, size = [y0, width - x1, y1, width - x0], [height, width]
+    width = size[0] if valid else None
     return rect, width
 
 
 _SIGN_ONLY = re.compile(r'^(?:-|−|\$|US\$|€|£|¥|MN|M\.N\.|MXN|USD|EUR|DLS|CR)$')
 
 
-def _cell_tokens(cell):
-    rect, width = _rect(cell)
+def _cell_tokens(cell, rotation=0):
+    rect, width = _rect(cell, rotation)
     if rect is None:
         return None, None
     lines = cell['expected_text'].split('\n')
@@ -130,7 +145,7 @@ def _pages(sources):
         for raw in source['rows']:
             tokens, width, located = [], None, True
             for cell in raw['cells']:
-                cell_tokens, cell_width = _cell_tokens(cell)
+                cell_tokens, cell_width = _cell_tokens(cell, source.get('reading_rotation') or 0)
                 if cell_tokens is None:
                     if cell['expected_text'].strip():
                         located = False
@@ -790,8 +805,9 @@ def _institution(legal_by_page, statement_first=()):
     """The issuer's name from its legal-name line (A9): short form before its first comma and legal form.
 
     Two tiers. First, lines printing a banking designation ("Institucion de Banca
-    Multiple", "N.A.", "Credit Union", "Casa de Bolsa") on the statement's first
-    pages or repeated on most of its pages. Otherwise, a line repeated on most
+    Multiple", "N.A.", "Credit Union", "Casa de Bolsa") directly after the name
+    (after its legal form at most), on the statement's first pages or repeated on
+    most of its pages. Otherwise, a line repeated on most
     pages whose short form starts or ends with a bank word, has at most six words
     and no number, on a line naming no account (transfer lines name counterparty banks). One name in a tier is the institution; none or several give no
     name (a person decides). Designation-only fragments, headings ("Estado de
@@ -803,14 +819,17 @@ def _institution(legal_by_page, statement_first=()):
         if not _LEGAL_FORM.search(line):
             continue
         # A leading year or copyright mark is not part of the name; the legal form ends it.
-        short = re.sub(r'^(?:\(C\)|©)?\s*(?:\d{4}\s+)?', '', line.split(',')[0].strip(' .'))
-        short = _TRAILING_FORM.sub('', _NAME_END.split(short)[0]).strip(' .')
+        name = _NAME_END.split(line.split(',')[0])[0]
+        rest = line[len(name):]
+        short = re.sub(r'^(?:\(C\)|©)?\s*(?:\d{4}\s+)?', '', name.strip(' .'))
+        short = _TRAILING_FORM.sub('', short).strip(' .')
         words = short.split()
         if (not 3 <= len(short) <= 80 or len(words) > 6 or _DESIGNATION_ONLY.match(short)
                 or _CONNECTOR_START.match(short) or any(word in short for word in ('ESTADO DE CUENTA', 'STATEMENT'))
                 or not any(word in short or word in line for word in INSTITUTION_WORDS)):
             continue
-        if _DESIGNATION.search(line):
+        if _DESIGNATED_REST.match(rest) or short.endswith('CREDIT UNION'):
+            # The designation is printed with the name (after its legal form at most), not elsewhere on the line.
             designated.add(short)
         elif (line in repeated and not re.search(r'\d', short) and not re.search(r'\d{6,}', line)
               and not {'CUENTA', 'ACCOUNT', 'CLABE', 'CONTRATO'} & set(line.split())
@@ -823,6 +842,8 @@ def _institution(legal_by_page, statement_first=()):
     return ''
 
 
+_DESIGNATED_REST = re.compile(r'^[\s,.]*(?:S\.?\s?A\.?(?:\s+DE\s+C\.?\s?V\.?)?[\s,.]*)?'
+                              r'(?:INSTITUCION DE BANCA MULTIPLE|N\.?\s?A\.?|CASA DE BOLSA|CREDIT UNION)\b')
 _NAME_END = re.compile(r'\s+(?=S\.?\s?A\.?\b|S\.?\s?P\.?\s?A\.?\b|N\.?\s?A\.?\b|INSTITUCION DE BANCA MULTIPLE\b)')
 
 
@@ -882,7 +903,7 @@ _READINGS = {}
 def _source_signature(sources):
     """Identity of a document's stored sources: revisions plus every cell's text and position (None if a
     revision is missing, in which case nothing is cached)."""
-    parts = tuple((s['page_number'], s['table_index'], s.get('source_revision'),
+    parts = tuple((s['page_number'], s['table_index'], s.get('source_revision'), s.get('reading_rotation') or 0,
                    hash(tuple((c['expected_text'], tuple((c.get('locator') or {}).get('rect') or ()))
                               for r in s['rows'] for c in r['cells']))) for s in sources)
     return parts if all(part[2] for part in parts) else None

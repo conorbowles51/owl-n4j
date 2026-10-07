@@ -86,3 +86,112 @@ class OcrWordTableTests(unittest.TestCase):
         values=table['table']['values']
         self.assertEqual([v['text'] for v in values],['Mark as Returned','500.00','0.00'])
         self.assertEqual(values[0]['locator']['rect'][::2],[10000,90000])
+
+
+class UprightFrameTests(unittest.TestCase):
+    """A page printed sideways: rows are grouped in the frame its text reads upright in, and every
+    stored rectangle stays in displayed page space (r3, synthetic layout)."""
+
+    WIDTH, HEIGHT = 612, 792  # upright reading frame (points)
+    LINES = [
+        [(20, 'BANCO EJEMPLO DEL NORTE, S.A., INSTITUCION DE BANCA MULTIPLE')],
+        [(20, 'EMPRESA DE PRUEBA SA DE CV'), (330, 'PERIODO DEL 01/03/2024 AL 31/03/2024')],
+        [(20, 'CALLE FALSA 123'), (330, 'NO. DE CUENTA 0012345678')],
+        [(20, 'COL CENTRO'), (330, 'MONEDA PESOS')],
+        [(20, 'CIUDAD DE MEXICO C.P. 06000')],
+        [(330, 'SALDO ANTERIOR'), (510, '1,000.00')],
+        [(330, 'SALDO FINAL'), (510, '1,250.00')],
+        [(20, 'FECHA'), (80, 'CONCEPTO'), (340, 'ABONOS'), (420, 'CARGOS'), (520, 'SALDO')],
+        [(20, '05/MAR'), (80, 'TRANSFERENCIA RECIBIDA'), (340, '500.00'), (520, '1,500.00')],
+        [(20, '10/MAR'), (80, 'PAGO DE SERVICIO'), (420, '200.00'), (520, '1,300.00')],
+        [(20, '20/MAR'), (80, 'COMISION'), (430, '50.00'), (520, '1,250.00')],
+    ]
+
+    def upright_words(self):
+        words = []
+        for index, cells in enumerate(self.LINES):
+            for x, text in cells:
+                for word in text.split():
+                    width = len(word) * 5
+                    words.append((x, 40 + index * 18, x + width, 49 + index * 18, word))
+                    x += width + 3
+        return words
+
+    @staticmethod
+    def displayed(words, rotation, width, height):
+        """What the OCR projection stores for a page whose text reads upright after a clockwise turn."""
+        out = []
+        for x0, y0, x1, y1, text in words:
+            if rotation == 90:
+                box = (y0, width - x1, y1, width - x0)
+            elif rotation == 180:
+                box = (width - x1, height - y1, width - x0, height - y0)
+            else:
+                box = (height - y1, x0, height - y0, x1)
+            out.append((*box, text))
+        return out
+
+    def source(self, tables, rotation=0):
+        table = tables[0].to_json()
+        rows = {}
+        for value in table['table']['values']:
+            row = rows.setdefault(value['row'], dict(row_index=value['row'], cells=[]))
+            row['cells'].append(dict(column_index=value['column'], expected_text=value['text'], locator=value['locator']))
+        source = dict(page_number=1, table_index=0, source_revision='a' * 64, rows=list(rows.values()))
+        if rotation:
+            source['reading_rotation'] = rotation
+        return source
+
+    def test_round_trip_and_displayed_rectangles(self):
+        from services.financial.pdf_tables import upright_ocr_words, displayed_tables
+        upright = self.upright_words()
+        expected = read_positioned_ocr_words(upright, page_number=1, page_width=self.WIDTH, page_height=self.HEIGHT)
+        for rotation in (90, 180, 270):
+            dw, dh = (self.HEIGHT, self.WIDTH) if rotation in (90, 270) else (self.WIDTH, self.HEIGHT)
+            shown = self.displayed(upright, rotation, self.WIDTH, self.HEIGHT)
+            turned, size = upright_ocr_words(shown, rotation=rotation, page_width=dw, page_height=dh)
+            self.assertEqual(size, (self.WIDTH, self.HEIGHT))
+            self.assertEqual([tuple(round(v, 6) for v in w[:4]) + (w[4],) for w in turned],
+                             [tuple(float(v) for v in w[:4]) + (w[4],) for w in upright])
+            tables = displayed_tables(read_positioned_ocr_words(turned, page_number=1, page_width=size[0],
+                                                                page_height=size[1]), rotation=rotation)
+            # Same rows and text as the upright reading; rectangles in displayed space.
+            self.assertEqual([c.text for c in tables[0].geometry.cells], [c.text for c in expected[0].geometry.cells])
+            for cell in tables[0].geometry.cells:
+                payload = cell.locator.to_json()
+                self.assertEqual(payload['page_size'], [dw * 1000, dh * 1000])
+                x0, y0, x1, y1 = payload['rect']
+                self.assertTrue(0 <= x0 < x1 <= dw * 1000 and 0 <= y0 < y1 <= dh * 1000)
+
+    def test_the_engine_reads_a_turned_page_as_it_reads_the_upright_page(self):
+        from services.financial.pdf_tables import upright_ocr_words, displayed_tables
+        from services.financial.statement_engine import read_statements
+        upright = self.upright_words()
+        reference = read_statements([self.source(read_positioned_ocr_words(
+            upright, page_number=1, page_width=self.WIDTH, page_height=self.HEIGHT))])
+        self.assertTrue(reference[0]['engine']['proved'], reference[0]['engine'])
+        key = lambda sts: [(s['period_start'], s['account_reference'], s['holder'], s['currency'], s['engine']['proved'],
+                            [(r['kind'], r['fields'].get('amount_minor'), r['fields'].get('balance')) for r in s['_rows']])
+                           for s in sts]
+        for rotation in (90, 180, 270):
+            dw, dh = (self.HEIGHT, self.WIDTH) if rotation in (90, 270) else (self.WIDTH, self.HEIGHT)
+            turned, size = upright_ocr_words(self.displayed(upright, rotation, self.WIDTH, self.HEIGHT),
+                                             rotation=rotation, page_width=dw, page_height=dh)
+            tables = displayed_tables(read_positioned_ocr_words(turned, page_number=1, page_width=size[0],
+                                                                page_height=size[1]), rotation=rotation)
+            self.assertEqual(key(read_statements([self.source(tables, rotation)])), key(reference), rotation)
+            # Without the reading orientation the same stored rectangles do not read as this statement.
+            self.assertNotEqual(key(read_statements([self.source(tables)])), key(reference), rotation)
+
+
+class ReadingRotationMarkerTests(unittest.TestCase):
+    def test_only_pages_whose_tables_were_grouped_upright_carry_a_reading_rotation(self):
+        from services.financial.candidate_sources import reading_rotation
+        locations = [dict(kind='page', page_number=1, ocr_refinements=[dict(field='page_orientation', rotation=90)]),
+                     dict(kind='page', page_number=2, ocr_refinements=[
+                         dict(field='page_orientation', rotation=90),
+                         dict(field='table_frame', frame='upright', rotation=90)]),
+                     dict(kind='page', page_number=3, ocr_refinements=[dict(field='table_frame', frame='upright', rotation=45)])]
+        # Page 1 was read before the upright frame existed: its stored reading is unchanged.
+        self.assertEqual([reading_rotation(locations, n) for n in (1, 2, 3, 4)], [0, 90, 0, 0])
+        self.assertEqual(reading_rotation(None, 1), 0)

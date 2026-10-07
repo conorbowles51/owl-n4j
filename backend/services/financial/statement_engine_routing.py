@@ -28,7 +28,7 @@ import os
 import time
 from pathlib import Path
 
-from services.financial.statement_engine import HOLD_MESSAGES, engine_catalog, read_statements
+from services.financial.statement_engine import HOLD_MESSAGES, read_statements
 
 # On by default (r2-any-layout ship decision, 2026-10-06): every measured mode admitted 0 wrong periods,
 # the 20-period visual sample agreed to the cent, and no period ready with the library alone was lost.
@@ -112,13 +112,30 @@ def disagreement_row(rows, choice):
                 engine_hold='library_disagrees')
 
 
+def _profiled(sources, engine):
+    """(reading, profile name): a library profile (data) that matches the document replaces the plain
+    reading only if it keeps every period the plain engine proves, with the identical money reading."""
+    from services.financial.statement_engine_profiles import matching_profile, profile_text
+    profile = matching_profile(profile_text(sources))
+    if profile is None:
+        return engine, None
+    profiled = read_statements(sources, profile=profile)
+    plain_keys = {(st['period_start'], st['period_end'], reading_key(st['_rows'])) for st in engine if st['engine']['proved']}
+    profiled_keys = {(st['period_start'], st['period_end'], reading_key(st['_rows'])) for st in profiled if st['engine']['proved']}
+    if plain_keys <= profiled_keys and profiled_keys:
+        return profiled, profile['name']
+    return engine, None
+
+
 def _engine_only(sources):
-    statements = [s for s in engine_catalog(sources) if s['period_start']]
+    # Family readers (code) are skipped; library profiles (data) apply exactly as in normal routing.
+    reading, profile = _profiled(sources, read_statements(sources))
+    statements = [{k: v for k, v in s.items() if k != '_rows'} for s in reading if s['period_start']]
     claimed = {p for s in statements for p in _pages(s)}
     unclassified = [dict(page_number=s['page_number'], table_index=s['table_index'])
                     for s in sources if s['page_number'] not in claimed]
     return dict(statements=statements, unclassified_sources=unclassified, information_sources=[],
-                complete_coverage=not unclassified, engine_routing=dict(mode='generic_only'))
+                complete_coverage=not unclassified, engine_routing=dict(mode='generic_only', profile=profile))
 
 
 def route_catalog(sources, library_catalog):
@@ -128,19 +145,9 @@ def route_catalog(sources, library_catalog):
     if not generic_enabled():
         return library
     started = time.monotonic()
-    engine = read_statements(sources)
-    routing_profile = None
     # A library profile (data) that matches the document is used only if it keeps every period the
     # plain engine proves, with the identical money reading, and proves at least as many.
-    from services.financial.statement_engine_profiles import matching_profile, profile_text
-    profile = matching_profile(profile_text(sources))
-    if profile is not None:
-        profiled = read_statements(sources, profile=profile)
-        plain_keys = {(st['period_start'], st['period_end'], reading_key(st['_rows'])) for st in engine if st['engine']['proved']}
-        profiled_keys = {(st['period_start'], st['period_end'], reading_key(st['_rows'])) for st in profiled if st['engine']['proved']}
-        if plain_keys <= profiled_keys and profiled_keys:
-            engine = profiled
-            routing_profile = profile['name']
+    engine, routing_profile = _profiled(sources, read_statements(sources))
     table = routes()
     groups = list(library['statements'])
     library_pages = {p for g in groups if not g.get('document_kind') for p in _pages(g)}

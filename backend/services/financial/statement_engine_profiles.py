@@ -22,9 +22,10 @@ Profile format (every key optional except ``name`` and ``match``):
     columns      {role: [printed column words]} added to the movement headings;
                  roles are date, description, credit, debit, balance, amount
 
-Two existing families are expressed below to prove the format (their code
-readers stay in the library unchanged). New layouts confirmed by a person can
-be added the same way ("layout memory", see WIP notes).
+Capital One and BBVA are expressed below to prove the format (their code
+readers stay in the library unchanged); Monex, Santander, Intercam and Citi
+supply only their institution. Facts a person confirms per layout and account
+are not profiles: they are case data (``layout_memory``).
 """
 
 PROFILES = (
@@ -50,6 +51,14 @@ PROFILES = (
                     column_total=['TOTAL DE MOVIMIENTOS']),
         columns=dict(date=['OPER', 'LIQ'], debit=['CARGOS'], credit=['ABONOS'], balance=['OPERACION', 'LIQUIDACION']),
     ),
+    # Institution-only profiles (r3): these layouts do not always print their legal name on the pages
+    # the engine reads it from. Each match phrase is printed by every statement of its family in the
+    # real collection and by no statement of another family (group names, not bank names that
+    # counterparty transfer lines also print). The engine's printed legal name always wins.
+    dict(name='monex-mexico', match=dict(any=['monex grupo financiero']), institution='Monex'),
+    dict(name='santander-mexico', match=dict(any=['grupo financiero santander']), institution='Santander'),
+    dict(name='intercam-mexico', match=dict(any=['intercam grupo financiero']), institution='Intercam'),
+    dict(name='citi-card', match=dict(any=['citibank, n.a']), institution='Citibank'),
 )
 
 _KEYS = {'name', 'match', 'institution', 'currency', 'convention', 'date_order', 'labels', 'columns'}

@@ -9,6 +9,22 @@ from services.financial.pdf_candidates import PdfMappingError
 from services.financial.pdf_geometry_candidates import _snapshot, _table, _page_origin
 
 
+def reading_rotation(locations, page_number):
+    """The clockwise turn (90/180/270) a page's text reads upright in, when its tables were grouped in
+    that upright frame (evidence engine ``table_frame`` refinement); 0 otherwise.
+
+    Rectangles stay in displayed page space; a reader of positions turns them by this angle. Pages read
+    before the upright table frame existed carry no marker and keep their earlier reading unchanged.
+    """
+    for location in locations if isinstance(locations, list) else []:
+        if isinstance(location, dict) and location.get('kind') == 'page' and location.get('page_number') == page_number:
+            for refinement in location.get('ocr_refinements') or []:
+                if (isinstance(refinement, dict) and refinement.get('field') == 'table_frame'
+                        and refinement.get('frame') == 'upright' and refinement.get('rotation') in (90, 180, 270)):
+                    return refinement['rotation']
+    return 0
+
+
 def list_candidate_sources(session, *, case_id, limit=25, offset=0):
     if type(limit) is not int or not 1 <= limit <= 100 or type(offset) is not int or offset < 0:
         raise PdfMappingError("Invalid source page limits.", 422)
@@ -43,7 +59,9 @@ def read_candidate_source(session, *, case_id, evidence_file_id, page_number, ta
         raise PdfMappingError("Stored table exceeds candidate review limits; no rows were truncated.", 422)
     from services.financial.statement_layout_context import statement_layout_context
     source_rows = [dict(row_index=row, cells=values) for row, values in rows.items()]
+    rotation = reading_rotation(locations, page_number)
     return dict(case_id=str(case_id), evidence_file_id=str(evidence_file_id), page_number=page_number,
+        **(dict(reading_rotation=rotation) if rotation else {}),
         table_index=table_index, table_count=len(payload), source_revision=revision,
         table_source=source.value, geometry_source=geometry.value, locator=locator.to_json(),
         text_origin=_page_origin(content, locations, page_number).value,
