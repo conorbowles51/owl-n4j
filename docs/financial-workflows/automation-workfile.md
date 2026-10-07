@@ -13,23 +13,27 @@ sets it itself only when it is genuinely blocked on Neil; see "Halt rules".)
 
 ## ▶ NEXT
 
-**(2026-10-06 04:10) REAL-DOCUMENT wave 1 integrated into fin/release-1 (r1-reproduced 04eb0037, r1-monex-citi
-4f566f1c, t-visual-v10 ae9486ca; NOT pushed). The real-document driver owns the next waves; running state, counts and
+**(2026-10-07 02:50) REAL-DOCUMENT wave 2 integrated into fin/release-1 (t-visual-v07 eddfefbd, r2-admitted-duplicates
+80645846, r2-any-layout 080664d2; NOT pushed). The real-document driver owns the next waves; running state, counts and
 history in /mnt/owl-data/fin-wt/headless/real/STATE.md (counts only).**
-Real headline (verified truth, 485 documents, 1,035 distinct periods, fresh read, bench /mnt/owl-data/fin-real/bench/wave1,
-exit 0): **800/1,035 ready without edits (77.3%)**, recoverable 797/1,028, **0 wrong admissions**, 0 critical-field
-errors (10,622 rows), must-hold 4/4 kept out, exact copies held 145/145. Same truth at wave-0 code: 585/1,035 with 2
-wrong. Monex 171/171, Citi 46/46, BBVA 333/344, Capital One 116/119; Andrews 99/270, Santander 9/41, Kapital 4/14.
-Census (all 6 cases, wave-1 code): 1,017/1,896 scorable periods ready (53.6%; release 1 was 709/1,811).
-Live (read-only audit, unchanged until deploy): 5 admitted periods disagree with truth, 102 printed periods admitted
-twice in case 49494305. Truth coverage: 499/729 statement documents final; compare files 485/724.
-Actions per 100 statements: 1,023 / 984 grouped (Andrews newly scored; 459 / 432 without it, wave 0 545 / 514).
-Synthetic 105/125, 0 wrong.
-**Wave 2 (headless/real/wave2.units, prompts headless/real/units/):** `r2-any-layout` (general statement engine
-primary, family readers as fallback library, leave-families-out scale test; prompt by Neil), `r2-admitted-duplicates`
-(set aside the 102 live double admissions as linked duplicates via product code + dry-run command; prompt by Neil),
-`t-visual-v07` (visual truth for 40 unknown-issuer documents). Acceptance for every unit: 0 wrong admissions real and
-synthetic, synthetic ≥ 105/125.
+Real headline (verified truth, bench /mnt/owl-data/fin-real/bench/wave2, exit 0): on wave 1's 485 documents **821/1,035
+ready without edits (79.3%; wave 1 800)**; on all 525 documents with truth **821/1,089 (75.4%)**, recoverable 818/1,082;
+the 54 periods newly verified on 40 previously unrecognised documents are 0/54 ready. **0 wrong admissions**, 0
+critical-field errors (11,514 rows), must-hold 4/4, exact copies held 145/145, 0 previously ready periods lost.
+The general statement engine is ON by default (engine primary, family readers kept as the fallback library): it serves
+21 Santander periods no family reader claims, each equal to truth; blind leave-families-out figure (r2, engine alone)
+development 375/634, held-out 0/401, 0 wrong (held for holder/institution/currency, money proved).
+Census (all 6 cases, wave-2 code): 1,038/2,343 scorable periods ready (44.3%; wave 1 1,017/1,896: the engine now lists
+391 periods on documents that yielded nothing before, 21 ready). Live (read-only audit): unchanged, 5 admitted periods
+disagree with truth, 102 printed periods admitted twice in case 49494305 (set-aside command built, dry run 102/929/0
+held, `--apply` not run). Truth coverage 541/729 statement documents final; compare files 525/724. Actions per 100
+statements 958 / 928 grouped (on wave 1's 485: 581 / 560, was 1,023 / 984). Synthetic 105/125, 0 wrong.
+**Wave 3 (headless/real/wave3.units, prompts headless/real/units/):** `r3-any-layout` (continues r2: layout memory =
+one confirmation per layout + account + missing fact, identity facts read generically, 9 currency-only holds and 16
+not-detected Monex sideways periods, Santander/Kapital/Intercam coverage, generic-only figure per family),
+`r3-andrews` (167 recoverable held Andrews periods, 63% of all recoverable held), `t-visual-v13` (first truth for
+merrick-card and credit-one-card, plus Citi/Monex residue). Acceptance for every unit: 0 wrong admissions real and
+synthetic, synthetic ≥ 105/125, no ready period lost.
 **Everything below in this section is the synthetic track (wave 5 state), parked behind the real waves.**
 Release-1 now (corpus v4, 124 distinct periods, bench-runs/release-1-w5, exit 0): **102/124 ready without edits (82.3%)**,
 102/107 recoverable (95.3%), 0 wrong admissions, 0 critical-field errors (347 saved), 0 valid-looking wrong values
@@ -54,12 +58,16 @@ Correctly held and not in a unit: 10 must-hold (omitted rows, missing pages, dep
 (holder/account not printed, no activity, quiet section across pages).
 
 **Open Neil decisions (nothing above waits on them; all have a recorded default):**
-- **Deploy real wave 1 (engine + backend together, reading revision v14).** Brings the Monex/Citi readers, the
-  duplicate set-aside for re-produced statements and the invisible-OCR safety rule to live.
-- **Live double admission: case 49494305 has 102 printed periods admitted twice (~929 transactions counted twice)**,
-  from two productions of the same card statements. r2-admitted-duplicates builds a dry-run-by-default command that
-  sets the later production aside as linked duplicates (keeps d22e405327ccf, d568d90faff56); recommend running it with
-  `--apply` from an interactive session after deploy. Wave-1 code stops new ones.
+- **Deploy real waves 1 and 2 (engine + backend + frontend together, reading revision v14).** Brings the Monex/Citi
+  readers, the duplicate set-aside for re-produced statements, the invisible-OCR safety rule, the general statement
+  engine ON by default (documents that showed "no statement found" list held periods with a named reason; reverse
+  `LOUPE_FINANCIAL_GENERIC_READER=0`) and the keep-duplicate-copy review.
+- **Live double admission: case 49494305 has 102 printed periods admitted twice (929 payments counted twice).**
+  r2-admitted-duplicates built `backend/scripts/financial_set_aside_admitted_duplicates.py` (dry run by default; live
+  dry run 102 set aside, 0 held; `--apply` NOT run). "Earliest import" kept the first production for only 54/102
+  periods, so the built rule is: investigator work, then evidence received first, then file-name (Bates) order, then
+  first page, then first saved; it keeps d568d90faff56 and d22e405327ccf for 102/102. Recommend accepting it and running
+  `--apply` from an interactive session after deploy.
 - **5 live periods disagree with verified truth** (3 printed statements; opaque ids in headless/real/STATE.md). Wave-1
   code reads all of them correctly; recommend re-reading them after deploy. Not touched (no live writes).
 - **Deploy needed for the route-check fix (41a306a8).** The pushed release has merge 97878ff8, in which Conor's batch-cap
@@ -573,3 +581,22 @@ brief (briefs = Queue entries above + the 2026-10-02 log lines). Automation is t
   skipped 20; tsc -b 0; vitest unit 295 files 2054/2054. Logs bench-runs/real-wave1-{suite,tsc,vitest}.log.
 - Wave 2 planned (Neil directive): r2-any-layout, r2-admitted-duplicates (existing prompts, untouched), t-visual-v07.
   STATUS-FOR-NEIL.md rewritten.
+
+### 2026-10-07 02:50 — REAL-DOCUMENT wave 2 merged into fin/release-1 (headless integrate-2)
+- Merged, none refused (all three notes say complete, 0 wrong admissions on real and synthetic; added lines scanned
+  for every holder/account token in the private truth and every inventory file name: only generic bank legal-form
+  words; WIP-NOTES.md dropped; notes archived /mnt/owl-data/fin-wt/notes/{t-visual-v07,r2-admitted-duplicates,
+  r2-any-layout}.md): `fin/t-visual-v07` (eddfefbd), `fin/r2-admitted-duplicates` (80645846), `fin/r2-any-layout`
+  (080664d2). One conflict: services/financial/__init__.py export blocks, both kept; 10 targeted modules 278 OK first.
+- Not merged into the shared truth: r2-any-layout's 9 visually read periods (holder printed but untranscribed, labelled
+  decision; documents stay in shard v08).
+- **Real benchmark** (bench/wave2, REAL_EXIT=0; wave-1 readings for 485 documents, evidence-engine tree unchanged,
+  plus a fresh read of the 40 v07 documents; import 6.8 h): **821/1,089 ready w/o edits**, 821/1,035 on wave-1 truth
+  (was 800), recoverable 818/1,082, 0 wrong, 0 critical (11,514 rows), holds 4/4, copies 145/145; v07 0/54 ready.
+  Compare files 525/724.
+- Census rerun on all 6 cases (cached readings, census-wave2): 1,038/2,343 (44.3%); ready +21, denominator +447.
+- Live ledger audit (read-only, audit-wave2): unchanged — 5 disagree, 102 printed periods admitted twice.
+- Synthetic (bench-runs/real-wave2, BENCH_EXIT=0): 105/125, 105/108, 0 wrong.
+- Suites (live .venv, CHROMADB_PORT=1 CHROMA_PORT=1): financial **Ran 5866, failures=2** (known unassigned_statement),
+  skipped 20; tsc -b 0; vitest unit 296 files 2058/2058. Logs bench-runs/real-wave2-{suite,tsc,vitest}.log.
+- Wave 3 planned: r3-any-layout, r3-andrews, t-visual-v13. STATUS-FOR-NEIL.md rewritten.
