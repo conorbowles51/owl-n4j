@@ -45,6 +45,7 @@ share number uses ``-``::
     kind card              (balances are amounts owed; purchases raise them)
     form not_statement <reason>   (the document holds no statement: no periods, status not_statement)
     page 1 stmt 2024-01-01 2024-01-31 no 1 member 4321   (``member`` = account as printed, ``?`` if not)
+    page 1 stmt - 2024-01-31 no 1 member 4321   (the statement prints only its closing date: start not printed)
     share - open 1000.00
     r 2024-01-05 -20.00 - | ...   (ISO date where the year is printed; ``-`` = no running balance printed)
     control credits_total 50.00   (printed totals and counts: credits_/debits_total, credits_/debits_/rows_count)
@@ -71,10 +72,11 @@ import json
 import re
 import sys
 from collections import Counter, defaultdict
+from datetime import date, timedelta
 from pathlib import Path
 
-from .real_truth import (ANDREWS_DATES, ANDREWS_TAIL, Period, document_status, iso, ocr_money, read_pages,
-                         reconcile, year_for)
+from .real_truth import (ANDREWS_DATES, ANDREWS_TAIL, START_UNPRINTED, Period, document_status, iso, ocr_money,
+                         read_pages, reconcile, year_for)
 
 VERSION = 'visual-v1'
 MONEY = re.compile(r'^-?\d+\.\d{2}$')
@@ -256,6 +258,8 @@ class Transcription:
                     if not fields:
                         raise ValueError(f'line {number}: page header not understood')
                     start, end, no, member, holder = fields.groups()
+                    if not re.fullmatch(r'\d{4}-\d{2}-\d{2}', end) or not re.fullmatch(r'\d{4}-\d{2}-\d{2}|-', start):
+                        raise ValueError(f'line {number}: statement dates are YYYY-MM-DD (start - when not printed)')
                     key = dict(start=start, end=end, member=member, holder=(holder or '').strip())
                     if statement is None or no == '1' or {k: statement[k] for k in ('start', 'end', 'member')} != \
                             {k: key[k] for k in ('start', 'end', 'member')}:
@@ -363,6 +367,8 @@ def _row_iso(text, start, end):
     if '-' in text:
         return text
     month, day = map(int, text.split('/'))
+    if start == '-':  # start not printed: a quarter before the closing date bounds the year
+        start = (date.fromisoformat(end) - timedelta(days=92)).isoformat()
     return iso(year_for(month, start, end), month, day)
 
 
@@ -376,12 +382,15 @@ def to_period(item, issuer=None):
     share = item['share'] if re.fullmatch(r'\d{4}', item['share']) else None
     period = Period(family=issuer['family'], institution=issuer['institution'],
                     currency=item.get('currency') or issuer['currency'], holder=s['holder'] or None,
-                    account=s['member'] if s['member'] != '?' else None, period_start=s['start'],
+                    account=s['member'] if s['member'] != '?' else None,
+                    period_start=s['start'] if s['start'] != '-' else None,
                     period_end=s['end'], opening_minor=item['opening'], closing_minor=item['closing'],
                     pages=sorted(set(item['pages'])), share=share if andrews else None, kind=issuer['kind'],
                     controls=dict(item.get('controls') or {}))
     if not andrews and item['share'] not in ('-', '?'):
         period.notes.append(f"section {item['share']}")
+    if s['start'] == '-':
+        period.notes.append(START_UNPRINTED)
     for row in item['rows']:
         if row.get('unread') or andrews and row['balance'] is None:
             continue  # an unread value is counted in ``unread``; Andrews prints a balance on every row

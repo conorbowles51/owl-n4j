@@ -320,15 +320,23 @@ class Period:
     kind: str = 'deposit'  # 'card': balances are amounts owed; purchases (debits) raise them
 
 
+# A statement that prints only its closing date (e.g. Merrick Bank cards): the start is not a
+# printed fact, so it is neither required nor scored (the manifest records start_printed=False).
+START_UNPRINTED = 'period start not printed'
+
+
 def reconcile(period):
     """``(status, reasons)``: verified only if every printed control agrees to the cent."""
     reasons = list(period.problems)
+    unprinted_start = START_UNPRINTED in period.notes
     if period.page_total:
         printed = set(period.page_sequence)
         missing = sorted(set(range(1, period.page_total + 1)) - printed)
         if missing:
             return 'incomplete', [f'missing printed pages {len(missing)} of {period.page_total}']
     for name in ('period_start', 'period_end', 'opening_minor', 'closing_minor', 'currency', 'account'):
+        if name == 'period_start' and unprinted_start:
+            continue
         if getattr(period, name) in (None, ''):
             reasons.append(f'{name} not read')
     if reasons:
@@ -362,8 +370,10 @@ def reconcile(period):
             reasons.append(f'running balance differs at row {index + 1}')
             break
     earliest = period.period_start
+    if unprinted_start and not earliest:  # at most a quarter before the printed closing date
+        earliest = (date.fromisoformat(period.period_end) - timedelta(days=92)).isoformat()
     if period.kind == 'card':  # a card prints the transaction date; it may precede the cycle it posts in
-        earliest = (date.fromisoformat(period.period_start) - timedelta(days=60)).isoformat()
+        earliest = (date.fromisoformat(earliest) - timedelta(days=60)).isoformat()
     for row in period.rows:
         if not row.get('date'):
             reasons.append('row date not read')

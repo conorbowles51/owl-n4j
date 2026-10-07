@@ -380,6 +380,29 @@ class CardSectionAndPatchTests(unittest.TestCase):
         visual = rv.compile_document(CARD.replace('patch 2', 'patch 7'), page_count=5)
         self.assertEqual(rv.apply_visual(self.text_layer(), visual), self.text_layer())
 
+    def test_a_statement_that_prints_only_its_closing_date(self):
+        text = ('doc dmer\ndone 1\nissuer acme-card Acme Card\nkind card\ncurrency USD\n'
+                'page 1 stmt - 2021-01-25 no 1 member 9999 holder A PERSON\nshare - open 0.00\n'
+                'r 12/30 -14.00 - | store\nr 01/22 -100.00 - | diner\nclose 114.00\n')
+        period = rv.compile_document(text, page_count=1)['periods'][0]
+        self.assertEqual((period['period_start'], period['period_end'], period['truth_status']),
+                         (None, '2021-01-25', 'verified'))
+        self.assertEqual([r['date'] for r in period['rows']], ['2020-12-30', '2021-01-22'])  # year from the close
+        self.assertIn(rt.START_UNPRINTED, period['notes'])
+        record = rt.manifest_period(dict(period, expected='auto'))
+        self.assertEqual((record['start_printed'], record['period_start']), (False, None))
+        # Without the marker a missing start is still a gap in the reading, never verified.
+        bare = rt.Period(family='f', institution='i', currency='USD', holder='H', account='9999', period_end='2021-01-25',
+                         opening_minor=0, closing_minor=0, kind='card')
+        self.assertEqual(rt.reconcile(bare), ('unverified', ['period_start not read']))
+        # A row far before the closing date is still caught.
+        late = text.replace('r 12/30', 'r 2020-08-01')
+        self.assertIn('row date outside the printed period',
+                      rv.compile_document(late, page_count=1)['periods'][0]['truth_reasons'])
+        for bad in ('stmt - - no', 'stmt 2021/01/01 2021-01-25 no', 'stmt - 25.01.2021 no'):
+            with self.assertRaises(ValueError):
+                rv.Transcription(text.replace('stmt - 2021-01-25 no', bad))
+
     def test_malformed_patch_and_section_lines_are_refused(self):
         for text in (CARD.replace('patch 2', 'patch 2,3'), CARD.replace('patch 2', 'patch 2,2'),
                      CARD.replace('patch 2', 'patch two'), CARD.replace('group payments', 'group'),
