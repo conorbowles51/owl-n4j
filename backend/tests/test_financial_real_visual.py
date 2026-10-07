@@ -287,6 +287,14 @@ class QueueAndDuplicateTests(unittest.TestCase):
         mixed = rt.visual_queue(reviewed[:9] + big[9:] + [self.result('a1')], previous=first)
         self.assertFalse(mixed['shards'][0]['done'])  # a shard is done only when every document is
 
+    def test_a_queued_document_whose_truth_became_final_by_any_reader_is_done(self):
+        first = rt.visual_queue([self.result('a1'), self.result('a2')])
+        again = rt.visual_queue([dict(self.result('a1'), status='verified'), self.result('a2')], previous=first)
+        self.assertEqual([(d['id'], d['done']) for d in again['shards'][0]['documents']], [('a1', True), ('a2', False)])
+        for status in ('partly_verified', 'unverified', 'ocr_reconciled', 'needs_visual'):
+            still = rt.visual_queue([dict(self.result('a1'), status=status), self.result('a2')], previous=first)
+            self.assertEqual(still['done'], 0, status)
+
     def test_reviewed_documents_never_enter_a_fresh_queue(self):
         queue = rt.visual_queue([self.result('a1', source='visual'), self.result('a2')])
         self.assertEqual(queue['documents'], 1)
@@ -299,6 +307,111 @@ class QueueAndDuplicateTests(unittest.TestCase):
         results = [dict(id='d', periods=[p('0000'), p('0011')])]
         rt.mark_duplicates(results)
         self.assertEqual([x['expected'] for x in results[0]['periods']], ['auto', 'auto'])
+
+
+CARD = """doc dcard
+done 2-3
+issuer acme-card Acme Card
+kind card
+currency USD
+patch 2
+page 2 stmt 2024-01-01 2024-01-31 no 1 member 9999 holder A PERSON
+share - open 100.00
+group payments
+r 2024-01-20 100.00 - | payment
+subtotal payments 100.00
+page 3 cont
+group purchases
+r 2024-01-03 -40.00 - | purchase
+r 2024-01-09 5.00 - | refund
+subtotal purchases -35.00
+group interest
+r 2024-01-31 -1.25 - | interest
+subtotal interest -1.25
+subtotal fees 0.00
+close 36.25
+"""
+
+
+class CardSectionAndPatchTests(unittest.TestCase):
+    def text_layer(self):
+        def p(n, status):
+            return dict(id=f'dcard#{n}', family='acme-card', truth_status=status, truth_reasons=[] if status == 'verified'
+                        else ['amount line without a date'], pages=[n])
+        return dict(id='dcard', sha256='x', status='partly_verified', pages=5, mode='digital',
+                    periods=[p(1, 'verified'), p(2, 'unverified'), p(3, 'verified')])
+
+    def test_printed_section_totals_are_checked_against_their_rows(self):
+        period = rv.compile_document(CARD, page_count=5)['periods'][0]
+        self.assertEqual((period['truth_status'], period['id']), ('verified', 'dcard#2'))
+        self.assertEqual([c['ok'] for c in period['controls']['other_checks']], [True, True, True, True])
+        self.assertNotIn('group', period['rows'][0])
+        wrong = rv.compile_document(CARD.replace('subtotal purchases -35.00', 'subtotal purchases -40.00'),
+                                    page_count=5)['periods'][0]
+        self.assertEqual((wrong['truth_status'], wrong['truth_reasons']),
+                         ('unverified', ['purchases rows differ from the printed purchases total']))
+        # A row put in the wrong section is caught even though the period still balances.
+        moved = CARD.replace('r 2024-01-31 -1.25 - | interest\n', '').replace(
+            'r 2024-01-09 5.00 - | refund\n', 'r 2024-01-09 5.00 - | refund\nr 2024-01-31 -1.25 - | interest\n')
+        self.assertIn('interest rows differ from the printed interest total',
+                      rv.compile_document(moved, page_count=5)['periods'][0]['truth_reasons'])
+
+    def test_a_patch_needs_only_its_own_pages_and_replaces_only_the_periods_it_names(self):
+        visual = rv.compile_document(CARD, page_count=5)
+        self.assertEqual((visual['complete'], visual['pages_pending'], visual['patch']), (True, [], [2]))
+        merged = rv.apply_visual(self.text_layer(), visual)
+        self.assertEqual([p['id'] for p in merged['periods']], ['dcard#1', 'dcard#2', 'dcard#3'])
+        self.assertEqual([p.get('truth_source') for p in merged['periods']], [None, 'visual', None])
+        self.assertEqual((merged['status'], merged['truth_source'], merged['visual_patch']),
+                         ('verified', 'visual', ['dcard#2']))
+        self.assertTrue(merged['statements_complete'])
+        self.assertEqual(rv.apply_visual(merged, visual), merged)  # merging twice changes nothing
+        self.assertFalse(rv.compile_document(CARD.replace('done 2-3', 'done 2'), page_count=5)['complete'])
+
+    def test_a_patched_period_the_image_cannot_settle_still_makes_the_document_final(self):
+        text = CARD.replace('subtotal fees 0.00\n', 'subtotal fees 0.00\nunverified a digit is cut off\n')
+        merged = rv.apply_visual(self.text_layer(), rv.compile_document(text, page_count=5))
+        self.assertEqual(merged['status'], 'settled')
+        self.assertIn(merged['status'], rt.FINAL)
+        left = self.text_layer()
+        left['periods'][2]['truth_status'] = 'unverified'  # a second text-layer gap the patch does not cover
+        self.assertEqual(rv.apply_visual(left, rv.compile_document(CARD, page_count=5))['status'], 'partly_verified')
+
+    def test_a_patch_naming_a_period_the_text_layer_lacks_is_refused(self):
+        visual = rv.compile_document(CARD.replace('patch 2', 'patch 7'), page_count=5)
+        self.assertEqual(rv.apply_visual(self.text_layer(), visual), self.text_layer())
+
+    def test_a_statement_that_prints_only_its_closing_date(self):
+        text = ('doc dmer\ndone 1\nissuer acme-card Acme Card\nkind card\ncurrency USD\n'
+                'page 1 stmt - 2021-01-25 no 1 member 9999 holder A PERSON\nshare - open 0.00\n'
+                'r 12/30 -14.00 - | store\nr 01/22 -100.00 - | diner\nclose 114.00\n')
+        period = rv.compile_document(text, page_count=1)['periods'][0]
+        self.assertEqual((period['period_start'], period['period_end'], period['truth_status']),
+                         (None, '2021-01-25', 'verified'))
+        self.assertEqual([r['date'] for r in period['rows']], ['2020-12-30', '2021-01-22'])  # year from the close
+        self.assertIn(rt.START_UNPRINTED, period['notes'])
+        record = rt.manifest_period(dict(period, expected='auto'))
+        self.assertEqual((record['start_printed'], record['period_start']), (False, None))
+        # Without the marker a missing start is still a gap in the reading, never verified.
+        bare = rt.Period(family='f', institution='i', currency='USD', holder='H', account='9999', period_end='2021-01-25',
+                         opening_minor=0, closing_minor=0, kind='card')
+        self.assertEqual(rt.reconcile(bare), ('unverified', ['period_start not read']))
+        # A row far before the closing date is still caught.
+        late = text.replace('r 12/30', 'r 2020-08-01')
+        self.assertIn('row date outside the printed period',
+                      rv.compile_document(late, page_count=1)['periods'][0]['truth_reasons'])
+        for bad in ('stmt - - no', 'stmt 2021/01/01 2021-01-25 no', 'stmt - 25.01.2021 no'):
+            with self.assertRaises(ValueError):
+                rv.Transcription(text.replace('stmt - 2021-01-25 no', bad))
+
+    def test_malformed_patch_and_section_lines_are_refused(self):
+        for text in (CARD.replace('patch 2', 'patch 2,3'), CARD.replace('patch 2', 'patch 2,2'),
+                     CARD.replace('patch 2', 'patch two'), CARD.replace('group payments', 'group'),
+                     CARD.replace('subtotal fees 0.00', 'subtotal fees'),
+                     CARD.replace('subtotal fees 0.00', 'subtotal fees 1'),
+                     CARD.replace('share - open 100.00\ngroup payments', 'group payments\nshare - open 100.00')):
+            with self.assertRaises(ValueError):
+                rv.Transcription(text)
 
 
 if __name__ == '__main__':

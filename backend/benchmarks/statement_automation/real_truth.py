@@ -320,15 +320,23 @@ class Period:
     kind: str = 'deposit'  # 'card': balances are amounts owed; purchases (debits) raise them
 
 
+# A statement that prints only its closing date (e.g. Merrick Bank cards): the start is not a
+# printed fact, so it is neither required nor scored (the manifest records start_printed=False).
+START_UNPRINTED = 'period start not printed'
+
+
 def reconcile(period):
     """``(status, reasons)``: verified only if every printed control agrees to the cent."""
     reasons = list(period.problems)
+    unprinted_start = START_UNPRINTED in period.notes
     if period.page_total:
         printed = set(period.page_sequence)
         missing = sorted(set(range(1, period.page_total + 1)) - printed)
         if missing:
             return 'incomplete', [f'missing printed pages {len(missing)} of {period.page_total}']
     for name in ('period_start', 'period_end', 'opening_minor', 'closing_minor', 'currency', 'account'):
+        if name == 'period_start' and unprinted_start:
+            continue
         if getattr(period, name) in (None, ''):
             reasons.append(f'{name} not read')
     if reasons:
@@ -362,8 +370,10 @@ def reconcile(period):
             reasons.append(f'running balance differs at row {index + 1}')
             break
     earliest = period.period_start
+    if unprinted_start and not earliest:  # at most a quarter before the printed closing date
+        earliest = (date.fromisoformat(period.period_end) - timedelta(days=92)).isoformat()
     if period.kind == 'card':  # a card prints the transaction date; it may precede the cycle it posts in
-        earliest = (date.fromisoformat(period.period_start) - timedelta(days=60)).isoformat()
+        earliest = (date.fromisoformat(earliest) - timedelta(days=60)).isoformat()
     for row in period.rows:
         if not row.get('date'):
             reasons.append('row date not read')
@@ -696,7 +706,10 @@ def parse_monex(pages):
     text = '\n'.join(p.text for p in pages)
     start, end = _monex_dates(text)
     contract = find(r'CONTRATO:\s*(\d{5,})', text)
-    holder = _monex_holder(pages[0]) if pages else None
+    # The holder's address block is on the cover (the page listing the contract type); a production
+    # may put a notice page before it, and later pages print the bank's own postcode.
+    cover = next((p for p in pages if re.search(r'TIPO DE CONTRATO', p.text)), pages[0] if pages else None)
+    holder = _monex_holder(cover) if cover else None
     sequence, total, _ = printed_sequence(pages, r'Hoja\s+(\d+)\s+de\s+(\d+)')
     sections, section = [], None
     for page in pages:
@@ -1852,6 +1865,10 @@ def visual_queue(results, size=SHARD_SIZE, previous=None):
     """
     reviewed = {r['id'] for r in results if r.get('truth_source') == 'visual'}
     if previous is not None:
+        # A queued document whose truth became settled by any reader (e.g. a parser added since it was
+        # queued) needs no reading either. A text-layer 'unverified' document stays queued: that is the
+        # reason it needs a person reading its pages.
+        reviewed |= {r['id'] for r in results if r.get('status') in ('verified', 'settled', 'incomplete', 'not_statement')}
         return _requeue(results, previous, reviewed, size)
     entries = []
     for r in sorted(results, key=lambda r: r['id']):
