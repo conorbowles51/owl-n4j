@@ -284,3 +284,17 @@ class LayoutMemoryCurrencyTests(BatchHelpers, unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class LayoutMemoryRouteTests(unittest.TestCase):
+    def test_each_layout_memory_path_resolves_to_its_own_endpoint(self):
+        from starlette.routing import Match
+        from routers.financial_statement_import import router
+        cases = {('GET', '/api/financial/statement-import/batches/' + str(uuid4()) + '/layout-memory'): 'batch_layout_memory_groups',
+                 ('GET', '/api/financial/statement-import/layout-memory/confirmations'): 'case_layout_memory',
+                 ('POST', '/api/financial/statement-import/layout-memory/confirm'): 'confirm_layout_memory',
+                 ('POST', '/api/financial/statement-import/layout-memory/' + str(uuid4()) + '/withdraw'): 'withdraw_layout_memory'}
+        for (method, path), name in cases.items():
+            scope = dict(type='http', method=method, path=path, root_path='', query_string=b'', headers=[])
+            first = next(route for route in router.routes if route.matches(scope)[0] == Match.FULL)
+            self.assertEqual(first.name, name, path)

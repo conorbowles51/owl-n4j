@@ -608,7 +608,7 @@ def batch_layout_memory_groups(batch_id: UUID, case_id: UUID = Query(...), db: S
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
 
-@router.get('/layout-memory')
+@router.get('/layout-memory/confirmations')
 def case_layout_memory(case_id: UUID = Query(...), db: Session = Depends(get_db)):
     return layout_memory.case_confirmations(db, case_id=case_id)
 
