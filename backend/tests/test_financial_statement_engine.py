@@ -273,6 +273,29 @@ class EngineReadingTests(unittest.TestCase):
         self.assertEqual(statements[1]['currency'], '')
         self.assertEqual(statements[1]['currency_source'], 'printed_account_section')
 
+    def test_statement_account_profile_gives_every_currency_section_the_printed_contract(self):
+        lines = [
+            [('BANCO EJEMPLO DEL NORTE, S.A., INSTITUCION DE BANCA MULTIPLE', 20000, 400000)],
+            [('PERIODO', 330000, 380000), ('DEL 01/03/2024 AL 31/03/2024', 390000, 590000)],
+            [('CONTRATO:', 330000, 380000), ('4455667', 390000, 450000)],
+            [('RESUMEN PESO MEXICANO', 20000, 200000)],
+            [('SALDO INICIAL', 330000, 430000), ('100.00', 520000, 560000)],
+            [('FECHA', 20000, 60000), ('CONCEPTO', 80000, 160000), ('ABONOS', 330000, 380000), ('CARGOS', 410000, 460000), ('SALDO', 520000, 560000)],
+            [('04/MAR', 20000, 60000), ('VENTA DIVISA', 80000, 300000), ('40.00', 436000, 460000), ('60.00', 536000, 560000)],
+            [('SALDO FINAL', 330000, 430000), ('60.00', 520000, 560000)],
+            [('RESUMEN DOLAR AMERICANO', 20000, 200000)],
+            [('SALDO INICIAL', 330000, 430000), ('0.00', 530000, 560000)],
+            [('FECHA', 20000, 60000), ('CONCEPTO', 80000, 160000), ('ABONOS', 330000, 380000), ('CARGOS', 410000, 460000), ('SALDO', 520000, 560000)],
+            [('05/MAR', 20000, 60000), ('COMPRA DIVISA', 80000, 300000), ('10.00', 356000, 380000), ('10.00', 536000, 560000)],
+            [('SALDO FINAL', 330000, 430000), ('10.00', 530000, 560000)],
+        ]
+        plain = read_statements([page(1, lines)])
+        self.assertEqual([s['account_reference'] for s in plain], ['4455667', ''])
+        profile = dict(name='invented-contract', match=dict(any=['banco ejemplo']), statement_account=True)
+        profiled = read_statements([page(1, lines)], profile=profile)
+        self.assertEqual([s['account_reference'] for s in profiled], ['4455667', '4455667'])
+        self.assertTrue(all(s['engine']['proved'] for s in profiled))
+
     def test_layout_fingerprint_carries_no_values(self):
         a = self.one(mx_statement(MOVES, closing='1,250.00'))
         moves = [(d, t, c and c.replace('5', '7'), dbt, b) for d, t, c, dbt, b in MOVES]

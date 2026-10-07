@@ -1099,6 +1099,17 @@ def _read_section(rows, segment, pages, facts, style, sources, profile, shared=F
         top = max(max(r) for r in accounts.values())
         best = {v for v, r in accounts.items() if top in r}
         account = next(iter(best)) if len(best) == 1 else ''
+    if not account and shared and profile and profile.get('statement_account'):
+        # Library profile (data): every section of this layout belongs to the contract printed once on
+        # the statement's heading pages (one top-ranked number or none).
+        printed = {}
+        for page in _heading_pages(segment['pages'], facts):
+            for value, ranks in facts[page]['accounts'].items():
+                printed.setdefault(value, set()).update(ranks)
+        if printed:
+            top = max(max(r) for r in printed.values())
+            best = {v for v, r in printed.items() if top in r}
+            account = next(iter(best)) if len(best) == 1 else ''
     if not account and not accounts and profile and profile.get('account_heading'):
         # Library profile (data): this layout prints the account only after the product name in a
         # section heading ("<product name> 12-34567890-1"). One distinct heading number or none.
