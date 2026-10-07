@@ -301,5 +301,87 @@ class QueueAndDuplicateTests(unittest.TestCase):
         self.assertEqual([x['expected'] for x in results[0]['periods']], ['auto', 'auto'])
 
 
+CARD = """doc dcard
+done 2-3
+issuer acme-card Acme Card
+kind card
+currency USD
+patch 2
+page 2 stmt 2024-01-01 2024-01-31 no 1 member 9999 holder A PERSON
+share - open 100.00
+group payments
+r 2024-01-20 100.00 - | payment
+subtotal payments 100.00
+page 3 cont
+group purchases
+r 2024-01-03 -40.00 - | purchase
+r 2024-01-09 5.00 - | refund
+subtotal purchases -35.00
+group interest
+r 2024-01-31 -1.25 - | interest
+subtotal interest -1.25
+subtotal fees 0.00
+close 36.25
+"""
+
+
+class CardSectionAndPatchTests(unittest.TestCase):
+    def text_layer(self):
+        def p(n, status):
+            return dict(id=f'dcard#{n}', family='acme-card', truth_status=status, truth_reasons=[] if status == 'verified'
+                        else ['amount line without a date'], pages=[n])
+        return dict(id='dcard', sha256='x', status='partly_verified', pages=5, mode='digital',
+                    periods=[p(1, 'verified'), p(2, 'unverified'), p(3, 'verified')])
+
+    def test_printed_section_totals_are_checked_against_their_rows(self):
+        period = rv.compile_document(CARD, page_count=5)['periods'][0]
+        self.assertEqual((period['truth_status'], period['id']), ('verified', 'dcard#2'))
+        self.assertEqual([c['ok'] for c in period['controls']['other_checks']], [True, True, True, True])
+        self.assertNotIn('group', period['rows'][0])
+        wrong = rv.compile_document(CARD.replace('subtotal purchases -35.00', 'subtotal purchases -40.00'),
+                                    page_count=5)['periods'][0]
+        self.assertEqual((wrong['truth_status'], wrong['truth_reasons']),
+                         ('unverified', ['purchases rows differ from the printed purchases total']))
+        # A row put in the wrong section is caught even though the period still balances.
+        moved = CARD.replace('r 2024-01-31 -1.25 - | interest\n', '').replace(
+            'r 2024-01-09 5.00 - | refund\n', 'r 2024-01-09 5.00 - | refund\nr 2024-01-31 -1.25 - | interest\n')
+        self.assertIn('interest rows differ from the printed interest total',
+                      rv.compile_document(moved, page_count=5)['periods'][0]['truth_reasons'])
+
+    def test_a_patch_needs_only_its_own_pages_and_replaces_only_the_periods_it_names(self):
+        visual = rv.compile_document(CARD, page_count=5)
+        self.assertEqual((visual['complete'], visual['pages_pending'], visual['patch']), (True, [], [2]))
+        merged = rv.apply_visual(self.text_layer(), visual)
+        self.assertEqual([p['id'] for p in merged['periods']], ['dcard#1', 'dcard#2', 'dcard#3'])
+        self.assertEqual([p.get('truth_source') for p in merged['periods']], [None, 'visual', None])
+        self.assertEqual((merged['status'], merged['truth_source'], merged['visual_patch']),
+                         ('verified', 'visual', ['dcard#2']))
+        self.assertTrue(merged['statements_complete'])
+        self.assertEqual(rv.apply_visual(merged, visual), merged)  # merging twice changes nothing
+        self.assertFalse(rv.compile_document(CARD.replace('done 2-3', 'done 2'), page_count=5)['complete'])
+
+    def test_a_patched_period_the_image_cannot_settle_still_makes_the_document_final(self):
+        text = CARD.replace('subtotal fees 0.00\n', 'subtotal fees 0.00\nunverified a digit is cut off\n')
+        merged = rv.apply_visual(self.text_layer(), rv.compile_document(text, page_count=5))
+        self.assertEqual(merged['status'], 'settled')
+        self.assertIn(merged['status'], rt.FINAL)
+        left = self.text_layer()
+        left['periods'][2]['truth_status'] = 'unverified'  # a second text-layer gap the patch does not cover
+        self.assertEqual(rv.apply_visual(left, rv.compile_document(CARD, page_count=5))['status'], 'partly_verified')
+
+    def test_a_patch_naming_a_period_the_text_layer_lacks_is_refused(self):
+        visual = rv.compile_document(CARD.replace('patch 2', 'patch 7'), page_count=5)
+        self.assertEqual(rv.apply_visual(self.text_layer(), visual), self.text_layer())
+
+    def test_malformed_patch_and_section_lines_are_refused(self):
+        for text in (CARD.replace('patch 2', 'patch 2,3'), CARD.replace('patch 2', 'patch 2,2'),
+                     CARD.replace('patch 2', 'patch two'), CARD.replace('group payments', 'group'),
+                     CARD.replace('subtotal fees 0.00', 'subtotal fees'),
+                     CARD.replace('subtotal fees 0.00', 'subtotal fees 1'),
+                     CARD.replace('share - open 100.00\ngroup payments', 'group payments\nshare - open 100.00')):
+            with self.assertRaises(ValueError):
+                rv.Transcription(text)
+
+
 if __name__ == '__main__':
     unittest.main()
