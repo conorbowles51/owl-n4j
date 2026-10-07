@@ -687,9 +687,16 @@ _POSTAL = re.compile(r'(?:\bC\.?\s?P\.?\s*\d{5}\b|\b\d{5}(?:-\d{4})?\s*$|^\d{5}\
 
 def address_holder(rows):
     """The top line of the left address block ending with a postal-code line (A8)."""
+    found = [(y0, name) for y0, name, accepted in _address_tops(rows) if accepted]
+    # The addressee block is the topmost one; a second (fiscal) address block below it is not the holder.
+    return min(found)[1] if found else ''
+
+
+def _address_tops(rows):
+    """[(y0, top line, accepted as a name)] of every address block ending with a postal-code line."""
     located = [r for r in rows if r['tokens'] and r['width']]
     if not located:
-        return ''
+        return []
     found = []
     for index, row in enumerate(located):
         if not _POSTAL.search(fold(row['text'])):
@@ -719,23 +726,58 @@ def address_holder(rows):
             aligned = {id(t['cell']) for t in top['tokens'] if abs(t['x0'] - x) <= row['width'] * 0.015 and t['first']}
             name = ' '.join(t['t'] for t in sorted(top['tokens'], key=lambda t: (t['line'], t['x0']))
                             if id(t['cell']) in aligned and t['line'] == 0)
-            if (re.search(r'[A-Za-z]{2}', name) and not re.search(r'\d', name) and len(name.split()) >= 2
-                    and not name.rstrip().endswith(':')
-                    and not any(re.search(r'\b' + re.escape(word) + r'\b', fold(name)) for word in NOT_A_NAME)):
-                found.append((top['y0'], name))
-    # The addressee block is the topmost one; a second (fiscal) address block below it is not the holder.
-    return min(found)[1] if found else ''
+            accepted = bool(re.search(r'[A-Za-z]{2}', name) and not re.search(r'\d', name) and len(name.split()) >= 2
+                            and not name.rstrip().endswith(':')
+                            and not any(re.search(r'\b' + re.escape(word) + r'\b', fold(name)) for word in NOT_A_NAME))
+            if name.strip():
+                found.append((top['y0'], name, accepted))
+    return found
 
 
-def _institution(legal_by_page):
-    """A legal-name furniture line repeated on most pages (A9), short form before its first comma."""
+_MONEY_MARK = re.compile(r'^[-−+(]?\s*(US\$|\$|€|£|¥)|(MN|M\.N\.|MXN|USD|EUR|DLS)$')
+
+
+def identity_evidence(segment, section_pages, rows, pages, facts, style):
+    """What the statement prints about its own identity, per fact (layout memory compares it).
+
+    holder: every labelled holder value and every addressee-block top line on the
+    statement's heading pages (also lines the engine did not accept as a name);
+    institution: legal-name lines repeated on the section's pages, digits removed;
+    currency: currencies named in the statement and the markers printed on its amounts.
+    A remembered fact applies to another period only when this evidence is the same.
+    """
+    holder = set()
+    for page in _heading_pages(segment['pages'], facts):
+        for row in pages[page]:
+            if row['tokens'] and len(row['text']) <= 160:
+                _holder_label(row, holder)
+        holder.update(name for _, name, _ in _address_tops(pages[page]))
+    legal = _repeated_legal([facts[p]['legal'] for p in section_pages])
+    currency = {'named:' + code for _, code in segment.get('currency_mentions', [])}
+    for row in rows:
+        for token in row['tokens']:
+            if _value_kind(token, style or 'dot', 2) == 'money':
+                mark = _MONEY_MARK.search(token['t'])
+                if mark:
+                    currency.add('mark:' + (mark[1] or mark[2]))
+    return dict(holder=sorted({fold(name) for name in holder} - {''}),
+                institution=sorted({' '.join(re.sub(r'\d', ' ', line).split()) for line in legal} - {''}),
+                currency=sorted(currency))
+
+
+def _repeated_legal(legal_by_page):
     counts = {}
     for lines in legal_by_page:
         for line in lines:
             counts[line] = counts.get(line, 0) + 1
     pages = len(legal_by_page)
-    best = [line for line, count in counts.items() if count >= max(1, (pages + 1) // 2)
-            and re.search(r'\b(?:S\.?\s?A\.?|N\.?\s?A\.?|INC\.?|INSTITUCION DE BANCA MULTIPLE|CREDIT UNION|BANK|BANCO)\b', line)]
+    return [line for line, count in counts.items() if count >= max(1, (pages + 1) // 2)]
+
+
+def _institution(legal_by_page):
+    """A legal-name furniture line repeated on most pages (A9), short form before its first comma."""
+    best = [line for line in _repeated_legal(legal_by_page)
+            if re.search(r'\b(?:S\.?\s?A\.?|N\.?\s?A\.?|INC\.?|INSTITUCION DE BANCA MULTIPLE|CREDIT UNION|BANK|BANCO)\b', line)]
     names = set()
     for line in best:
         short = line.split(',')[0].strip(' .')
@@ -938,6 +980,15 @@ def _fingerprint(header_words, columns, labels_seen, convention):
                         columns=[round(c / 0.02) for c in columns], convention=convention))[:16]
 
 
+def layout_key(header_words, convention):
+    """The layout as a person recognises it: its movement headings and balance convention.
+
+    Coarser than the fingerprint (no column positions, no per-period label set),
+    so every period of one printed layout shares it; layout memory is keyed by it.
+    """
+    return _digest(dict(layout='statement-engine-layout-v1', header=sorted(header_words), convention=convention))[:16]
+
+
 def _read_section(rows, segment, pages, facts, style, sources, profile, shared=False):
     """One account section. ``shared``: another section is printed on one of its pages, so
     page-level facts (account, currency) cannot be attributed to it; only facts printed
@@ -1013,7 +1064,8 @@ def _read_section(rows, segment, pages, facts, style, sources, profile, shared=F
                      currency_source=currency_basis or ('printed_account_section' if shared else ''),
                      account_type='credit_card' if liability else 'checking',
                      balance_convention='liability_owed' if liability else 'asset_balance',
-                     page_numbers=section_pages)
+                     page_numbers=section_pages,
+                     identity_evidence=identity_evidence(segment, section_pages, rows, pages, facts, style))
     statement['sources'] = [dict(page_number=s['page_number'], table_index=s['table_index'],
                                  source_revision=s['source_revision'])
                             for s in sources if s['page_number'] in section_pages]
@@ -1027,7 +1079,7 @@ def _read_section(rows, segment, pages, facts, style, sources, profile, shared=F
     statement.update(id=_digest(dict(layout_id=LAYOUT, account=account, start=statement['period_start'],
                                      end=statement['period_end'], currency=currency, first_page=section_pages[0],
                                      first_row=reading['first_row'])),
-                     layout_fingerprint=reading['fingerprint'], engine=reading['proof'])
+                     layout_fingerprint=reading['fingerprint'], layout_key=reading['layout_key'], engine=reading['proof'])
     if profile:
         statement['engine_profile'] = profile['name']
     if not _numbering_complete(segment['pages'], facts) and reading['proof']['proved']:
@@ -1055,7 +1107,8 @@ def _read_section(rows, segment, pages, facts, style, sources, profile, shared=F
                 new_exponent = 2
             if new_exponent != exponent:
                 reading = _reading(rows, statement, style, new_exponent, liability, period)
-                statement.update(layout_fingerprint=reading['fingerprint'], engine=reading['proof'])
+                statement.update(layout_fingerprint=reading['fingerprint'], layout_key=reading['layout_key'],
+                                 engine=reading['proof'])
             statement['id'] = _digest(dict(layout_id=LAYOUT, account=account, start=statement['period_start'],
                                            end=statement['period_end'], currency=attributed, first_page=section_pages[0],
                                            first_row=reading['first_row']))
@@ -1179,7 +1232,7 @@ def _hints(header_rows, columns, width):
 def _reading(rows, statement, style, exponent, liability, period):
     width = next((r['width'] for r in rows if r['width']), None)
     proof = dict(engine=ENGINE_VERSION, proved=False, reason='', convention='liability_owed' if liability else 'asset_balance')
-    result = dict(rows=[], proof=proof, fingerprint='', first_row='')
+    result = dict(rows=[], proof=proof, fingerprint='', layout_key='', first_row='')
     if style is None:
         proof['reason'] = 'separators_mixed'
     if any(not r['located'] for r in rows):
@@ -1301,6 +1354,7 @@ def _reading(rows, statement, style, exponent, liability, period):
     hints = _hints(headers, columns, width or 1) if columns else {}
     result['fingerprint'] = _fingerprint({label(t['t']) for h in headers for t in h['tokens']}, columns,
                                          labels_seen, proof['convention'])
+    result['layout_key'] = layout_key({label(t['t']) for h in headers for t in h['tokens']}, proof['convention'])
     dated = [m for m in all_moves if not m.get('undated')]
     resolved, date_problem = _resolve_dates(dated, period, liability) if dated else ([], None if period else 'no_period')
     candidates = _search(all_moves, columns, hints, controls, column_totals, style or 'dot', exponent, liability)

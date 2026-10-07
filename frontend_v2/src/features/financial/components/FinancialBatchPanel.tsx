@@ -10,6 +10,7 @@ import { BatchReadingJobs } from "./BatchReadingJobs"
 import { FinancialRemovalAction } from "./FinancialRemovalAction"
 import { BatchStatementImportChoice } from "./BatchStatementImportChoice"
 import { BatchCurrencyEditor } from "./BatchCurrencyEditor"
+import { BatchLayoutMemory } from "./BatchLayoutMemory"
 import { BatchReviewSummary } from "./BatchReviewSummary"
 import { batchReviewSummarySchema } from "../lib/batch-review-summary"
 import { BulkStatementDetails } from "./BulkStatementDetails"
@@ -1294,6 +1295,14 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
         {canEdit && (
           <BatchCurrencyEditor
             key={batchId}
+            caseId={caseId}
+            batchId={batchId}
+            onSaved={refresh}
+          />
+        )}
+        {canEdit && (
+          <BatchLayoutMemory
+            key={`memory-${batchId}`}
             caseId={caseId}
             batchId={batchId}
             onSaved={refresh}

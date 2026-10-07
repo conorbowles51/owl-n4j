@@ -581,6 +581,58 @@ def set_batch_statement_currency(batch_id: UUID, body: SelectedStatementCurrency
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
 
+from services.financial import layout_memory
+
+
+class LayoutMemoryConfirmation(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    file_id: UUID
+    statement_id: str = Field(pattern=r'^[a-f0-9]{64}$')
+    field: Literal['holder', 'institution', 'currency']
+    value: str = Field(min_length=1, max_length=128)
+    key: str = Field(pattern=r'^[a-f0-9]{64}$')
+    request_id: UUID | None = None
+
+
+class LayoutMemoryWithdrawal(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    reason: str = Field(min_length=1, max_length=500)
+
+
+@router.get('/batches/{batch_id}/layout-memory')
+def batch_layout_memory_groups(batch_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    """Held general-reader periods grouped by layout, account and missing identity fact."""
+    try:
+        return layout_memory.memory_groups(db, case_id=case_id, batch_id=batch_id)
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+@router.get('/layout-memory')
+def case_layout_memory(case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    return layout_memory.case_confirmations(db, case_id=case_id)
+
+
+@router.post('/layout-memory/confirm', dependencies=[Depends(case_access_dependency(lambda request,payload: ('case','edit')))])
+def confirm_layout_memory(body: LayoutMemoryConfirmation, case_id: UUID = Query(...),
+        user=Depends(get_current_db_user), db: Session = Depends(get_db)):
+    try:
+        return layout_memory.confirm(db, case_id=case_id, file_id=body.file_id, statement_id=body.statement_id,
+            field=body.field, value=body.value, expected_key=body.key, actor=actor_from_user(user), request_id=body.request_id)
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+@router.post('/layout-memory/{confirmation_id}/withdraw', dependencies=[Depends(case_access_dependency(lambda request,payload: ('case','edit')))])
+def withdraw_layout_memory(confirmation_id: UUID, body: LayoutMemoryWithdrawal, case_id: UUID = Query(...),
+        user=Depends(get_current_db_user), db: Session = Depends(get_db)):
+    try:
+        return layout_memory.withdraw(db, case_id=case_id, confirmation_id=confirmation_id, reason=body.reason,
+            actor=actor_from_user(user))
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
 @router.post('/batches', dependencies=[Depends(case_access_dependency(lambda request,payload: ('case','edit'))), Depends(case_access_dependency(lambda request,payload: ('evidence','upload')))])
 def create_financial_batch(body: CreateFinancialBatch, case_id: UUID = Query(...), user=Depends(get_current_db_user), db: Session = Depends(get_db)):
     try:

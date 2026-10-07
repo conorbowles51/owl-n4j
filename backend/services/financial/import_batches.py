@@ -176,6 +176,10 @@ def assess(proposal, request=None):
         balance_status=balance['balance_status'], checks=balance['checks'],
         can_import=can_import, admission=admission, balance_exception=False, problems=problems[:50], problem_count=len(problems))
     summary['review_model'] = REVIEW_MODEL
+    if proposal.get('identity_memory'):
+        # Which identity facts came from a person's layout confirmation (layout_memory), so a
+        # withdrawal re-reads this period without them.
+        summary['identity_memory'] = proposal['identity_memory']
     if proposal.get('period_dates'):
         summary['closing_only_period'] = True
     summary['account_type'] = proposal['metadata'].get('account_type') or ''
