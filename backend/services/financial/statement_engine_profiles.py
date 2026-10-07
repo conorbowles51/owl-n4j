@@ -21,10 +21,17 @@ Profile format (every key optional except ``name`` and ``match``):
                  credit_component, debit_component, column_total
     columns      {role: [printed column words]} added to the movement headings;
                  roles are date, description, credit, debit, balance, amount
+    account_heading  True: with no labelled account, a section heading of the
+                 product name followed by a hyphenated account number (one
+                 distinct number in the section's heading area) is the account
+    statement_account  True: a section sharing pages with another section and
+                 printing no account of its own takes the statement's single
+                 top-ranked heading account (one contract, several currencies)
 
-Two existing families are expressed below to prove the format (their code
-readers stay in the library unchanged). New layouts confirmed by a person can
-be added the same way ("layout memory", see WIP notes).
+Capital One and BBVA are expressed below to prove the format (their code
+readers stay in the library unchanged); Monex, Santander, Intercam and Citi
+supply only their institution. Facts a person confirms per layout and account
+are not profiles: they are case data (``layout_memory``).
 """
 
 PROFILES = (
@@ -50,9 +57,23 @@ PROFILES = (
                     column_total=['TOTAL DE MOVIMIENTOS']),
         columns=dict(date=['OPER', 'LIQ'], debit=['CARGOS'], credit=['ABONOS'], balance=['OPERACION', 'LIQUIDACION']),
     ),
+    # Institution-only profiles (r3): these layouts do not always print their legal name on the pages
+    # the engine reads it from. Each match phrase is printed by every statement of its family in the
+    # real collection and by no statement of another family (group names, not bank names that
+    # counterparty transfer lines also print). The engine's printed legal name always wins.
+    # Monex prints one contract number for all currency sections of a statement (its reader keys
+    # every section by it); sections sharing pages take it from the statement's heading pages.
+    dict(name='monex-mexico', match=dict(any=['monex grupo financiero']), institution='Monex', statement_account=True),
+    # Santander prints some accounts only after the product name ("<PRODUCT NAME> 12-34567890-1"):
+    # on the verified truth 45 such heading lines, every one the truth account.
+    dict(name='santander-mexico', match=dict(any=['grupo financiero santander']), institution='Santander',
+         account_heading=True),
+    dict(name='intercam-mexico', match=dict(any=['intercam grupo financiero']), institution='Intercam'),
+    dict(name='citi-card', match=dict(any=['citibank, n.a']), institution='Citibank'),
 )
 
-_KEYS = {'name', 'match', 'institution', 'currency', 'convention', 'date_order', 'labels', 'columns'}
+_KEYS = {'name', 'match', 'institution', 'currency', 'convention', 'date_order', 'labels', 'columns', 'account_heading',
+         'statement_account'}
 _LABEL_ROLES = {'opening', 'closing', 'subtotal', 'credit_total', 'debit_total', 'credit_component',
                 'debit_component', 'column_total'}
 _COLUMN_ROLES = {'date', 'description', 'credit', 'debit', 'balance', 'amount'}
@@ -69,6 +90,8 @@ def validate(profile):
         raise ValueError('Invalid profile date order.')
     if set(profile.get('labels') or {}) - _LABEL_ROLES or set(profile.get('columns') or {}) - _COLUMN_ROLES:
         raise ValueError('Invalid profile label or column role.')
+    if profile.get('account_heading') not in (None, True) or profile.get('statement_account') not in (None, True):
+        raise ValueError('Invalid profile account heading flag.')
     if profile.get('currency'):
         from services.financial.money import get_currency
         get_currency(profile['currency'])

@@ -164,3 +164,25 @@ class IntercamProposalTests(TestCase):
         self.assertEqual(check_statement_rows(propose_kapital_statement(sources,'MXN',choices[0])['rows'])['transaction_count'],2)
         # Counterparty wording cannot make a Kapital product an Intercam account.
         self.assertEqual(kapital_catalog(statement(),institution='Intercam',product=INTERCAM_PRODUCT,layout='intercam-mexico-product-statement')[0],[])
+
+
+class KapitalProductScopeTests(TestCase):
+    """r3: real USD product headings truncated by OCR, and a later investment product on the same page."""
+
+    def test_truncated_product_word_and_the_next_products_currency_line_bound_the_section(self):
+        usd = product('USD', '128000000000000002')
+        usd[0][0] = (40000, 300000, 205000, 'SERVICIO EMPRESARIAL FX USD KAPITA 123-456-002-4')
+        investment = [[(40000, 440000, 120000, 'GAT 0.00% NOMINAL'), (180000, 440000, 40000, 'Moneda'),
+                       (230000, 440000, 30000, 'MN'), (280000, 440000, 150000, 'No. de Inversion 123456001')],
+                      [(40000, 460000, 120000, 'TOTAL VIGENTES'), (220000, 460000, 60000, '6,000.00')]]
+        s = [source(1, header() + [[(30000, 120000, 160000, 'EXAMPLE SERVICES')], [(30000, 150000, 160000, 'Persona Moral')]]
+                    + product() + table()), source(2, header() + usd + investment)]
+        choices = currencies_by_statement(kapital_catalog(s)[0], s)
+        self.assertEqual([c['currency'] for c in choices], ['MXN', 'USD'])
+        dollar = choices[1]
+        scoped = {i for x in dollar['section_sources'] if x['page_number'] == 2 for i in x['row_indices']}
+        texts = {row['row_index']: ' '.join(c['expected_text'] for c in row['cells']) for row in s[1]['rows']}
+        self.assertFalse(any('VIGENTES' in texts[i] or 'Inversion' in texts[i] for i in scoped))
+        from services.financial.statement_import_kapital import kapital_no_activity_evidence
+        rows = propose_kapital_statement(s, 'USD', dollar)['rows']
+        self.assertEqual(kapital_no_activity_evidence(s, dollar, rows, 'USD')['reason'], 'printed_zero_totals')

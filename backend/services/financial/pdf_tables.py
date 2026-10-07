@@ -591,6 +591,64 @@ def read_positioned_ocr_words(words, *, page_number, page_width, page_height):
         space=CoordinateSpace.pdf_displayed, page_number=page_number,
         extent_failure=None, rotation=0, page_width=page_width, page_height=page_height))
 
+def upright_ocr_words(words, *, rotation, page_width, page_height):
+    """Positioned OCR words (displayed PDF points) turned into the frame the text reads upright in.
+
+    ``rotation`` is the clockwise turn the OCR applied to make the page upright
+    (90, 180 or 270). Returns (words, upright_width, upright_height). Rows and
+    columns are grouped in this frame: on a page printed sideways, grouping in
+    the displayed frame would join words of different printed lines.
+    """
+    if rotation not in (90, 180, 270):
+        raise ValueError('Unsupported reading orientation')
+    width, height = page_width, page_height
+    turned = []
+    for x0, y0, x1, y1, text in words:
+        if rotation == 90:
+            box = (height - y1, x0, height - y0, x1)
+        elif rotation == 180:
+            box = (width - x1, height - y1, width - x0, height - y0)
+        else:
+            box = (y0, width - x1, y1, width - x0)
+        turned.append((*box, text))
+    return turned, (height, width) if rotation in (90, 270) else (width, height)
+
+
+def displayed_tables(tables, *, rotation):
+    """Tables read in the upright frame with every rectangle mapped back to displayed page space.
+
+    Exact in integer millipoints (a quarter turn maps integers to integers), so
+    stored geometry keeps the single coordinate space every consumer assumes.
+    """
+    from dataclasses import replace
+    from services.financial.locators import Locator
+
+    def back(locator):
+        payload = locator.to_json()
+        if 'rect' not in payload:
+            return locator
+        x0, y0, x1, y1 = payload['rect']
+        width, height = payload['page_size']  # upright frame
+        if rotation == 90:  # displayed (x, y) = (upright y, upright width - upright x)
+            rect, size = [y0, width - x1, y1, width - x0], [height, width]
+        elif rotation == 180:
+            rect, size = [width - x1, height - y1, width - x0, height - y0], [width, height]
+        else:  # 270: displayed (x, y) = (upright height - upright y, upright x)
+            rect, size = [height - y1, x0, height - y0, x1], [height, width]
+        return Locator.from_json(dict(payload, rect=rect, page_size=size))
+
+    if rotation not in (90, 180, 270):
+        raise ValueError('Unsupported reading orientation')
+    result = []
+    for table in tables:
+        geometry = table.geometry
+        if geometry is not None:
+            geometry = replace(geometry, locator=back(geometry.locator),
+                               cells=tuple(replace(cell, locator=back(cell.locator)) for cell in geometry.cells))
+        result.append(replace(table, geometry=geometry))
+    return tuple(result)
+
+
 def chunks_of(tables: Sequence[ExtractedTable]) -> list[str]:
     """The text chunks, in order -- what the pipeline's ``tables`` list holds."""
     return [table.chunk for table in tables]

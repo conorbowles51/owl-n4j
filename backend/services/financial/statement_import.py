@@ -230,9 +230,18 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
             needs_attention=0, revision=document['revision'], applied=False, document_review=document,
             statement_choices=choices, statement_id=selected['id'], page_numbers=document['page_numbers'])
     sources = all_sources
+    identity_memory = {}
     if selected:
         detected_currency = selected.get('currency', '')
         saved_currency = ((file.metadata_ or {}).get('financial_review_progress', {}).get(statement_id or '', {}).get('request') or {}).get('currency')
+        if selected.get('layout_id') == 'generic':
+            # Layout memory: identity facts a person confirmed for this printed layout and account
+            # fill only what the page did not establish (services.financial.layout_memory).
+            from services.financial.layout_memory import remembered, provenance
+            identity_memory = {field: provenance(entry) for field, entry
+                               in remembered(session, case_id, selected, cache).items()}
+            if 'currency' in identity_memory and not detected_currency:
+                detected_currency = identity_memory['currency']['value']
         chosen_currency = currency or saved_currency or detected_currency
         addresses = {(item['page_number'], item['table_index']) for item in selected['sources']}
         sources = [source for source in all_sources if (source['page_number'], source['table_index']) in addresses]
@@ -551,6 +560,19 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
     from services.financial.statement_progress import review_progress
     from services.financial.closing_only_period import closing_only_period_dates
     revision = _digest(snapshot)
+    if identity_memory:
+        # Outside the revision, like derived period dates: a confirmation or its withdrawal never
+        # invalidates saved corrections; the remembered value only fills an empty field.
+        metadata = dict(metadata)
+        for field in ('holder', 'institution'):
+            if field in identity_memory and not metadata.get(field):
+                metadata[field] = identity_memory[field]['value']
+            else:
+                identity_memory.pop(field, None)
+        if 'currency' in identity_memory and chosen_currency != identity_memory['currency']['value']:
+            identity_memory.pop('currency')
+        if metadata.get('holder'):
+            issues = [issue for issue in issues if 'account holder' not in issue]
     recovery, previous_review = recovery_state(session, file, sources=all_sources, choices=choices,
         statement_id=statement_id, revision=revision, cache=cache)
     result = dict(case_id=str(case_id), evidence_file_id=str(evidence_file_id), filename=file.original_filename,
@@ -587,6 +609,8 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
                 transaction_count=0 if reading_failure else sum(not row['excluded'] for row in rows),
                 needs_attention=sum(bool(row['issues']) for row in rows) + len(issues),
                 revision=revision, current_import=current_import, applied=False)
+    if identity_memory:
+        result['identity_memory'] = identity_memory
     from services.financial.review_upgrade import attach_upgrade
     attach_upgrade(result, snapshot)
     if _apply_assignments:

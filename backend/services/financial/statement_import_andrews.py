@@ -499,11 +499,19 @@ def _ordinary_additional_date(printed, primary):
 
 
 def andrews_source_regions(sources, statement):
-    """Physical account sections remain comparable when OCR renumbers rows."""
+    """Physical account sections remain comparable when OCR renumbers rows.
+
+    A region is the section's vertical extent on its page. On a page whose text
+    reads turned (``reading_rotation``) it is measured in the frame the page
+    reads upright in: in displayed space every printed row of a sideways page
+    spans the page's whole height, so any two sections would appear to overlap.
+    """
+    from services.financial.statement_engine import _rect
     lookup = {(s['page_number'], s['table_index']): s for s in sources}
     result = []
     for scope in statement['sources']:
         source = lookup[(scope['page_number'], scope['table_index'])]
+        rotation = source.get('reading_rotation') or 0
         cells = [c for r in source['rows'] if r['row_index'] in scope['row_indices'] for c in r['cells']]
         if not cells or any(_box(c) is None for c in cells):
             return None
@@ -511,9 +519,15 @@ def andrews_source_regions(sources, statement):
         if any((c['locator'].get('page_size'), c['locator'].get('space')) !=
                (locator.get('page_size'), locator.get('space')) for c in cells):
             return None
+        boxes = [_rect(c, rotation)[0] for c in cells] if rotation else [_box(c) for c in cells]
+        if any(box is None for box in boxes):
+            return None
+        page_size = list(locator['page_size'])
+        if rotation in (90, 270):
+            page_size = page_size[::-1]
         result.append(dict(page_number=scope['page_number'], table_index=scope['table_index'],
-            page_size=locator['page_size'], space=locator['space'],
-            top=min(_box(c)[1] for c in cells), bottom=max(_box(c)[3] for c in cells)))
+            page_size=page_size, space=locator['space'] + (f'_upright_{rotation}' if rotation else ''),
+            top=min(box[1] for box in boxes), bottom=max(box[3] for box in boxes)))
     return result
 
 
