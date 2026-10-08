@@ -6,10 +6,14 @@ export function EvidencePdfPage({
   evidenceId,
   page,
   onPageCount,
+  inline = false,
+  documentZoom = 100,
 }: {
   evidenceId: string
   page: number
   onPageCount: (fileId: string, count: number) => void
+  inline?: boolean
+  documentZoom?: number
 }) {
   const [retry, setRetry] = useState(0)
   const [zoom, setZoom] = useState(100)
@@ -80,33 +84,35 @@ export function EvidencePdfPage({
   }, [evidenceId, page, token, key, onPageCount])
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <div className="flex shrink-0 items-center gap-2 border-b px-4 py-2">
-        <Button
-          variant="outline"
-          size="sm"
-          aria-label="Zoom out PDF page"
-          disabled={zoom <= 50}
-          onClick={() => setZoom((v) => Math.max(50, v - 25))}
-        >
-          −
-        </Button>
-        <span className="text-sm">{zoom}%</span>
-        <Button
-          variant="outline"
-          size="sm"
-          aria-label="Zoom in PDF page"
-          disabled={zoom >= 250}
-          onClick={() => setZoom((v) => Math.min(250, v + 25))}
-        >
-          +
-        </Button>
-        <Button variant="outline" size="sm" onClick={() => setZoom(100)}>
-          Fit page width
-        </Button>
-      </div>
+    <div className={inline ? "" : "flex h-full min-h-0 flex-col"}>
+      {!inline && (
+        <div className="flex shrink-0 items-center gap-2 border-b px-4 py-2">
+          <Button
+            variant="outline"
+            size="sm"
+            aria-label="Zoom out PDF page"
+            disabled={zoom <= 50}
+            onClick={() => setZoom((v) => Math.max(50, v - 25))}
+          >
+            −
+          </Button>
+          <span className="text-sm">{zoom}%</span>
+          <Button
+            variant="outline"
+            size="sm"
+            aria-label="Zoom in PDF page"
+            disabled={zoom >= 250}
+            onClick={() => setZoom((v) => Math.min(250, v + 25))}
+          >
+            +
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setZoom(100)}>
+            Fit page width
+          </Button>
+        </div>
+      )}
       <div
-        className="min-h-0 flex-1 overflow-auto p-4"
+        className={inline ? "p-4" : "min-h-0 flex-1 overflow-auto p-4"}
         aria-label="PDF page area"
       >
         {!current && <p role="status">Loading page {page}...</p>}
@@ -119,7 +125,7 @@ export function EvidencePdfPage({
         {current?.url && (
           <img
             className="block max-w-none bg-white"
-            style={{ width: `${zoom}%` }}
+            style={{ width: `${inline ? documentZoom : zoom}%` }}
             src={current.url}
             alt={`Page ${page} of the original PDF`}
             onError={() =>

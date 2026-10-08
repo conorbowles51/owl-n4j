@@ -39,7 +39,7 @@ suite already reports one collection error.  The endpoint's syntax tree is
 readable without importing it, so the four properties that would be silent if
 wrong are pinned that way.  Weaker than an executed assertion, and stronger
 than the nothing that is otherwise available: the permission tuple, the batch
-cap, the resolver it hands to the service and the re-raise its neighbour omits
+selection handling, the resolver it hands to the service and the re-raise its neighbour omits
 would each be wrong in a way no other test in this repository would notice.
 
 The fixtures are imported from the parser suites rather than restated, for the
@@ -729,17 +729,8 @@ class EndpointTests(unittest.TestCase):
         self.assertIn("required_permission=('case', 'view')", source)
         self.assertIn("check_case_access", source)
 
-    def test_the_batch_is_capped(self):
-        """Fifty ids is fifty file reads, and the cap is the one the process
-        call already enforces so that a check cannot be asked about a batch
-        that could not be processed anyway.
-
-        Asserted as a comparison rather than as the presence of the name.  The
-        name appears twice in this endpoint -- once in the guard and once in
-        the message that quotes it -- so a substring test stays green while the
-        guard itself compares against something else entirely, which is exactly
-        the mutation that found this.
-        """
+    def test_route_check_has_no_file_count_cap(self):
+        """Preflight accepts the same large selections as processing."""
         compared_against = [
             comparator.id
             for node in ast.walk(endpoint_tree())
@@ -750,7 +741,7 @@ class EndpointTests(unittest.TestCase):
             for comparator in node.comparators
             if isinstance(comparator, ast.Name)
         ]
-        self.assertEqual(compared_against, ["MAX_BATCH_SIZE"])
+        self.assertEqual(compared_against, [])
 
     def test_the_router_hands_over_its_own_path_resolver(self):
         """The service has no default for this, and this is why.

@@ -1408,8 +1408,8 @@ async def check_evidence_financial_route(
     caller can already see, not from the caller, which is a stronger guarantee
     than checking a string for "..".
 
-    ``POST`` rather than ``GET`` despite reading nothing: the batch limit is
-    fifty ids, and fifty UUIDs do not belong in a query string.
+    ``POST`` rather than ``GET`` because selections may contain many file IDs,
+    which do not belong in a query string.
     """
     try:
         from services.case_service import check_case_access, CaseNotFound, CaseAccessDenied
@@ -1431,15 +1431,6 @@ async def check_evidence_financial_route(
 
         if not request.file_ids:
             raise HTTPException(status_code=400, detail="No file_ids provided")
-
-        if len(request.file_ids) > MAX_BATCH_SIZE:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    f"Too many files ({len(request.file_ids)}). Maximum {MAX_BATCH_SIZE} "
-                    "files per request. Please batch your requests."
-                ),
-            )
 
         # An id that is not a UUID is a fault in the caller, not a fact about a
         # file, so it is rejected rather than given a per-file outcome.  Giving

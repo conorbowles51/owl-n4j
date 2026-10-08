@@ -7,7 +7,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
-import { EvidencePdfPage } from "./evidence-pdf-page"
+import { EvidencePdfDocument } from "./evidence-pdf-document"
 import {
   ChevronLeft,
   ChevronRight,
@@ -257,7 +257,7 @@ export function DocumentViewer({
         )
 
       case "pdf":
-        if (evidenceId) return open ? <EvidencePdfPage key={evidenceId} evidenceId={evidenceId} page={currentPage} onPageCount={onPageCount} /> : null
+        if (evidenceId) return open ? <EvidencePdfDocument key={evidenceId} evidenceId={evidenceId} page={currentPage} onPageCount={onPageCount} onVisiblePageChange={setCurrentPage} /> : null
         return (
           <iframe
             ref={iframeRef}
@@ -358,7 +358,7 @@ export function DocumentViewer({
             </Button>
           </div>
         )}
-        <div className="flex-1 relative overflow-hidden">
+        <div className="min-h-0 flex-1 relative overflow-hidden">
           {loading && !usesPageImages && (
             <div className="absolute inset-0 z-10 flex items-center justify-center bg-background">
               <div className="flex flex-col items-center gap-3">
