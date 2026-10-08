@@ -13,27 +13,29 @@ sets it itself only when it is genuinely blocked on Neil; see "Halt rules".)
 
 ## ▶ NEXT
 
-**(2026-10-07 02:50) REAL-DOCUMENT wave 2 integrated into fin/release-1 (t-visual-v07 eddfefbd, r2-admitted-duplicates
-80645846, r2-any-layout 080664d2; NOT pushed). The real-document driver owns the next waves; running state, counts and
-history in /mnt/owl-data/fin-wt/headless/real/STATE.md (counts only).**
-Real headline (verified truth, bench /mnt/owl-data/fin-real/bench/wave2, exit 0): on wave 1's 485 documents **821/1,035
-ready without edits (79.3%; wave 1 800)**; on all 525 documents with truth **821/1,089 (75.4%)**, recoverable 818/1,082;
-the 54 periods newly verified on 40 previously unrecognised documents are 0/54 ready. **0 wrong admissions**, 0
-critical-field errors (11,514 rows), must-hold 4/4, exact copies held 145/145, 0 previously ready periods lost.
-The general statement engine is ON by default (engine primary, family readers kept as the fallback library): it serves
-21 Santander periods no family reader claims, each equal to truth; blind leave-families-out figure (r2, engine alone)
-development 375/634, held-out 0/401, 0 wrong (held for holder/institution/currency, money proved).
-Census (all 6 cases, wave-2 code): 1,038/2,343 scorable periods ready (44.3%; wave 1 1,017/1,896: the engine now lists
-391 periods on documents that yielded nothing before, 21 ready). Live (read-only audit): unchanged, 5 admitted periods
-disagree with truth, 102 printed periods admitted twice in case 49494305 (set-aside command built, dry run 102/929/0
-held, `--apply` not run). Truth coverage 541/729 statement documents final; compare files 525/724. Actions per 100
-statements 958 / 928 grouped (on wave 1's 485: 581 / 560, was 1,023 / 984). Synthetic 105/125, 0 wrong.
-**Wave 3 (headless/real/wave3.units, prompts headless/real/units/):** `r3-any-layout` (continues r2: layout memory =
-one confirmation per layout + account + missing fact, identity facts read generically, 9 currency-only holds and 16
-not-detected Monex sideways periods, Santander/Kapital/Intercam coverage, generic-only figure per family),
-`r3-andrews` (167 recoverable held Andrews periods, 63% of all recoverable held), `t-visual-v13` (first truth for
-merrick-card and credit-one-card, plus Citi/Monex residue). Acceptance for every unit: 0 wrong admissions real and
-synthetic, synthetic ≥ 105/125, no ready period lost.
+**(2026-10-08 13:55) REAL-DOCUMENT wave 3 integrated into fin/release-1 (t-visual-v13 4d9cfdff, r3-andrews 0a20fe1f,
+r3-any-layout d07ed24c; NOT pushed). The real-document driver owns the next waves; running state, counts and history
+in /mnt/owl-data/fin-wt/headless/real/STATE.md (counts only).**
+Real headline (verified truth, bench /mnt/owl-data/fin-real/bench/wave3, full fresh engine read, exit 0): **977/1,191
+ready without edits (82.0%)**, recoverable 977/1,187; on wave 2's 525 documents 959/1,092 (was 821/1,089); on wave 1's
+485 documents 943/1,038. **0 wrong admissions**, 0 critical-field errors (13,464 rows), must-hold 4/4, exact copies
+held 148/148, 0 previously ready periods lost, 156 gained. Andrews 99 -> 199/270; Monex 187/191 (16 sideways periods
+engine-served); Intercam 30/38, Kapital 12/18; first truth for credit-one-card (18/53 ready) and merrick-card (0/42).
+Engine-served 40, library-served 937. Generic-only (r3, engine alone) 620/1,092, 0 wrong.
+Census (all 6 cases, wave-3 backend on the earlier reading cache): 1,100/2,386 scorable periods ready (46.1%; wave 2
+1,038/2,343); 344 periods are held only for currency. Live (read-only audit): 6 admitted periods disagree with truth
+(the 5 known + one Merrick period; current code reads 2 equal, holds 1, sets 3 aside as copies), 102 printed periods
+admitted twice in case 49494305 (`--apply` not run). Truth coverage 547/729 statement documents final, compare files
+529/724; the truth inventory (4 Oct) misses 107 originals now in live batches. Actions per 100 statements 920 / 897
+grouped (on wave 1's 485: 385 / 378, was 581 / 560). Synthetic 105/125, 0 wrong. Suites: financial 5,922 (2 known
+failures + 1 load timeout that passes alone), tsc 0, vitest unit 2,060/2,060.
+**Wave 4 (headless/real/wave4.units, prompts headless/real/units/):** `r4-any-layout` (continues r3: currency read
+generally, Santander/BBVA/Intercam/Kapital/Monex residue, printed holder legal form, vector-outline documents,
+generic-only figure on final code), `r4-cards` (credit-one 18/53 and merrick 0/42: card summary reading, general form
+preferred; harness copy pairing), `t-visual-v08` (inventory delta first, 40 unknown-issuer documents, Monex holder
+truth defects on 46 periods). Acceptance for every unit: 0 wrong admissions real and synthetic, synthetic >= 105/125,
+no ready period lost. New Neil decision (nothing waits on it): Andrews payment with a misread verb takes its direction
+from the printed sign when both printed balances agree (about 5 periods; recommend yes).
 **Everything below in this section is the synthetic track (wave 5 state), parked behind the real waves.**
 Release-1 now (corpus v4, 124 distinct periods, bench-runs/release-1-w5, exit 0): **102/124 ready without edits (82.3%)**,
 102/107 recoverable (95.3%), 0 wrong admissions, 0 critical-field errors (347 saved), 0 valid-looking wrong values
@@ -58,7 +60,8 @@ Correctly held and not in a unit: 10 must-hold (omitted rows, missing pages, dep
 (holder/account not printed, no activity, quiet section across pages).
 
 **Open Neil decisions (nothing above waits on them; all have a recorded default):**
-- **Deploy real waves 1 and 2 (engine + backend + frontend together, reading revision v14).** Brings the Monex/Citi
+- **Deploy real waves 1-3 (engine + backend + frontend together, reading revision v15).** Wave 3 adds the Andrews
+  scan reading (99 -> 199 of 270 verified periods), sideways pages, layout memory. Brings the Monex/Citi
   readers, the duplicate set-aside for re-produced statements, the invisible-OCR safety rule, the general statement
   engine ON by default (documents that showed "no statement found" list held periods with a named reason; reverse
   `LOUPE_FINANCIAL_GENERIC_READER=0`) and the keep-duplicate-copy review.
@@ -68,8 +71,9 @@ Correctly held and not in a unit: 10 must-hold (omitted rows, missing pages, dep
   periods, so the built rule is: investigator work, then evidence received first, then file-name (Bates) order, then
   first page, then first saved; it keeps d568d90faff56 and d22e405327ccf for 102/102. Recommend accepting it and running
   `--apply` from an interactive session after deploy.
-- **5 live periods disagree with verified truth** (3 printed statements; opaque ids in headless/real/STATE.md). Wave-1
-  code reads all of them correctly; recommend re-reading them after deploy. Not touched (no live writes).
+- **6 live periods disagree with verified truth** (opaque ids in headless/real/STATE.md; the 6th is a Merrick period
+  found by t-visual-v13). Current code reads 2 equal to truth, holds 1, sets 3 aside as copies; recommend re-reading
+  them after deploy. Not touched (no live writes).
 - **Deploy needed for the route-check fix (41a306a8).** The pushed release has merge 97878ff8, in which Conor's batch-cap
   removal deleted `MAX_BATCH_SIZE` that our `/route-check` still uses: every non-empty route-check request returns 500
   (the evidence list cannot label bank files before processing). Fixed on fin/release-1 only; live until the next push.
@@ -600,3 +604,28 @@ brief (briefs = Queue entries above + the 2026-10-02 log lines). Automation is t
 - Suites (live .venv, CHROMADB_PORT=1 CHROMA_PORT=1): financial **Ran 5866, failures=2** (known unassigned_statement),
   skipped 20; tsc -b 0; vitest unit 296 files 2058/2058. Logs bench-runs/real-wave2-{suite,tsc,vitest}.log.
 - Wave 3 planned: r3-any-layout, r3-andrews, t-visual-v13. STATUS-FOR-NEIL.md rewritten.
+
+### 2026-10-08 13:55 — REAL-DOCUMENT wave 3 merged into fin/release-1 (headless integrate-3)
+- Merged, none refused (all three notes say complete, 0 wrong admissions on real and synthetic; added lines and
+  commit messages scanned for every holder, account, inventory file name and large amount in the private truth: only
+  generic bank legal-form words and a synthetic fixture; r3-andrews and r3-any-layout had rewritten their own
+  histories to remove real values before notes; WIP-NOTES.md dropped; notes archived
+  /mnt/owl-data/fin-wt/notes/{t-visual-v13,r3-andrews,r3-any-layout}.md): `fin/t-visual-v13` (4d9cfdff),
+  `fin/r3-andrews` (0a20fe1f), `fin/r3-any-layout` (d07ed24c). No conflicts; statement_import_andrews.py and
+  pdf_extraction.py auto-merged (disjoint hunks); 14 backend modules 299 OK and 3 engine modules 111 passed first.
+- **Real benchmark, full fresh read** (bench/wave3, REAL_EXIT=0; read 2 h 52 min, import about 13 h): **977/1,191
+  ready w/o edits**, recoverable 977/1,187, 0 wrong, 0 critical (13,464 rows), holds 4/4, copies 148/148, 0 lost
+  against wave 2; 67 valid-looking wrong values, none in a ready period. Compare files 529/724 (1,047 of 1,393
+  without disagreement).
+- Census rerun on all 6 cases (earlier reading cache; census-wave3): 1,100/2,386 (46.1%). It found 107 originals in
+  live batches that the truth inventory (4 Oct) does not list, one of them a 345-page production with 287 engine
+  periods.
+- Live ledger audit (read-only, audit-wave3): 6 disagree (5 known + d5a3ad9b75a08#5), 102 printed periods admitted
+  twice.
+- Synthetic (bench-runs/real-wave3, BENCH_EXIT=0): 105/125, 105/108, 0 wrong.
+- Suites (live .venv, CHROMADB_PORT=1 CHROMA_PORT=1): financial **Ran 5,922, failures=2** (known
+  unassigned_statement), errors=1 (test_financial_extraction_release subprocess timeout under load; alone 4/4 OK),
+  skipped 20; tsc -b 0; vitest unit 297 files 2,060/2,060. Logs bench-runs/real-wave3-{suite,tsc,vitest}.log.
+- Found, not fixed (planned): 46 Monex periods whose truth holder is not a holder (truth defect); BBVA holder drops
+  the printed legal form on 30 periods; one Capital One copy-pairing scoring artefact.
+- Wave 4 planned: r4-any-layout, r4-cards, t-visual-v08. STATUS-FOR-NEIL.md rewritten.
