@@ -148,6 +148,48 @@ class MonexTruthTests(unittest.TestCase):
         (none,) = rt.parse_monex([notice, page(3, self.LINES), bank])  # no cover: page 1 only, as before
         self.assertIsNone(none.holder)
 
+    @staticmethod
+    def placed(number, rows):
+        """A page from (top, [(x0, text), ...]) rows: words where the layout prints them."""
+        built = [rt.Line(top, [word(text, x0, top) for x0, text in words]) for top, words in rows]
+        return rt.Page(number, 792.0, built, '\n'.join(l.text for l in built))
+
+    def test_the_holder_skips_a_notice_line_printed_beside_the_address(self):
+        cover = self.placed(1, [
+            (277.0, [(84, 'incrementan'), (160, 'a'), (170, 'HR')]),
+            (289.0, [(486, 'ACME'), (510, 'SERV'), (535, 'SA'), (548, 'DE'), (560, 'CV')]),
+            (291.0, [(84, 'corto'), (116, 'plazo')]),
+            (300.0, [(486, 'CALLE'), (512, 'UNO'), (530, '14-BODEGA'), (575, 'COLONIA')]),
+            (310.0, [(486, 'CIUDAD'), (514, 'DE'), (524, 'MEXICO')]),
+            (322.0, [(486, 'C.P.'), (588, '02970')]),
+            (402.0, [(486, 'TIPO'), (503, 'DE'), (514, 'CONTRATO:'), (588, 'SERVICIOS')])])
+        (found,) = rt.parse_monex([cover, page(2, self.LINES)])
+        self.assertEqual(found.holder, 'ACME SERV SA DE CV')
+
+    def test_the_holder_is_never_the_banks_own_footer_address(self):
+        cover = self.placed(1, [
+            (128.7, [(10, 'ACME'), (34, 'TEXTILES'), (70, 'Y'), (80, 'COMERCIO'), (130, 'S.A.'), (160, 'DE'),
+                     (186, 'C.V.'), (396, 'CLIENTE'), (432, 'No.'), (461, '1234567')]),
+            (140.7, [(12, 'CARRETERA'), (63, 'FEDERAL'), (396, 'CONTRATO:'), (456, '7654321')]),
+            (152.7, [(12, 'CIUDAD'), (46, 'DE'), (61, 'MEXICO'), (396, 'CTA.'), (418, 'CLABE:')]),
+            (164.7, [(396, 'CTA.'), (418, 'SPID:')]),
+            (170.7, [(17, 'C.P.:'), (38, '11560'), (101, 'C.R.:'), (131, '0'), (190, 'FOLIO:')]),
+            (201.0, [(14, 'TIPO'), (33, 'DE'), (46, 'CONTRATO:'), (88, 'SERVICIOS')]),
+            (717.8, [(174, 'Banco'), (197, 'Monex'), (225, 'S.A.'), (243, 'Institución'), (280, 'de'),
+                     (290, 'Banca'), (315, 'Multiple,')]),
+            (727.1, [(176, 'Monex'), (200, 'Grupo'), (223, 'Financiero')]),
+            (736.4, [(174, 'Av.'), (186, 'Paseo'), (209, 'de'), (219, 'la'), (227, 'Reforma')]),
+            (745.7, [(174, 'Ciudad'), (199, 'de'), (209, 'México'), (235, 'C.P.'), (251, '06600')])])
+        (found,) = rt.parse_monex([cover, page(2, self.LINES)])
+        # The whole printed name, though it runs past the address column's usual width.
+        self.assertEqual(found.holder, 'ACME TEXTILES Y COMERCIO S.A. DE C.V.')
+        bank_only = self.placed(1, [
+            (717.8, [(174, 'Banco'), (197, 'Monex'), (243, 'Institución'), (280, 'de'), (290, 'Banca')]),
+            (745.7, [(174, 'Ciudad'), (235, 'C.P.'), (251, '06600')]),
+            (760.0, [(14, 'TIPO'), (33, 'DE'), (46, 'CONTRATO:')])])
+        (none,) = rt.parse_monex([bank_only, page(2, self.LINES)])
+        self.assertIsNone(none.holder)
+
     def test_a_printed_fraction_of_a_yen_is_never_rounded(self):
         lines = [l.replace('5,000.00', '5,000.50') for l in self.LINES]
         (found,) = rt.parse_monex([page(1, lines)])

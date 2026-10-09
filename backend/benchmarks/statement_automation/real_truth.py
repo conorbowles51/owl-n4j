@@ -677,21 +677,50 @@ def _monex_currency(text):
     return None
 
 
+# The bank's own address (statement footer) also ends with a postcode line; it is never the holder.
+MONEX_OWN_ADDRESS = re.compile(r'BMI9704113PA|Banco\s+Monex|Instituci[oó]n\s+de\s+Banca', re.I)
+
+
+def _column_run(words, left):
+    """The words of a line printed in the column that starts near ``left``: from the first word that
+    starts there, as long as the words follow on with no wider gap than a few spaces (a name can run
+    past the column's usual width; the next column starts after a wide gap)."""
+    words = sorted(words, key=lambda w: w['x0'])
+    first = next((i for i, w in enumerate(words) if left - 15 <= w['x0'] < left + 160), None)
+    if first is None:
+        return []
+    run = [words[first]]
+    for word in words[first + 1:]:
+        if word['x0'] - run[-1]['x1'] > 24:
+            break
+        run.append(word)
+    return run
+
+
 def _monex_holder(page):
-    """First line of the address block that ends with the postcode line ('C.P.')."""
+    """First line of the address block that ends with the postcode line ('C.P.').
+
+    The block is the run of lines above the postcode in its column: a line of
+    another column printed between two of its lines (a notice beside the
+    address) is passed over, and the walk stops at the first gap taller than
+    a blank line. A block that is the bank's own address is not the holder's.
+    """
     for index, line in enumerate(page.lines):
         cp = next((w for w in line.words if w['text'].startswith('C.P')), None)
         if cp is None:
             continue
-        block = []
+        block, texts = [], [line.text]
         top = line.top
         for previous in reversed(page.lines[:index]):
-            words = [w for w in previous.words if abs(w['x0'] - cp['x0']) < 160 and w['x0'] >= cp['x0'] - 5]
-            if not words or top - previous.top > 16:
+            if top - previous.top > 20:
                 break
+            words = _column_run(previous.words, cp['x0'])
+            if not words:
+                continue
             block.insert(0, ' '.join(w['text'] for w in words))
+            texts.append(previous.text)
             top = previous.top
-        if block:
+        if block and not any(MONEX_OWN_ADDRESS.search(text) for text in texts):
             return block[0]
     return None
 
