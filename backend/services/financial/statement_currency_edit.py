@@ -136,18 +136,32 @@ def complete_currency_records(session, *, document, period, metadata, currency, 
             item.update(correction=fields, correction_currency=currency)
         row = DraftImportRow.model_validate(fields)
         item['missing_fields'] = incomplete_fields(row, request)
+        item.pop('hold_reason', None); item.pop('hold_blockers', None)
         if item['missing_fields'] or row.excluded:
             continue
-        drafts.append(transaction_draft(row, item['original'], session=session, case_id=period.case_id, account_id=period.account_id, period_id=period.id,
-            currency=currency, position=positions.get(row.id, len(raw['rows']) + len(drafts)), actor=actor, balance_sign=sign, period_end=request.period_end))
-        pending.append((item, row))
-    from services.financial.saved_statement_admission import assess_saved_additions
-    admission = assess_saved_additions(session, document, period, metadata, currency) if drafts else None
+        # Drafting validates every completed row (for example its counterparty
+        # link) whether or not it is admitted in this pass.
+        draft = transaction_draft(row, item['original'], session=session, case_id=period.case_id, account_id=period.account_id, period_id=period.id,
+            currency=currency, position=positions.get(row.id, len(raw['rows']) + len(pending)), actor=actor, balance_sign=sign, period_end=request.period_end)
+        pending.append((item, row, draft))
+    # Each completed record enters Transactions once the statement is proven
+    # to reconcile with it (see held_record_admission); the rest stay held
+    # with their specific reason.
+    from services.financial.held_record_admission import plan
+    admit, held, admission, held_checks = plan(session, document, period, metadata, currency,
+        {item['id']: (item.get('correction') or item['fields']) for item, _, _ in pending}) if pending else (set(), {}, None, {})
+    for item, _, _ in pending:
+        if item['id'] in held:
+            item['hold_reason'] = held[item['id']]
+            if held_checks.get(item['id']):
+                item['hold_blockers'] = held_checks[item['id']]
+    drafts = [draft for item, _, draft in pending if item['id'] in admit]
+    pending = [(item, row) for item, row, _ in pending if item['id'] in admit]
     if admission:
         metadata['statement_import_issues'] = admission['blockers'] + [
             issue for issue in metadata.get('statement_import_issues', []) if issue.get('kind') == 'coverage']
         metadata['statement_admission'] = admission
-        if not admission['can_import']:
+        if not admission['can_import'] or not drafts:
             return admission
     transactions = record_transactions(session, review_run(document), document, drafts, retain_prior_versions=True) if drafts else []
     for (item, row), transaction in zip(pending, transactions, strict=True):

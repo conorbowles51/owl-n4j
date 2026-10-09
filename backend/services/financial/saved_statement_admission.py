@@ -7,7 +7,14 @@ from services.financial.statement_import import StatementImportRequest
 from services.financial.statement_admission import assess_admission, explain_blockers, POLICY
 
 
-def assess_saved_additions(session, document, period, metadata, currency, *, no_activity_confirmed=False, transactions=None):
+def assess_saved_additions(session, document, period, metadata, currency, *, no_activity_confirmed=False, transactions=None, include=None):
+    """Assess the statement with its retained records.
+
+    ``include`` (a set of retained-record ids) tests a candidate set: retained
+    printed rows outside it keep their original reading and investigator
+    additions outside it are left out. ``None`` includes every record not
+    held with a reason.
+    """
     proposal = deepcopy(metadata['statement_import_original'])
     raw = {**deepcopy(metadata['statement_import_request']), **saved_details(document), 'currency':currency}
     from services.financial.currency_correction import rescale_minor
@@ -18,12 +25,16 @@ def assess_saved_additions(session, document, period, metadata, currency, *, no_
                 value = row.get(key)
                 if value is None or (isinstance(value, str) and value.lstrip('-').isdigit()):
                     row[key] = rescale_minor(value, original_currency, currency)
-    corrections = {r['id']:r.get('correction') or r['fields'] for r in metadata.get('statement_incomplete_records', [])}
+    # Already admitted records are part of the statement in every candidate.
+    # Records held with a reason (held_record_admission) are outside totals.
+    tested = lambda r: bool(r.get('resolved_transaction_id')) or (
+        not r.get('hold_reason') if include is None else r['id'] in include)
+    corrections = {r['id']:(r.get('correction') if tested(r) else None) or r['fields'] for r in metadata.get('statement_incomplete_records', [])}
     # Investigator additions are retained alongside the sealed reading, not
     # written into the original extraction or its original import request.
     ids = {r['id'] for r in raw['rows']}
     for item in metadata.get('statement_incomplete_records', []):
-        if item['id'] not in ids and item['original'].get('kind') == 'manual_entry':
+        if item['id'] not in ids and item['original'].get('kind') == 'manual_entry' and tested(item):
             raw['rows'].append(deepcopy(item.get('correction') or item['fields']))
     rows = list(transactions) if transactions is not None else list(session.scalars(select(FinancialTransaction).where(FinancialTransaction.case_id == document.case_id,
         FinancialTransaction.source_document_id == document.id, FinancialTransaction.superseded_by_id.is_(None))))

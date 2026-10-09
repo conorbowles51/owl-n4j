@@ -149,3 +149,86 @@ Changes:
   row would then reconcile. No data was changed.
 - Not touched: the reader date rule for late-posted charges, and the double-counting of the two Bates copies
   (that is the duplicate set-aside script's job).
+
+## Follow-up (Neil's decision on open question 2): completed rows enter Transactions on their own proof
+
+Rule (`backend/services/financial/held_record_admission.py`, one module; `INDIVIDUAL_ADMISSION = False`
+restores the old all-together rule):
+- Ready = unresolved retained records with every value present.
+- Corrected printed rows are the statement's own lines and form the base, tested together.
+- Each investigator addition is first checked for a likely repeat. A repeat has the same amount and
+  direction as a row in one of these places:
+  - an admitted saved row of this statement,
+  - a corrected printed row,
+  - an earlier addition.
+
+  It must also have the same date, or the same description within 3 days. A likely repeat is held:
+  "Looks like a repeat of an existing row (…)".
+- Each remaining addition is assessed alone on top of the base, using the ordinary
+  `assess_saved_additions` / `assess_admission` reconciliation. That function gained an `include=` candidate
+  set: printed rows outside the set keep their original reading, and additions outside it are left out.
+- Admission:
+  - If the base reconciles, the base is admitted together with the additions that pass alone, as long as
+    they also reconcile together. If they don't, those additions are held as ambiguous.
+  - If the base fails and exactly one addition fixes it, the base and that addition are admitted.
+  - If several additions could fix it, everything is held as ambiguous.
+  - Otherwise the base is held ("doesn't add up with the corrected printed rows").
+- Additions that fail alone are held:
+  - "The statement doesn't add up with this row", or
+  - "only adds up together with another added row" when they reconcile only as a group (fail closed).
+- Held records carry `hold_reason` and `hold_blockers` in `statement_incomplete_records`.
+  - The default assessment (`include=None`) leaves records with a hold reason out of totals, so a statement
+    reconciles with its admitted rows while held rows remain visible.
+  - Every completed row is still drafted, so a bad counterparty link fails the save as before.
+- Applied on every save path that calls `complete_currency_records`: complete-record, manual-payment, and
+  statement details / currency.
+- Reading the records list (`GET /incomplete-records`) runs the same rule as a dry run (no writes). It
+  returns `hold_reason` and `can_enter_now`.
+- New `POST /sources/{id}/admit-ready-records` runs the rule for real, with the same locks and ingestion run
+  as complete-record.
+- UI (`ImportedRecordsPanel`):
+  - each held record shows its specific reason;
+  - records that check out are labelled as such;
+  - an "Add N records that check out to Transactions" button calls the new endpoint.
+- Replayed save receipts include the record's hold reason as a blocker (`kind: held_record`).
+
+How the live held rows are picked up after deploy (no migration; nothing rewritten):
+- When the investigator opens the records list for case 49494305, copy file 5c4cf2dd, the read-time dry run
+  marks the corrected original row 7:0:17 as "checks out" and shows the "Add 1 record that checks out to
+  Transactions" button.
+- Clicking it, or any later save on that statement, runs the rule and admits that row.
+- The two manual rows remain held with their reasons. No automatic background admission is done.
+
+Read-only dry run against live data (this branch's code, `SET TRANSACTION READ ONLY`, case 49494305):
+- 5c4cf2dd, row 7:0:17 (corrected original): **would enter**. The statement with it is `reconciled`, with
+  difference 0 and no blockers. Under the old all-together rule it was held, with a closing-balance
+  difference equal to the net of the two manual rows.
+- 5c4cf2dd, manual re-entered charge: **held**, "Looks like a repeat of an existing row (corrected …)",
+  matching the corrected 7:0:17.
+- 5c4cf2dd, manual payment credit: **held**, "Looks like a repeat of an existing row (saved …)". A saved,
+  admitted payment with the same date and amount already exists. So the "missed" payment was not missed,
+  which also explains the failed reconciliation.
+- d32d2711, row 7:0:17: unchanged. It still needs its date (missing value, not a held completed row).
+
+Tests:
+- Backend, `test_financial_statement_admission.py`:
+  - The old by-design test was replaced: offsetting additions that only reconcile together stay held.
+  - New: an addition matching a saved row is held as a likely repeat.
+  - New: a lone valid correction enters while a bad addition stays held.
+  - New: records held under the old rule are reported by the dry run and admitted by admit-ready-records.
+  - Another offsetting-pair test (unread-page addition) was updated to the new rule.
+- Backend, `test_financial_payment_counterparty_link.py`: the offsetting-pair tail was updated to the new
+  rule (both held, no link history).
+- Backend suites run: every test file using these paths, 824 tests in all. 812 pass. The 12 failures are
+  all in `test_financial_deployment_recovery.py` / `test_financial_recovery_followup.py`
+  (DetachedInstanceError), and the same 12 fail on the unmodified base.
+- Frontend: `ImportedRecordsPanel.test.tsx` gained a hold-reason and admit-button test. The
+  ImportedRecordsPanel, StatementFilesPanel and SavedManualRefresh tests pass, and `tsc --noEmit` is clean.
+
+Open:
+- The likely-repeat window (same amount and direction, plus the same date or the same description within 3
+  days) is a heuristic. A held repeat can only be resolved by changing or removing the addition.
+  - Withdrawing an addition from the list is still not built.
+  - There is no "I checked, this is a separate payment" override; that would be the next product decision.
+- The base of corrected printed rows is still tested as one block. One wrong printed correction holds back
+  the others in the same statement.

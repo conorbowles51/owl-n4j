@@ -80,7 +80,8 @@ def statement_file_status(session, *, case_id):
                 period_start=period.period_start.isoformat() if period and period.period_start else request_start or None,
                 period_end=period.period_end.isoformat() if period and period.period_end else request_end or None,
                 missing_count=len(open_records) - waiting, awaiting_reconciliation_count=waiting,
-                blockers=[issue.get('message') for issue in (blockers or []) if issue.get('message')][:3] if waiting else []))
+                blockers=list(dict.fromkeys([row['hold_reason'] for row in open_records if row.get('hold_reason')] +
+                    [issue.get('message') for issue in (blockers or []) if issue.get('message')]))[:3] if waiting else []))
     from postgres.models.workspace_entry import WorkspaceEntry, WorkspaceEntryLink
     from services.financial.payment_document_proposal import SCHEMA
     reviews = session.execute(select(WorkspaceEntryLink, WorkspaceEntry)

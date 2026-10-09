@@ -225,7 +225,7 @@ it("lists one file's completed records as waiting for reconciliation with what i
     )
   ).toBeVisible()
   expect(
-    screen.getByText(/Values complete · enters Transactions when the statement reconciles/)
+    screen.getByText(/Values complete · held outside totals/)
   ).toBeVisible()
   expect(
     screen.getByText(
@@ -234,5 +234,55 @@ it("lists one file's completed records as waiting for reconciliation with what i
   ).toBeVisible()
   expect(vi.mocked(fetchAPI).mock.calls[0][0]).toContain(
     "evidence_file_id=file&evidence_file_id=older-reading"
+  )
+})
+it("shows why a completed record is held and adds the ones that check out", async () => {
+  const held = {
+    ...record,
+    id: "manual:held",
+    missing_fields: [],
+    awaiting_reconciliation: true,
+    hold_reason: "Looks like a repeat of an existing row (saved Incoming payment).",
+    can_enter_now: false,
+    fields: { ...record.fields, id: "manual:held", amount_minor: "12500" },
+  }
+  const ready = {
+    ...record,
+    missing_fields: [],
+    awaiting_reconciliation: true,
+    can_enter_now: true,
+    fields: { ...record.fields, amount_minor: "12500" },
+  }
+  vi.mocked(fetchAPI).mockImplementation(async (url, options) =>
+    options?.method === "POST"
+      ? ({ admitted: 1, held: [] } as never)
+      : ({ records: [held, ready], total: 2 } as never)
+  )
+  render(
+    <QueryClientProvider
+      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+    >
+      <ImportedRecordsPanel caseId="case" params={{}} expanded onOpen={vi.fn()} />
+    </QueryClientProvider>
+  )
+  expect(
+    await screen.findByText(
+      "Looks like a repeat of an existing row (saved Incoming payment)."
+    )
+  ).toBeVisible()
+  expect(
+    screen.getByText(/checks out against the statement on its own/)
+  ).toBeVisible()
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: "Add 1 record that checks out to Transactions",
+    })
+  )
+  expect(
+    await screen.findByText("1 record added to Transactions.")
+  ).toBeVisible()
+  expect(fetchAPI).toHaveBeenCalledWith(
+    "/api/financial/statement-import/sources/source/admit-ready-records?case_id=case",
+    { method: "POST" }
   )
 })

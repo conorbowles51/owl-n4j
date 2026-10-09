@@ -28,6 +28,9 @@ const recordSchema = z.object({
   // Complete values held until the statement reconciles, with what blocks it.
   awaiting_reconciliation: z.boolean().default(false),
   statement_blockers: z.array(z.string()).default([]),
+  // Why a completed record is held, or that it already checks out on its own.
+  hold_reason: z.string().nullish(),
+  can_enter_now: z.boolean().default(false),
   version: z.number(),
   fields: z.object({
     id: z.string(),
@@ -181,6 +184,19 @@ export function ImportedRecordsPanel({
             including undated records. Payment search and category filters apply
             to the transaction table below.
           </p>
+          {!active && (
+            <AdmitReadyRecords
+              caseId={caseId}
+              sources={[
+                ...new Set(
+                  query.data.records
+                    .filter((r) => r.can_enter_now)
+                    .map((r) => r.source_document_id)
+                ),
+              ]}
+              count={query.data.records.filter((r) => r.can_enter_now).length}
+            />
+          )}
           {!active ? (
             <div className="divide-y">
               {query.data.records.map((r) => (
@@ -195,16 +211,22 @@ export function ImportedRecordsPanel({
                     </p>
                     <p className="text-xs text-muted-foreground">
                       {r.filename} · page {r.page_number ?? "unknown"} ·{" "}
-                      {r.awaiting_reconciliation
-                        ? "Values complete · enters Transactions when the statement reconciles"
-                        : `Check ${r.missing_fields.join(", ")}`}
+                      {!r.awaiting_reconciliation
+                        ? `Check ${r.missing_fields.join(", ")}`
+                        : r.can_enter_now
+                          ? "Values complete · checks out against the statement on its own"
+                          : "Values complete · held outside totals"}
                     </p>
-                    {r.awaiting_reconciliation &&
-                      r.statement_blockers.length > 0 && (
-                        <p className="text-xs">
-                          Still needed: {r.statement_blockers.join(" ")}
-                        </p>
-                      )}
+                    {r.awaiting_reconciliation && !r.can_enter_now &&
+                      (r.hold_reason ? (
+                        <p className="text-xs">{r.hold_reason}</p>
+                      ) : (
+                        r.statement_blockers.length > 0 && (
+                          <p className="text-xs">
+                            Still needed: {r.statement_blockers.join(" ")}
+                          </p>
+                        )
+                      ))}
                   </div>
                   <Button
                     size="sm"
@@ -253,6 +275,59 @@ export function ImportedRecordsPanel({
         </div>
       </details>
     </section>
+  )
+}
+
+function AdmitReadyRecords({
+  caseId,
+  sources,
+  count,
+}: {
+  caseId: string
+  sources: string[]
+  count: number
+}) {
+  const { canEdit } = useFinancialAccess()
+  const cache = useQueryClient()
+  const admit = useMutation({
+    mutationFn: async () => {
+      let admitted = 0
+      for (const source of sources)
+        admitted += z
+          .object({ admitted: z.number() })
+          .parse(
+            await fetchAPI(
+              `/api/financial/statement-import/sources/${source}/admit-ready-records?case_id=${caseId}`,
+              { method: "POST" }
+            )
+          ).admitted
+      return admitted
+    },
+    onSettled: () => void cache.invalidateQueries(),
+  })
+  if (!canEdit || (!count && !admit.isSuccess)) return null
+  return (
+    <div className="space-y-1 text-sm">
+      {count > 0 && (
+        <Button
+          variant="outline"
+          disabled={admit.isPending}
+          onClick={() => admit.mutate()}
+        >
+          {admit.isPending
+            ? "Adding records…"
+            : `Add ${count} ${count === 1 ? "record that checks" : "records that check"} out to Transactions`}
+        </Button>
+      )}
+      {admit.isSuccess && (
+        <p role="status">
+          {admit.data
+            ? `${admit.data} ${admit.data === 1 ? "record" : "records"} added to Transactions.`
+            : "No record could be added. Each held record shows why."}
+        </p>
+      )}
+      {admit.isError && <p role="alert">{admit.error.message}</p>}
+    </div>
   )
 }
 

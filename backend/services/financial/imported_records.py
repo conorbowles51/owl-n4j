@@ -46,6 +46,7 @@ def imported_records(session, *, case_id, account_id=None, start_date=None, end_
     records = []
     for source_id, file_id, account, items, currency, filename, blockers in session.execute(query):
         blockers = [issue.get('message') for issue in blockers or [] if isinstance(issue, dict) and issue.get('message')][:3]
+        admit, held = held_record_plan(session, source_id, items)
         for item in items or []:
             if item.get('resolved_transaction_id'):
                 continue
@@ -64,7 +65,11 @@ def imported_records(session, *, case_id, account_id=None, start_date=None, end_
                 # Complete values are held until the whole statement reconciles
                 # (corrections and manual additions enter Transactions together).
                 awaiting_reconciliation=not item['missing_fields'],
-                statement_blockers=blockers if not item['missing_fields'] else []))
+                statement_blockers=blockers if not item['missing_fields'] else [],
+                # The specific reason a completed record is held, and whether
+                # it already checks out and can enter Transactions now.
+                hold_reason=held.get(item['id']) or item.get('hold_reason'),
+                can_enter_now=item['id'] in admit))
     statements = {}
     for record in records:
         summary = statements.setdefault(record['evidence_file_id'], dict(
@@ -72,6 +77,68 @@ def imported_records(session, *, case_id, account_id=None, start_date=None, end_
         summary['count'] += 1
     return dict(records=records[offset:offset+limit], total=len(records), offset=offset,
         statements=sorted(statements.values(), key=lambda item: (item['filename'], item['evidence_file_id'])))
+
+
+def held_record_plan(session, source_id, items):
+    """Dry run of the held-record rule for one saved statement. Writes nothing.
+
+    Returns ``(admit_ids, held_reasons)`` for its completed, unresolved records.
+    """
+    if not any(not item.get('resolved_transaction_id') and item.get('missing_fields') == [] for item in items or []):
+        return set(), {}
+    from services.financial.held_record_admission import plan
+    from services.financial.statement_details import _load
+    try:
+        document, period, _account = _load(session, document_case(session, source_id), source_id)
+        if period is None:
+            return set(), {}
+        metadata = deepcopy(document.metadata_)
+        ready = {item['id']: item.get('correction') or item['fields'] for item in metadata.get('statement_incomplete_records', [])
+            if not item.get('resolved_transaction_id') and item.get('missing_fields') == []}
+        admit, held, admission, _checks = plan(session, document, period, metadata, period.currency, ready)
+    except (PdfMappingError, KeyError, TypeError, ValueError):  # ValidationError is a ValueError
+        return set(), {}
+    return (admit if admission and admission['can_import'] else set()), held
+
+
+def document_case(session, source_id):
+    return session.scalar(select(FinancialSourceDocument.case_id).where(FinancialSourceDocument.id == source_id))
+
+
+def admit_ready_records(*, session_factory, case_id, source_id, actor):
+    """Enter every completed record that now checks out on its own."""
+    from services.financial.runs import ingestion_run
+    from services.financial.reconcile import reconcile_period
+    with session_factory() as session:
+        exists = session.scalar(select(FinancialSourceDocument.id).where(FinancialSourceDocument.id == source_id,
+            FinancialSourceDocument.case_id == case_id, FinancialSourceDocument.status == 'admitted'))
+        if exists is None:
+            raise PdfMappingError('This imported statement is no longer available.', 404)
+    with ingestion_run(case_id=case_id, actor=SimpleNamespace(id=actor.user_id, email=actor.email),
+            session_factory=session_factory, config=dict(operation='admit_ready_records', source_document_id=str(source_id))) as run:
+        with session_factory() as session:
+            from postgres.models.case import Case
+            session.execute(select(Case.id).where(Case.id == case_id).with_for_update()).all()
+            from services.financial.statement_details import _load
+            document, period, _account = _load(session, case_id, source_id, lock=True)
+            if period is None:
+                raise PdfMappingError('Set this statement’s currency and period before adding its records.', 409)
+            metadata = deepcopy(document.metadata_)
+            pending_before = sum(not item.get('resolved_transaction_id') for item in metadata.get('statement_incomplete_records', []))
+            from services.financial.statement_currency_edit import complete_currency_records
+            admission = complete_currency_records(session, document=document, period=period,
+                metadata=metadata, currency=period.currency, actor=actor)
+            document.metadata_ = metadata
+            reconcile_period(session, period)
+            if admission and admission['can_import']:
+                from services.financial.account_history import record_admission_snapshot
+                record_admission_snapshot(session, document, period)
+            session.commit()
+            records = metadata.get('statement_incomplete_records', [])
+            admitted = pending_before - sum(not item.get('resolved_transaction_id') for item in records)
+            if admitted: run.transaction_admitted(admitted)
+            return dict(admitted=admitted, held=[dict(id=item['id'], reason=item['hold_reason'])
+                for item in records if not item.get('resolved_transaction_id') and item.get('hold_reason')])
 
 
 def transaction_draft(row, original, *, account_id, period_id, currency, position, actor, balance_sign=1, period_end='', session=None, case_id=None):
@@ -143,11 +210,12 @@ def complete_record(*, session_factory, case_id, source_id, request, actor):
                     # still needs work. Replay that receipt after a lost response
                     # without writing the same pending correction a second time.
                     from services.financial.saved_statement_admission import current_saved_assessment
+                    from services.financial.held_record_admission import held_blockers
                     admission = current_saved_assessment(session, document, period)
                     return dict(transaction_id=None, created=False, pending_reconciliation=True,
                         version=record['version'],
-                        message='Correction saved. This statement still needs reconciliation before its repaired payments enter Transactions.',
-                        blockers=admission.get('blockers', []))
+                        message=record.get('hold_reason') or 'Correction saved. This statement still needs reconciliation before its repaired payments enter Transactions.',
+                        blockers=admission.get('blockers', []) + held_blockers(record))
                 raise PdfMappingError('Another investigator changed this record. Reload it before saving.', 409)
             original = record['original']
             fields = original.get('fields', {})
@@ -183,6 +251,9 @@ def complete_record(*, session_factory, case_id, source_id, request, actor):
             promoted = record.get('resolved_transaction_id')
             admitted = pending_before - sum(not item.get('resolved_transaction_id') for item in metadata.get('statement_incomplete_records', []))
             if admitted: run.transaction_admitted(admitted)
+            from services.financial.held_record_admission import held_blockers
+            if not promoted and admission is not None:
+                admission = {**admission, 'blockers': admission.get('blockers', []) + held_blockers(record)}
             return dict(transaction_id=promoted, created=bool(promoted), pending_reconciliation=not bool(promoted),
-                version=record['version'], message=('Correction saved. This statement still needs reconciliation before its repaired payments enter Transactions.' if not promoted else ''),
+                version=record['version'], message=((record.get('hold_reason') or 'Correction saved. This statement still needs reconciliation before its repaired payments enter Transactions.') if not promoted else ''),
                 blockers=(admission or {}).get('blockers', []))

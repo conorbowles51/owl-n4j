@@ -328,6 +328,20 @@ def add_manual_statement_payment(source_id: UUID, body: ManualStatementPayment, 
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
 
+@router.post('/sources/{source_id}/admit-ready-records', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
+def admit_ready_imported_records(source_id: UUID, case_id: UUID = Query(...),
+        user=Depends(get_current_db_user), db: Session = Depends(get_db)):
+    from services.financial.imported_records import admit_ready_records
+    try:
+        return admit_ready_records(session_factory=sessionmaker(bind=db.get_bind()), case_id=case_id,
+            source_id=source_id, actor=actor_from_user(user))
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception:
+        logger.exception('Ready imported records could not be added')
+        raise HTTPException(status_code=500, detail='The records could not be added. They remain retained; retry to check again.')
+
+
 @router.post('/sources/{source_id}/complete-record', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
 def complete_imported_record(source_id: UUID, body: CompleteImportedRecord, case_id: UUID = Query(...),
         user=Depends(get_current_db_user), db: Session = Depends(get_db)):
