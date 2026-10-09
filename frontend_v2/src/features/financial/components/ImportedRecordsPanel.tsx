@@ -25,6 +25,9 @@ const recordSchema = z.object({
   locator: z.unknown(),
   original_text: z.string(),
   missing_fields: z.array(z.string()),
+  // Complete values held until the statement reconciles, with what blocks it.
+  awaiting_reconciliation: z.boolean().default(false),
+  statement_blockers: z.array(z.string()).default([]),
   version: z.number(),
   fields: z.object({
     id: z.string(),
@@ -53,16 +56,22 @@ export function ImportedRecordsPanel({
   params,
   onOpen,
   onReviewFile,
+  evidenceFileIds,
+  expanded = false,
 }: {
   caseId: string
   params: LedgerQueryParams
   onOpen: (id: string) => void
   onReviewFile?: (fileId: string) => void
+  /** Limit the list to one statement file (all its reading versions). */
+  evidenceFileIds?: string[]
+  /** Show the list open, for example when the investigator asked for it. */
+  expanded?: boolean
 }) {
   const [active, setActive] = useState<ImportedRecord | null>(null)
   const [page, setPage] = useState(0)
   const query = useQuery({
-    queryKey: ["financial-incomplete-records", caseId, params, page],
+    queryKey: ["financial-incomplete-records", caseId, params, evidenceFileIds ?? null, page],
     queryFn: async () => {
       const search = new URLSearchParams({
         case_id: caseId,
@@ -72,6 +81,7 @@ export function ImportedRecordsPanel({
       appendAccountSelection(search, params)
       if (params.sourceDocumentId)
         search.set("source_document_id", params.sourceDocumentId)
+      for (const id of evidenceFileIds ?? []) search.append("evidence_file_id", id)
       if (params.accountId) search.set("account_id", params.accountId)
       if (params.startDate) search.set("start_date", params.startDate)
       if (params.endDate) search.set("end_date", params.endDate)
@@ -143,11 +153,10 @@ export function ImportedRecordsPanel({
           Review statement: {files[0].filename}
         </Button>
       )}
-      <details open={!!active}>
+      <details open={!!active || expanded}>
         <summary className="cursor-pointer text-sm font-medium">
-          {query.data.total} imported{" "}
-          {query.data.total === 1 ? "record has" : "records have"} missing
-          values · kept outside totals
+          {recordsSummary(query.data.total, query.data.records)} · kept
+          outside totals
         </summary>
         <div className="mt-3 space-y-3">
           {onReviewFile && files.length > 1 && (
@@ -185,9 +194,17 @@ export function ImportedRecordsPanel({
                       {r.fields.description || "Description unreadable"}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      {r.filename} · page {r.page_number ?? "unknown"} · Check{" "}
-                      {r.missing_fields.join(", ")}
+                      {r.filename} · page {r.page_number ?? "unknown"} ·{" "}
+                      {r.awaiting_reconciliation
+                        ? "Values complete · enters Transactions when the statement reconciles"
+                        : `Check ${r.missing_fields.join(", ")}`}
                     </p>
+                    {r.awaiting_reconciliation &&
+                      r.statement_blockers.length > 0 && (
+                        <p className="text-xs">
+                          Still needed: {r.statement_blockers.join(" ")}
+                        </p>
+                      )}
                   </div>
                   <Button
                     size="sm"
@@ -237,6 +254,22 @@ export function ImportedRecordsPanel({
       </details>
     </section>
   )
+}
+
+function recordsSummary(total: number, records: ImportedRecord[]) {
+  const waiting = records.filter((r) => r.awaiting_reconciliation).length
+  const waitingText = (n: number) =>
+    `${n} completed ${n === 1 ? "record is" : "records are"} waiting for the statement to reconcile`
+  const missingText = (n: number) =>
+    `${n} imported ${n === 1 ? "record has" : "records have"} missing values`
+  // Exact split only when every record is on this page.
+  if (total > records.length)
+    return waiting
+      ? `${total} imported records have missing values or are waiting for the statement to reconcile`
+      : missingText(total)
+  if (!waiting) return missingText(total)
+  if (waiting === total) return waitingText(total)
+  return `${missingText(total - waiting)} · ${waitingText(waiting)}`
 }
 
 function ImportedRecordEditor({

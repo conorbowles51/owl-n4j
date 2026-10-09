@@ -255,5 +255,5 @@ it("finds ready statements and outstanding checks from the file list without ope
   })
   expect(screen.getByText("Example 1.pdf")).toBeVisible()
   expect(screen.queryByText("Example 0.pdf")).toBeNull()
-  expect(screen.getByText(/1 periods have checks to review/)).toBeVisible()
+  expect(screen.getByText(/1 period has checks to review/)).toBeVisible()
 })

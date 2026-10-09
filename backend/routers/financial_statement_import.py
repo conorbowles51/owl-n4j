@@ -108,14 +108,15 @@ def save_statement_details(source_id: UUID, body: StatementDetailsRequest, case_
 
 @router.get('/incomplete-records')
 def incomplete_records(account_ids: Annotated[list[UUID] | None, Query()] = None, account_holders: Annotated[list[str] | None, Query()] = None, case_id: UUID = Query(...), account_id: UUID | None = Query(None),
-        source_document_id: UUID | None = None,
+        source_document_id: UUID | None = None, evidence_file_id: Annotated[list[UUID] | None, Query()] = None,
         start_date: date | None = Query(None), end_date: date | None = Query(None),
         offset: int = Query(0, ge=0), limit: int = Query(50, ge=1, le=100), db: Session = Depends(get_db)):
     from services.financial.imported_records import imported_records
     if start_date and end_date and start_date > end_date:
         raise HTTPException(status_code=422, detail='The end date must be on or after the start date.')
     return imported_records(db, case_id=case_id, account_id=account_id, account_ids=account_ids, account_holders=account_holders,
-        start_date=start_date, end_date=end_date, offset=offset, limit=limit, source_document_id=source_document_id)
+        start_date=start_date, end_date=end_date, offset=offset, limit=limit, source_document_id=source_document_id,
+        evidence_file_ids=evidence_file_id)
 
 
 @router.get('/deployment-recovery')

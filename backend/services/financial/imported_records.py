@@ -20,18 +20,20 @@ class CompleteImportedRecord(BaseModel):
     currency: str = Field(pattern=r'^[A-Z]{3}$')
 
 
-def imported_records(session, *, case_id, account_id=None, start_date=None, end_date=None, offset=0, limit=50, account_ids=None, account_holders=None, source_document_id=None):
+def imported_records(session, *, case_id, account_id=None, start_date=None, end_date=None, offset=0, limit=50, account_ids=None, account_holders=None, source_document_id=None, evidence_file_ids=None):
     # Select only the small retained-record arrays, never each full PDF proposal.
     query = select(FinancialSourceDocument.id, FinancialSourceDocument.evidence_file_id,
         FinancialSourceDocument.metadata_['statement_account_id'].as_string(),
         FinancialSourceDocument.metadata_['statement_incomplete_records'],
         func.coalesce(FinancialSourceDocument.metadata_['statement_details_review']['currency'].as_string(),
             FinancialSourceDocument.metadata_['statement_import_request']['currency'].as_string()),
-        EvidenceFile.original_filename).join(EvidenceFile, EvidenceFile.id == FinancialSourceDocument.evidence_file_id).where(
+        EvidenceFile.original_filename, FinancialSourceDocument.metadata_['statement_admission']['blockers']).join(EvidenceFile, EvidenceFile.id == FinancialSourceDocument.evidence_file_id).where(
             FinancialSourceDocument.case_id == case_id, EvidenceFile.case_id == case_id,
             FinancialSourceDocument.status == 'admitted').order_by(FinancialSourceDocument.id)
     if source_document_id:
         query = query.where(FinancialSourceDocument.id == source_document_id)
+    if evidence_file_ids:
+        query = query.where(FinancialSourceDocument.evidence_file_id.in_(evidence_file_ids))
     if account_id:
         query = query.where(FinancialSourceDocument.metadata_['statement_account_id'].as_string().in_([str(id) for id in expand_account_ids(session, case_id, [account_id])]))
     if account_ids:
@@ -42,7 +44,8 @@ def imported_records(session, *, case_id, account_id=None, start_date=None, end_
         ids = [str(id) for id in holder_account_ids(session, case_id, account_holders)]
         query = query.where(FinancialSourceDocument.metadata_['statement_account_id'].as_string().in_(ids))
     records = []
-    for source_id, file_id, account, items, currency, filename in session.execute(query):
+    for source_id, file_id, account, items, currency, filename, blockers in session.execute(query):
+        blockers = [issue.get('message') for issue in blockers or [] if isinstance(issue, dict) and issue.get('message')][:3]
         for item in items or []:
             if item.get('resolved_transaction_id'):
                 continue
@@ -57,7 +60,11 @@ def imported_records(session, *, case_id, account_id=None, start_date=None, end_
                 account_id=account, filename=filename, currency=item.get('correction_currency') or currency or '', fields=fields,
                 page_number=original.get('page_number'), locator=(original.get('source_cells') or [{}])[0].get('locator'),
                 original_text=' '.join(c.get('expected_text', '') for c in original.get('source_cells', [])),
-                missing_fields=item['missing_fields'], version=item.get('version', 0)))
+                missing_fields=item['missing_fields'], version=item.get('version', 0),
+                # Complete values are held until the whole statement reconciles
+                # (corrections and manual additions enter Transactions together).
+                awaiting_reconciliation=not item['missing_fields'],
+                statement_blockers=blockers if not item['missing_fields'] else []))
     statements = {}
     for record in records:
         summary = statements.setdefault(record['evidence_file_id'], dict(

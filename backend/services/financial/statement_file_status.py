@@ -53,18 +53,34 @@ def statement_file_status(session, *, case_id):
         ))
     # Incomplete imports can have no statement period (for example, no usable
     # currency). They still belong in the file register, with an honest count.
-    incomplete_sources = session.execute(select(Source.evidence_file_id, Source.metadata_['statement_incomplete_records'])
+    incomplete_sources = session.execute(select(Source.id, Source.evidence_file_id,
+            Source.metadata_['statement_incomplete_records'], Source.metadata_['statement_admission']['blockers'],
+            Source.metadata_['statement_import_request']['period_start'].as_string(),
+            Source.metadata_['statement_import_request']['period_end'].as_string())
         .join(EvidenceFile, Source.evidence_file_id == EvidenceFile.id)
         .where(Source.case_id == case_id, EvidenceFile.case_id == case_id,
                Source.status == 'admitted', Source.document_type == 'statement_review')
         .order_by(Source.id).limit(5001)).all()
     truncated = truncated or len(incomplete_sources) > 5000
-    for file_id, records in incomplete_sources[:5000]:
-        count = sum(not row.get('resolved_transaction_id') for row in records or [])
-        if count:
+    saved_dates = {str(period.source_document_id): period for period, _, _ in periods}
+    for source_id, file_id, records, blockers, request_start, request_end in incomplete_sources[:5000]:
+        open_records = [row for row in records or [] if not row.get('resolved_transaction_id')]
+        if open_records:
             key = str(file_id)
             item = files.setdefault(key, dict(evidence_file_id=key, current_transactions=0, periods=[]))
-            item['incomplete_count'] = item.get('incomplete_count', 0) + count
+            item['incomplete_count'] = item.get('incomplete_count', 0) + len(open_records)
+            # Records whose values are all present (corrections and manual
+            # additions) are held until the whole statement reconciles. They are
+            # not missing anything; the card must say what is still needed.
+            waiting = sum(row.get('missing_fields') == [] for row in open_records)
+            item['awaiting_reconciliation_count'] = item.get('awaiting_reconciliation_count', 0) + waiting
+            period = saved_dates.get(str(source_id))
+            item.setdefault('incomplete_sources', []).append(dict(
+                source_document_id=str(source_id),
+                period_start=period.period_start.isoformat() if period and period.period_start else request_start or None,
+                period_end=period.period_end.isoformat() if period and period.period_end else request_end or None,
+                missing_count=len(open_records) - waiting, awaiting_reconciliation_count=waiting,
+                blockers=[issue.get('message') for issue in (blockers or []) if issue.get('message')][:3] if waiting else []))
     from postgres.models.workspace_entry import WorkspaceEntry, WorkspaceEntryLink
     from services.financial.payment_document_proposal import SCHEMA
     reviews = session.execute(select(WorkspaceEntryLink, WorkspaceEntry)
@@ -224,11 +240,28 @@ def statement_file_status(session, *, case_id):
                 transaction_count=summary.get('transaction_count', 0),
                 incomplete_count=summary.get('incomplete_count', 0),
                 problem_count=summary.get('problem_count', 0)))
+        pending_import = prepared_item.status == 'pending_import' and not ignored
+        # A second reading of a period this PDF already saved (for example the
+        # same pages found under two statement keys) is a repeat, not unsaved.
+        repeat = (not already_saved and not available and not pending_import and not ignored
+            and not duplicate_review and prepared_item.status != 'skipped' and any(
+                (period['start'], period['end']) == (summary.get('period_start'), summary.get('period_end'))
+                and (not summary.get('account_id') or period['account_id'] == str(summary['account_id']))
+                for period in item['periods']))
+        # "Another supplied statement covers some of these dates" is a note to
+        # compare if needed, not a check. Count it honestly as an overlap;
+        # duplicate holds and conflicting comparisons remain checks.
+        problems = summary.get('problems') or []
+        overlap_only = (bool(problems) and all(problem.get('kind') == 'coverage' for problem in problems)
+            and summary.get('problem_count', 0) <= len(problems))
+        has_checks = duplicate_review or held or (bool(summary.get('problem_count', 0)) and not overlap_only)
         for field, matched in (
             ('available_periods', available),
             ('ignored_periods', ignored),
-            ('pending_periods', prepared_item.status == 'pending_import' and not ignored),
-            ('periods_with_checks', not ignored and (duplicate_review or held or bool(summary.get('problem_count', 0))) and prepared_item.status != 'skipped'),
+            ('pending_periods', pending_import),
+            ('repeat_periods', repeat),
+            ('periods_with_checks', not ignored and not repeat and has_checks and prepared_item.status != 'skipped'),
+            ('overlapping_periods', not ignored and not repeat and not has_checks and overlap_only and prepared_item.status != 'skipped'),
         ):
             item[field] = item.get(field, 0) + int(matched)
     # Direct statement decisions also appear before the file joins a batch.

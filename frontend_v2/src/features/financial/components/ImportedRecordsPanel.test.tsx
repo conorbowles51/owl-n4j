@@ -191,3 +191,48 @@ it("paginates retained records instead of silently truncating them", async () =>
     ).toBe(true)
   )
 })
+it("lists one file's completed records as waiting for reconciliation with what is still needed", async () => {
+  vi.mocked(fetchAPI).mockResolvedValue({
+    records: [
+      {
+        ...record,
+        missing_fields: [],
+        awaiting_reconciliation: true,
+        statement_blockers: [
+          "The payments do not add up to the printed closing balance.",
+        ],
+        fields: { ...record.fields, amount_minor: "12500" },
+      },
+    ],
+    total: 1,
+  } as never)
+  render(
+    <QueryClientProvider
+      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+    >
+      <ImportedRecordsPanel
+        caseId="case"
+        params={{}}
+        evidenceFileIds={["file", "older-reading"]}
+        expanded
+        onOpen={vi.fn()}
+      />
+    </QueryClientProvider>
+  )
+  expect(
+    await screen.findByText(
+      /1 completed record is waiting for the statement to reconcile/
+    )
+  ).toBeVisible()
+  expect(
+    screen.getByText(/Values complete · enters Transactions when the statement reconciles/)
+  ).toBeVisible()
+  expect(
+    screen.getByText(
+      "Still needed: The payments do not add up to the printed closing balance."
+    )
+  ).toBeVisible()
+  expect(vi.mocked(fetchAPI).mock.calls[0][0]).toContain(
+    "evidence_file_id=file&evidence_file_id=older-reading"
+  )
+})
