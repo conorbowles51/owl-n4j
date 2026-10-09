@@ -309,6 +309,14 @@ export function StatementFilesPanel({
       )
   )
   const selectableFiles = visibleFiles.filter(usesPdfStatementReader)
+  // Edit account details works on ticked files, or, with nothing ticked, on
+  // the PDFs the current filter shows when that is a manageable set.
+  const BULK_SHOWN_LIMIT = 50
+  const bulkDetailIds = selectedIds.length
+    ? selectedIds
+    : selectableFiles.length <= BULK_SHOWN_LIMIT
+      ? selectableFiles.map((file) => file.id)
+      : []
   const hiddenSelected = selectedIds.filter(
     (id) => !visibleFiles.some((file) => file.id === id)
   ).length
@@ -825,8 +833,13 @@ export function StatementFilesPanel({
             {!removalMode && (
               <BulkStatementDetails
                 caseId={caseId}
-                fileIds={selectedIds}
+                fileIds={bulkDetailIds}
                 onSaved={refresh}
+                buttonLabel={
+                  !selectedIds.length && bulkDetailIds.length
+                    ? `Edit account details of ${count(bulkDetailIds.length, "shown file", "shown files")}`
+                    : undefined
+                }
               />
             )}
             <FinancialRemovalAction
@@ -848,7 +861,13 @@ export function StatementFilesPanel({
           <p className="text-sm text-muted-foreground">
             {removalMode
               ? "Tick individual files below or select all shown files, then review the removal. Nothing is removed until you confirm."
-              : "Select PDFs to edit account details across their statements, prepare them together or remove their imports. Other sources have their own review and removal actions. Edit account details lets you choose the individual periods before saving."}
+              : `Select PDFs to edit account details across their statements, prepare them together or remove their imports. Other sources have their own review and removal actions. Edit account details lets you choose the individual periods before saving.${
+                  !selectedIds.length && !bulkDetailIds.length
+                    ? ` Tick files, or filter the list to ${BULK_SHOWN_LIMIT} or fewer, to edit their holder, account number, bank, currency or dates together.`
+                    : !selectedIds.length
+                      ? " With nothing ticked, Edit account details covers the files shown below, including readings that found nothing."
+                      : ""
+                }`}
           </p>
         </section>
       )}

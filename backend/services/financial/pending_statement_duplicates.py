@@ -111,7 +111,7 @@ def _requires_review_comparison(proposal):
     return bool(recovery.get('required') and not recovery.get('acknowledged'))
 
 
-def _target_available(session, case_id, decision):
+def _target_available(session, case_id, decision, cache=None):
     retained = decision.get('retained') or {}
     try:
         file_id = UUID(retained['evidence_file_id'])
@@ -135,7 +135,7 @@ def _target_available(session, case_id, decision):
         try:
             proposal = read_statement_import(session, case_id=case_id, evidence_file_id=target.id,
                 statement_id=retained.get('statement_id'), currency=(decision.get('scope') or {}).get('currency'),
-                _include_period_checks=False, _include_duplicate_disposition=False)
+                _cache=cache, _include_period_checks=False, _include_duplicate_disposition=False)
         except PdfMappingError:
             return False
         if proposal['revision'] != decision['retained_reading_revision'] or _requires_review_comparison(proposal):
@@ -143,7 +143,7 @@ def _target_available(session, case_id, decision):
     return True
 
 
-def read_duplicate_disposition(session, file, proposal, request=None):
+def read_duplicate_disposition(session, file, proposal, request=None, *, cache=None):
     """Cheap read projection; stale decisions cannot continue suppressing work."""
     previous = _stored(file, proposal.get('statement_id'))
     if not previous:
@@ -155,7 +155,7 @@ def read_duplicate_disposition(session, file, proposal, request=None):
         from services.financial.pending_duplicate_projection import capture_projection_guard
         valid = valid and previous.get('projection_guard') == capture_projection_guard(session, file, proposal.get('statement_id'), previous)
     if previous.get('status') == 'ignored':
-        valid = valid and not _requires_review_comparison(proposal) and _target_available(session, file.case_id, previous)
+        valid = valid and not _requires_review_comparison(proposal) and _target_available(session, file.case_id, previous, cache)
     result['current'] = valid
     if not valid:
         result.update(status='needs_comparison', label='Compare this statement',

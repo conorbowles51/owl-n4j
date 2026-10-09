@@ -919,3 +919,57 @@ it("opens on Needs action, counts not-imported cards exactly and filters without
     document.querySelectorAll('[data-not-imported="true"]').length
   ).toBe(3)
 })
+
+it("offers Edit account details for the shown files without ticking, including empty readings", async () => {
+  vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
+    if (url.includes("/account-details/statements"))
+      return { case_id: "case", items: [], notices: [] } as never
+    if (url.includes("/statement-import/files"))
+      return {
+        case_id: "case",
+        truncated: false,
+        files: [
+          {
+            evidence_file_id: "empty",
+            current_transactions: 0,
+            periods: [],
+            prepared_periods: 1,
+            empty_reading: {
+              reason: "layout_not_supported",
+              message: "Nothing could be read: layout not supported yet",
+            },
+          },
+        ],
+      } as never
+    void options
+    return {
+      files: ["empty", "other"].map((id) => ({
+        ...file,
+        id,
+        original_filename: `${id}.pdf`,
+        status: "processed",
+      })),
+    } as never
+  })
+  mount(true)
+  const edit = await screen.findByRole("button", {
+    name: "Edit account details of 2 shown files",
+  })
+  expect(edit).toBeEnabled()
+  expect(
+    screen.getByText(/With nothing ticked, Edit account details covers the files shown/)
+  ).toBeVisible()
+  fireEvent.click(edit)
+  await waitFor(() =>
+    expect(fetchAPI).toHaveBeenCalledWith(
+      expect.stringContaining("/account-details/statements"),
+      expect.objectContaining({
+        body: { file_ids: ["empty", "other"] },
+      })
+    )
+  )
+  fireEvent.click(screen.getByLabelText("Select empty.pdf"))
+  expect(
+    screen.getByRole("button", { name: "Edit account details" })
+  ).toBeEnabled()
+})

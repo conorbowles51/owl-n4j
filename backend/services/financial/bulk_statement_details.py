@@ -90,8 +90,8 @@ def _key(target):
 
 
 def _file(session, case_id, file_id):
-    file = session.scalar(select(EvidenceFile).where(EvidenceFile.case_id == case_id, EvidenceFile.id == file_id))
-    if file is None:
+    file = session.get(EvidenceFile, file_id)
+    if file is None or str(file.case_id) != str(case_id):
         raise PdfMappingError('A selected file is not in this case.', 404)
     from services.financial.file_visibility import require_financial_file
     require_financial_file(file)
@@ -130,8 +130,14 @@ def _load(session, case_id, target, cache):
         currencies = {raw.get('currency') for raw in drafts}
         if len(currencies) > 1:
             raise PdfMappingError('This statement has conflicting saved reviews. Open it to compare them first.', 409)
-        proposal = read_statement_import(session, case_id=case_id, evidence_file_id=file.id,
-            statement_id=target.statement_id, currency=next(iter(currencies), None), _cache=cache, _include_period_checks=False)
+        # Identity values only: the duplicate verdict re-reads the retained
+        # statement of every earlier decision and is attached at save time,
+        # where it decides the saved review's status (see _with_duplicate).
+        chosen = next(iter(currencies), None)
+        listed = cache.get(('bulk_listed_reading', str(file.id), target.statement_id)) if chosen is None else None
+        proposal = listed or read_statement_import(session, case_id=case_id, evidence_file_id=file.id,
+            statement_id=target.statement_id, currency=chosen, _cache=cache,
+            _include_period_checks=False, _include_duplicate_disposition=False)
         if proposal.get('current_import') or proposal.get('document_review') or proposal.get('assignment_only') or proposal.get('reading_failure'):
             raise PdfMappingError('Open this statement individually to review its import or account assignment.', 409)
         saved = proposal.get('saved_review')
@@ -181,7 +187,8 @@ def list_statements(session, *, case_id, selection):
         file_ids = {f.id for versions in groups for f in versions}
     sources = list(session.scalars(select(Source).where(Source.case_id == case_id,
         Source.evidence_file_id.in_(file_ids), Source.status == 'admitted', Source.document_type == 'statement_review').order_by(Source.id)))
-    targets, notices, cache = {}, [], {}
+    from services.financial.statement_import import READ_ONLY_LISTING
+    targets, notices, cache = {}, [], {READ_ONLY_LISTING: True}
     for source in sources:
         statement_id = (source.metadata_ or {}).get('statement_import_statement_id')
         if scopes is not None and (source.evidence_file_id, statement_id) not in scopes:
@@ -190,15 +197,19 @@ def list_statements(session, *, case_id, selection):
         targets[_key(target)] = target
     for file in files:
         try:
-            first = read_statement_import(session, case_id=case_id, evidence_file_id=file.id, _cache=cache, _include_period_checks=False)
+            first = read_statement_import(session, case_id=case_id, evidence_file_id=file.id, _cache=cache,
+                _include_period_checks=False, _include_duplicate_disposition=False)
             identifiers = [c['id'] for c in first.get('statement_choices', [])] or [first.get('statement_id')]
             for sid in identifiers:
                 if scopes is not None and (file.id, sid) not in scopes:
                     continue
                 proposal = read_statement_import(session, case_id=case_id, evidence_file_id=file.id,
-                    statement_id=sid, _cache=cache, _include_period_checks=False)
+                    statement_id=sid, _cache=cache, _include_period_checks=False, _include_duplicate_disposition=False)
                 if proposal.get('current_import'):
                     continue
+                # The same call _load makes when no saved review names a
+                # currency; reuse it instead of reading the statement twice.
+                cache[('bulk_listed_reading', str(file.id), sid)] = proposal
                 target = Target(file_id=file.id, statement_id=sid, revision='0'*64)
                 targets[_key(target)] = target
         except PdfMappingError as exc:
@@ -287,7 +298,8 @@ def _plan(session, case_id, request):
                     after='Confirmed: every page checked; no transactions in this period')
         if not target.source_id and 'currency' in changed:
             new = read_statement_import(session, case_id=case_id, evidence_file_id=target.file_id,
-                statement_id=target.statement_id, currency=after['currency'], _cache=cache, _include_period_checks=False)
+                statement_id=target.statement_id, currency=after['currency'], _cache=cache,
+                _include_period_checks=False, _include_duplicate_disposition=False)
             state['raw'] = import_batches.rebase_review_currency(state['proposal'], new, state['raw'], after['currency'])
             state['proposal'] = new
         plan.append({**row, 'after': after, 'changes': changed, 'excluded_reason': excluded_reason,
@@ -297,6 +309,15 @@ def _plan(session, case_id, request):
                             **(dict(no_activity=True) if quiet else {})))
     return dict(case_id=str(case_id), preview_revision=revision, items=plan,
         updated=sum(bool(row['changes']) for row in plan)), states
+
+
+def _with_duplicate(session, file, proposal, cache):
+    """The proposal as read_statement_import returns it by default: with the
+    current duplicate decision attached (an ignored copy saves as ignored)."""
+    if 'duplicate_disposition' in proposal:
+        return proposal
+    from services.financial.pending_statement_duplicates import read_duplicate_disposition
+    return {**proposal, 'duplicate_disposition': read_duplicate_disposition(session, file, proposal, cache=cache)}
 
 
 def preview(session, *, case_id, request):
@@ -333,7 +354,7 @@ def save(session, *, case_id, request, actor):
         plan, states = _plan(session, case_id, request)
         if request.preview_revision != plan['preview_revision']:
             raise PdfMappingError('Review the current preview before saving these account details.', 409)
-        account_changes = []
+        account_changes, duplicate_cache = [], {}
         for row, (target, state) in zip(plan['items'], states):
             if not row['changes']:
                 continue
@@ -359,7 +380,7 @@ def save(session, *, case_id, request, actor):
                     metadata.setdefault('financial_review_history', []).append(previous)
                 record = dict(request=raw, review_revision=_digest(raw), saved_at=datetime.now(timezone.utc).isoformat(),
                     saved_by=dict(user_id=str(actor.user_id), name=actor.name))
-                status, summary = import_batches.assess(state['proposal'], raw)
+                status, summary = import_batches.assess(_with_duplicate(session, file, state['proposal'], duplicate_cache), raw)
                 record.update(assessment=summary, assessment_status=status,
                     initial_request_signature=request_signature(import_batches.initial_request(state['proposal'])),
                     superseded_request_signatures=sorted(set([

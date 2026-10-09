@@ -194,3 +194,29 @@ class BulkStatementDetailsTests(TestCase):
         result = self.listing()
         self.assertEqual(len(result['items']), 1)
         self.assertIn('Prepare this PDF', result['notices'][0]['message'])
+
+    # The editor lists identity values; it must not rebuild duplicate verdicts.
+    def test_listing_and_preview_skip_the_duplicate_verdict_and_save_applies_it(self):
+        from services.financial import pending_statement_duplicates as duplicates
+        real = duplicates.read_duplicate_disposition
+        with patch.object(duplicates, 'read_duplicate_disposition', side_effect=real) as verdict:
+            request = self.request()
+            self.assertEqual(verdict.call_count, 0)
+            self.save(request)
+            # Called for the draft row being saved, so an ignored copy still
+            # saves as ignored.
+            self.assertGreaterEqual(verdict.call_count, 1)
+
+    def test_read_only_listing_memo_gives_the_same_reading(self):
+        from services.financial.statement_import import READ_ONLY_LISTING
+        self.import_second()
+        with self.f.SessionLocal() as db:
+            plain = read_statement_import(db, case_id=self.f.case.id, evidence_file_id=self.second.id, _cache={})
+        with self.f.SessionLocal() as db:
+            memo = {READ_ONLY_LISTING: True}
+            first = read_statement_import(db, case_id=self.f.case.id, evidence_file_id=self.second.id, _cache=memo)
+            again = read_statement_import(db, case_id=self.f.case.id, evidence_file_id=self.second.id, _cache=memo)
+        self.assertIsNotNone(plain.get('current_import'))
+        self.assertEqual(first, plain)
+        self.assertEqual(again, plain)
+        self.assertTrue(any(isinstance(key, tuple) and key[0] == 'existing_sources' for key in memo))

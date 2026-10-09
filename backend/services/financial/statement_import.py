@@ -55,7 +55,14 @@ def _reading_dates(fields, reviewed_date, date_values=None):
     return result
 
 
-def _existing_statement(session, case_id, file, statement_id, addresses=(), row_addresses=None, source_regions=None, *, excluded_duplicates=False):
+# A read-only listing (bulk account details) marks its request cache with this
+# key. Only then are a PDF's saved sources loaded once per request instead of
+# once per statement; paths that save between readings never set it, so a
+# source saved earlier in the same request can never be missed.
+READ_ONLY_LISTING = 'read_only_listing'
+
+
+def _existing_statement(session, case_id, file, statement_id, addresses=(), row_addresses=None, source_regions=None, *, excluded_duplicates=False, memo=None):
     from postgres.models.financial import FinancialSourceDocument
     query = select(FinancialSourceDocument).where(
         FinancialSourceDocument.case_id == case_id,
@@ -78,7 +85,13 @@ def _existing_statement(session, case_id, file, statement_id, addresses=(), row_
             FinancialSourceDocument.evidence_file_id.in_(related_files))
     else:
         query = query.where(FinancialSourceDocument.status != 'superseded')
-    candidates = session.scalars(query.order_by(FinancialSourceDocument.id))
+    if memo is not None:
+        memo_key = ('existing_sources', str(case_id), file.sha256, excluded_duplicates, str(file.id) if excluded_duplicates else '')
+        if memo_key not in memo:
+            memo[memo_key] = list(session.scalars(query.order_by(FinancialSourceDocument.id)))
+        candidates = memo[memo_key]
+    else:
+        candidates = session.scalars(query.order_by(FinancialSourceDocument.id))
     addresses = set(addresses)
     row_addresses = {tuple(value) for value in row_addresses} if row_addresses is not None else None
     matches = []
@@ -129,20 +142,11 @@ def _existing_statement(session, case_id, file, statement_id, addresses=(), row_
     return matches[0] if matches else None
 
 
-def read_statement_import(session, *, case_id, evidence_file_id, currency=None, statement_id=None, _cache=None, _include_period_checks=True, _apply_assignments=True, _include_duplicate_disposition=True, _compare_printings=True):
-    file = session.scalar(select(EvidenceFile).where(EvidenceFile.id == evidence_file_id,
-                                                    EvidenceFile.case_id == case_id))
-    if file is None:
-        raise PdfMappingError('Statement not found in this case.', 404)
-    from services.financial.file_visibility import require_financial_file
-    require_financial_file(file)
-    text = session.get(EvidenceDocumentText, evidence_file_id)
-    if text is None:
-        raise PdfMappingError('Prepare this PDF before opening its statement review.', 409)
-    sections = list(re.finditer(r'(?im)^\s*TRANSACTION HISTORY\s*$', text.content))
+def _printed_header(content):
+    sections = list(re.finditer(r'(?im)^\s*TRANSACTION HISTORY\s*$', content))
     # A labelled beneficiary block below a single transaction history is not
     # the statement account. Multiple statement sections remain unresolved.
-    header = text.content[:sections[0].start()] if len(sections) == 1 else text.content
+    header = content[:sections[0].start()] if len(sections) == 1 else content
     metadata = dict(holder=_label(header, ('Account Name', 'Account Holder')),
                     account_number=_label(header, ('Account Number', 'Account No', 'IBAN')),
                     period=_label(header, ('Statement Period', 'Period')),
@@ -150,24 +154,51 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
     banks = [line.strip() for line in header.splitlines() if re.search(r'\b(?:bank|credit union)\b', line, re.I) and not re.search(r'statement|account|:', line, re.I)]
     metadata['institution'] = _label(header, ('Bank', 'Institution')) or (banks[0] if len(set(banks)) == 1 else '')
     metadata['period_start'], metadata['period_end'] = _period(metadata['period'])
+    return header, metadata
+
+
+def read_statement_import(session, *, case_id, evidence_file_id, currency=None, statement_id=None, _cache=None, _include_period_checks=True, _apply_assignments=True, _include_duplicate_disposition=True, _compare_printings=True):
+    # The identity map already holds the row after the first read in a request;
+    # re-querying decoded its whole metadata again for every statement.
+    file = session.get(EvidenceFile, evidence_file_id)
+    if file is None or str(file.case_id) != str(case_id):
+        raise PdfMappingError('Statement not found in this case.', 404)
+    from services.financial.file_visibility import require_financial_file
+    require_financial_file(file)
+    text = session.get(EvidenceDocumentText, evidence_file_id)
+    if text is None:
+        raise PdfMappingError('Prepare this PDF before opening its statement review.', 409)
+    cache = _cache if _cache is not None else {}
+    # The printed header depends only on the extracted text; parse it once per
+    # request (one cache) rather than once per statement the file prints.
+    header_key = ('printed_header', str(evidence_file_id), text.content_sha256)
+    if header_key not in cache:
+        cache[header_key] = _printed_header(text.content)
+    header, printed = cache[header_key]
+    metadata = dict(printed)
     issues = []
     if not metadata['holder']:
         issues.append('Check the account holder. It could not be identified automatically.')
     if not metadata['account_number']:
         issues.append('Check the account number. It could not be identified automatically.')
-    pages = list(session.scalars(select(EvidenceTableGeometry).where(
-        EvidenceTableGeometry.evidence_file_id == evidence_file_id).order_by(EvidenceTableGeometry.page_number)))
+    source_key = (str(case_id), str(evidence_file_id), text.content_sha256)
+    # Page numbers and table counts only. Within one request (one cache) a
+    # file's geometry is loaded once, not once per statement it prints.
+    pages_key = ('geometry_pages', *source_key)
+    if pages_key not in cache:
+        cache[pages_key] = [(page.page_number, len(page.payload or [])) for page in session.scalars(
+            select(EvidenceTableGeometry).where(EvidenceTableGeometry.evidence_file_id == evidence_file_id)
+            .order_by(EvidenceTableGeometry.page_number))]
+    pages = [SimpleNamespace(page_number=number, tables=tables) for number, tables in cache[pages_key]]
     if not pages:
         raise PdfMappingError('No readable tables were prepared. Reprocess this PDF or inspect its extraction errors.', 409)
     if len(pages) > 500:
         raise PdfMappingError('This statement exceeds the 500-page review limit. No pages were omitted.', 422)
     from services.financial.statement_import_catalog import statement_catalog
-    cache = _cache if _cache is not None else {}
-    source_key = (str(case_id), str(evidence_file_id), text.content_sha256)
     if source_key not in cache:
         cache[source_key] = [read_candidate_source(session, case_id=case_id, evidence_file_id=evidence_file_id,
                         page_number=page.page_number, table_index=index)
-                       for page in pages for index in range(len(page.payload or []))]
+                       for page in pages for index in range(page.tables)]
     all_sources = cache[source_key]
     from services.financial.payment_document_review import payment_document_response
     payment_document = payment_document_response(file, all_sources, case_id=case_id)
@@ -336,11 +367,12 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
         row_addresses = [[s['page_number'], s['table_index'], index]
             for s in selected['section_sources'] for index in s['row_indices']]
         source_regions = andrews_source_regions(sources, dict(sources=selected['section_sources']))
+    memo = cache if cache.get(READ_ONLY_LISTING) else None
     current = _existing_statement(session, case_id, file, statement_id,
-        ((source['page_number'], source['table_index']) for source in sources), row_addresses, source_regions)
+        ((source['page_number'], source['table_index']) for source in sources), row_addresses, source_regions, memo=memo)
     excluded_copy = _existing_statement(session, case_id, file, statement_id,
         ((source['page_number'], source['table_index']) for source in sources), row_addresses, source_regions,
-        excluded_duplicates=True)
+        excluded_duplicates=True, memo=memo)
     if excluded_copy is not None:
         current = excluded_copy
     current_import = None
