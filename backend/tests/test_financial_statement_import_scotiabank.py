@@ -1,5 +1,6 @@
 """Synthetic source geometry for a complete Scotiabank no-activity statement."""
 import hashlib
+import os
 from copy import deepcopy
 from pathlib import Path
 from unittest import TestCase
@@ -167,7 +168,10 @@ class ScotiabankImportTests(TestCase):
         from services.financial.legacy_statement_refresh import refresh_legacy_import
         from services.financial.imported_records import imported_records
         from postgres.models.financial import FinancialSourceDocument
-        with patch('services.financial.statement_import_scotiabank.scotiabank_catalog',return_value=([],set())):
+        # A legacy import made before any reader existed: neither the Scotiabank reader nor the general
+        # engine (which reads this layout's period) prepared it.
+        with patch('services.financial.statement_import_scotiabank.scotiabank_catalog',return_value=([],set())), \
+                patch.dict(os.environ, {'LOUPE_FINANCIAL_GENERIC_READER': '0'}):
             raw=initial_request(self.preview())
             raw.update(holder='Investigator corrected holder',account_number='00001234567')
             for row in raw['rows']: row['excluded']=False
@@ -191,7 +195,10 @@ class ScotiabankImportTests(TestCase):
     def test_a_saved_row_correction_blocks_automatic_replacement(self):
         from services.financial.import_batches import initial_request
         from postgres.models.financial import FinancialSourceDocument
-        with patch('services.financial.statement_import_scotiabank.scotiabank_catalog',return_value=([],set())):
+        # A legacy import made before any reader existed: neither the Scotiabank reader nor the general
+        # engine (which reads this layout's period) prepared it.
+        with patch('services.financial.statement_import_scotiabank.scotiabank_catalog',return_value=([],set())), \
+                patch.dict(os.environ, {'LOUPE_FINANCIAL_GENERIC_READER': '0'}):
             raw=initial_request(self.preview())
             for row in raw['rows']: row['excluded']=False
             old=self.f.confirm_legacy(raw)

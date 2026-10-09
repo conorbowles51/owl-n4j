@@ -46,6 +46,8 @@ from services.financial.statement_engine_vocabulary import (
 LAYOUT = 'generic'
 # The library profile applied to the current reading (None for the plain engine).
 _PROFILE = ContextVar('statement_engine_profile', default=None)
+# The document's movement headings name the date column "DIA"/"DAY": a row may start with the day alone (B2).
+_DAY_COLUMN = ContextVar('statement_engine_day_column', default=False)
 ENGINE_VERSION = 'statement-engine-v1'
 MAX_ASSIGNMENTS = 4000
 MAX_PERIOD_DAYS = 95
@@ -129,6 +131,7 @@ def _cell_tokens(cell, rotation=0):
                 merged.append((ps, e, pw + word))
             else:
                 merged.append((s, e, word))
+        merged = _rejoin_amounts(merged)
         for s, e, word in merged:
             exact = count == 1 and len(merged) == 1
             x0 = rect[0] + (rect[2] - rect[0]) * (s - start) / span
@@ -136,6 +139,105 @@ def _cell_tokens(cell, rotation=0):
             tokens.append(dict(t=word, f=fold(word), x0=x0, x1=x1, y0=y0, y1=y1, cell=cell, exact=exact,
                                first=s == start, last=e == end, line=index))
     return tokens, width
+
+
+# OCR damage around one printed amount (C11): a stray '?' read after it (scan noise beside the
+# figure), and the amount split by a space inside one cell ("135 , 700.06", "5,173 846,29").
+_NOISE_TAIL = re.compile(r'^([-−(]?(?:US\$|\$)?(?:\d{1,3}(?:,\d{3})*)?[.,]?\d{2}(?:\)|-|−|CR)?)\?$')
+# Two separators read before the cents ('2,617,384,.91'): the one next to the cents is the decimal mark.
+_DOUBLE_MARK = re.compile(r'^([-−(]?(?:US\$|\$)?\d{1,3}(?:,\d{3})*)[.,]([.,]\d{2}(?:\)|-|−|CR)?)$')
+_SPLIT_HEAD = re.compile(r'^[-−(]?(?:US\$|\$)?\d{1,3}(?:,\d{3})*,?$')
+_SPLIT_TAIL = re.compile(r'^,?\d{3}(?:,\d{3})*[.,]\d{2}(?:\)|-|−|CR)?$')
+_SPLIT_CENTS = re.compile(r'^[.,]?\d{2}(?:\)|-|−|CR)?$')
+_GROUPED_AMOUNT = re.compile(r'^[-−(]?(?:US\$|\$)?\d{1,3}(?:,\d{3})+[.,]\d{2}(?:\)|-|−|CR)?$')
+
+
+def _rejoin_amounts(words):
+    """[(start, end, word)] of one cell line with OCR-damaged amounts repaired.
+
+    A trailing '?' after a complete amount (or its cents) is dropped, and of two
+    separators printed before the cents the one next to them is kept. Words are joined only inside
+    one cell line, only across a gap of spaces or a lone comma, and only when the
+    result is one amount with complete three-digit groups (a thousands group is
+    never invented): '3,215 , 677.12' -> '3,215,677.12', '12,486, 37' -> '12,486,37',
+    '5,291 157,82' -> '5,291,157,82' (read by the document's decimal convention).
+    The proof still decides whether the value is used.
+    """
+    cleaned = []
+    for s, e, word in words:
+        noise = _NOISE_TAIL.fullmatch(word)
+        if noise:
+            e, word = e - 1, noise[1]
+        double = _DOUBLE_MARK.fullmatch(word)
+        if double:
+            word = double[1] + double[2]
+        cleaned.append((s, e, word))
+    out, index = [], 0
+    while index < len(cleaned):
+        s, e, word = cleaned[index]
+        joined = None
+        if _SPLIT_HEAD.fullmatch(word):
+            following = cleaned[index + 1:index + 3]
+            parts = [p for _, _, p in following]
+            for size in (1, 2):
+                if len(parts) < size:
+                    continue
+                if size == 2 and parts[0] != ',' or size == 1 and ',' not in word:
+                    # A head without its own comma (a printed count before an amount) joins only
+                    # across a lone comma.
+                    continue
+                tail = parts[size - 1]
+                head = word.rstrip(',')
+                if _SPLIT_TAIL.fullmatch(tail):
+                    text = head + ',' + tail.lstrip(',')
+                elif _SPLIT_CENTS.fullmatch(tail) and ',' in head and size == 1:
+                    # The decimal separator read as a space or detached onto the cents ('5,733,642 43',
+                    # '140,527 ,00'): only after complete thousands groups.
+                    text = head + ',' + tail.lstrip('.,')
+                else:
+                    continue
+                if _GROUPED_AMOUNT.fullmatch(text):
+                    joined = (s, following[size - 1][1], text, size)
+                    break
+        if joined:
+            out.append(joined[:3])
+            index += 1 + joined[3]
+        else:
+            out.append((s, e, word))
+            index += 1
+    return out
+
+
+_CELL_HEAD = re.compile(r'^\d{1,3}(?:,\d{3})*$')
+_CELL_TAIL = re.compile(r'^\d{3}(?:,\d{3})*[.,]\d{2}(?:\)|-|−|CR)?$')
+
+
+def _rejoin_split_cells(tokens):
+    """One amount the OCR split into two cells at a thousands separator ('168 | 802.21').
+
+    Joined only when both cells are single-line, the head is digits in complete
+    groups, the tail starts with a complete three-digit group and ends in cents,
+    and the gap between them is under two character widths of the head (a count
+    printed before an amount stands in its own column, several characters away).
+    """
+    out, index = [], 0
+    while index < len(tokens):
+        head = tokens[index]
+        tail = tokens[index + 1] if index + 1 < len(tokens) else None
+        if (tail is not None and head['cell'] is not tail['cell'] and head['line'] == tail['line'] == 0
+                and head['last'] and tail['first'] and '\n' not in head['cell']['expected_text']
+                and '\n' not in tail['cell']['expected_text']
+                and _CELL_HEAD.fullmatch(head['t']) and _CELL_TAIL.fullmatch(tail['t'])):
+            char = (head['x1'] - head['x0']) / max(len(head['t']), 1)
+            gap = tail['x0'] - head['x1']
+            if char > 0 and -char < gap < 2 * char and min(head['y1'], tail['y1']) > max(head['y0'], tail['y0']):
+                text = head['t'] + ',' + tail['t']
+                out.append(dict(tail, t=text, f=fold(text), x0=head['x0'], exact=False, joined=(head, tail)))
+                index += 2
+                continue
+        out.append(head)
+        index += 1
+    return out
 
 
 def _pages(sources):
@@ -159,6 +261,7 @@ def _pages(sources):
                         located=False, text=' '.join(c['expected_text'] for c in raw['cells'])))
                 continue
             tokens.sort(key=lambda t: (t['line'], t['x0']))
+            tokens = _rejoin_split_cells(tokens)
             pages.setdefault(source['page_number'], []).append(dict(
                 page=source['page_number'], source=source, raw=raw, tokens=tokens,
                 y0=min(t['y0'] for t in tokens), width=width, located=located,
@@ -183,32 +286,59 @@ _UNAMBIGUOUS_DOT = re.compile(r'\d\.\d{2}(?:\D|$)')
 _UNAMBIGUOUS_COMMA = re.compile(r'\d,\d{2}(?:\D|$)')
 
 
+# A dot-decimal amount whose decimal point the scan printed or read as a comma ('147,382,26'):
+# comma thousands groups, so it can only be the dot convention.
+_WORN = re.compile(r'^(?P<lead>[-−+(]?)\s*(?:US\$|\$|€|£|¥)?\s*(?P<lead2>[-−]?)(?P<int>\d{1,3}(?:,\d{3})*),(?P<frac>\d{2})'
+                   r'(?P<trail>\)|-|−|CR)?(?:MN|M\.N\.|MXN|USD|EUR|DLS)?$')
+_DOT_THOUSANDS = re.compile(r'\d,\d{3}(?:,\d{3})*\.\d{2}(?:\D|$)')
+_COMMA_THOUSANDS = re.compile(r'\d\.\d{3}(?:\.\d{3})*,\d{2}(?:\D|$)')
+
+
 def separator_style(pages):
-    """'dot' or 'comma' decimals for the whole document (C1); None when mixed."""
-    dot = comma = 0
+    """'dot' or 'comma' decimals for the whole document (C1); None when mixed.
+
+    'dot_worn': the document prints dot decimals with comma thousands, and some of
+    its decimal points are printed or read as commas (scans): '1,234.56' and
+    '147,382,26' both occur and no amount uses dot thousands with a decimal comma
+    ('1.234,56'). Such a document is read in the dot convention, a decimal comma
+    included; values are the printed digits either way and the proof decides.
+    """
+    dot = comma = dot_thousands = comma_thousands = 0
     for rows in pages.values():
         for row in rows:
             for token in row['tokens']:
                 text = token['t']
                 if _DOT.fullmatch(text) and _UNAMBIGUOUS_DOT.search(text) and not re.search(r'\d\.\d{3}', text):
                     dot += 1
+                    dot_thousands += bool(_DOT_THOUSANDS.search(text))
                 elif _COMMA.fullmatch(text) and _UNAMBIGUOUS_COMMA.search(text) and not re.search(r'\d,\d{3}', text):
                     comma += 1
+                elif _WORN.fullmatch(text) and re.search(r'\d,\d{3},\d{2}$', text):
+                    comma += 1
+                if _COMMA.fullmatch(text) and _COMMA_THOUSANDS.search(text):
+                    comma_thousands += 1
     if dot and comma:
-        return 'dot' if dot >= 20 * comma else 'comma' if comma >= 20 * dot else None
+        if dot >= 20 * comma:
+            return 'dot'
+        if comma >= 20 * dot:
+            return 'comma'
+        return 'dot_worn' if dot_thousands and not comma_thousands and dot >= 2 * comma else None
     return 'comma' if comma else 'dot'
 
 
 def money(text, style, exponent=2):
     """Signed minor units of one printed amount token, or None."""
+    dot = style in ('dot', 'dot_worn')
     if exponent == 0:
         # Whole-unit currencies (yen) may print ".00": accepted only when the fraction is zero (C3).
-        printed = (_DOT if style == 'dot' else _COMMA).fullmatch(text) if style else None
+        printed = (_DOT if dot else _COMMA).fullmatch(text) if style else None
         if printed and printed['frac'] == '00':
             text = text[:printed.start('frac') - 1] + text[printed.end('frac'):]
         match = _WHOLE.fullmatch(text)
     else:
-        match = (_DOT if style == 'dot' else _COMMA).fullmatch(text)
+        match = (_DOT if dot else _COMMA).fullmatch(text)
+        if not match and style == 'dot_worn':
+            match = _WORN.fullmatch(text)
     if not match or (exponent == 0 and style is None):
         return None
     lead, lead2, trail = match['lead'], match['lead2'], match['trail'] or ''
@@ -245,10 +375,29 @@ def _dnorm(text):
     return ' '.join(upper.replace('–', '-').replace('−', '-').split())
 
 
+_OCR_ZERO = re.compile(r'(?<![A-Z])O(?=\d)|(?<=\d)O(?![A-Z])')
+_OCR_MONTH_O = re.compile(r'(?<=[A-Z]{2})0(?=$|[-/ .])')
+
+
+def _ocr_date(text):
+    """A date token with the scan's letter O / digit zero confusion undone ('O1-JUN-2021',
+    '02-AG0-2021'): O counts as 0 only between digits or before one, 0 as O only at the end of
+    a month word. Only used when the token reads as no date as printed."""
+    return _OCR_MONTH_O.sub('O', _OCR_ZERO.sub('0', text))
+
+
 @lru_cache(maxsize=262144)
 def _date_parts(text):
     """Possible (day, month, year|None, order) readings of one date token."""
-    f = _dnorm(text).strip(',.:;')
+    parts = _date_parts_printed(_dnorm(text).strip(',.:;'))
+    if not parts:
+        repaired = _ocr_date(_dnorm(text).strip(',.:;'))
+        if repaired != _dnorm(text).strip(',.:;') and re.search(r'\d', repaired):
+            parts = _date_parts_printed(repaired)
+    return parts
+
+
+def _date_parts_printed(f):
     if m := _ISO_DATE.fullmatch(f):
         return [(int(m[3]), int(m[2]), int(m[1]), 'iso')]
     if m := _NUM_DATE.fullmatch(f):
@@ -281,9 +430,13 @@ _FULL = (r'(?:\d{1,2}[/.-]\d{1,2}[/.-]\d{4}|\d{4}-\d{2}-\d{2}|\d{1,2}[/.-][A-Z]{
          r'|\d{1,2}[/.-]\d{1,2}[/.-]\d{2})')
 _RANGE = re.compile(r'(?:^|\b)(' + _FULL + r')\s*(?:AL|A|-|TO|THROUGH|THRU|HASTA)\s+(' + _FULL + r')(?:\b|$)')
 _RANGE_TIGHT = re.compile(r'(' + _FULL + r')\s*-\s*(' + _FULL + r')')
-# "03 FEB 26/27 FEB 26": two day-month-year dates joined by a slash.
-_SLASH_RANGE = re.compile(r'\b(\d{1,2}\s+[A-Z]{3,10}\.?\s+\d{2}(?:\d{2})?)\s*/\s*(\d{1,2}\s+[A-Z]{3,10}\.?\s+\d{2}(?:\d{2})?)\b')
+# "03 FEB 26/27 FEB 26", "03-FEB-26/27-FEB-26": two day-month-year dates joined by a slash. The OCR
+# can split the month word with one space ("27-F EB-26"); the joined letters must name a month.
+_SLASH_DATE = r'\d{1,2}[\s-]+[A-Z](?: ?[A-Z]){2,9}\.?[\s-]+\d{2}(?:\d{2})?'
+_SLASH_RANGE = re.compile(r'\b(' + _SLASH_DATE + r')\s*/\s*(' + _SLASH_DATE + r')\b')
 _SHARED_MONTH = re.compile(r'\b(\d{1,2})\s+AL\s+(\d{1,2})\s+DE\s+([A-Z]{3,10})\s+(?:DE\s+|DEL\s+)?(\d{4})\b')
+# "MAR.24-APR.23,2024", "Mar 24 - Apr 23, 2024": month-day to month-day, one year printed for both.
+_SHARED_YEAR = re.compile(r'\b([A-Z]{3,10})\.?\s?(\d{1,2})\s*(?:-|TO|THROUGH|THRU)\s*([A-Z]{3,10})\.?\s?(\d{1,2}),?\s*(\d{4})\b')
 
 
 def _full_date(text, order):
@@ -299,7 +452,7 @@ def _full_date(text, order):
 
 def period_ranges(text, order=None):
     """(start, end) ranges printed in one line of text (B1, B3)."""
-    f = re.sub(r'[^A-Z0-9/.,\- ]+', ' ', _dnorm(text))
+    f = _ocr_date(re.sub(r'[^A-Z0-9/.,\- ]+', ' ', _dnorm(text)))
     found = []
     for pattern in (_RANGE, _RANGE_TIGHT):
         for m in pattern.finditer(f):
@@ -313,11 +466,20 @@ def period_ranges(text, order=None):
     for m in _SLASH_RANGE.finditer(f):
         dates = []
         for part in (m[1], m[2]):
-            d, month, year = part.split()[0], part.split()[1].rstrip('.'), part.split()[2]
+            pieces = re.match(r'(\d{1,2})[\s-]+([A-Z ]+?)\.?[\s-]+(\d{2,4})$', part)
+            d, month, year = pieces[1], pieces[2].replace(' ', ''), pieces[3]
             year = int(year) + (2000 if len(year) == 2 else 0)
             dates.append(_calendar(year, MONTHS.get(month, 0), int(d)) if month in MONTHS else None)
         if all(dates) and dates[0] <= dates[1] and (dates[1] - dates[0]).days <= MAX_PERIOD_DAYS:
             found.append(tuple(dates))
+    for m in _SHARED_YEAR.finditer(f):
+        if m[1] in MONTHS and m[3] in MONTHS:
+            year = int(m[5])
+            # The printed year is the end's; a start month after the end month is in the year before.
+            start = _calendar(year - (MONTHS[m[1]] > MONTHS[m[3]]), MONTHS[m[1]], int(m[2]))
+            end = _calendar(year, MONTHS[m[3]], int(m[4]))
+            if start and end and start <= end and (end - start).days <= MAX_PERIOD_DAYS:
+                found.append((start, end))
     for m in _SHARED_MONTH.finditer(f):
         if m[3] in MONTHS:
             start = _calendar(int(m[4]), MONTHS[m[3]], int(m[1]))
@@ -475,9 +637,18 @@ def _row_is_movement(row, style, exponent):
     tokens = merged_dates(row['tokens'])
     if not tokens:
         return False
-    if not is_date_token(tokens[0]['t'].rstrip('.,')):
+    if not _leading_date(tokens[0]['t'].rstrip('.,')):
         return False
     return any(_value_kind(t, style, exponent) == 'money' for t in tokens)
+
+
+def _day_only(text):
+    return _DAY_COLUMN.get() and bool(re.fullmatch(r'\d{1,2}', text)) and 1 <= int(text) <= 31
+
+
+def _leading_date(text):
+    """The first printed word of a dated line: a date, or the day alone under a day column (B2)."""
+    return is_date_token(text) or _day_only(text)
 
 
 def page_facts(rows, style, exponent=2):
@@ -496,7 +667,10 @@ def page_facts(rows, style, exponent=2):
                 if any(word in folded.split() or folded.startswith(word) for word in PERIOD_WORDS):
                     facts['labelled_periods'].update(ranges)
         for m in PAGE_NUMBERING.finditer(folded):
-            facts['numbering'].add((int(m[1]), int(m[2])))
+            # A page number above the printed count ('HOJA 10DE 2' for 'HOJA 1 DE 2') is a misreading,
+            # not a page number: the page counts as unnumbered (A3).
+            if 1 <= int(m[1]) <= int(m[2]):
+                facts['numbering'].add((int(m[1]), int(m[2])))
         if any(phrase in folded for phrase in (fold(p) for p in LIABILITY_EVIDENCE)):
             facts['liability'] = True
         if not movement:
@@ -565,6 +739,40 @@ def _accounts(row, found):
 _ACCOUNT_LABELS_LONGEST = sorted(ACCOUNT_LABELS, key=lambda item: len(item[0]), reverse=True)
 
 
+def _stacked_accounts(rows):
+    """[(value, rank)] of account labels printed as a column heading with the value in the line below (A6).
+
+    The label is a whole cell ('ACCOUNT NUMBER' above '2489'); the value is the
+    cell of the next line that overlaps it horizontally, digits only. Under a
+    full account-number label (rank 3) four printed digits are enough (statements
+    printing only the last digits of the number); otherwise the usual 6-20.
+    """
+    names = {label(name): rank for name, rank in ACCOUNT_LABELS}
+    located = [r for r in rows if r['tokens'] and r['y0'] is not None]
+    found = []
+    for index, row in enumerate(located):
+        rotation = row['source'].get('reading_rotation') or 0
+        for cell in row['raw']['cells']:
+            rank = names.get(label(cell['expected_text']))
+            rect, _ = _rect(cell, rotation)
+            if rank is None or rect is None:
+                continue
+            height = rect[3] - rect[1]
+            below = next((r for r in located[index + 1:] if r['y0'] > rect[1] + height * 0.5), None)
+            if below is None or below['y0'] - rect[3] > height * 1.5:
+                continue
+            for other in below['raw']['cells']:
+                orect, _ = _rect(other, rotation)
+                text = other['expected_text'].strip()
+                if orect is None or orect[2] <= rect[0] or orect[0] >= rect[2] or not re.fullmatch(r'[\d -]+', text):
+                    continue
+                digits = re.sub(r'\D', '', text)
+                if (4 <= len(digits) <= 20 if rank >= 3 else 6 <= len(digits) <= 20) and not text.startswith('0' * 4):
+                    found.append((text.replace(' ', ''), rank))
+                break
+    return found
+
+
 def _zipped_labels(source_rows):
     """Values of a vertically merged label column (A6): 'L1\\nL2\\nL3' beside rows of values."""
     pairs = []
@@ -583,20 +791,50 @@ def _zipped_labels(source_rows):
     return pairs
 
 
+def _one_substitution(read, word):
+    """A word of six or more letters read with exactly one other character in its place (F1, OCR)."""
+    return read == word or (len(read) == len(word) >= 6 and sum(a != b for a, b in zip(read, word)) == 1)
+
+
+_MULTIWORD_CURRENCIES = [(name.split(), code) for name, code in CURRENCY_NAMES.items() if ' ' in name]
+
+
+def labelled_currency(key, value):
+    """The currency a currency label's value names, or ''.
+
+    The value is a currency name ('MONEDA: PESOS'); the label word and the value
+    together are one ('Moneda: Nacional' = moneda nacional); or, after the label
+    only, a multi-word currency name read with at most one substituted character
+    per word of six or more letters ('MONEDA NACTONAL'), when exactly one
+    currency is that close.
+    """
+    words = value.split()
+    for size in (3, 2, 1):
+        head = ' '.join(words[:size])
+        if len(words) >= size and head in CURRENCY_NAMES:
+            return CURRENCY_NAMES[head]
+    for size in (2, 1):
+        joined = ' '.join([key] + words[:size])
+        if len(words) >= size and joined in CURRENCY_NAMES:
+            return CURRENCY_NAMES[joined]
+    close = set()
+    for candidate in (words, [key] + words):
+        for name, code in _MULTIWORD_CURRENCIES:
+            read = candidate[:len(name)]
+            if len(read) == len(name) and all(_one_substitution(r, w) for r, w in zip(read, name)):
+                close.add(code)
+    return close.pop() if len(close) == 1 else ''
+
+
 def _currency(row, found):
-    pairs = label_pairs(row, 'dot', 2)
     folded = fold(row['text'])
     for name in CURRENCY_LABELS:
         key = fold(name)
         # Every occurrence of the label counts: its value can repeat the label word ("MONEDA: MONEDA NACIONAL").
         for m in re.finditer(r'(?:^|(?<=\s))' + re.escape(key) + r'\s*:?\s+(?=(.+)$)', folded):
-            value = m[1].strip()
-            for size in (3, 2, 1):
-                head = ' '.join(value.split()[:size])
-                if head in CURRENCY_NAMES:
-                    found.add(CURRENCY_NAMES[head])
-                    break
-    del pairs
+            code = labelled_currency(key, m[1].strip())
+            if code:
+                found.add(code)
 
 
 _US_ADDRESS = re.compile(r'\b(?:A[KLRZ]|C[AOT]|D[CE]|FL|GA|HI|I[ADLN]|K[SY]|LA|M[ADEINOST]|N[CDEHJMVY]|O[HKR]|PA|RI|S[CD]|T[NX]|UT|V[AT]|W[AIVY])\s+\d{5}(?:\s?-?\s?\d{4})?\b')
@@ -672,12 +910,21 @@ def _heading_currencies(rows, style):
         if any(_value_kind(t, style, 2) == 'money' for t in row['tokens']):
             continue
         text = ' ' + fold(row['text']) + ' '
+        words = fold(row['text']).split()
         for name in _HEADING_CURRENCIES:
-            if ' ' + name + ' ' in text and (' ' in name or fold(row['text']).split()[-1:] == [name]
-                                              or fold(row['text']).split()[:1] == [name]):
+            if ' ' + name + ' ' in text and (' ' in name or words[-1:] == [name]
+                                              or words[:1] == [name] and not _qualified_dollar(words)):
                 found.add(CURRENCY_NAMES[name])
                 break
     return found
+
+
+def _qualified_dollar(words):
+    """'DOLAR AUSTRALIANO', 'DOLAR CANADA': a dollar word followed by a qualifier names another dollar,
+    not US dollars (C2). Only the American qualifiers keep the plain reading."""
+    return (words[0] in ('DOLAR', 'DOLARES') and len(words) > 1
+            and words[1] not in ('AMERICANO', 'AMERICANOS', 'ESTADOUNIDENSE', 'ESTADOUNIDENSES', 'US', 'USD', 'EUA',
+                                 'E.U.A.', 'DE', 'SOBRE', 'AL'))
 
 
 def _holder_label(row, found):
@@ -957,6 +1204,20 @@ def _read_statements(sources, *, profile=None):
     pages = _pages(sources)
     if not pages:
         return []
+    day_column = any(_is_header(row) and any(column_role(label(t['t'])) == 'date' and label(t['t']) in _DAY_WORDS
+                                             for t in row['tokens'])
+                     for rows in pages.values() for row in rows if row['tokens'])
+    token = _DAY_COLUMN.set(day_column)
+    try:
+        return _read_statements_in(pages, sources, profile)
+    finally:
+        _DAY_COLUMN.reset(token)
+
+
+_DAY_WORDS = {'DIA', 'DAY'}
+
+
+def _read_statements_in(pages, sources, profile):
     style = separator_style(pages)
     facts = {page: page_facts(rows, style or 'dot') for page, rows in pages.items()}
     by_source = {}
@@ -972,18 +1233,25 @@ def _read_statements(sources, *, profile=None):
                     if name in {label(w) for w in PERIOD_WORDS} or 'PERIODO' in name or 'PERIOD' in name:
                         facts[page]['labelled_periods'].add(period)
                         facts[page]['periods'].add(period)
+    for page, rows in pages.items():
+        for value, rank in _stacked_accounts(rows):
+            printed = {re.sub(r'\D', '', key) for key in facts[page]['accounts']}
+            if re.sub(r'\D', '', value) not in printed:  # the same number printed inline is one account
+                facts[page]['accounts'].setdefault(value, set()).add(rank)
     statements = []
     for segment in _segments(pages, facts):
         ordered = [row for page in segment['pages'] for row in pages[page]]
-        mentions = []
+        mentions, labelled = [], set()
         for position, row in enumerate(ordered):
             row['_seg'] = position
             if row['tokens'] and not _row_is_movement(row, style or 'dot', 2):
                 named = set()
                 _currency(row, named)
+                labelled |= named
                 named |= _heading_currencies([row], style or 'dot')
                 mentions.extend((position, code) for code in named)
         segment['currency_mentions'] = mentions
+        segment['currency_labels'] = labelled
         sections = _sections(segment, pages, style or 'dot')
         page_use = {}
         for section in sections:
@@ -1006,7 +1274,9 @@ def _empty_section(statement):
     if any(r['kind'] == 'transaction' for r in rows) or statement['engine']['proved']:
         return False
     balances = [r['fields'].get('balance') for r in rows if r['kind'] in ('balance', 'statement_total')]
-    return (not statement['currency'] and not statement['account_reference']
+    # A currency inherited from the statement's label is not the section's own.
+    own_currency = statement['currency'] and statement.get('currency_source') != 'printed_statement_currency'
+    return (not own_currency and not statement['account_reference']
             and all(value in (None, '0') for value in balances))
 
 
@@ -1020,13 +1290,19 @@ def _sections(segment, pages, style):
         new_opening = {money(_control_value([t for kind, t in values if kind == 'money'])['t'], style)
                        for text, values in pairs if _role_of(text, False) == 'opening'
                        and any(kind == 'money' for kind, _ in values)}
-        if 'opening' in roles and closed and current and (moved or not new_opening <= _endpoints(current, style)['opening']):
+        # A heading line repeated on every page ('... Saldo inicial 1,000.00' above each page's table)
+        # continues the section: the same text printed on an earlier page of it is not a new opening.
+        repeated = any(earlier['page'] != row['page'] and earlier['text'] == row['text'] for earlier in current)
+        if ('opening' in roles and closed and current and not repeated
+                and (moved or not new_opening <= _endpoints(current, style)['opening'])):
             # Lines printed after the closing balance (the next section's heading) open the next section.
             carried = current[after_close:] if after_close is not None else []
             sections.append(current[:after_close] if after_close is not None else current)
             current, closed, moved, after_close = list(carried), False, False, None
         current.append(row)
-        if 'closing' in roles:
+        if 'closing' in roles or ('column_total' in roles and moved):
+            # A table's own total line after its movements closes it as its closing balance does: lines
+            # printed after it are the next section's heading.
             closed = True
             after_close = len(current)
         elif _row_is_movement(row, style, 2):
@@ -1041,6 +1317,13 @@ def _sections(segment, pages, style):
         if merged and not any(_row_is_movement(r, style, 2) for r in section):
             previous, here = _endpoints(merged[-1], style), _endpoints(section, style)
             if here['opening'] and here['opening'] <= previous['opening'] and here['closing'] <= previous['closing']:
+                merged[-1] = merged[-1] + section
+                continue
+        if merged and not any(_row_is_movement(r, style, 2) for r in merged[-1]):
+            # A summary block whose opening was not read, printing the closing balance this section prints,
+            # is this section's summary (its heading), not a period of its own.
+            previous, here = _endpoints(merged[-1], style), _endpoints(section, style)
+            if not previous['opening'] and previous['closing'] and previous['closing'] <= here['closing']:
                 merged[-1] = merged[-1] + section
                 continue
         merged.append(section)
@@ -1208,6 +1491,23 @@ def _read_section(rows, segment, pages, facts, style, sources, profile, shared=F
     if not period and reading['proof']['proved']:
         reading['proof'].update(proved=False, reason='no_period')
     named = {code for _, code in segment.get('currency_mentions', [])}
+    if shared and not statement['currency'] and len(named) == 1 and segment.get('currency_labels') == named:
+        # A section sharing a page names no currency of its own, and the statement prints exactly one
+        # currency, under a currency label ('MONEDA: ...'): that is the statement's currency, so it is the
+        # section's (C2). A currency named only in another section's heading is that section's; a
+        # statement naming several currencies keeps the rule below (only the section's own heading counts).
+        statement.update(currency=next(iter(named)), currency_source='printed_statement_currency')
+        try:
+            new_exponent = get_currency(statement['currency']).exponent
+        except MoneyError:
+            new_exponent = 2
+        if new_exponent != exponent:
+            reading = _reading(rows, statement, style, new_exponent, liability, period)
+            statement.update(layout_fingerprint=reading['fingerprint'], layout_key=reading['layout_key'],
+                             engine=reading['proof'])
+        statement['id'] = _digest(dict(layout_id=LAYOUT, account=account, start=statement['period_start'],
+                                       end=statement['period_end'], currency=statement['currency'],
+                                       first_page=section_pages[0], first_row=reading['first_row']))
     if len(named) > 1:
         # Several currencies are printed in this statement: the section's own is the nearest one
         # named inside the section above its opening balance; otherwise it stays unread (C2, A7).
@@ -1262,15 +1562,25 @@ def _resolve_dates(movements, period, liability):
         resolved, ok = [], True
         for move in movements:
             dates = []
-            for token in move['date_tokens']:
+            for position, token in enumerate(move['date_tokens']):
+                # The row date lies in the period (the card window below its start); a second printed date
+                # (settlement / value date, B5) may fall up to a month either side of it.
+                first, last = (low, end) if position == 0 else (start - timedelta(days=31), end + timedelta(days=31))
                 found = set()
+                if not _date_parts(token['t']) and _day_only(token['t'].rstrip('.,')):
+                    # The day alone: the one date with that day inside the printed period (B2).
+                    day, cursor = int(token['t'].rstrip('.,')), start
+                    while cursor <= end:
+                        if cursor.day == day:
+                            found.add(cursor)
+                        cursor += timedelta(days=1)
                 for d, mth, y, kind in _date_parts(token['t']):
                     if kind in ('dmy', 'mdy') and kind != order:
                         continue
-                    years = [y] if y else range(low.year, end.year + 1)
+                    years = [y] if y else range(first.year, last.year + 1)
                     for year in years:
                         day = _calendar(year, mth, d)
-                        if day and low <= day <= end:
+                        if day and first <= day <= last:
                             found.add(day)
                 if len(found) != 1:
                     ok = False
@@ -1290,9 +1600,9 @@ def _resolve_dates(movements, period, liability):
 
 def _columns(tokens, width):
     """Right-edge bands of money tokens (E2), as fractions of the page width."""
-    edges = sorted((t['x1'] / (t['_width'] or width)) for t in tokens if t['exact'] or t['last'])
+    edges = sorted(_edge(t, width) for t in tokens if t['exact'] or t['last'])
     if not edges:
-        edges = sorted(t['x1'] / (t['_width'] or width) for t in tokens)
+        edges = sorted(_edge(t, width) for t in tokens)
     bands = []
     for edge in edges:
         if bands and edge - bands[-1][-1] <= 0.012:
@@ -1302,8 +1612,53 @@ def _columns(tokens, width):
     return [sorted(band)[len(band) // 2] for band in bands]
 
 
+def _edge(token, width):
+    """A token's right edge as a fraction of its page width, on its page's aligned position."""
+    return token['x1'] / (token['_width'] or width) - token.get('_shift', 0.0)
+
+
+def _page_shifts(rows, style, exponent, width):
+    """{page: horizontal offset} of scanned pages whose amount columns sit to one side of the
+    reference page's (the page with the most movement amounts) (E2, F).
+
+    A scan places each sheet with its own offset, so one printed column lands a
+    little left or right on each page. A page is aligned only when one offset of
+    at most 4% of the width puts more of its movement amounts on the reference
+    columns than leaving it in place, and puts at least 80% of them there.
+    """
+    edges = {}
+    for row in rows:
+        if row['tokens'] and _row_is_movement(row, style, exponent):
+            for token in row['tokens']:
+                if (token['exact'] or token['last']) and _value_kind(token, style, exponent) == 'money':
+                    edges.setdefault(row['page'], []).append(token['x1'] / (token['_width'] or width))
+    if len(edges) < 2:
+        return {}
+    reference = max(sorted(edges), key=lambda page: len(edges[page]))
+    bands = []
+    for edge in sorted(edges[reference]):
+        if bands and edge - bands[-1][-1] <= 0.012:
+            bands[-1].append(edge)
+        else:
+            bands.append([edge])
+    centres = [sorted(band)[len(band) // 2] for band in bands]
+
+    def placed(values, shift):
+        return sum(any(abs(value - shift - centre) <= 0.006 for centre in centres) for value in values)
+
+    shifts = {}
+    for page, values in edges.items():
+        if page == reference:
+            continue
+        here = placed(values, 0.0)
+        best, shift = max((placed(values, step / 1000), -abs(step), step / 1000) for step in range(-40, 41))[0::2]
+        if best > here and best >= 0.8 * len(values):
+            shifts[page] = shift
+    return shifts
+
+
 def _band(token, columns, width):
-    edge = token['x1'] / (token['_width'] or width)
+    edge = _edge(token, width)
     tolerance = 0.015 if (token['exact'] or token['last']) else 0.03
     near = [i for i, c in enumerate(columns) if abs(edge - c) <= tolerance]
     if len(near) == 1:
@@ -1326,7 +1681,8 @@ def _hints(header_rows, columns, width):
                     continue
                 role = column_role(label(' '.join(t['t'] for t in group)))
                 if role:
-                    words.append((role, group[0]['x0'], group[-1]['x1'], row['width'] or width))
+                    shift = group[0].get('_shift', 0.0) * (row['width'] or width)
+                    words.append((role, group[0]['x0'] - shift, group[-1]['x1'] - shift, row['width'] or width))
                     break
         for i, column in enumerate(columns):
             scored = []
@@ -1367,13 +1723,29 @@ def _reading(rows, statement, style, exponent, liability, period):
         row['_index'] = index
         for token in row['tokens']:
             token['_width'] = row['width'] or width
+            token['_shift'] = 0.0
+    shifts = _page_shifts(rows, style or 'dot', exponent, width or 1)
+    for row in rows:
+        for token in row['tokens']:
+            token['_shift'] = shifts.get(row['page'], 0.0)
     # Amount bands from the dated movement lines, before deciding what else carries money (E2).
     early = [t for row in rows if row['tokens'] and _row_is_movement(row, style or 'dot', exponent)
              for t in row['tokens'] if _value_kind(t, style or 'dot', exponent) == 'money']
     early_columns = _columns(early, width or 1) if early else []
+    block = (_PROFILE.get() or {}).get('prior_period_block')
+    prior = False
     for index, row in enumerate(rows):
         if not row['tokens']:
             continue
+        if block:
+            # Library profile (data): earlier periods' operations repeated to explain a balance (E7).
+            folded = fold(row['text'])
+            if any(folded.startswith(fold(p)) for p in block['start']):
+                prior = True
+            elif any(folded.startswith(fold(p)) for p in block['end']):
+                prior = False
+            if prior:
+                continue
         words = {label(t['t']) for t in row['tokens']}
         if _is_header(row):
             headers.append(row)
@@ -1384,6 +1756,8 @@ def _reading(rows, statement, style, exponent, liability, period):
             tokens = merged_dates(row['tokens'])
             date_tokens = []
             rest = list(tokens)
+            if rest and _leading_date(rest[0]['t'].rstrip('.,')):
+                date_tokens.append(rest.pop(0))
             while rest and is_date_token(rest[0]['t']) and len(date_tokens) < 2:
                 date_tokens.append(rest.pop(0))
             money_tokens = [t for t in rest if _value_kind(t, style or 'dot', exponent) == 'money']
@@ -1451,6 +1825,16 @@ def _reading(rows, statement, style, exponent, liability, period):
                 last_move = None if last_move is not None and row['page'] == last_move['row']['page'] and _below(row, last_move) else last_move
             continue
         if region and last_move is not None and row['page'] == last_move['row']['page']:
+            money_here = [t for t in row['tokens'] if _value_kind(t, style or 'dot', exponent) == 'money']
+            band = _band(money_here[0], early_columns, width or 1) if len(money_here) == 1 and early_columns else None
+            taken = {_band(t, early_columns, width or 1) for t in last_move['money']}
+            if band is not None and band not in taken and _continues(row, last_move):
+                # A multi-line entry prints one more value (its amount, or the day's balance) on its last
+                # line, in a column the dated line left empty (E3, C9). The proof assigns its role.
+                last_move['money'].append(money_here[0])
+                last_move['continuation'].append(row)
+                continuation_of[index] = last_move
+                continue
             unplaced.append(row)
     result['first_row'] = (rows[0]['page'], rows[0]['source']['table_index'], rows[0]['raw']['row_index']) if rows else ''
     # Unplaced money lines only count inside a page's movement region: between its first and last movement.
@@ -1488,7 +1872,7 @@ def _reading(rows, statement, style, exponent, liability, period):
             proof['reason'] = 'no_movements_or_controls'
         elif not controls['opening']:
             proof['reason'] = 'no_opening'
-        elif not controls['closing']:
+        elif not controls['closing'] and not column_totals:
             proof['reason'] = 'no_closing'
         elif date_problem:
             proof['reason'] = date_problem
@@ -1702,7 +2086,17 @@ def _search(moves, columns, hints, controls, column_totals, style, exponent, lia
                     totals_found += 1
                     if money(token['t'], style, exponent) != (credits if role == 'credit' else debits):
                         totals_ok, totals_failed = False, True
-        for opening, closing in product(openings, closings):
+        # A column-total line printing a value in the running-balance column prints the balance after the
+        # last movement: a closing-balance candidate (D6); unequal candidates cannot both prove.
+        here_closings = dict(closings)
+        for item in column_totals:
+            for token in item['tokens']:
+                band = _band(token, columns, width) if columns else None
+                if band is not None and assignment[band] == 'balance':
+                    value = money(token['t'], style, exponent)
+                    if value is not None:
+                        here_closings.setdefault(value, dict(row=item['row'], value_token=token, count=None))
+        for opening, closing in product(openings, here_closings):
             net = sum(v['effect'] for v in effects)
             closing_ok = opening + net == closing
             chains = []
@@ -1726,7 +2120,7 @@ def _search(moves, columns, hints, controls, column_totals, style, exponent, lia
             key = (opening, closing, tuple((m['row']['_index'], v.get('direction'), v.get('amount')) for m, v in zip(moves, values)))
             results.append(dict(proved=proved, closing_ok=closing_ok, totals_failed=totals_failed, chain_ok=chain_ok,
                                 key=key, assignment=assignment, values=values, opening=opening, closing=closing,
-                                basis=basis, opening_item=openings[opening], closing_item=closings[closing]))
+                                basis=basis, opening_item=openings[opening], closing_item=here_closings[closing]))
     return results
 
 
@@ -1765,7 +2159,8 @@ def _rows(rows, moves, resolved, chosen, controls, column_totals, statement, sty
             fields = item['fields']
             description = ' '.join(t['t'] for t in move['description'])
             for extra in move['continuation']:
-                description += ' ' + extra['text']
+                description += ' ' + ' '.join(t['t'] for t in extra['tokens']
+                                              if not any(t is m for m in move['money']))
                 item.setdefault('continuation_sources', []).append(dict(
                     page_number=extra['page'], table_index=extra['source']['table_index'],
                     row_index=extra['raw']['row_index'], source_cells=extra['raw']['cells']))
