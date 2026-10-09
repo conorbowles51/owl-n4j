@@ -232,6 +232,44 @@ def pair_truth(proposal, candidates, summary):
     return truth
 
 
+def _same_money(a, b):
+    """Two truth periods that print the same money: currency, both balances and every row."""
+    def rows(t):
+        return sorted((r['amount_minor'], r['direction'], r['date'] or '') for r in t['rows'])
+    return (a['currency'] == b['currency'] and a['opening_minor'] == b['opening_minor']
+            and a['closing_minor'] == b['closing_minor'] and rows(a) == rows(b))
+
+
+def pair_identical_copies(periods, truths):
+    """Score whichever printed copy of a statement the processor admits.
+
+    The truth marks the second printing of a statement in a file as a
+    ``duplicate`` of the first. The processor keeps one printing and sets the
+    other aside; which one it keeps is its own rule. When it set aside the
+    printing the truth calls the original and offers the copy, and the two
+    truth periods print identical money (currency, both balances, every row),
+    the two items exchange their truth periods: the offered copy is scored as
+    the statement and the set-aside one as the repeat. Any other case is left
+    as paired. Scoring only; nothing about the processor's choice changes.
+    """
+    by_truth = {p['truth_id']: p for p in periods if p.get('truth_id')}
+    for original in list(by_truth.values()):
+        truth = truths.get(original['truth_id'])
+        if not truth or truth['expected'] == 'duplicate' or original['status'] != 'duplicate_ignored':
+            continue
+        copies = [by_truth[t['id']] for t in truths.values() if t.get('duplicate_of') == truth['id']
+                  and t['id'] in by_truth and by_truth[t['id']]['can_import'] and _same_money(t, truth)]
+        if len(copies) != 1:
+            continue
+        copy = copies[0]
+        repeat = truths[copy['truth_id']]
+        for entry, assigned in ((copy, truth), (original, repeat)):
+            entry.update(truth_id=assigned['id'], expected=assigned['expected'], scored=_scored(assigned),
+                         defects=assigned['defects'], paired_copy=True)
+            entry.pop('correction', None)
+    return periods
+
+
 def simulate_correction(proposal, truth, assess, initial_request):
     """Apply ground truth like an investigator; count each action; re-assess."""
     raw = initial_request(proposal)
@@ -479,6 +517,7 @@ def run(out, python, concurrency, corpus=CORPUS, readings=None, compare=None):
                 if not entry['can_import']:
                     entry['correction'] = simulate_correction(proposal, truth, batches.assess, batches.initial_request)
             periods.append(entry)
+    periods = pair_identical_copies(periods, truths)
     missing = [t for t in truths.values() if t['id'] not in used]
     for truth in missing:
         periods.append(dict(item_id=None, filename=truth['filename'], statement_id=None, status='not_detected',
@@ -682,6 +721,7 @@ def rescore(out, corpus, compare=None):
                           defects=truth['defects'])
         elif period['truth_id']:
             period.update(scored=False, expected=None)
+    result['periods'] = pair_identical_copies(result['periods'], truths)
     engine = create_engine(f"sqlite+pysqlite:///{out / 'benchmark.db'}", future=True)
     factory = sessionmaker(bind=engine, autoflush=False, autocommit=False)
     with factory() as db:

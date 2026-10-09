@@ -4,7 +4,7 @@ Amounts come from the source image, never from balancing arithmetic. Complete
 matching visual readings are required; conflicting signs or digits stay flagged.
 """
 from copy import deepcopy
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 import re
 import time
@@ -178,8 +178,10 @@ def _cleaned_line_readings(page, rect, rotation, deadline, language, whitelist='
 
 
 # Glyphs an embedded OCR layer was measured to put for a printed digit in an
-# Andrews row date (``O3/l5`` for ``03/15``), by the digit they stand for.
-_DATE_LOOKALIKES = {'0': 'OoDQ', '1': 'lIi|!L', '2': 'Z', '5': 'S', '8': 'B'}
+# Andrews row date (``O3/l5`` for ``03/15``), by the digit they stand for, and
+# for the printed slash in a card row date (``07112`` for ``07/12`` on a real
+# card statement's recognised text layer).
+_DATE_LOOKALIKES = {'0': 'OoDQ', '1': 'lIi|!L', '2': 'Z', '5': 'S', '8': 'B', '/': '1lI|'}
 
 
 def _row_date_in_period(text, period):
@@ -196,14 +198,16 @@ def _row_date_in_period(text, period):
 
 
 def _reread_row_date(page, rect, original, period, deadline, language):
-    """``(MM/DD, observations)`` for an unreadable Andrews row date its own cell shows, else ``(None, ...)``.
+    """``(MM/DD, observations)`` for an unreadable row date its own cell shows, else ``(None, ...)``.
 
+    Used for Andrews row dates and card transaction and posting dates.
     The measured date cell is read at two sizes and three ink thresholds with
     only digits and ``/`` allowed. Accepted only when all six readings were
     made, the first and at least four (at both sizes) are one identical date
-    inside the printed statement period, and that date accounts for every
+    inside ``period`` (the printed statement period; for a card transaction
+    date, also the 31 days before it, as the card reader allows), and that date accounts for every
     character the page reading shows: each is the same digit or ``/``, or a
-    letter measured to stand in for that digit (``O`` for 0, ``l`` for 1).
+    glyph measured to stand in for it (``O`` for 0, ``l`` for 1, ``1`` for ``/``).
     Spaces in the page reading are ignored. Anything else keeps the cell
     unreadable for a person.
     """
@@ -245,8 +249,10 @@ def refine_statement_native_cells(page, tables, *, deadline, language):
     cards, _ = credit_one_catalog(sources)
     merrick = merrick_statement(sources[0]) if len(sources) == 1 else None
     labelled = None
-    # Andrews only: the printed statement period that bounds a reread row date.
-    period = None
+    # Row date fields reread from their own cell, each with the dates its
+    # reading may take: the printed statement period (Andrews, card posting
+    # dates), and for a card transaction date also the 31 days before it.
+    dates = {}
     # Layouts whose rows name their money column per row rather than one
     # amount column: (field, column key) pairs to try for a payment row.
     payment_columns = None
@@ -256,6 +262,8 @@ def refine_statement_native_cells(page, tables, *, deadline, language):
     valid_money, whitelist = _money, '0123456789.,-+'
     if len(cards) == 1:
         propose = lambda source: propose_credit_one_table(source, 'USD', cards[0])
+        start, end = date.fromisoformat(cards[0]['period_start']), date.fromisoformat(cards[0]['period_end'])
+        dates = dict(date=(start - timedelta(days=31), end), booking_date=(start, end))
     elif (bbva := bbva_page_statement(sources)) is not None:
         # The Cargos or Abonos column holding the payment's only amount.
         rows = bbva[1]
@@ -284,12 +292,15 @@ def refine_statement_native_cells(page, tables, *, deadline, language):
                 if r['row_index'] >= andrews['body_start']])
         statement = dict(period_start=andrews['start'], period_end=andrews['end'], sources=[scope])
         propose = lambda source: propose_andrews_statement([source], 'USD', statement)
-        period = (date.fromisoformat(andrews['start']), date.fromisoformat(andrews['end']))
+        dates = dict(date=(date.fromisoformat(andrews['start']), date.fromisoformat(andrews['end'])))
     before = assess_statement_reading([table.to_json() for table in tables])
     if not before or not before['unreadable']:
         return tables, []
     replacements, records = {}, []
-    deadline = min(deadline, time.monotonic() + 30)
+    # Each cell costs six crop readings (about 3 s on a loaded host). A card
+    # page can carry a dozen dates whose slash the layer read as 1, so the
+    # page budget is 60 s; the caller's deadline still bounds it.
+    deadline = min(deadline, time.monotonic() + 60)
     targets = []
     for source in sources:
         for row in propose(source)['rows']:
@@ -306,8 +317,8 @@ def refine_statement_native_cells(page, tables, *, deadline, language):
                 # A balance split across several money cells is not one
                 # measured target; a fragment could read as a complete value.
                 candidates = []
-            if period and payment and row['kind'] == 'transaction':
-                candidates = [*candidates, ('date', 'date_column')]
+            if dates and payment and row['kind'] == 'transaction':
+                candidates = [*candidates, *[(field, field + '_column') for field in dates]]
             for field, column_key in candidates:
                 column = fields.get(column_key)
                 if field not in fields and column is not None:
@@ -328,13 +339,13 @@ def refine_statement_native_cells(page, tables, *, deadline, language):
                 or abs(size[0] - page.rect.width * 1000) > 2 or abs(size[1] - page.rect.height * 1000) > 2
                 or rect[2] - rect[0] > size[0] * .13 or len(cell['expected_text']) > 24):
             continue
-        if field == 'date':
-            value, observations = _reread_row_date(page, rect, cell['expected_text'], period, deadline, language)
+        if field in dates:
+            value, observations = _reread_row_date(page, rect, cell['expected_text'], dates[field], deadline, language)
             if value:
                 replacements[(source['table_index'], row['row_index'], int(column))] = value
                 records.append(dict(method='tesseract_native_statement_cell_consensus', page=page.number + 1,
                     table_index=source['table_index'], row_index=row['row_index'], column_index=int(column),
-                    field='date', original_text=cell['expected_text'], text=value, source_locator=locator,
+                    field=field, original_text=cell['expected_text'], text=value, source_locator=locator,
                     observations=observations, reason='unreadable_native_statement_date'))
             continue
         try:

@@ -489,6 +489,28 @@ class MerrickCouponHolderTests(unittest.TestCase):
                 self.assertNotIn('holder_sources', result)
 
 
+    def test_an_initial_set_above_the_name_with_touching_boxes_is_part_of_the_name(self):
+        data = self.example(True)
+        extra = {r['row_index']: r for r in data['rows'] if r['row_index'] >= 100}
+        # Image OCR: 'EXAMPLE' and 'HOLDER' on the name line, the initial raised and its box
+        # overlapping the surname's by one point.
+        extra[104]['cells'][0].update(expected_text='EXAMPLE', locator=rectangle(117, x=370, width=33, height=3))
+        data['rows'].append(dict(row_index=106, cells=[dict(column_index=0, expected_text='A',
+                                                            locator=rectangle(113, x=406, width=5, height=3))]))
+        result = merrick_statement(data)
+        self.assertEqual(result['holder'], 'EXAMPLE A HOLDER')
+        self.assertEqual(len(result['holder_sources']), 3)
+        for text in ('HOLDER.', 'HOLDER'):
+            with self.subTest(surname=text):
+                variant = deepcopy(data)
+                surname = next(r for r in variant['rows'] if r['row_index'] == 105)['cells'][0]
+                surname['expected_text'] = text
+                if text == 'HOLDER':
+                    # Boxes overlapping by more than an eighth of the usual gap are two readings of one place.
+                    surname['locator'] = rectangle(117, x=407, width=31, height=3)
+                self.assertEqual(merrick_statement(variant)['holder'], '')
+
+
 class MerrickChargeControlTests(unittest.TestCase):
     def example(self):
         data = measured_statement()

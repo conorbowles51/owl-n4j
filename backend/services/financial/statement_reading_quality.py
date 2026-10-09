@@ -152,6 +152,26 @@ def _page_statement_rows(sources):
     return identity, rows
 
 
+def _incomplete_identity_rows(sources):
+    """``(identity, rows)`` for a page a supported layout claims although its statement identity is unreadable.
+
+    Merrick recognises its statement pages by the issuer and the transaction
+    section heading, before the account and statement date are read. A
+    recognised text layer can be too damaged to read either (a closing date
+    ``09/14125``). Such a reading can never be admitted, so it is assessed with
+    the identity parts it did read (an unreadable part is ``''``) and marked
+    incomplete: an image reading of the same page may then replace it
+    (``prefer_image_reading``). Otherwise ``None``.
+    """
+    from services.financial.statement_import_merrick import merrick_statement, propose_merrick_table
+    merrick = merrick_statement(sources[0]) if len(sources) == 1 else None
+    if merrick is None or (merrick['account_reference'] and merrick['statement_date'] and not merrick.get('date_conflict')):
+        return None
+    identity = [merrick['layout_id'], merrick['account_reference'],
+                '' if merrick.get('date_conflict') else merrick['statement_date']]
+    return identity, propose_merrick_table(sources[0], 'USD', merrick)['rows']
+
+
 def assess_statement_reading(tables):
     assessed = _assess(tables)
     return assessed[0] if assessed else None
@@ -159,7 +179,11 @@ def assess_statement_reading(tables):
 
 def _assess(tables):
     """``(assessment, rows behind known_rows)`` for one page reading, or ``None``."""
-    found = _page_statement_rows(sources_from_tables(tables))
+    sources = sources_from_tables(tables)
+    found = _page_statement_rows(sources)
+    complete = found is not None
+    if found is None:
+        found = _incomplete_identity_rows(sources)
     if found is None:
         return None
     identity, rows = found
@@ -183,9 +207,12 @@ def _assess(tables):
         or r['fields'].get('statement_layout') == 'andrews-share-statement')
         and 'balance' not in r['fields'] for r in payments)
     missing['statement_balance'] = sum('balance' not in r['fields'] for r in balances)
+    # An unreadable account or statement date is an unreadable field too.
+    missing['identity'] = 0 if complete else max(1, sum(not part for part in identity[1:]))
     zero_charges = sum(r['kind'] == 'zero_charge' for r in rows)
     result = dict(identity=identity, payments=len(payments), payment_rows=len(payments) + zero_charges,
-        zero_charge_rows=zero_charges, balances=len(balances), missing_fields=missing, unreadable=sum(missing.values()))
+        zero_charge_rows=zero_charges, balances=len(balances), missing_fields=missing, unreadable=sum(missing.values()),
+        identity_complete=complete)
     # Preserve readable facts across every supported family, not just counts.
     # One repaired cell must not silently alter another payment or control.
     known = [r for r in rows if r in payments or r['kind'] in ('zero_charge', 'balance', 'statement_total')]
@@ -196,7 +223,50 @@ def _assess(tables):
     return result, known
 
 
+def _identity_recovered(original, image):
+    """Whether an image reading recovers the statement identity a recognised layer could not read.
+
+    The layer's reading of the page is incomplete (``_incomplete_identity_rows``),
+    so it can never be admitted and there is nothing in it to preserve. The
+    image reading must claim the same layout with a complete identity that
+    agrees with every identity part the layer did read, carry at least as many
+    balance controls, and leave fewer fields unreadable. It is then read like
+    any image reading: every money cell is crop-verified and the period must
+    reconcile with its printed controls before it can be admitted.
+    """
+    return bool(original and image and original.get('identity_complete') is False
+        and image.get('identity_complete', True) is not False
+        and original['identity'][0] == image['identity'][0] and len(original['identity']) == len(image['identity'])
+        and all(not part or part == other for part, other in zip(original['identity'][1:], image['identity'][1:]))
+        and image['balances'] >= original['balances']
+        and image['unreadable'] < original['unreadable'])
+
+
+def _card_summary_recovered(original, image):
+    """Whether an image reading reads the card account summary a recognised layer could not read at all.
+
+    A card statement prints its previous and new balance in the account
+    summary of its first page. A layer reading of that page with the same
+    statement identity that reads neither balance, and leaves other fields
+    unreadable, cannot reconcile and can never be admitted. The image reading
+    may replace it when it reads both balances and leaves fewer fields
+    unreadable; it is then crop-verified and must reconcile like any other.
+    """
+    return bool(original and image and original['identity'] == image['identity']
+        and original['identity'][0] in _LIABILITY_LAYOUTS
+        and original['balances'] == 0 and image['balances'] >= 2
+        and original['unreadable'] and image['unreadable'] < original['unreadable'])
+
+
 def prefer_image_reading(original, image):
+    if (original and image and (original.get('identity_complete') is False
+                                or image.get('identity_complete') is False)):
+        # An incomplete identity is never matched by equality: two readings
+        # that both failed to read it would share the same empty parts.
+        return _identity_recovered(original, image)
+    if _card_summary_recovered(original, image):
+        return True
+
     def preserves_known_rows():
         if 'known_rows' not in original:
             return True
@@ -587,6 +657,123 @@ def pinned_andrews_values(tables, candidates, confirmed=None, context=None):
         return {}
     return dict(values=accepted, controls=dict(reconciles=True, sections=summaries,
         unresolved=sorted(list(key) for key in disputed - accepted.keys())))
+
+
+# A card statement's transaction section ends with its year-to-date totals:
+# a page that prints them holds the end of its statement's lines.
+_CARD_YEAR_TO_DATE = re.compile(r'20\d{2} Totals Year-to-Date')
+
+
+def _card_equations(sources, rows):
+    """``[(name, cells, holds)]``: the printed controls of one card statement complete on this page.
+
+    ``balance``: previous balance + charges - payments and credits = new
+    balance, over every line read. ``credit_component`` / ``debit_component``:
+    the printed summary totals of each side = the lines read on that side
+    (``card_summary``). Cells are ``(table_index, row, column)``. Empty when
+    the page does not hold its statement's balances and the end of its lines.
+    """
+    from services.financial.card_summary import SUMMARY_BOXES, compared_lines, summary_components
+    if not any(_CARD_YEAR_TO_DATE.fullmatch(' '.join(c['expected_text'].strip() for c in r['cells']).strip())
+               for s in sources for r in s['rows']):
+        return []
+
+    def key(row, column):
+        return (row['table_index'], row['row_index'], int(column)) if column is not None else None
+
+    def number(value):
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+    balances = {r['fields'].get('description'): r for r in rows if r['kind'] == 'balance'}
+    opening, closing = balances.get('Opening Balance'), balances.get('Closing Balance')
+    if opening is None or closing is None:
+        return []
+    payments = [r for r in rows if not r['excluded'] and r['kind'] in ('transaction', 'unresolved')]
+    lines = [(key(r, r['fields'].get('amount_column')), number(r['fields'].get('amount_minor')),
+              r['fields'].get('direction')) for r in payments]
+    if any(cell is None for cell, _, _ in lines):
+        return []
+    readable = all(amount is not None and direction in ('credit', 'debit') for _, amount, direction in lines)
+    side = {d: sum(a for _, a, direction in lines if direction == d) if readable else None for d in ('credit', 'debit')}
+    first, last = number(opening['fields'].get('balance')), number(closing['fields'].get('balance'))
+    cells = [key(opening, opening['fields'].get('balance_column')), key(closing, closing['fields'].get('balance_column'))]
+    found = [('balance', cells + [cell for cell, _, _ in lines],
+              None not in (first, last) and readable and first + side['debit'] - side['credit'] == last)]
+    # A printed fee or interest total of the period = the charge lines of its section.
+    for total in (r for r in rows if r['kind'] == 'statement_total' and r['fields'].get('total_scope')):
+        scope = total['fields']['total_scope']
+        members = [(key(r, r['fields'].get('amount_column')), number(r['fields'].get('amount_minor')))
+                   for r in rows if r['fields'].get('charge_group') == scope and not r['excluded']]
+        value = number(total['fields'].get('balance'))
+        found.append((scope + '_total', [key(total, total['fields'].get('balance_column'))] + [c for c, _ in members],
+                      value is not None and None not in [a for _, a in members] and value == sum(a for _, a in members)))
+    for heading, beside in SUMMARY_BOXES:
+        components = [line for s in sources for line in summary_components(s, heading, beside, 'USD')]
+        totalled = {id(r) for r in compared_lines(payments, components)}
+        compared = [line for line, r in zip(lines, payments) if id(r) in totalled]
+        for role, direction in (('credit_component', 'credit'), ('debit_component', 'debit')):
+            members = [(value, cell) for r, _, _, value, cell in components if r == role]
+            if not members:
+                continue
+            values = [value[0] if value and value[1] is not False else None for value, _ in members]
+            total = sum(a for _, a, d in compared if d == direction) if readable else None
+            found.append((role, [cell for _, cell in members] + [c for c, _, d in compared if d == direction],
+                          None not in values and total is not None and sum(values) == total))
+    return found
+
+
+def pinned_card_values(tables, candidates, confirmed):
+    """The one printed reading of each held money cell of a card statement page that its controls fix.
+
+    The card form of ``pinned_andrews_values``. ``candidates`` maps a held
+    cell to the readings a recogniser produced from its print (the page
+    reading when a crop supports it, its normalised form, the agreed crop
+    reading). A reading is accepted only when one printed control of the page
+    (``_card_equations``: the balance equation over every line, a summary
+    side's totals against its lines) contains the cell as its only held cell,
+    every other cell of it was confirmed by the crop check, and it holds with
+    that reading and with no other candidate of the cell. Then, all or
+    nothing for the page, every control holds with every pinned reading in
+    place and every held cell any control uses is pinned. Compensating
+    misreads that only fix a sum of held cells stay held.
+
+    Returns ``dict(values={cell: dict(text=..., pinned_by=[cells])}, controls=...)``,
+    ``{}`` when nothing is accepted, or ``None`` when no card layout claims the page.
+    """
+    found = _page_statement_rows(sources_from_tables(tables))
+    if found is None or found[0][0] not in _LIABILITY_LAYOUTS:
+        return None
+    if not candidates:
+        return {}
+    disputed, confirmed = set(candidates), set(confirmed or ())
+
+    def equations(texts):
+        sources = sources_from_tables(_with_texts(tables, texts))
+        page = _page_statement_rows(sources)
+        return _card_equations(sources, page[1]) if page and page[0][0] in _LIABILITY_LAYOUTS else []
+
+    pinned = {}
+    for key, texts in candidates.items():
+        fixed = []
+        for text in dict.fromkeys(texts):
+            cells = next((cells for _, cells, holds in equations({key: text}) if holds and key in cells
+                          and all(other == key or (other not in disputed and other in confirmed) for other in cells)),
+                         None)
+            if cells is not None:
+                fixed.append((text, cells))
+        if len(fixed) == 1:
+            pinned[key] = dict(text=fixed[0][0], pinned_by=sorted(list(c) for c in set(fixed[0][1]) if c != key))
+    if not pinned:
+        return {}
+    final = equations({key: value['text'] for key, value in pinned.items()})
+    used = {cell for _, cells, _ in final for cell in cells}
+    if not final or not all(holds for _, _, holds in final) or not (disputed & used) <= pinned.keys():
+        return {}
+    return dict(values={key: pinned[key] for key in disputed & used},
+                controls=dict(reconciles=True, equations=[name for name, _, _ in final],
+                              unresolved=sorted(list(key) for key in disputed - used)))
 
 
 def recovers_unread_lines(original, image_tables, bands):

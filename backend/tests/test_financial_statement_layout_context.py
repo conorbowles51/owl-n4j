@@ -141,3 +141,17 @@ class PurchaseBeforeCycleTests(unittest.TestCase):
         self.assertEqual(card_row_dates('May 11', '', start, end)[1], [])
         self.assertEqual(card_row_dates('May 11', 'Jun 30', start, end)[1], [])
         self.assertEqual(card_row_dates('May 11', 'May 13', start, end)[1:4:2], (['2020-05-11'], 'printed_posting_date'))
+
+
+class RepeatedDateCellTests(unittest.TestCase):
+    def test_a_date_printed_twice_in_one_cell_is_read_from_its_readable_copy(self):
+        from datetime import date
+        from services.financial.statement_layout_context import card_row_dates
+        start, end = date(2024, 4, 16), date(2024, 5, 15)
+        for text in ('04/20 04120', '04120 04/20'):
+            with self.subTest(text=text):
+                self.assertEqual(card_row_dates(text, text, start, end)[1:3], (['2024-04-20'], ['2024-04-20']))
+        for text in ('04/20 04121', '04/20 04/21', '04120 04120', '04/20 0412O'):
+            with self.subTest(text=text):
+                self.assertEqual(card_row_dates(text, '04/20', start, end)[1], [])
+

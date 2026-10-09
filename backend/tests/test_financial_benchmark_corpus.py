@@ -77,6 +77,44 @@ class ScoringTests(unittest.TestCase):
 
 
 
+class CopyPairingTests(unittest.TestCase):
+    """A statement printed twice in one file: whichever identical copy is admitted is scored."""
+
+    def truths(self, second_rows=((500, 'debit'),)):
+        rows = [dict(amount_minor=a, direction=d, date='2024-03-05', description='x') for a, d in ((500, 'debit'),)]
+        copy = [dict(amount_minor=a, direction=d, date='2024-03-05', description='x') for a, d in second_rows]
+        base = dict(currency='USD', opening_minor=100, closing_minor=600, defects=[], truth_status='verified')
+        return {'x.pdf#12': dict(base, id='x.pdf#12', expected='auto', duplicate_of=None, rows=rows),
+                'x.pdf#13': dict(base, id='x.pdf#13', expected='duplicate', duplicate_of='x.pdf#12', rows=copy,
+                                 truth_status='ocr_reconciled')}
+
+    def periods(self):
+        return [dict(item_id='a', truth_id='x.pdf#12', expected='auto', scored=True, status='duplicate_ignored',
+                     can_import=False, defects=[], family='f', reasons={}, correction=dict(actions=[])),
+                dict(item_id='b', truth_id='x.pdf#13', expected='duplicate', scored=False, status='ready',
+                     can_import=True, defects=[], family='f', reasons={})]
+
+    def test_the_admitted_identical_copy_is_scored_as_the_statement(self):
+        periods = harness.pair_identical_copies(self.periods(), self.truths())
+        by_item = {p['item_id']: p for p in periods}
+        self.assertEqual((by_item['b']['truth_id'], by_item['b']['expected'], by_item['b']['scored']),
+                         ('x.pdf#12', 'auto', True))
+        self.assertEqual((by_item['a']['truth_id'], by_item['a']['expected'], by_item['a']['scored']),
+                         ('x.pdf#13', 'duplicate', False))
+        block = harness.metrics(dict(periods=periods))['overall']
+        self.assertEqual((block['ready_without_edits'], block['periods']), (1, 1))
+
+    def test_copies_whose_money_differs_keep_their_pairing(self):
+        periods = harness.pair_identical_copies(self.periods(), self.truths(second_rows=((501, 'debit'),)))
+        self.assertEqual([p['truth_id'] for p in periods], ['x.pdf#12', 'x.pdf#13'])
+
+    def test_an_admitted_original_or_a_held_copy_is_left_as_paired(self):
+        periods = self.periods()
+        periods[1].update(status='attention', can_import=False)
+        self.assertEqual([p['truth_id'] for p in harness.pair_identical_copies(periods, self.truths())],
+                         ['x.pdf#12', 'x.pdf#13'])
+
+
 class PairingTests(unittest.TestCase):
     """Batch items pair with ground truth by content; currency only breaks ties."""
 

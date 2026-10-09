@@ -60,9 +60,15 @@ def _coupon_holder(source):
                  if city_box.x0 - tolerance <= box.x0 and box.x1 <= city_box.x1 + tolerance
                  and 0 <= street.y0 - box.y1 <= city_box.page_height // 60]
         names.sort(key=lambda item: item[2].x0)
+        # Image OCR can set a middle initial a little above the name and
+        # report neighbouring words with boxes that touch or overlap slightly
+        # (by up to an eighth of the usual gap). A word ending in a point
+        # after three or more letters is a speck read as part of the name,
+        # not a printed initial or suffix: the name stays unread.
         if (not names or len(names) > 4 or abs(names[0][2].x0 - street.x0) > tolerance
-                or any(not re.fullmatch(r"[A-Z][A-Z .'-]*", cell['expected_text'].strip()) for _, cell, _ in names)
-                or any(not 0 <= right[2].x0 - left[2].x1 <= tolerance
+                or any(not re.fullmatch(r"[A-Z][A-Z .'-]*", cell['expected_text'].strip())
+                       or re.search(r"[A-Z]{3,}\.$", cell['expected_text'].strip()) for _, cell, _ in names)
+                or any(not -(tolerance // 8) <= right[2].x0 - left[2].x1 <= tolerance
                        for left, right in zip(names, names[1:]))):
             continue
         name = ' '.join(cell['expected_text'].strip() for _, cell, _ in names)
@@ -365,6 +371,8 @@ def propose_merrick_table(source, currency, statement):
                 fields.update(amount_minor=str(abs(value)), amount_column=str(cells[amount_index]['column_index']))
                 if value > 0 and re.search(r'\b(?:MOBILE\s+)?PAYMENT\s*-\s*THANK\s+YOU\b', fields['description'], re.IGNORECASE):
                     item['issues'].append('This row describes a card payment, but no minus sign was read. Check its date and original amount in the PDF, then enter the amount under Credit or Debit.')
+                    # The period's printed controls may fix it (card_summary).
+                    fields['payment_sign_unread'] = True
                 else:
                     fields['direction'] = 'credit' if value < 0 else 'debit'
                 # A clearly labelled, positioned zero-interest line records

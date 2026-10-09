@@ -36,7 +36,12 @@ MAX_OSD_TIMEOUT_SECONDS = 30.0
 # v15 (r3-andrews): on Andrews scans, joined amount/balance cells and cells whose
 # only fault is the decimal mark are crop-verified, crop readings are compared by
 # amount, and the pinned reading is decided per account section.
-PDF_READING_REVISION = 'bank-payment-rows-v15'
+# v16 (r4-cards): a printed minus the crops lose is confirmed by its measured
+# mark; crop readings agree whatever decimal/grouping marks they show; an "S"
+# read for the dollar sign is confirmed when the crops read the sign; card row
+# dates are reread from their cells; an image reading replaces a recognised
+# layer that cannot read the statement identity or the card summary balances.
+PDF_READING_REVISION = 'bank-payment-rows-v16'
 OSD_INSUFFICIENT_TEXT_MARKERS = ("too few characters", "skipping this page")
 
 
@@ -1084,7 +1089,7 @@ def _read_ocr_page(document, page_index, page_result, prepared, page_cache, nati
         try:
             from app.pipeline.financial_amount_ocr import refine_statement_native_cells
             refined, refinements = refine_statement_native_cells(crop_page, original['tables'],
-                deadline=time.monotonic() + 30, language=settings.tesseract_lang)
+                deadline=time.monotonic() + 60, language=settings.tesseract_lang)
             if refinements:
                 page_result.ocr_refinements.extend(refinements)
                 original = {**original, 'tables': refined, 'chunks': reader.chunks_of(refined)}

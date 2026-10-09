@@ -60,13 +60,31 @@ def _dates_within(text, start, end):
     return reading, sorted(possible)
 
 
+def _repeated_date(text):
+    """The readable copy of a date a text layer printed twice in one cell, else the text unchanged.
+
+    A real card statement's recognised layer repeats some date cells, once
+    readable and once with its slash read as ``1`` (``05/06 05106``). The cell
+    states one date: the readable copy is taken only when the other copy is
+    exactly it with that slash read as ``1``. Anything else stays as printed.
+    """
+    parts = (text or '').split()
+    if len(parts) == 2:
+        for readable, other in (parts, parts[::-1]):
+            if re.fullmatch(r'\d{2}/\d{2}', readable) and other == readable.replace('/', '1'):
+                return readable
+    return text
+
+
 def card_row_dates(text, posting_text, start, end):
     """Keep both printed dates; a valid posting can anchor a recent purchase.
 
     A purchase shortly before the cycle can post inside it. Resolve its printed
     month/day against that posting date, at most 31 days earlier. More distant,
-    invalid, ambiguous or reversed dates still need review.
+    invalid, ambiguous or reversed dates still need review. A cell repeating
+    its date (``_repeated_date``) is read from its readable copy.
     """
+    text, posting_text = _repeated_date(text), _repeated_date(posting_text) if posting_text is not None else None
     reading, possible = _dates_within(text, start, end)
     postings = _dates_within(posting_text, start, end)[1] if posting_text else []
     basis = 'printed_cycle'

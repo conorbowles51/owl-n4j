@@ -71,7 +71,11 @@ READER_RECOVERY_FLAG = 'LOUPE_FINANCIAL_READER_RECOVERY'
 # crop-verified. r3-andrews (revision v15) added r1-reproduced's file 5eca9825:
 # its readings never crop-verified Andrews cells that join the amount and the
 # running balance (they were parsed unchecked) and held every Andrews page
-# carrying a club share. If a later change edits pdf_extraction.py, add the
+# carrying a club share. r4-cards (revision v16) added r3-andrews' file 3e234391:
+# its readings held every card credit whose minus the crops lost, every card
+# row date whose slash the layer read as 1, every summary balance whose dollar
+# sign it read as S, and kept garbled Merrick layers that cannot read the
+# statement date. If a later change edits pdf_extraction.py, add the
 # digest of the current file here.
 AFFECTED_EXTRACTION_SHA256 = (
     '838372af7b656fa02f655aaa564582ff7ba15c5c17ff46020935ce3356152495',  # 7b0013fb
@@ -93,6 +97,7 @@ AFFECTED_EXTRACTION_SHA256 = (
     'f0afcaf91e36bfec1577d6d2ace6e693c421fb0b72055d5e55e41921bf87a835',  # cc9c6224 (c-image-fields)
     '6d388613fcdb471890f68921103ad8db18f1a4db91bedc44049e9d28a394db1e',  # wave 5 (v13)
     '5eca9825fe4fdd4c06783eb7820fb91d8bc359cd8d77bb45487e307161d6942e',  # 7b00e2f3 r1-reproduced (v14)
+    '3e2343916ad66c94b85230947d48841235f8c4ff22963adb1f7c3a58c6591149',  # bffe7375 r3-andrews (v15)
 )
 READER_RECOVERY = RecoveryCampaign(READER_RECOVERY_RELEASE, {'pdf_extraction.py': AFFECTED_EXTRACTION_SHA256},
     batch_reread=True)

@@ -113,6 +113,8 @@ def statement_rows(choice, selected, chosen_currency, all_sources=None):
         propose = {'capital-one-card': propose_card_table, 'merrick-card': propose_merrick_table,
             'credit-one-card': propose_credit_one_table}[layout]
         rows = [row for source in selected for row in propose(source, chosen_currency, choice)['rows']]
+        from services.financial.card_summary import check_card_period
+        rows = check_card_period(layout, rows, selected, chosen_currency)
     else:
         return None
     if choice.get('engine_disagreement'):

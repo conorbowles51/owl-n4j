@@ -495,6 +495,11 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
         rows.extend(proposal['rows'])
         issues.extend(proposal.get('issues', []))
         _check_review_size(rows)
+    if selected and selected.get('layout_id') in ('merrick-card', 'credit-one-card'):
+        # Fail closed on the printed account summary: its payment and charge
+        # totals must equal the card lines read for this period.
+        from services.financial.card_summary import check_card_period
+        rows = check_card_period(selected['layout_id'], rows, sources, chosen_currency)
     if selected and selected.get('engine_disagreement') and rows:
         # The general engine and this library reader both reconcile the
         # period but read it differently: hold it, never pick one silently.
