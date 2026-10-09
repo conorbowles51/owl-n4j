@@ -15,6 +15,15 @@ import { savedStatementPosition } from "../lib/saved-statement-position"
 import { sourceOrderAnchor } from "../lib/statement-review-draft"
 import { statementBlocker } from "../lib/statement-assessment"
 
+function recordPeriod(record: {
+  period_start?: string | null
+  period_end?: string | null
+}) {
+  if (!record.period_start && !record.period_end)
+    return "statement period dates not read"
+  return `statement ${record.period_start || "start not read"} to ${record.period_end || "end not read"}`
+}
+
 const recordSchema = z.object({
   id: z.string(),
   source_document_id: z.string(),
@@ -22,6 +31,9 @@ const recordSchema = z.object({
   filename: z.string(),
   currency: z.string(),
   page_number: z.number().nullish(),
+  // The statement period the record belongs to; null when not read.
+  period_start: z.string().nullish(),
+  period_end: z.string().nullish(),
   locator: z.unknown(),
   original_text: z.string(),
   missing_fields: z.array(z.string()),
@@ -210,7 +222,8 @@ export function ImportedRecordsPanel({
                       {r.fields.description || "Description unreadable"}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      {r.filename} · page {r.page_number ?? "unknown"} ·{" "}
+                      {r.filename} · {recordPeriod(r)} · page{" "}
+                      {r.page_number ?? "unknown"} ·{" "}
                       {!r.awaiting_reconciliation
                         ? `Check ${r.missing_fields.join(", ")}`
                         : r.can_enter_now
@@ -488,7 +501,8 @@ function ImportedRecordEditor({
     <div>
       <div className="mb-3 flex items-center justify-between">
         <h3 className="font-medium">
-          {record.filename} · page {record.page_number}
+          {record.filename} · {recordPeriod(record)} · page{" "}
+          {record.page_number}
         </h3>
         <Button variant="ghost" size="sm" onClick={onClose}>
           Back to records
