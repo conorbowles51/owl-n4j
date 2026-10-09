@@ -174,3 +174,66 @@ class StatementFileStatusTests(DuplicateTestCase):
         self.assertEqual(len(file['periods']), 1)
         self.assertEqual(file['overlapping_periods'], 1)
         self.assertEqual(file['periods_with_checks'], 0)
+
+    def _empty_file(self, origins, summary=None):
+        from uuid import uuid4
+        from postgres.models.evidence import EvidenceFile, EvidenceDocumentText
+        from postgres.models.financial_import_batches import FinancialImportBatch as Batch, FinancialImportBatchItem as Item
+        EvidenceDocumentText.__table__.create(self.db.connection(), checkfirst=True)
+        file = EvidenceFile(id=uuid4(), case_id=self.case.id, original_filename='empty.pdf',
+            stored_path='/synthetic/empty.pdf', sha256=uuid4().hex * 2, status='processed')
+        self.db.add(file); self.db.flush()
+        if origins is not None:
+            self.db.add(EvidenceDocumentText(evidence_file_id=file.id, content='x', content_sha256='0' * 64,
+                character_count=1, source_locations=[dict(kind='page', page_number=n + 1, text_origin=origin)
+                    for n, origin in enumerate(origins)]))
+        batch = Batch(id=uuid4(), case_id=self.case.id, created_by=self.user.id, actor={}, files=[], status='review')
+        self.db.add(batch); self.db.flush()
+        self.db.add(Item(id=uuid4(), batch_id=batch.id, file_id=file.id, statement_key='', status='attention',
+            summary=summary or dict(can_import=False, transaction_count=0, record_count=None, period_start='',
+                period_end='', currency='', problem_count=1,
+                problems=[dict(message='Choose the currency printed on these statements.')])))
+        self.db.commit()
+        return next(f for f in statement_file_status(self.db, case_id=self.case.id)['files']
+                    if f['evidence_file_id'] == str(file.id))
+
+    def test_an_empty_reading_says_why_nothing_was_read(self):
+        scanned = self._empty_file(['recognised_glyphs', 'recognised_glyphs'])
+        self.assertEqual(scanned['empty_reading']['reason'], 'scanned_image')
+        self.assertIn('scanned image', scanned['empty_reading']['message'])
+        layout = self._empty_file(['recognised_glyphs', 'digital_text_layer'])
+        self.assertEqual(layout['empty_reading']['reason'], 'layout_not_supported')
+        nothing = self._empty_file(None)
+        self.assertEqual(nothing['empty_reading']['reason'], 'no_statement')
+
+    def test_a_reading_that_found_rows_or_dates_is_not_empty(self):
+        found = self._empty_file(['digital_text_layer'], summary=dict(can_import=False, transaction_count=0,
+            period_start='2024-01-01', period_end='2024-01-31', problem_count=1, problems=[]))
+        self.assertNotIn('empty_reading', found)
+        rows = self._empty_file(['digital_text_layer'], summary=dict(can_import=False, transaction_count=3,
+            period_start='', period_end='', problem_count=1, problems=[]))
+        self.assertNotIn('empty_reading', rows)
+
+    def test_status_is_reused_only_while_the_fingerprint_is_unchanged(self):
+        from unittest import mock
+        import importlib
+        module = importlib.import_module('services.financial.statement_file_status')
+        fingerprint = [('items', 1, 'a')]
+        with mock.patch.object(module, 'status_fingerprint', lambda session, case_id: tuple(fingerprint)), \
+                mock.patch.object(module, '_statement_file_status', wraps=module._statement_file_status) as compute:
+            module._cache.clear()
+            first = module.statement_file_status(self.db, case_id=self.case.id)
+            first['files'].append('caller mutation must not leak into the cache')
+            second = module.statement_file_status(self.db, case_id=self.case.id)
+            self.assertEqual(compute.call_count, 1)
+            self.assertNotIn('caller mutation must not leak into the cache', second['files'])
+            fingerprint[0] = ('items', 2, 'b')
+            module.statement_file_status(self.db, case_id=self.case.id)
+            self.assertEqual(compute.call_count, 2)
+            module.statement_file_status(self.db, case_id=self.case.id, use_cache=False)
+            self.assertEqual(compute.call_count, 3)
+        module._cache.clear()
+
+    def test_sqlite_is_never_cached(self):
+        from services.financial.statement_file_status import status_fingerprint
+        self.assertIsNone(status_fingerprint(self.db, self.case.id))

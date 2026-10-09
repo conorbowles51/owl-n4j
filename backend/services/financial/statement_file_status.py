@@ -1,5 +1,9 @@
 """Saved import state for the statement file list, independent of browser drafts."""
-from sqlalchemy import select, func, case, cast, String
+import threading
+from collections import OrderedDict
+from copy import deepcopy
+
+from sqlalchemy import select, func, case, cast, String, text
 from postgres.models.evidence import EvidenceFile
 from postgres.models.financial import (
     FinancialAccount as Account,
@@ -9,9 +13,79 @@ from postgres.models.financial import (
 )
 
 
-def statement_file_status(session, *, case_id):
+# The register is polled while the Financial tab is open. On a large case the
+# full computation takes seconds, while the inputs rarely change between
+# polls. A result is reused only while a fingerprint of every row the
+# computation reads is unchanged: PostgreSQL gives each row version a new
+# ``xmin``, so any insert, update or delete (including long transactions that
+# commit late) changes the fingerprint. Other databases are never cached.
+_FINGERPRINT_SQL = text("""
+SELECT 'periods', count(*), md5(string_agg(id::text || ':' || xmin::text, ',' ORDER BY id))
+  FROM financial_statement_periods WHERE case_id = :case_id
+UNION ALL SELECT 'sources', count(*), md5(string_agg(id::text || ':' || xmin::text, ',' ORDER BY id))
+  FROM financial_source_documents WHERE case_id = :case_id
+UNION ALL SELECT 'accounts', count(*), md5(string_agg(id::text || ':' || xmin::text, ',' ORDER BY id))
+  FROM financial_accounts WHERE case_id = :case_id
+UNION ALL SELECT 'transactions', count(*), md5(string_agg(id::text || ':' || xmin::text, ',' ORDER BY id))
+  FROM financial_transactions WHERE case_id = :case_id
+UNION ALL SELECT 'files', count(*), md5(string_agg(id::text || ':' || xmin::text, ',' ORDER BY id))
+  FROM evidence_files WHERE case_id = :case_id
+UNION ALL SELECT 'batches', count(*), md5(string_agg(id::text || ':' || xmin::text, ',' ORDER BY id))
+  FROM financial_import_batches WHERE case_id = :case_id
+UNION ALL SELECT 'items', count(*), md5(string_agg(i.id::text || ':' || i.xmin::text, ',' ORDER BY i.id))
+  FROM financial_import_batch_items i JOIN financial_import_batches b ON b.id = i.batch_id WHERE b.case_id = :case_id
+UNION ALL SELECT 'texts', count(*), md5(string_agg(t.evidence_file_id::text || ':' || t.xmin::text, ',' ORDER BY t.evidence_file_id))
+  FROM evidence_document_texts t JOIN evidence_files f ON f.id = t.evidence_file_id WHERE f.case_id = :case_id
+UNION ALL SELECT 'geometry', count(*), md5(string_agg(g.evidence_file_id::text || '/' || g.page_number::text || ':' || g.xmin::text, ','
+    ORDER BY g.evidence_file_id, g.page_number))
+  FROM evidence_table_geometry g JOIN evidence_files f ON f.id = g.evidence_file_id WHERE f.case_id = :case_id
+UNION ALL SELECT 'entries', count(*), md5(string_agg(id::text || ':' || xmin::text, ',' ORDER BY id))
+  FROM workspace_entries WHERE case_id = :case_id
+UNION ALL SELECT 'links', count(*), md5(string_agg(id::text || ':' || xmin::text, ',' ORDER BY id))
+  FROM workspace_entry_links WHERE case_id = :case_id
+""")
+_CACHE_SIZE = 16
+_cache = OrderedDict()
+_cache_lock = threading.Lock()
+
+
+def status_fingerprint(session, case_id):
+    """Fingerprint of every row the register reads, or None when not supported."""
+    if session.get_bind().dialect.name != 'postgresql':
+        return None
+    return tuple(tuple(row) for row in session.execute(_FINGERPRINT_SQL, dict(case_id=str(case_id))))
+
+
+def statement_file_status(session, *, case_id, use_cache=True):
+    fingerprint = status_fingerprint(session, case_id) if use_cache else None
+    key = str(case_id)
+    if fingerprint is not None:
+        with _cache_lock:
+            hit = _cache.get(key)
+            if hit and hit[0] == fingerprint:
+                _cache.move_to_end(key)
+                return deepcopy(hit[1])
+    result = _statement_file_status(session, case_id=case_id)
+    if fingerprint is not None:
+        # The fingerprint was taken before the computation. A change committed
+        # in between only makes the next poll recompute; it can never pin a
+        # stale result.
+        with _cache_lock:
+            _cache[key] = (fingerprint, deepcopy(result))
+            _cache.move_to_end(key)
+            while len(_cache) > _CACHE_SIZE:
+                _cache.popitem(last=False)
+    return result
+
+
+def _statement_file_status(session, *, case_id):
+    # Only the columns the register shows. Loading whole source documents would
+    # decode every saved reading (tens of MB on a large case) for each poll.
     periods = session.execute(
-        select(Period, Source, Account)
+        select(Period, Source.evidence_file_id, Source.status,
+               Source.metadata_['financial_import_removal'].as_string(),
+               Account.id, Account.metadata_['display_label'].as_string(),
+               Account.identifier_as_printed, Account.holder_name)
         .join(Source, Period.source_document_id == Source.id)
         .join(Account, Period.account_id == Account.id)
         .join(EvidenceFile, Source.evidence_file_id == EvidenceFile.id)
@@ -33,23 +107,22 @@ def statement_file_status(session, *, case_id):
                Source.case_id == case_id,
                Transaction.source_document_id == Period.source_document_id,
                Transaction.account_id == Period.account_id,
-               Period.id.in_([period.id for period, _, _ in periods]))
+               Period.id.in_([row[0].id for row in periods]))
         .group_by(Transaction.statement_period_id)
     ).all()) if periods else {}
     files = {}
-    for period, source, account in periods:
-        if (source.metadata_ or {}).get('financial_import_removal'):
+    for period, file_id, source_status, removal, account_id, display_label, printed, holder in periods:
+        if removal:
             continue
-        key = str(source.evidence_file_id)
+        key = str(file_id)
         item = files.setdefault(key, dict(evidence_file_id=key, current_transactions=0, periods=[]))
         item['current_transactions'] += int(counts.get(period.id, 0))
         item['periods'].append(dict(
-            id=str(period.id), account_id=str(account.id),
-            account_label=(account.metadata_ or {}).get('display_label') or
-                account.identifier_as_printed or account.holder_name or 'Account not identified',
+            id=str(period.id), account_id=str(account_id),
+            account_label=display_label or printed or holder or 'Account not identified',
             start=period.period_start.isoformat() if period.period_start else None,
             end=period.period_end.isoformat() if period.period_end else None,
-            source_status=source.status,
+            source_status=source_status,
         ))
     # Incomplete imports can have no statement period (for example, no usable
     # currency). They still belong in the file register, with an honest count.
@@ -62,7 +135,7 @@ def statement_file_status(session, *, case_id):
                Source.status == 'admitted', Source.document_type == 'statement_review')
         .order_by(Source.id).limit(5001)).all()
     truncated = truncated or len(incomplete_sources) > 5000
-    saved_dates = {str(period.source_document_id): period for period, _, _ in periods}
+    saved_dates = {str(row[0].source_document_id): row[0] for row in periods}
     for source_id, file_id, records, blockers, request_start, request_end in incomplete_sources[:5000]:
         open_records = [row for row in records or [] if not row.get('resolved_transaction_id')]
         if open_records:
@@ -112,20 +185,41 @@ def statement_file_status(session, *, case_id):
         EvidenceFile.metadata_['financial_file_visibility']['removed'].as_boolean().is_not(True),
         EvidenceFile.metadata_['financial_import_removal'].as_string().is_(None),
     )
-    prepared = session.scalars(select(Item).join(Batch, Item.batch_id == Batch.id)
+    # One read of the case's prepared periods serves both this register (files
+    # still in Financial) and the coverage comparison below (which, as before,
+    # also compares against files hidden from Financial).
+    every_prepared = session.scalars(select(Item).join(Batch, Item.batch_id == Batch.id)
         .join(EvidenceFile, Item.file_id == EvidenceFile.id).where(Batch.case_id == case_id,
-            EvidenceFile.case_id == case_id, *active_file, Batch.status != 'removed', Item.status.notin_(('removed', 'assigned', 'superseded_reading')))
-        .order_by(Item.updated_at.desc(), Item.id).limit(20001)).all()
+            EvidenceFile.case_id == case_id, Batch.status != 'removed', Item.status.notin_(('removed', 'assigned', 'superseded_reading')))
+        .order_by(Item.updated_at.desc(), Item.id)).all()
+    item_files = {file.id: file for file in session.scalars(select(EvidenceFile)
+        .where(EvidenceFile.case_id == case_id, EvidenceFile.id.in_({p.file_id for p in every_prepared})))} if every_prepared else {}
+    def _active(file):
+        metadata = file.metadata_ or {}
+        visibility = metadata.get('financial_file_visibility')
+        return (not (isinstance(visibility, dict) and visibility.get('removed') is True)
+                and metadata.get('financial_import_removal') is None)
+    comparison_pending = [(p, item_files[p.file_id]) for p in every_prepared
+                          if p.status in ('ready', 'attention', 'pending_import')]
+    prepared = [p for p in every_prepared if _active(item_files[p.file_id])][:20001]
     truncated = truncated or len(prepared) > 20000
     # A statement imported from an individual review can leave older batch
     # snapshots marked ready. Match saved source scope, not the old UI status.
-    saved_sources = list(session.scalars(select(Source).where(Source.case_id == case_id,
-        Source.status == 'admitted', Source.document_type == 'statement_review')))
-    saved_scopes = {(source.sha256_at_ingestion, source.metadata_.get('statement_import_statement_id')) for source in saved_sources}
+    from types import SimpleNamespace
+    source_columns = (Source.id, Source.evidence_file_id, Source.sha256_at_ingestion,
+        Source.metadata_['statement_import_statement_id'].as_string(),
+        Source.metadata_['statement_recovery_parent_id'].as_string(),
+        Source.metadata_['financial_import_removal'].as_string())
+    def _light(row):
+        return SimpleNamespace(id=row[0], evidence_file_id=row[1], sha256_at_ingestion=row[2],
+            statement_id=row[3], parent_id=row[4], removed=bool(row[5]))
+    saved_sources = [_light(row) for row in session.execute(select(*source_columns).where(Source.case_id == case_id,
+        Source.status == 'admitted', Source.document_type == 'statement_review'))]
+    saved_scopes = {(source.sha256_at_ingestion, source.statement_id) for source in saved_sources}
     # A saved split replaces its earlier combined scope. An old batch snapshot
     # must not advertise that same source as a fresh set of available payments.
     from uuid import UUID
-    ancestors = {source.metadata_.get('statement_recovery_parent_id') for source in saved_sources} - {None}
+    ancestors = {source.parent_id for source in saved_sources} - {None}
     seen_ancestors = set()
     while ancestors:
         current = ancestors - seen_ancestors
@@ -133,13 +227,12 @@ def statement_file_status(session, *, case_id):
             break
         seen_ancestors.update(current)
         ancestors = set()
-        for source in session.scalars(select(Source).where(Source.case_id == case_id, Source.id.in_([UUID(key) for key in current]))):
-            saved_scopes.add((source.sha256_at_ingestion, source.metadata_.get('statement_import_statement_id')))
-            parent = source.metadata_.get('statement_recovery_parent_id')
-            if parent:
-                ancestors.add(parent)
-    prepared_files = {file.id: file for file in session.scalars(select(EvidenceFile)
-        .where(EvidenceFile.case_id == case_id, EvidenceFile.id.in_([p.file_id for p in prepared])))}
+        for source in map(_light, session.execute(select(*source_columns).where(
+                Source.case_id == case_id, Source.id.in_([UUID(key) for key in current])))):
+            saved_scopes.add((source.sha256_at_ingestion, source.statement_id))
+            if source.parent_id:
+                ancestors.add(source.parent_id)
+    prepared_files = {p.file_id: item_files[p.file_id] for p in prepared}
     file_hashes = {key: file.sha256 for key, file in prepared_files.items()}
     # Decisions can be recorded directly from a statement, without updating its
     # old batch snapshot. Validate their lightweight source/review fingerprints
@@ -174,6 +267,7 @@ def statement_file_status(session, *, case_id):
                 item.setdefault('duplicate_dispositions', []).append(dict(statement_id=statement_id or None,
                     currency=(decision.get('scope') or {}).get('currency'), decision=decision))
     seen_periods = set()
+    empty_scan = {}
     from services.financial.statement_import_overlap import comparison_sources, coverage_review, summary_request, duplicate_hold, scope
     coverage_sources = None
     coverage_prepared = {}
@@ -227,7 +321,8 @@ def statement_file_status(session, *, case_id):
                 'statement_id': prepared_item.statement_key or None, 'account_type': summary.get('account_type', '')}
             if scope(raw) is not None:
                 if coverage_sources is None:
-                    coverage_sources, coverage_prepared = comparison_sources(session, case_id)
+                    coverage_sources, coverage_prepared = comparison_sources(session, case_id,
+                        comparison_pending, duplicate_context=context)
                 raw = {**(effective_request or coverage_prepared.get(prepared_item.id, raw)), 'statement_id': prepared_item.statement_key or None}
                 held = duplicate_hold(coverage_review(session, case_id=case_id, file_id=prepared_item.file_id,
                     request=raw, sources=coverage_sources), raw)
@@ -256,6 +351,13 @@ def statement_file_status(session, *, case_id):
         overlap_only = (bool(problems) and all(problem.get('kind') == 'coverage' for problem in problems)
             and summary.get('problem_count', 0) <= len(problems))
         has_checks = duplicate_review or held or (bool(summary.get('problem_count', 0)) and not overlap_only)
+        # A reading that found nothing at all (no rows, records, dates or
+        # balances) is not "read and waiting for review": the card must say so.
+        if not ignored and prepared_item.status != 'skipped':
+            found = bool(summary.get('transaction_count') or summary.get('record_count')
+                or summary.get('incomplete_count') or summary.get('unclassified_count')
+                or summary.get('period_start') or summary.get('period_end'))
+            empty_scan[key] = empty_scan.get(key, True) and not found
         for field, matched in (
             ('available_periods', available),
             ('ignored_periods', ignored),
@@ -265,6 +367,7 @@ def statement_file_status(session, *, case_id):
             ('overlapping_periods', not ignored and not repeat and not has_checks and overlap_only and prepared_item.status != 'skipped'),
         ):
             item[field] = item.get(field, 0) + int(matched)
+    _mark_empty_readings(session, files, [key for key, empty in empty_scan.items() if empty])
     # Direct statement decisions also appear before the file joins a batch.
     for (key, statement_id), decision in decisions.items():
         if (key, statement_id) in seen_periods:
@@ -280,7 +383,7 @@ def statement_file_status(session, *, case_id):
     # attributing the older copy's payments to this file or counting them twice.
     saved_by_hash = {}
     for source in saved_sources:
-        if (source.metadata_ or {}).get('financial_import_removal'):
+        if source.removed:
             continue
         owner = files.get(str(source.evidence_file_id))
         if owner and (owner['periods'] or owner.get('incomplete_count')):
@@ -296,3 +399,39 @@ def statement_file_status(session, *, case_id):
                 item = files.setdefault(str(copy.id), dict(evidence_file_id=str(copy.id), current_transactions=0, periods=[]))
                 item['same_pdf_saved_file_ids'] = related
     return dict(case_id=str(case_id), files=list(files.values()), truncated=truncated)
+
+
+EMPTY_READING_REASONS = {
+    'scanned_image': 'Nothing could be read: scanned image, needs visual reading',
+    'layout_not_supported': 'Nothing could be read: layout not supported yet',
+    'no_statement': 'Reading found no statement',
+}
+
+
+def empty_reading_reason(source_locations):
+    """Why a reading with no rows, dates or balances found nothing.
+
+    Pages recognised only from images (OCR) need a visual reading; a page with
+    a usable text layer that produced nothing is a layout the readers do not
+    support yet; a file with no readable pages is not a statement as read."""
+    origins = {(location or {}).get('text_origin') for location in source_locations or []
+               if (location or {}).get('kind', 'page') == 'page'} - {None}
+    if 'digital_text_layer' in origins:
+        return 'layout_not_supported'
+    if origins:
+        return 'scanned_image'
+    return 'no_statement'
+
+
+def _mark_empty_readings(session, files, keys):
+    """Label files whose every current reading is empty and nothing was saved."""
+    from uuid import UUID
+    from postgres.models.evidence import EvidenceDocumentText
+    candidates = [key for key in keys if not files[key]['periods'] and not files[key].get('incomplete_count')]
+    if not candidates:
+        return
+    locations = dict(session.execute(select(EvidenceDocumentText.evidence_file_id, EvidenceDocumentText.source_locations)
+        .where(EvidenceDocumentText.evidence_file_id.in_([UUID(key) for key in candidates]))).all())
+    for key in candidates:
+        reason = empty_reading_reason(locations.get(UUID(key)))
+        files[key]['empty_reading'] = dict(reason=reason, message=EMPTY_READING_REASONS[reason])

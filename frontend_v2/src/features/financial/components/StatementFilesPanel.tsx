@@ -11,6 +11,10 @@ import {
   usesPdfStatementReader,
 } from "../hooks/use-statement-register"
 import { FinancialSourceFile } from "./FinancialSourceFile"
+import {
+  incompleteSummary,
+  statementFileCard,
+} from "../lib/statement-file-state"
 import { FinancialFileAction } from "./FinancialFileAction"
 import { EvidenceFinancialPicker } from "./EvidenceFinancialPicker"
 import { useFinancialAccess } from "../hooks/use-financial-access"
@@ -32,19 +36,6 @@ import {
 
 const count = (n: number, one: string, many: string) =>
   `${n} ${n === 1 ? one : many}`
-
-// Incomplete records are either missing values or complete values held until
-// their statement reconciles. The card says which, and for which period.
-function incompleteSummary(missing: number, waiting: number) {
-  return [
-    missing ? `${count(missing, "incomplete record", "incomplete records")} to check` : "",
-    waiting
-      ? `${count(waiting, "completed record", "completed records")} waiting for the statement to reconcile`
-      : "",
-  ]
-    .filter(Boolean)
-    .join(" · ")
-}
 
 export function StatementFilesPanel({
   caseId,
@@ -70,7 +61,10 @@ export function StatementFilesPanel({
   const client = useQueryClient()
   const input = useRef<HTMLInputElement>(null)
   const [search, setSearch] = useState("")
-  const [status, setStatus] = useState("work")
+  // The register opens on the files that need something from the
+  // investigator. The statement viewer's side list has no filter control, so
+  // it keeps listing every statement file.
+  const [status, setStatus] = useState(register ? "action" : "work")
   const resultsHeading = useRef<HTMLHeadingElement>(null)
   const [filterAction, setFilterAction] = useState(0)
   const [removed, setRemoved] = useState(false)
@@ -193,6 +187,35 @@ export function StatementFilesPanel({
       setReading((current) => ({ ...current, [fileId]: false }))
     }
   }
+  const statusLoaded = !!imports.data && !imports.data.truncated
+  // Non-PDF sources open their own review; they are listed under Needs action
+  // until something has been saved from them, but never counted as a PDF
+  // statement that is not imported.
+  const cardFor = (file: NonNullable<typeof files.data>[number]) => {
+    const saved = imports.data?.files.find(
+      (item) => item.evidence_file_id === file.id
+    )
+    if (!usesPdfStatementReader(file)) {
+      const pending =
+        !file.financial_removed &&
+        !saved?.current_transactions &&
+        !saved?.wire_review_count &&
+        !saved?.receipt_review_count
+      return { label: "", tone: "review", notImported: false, needsAction: pending }
+    }
+    return statementFileCard(file, saved, {
+      removed: file.financial_removed,
+      statusLoaded,
+      queued: queuedReadings.has(file.id),
+    })
+  }
+  const activeFiles = files.data?.filter((file) => !file.financial_removed) ?? []
+  const notImportedCount = activeFiles.filter(
+    (file) => cardFor(file).notImported
+  ).length
+  const needsActionCount = activeFiles.filter(
+    (file) => cardFor(file).needsAction
+  ).length
   const visibleFiles =
     files.data
       ?.filter(
@@ -214,6 +237,7 @@ export function StatementFilesPanel({
         const saved = imports.data?.files.find(
           (item) => item.evidence_file_id === file.id
         )
+        const card = cardFor(file)
         const duplicatePeriods =
           saved?.duplicate_dispositions.filter(
             ({ decision }) =>
@@ -232,6 +256,8 @@ export function StatementFilesPanel({
           removalMode ||
           removed ||
           status === "all" ||
+          (status === "action" && card.needsAction) ||
+          (status === "not_imported" && card.notImported) ||
           (status === "work" && !onlyDuplicates) ||
           (status === "ready" && !!saved?.available_periods) ||
           (status === "duplicates" &&
@@ -542,6 +568,8 @@ export function StatementFilesPanel({
               value={status}
               onChange={(e) => showResults(e.target.value)}
             >
+              <option value="action">Needs action</option>
+              <option value="not_imported">Not imported</option>
               <option value="work">
                 Statements to process and saved statements
               </option>
@@ -551,7 +579,7 @@ export function StatementFilesPanel({
               <option value="duplicates">
                 Duplicates to compare or left unimported
               </option>
-              <option value="pending">Reading or importing</option>
+              <option value="pending">Reading or imports in progress</option>
               <option value="imported">With imported statements</option>
               <option value="review">Without imported statements</option>
               <option value="attention">Reading failed or not started</option>
@@ -568,6 +596,9 @@ export function StatementFilesPanel({
               files have saved statements
             </span>
           )}
+          {files.data && statusLoaded && (
+            <span>Not imported: {notImportedCount}</span>
+          )}
         </div>
       )}
       {files.isPending && <p role="status">Loading statement files…</p>}
@@ -576,30 +607,6 @@ export function StatementFilesPanel({
           aria-label="Statement work remaining"
           className="rounded border p-3 space-y-2"
         >
-          {!!unpreparedFiles.length && canEdit && canUpload && (
-            <div className="space-y-2">
-              <p>
-                {unpreparedFiles.length} read{" "}
-                {unpreparedFiles.length === 1 ? "file has" : "files have"} not
-                been checked for import in a batch. These readings are not
-                included in the ready counts below.
-              </p>
-              <Button
-                disabled={preparing}
-                onClick={() =>
-                  void prepareSelected(unpreparedFiles.map((file) => file.id))
-                }
-              >
-                Review {unpreparedFiles.length} read{" "}
-                {unpreparedFiles.length === 1 ? "file" : "files"} together
-              </Button>
-              <p className="text-sm text-muted-foreground">
-                Uses the retained readings to show ready statements, saved
-                copies and checks. Payments are saved only when you confirm
-                import.
-              </p>
-            </div>
-          )}
           <div className="grid gap-3 sm:grid-cols-2 rounded bg-muted/40 p-4">
             <div>
               <h3 className="font-semibold">
@@ -634,54 +641,120 @@ export function StatementFilesPanel({
               </p>
             </div>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <Button
-              variant="outline"
-              aria-pressed={status === "ready"}
-              onClick={() => showResults("ready", true)}
-            >
-              Show {readyCount} {readyCount === 1 ? "statement" : "statements"}{" "}
-              ready to save
-            </Button>
-            <Button
-              variant="outline"
-              aria-pressed={status === "checks"}
-              onClick={() => showResults("checks", true)}
-            >
-              Show{" "}
-              {
-                imports.data.files.filter(
-                  (f) => f.periods_with_checks || f.incomplete_count
-                ).length
-              }{" "}
-              files with checks to review
-            </Button>
-            <Button
-              variant="outline"
-              aria-pressed={status === "pending"}
-              onClick={() => showResults("pending", true)}
-            >
-              Show{" "}
-              {imports.data.files.reduce(
-                (n, f) => n + (f.pending_periods || 0),
-                0
-              )}{" "}
-              statement imports pending
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => showResults("duplicates", true)}
-            >
-              Review duplicates
-            </Button>
-            <Button variant="ghost" onClick={() => showResults("all", true)}>
-              Show all files
-            </Button>
+          <div
+            role="group"
+            aria-labelledby="statement-file-filters"
+            className="space-y-2 rounded border p-3"
+          >
+            <h3 id="statement-file-filters" className="text-sm font-semibold">
+              Filter the list
+            </h3>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                aria-pressed={status === "action"}
+                onClick={() => showResults("action", true)}
+              >
+                Needs action ({needsActionCount})
+              </Button>
+              <Button
+                variant="outline"
+                aria-pressed={status === "not_imported"}
+                onClick={() => showResults("not_imported", true)}
+              >
+                Not imported ({notImportedCount})
+              </Button>
+              <Button
+                variant="outline"
+                aria-pressed={status === "ready"}
+                onClick={() => showResults("ready", true)}
+              >
+                Show {readyCount}{" "}
+                {readyCount === 1 ? "statement" : "statements"} ready to save
+              </Button>
+              <Button
+                variant="outline"
+                aria-pressed={status === "checks"}
+                onClick={() => showResults("checks", true)}
+              >
+                Show{" "}
+                {
+                  imports.data.files.filter(
+                    (f) => f.periods_with_checks || f.incomplete_count
+                  ).length
+                }{" "}
+                files with checks to review
+              </Button>
+              <Button
+                variant="outline"
+                aria-pressed={status === "pending"}
+                onClick={() => showResults("pending", true)}
+              >
+                Show{" "}
+                {count(
+                  imports.data.files.reduce(
+                    (n, f) => n + (f.pending_periods || 0),
+                    0
+                  ),
+                  "import",
+                  "imports"
+                )}{" "}
+                in progress
+              </Button>
+              <Button
+                variant="outline"
+                aria-pressed={status === "duplicates"}
+                onClick={() => showResults("duplicates", true)}
+              >
+                Review duplicates
+              </Button>
+              <Button
+                variant="ghost"
+                aria-pressed={status === "all"}
+                onClick={() => showResults("all", true)}
+              >
+                Show all files
+              </Button>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              These buttons only filter the list. They do not read, check or
+              save anything. Needs action lists files not imported, readings
+              that found nothing or failed, and files with records or checks to
+              review.
+            </p>
           </div>
+          {!!unpreparedFiles.length && canEdit && canUpload && (
+            <section
+              aria-label="Batch check"
+              className="space-y-2 rounded border border-dashed p-3"
+            >
+              <h3 className="text-sm font-semibold">Start a batch check</h3>
+              <p>
+                {unpreparedFiles.length} read{" "}
+                {unpreparedFiles.length === 1 ? "file has" : "files have"} not
+                been checked for import in a batch. These readings are not
+                included in the ready counts above.
+              </p>
+              <Button
+                variant="secondary"
+                disabled={preparing}
+                onClick={() =>
+                  void prepareSelected(unpreparedFiles.map((file) => file.id))
+                }
+              >
+                Start batch check of {unpreparedFiles.length} read{" "}
+                {unpreparedFiles.length === 1 ? "file" : "files"}
+              </Button>
+              <p className="text-sm text-muted-foreground">
+                This starts work: it uses the retained readings to show ready
+                statements, saved copies and checks. Payments are saved only
+                when you confirm import.
+              </p>
+            </section>
+          )}
           <p className="text-sm">
-            The buttons above filter the list; they do not save payments. Use
-            the group action to save ready statements together, or open a file
-            to correct a specific problem.
+            Use the group action to save ready statements together, or open a
+            file to correct a specific problem.
           </p>
           {imports.data.truncated && (
             <p role="status">
@@ -834,11 +907,6 @@ export function StatementFilesPanel({
         const saved = imports.data?.files.find(
           (item) => item.evidence_file_id === file.id
         )
-        const allPreparedIgnored =
-          !!saved?.ignored_periods &&
-          saved.ignored_periods === saved.prepared_periods &&
-          !saved.current_transactions &&
-          !saved.periods.length
         if (!usesPdfStatementReader(file))
           return (
             <FinancialSourceFile
@@ -855,6 +923,7 @@ export function StatementFilesPanel({
               }
             />
           )
+        const card = cardFor(file)
         return (
           <div
             key={file.id}
@@ -907,42 +976,10 @@ export function StatementFilesPanel({
               </span>
               <span
                 className="finance-badge"
-                data-finance-tone={
-                  file.status === "failed"
-                    ? "debit"
-                    : saved?.current_transactions ||
-                        saved?.periods.length ||
-                        saved?.wire_review_count
-                      ? "info"
-                      : "review"
-                }
+                data-finance-tone={card.tone}
+                data-not-imported={card.notImported ? "true" : undefined}
               >
-                {removed
-                  ? "Removed from Financial"
-                  : allPreparedIgnored
-                    ? "Duplicate — left unimported"
-                    : saved?.wire_review_count
-                      ? `${saved.wire_review_count} saved wire ${saved.wire_review_count === 1 ? "review" : "reviews"}`
-                      : saved?.incomplete_count
-                        ? `${count(saved.current_transactions, "usable transaction", "usable transactions")} · ${incompleteSummary(saved.incomplete_count - saved.awaiting_reconciliation_count, saved.awaiting_reconciliation_count)}`
-                        : saved?.periods.length && !saved.current_transactions
-                          ? `Statement saved · ${saved.periods.length} recorded ${saved.periods.length === 1 ? "period" : "periods"} · no payments`
-                          : saved?.same_pdf_saved_file_ids.length
-                            ? "Same PDF has saved records · review this copy"
-                            : saved &&
-                                (saved.current_transactions ||
-                                  saved.periods.length)
-                              ? `${count(saved.current_transactions, "imported payment", "imported payments")} · ${saved.periods.length} recorded ${saved.periods.length === 1 ? "period" : "periods"}`
-                              : saved?.available_periods
-                                ? `${count(saved.available_periods, "statement", "statements")} ready to save · not saved yet`
-                                : file.status === "processed"
-                                  ? imports.data && !imports.data.truncated
-                                    ? "PDF read · open review to check and import"
-                                    : "Ready to open"
-                                  : file.status === "unprocessed" &&
-                                      queuedReadings.has(file.id)
-                                    ? "Reading queued — waiting for progress"
-                                    : file.status}
+                {card.label}
               </span>
               {saved?.prepared_periods !== undefined && (
                 <span className="block text-sm">
@@ -963,7 +1000,7 @@ export function StatementFilesPanel({
                     ? ` · ${saved.available_periods} available to import`
                     : ""}
                   {saved.pending_periods
-                    ? ` · ${count(saved.pending_periods, "import", "imports")} pending`
+                    ? ` · ${count(saved.pending_periods, "import", "imports")} in progress`
                     : ""}
                   {saved.periods_with_checks
                     ? ` · ${count(saved.periods_with_checks, "period has", "periods have")} checks to review`

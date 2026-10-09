@@ -116,7 +116,7 @@ it("shows an ignored file, exposes its retained source and opens its exact perio
   )
   mount(true)
   const choice = await screen.findByLabelText("Show files")
-  expect(choice).toHaveValue("work")
+  expect(choice).toHaveValue("action")
   expect(
     screen.queryByRole("button", { name: "Review duplicate decision" })
   ).not.toBeInTheDocument()
@@ -619,9 +619,13 @@ it("keeps a balance-only statement in the imported file filter", async () => {
       </MemoryRouter>
     </QueryClientProvider>
   )
+  // A saved statement needs nothing, so the default Needs action view omits it.
   expect(
-    await screen.findByText("Statement saved · 1 recorded period · no payments")
+    await screen.findByRole("button", { name: "Needs action (0)" })
   ).toBeVisible()
+  expect(
+    screen.queryByText("Statement saved · 1 recorded period · no payments")
+  ).not.toBeInTheDocument()
   fireEvent.change(screen.getByLabelText("Show files"), {
     target: { value: "imported" },
   })
@@ -695,7 +699,7 @@ it("offers a clear review action and batch review for read files without a prepa
   ).toBeVisible()
   expect(screen.getByText(/not included in the ready counts/)).toBeVisible()
   fireEvent.click(
-    screen.getByRole("button", { name: "Review 1 read file together" })
+    screen.getByRole("button", { name: "Start batch check of 1 read file" })
   )
   await waitFor(() =>
     expect(screen.getByLabelText("Location")).toHaveTextContent("batch=batch")
@@ -811,4 +815,107 @@ it("names the period of incomplete records and opens them from the card without 
       expect.stringMatching(/incomplete-records\?.*evidence_file_id=file/)
     )
   )
+})
+
+it("opens on Needs action, counts not-imported cards exactly and filters without starting any work", async () => {
+  const empty = (reason: string, message: string) => ({
+    reason,
+    message,
+  })
+  vi.mocked(fetchAPI).mockImplementation(async (url) =>
+    url.includes("/statement-import/files")
+      ? {
+          case_id: "case",
+          truncated: false,
+          files: [
+            {
+              evidence_file_id: "scan",
+              current_transactions: 0,
+              periods: [],
+              prepared_periods: 1,
+              empty_reading: empty(
+                "scanned_image",
+                "Nothing could be read: scanned image, needs visual reading"
+              ),
+            },
+            {
+              evidence_file_id: "layout",
+              current_transactions: 0,
+              periods: [],
+              prepared_periods: 1,
+              empty_reading: empty(
+                "layout_not_supported",
+                "Nothing could be read: layout not supported yet"
+              ),
+            },
+            {
+              evidence_file_id: "saved",
+              current_transactions: 5,
+              periods: [
+                {
+                  id: "p",
+                  account_id: "a",
+                  account_label: "Saved account",
+                  start: "2024-01-01",
+                  end: "2024-01-31",
+                  source_status: "admitted",
+                },
+              ],
+            },
+          ],
+        }
+      : {
+          files: ["scan", "layout", "saved", "unsaved"].map((id) => ({
+            ...file,
+            id,
+            original_filename: `${id}.pdf`,
+            status: "processed",
+          })),
+        }
+  )
+  mount(true)
+  expect(await screen.findByLabelText("Show files")).toHaveValue("action")
+  const filters = await screen.findByRole("group", { name: "Filter the list" })
+  expect(
+    await screen.findByRole("button", { name: "Not imported (3)" })
+  ).toBeVisible()
+  expect(screen.getByText(/Not imported: 3/)).toBeVisible()
+  expect(
+    screen.getByText(
+      "Not imported · Nothing could be read: scanned image, needs visual reading"
+    )
+  ).toBeVisible()
+  expect(
+    screen.getByText(
+      "Not imported · Nothing could be read: layout not supported yet"
+    )
+  ).toBeVisible()
+  expect(screen.queryByText("saved.pdf")).not.toBeInTheDocument()
+  // The batch check starts work, so it is not among the filters.
+  expect(
+    filters.querySelector("button")?.textContent?.includes("batch check")
+  ).toBe(false)
+  expect(
+    screen.getByRole("region", { name: "Batch check" })
+  ).toHaveTextContent("This starts work")
+  expect(filters).toHaveTextContent("Show 0 imports in progress")
+  const before = vi.mocked(fetchAPI).mock.calls.length
+  for (const name of [
+    "Not imported (3)",
+    "Show all files",
+    "Show 0 imports in progress",
+    "Review duplicates",
+    "Needs action (3)",
+  ])
+    fireEvent.click(screen.getByRole("button", { name }))
+  expect(vi.mocked(fetchAPI).mock.calls.length).toBe(before)
+  fireEvent.click(screen.getByRole("button", { name: "Not imported (3)" }))
+  expect(
+    document.querySelectorAll('[data-not-imported="true"]').length
+  ).toBe(3)
+  fireEvent.click(screen.getByRole("button", { name: "Show all files" }))
+  expect(screen.getByText("saved.pdf")).toBeVisible()
+  expect(
+    document.querySelectorAll('[data-not-imported="true"]').length
+  ).toBe(3)
 })
