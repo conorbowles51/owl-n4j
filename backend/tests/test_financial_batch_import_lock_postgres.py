@@ -332,3 +332,54 @@ def test_migration_refuses_existing_duplicates_then_applies_and_downgrades(pg):
     assert present() == 1
     apply(migration.downgrade)
     assert present() == 0
+
+
+def test_batch_turn_defers_a_held_case_lock_without_stalling_the_event_loop(pg, monkeypatch):
+    # A statement review can hold the case row for minutes. The batch turn runs
+    # on the API event loop, so waiting for that lock froze every request.
+    import asyncio
+    from postgres.models.case import Case
+    from postgres.models.financial_import_batches import FinancialImportBatch as Batch
+    with pg.SessionLocal() as db:
+        batch = db.get(Batch, pg.batch_id)
+        item = db.get(Item, pg.item_id)
+        file_id, item.status = item.file_id, 'ready'
+        batch.status, batch.worker_token, batch.lease_until = 'preparing', None, None
+        batch.files = [dict(source_id=str(file_id), file_id=None, status='waiting',
+            expected_revision='initial', filename='synthetic.pdf')]
+        db.delete(db.get(Operation, pg.operation_id))
+        db.commit()
+    async def prepare(session, *, case_id, **_):
+        session.execute(select(Case.id).where(Case.id == case_id).with_for_update()).all()
+        raise AssertionError('The held case lock was not respected.')
+    monkeypatch.setattr(batches, 'prepare_existing_financial_file', prepare)
+
+    async def turn():
+        stalls, done = [], False
+        async def ticker():
+            while not done:
+                tick = monotonic()
+                await asyncio.sleep(0.05)
+                stalls.append(monotonic() - tick)
+        watching = asyncio.create_task(ticker())
+        try:
+            await batches.advance_batch(pg.SessionLocal, pg.batch_id, Path, None)
+        finally:
+            done = True
+            await watching
+        return max(stalls)
+
+    with pg.engine.connect() as review:
+        holder = review.begin()
+        review.execute(select(Case.id).where(Case.id == pg.case_id).with_for_update()).all()
+        started = monotonic()
+        worst = asyncio.run(turn())
+        holder.rollback()
+    assert monotonic() - started < 4
+    assert worst < 2  # bounded by the 1s lock timeout, never the lock holder
+    with pg.SessionLocal() as db:
+        batch = db.get(Batch, pg.batch_id)
+        [file] = batch.files
+        assert batch.status == 'preparing' and batch.worker_token is None
+        assert file['status'] == 'waiting' and 'error' not in file and 'preparation_retries' not in file
+        assert db.scalar(text('SHOW lock_timeout')) == '5s'
