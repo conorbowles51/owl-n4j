@@ -350,7 +350,12 @@ def test_batch_turn_defers_a_held_case_lock_without_stalling_the_event_loop(pg, 
         db.delete(db.get(Operation, pg.operation_id))
         db.commit()
     async def prepare(session, *, case_id, **_):
-        session.execute(select(Case.id).where(Case.id == case_id).with_for_update()).all()
+        session.execute(select(Case.id)).all()
+        session.commit()  # as preparation does: the connection returns to the pool
+        # Concurrent work takes that connection, so the session continues on another.
+        with pg.engine.connect() as other:
+            other.scalar(text('SELECT 1'))
+            session.execute(select(Case.id).where(Case.id == case_id).with_for_update()).all()
         raise AssertionError('The held case lock was not respected.')
     monkeypatch.setattr(batches, 'prepare_existing_financial_file', prepare)
 
@@ -382,4 +387,10 @@ def test_batch_turn_defers_a_held_case_lock_without_stalling_the_event_loop(pg, 
         [file] = batch.files
         assert batch.status == 'preparing' and batch.worker_token is None
         assert file['status'] == 'waiting' and 'error' not in file and 'preparation_retries' not in file
-        assert db.scalar(text('SHOW lock_timeout')) == '5s'
+    # The bounded wait never reaches a pooled connection (the commits inside
+    # preparation hand connections back to the pool mid-step).
+    connections = [pg.engine.connect() for _ in range(pg.engine.pool.checkedin() + 1)]
+    try:
+        assert {c.scalar(text('SHOW lock_timeout')) for c in connections} == {'5s'}
+    finally:
+        for c in connections: c.close()

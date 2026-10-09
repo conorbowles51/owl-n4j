@@ -1510,28 +1510,29 @@ def _lock_busy_error(error):
 
 
 class _bounded_lock_waits:
+    # SET LOCAL, renewed at every transaction begin: Postgres discards it at
+    # commit/rollback, so it cannot follow a connection back into the pool
+    # (a session-level SET leaked there, because commits release the session's
+    # connection and a later RESET can land on a different one).
     def __init__(self, db):
         self.db = db
 
+    def _limit(self, session, transaction, connection):
+        connection.exec_driver_sql(f"SET LOCAL lock_timeout = '{LOOP_LOCK_TIMEOUT}'")
+
     def __enter__(self):
-        from sqlalchemy import text
+        from sqlalchemy import event
         self.active = self.db.get_bind().dialect.name == 'postgresql'
         if self.active:
-            self.db.execute(text(f"SET lock_timeout = '{LOOP_LOCK_TIMEOUT}'"))
+            if self.db.in_transaction():
+                self.db.commit()
+            event.listen(self.db, 'after_begin', self._limit)
         return self.db
 
     def __exit__(self, *exc):
-        # A committed SET outlives the transaction on the pooled connection.
-        from sqlalchemy import text
-        if not self.active:
-            return False
-        try:
-            self.db.rollback()
-            self.db.execute(text('RESET lock_timeout'))
-            self.db.commit()
-        except Exception:
-            self.db.connection().invalidate()
-            raise
+        from sqlalchemy import event
+        if self.active:
+            event.remove(self.db, 'after_begin', self._limit)
         return False
 
 
