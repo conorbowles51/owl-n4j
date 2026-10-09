@@ -10,6 +10,7 @@ import { useInvestigationScope } from "../stores/investigation-scope"
 import { useFinancialDraft } from "../stores/financial-drafts"
 import { statementAssessment } from "../lib/statement-assessment"
 import { StatementReconciliationSummary } from "./StatementReconciliationSummary"
+import { AccountTypeEditor } from "./AccountTypeEditor"
 
 const balance = z.object({
   amount_minor: z.string().nullable(),
@@ -390,6 +391,7 @@ function DetailsForm({
           />
         </div>
       )}
+      <div className="space-y-3">
       <form
         ref={form}
         className="space-y-3"
@@ -561,6 +563,8 @@ function DetailsForm({
         </fieldset>
         {error && <p role="alert">{error} Your edits remain here.</p>}
       </form>
+      <AccountTypeEditor caseId={data.case_id} accountIds={[data.account_id]} />
+      </div>
     </div>
   )
 }

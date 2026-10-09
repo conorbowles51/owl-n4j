@@ -112,7 +112,8 @@ def complete_currency_records(session, *, document, period, metadata, currency, 
     from services.financial.statement_details import saved_details
     request = StatementImportRequest.model_validate({**raw, **saved_details(document), 'currency': currency})
     positions = {row['id']: index for index, row in enumerate(row for row in raw['rows'] if not row['excluded'])}
-    sign = -1 if metadata['statement_import_original']['metadata'].get('balance_convention') == 'liability_owed' else 1
+    from services.financial.statement_details import effective_convention
+    sign = -1 if effective_convention(metadata) == 'liability_owed' else 1
     pending, drafts = [], []
     for item in metadata.get('statement_incomplete_records', []):
         if item.get('resolved_transaction_id'):

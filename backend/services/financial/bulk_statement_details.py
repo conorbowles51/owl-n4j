@@ -159,6 +159,7 @@ def _load(session, case_id, target, cache):
             items=[(str(item.id), item.status, item.review_request) for item in items]))
         state = dict(proposal=proposal, raw=raw, items=items)
     row = dict(key=_key(target), file_id=str(file.id), source_id=str(target.source_id) if target.source_id else None,
+        account_id=state['view']['account_id'] if target.source_id else None,
         statement_id=target.statement_id, revision=revision, filename=file.original_filename,
         status='Imported' if target.source_id else 'Not imported', values=values)
     return row, state

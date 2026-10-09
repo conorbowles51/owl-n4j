@@ -16,6 +16,11 @@ def assess_saved_additions(session, document, period, metadata, currency, *, no_
     held with a reason.
     """
     proposal = deepcopy(metadata['statement_import_original'])
+    from services.financial.statement_details import CONVENTION_REVIEW, effective_convention
+    if metadata.get(CONVENTION_REVIEW):
+        # A reviewed account type decides how the printed balances read.
+        proposal['metadata'] = {**proposal['metadata'], 'balance_convention': effective_convention(metadata),
+            'account_type': metadata[CONVENTION_REVIEW]['account_type']}
     raw = {**deepcopy(metadata['statement_import_request']), **saved_details(document), 'currency':currency}
     from services.financial.currency_correction import rescale_minor
     original_currency = metadata['statement_import_request'].get('currency')

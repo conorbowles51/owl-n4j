@@ -38,6 +38,7 @@ import { LedgerPostingGraph } from "./LedgerPostingGraph"
 import { LedgerTransfersWorkbench } from "./LedgerTransfersWorkbench"
 import { LedgerTracingWorkbench } from "./LedgerTracingWorkbench"
 import { InvestigatorPeople } from "./InvestigatorPeople"
+import { AccountTypeReview } from "./AccountTypeReview"
 import { InvestigatorOverview } from "./InvestigatorOverview"
 import { InvestigatorFollowMoney } from "./InvestigatorFollowMoney"
 import { InvestigatorTrends } from "./InvestigatorTrends"
@@ -877,6 +878,14 @@ function FinancialPageContent() {
                     were added.
                   </p>
                 )}
+              {caseId && reviewingAccounts && !savedBatchAccounts && (
+                <ErrorBoundary level="section">
+                  <AccountTypeReview
+                    caseId={caseId}
+                    active={store.mainView === "statements"}
+                  />
+                </ErrorBoundary>
+              )}
               {caseId && (
                 <StatementRegisterChecks
                   caseId={caseId}

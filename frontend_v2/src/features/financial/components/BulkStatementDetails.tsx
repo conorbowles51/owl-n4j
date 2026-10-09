@@ -16,6 +16,7 @@ import { useInvestigationScope } from "../stores/investigation-scope"
 import { newReviewId } from "../lib/statement-review-id"
 import { useAuthStore } from "@/features/auth/hooks/use-auth"
 import { statementMonth } from "../lib/statement-month"
+import { AccountTypeEditor } from "./AccountTypeEditor"
 
 const fields = [
   ["holder", "Account holder"],
@@ -30,6 +31,8 @@ const statement = z.object({
   key: z.string(),
   file_id: z.string(),
   source_id: z.string().nullable(),
+  // The saved account of an imported statement (its type can be set here).
+  account_id: z.string().nullish(),
   statement_id: z.string().nullable(),
   revision: z.string(),
   filename: z.string(),
@@ -710,6 +713,23 @@ function Editor({
                     </p>
                   )}
                 </fieldset>
+                )}
+                {!datesOnly && (
+                  <div className="space-y-1">
+                    <AccountTypeEditor
+                      caseId={caseId}
+                      accountIds={selected.flatMap((item) =>
+                        item.account_id ? [item.account_id] : []
+                      )}
+                    />
+                    {selected.some((item) => !item.account_id) && (
+                      <p className="text-xs text-muted-foreground">
+                        Account type is set on imported statements. Statements
+                        not imported yet take their type from the reading; set
+                        it after import if it is wrong.
+                      </p>
+                    )}
+                  </div>
                 )}
               </>
             )}
