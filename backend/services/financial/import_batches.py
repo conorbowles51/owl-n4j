@@ -1497,64 +1497,126 @@ def _retryable_preparation_error(error):
     return isinstance(error, DBAPIError) and getattr(error.orig, 'sqlstate', None) in ('40P01', '40001')
 
 
+# Batch turns run on the API's event loop. A lock wait there stops every
+# request in the worker (a statement review can hold the case row for many
+# minutes), so blocking database work runs in threads, and the one step that
+# must await on the loop gives up on a held lock instead of waiting for it.
+LOOP_LOCK_TIMEOUT = '1s'
+
+
+def _lock_busy_error(error):
+    from sqlalchemy.exc import DBAPIError
+    return isinstance(error, DBAPIError) and getattr(error.orig, 'sqlstate', None) == '55P03'
+
+
+class _bounded_lock_waits:
+    # SET LOCAL, renewed at every transaction begin: Postgres discards it at
+    # commit/rollback, so it cannot follow a connection back into the pool
+    # (a session-level SET leaked there, because commits release the session's
+    # connection and a later RESET can land on a different one).
+    def __init__(self, db):
+        self.db = db
+
+    def _limit(self, session, transaction, connection):
+        connection.exec_driver_sql(f"SET LOCAL lock_timeout = '{LOOP_LOCK_TIMEOUT}'")
+
+    def __enter__(self):
+        from sqlalchemy import event
+        self.active = self.db.get_bind().dialect.name == 'postgresql'
+        if self.active:
+            if self.db.in_transaction():
+                self.db.commit()
+            event.listen(self.db, 'after_begin', self._limit)
+        return self.db
+
+    def __exit__(self, *exc):
+        from sqlalchemy import event
+        if self.active:
+            event.remove(self.db, 'after_begin', self._limit)
+        return False
+
+
 async def advance_batch(factory,batch_id,resolve_path,process_files):
     token=str(uuid4());now=datetime.now(timezone.utc)
-    with factory() as db:
-        batch=db.scalar(select(Batch).where(Batch.id==batch_id).with_for_update(skip_locked=True))
-        if not batch: return
-        if batch.status == 'pausing':
-            if not batch.lease_until or batch.lease_until.replace(tzinfo=timezone.utc) <= now:
-                batch.status = 'paused'; batch.worker_token = None; batch.lease_until = None; db.commit()
-            return
-        if batch.status != 'preparing': return
-        lease=batch.lease_until
-        if lease and lease.replace(tzinfo=timezone.utc)>now: return
-        batch.worker_token=token;batch.lease_until=now+timedelta(minutes=5);db.commit()
-        case_id=batch.case_id
+    def claim():
+        with factory() as db:
+            batch=db.scalar(select(Batch).where(Batch.id==batch_id).with_for_update(skip_locked=True))
+            if not batch: return None
+            if batch.status == 'pausing':
+                if not batch.lease_until or batch.lease_until.replace(tzinfo=timezone.utc) <= now:
+                    batch.status = 'paused'; batch.worker_token = None; batch.lease_until = None; db.commit()
+                return None
+            if batch.status != 'preparing': return None
+            lease=batch.lease_until
+            if lease and lease.replace(tzinfo=timezone.utc)>now: return None
+            batch.worker_token=token;batch.lease_until=now+timedelta(minutes=5);db.commit()
+            return batch.case_id
+    case_id = await asyncio.to_thread(claim)
+    if case_id is None: return
+    def extend_lease():
+        with factory() as db:
+            active=batch_for(db,case_id,batch_id,True)
+            if active.worker_token!=token: return False
+            active.lease_until=datetime.now(timezone.utc)+timedelta(minutes=5)
+            db.commit()
+            return True
     async def renew_lease():
         while True:
             await asyncio.sleep(30)
-            with factory() as db:
-                active=batch_for(db,case_id,batch_id,True)
-                if active.worker_token!=token: return
-                active.lease_until=datetime.now(timezone.utc)+timedelta(minutes=5)
-                db.commit()
-    def should_stop():
+            if not await asyncio.to_thread(extend_lease): return
+    def stopped():
+        with factory() as db:
+            current = batch_for(db, case_id, batch_id)
+            return current.worker_token != token or current.status in PAUSED_STATES
+    async def should_stop():
         # A stopping process ends the turn at the next item boundary, so the
         # lease is released normally and the next start resumes at once.
         if shutdown_requested():
             return True
+        return await asyncio.to_thread(stopped)
+    def pending_imports():
         with factory() as db:
-            current = batch_for(db, case_id, batch_id)
-            return current.worker_token != token or current.status in PAUSED_STATES
+            return list(db.scalars(select(Item.id).where(Item.batch_id==batch_id,Item.status=='pending_import')
+                .order_by(Item.updated_at, Item.id).limit(IMPORTS_PER_TURN)))
+    def batch_files():
+        with factory() as db:
+            return deepcopy(batch_for(db,case_id,batch_id).files)
+    def store_file(index, file):
+        with factory() as db:
+            batch=batch_for(db,case_id,batch_id,True)
+            if batch.worker_token!=token: return False
+            fresh=deepcopy(batch.files);fresh[index]=file;batch.files=fresh
+            batch.lease_until=datetime.now(timezone.utc)+timedelta(minutes=5);db.commit()
+            return True
+    def release(interrupted):
+        with factory() as db:
+            batch=batch_for(db,case_id,batch_id,True)
+            if batch.worker_token==token and not interrupted:
+                has_imports=db.scalar(select(Item.id).where(Item.batch_id==batch_id,Item.status=='pending_import').limit(1))
+                batch.status = 'paused' if batch.status in PAUSED_STATES else ('review' if not has_imports and all(f['status'] in TERMINAL_FILES for f in batch.files) else 'preparing')
+                batch.worker_token=None;batch.lease_until=None;db.commit()
     heartbeat=asyncio.create_task(renew_lease())
     interrupted=False
     try:
         started = time.monotonic()
         # An investigator's accepted imports do not wait for every PDF in the
         # batch. Bounded turns also allow other cases to make progress.
-        with factory() as db:
-            pending=list(db.scalars(select(Item.id).where(Item.batch_id==batch_id,Item.status=='pending_import')
-                .order_by(Item.updated_at, Item.id).limit(IMPORTS_PER_TURN)))
+        pending = await asyncio.to_thread(pending_imports)
         for item_id in pending:
-            if should_stop() or time.monotonic() - started >= TURN_SECONDS:
+            if await should_stop() or time.monotonic() - started >= TURN_SECONDS:
                 break
             await _finish_atomic(_import_item,factory,case_id,batch_id,item_id,resolve_path)
-            with factory() as db:
-                batch=batch_for(db,case_id,batch_id,True)
-                if batch.worker_token!=token: return
-                batch.lease_until=datetime.now(timezone.utc)+timedelta(minutes=5);db.commit()
-        with factory() as db:
-            batch=batch_for(db,case_id,batch_id)
-            files=deepcopy(batch.files)
+            if not await asyncio.to_thread(extend_lease): return
+        files = await asyncio.to_thread(batch_files)
         candidates = sorted(((index, file) for index, file in enumerate(files) if file['status'] not in TERMINAL_FILES),
             key=lambda pair: (pair[1].get('last_checked_at', ''), pair[0]))[:FILES_PER_TURN]
         for index,file in candidates:
-            if should_stop() or time.monotonic() - started >= TURN_SECONDS:
+            if await should_stop() or time.monotonic() - started >= TURN_SECONDS:
                 break
             previous_status = file['status']
+            busy = False
             try:
-                with factory() as db:
+                with factory() as session, _bounded_lock_waits(session) as db:
                     batch=batch_for(db,case_id,batch_id)
                     actor=Actor(**{**batch.actor,'user_id':UUID(batch.actor['user_id'])})
                     if file['status']=='waiting':
@@ -1582,7 +1644,12 @@ async def advance_batch(factory,batch_id,resolve_path,process_files):
                     _reading_progress(file, 'complete', 'The reading is complete. Open its statement review to check reconciliation before importing.', review_file_id=file['file_id'])
             except Exception as error:
                 retries = file.get('preparation_retries', 0)
-                if _retryable_preparation_error(error) and retries < 3:
+                if _lock_busy_error(error):
+                    # Another unit (usually a statement review) holds the case.
+                    # Not a failure: the file waits for a later turn unchanged.
+                    busy = True
+                    log.info('Financial preparation deferred: case %s is busy', case_id)
+                elif _retryable_preparation_error(error) and retries < 3:
                     # The failed session has rolled back. Resume retained reading
                     # on the next bounded worker turn, without re-upload or OCR.
                     file['preparation_retries'] = retries + 1
@@ -1599,23 +1666,16 @@ async def advance_batch(factory,batch_id,resolve_path,process_files):
             file['last_checked_at'] = datetime.now(timezone.utc).isoformat()
             if file['status'] != previous_status:
                 file['last_progress_at'] = file['last_checked_at']
-            with factory() as db:
-                batch=batch_for(db,case_id,batch_id,True)
-                if batch.worker_token!=token: return
-                fresh=deepcopy(batch.files);fresh[index]=file;batch.files=fresh
-                batch.lease_until=datetime.now(timezone.utc)+timedelta(minutes=5);db.commit()
+            if not await asyncio.to_thread(store_file, index, file): return
+            if busy:
+                break
     except asyncio.CancelledError:
         interrupted=True
         raise
     finally:
         heartbeat.cancel()
         await asyncio.gather(heartbeat,return_exceptions=True)
-        with factory() as db:
-            batch=batch_for(db,case_id,batch_id,True)
-            if batch.worker_token==token and not interrupted:
-                has_imports=db.scalar(select(Item.id).where(Item.batch_id==batch_id,Item.status=='pending_import').limit(1))
-                batch.status = 'paused' if batch.status in PAUSED_STATES else ('review' if not has_imports and all(f['status'] in TERMINAL_FILES for f in batch.files) else 'preparing')
-                batch.worker_token=None;batch.lease_until=None;db.commit()
+        await asyncio.shield(asyncio.to_thread(release, interrupted))
 
 
 def _review_file(factory,batch_id,case_id,file):
