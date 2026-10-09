@@ -212,3 +212,25 @@ Actual-service synthetic reproduction: a standalone holder correction passed adm
 The shared quality trigger previously recognized Credit One and Andrews only. Merrick now receives bounded image rereading and a measured-cell fallback when a page alternative cannot preserve the original rows. Candidate acceptance retains readable payment facts, identity, printed controls and row counts; original cell text and source coordinates remain in provenance. Synthetic real-Tesseract and extraction-path tests pass locally. Fresh-upload/held-out/scale and real-browser acceptance remain pending; no automatic date or valid-but-wrong value recovery is claimed. Included in the user-authorized 29 September code-only release; not yet deployed/live verified. See the automation delivery plan for the connected release gates.
 
 29 September publication: E31/E32 release `a48958e0` pushed after production build; no new tests, as explicitly requested. Deployment/live acceptance remain unverified. E31 follow-up extends shared review resolution and cached readiness to grouped detail changes and first batch saves; retained duplicate and superseded-reading states are protected. This follow-up is untested under the same instruction.
+
+## 9 October investigator feedback, round 2 (queued as headless unit `r5-alex-feedback`)
+
+### E33 — No "needs action" view; filters look like they re-read files
+
+The filter buttons only change the list filter. On the largest case, the file-status summary behind the list takes about 28 s and is polled every 5 s, so counts and cards update late and look like re-processing. The adjacent batch-check button does start work and sits among the filters. Planned: a default "Needs action" filter (not imported, empty or failed reading, incomplete records, checks), a fast status summary with slower idle polling, and the batch-check button moved out of the filter row.
+
+### E34 — "0 imports pending" contradicts files that were never imported
+
+"Pending" counts only imports in flight. On the same case, 101 files were read but never saved: 93 of them have empty readings (84 image-only statements needing visual reading, 14 card statements with a text layer and no supported layout, 1 other). Their cards still say "PDF read · open review to check and import". Planned: a "Not imported" count that matches the cards, and plain labels for empty readings with the reason.
+
+### E35 — Account type cannot be set or corrected
+
+If the first reading misses that an account is a credit card, the investigator cannot change it. The sign convention is also pinned in the saved reading, so changing the account record alone would not help. Live: one card is stored as two untyped accounts, and two hand-reconciled statements carry 6 sign-reversed rows. Planned: set the type in Edit account details and Review accounts, re-check without re-reading, keep corrections, flag rows entered under the wrong convention for a confirmed flip (never a silent double flip), offer to merge same-card accounts, and suggest "looks like a credit card" from printed card signals.
+
+### E36 — Bulk edit of holder / account number / currency hard to reach or not working
+
+The editor still exists, but in the file list it is disabled until files are ticked, with no hint. Its statement listing ran for minutes on one 16-file folder, and empty readings may offer nothing to edit. Planned: a visible entry point, a fast listing, and editing that works for empty readings.
+
+### E37 — Incomplete records do not show their statement period
+
+Covered by the clickable list on fin/alex-1009 (page, printed text, missing field). Still to add: the period, or "period dates not read", on each record. Most affected periods on the reported file have no dates, which the wave-4 card reader work addresses on re-read.
