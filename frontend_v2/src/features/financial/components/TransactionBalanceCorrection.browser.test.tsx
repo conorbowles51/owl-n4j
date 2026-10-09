@@ -292,9 +292,9 @@ it.each([1280, 390])(
       )
     )
     expect(
-      screen.getByRole("button", {
-        name: "Import 1 payments and view Transactions",
-      })
+      screen.getAllByRole("button", {
+        name: "Import 1 transaction",
+      })[0]
     ).toBeDisabled()
     await page
       .getByRole("button", { name: "Done editing this row", exact: true })

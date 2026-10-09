@@ -1,10 +1,17 @@
 """Single-statement submissions use the existing durable batch worker."""
 from uuid import uuid5
-from sqlalchemy import select
+from sqlalchemy import select, text
 from postgres.models.evidence import EvidenceFile
 from postgres.models.financial_import_batches import FinancialImportBatch as Batch, FinancialImportBatchItem as Item, FinancialImportOperation as Operation
 from services.financial.pdf_candidates import PdfMappingError, _digest
 from services.financial.import_operations import operation_view
+
+# A held statement lock (another save or a batch turn on this PDF) must not
+# hold the request open past the browser's own timeout. Nothing is written
+# while waiting, so a busy answer is definite and the submission can be repeated.
+QUEUE_LOCK_TIMEOUT = '5s'
+BUSY_MESSAGE = ('Another save is using this statement. Nothing was submitted yet; '
+    'the import is retried automatically in a moment.')
 
 
 def job_id(case_id, file_id, request):
@@ -25,8 +32,26 @@ def queue_statement(session, *, case_id, evidence_file_id, request, actor):
     identifier = job_id(case_id, evidence_file_id, request)
     # Evidence serializes simultaneous first submissions without taking another
     # worker's batch lock. An existing accepted operation is immutable here.
-    file = session.scalar(select(EvidenceFile).where(EvidenceFile.case_id == case_id,
-        EvidenceFile.id == evidence_file_id).with_for_update().execution_options(populate_existing=True))
+    postgres = session.get_bind().dialect.name == 'postgresql'
+    if postgres:
+        session.execute(text(f"SET LOCAL lock_timeout = '{QUEUE_LOCK_TIMEOUT}'"))
+    try:
+        file = session.scalar(select(EvidenceFile).where(EvidenceFile.case_id == case_id,
+            EvidenceFile.id == evidence_file_id).with_for_update().execution_options(populate_existing=True))
+    except Exception as error:
+        from services.financial.import_batches import _lock_busy_error
+        if not _lock_busy_error(error):
+            raise
+        session.rollback()
+        # An earlier identical submission may already be accepted; report it.
+        existing = session.get(Operation, identifier)
+        return dict(case_id=str(case_id), evidence_file_id=str(evidence_file_id), receipt=None,
+            operation=operation_view(existing) if existing else None,
+            busy=existing is None, message=None if existing else BUSY_MESSAGE)
+    if postgres:
+        # Only the first-submission serialization is bounded; the rest of this
+        # transaction keeps the server default.
+        session.execute(text('SET LOCAL lock_timeout TO DEFAULT'))
     if file is None:
         raise PdfMappingError('Statement not found in this case.', 404)
     require_financial_file(file)

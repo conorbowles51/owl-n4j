@@ -233,7 +233,7 @@ it("chooses the currency account, saves balances, switches accounts and reopens 
     screen.getByRole("button", { name: "Show corrections and import choices" })
   )
   fireEvent.click(
-    screen.getByRole("button", { name: "Save statement balances" })
+    screen.getAllByRole("button", { name: "Save statement balances" })[0]
   )
   await waitFor(() => expect(requests).toHaveLength(1))
   expect(requests[0]).toMatchObject({
@@ -261,7 +261,7 @@ it("chooses the currency account, saves balances, switches accounts and reopens 
     screen.getByRole("button", { name: "Show corrections and import choices" })
   )
   fireEvent.click(
-    screen.getByRole("button", { name: "Save statement balances" })
+    screen.getAllByRole("button", { name: "Save statement balances" })[0]
   )
   await waitFor(() => expect(requests).toHaveLength(2))
   expect(requests[1]).toMatchObject({

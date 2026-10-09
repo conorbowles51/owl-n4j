@@ -139,15 +139,15 @@ run(
     })
     await waitFor(() => expect(check).toBeEnabled())
     expect(
-      screen.getByRole("button", { name: "Save balances now" })
+      screen.getAllByRole("button", { name: "Save statement balances" })[0]
     ).toBeDisabled()
     fireEvent.click(check)
     await waitFor(() =>
       expect(
-        screen.getByRole("button", { name: "Save balances now" })
+        screen.getAllByRole("button", { name: "Save statement balances" })[0]
       ).toBeEnabled()
     )
-    fireEvent.click(screen.getByRole("button", { name: "Save balances now" }))
+    fireEvent.click(screen.getAllByRole("button", { name: "Save statement balances" })[0])
     await waitFor(() => expect(imported).toHaveBeenCalled())
     expect(imported.mock.calls[0][0].transaction_count).toBe(0)
     cleanup()
@@ -179,9 +179,9 @@ run(
     })
     const imported = vi.fn()
     mount(<StatementImportPanel caseId={caseId} onImported={imported} />)
-    const confirm = await screen.findByRole("button", {
-      name: "Confirm import of 12 transactions",
-    })
+    const confirm = (await screen.findAllByRole("button", {
+      name: "Import 12 transactions",
+    }))[0]
     await screen.findAllByText(/Closing balance matches/)
     expect(confirm).toBeDisabled()
     expect((await service("/__fixture/payments")).payments).toHaveLength(0)
@@ -220,9 +220,9 @@ run(
     // Remove tab-local drafts so reopening verifies the saved server review.
     useFinancialDraftStore.setState({ drafts: {} })
     mount(<StatementImportPanel caseId={caseId} onImported={imported} />)
-    const reopenedConfirm = await screen.findByRole("button", {
-      name: "Confirm import of 12 transactions",
-    })
+    const reopenedConfirm = (await screen.findAllByRole("button", {
+      name: "Import 12 transactions",
+    }))[0]
     await waitFor(() => expect(reopenedConfirm).toBeEnabled())
     await page
       .getByRole("button", { name: "Review printed credit total", exact: true })
@@ -252,7 +252,7 @@ run(
     ).toBe(Number(totals.debit_minor) / 100)
     await page
       .getByRole("button", {
-        name: "Confirm import of 12 transactions",
+        name: "Import 12 transactions",
         exact: true,
       })
       .click()
@@ -288,9 +288,9 @@ run(
     })
     const imported = vi.fn()
     mount(<StatementImportPanel caseId={caseId} onImported={imported} />)
-    const confirm = await screen.findByRole("button", {
-      name: "Confirm import of 12 transactions",
-    })
+    const confirm = (await screen.findAllByRole("button", {
+      name: "Import 12 transactions",
+    }))[0]
     expect(confirm).toBeDisabled()
     await page.getByText(source.malformed_text, { exact: true }).first().click()
     await page
@@ -330,9 +330,9 @@ run(
     cleanup()
     useFinancialDraftStore.setState({ drafts: {} })
     mount(<StatementImportPanel caseId={caseId} onImported={imported} />)
-    await screen.findByRole("button", {
-      name: "Confirm import of 12 transactions",
-    })
+    (await screen.findAllByRole("button", {
+      name: "Import 12 transactions",
+    }))[0]
     expect(
       within(
         screen.getByLabelText(`Balance correction ${source.row_id}`)
@@ -354,9 +354,9 @@ run(
     await page
       .getByLabelText("Corrected printed balance", { exact: true })
       .fill(String(Number(source.correct_balance_minor) / 100))
-    const ready = screen.getByRole("button", {
-      name: "Confirm import of 12 transactions",
-    })
+    const ready = screen.getAllByRole("button", {
+      name: "Import 12 transactions",
+    })[0]
     await waitFor(() => expect(ready).toBeEnabled())
     await page
       .getByRole("button", { name: "Done editing this row", exact: true })
@@ -372,7 +372,7 @@ run(
     })
     await page
       .getByRole("button", {
-        name: "Confirm import of 12 transactions",
+        name: "Import 12 transactions",
         exact: true,
       })
       .click()
@@ -391,9 +391,9 @@ run(
     const { case_id: caseId } = await setup()
     const imported = vi.fn()
     mount(<StatementImportPanel caseId={caseId} onImported={imported} />)
-    const confirm = await screen.findByRole("button", {
-      name: "Confirm import of 12 transactions",
-    })
+    const confirm = (await screen.findAllByRole("button", {
+      name: "Import 12 transactions",
+    }))[0]
     await waitFor(() => expect(confirm).toBeEnabled())
     fireEvent.click(
       screen.getByRole("button", {

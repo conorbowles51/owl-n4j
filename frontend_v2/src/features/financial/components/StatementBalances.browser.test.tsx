@@ -122,7 +122,7 @@ it("leads from the missing-balance check to labelled inputs and saves without im
   )
   await screen.findByText("Review Example balances.pdf")
   expect(
-    screen.getByRole("button", { name: "Save statement balances" })
+    screen.getAllByRole("button", { name: "Save statement balances" })[0]
   ).toBeDisabled()
   fireEvent.click(screen.getByRole("button", { name: "Show items to check" }))
   expect(
@@ -139,7 +139,7 @@ it("leads from the missing-balance check to labelled inputs and saves without im
     .scrollIntoView({ block: "center", behavior: "instant" })
   await page.screenshot({ path: "/tmp/statement-balances-review-light.png" })
   fireEvent.click(
-    screen.getByRole("button", { name: "Save statement balances" })
+    screen.getAllByRole("button", { name: "Save statement balances" })[0]
   )
   await waitFor(() => expect(saved).toHaveBeenCalledOnce())
   expect(save).toHaveBeenCalledWith(

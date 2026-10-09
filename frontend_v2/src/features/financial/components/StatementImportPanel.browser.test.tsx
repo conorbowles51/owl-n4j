@@ -248,9 +248,9 @@ it("imports from the review summary without opening corrections or resolving eve
     "43 records selected · 3 with missing or invalid fields"
   )
   expect(screen.getByLabelText("Credit ready:0")).not.toBeVisible()
-  const importNow = screen.getByRole("button", {
-    name: /Import .* payments and view Transactions/,
-  })
+  const importNow = screen.getAllByRole("button", {
+    name: /^Import \d+ transactions?$/,
+  })[0]
   importNow.scrollIntoView({ block: "center" })
   await page.screenshot({
     path: "/tmp/statement-review-direct-import-light.png",
@@ -370,9 +370,9 @@ it("keeps field labels visible after scrolling through correction rows in light 
     path: "/tmp/statement-review-labelled-fields-light.png",
   })
   fireEvent.change(amount, { target: { value: "127.00" } })
-  const confirm = screen.getByRole("button", {
-    name: "Confirm import of 40 transactions",
-  })
+  const confirm = screen.getAllByRole("button", {
+    name: "Import 40 transactions",
+  })[0]
   expect(confirm).toBeEnabled()
   fireEvent.click(confirm)
   await waitFor(() => expect(sent).toHaveLength(1))
@@ -433,7 +433,7 @@ it("pages 1200 correction rows, restores a late edit and submits every row", asy
     "Corrected last payment"
   )
   fireEvent.click(
-    screen.getByRole("button", { name: "Confirm import of 1200 transactions" })
+    screen.getAllByRole("button", { name: "Import 1200 transactions" })[0]
   )
   await waitFor(() => expect(sent).toHaveLength(1))
   const request = sent[0] as { rows: { description: string }[] }
@@ -477,7 +477,7 @@ it("sets aside empty entries across all pages, preserves partial readings and ed
     screen.getByRole("button", { name: "Exclude 60 blank rows from import" })
   )
   expect(
-    screen.getByRole("button", { name: "Confirm import of 3 transactions" })
+    screen.getAllByRole("button", { name: "Import 3 transactions" })[0]
   ).toBeEnabled()
   expect(
     screen.queryByLabelText("Include row empty:60")
@@ -495,7 +495,7 @@ it("sets aside empty entries across all pages, preserves partial readings and ed
     screen.getByRole("button", { name: "Exclude 60 blank rows from import" })
   )
   fireEvent.click(
-    screen.getByRole("button", { name: "Confirm import of 3 transactions" })
+    screen.getAllByRole("button", { name: "Import 3 transactions" })[0]
   )
   await waitFor(() => expect(sent).toHaveLength(1))
   const request = sent[0] as {
