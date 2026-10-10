@@ -97,7 +97,7 @@ class AccountTypeChangeTests(TestCase):
             self.assertEqual(view['balance_convention'], 'liability_owed')
             # The printed balances read the same; only their ledger sign changed.
             self.assertEqual(view['balances']['closing']['amount_minor'], str(self.balances[1]))
-        # The two hand-entered rows are flagged, never flipped automatically.
+        # The statement adds up as entered, so the two rows stay flagged, not flipped.
         flagged = result['statements'][0]['flagged_rows']
         self.assertEqual(len(flagged), 2)
         self.assertEqual({row['direction'] for row in flagged if row['description'] == 'PAYMENT - THANK YOU'}, {'debit'})
@@ -123,6 +123,46 @@ class AccountTypeChangeTests(TestCase):
         with self.f.SessionLocal() as db, self.assertRaises(PdfMappingError):
             service.flip_flagged_rows(db, case_id=self.f.case.id, account_id=self.account_id,
                 request=request.model_copy(update={'expected_revision': after['revision']}), actor=self.f.actor)
+
+    def _make_card_entries_only_add_up_flipped(self):
+        """The fee was entered as 50.00 and the printed closing is the card's:
+        it adds up only with both hand-entered rows reversed."""
+        with self.f.SessionLocal() as db:
+            rows = list(db.scalars(select(FinancialTransaction).where(FinancialTransaction.source_document_id == self.source_id,
+                                                                      FinancialTransaction.ledger_status != 'superseded')))
+            fee = next(row for row in rows if row.description == 'LATE FEE')
+            fee.amount_minor = 5000
+            manual = {'LATE FEE', 'PAYMENT - THANK YOU'}
+            period = db.scalar(select(FinancialStatementPeriod).where(FinancialStatementPeriod.source_document_id == self.source_id))
+            total = -period.opening_balance_minor
+            for row in rows:
+                credit = (row.direction == 'credit') != (row.description in manual)
+                total += row.amount_minor if credit else -row.amount_minor
+            period.closing_balance_minor = -total
+            db.commit()
+
+    def test_rows_flip_with_the_type_change_when_the_statement_then_adds_up_exactly(self):
+        self._make_card_entries_only_add_up_flipped()
+        with self.f.SessionLocal() as db:
+            preview = service.preview_account_type(db, case_id=self.f.case.id, account_id=self.account_id, account_type='credit_card')
+        statement = preview['statements'][0]
+        self.assertEqual((statement['reconciles'], statement['reconciles_with_flagged_flipped'], statement['auto_flip']),
+                         (False, True, True))
+        self.assertEqual(preview['auto_flip_rows'], 2)
+        result = self.change('credit_card')
+        self.assertEqual(result['auto_flipped_rows'], 2)
+        self.assertEqual(result['flagged_rows'], 0)
+        self.assertTrue(result['statements'][0]['reconciles'])
+        with self.f.SessionLocal() as db:
+            originals = list(db.scalars(select(FinancialTransaction).where(FinancialTransaction.source_document_id == self.source_id,
+                FinancialTransaction.description.in_(['LATE FEE', 'PAYMENT - THANK YOU']), FinancialTransaction.ledger_status == 'superseded')))
+            self.assertEqual(len(originals), 2)
+            for original in originals:
+                self.assertNotEqual(db.get(FinancialTransaction, original.superseded_by_id).direction, original.direction)
+                self.assertIn('adds up exactly', db.scalar(select(AdjudicationEvent.reason)
+                    .where(AdjudicationEvent.subject_id == original.id)))
+        # Changing back is the reverse decision: the flipped rows are not flagged again.
+        self.assertEqual(self.change('checking')['auto_flipped_rows'], 0)
 
     def test_only_currently_flagged_rows_can_be_flipped(self):
         state = self.change('credit_card')

@@ -11,9 +11,11 @@ prints the money held. When the first reading missed that an account is a card
   its history, and the period and running balances are re-signed;
 - each statement is reconciled again from the saved values;
 - rows the investigator entered or corrected while the old convention applied
-  are flagged. They are never flipped here: flipping is a separate, confirmed
-  action (``flip_flagged_rows``) that goes through the ordinary transaction
-  correction chain, so the entered values stay in history.
+  are flagged. When a statement does not add up after the change but adds up
+  exactly with all of its flagged rows flipped, those rows are flipped as part
+  of the change (``AUTO_FLIP_REASON``); otherwise they stay flagged for the
+  confirmed action ``flip_flagged_rows``. Both go through the ordinary
+  transaction correction chain, so the entered values stay in history.
 
 Read-only helpers suggest a type from printed card wording and find accounts
 that are the same printed card, for the existing reversible account merge.
@@ -48,6 +50,9 @@ CARD_SIGNALS = (
 )
 FLIP_REASON = ('Entered while this account was treated as a {before}; direction reversed for a {after} '
                'after the account type was corrected (confirmed by the investigator).')
+AUTO_FLIP_REASON = ('Entered while this account was treated as a {before}; direction reversed for a {after} '
+                    'after the account type was corrected, because the statement adds up exactly with it reversed '
+                    'and not without.')
 
 
 class AccountTypeRequest(BaseModel):
@@ -151,6 +156,10 @@ def _statement_state(session, document, period, account, convention_after=None):
         convention_before=before, convention_after=after,
         reconciles=_identity(opening, closing, rows),
         reconciles_with_flagged_flipped=_identity(opening, closing, rows, flagged_ids) if flagged else None,
+        # Flipped with the type change: it adds up exactly with every flagged
+        # row reversed and does not add up as entered.
+        auto_flip=bool(flagged) and _identity(opening, closing, rows) is False
+        and _identity(opening, closing, rows, flagged_ids) is True,
         flagged_rows=[dict(transaction_id=str(row.id), date=(row.transaction_date or row.posted_date or row.effective_date).isoformat()
                            if (row.transaction_date or row.posted_date or row.effective_date) else None,
                            description=row.description or '', amount_minor=str(row.amount_minor), direction=row.direction,
@@ -192,6 +201,7 @@ def preview_account_type(session, *, case_id, account_id, account_type):
         account_type_after=account_type, statements=statements,
         changed_statements=sum(s['convention_before'] != s['convention_after'] for s in statements),
         flagged_rows=sum(len(s['flagged_rows']) for s in statements),
+        auto_flip_rows=sum(len(s['flagged_rows']) for s in statements if s['auto_flip']),
         revision=_revision(account, current))
 
 
@@ -263,7 +273,13 @@ def save_account_type(session, *, case_id, account_id, request, actor):
         account.metadata_ = account_metadata
         account.account_type = request.account_type
         session.flush()
-        result = account_type_state(session, case_id=case_id, account_id=account_id)
+        state = account_type_state(session, case_id=case_id, account_id=account_id)
+        auto = [s for s in state['statements'] if s['auto_flip']]
+        for statement in auto:
+            _flip(session, case_id=case_id, account=account, source_document_id=UUID(statement['source_document_id']),
+                  rows=statement['flagged_rows'], actor=actor, template=AUTO_FLIP_REASON)
+        result = account_type_state(session, case_id=case_id, account_id=account_id) if auto else state
+        result['auto_flipped_rows'] = sum(len(s['flagged_rows']) for s in auto)
         session.commit()
         return result
     except Exception:
@@ -271,13 +287,39 @@ def save_account_type(session, *, case_id, account_id, request, actor):
         raise
 
 
+def _flip(session, *, case_id, account, source_document_id, rows, actor, template):
+    """Reverse the direction of the given flagged rows through the correction chain."""
+    from services.financial.correction_preview import preview_amount_correction
+    from services.financial.corrections import correct_transaction
+    review = (session.get(FinancialSourceDocument, source_document_id).metadata_ or {}).get(CONVENTION_REVIEW) or {}
+    reason = template.format(before=TYPE_LABELS.get(review.get('previous_account_type') or '', 'bank account')
+                             if review.get('previous_convention') == 'asset_balance' else 'credit card',
+                             after=TYPE_LABELS.get(account.account_type or '', 'account'))
+    replacements = []
+    for row in rows:
+        identifier = row['transaction_id']
+        preview = preview_amount_correction(session, case_id=case_id, transaction_id=UUID(identifier),
+            amount_minor=int(row['amount_minor']), direction=row['proposed_direction'])
+        result = correct_transaction(session, case_id=case_id, transaction_id=UUID(identifier),
+            amount_minor=int(row['amount_minor']), direction=row['proposed_direction'],
+            expected_revision=preview['document_revision'], actor=actor, reason=reason, commit=False)
+        replacements.append(result['replacement_id'])
+    document = session.get(FinancialSourceDocument, source_document_id)
+    metadata = deepcopy(document.metadata_ or {})
+    review = dict(metadata[CONVENTION_REVIEW])
+    review['flipped_transaction_ids'] = [*review.get('flipped_transaction_ids', []),
+                                         *(row['transaction_id'] for row in rows), *replacements]
+    metadata[CONVENTION_REVIEW] = review
+    metadata[CONVENTION_REVIEW + '_sha256'] = _digest(review)
+    document.metadata_ = metadata
+    session.flush()
+
+
 def flip_flagged_rows(session, *, case_id, account_id, request, actor):
     """Reverse the direction of rows flagged after a type change, once confirmed.
 
     Only the rows currently flagged on that statement can be flipped, all
     through the correction chain (original kept, adjudication recorded)."""
-    from services.financial.correction_preview import preview_amount_correction
-    from services.financial.corrections import correct_transaction
     try:
         account = _account(session, case_id, account_id, lock=True)
         state = account_type_state(session, case_id=case_id, account_id=account_id)
@@ -288,27 +330,8 @@ def flip_flagged_rows(session, *, case_id, account_id, request, actor):
         chosen = [str(identifier) for identifier in request.transaction_ids]
         if not statement or not chosen or len(set(chosen)) != len(chosen) or any(identifier not in flagged for identifier in chosen):
             raise PdfMappingError('Only rows flagged on this statement after its account type changed can be flipped here.', 409)
-        review = (session.get(FinancialSourceDocument, request.source_document_id).metadata_ or {}).get(CONVENTION_REVIEW) or {}
-        reason = FLIP_REASON.format(before=TYPE_LABELS.get(review.get('previous_account_type') or '', 'bank account')
-                                    if review.get('previous_convention') == 'asset_balance' else 'credit card',
-                                    after=TYPE_LABELS.get(account.account_type or '', 'account'))
-        replacements = []
-        for identifier in chosen:
-            row = flagged[identifier]
-            preview = preview_amount_correction(session, case_id=case_id, transaction_id=UUID(identifier),
-                amount_minor=int(row['amount_minor']), direction=row['proposed_direction'])
-            result = correct_transaction(session, case_id=case_id, transaction_id=UUID(identifier),
-                amount_minor=int(row['amount_minor']), direction=row['proposed_direction'],
-                expected_revision=preview['document_revision'], actor=actor, reason=reason, commit=False)
-            replacements.append(result['replacement_id'])
-        document = session.get(FinancialSourceDocument, request.source_document_id)
-        metadata = deepcopy(document.metadata_ or {})
-        review = dict(metadata[CONVENTION_REVIEW])
-        review['flipped_transaction_ids'] = [*review.get('flipped_transaction_ids', []), *chosen, *replacements]
-        metadata[CONVENTION_REVIEW] = review
-        metadata[CONVENTION_REVIEW + '_sha256'] = _digest(review)
-        document.metadata_ = metadata
-        session.flush()
+        _flip(session, case_id=case_id, account=account, source_document_id=request.source_document_id,
+              rows=[flagged[identifier] for identifier in chosen], actor=actor, template=FLIP_REASON)
         result = account_type_state(session, case_id=case_id, account_id=account_id)
         session.commit()
         return result
