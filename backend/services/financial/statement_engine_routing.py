@@ -12,16 +12,8 @@
   - different readings -> the period is held as an engine/library
     disagreement (a defect in one of them; never picked silently).
 * The library claims the pages but does not prove them and the engine does
-  -> the engine serves, under the library statement's id, so saved reviews of
-  that period stay attached, when the library's reading cannot reconcile its
-  balances, or reconciles with exactly the engine's reading (every movement's
-  date, direction and amount, and both balances: two readers agree; the library
-  was held for something else). When the engine section reads every page of
-  the library period plus covers or continuation pages holding no other library
-  period (row-level scope), the same applies to the one library period of the
-  same printed period, currency, account and opening balance.
-  Identity facts that differ only by case or a printed legal form are the same
-  fact; any other identity difference keeps the library period.
+  (same pages only) -> the engine serves, under the library statement's id, so
+  saved reviews of that period stay attached.
 * A layout fingerprint routed ``library_first`` in the route table (data,
   filled from the benchmark's verified truth) is never served by the engine.
 
@@ -32,7 +24,6 @@ Switches (environment):
   family reader is skipped. Never a production path.
 """
 import json
-import re
 import logging
 import os
 import time
@@ -108,27 +99,6 @@ def _same_account(a, b):
     da, db = ''.join(ch for ch in a if ch.isdigit()), ''.join(ch for ch in b if ch.isdigit())
     shorter, longer = sorted((da, db), key=len)
     return len(shorter) >= 4 and shorter in longer
-
-
-_LEGAL_FORM_TAIL = re.compile(r'(?:\s*,)?\s+(?:S\.?\s*A\.?\s*(?:P\.?\s*I\.?\s*)?|S\.?\s*DE\s*R\.?\s*L\.?\s*)(?:DE\s+C\.?\s*V\.?)?$')
-
-
-def _same_identity(field, a, b):
-    """Two readings of one identity fact that name the same thing: equal accounts by their digits,
-    names equal after case and accents, a holder printed with and without its legal form ('X SA DE CV'
-    and 'X'). Anything else is a conflict."""
-    from services.financial.statement_engine_vocabulary import fold
-    if field == 'account_reference':
-        return a == b or _same_account(a, b)
-    if field == 'currency':
-        return a == b
-    fa, fb = fold(a), fold(b)
-    if fa == fb:
-        return True
-    if field == 'holder':
-        bare = lambda text: ' '.join(_LEGAL_FORM_TAIL.sub('', text).replace('.', ' ').replace(',', ' ').split())
-        return bare(fa) == bare(fb) and bool(bare(fa))
-    return False
 
 
 def disagreement_row(rows, choice):
@@ -210,8 +180,8 @@ def route_catalog(sources, library_catalog):
         if not exact:
             # Row-level scope: the engine section and the library period share pages but not all of them
             # (sections sharing a page, covers, continuation pages). Exactly one library period of the same
-            # printed period, currency, printed account and printed opening balance is cross-checked, and
-            # replaced below only when no other library period shares the engine's pages.
+            # printed period, currency, printed account and printed opening balance is cross-checked;
+            # nothing is replaced in this case.
             same = [g for g in matching if g.get('period_start') == statement['period_start']
                     and g.get('period_end') == statement['period_end']
                     and not (statement.get('currency') and g.get('currency') and g['currency'] != statement['currency'])
@@ -256,22 +226,15 @@ def route_catalog(sources, library_catalog):
                 logger.warning('Engine/library disagreement on statement %s (layout %s, fingerprint %s).',
                                group['id'], group.get('layout_id'), statement['layout_fingerprint'])
             continue
-        agrees = reading_key(library_rows) == reading_key(engine_rows)
-        if closing_reconciles(library_rows, is_liability(group)) and not agrees:
-            # The library's reading reconciles its balances with a different reading (it may still be held
-            # for another reason): it keeps the period. The engine replaces a reading that cannot reconcile,
-            # or one that reads every movement and balance exactly as the engine proves them.
-            if not exact:
-                routing['scoped_unchecked'] = routing.get('scoped_unchecked', 0) + 1
-            continue
-        if not exact and (not _pages(group) <= pages or any(other is not group and _pages(other) & pages
-                                                              for other in groups if not other.get('document_kind'))):
-            # Row-level scope: the library period claims a page the engine section does not read, or the
-            # engine's pages also hold another library period; nothing is replaced.
+        if not exact:
             routing['scoped_unchecked'] = routing.get('scoped_unchecked', 0) + 1
             continue
+        if closing_reconciles(library_rows, is_liability(group)):
+            # The library's reading reconciles its balances (it may still be held for another reason,
+            # or be ready): it keeps the period. The engine replaces only a reading that cannot reconcile.
+            continue
         conflicts = [field for field in IDENTITY if public.get(field) and group.get(field)
-                     and not _same_identity(field, public[field], group[field])]
+                     and public[field] != group[field] and not (field == 'account_reference' and _same_account(public[field], group[field]))]
         if conflicts:
             continue
         # The library cannot reconcile this period and the engine proves it: the engine serves under the
