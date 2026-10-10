@@ -104,21 +104,238 @@ def _items(session, case_id, file_id, statement_id):
         Item.statement_key == (statement_id or ''), Item.status.notin_(('removed', 'superseded_reading'))).order_by(Item.id)))
 
 
-def _load(session, case_id, target, cache):
+# Listing and previewing use the saved statement records and the readings a
+# batch check stored; neither re-reads a PDF. A statement's PDF is read again
+# only for a change that depends on the reading (currency, unprinted start,
+# no activity) and when a draft is saved. Revisions from these paths are
+# opaque tokens: _plan recomputes them the same way before any change.
+STORED = 'bulk_stored_readings'
+_STORED_FIELDS = (('holder', 'holder'), ('account_number', 'account'), ('institution', 'institution'),
+                  ('currency', 'currency'), ('period_start', 'period_start'), ('period_end', 'period_end'))
+_INDIVIDUAL = 'Open this statement individually to review its import or account assignment.'
+# Problems assess() records for a receipt reading and an unseparated reading.
+_DOCUMENT_REVIEW = 'This is a receipt or payment document. Open its document review.'
+_READING_FAILURE = 'This PDF contains several Capital One statements'
+# Item statuses that _load refuses before it reads anything.
+_REFUSED = ('pending_import', 'imported', 'skipped', 'assigned', 'duplicate_ignored')
+
+
+def _saved_records(session, case_id, source_ids, cache):
+    """Saved statements' details from their records, loaded together, without
+    decoding their stored readings (the same values read_statement_details shows)."""
+    from postgres.models.financial import FinancialAccount, FinancialStatementPeriod
+    from services.financial.statement_details import DETAIL_KEYS
+    wanted = [sid for sid in {UUID(str(sid)) for sid in source_ids} if ('saved_record', sid) not in cache]
+    if not wanted:
+        return
+    meta = Source.metadata_
+    request = meta['statement_import_request']
+    keys = (*DETAIL_KEYS, 'period_start', 'period_end')
+    rows = session.execute(select(Source.id, Source.evidence_file_id, Source.document_type, Source.status,
+        meta['statement_details_review'], meta['statement_details_history'], meta['statement_account_id'].as_string(),
+        meta['statement_import_original_sha256'].as_string(), meta['statement_import_request_sha256'].as_string(),
+        meta['statement_details_review_sha256'].as_string(), request['currency'].as_string(),
+        *[request[key].as_string() for key in keys])
+        .where(Source.case_id == case_id, Source.id.in_(wanted))).all()
+    periods = {}
+    for period in session.scalars(select(FinancialStatementPeriod).where(FinancialStatementPeriod.case_id == case_id,
+            FinancialStatementPeriod.source_document_id.in_(wanted)).order_by(FinancialStatementPeriod.id)):
+        periods.setdefault(period.source_document_id, []).append(period)
+    found = {row[0]: row for row in rows}
+    account_ids = set()
+    for sid in wanted:
+        row = found.get(sid)
+        if row is None:
+            cache[('saved_record', sid)] = PdfMappingError('Statement not found in this case.', 404)
+            continue
+        _, file_id, kind, status, review, history, account_ref, *_rest = row
+        if kind != 'statement_review' or status != 'admitted':
+            cache[('saved_record', sid)] = PdfMappingError('Only a current imported statement can be edited here.', 409)
+            continue
+        found_periods = periods.get(sid, [])
+        if len(found_periods) > 1:
+            cache[('saved_record', sid)] = PdfMappingError('Choose an individual statement period before editing.', 409)
+            continue
+        try:
+            account_id = found_periods[0].account_id if found_periods else UUID(account_ref)
+        except (TypeError, ValueError):
+            cache[('saved_record', sid)] = PdfMappingError('The statement account is unavailable.', 409)
+            continue
+        account_ids.add(account_id)
+        cache[('saved_record', sid)] = (row, found_periods[0] if found_periods else None, account_id)
+    accounts = {account.id: account for account in session.scalars(select(FinancialAccount).where(
+        FinancialAccount.case_id == case_id, FinancialAccount.id.in_(account_ids)))} if account_ids else {}
+    for sid in wanted:
+        entry = cache[('saved_record', sid)]
+        if isinstance(entry, PdfMappingError):
+            continue
+        row, period, account_id = entry
+        account = accounts.get(account_id)
+        if account is None:
+            cache[('saved_record', sid)] = PdfMappingError('The statement account is unavailable.', 409)
+            continue
+        _, file_id, _kind, _status, review, history, _ref, original_sha, request_sha, review_sha, request_currency, *values = row
+        review = review or {}
+        details = {**{key: value or '' for key, value in zip(keys, values)}, **review.get('details', {})}
+        if period:
+            for key in ('period_start', 'period_end'):
+                value = getattr(period, key)
+                details[key] = value.isoformat() if value else ''
+        currency = period.currency if period else (review.get('currency') or request_currency or None)
+        revision = _digest(dict(saved_record=str(sid), details=details, currency=currency, account=str(account.id),
+            period=[str(period.id), str(period.period_start), str(period.period_end), period.currency,
+                    period.opening_balance_minor, period.closing_balance_minor] if period else None,
+            identity=[account.identity_key, account.holder_name, account.identifier_as_printed, account.institution_name],
+            seals=[original_sha, request_sha, review_sha], review=review, history=history or []))
+        cache[('saved_record', sid)] = dict(evidence_file_id=str(file_id), account_id=str(account.id),
+            values={**details, 'currency': currency or ''}, revision=revision)
+
+
+def _summary_values(summary):
+    return {field: summary.get(name, '') for field, name in _STORED_FIELDS}
+
+
+def _individual(summary):
+    messages = [problem.get('message') or '' for problem in summary.get('problems', [])]
+    return bool(summary.get('assignment_only') or _DOCUMENT_REVIEW in messages
+                or any(message.startswith(_READING_FAILURE) for message in messages))
+
+
+def _stored_draft(file, statement_id, items):
+    """Values and a revision for an unimported period from the readings its
+    batch checks stored, or None when only a fresh reading can answer: a
+    batch correction, a saved review of another reading, or batches that
+    disagree on whether it needs its individual review."""
+    from services.financial.statement_progress import review_progress
+    if not items:
+        return None
+    if any(item.status not in ('ready', 'attention') or 'revision' not in item.summary for item in items):
+        return None
+    individual = [_individual(item.summary) for item in items]
+    if all(individual):
+        # The batch read a receipt, payments still to assign or unseparated
+        # periods: as _load does for that reading, send the investigator to
+        # the individual review.
+        raise PdfMappingError(_INDIVIDUAL, 409)
+    if any(individual):
+        return None
+    # Successive batch checks of one PDF can record readings from different
+    # reader versions; the most recently written one is the current reading.
+    newest = max(items, key=lambda item: (item.updated_at, item.created_at, str(item.id)))
+    values = _summary_values(newest.summary)
+    # The saved draft _load resolves to: the shared review, which every batch
+    # draft must follow, or the batches' one draft. A draft of another reading
+    # or competing drafts need the PDF (and usually an individual review).
+    shared = review_progress(file, statement_id)
+    requests = [item.review_request for item in items if item.review_request is not None]
+    effective = None
+    if shared is not None:
+        effective = shared.get('request') or {}
+        compatible = {request_signature(effective), *shared.get('superseded_request_signatures', []),
+                      shared.get('initial_request_signature')}
+        if any(request_signature(request) not in compatible for request in requests):
+            return None
+    elif requests:
+        if len({request_signature(request) for request in requests}) != 1:
+            return None
+        effective = requests[0]
+    if effective is not None:
+        if effective.get('expected_revision') not in {item.summary['revision'] for item in items}:
+            return None
+        values = {key: effective.get(key, '') for key in FIELDS}
+    revision = _digest(dict(stored_reading=values, file=str(file.id), statement=statement_id,
+        items=[(str(item.id), item.status, item.summary['revision'], item.review_request) for item in items],
+        shared=shared.get('review_revision') if shared else None))
+    return values, revision
+
+
+def _batch_items(session, case_id, file_ids, cache):
+    """The current batch items of each file by period, loaded together: what
+    _items returns for each period, without one query per period."""
+    wanted = {UUID(str(fid)) for fid in file_ids} - {UUID(key[1]) for key in cache if isinstance(key, tuple) and key[0] == STORED}
+    if not wanted:
+        return
+    keyed = {fid: {} for fid in wanted}
+    for item in session.scalars(select(Item).join(Batch, Batch.id == Item.batch_id).where(
+            Batch.case_id == case_id, Batch.status != 'removed', Item.file_id.in_(wanted),
+            Item.status.notin_(('removed', 'superseded_reading'))).order_by(Item.id)):
+        keyed[item.file_id].setdefault(item.statement_key or '', []).append(item)
+    for fid, found in keyed.items():
+        cache[(STORED, str(fid))] = found
+
+
+def _stored_statements(session, case_id, files, cache):
+    """Each file's unimported periods from its stored batch readings, or None
+    for a file that must be read: no current batch reading, a file-level
+    reading, or saved records the readings do not settle (an import whose
+    period the batch did not record, or an excluded copy)."""
+    if not files:
+        return {}
+    _batch_items(session, case_id, [file.id for file in files], cache)
+    copies = {}
+    for source_id, sha, status, statement, removal, rung in session.execute(select(Source.id, Source.sha256_at_ingestion,
+            Source.status, Source.metadata_['statement_import_statement_id'].as_string(),
+            Source.metadata_['financial_import_removal'], Source.duplicate_match_rung).where(
+            Source.case_id == case_id, Source.sha256_at_ingestion.in_({file.sha256 for file in files}))):
+        copies.setdefault(sha, []).append((str(source_id), status, statement, removal, rung))
+    result = {}
+    for file in files:
+        result[file.id] = None
+        keyed = cache[(STORED, str(file.id))]
+        if not keyed or ('' in keyed and len(keyed) > 1):
+            # A file-level reading beside printed periods: the PDF was read
+            # both ways, so only a fresh reading says which is current.
+            continue
+        found = copies.get(file.sha256, [])
+        if any(status == 'superseded' and rung is not None for _, status, _, _, rung in found):
+            continue
+        current = [(source_id, statement or '') for source_id, status, statement, removal, _ in found
+                   if status != 'superseded' and not removal]
+        statements = [statement for _, statement in current]
+        if any(statement not in keyed for statement in statements) or len(statements) != len(set(statements)):
+            continue
+        current_ids = {source_id for source_id, _ in current}
+        # A period whose batch recorded its import into a current saved
+        # statement is that statement, whichever period id the import kept.
+        saved = set(statements) | {key for key, found_items in keyed.items() if any(item.status == 'imported'
+            and str(item.summary.get('source_document_id')) in current_ids for item in found_items)}
+        drafts = [key or None for key in sorted(set(keyed) - saved)]
+        if current and any(not any(item.status in _REFUSED for item in keyed[key or '']) for key in drafts):
+            # Beside a saved period, only a period its batch already refuses is
+            # listed without reading: whether another period overlaps a saved
+            # one is a question for the reading.
+            continue
+        result[file.id] = drafts
+    return result
+
+
+def _load(session, case_id, target, cache, *, stored=False):
+    """One statement's row. With `stored`, a saved statement comes from its
+    records and an unimported period from its batch's stored reading where one
+    settles it (state['stored'] is then true); otherwise the PDF is read."""
     file = _file(session, case_id, target.file_id)
     if target.source_id:
-        view = read_statement_details(session, case_id=case_id, source_id=target.source_id)
-        if view['evidence_file_id'] != str(file.id):
+        _saved_records(session, case_id, [target.source_id], cache)
+        record = cache[('saved_record', UUID(str(target.source_id)))]
+        if isinstance(record, PdfMappingError):
+            raise record
+        if record['evidence_file_id'] != str(file.id):
             raise PdfMappingError('The selected statement does not belong to this PDF.', 409)
-        values = {**view['details'], 'currency': view['currency'] or ''}
-        revision = view['revision']
-        state = dict(view=view)
+        values, revision = dict(record['values']), record['revision']
+        state = dict(account_id=record['account_id'])
     else:
-        items = _items(session, case_id, file.id, target.statement_id)
+        keyed = cache.get((STORED, str(file.id)))
+        items = list(keyed.get(target.statement_id or '', [])) if keyed is not None else _items(
+            session, case_id, file.id, target.statement_id)
         if any(item.status in ('pending_import', 'imported', 'skipped', 'assigned') for item in items):
             raise PdfMappingError('This statement is importing, imported or left unimported. Refresh the list or restore it to review first.', 409)
         if any(item.status == 'duplicate_ignored' for item in items):
             raise PdfMappingError('This copy was left unimported as a duplicate. Restore it explicitly before changing its details.', 409)
+        reading = _stored_draft(file, target.statement_id, items) if stored else None
+        if reading is not None:
+            values, revision = reading
+            state = dict(stored=True, items=items)
+            return _row(file, target, values, revision, None), state
         shared = review_progress(file, target.statement_id)
         # A predecessor is not a competing investigator edit. Resolve it before
         # choosing currency, otherwise a corrected currency falsely splits the
@@ -139,7 +356,7 @@ def _load(session, case_id, target, cache):
             statement_id=target.statement_id, currency=chosen, _cache=cache,
             _include_period_checks=False, _include_duplicate_disposition=False)
         if proposal.get('current_import') or proposal.get('document_review') or proposal.get('assignment_only') or proposal.get('reading_failure'):
-            raise PdfMappingError('Open this statement individually to review its import or account assignment.', 409)
+            raise PdfMappingError(_INDIVIDUAL, 409)
         saved = proposal.get('saved_review')
         if saved:
             drafts.append(saved['request'])
@@ -158,11 +375,24 @@ def _load(session, case_id, target, cache):
         revision = _digest(dict(proposal=proposal['revision'], raw=raw, saved=saved,
             items=[(str(item.id), item.status, item.review_request) for item in items]))
         state = dict(proposal=proposal, raw=raw, items=items)
-    row = dict(key=_key(target), file_id=str(file.id), source_id=str(target.source_id) if target.source_id else None,
-        account_id=state['view']['account_id'] if target.source_id else None,
+    return _row(file, target, values, revision, state.get('account_id')), state
+
+
+def _row(file, target, values, revision, account_id):
+    return dict(key=_key(target), file_id=str(file.id), source_id=str(target.source_id) if target.source_id else None,
+        account_id=account_id if target.source_id else None,
         statement_id=target.statement_id, revision=revision, filename=file.original_filename,
         status='Imported' if target.source_id else 'Not imported', values=values)
-    return row, state
+
+
+def _read_draft(session, case_id, target, row, filename, cache):
+    """The full reading of a period listed from its stored batch reading, for a
+    change that depends on it. Its details must still be the listed ones."""
+    full, state = _load(session, case_id, target, cache)
+    if full['values'] != row['values']:
+        raise PdfMappingError(f'{filename}: this statement was read again since its batch check, so the listed details are out of date. '
+            'Open it individually or check its batch again; no details were changed.', 409)
+    return state
 
 
 def list_statements(session, *, case_id, selection):
@@ -186,17 +416,26 @@ def list_statements(session, *, case_id, selection):
         groups = [versions for versions in case_lineage(session, case_id).values() if any(f.id in file_ids for f in versions)]
         files = [current_version(versions) for versions in groups]
         file_ids = {f.id for versions in groups for f in versions}
-    sources = list(session.scalars(select(Source).where(Source.case_id == case_id,
-        Source.evidence_file_id.in_(file_ids), Source.status == 'admitted', Source.document_type == 'statement_review').order_by(Source.id)))
+    # Identifiers only: a saved statement's stored reading is never decoded to list it.
+    sources = session.execute(select(Source.id, Source.evidence_file_id, Source.metadata_['statement_import_statement_id'].as_string())
+        .where(Source.case_id == case_id, Source.evidence_file_id.in_(file_ids), Source.status == 'admitted',
+               Source.document_type == 'statement_review').order_by(Source.id)).all()
     from services.financial.statement_import import READ_ONLY_LISTING
     targets, notices, cache = {}, [], {READ_ONLY_LISTING: True}
-    for source in sources:
-        statement_id = (source.metadata_ or {}).get('statement_import_statement_id')
-        if scopes is not None and (source.evidence_file_id, statement_id) not in scopes:
+    stored = _stored_statements(session, case_id, files, cache)
+    for source_id, evidence_file_id, statement_id in sources:
+        if scopes is not None and (evidence_file_id, statement_id) not in scopes:
             continue
-        target = Target(file_id=source.evidence_file_id, source_id=source.id, revision='0'*64)
+        target = Target(file_id=evidence_file_id, source_id=source_id, revision='0'*64)
         targets[_key(target)] = target
     for file in files:
+        if stored.get(file.id) is not None:
+            for key in stored[file.id]:
+                if scopes is not None and (file.id, key) not in scopes:
+                    continue
+                target = Target(file_id=file.id, statement_id=key, revision='0'*64)
+                targets[_key(target)] = target
+            continue
         try:
             first = read_statement_import(session, case_id=case_id, evidence_file_id=file.id, _cache=cache,
                 _include_period_checks=False, _include_duplicate_disposition=False)
@@ -217,10 +456,11 @@ def list_statements(session, *, case_id, selection):
             notices.append(dict(filename=file.original_filename, message=str(exc)))
     if len(targets) > 1000:
         raise PdfMappingError('Select fewer files: this selection contains more than 1,000 statement periods.', 422)
+    _saved_records(session, case_id, [t.source_id for t in targets.values() if t.source_id], cache)
     rows = []
     for target in targets.values():
         try:
-            row, _ = _load(session, case_id, target, cache)
+            row, _ = _load(session, case_id, target, cache, stored=True)
             rows.append(row)
         except PdfMappingError as exc:
             notices.append(dict(filename=_file(session, case_id, target.file_id).original_filename, message=str(exc)))
@@ -257,15 +497,18 @@ def _no_activity_plan(target, state, after):
     return None, admission['revision'], source_check
 
 
-def _plan(session, case_id, request):
+def _plan(session, case_id, request, *, saving=False):
     if len({_key(t) for t in request.targets}) != len(request.targets):
         raise PdfMappingError('Select each statement once.', 422)
     changes = request.changes.model_dump(exclude_none=True)
     unprinted = changes.pop('period_start_unprinted', False)
     quiet = changes.pop('no_activity_confirmed', False)
     plan, states, cache = [], [], {}
-    for target in sorted(request.targets, key=lambda target: (str(target.file_id), _key(target))):
-        row, state = _load(session, case_id, target, cache)
+    targets = sorted(request.targets, key=lambda target: (str(target.file_id), _key(target)))
+    _saved_records(session, case_id, [t.source_id for t in targets if t.source_id], cache)
+    _batch_items(session, case_id, [t.file_id for t in targets if not t.source_id], cache)
+    for target in targets:
+        row, state = _load(session, case_id, target, cache, stored=True)
         if row['revision'] != target.revision:
             raise PdfMappingError(f'{row["filename"]} changed since selection. Refresh the statements and preview again; no details were changed.', 409)
         after = {**row['values'], **{key: value for key, value in changes.items()
@@ -273,6 +516,9 @@ def _plan(session, case_id, request):
         if after.get('period_start') and after.get('period_end') and after['period_start'] > after['period_end']:
             raise PdfMappingError(f'{row["filename"]}: statement start must be on or before statement end.', 422)
         changed = {key: dict(before=row['values'].get(key, ''), after=after[key]) for key in changes if after[key] != row['values'].get(key, '')}
+        if state.get('stored') and (unprinted or quiet or 'currency' in changed or (saving and changed)):
+            # Only this change depends on the reading: read this period now.
+            state = _read_draft(session, case_id, target, row, row['filename'], cache)
         excluded_reason = None
         if unprinted:
             from services.financial.import_issues import calendar_date
@@ -352,7 +598,7 @@ def save(session, *, case_id, request, actor):
         if source_ids:
             session.execute(select(Source).where(Source.case_id == case_id, Source.id.in_(source_ids))
                 .order_by(Source.id).with_for_update().execution_options(populate_existing=True)).all()
-        plan, states = _plan(session, case_id, request)
+        plan, states = _plan(session, case_id, request, saving=True)
         if request.preview_revision != plan['preview_revision']:
             raise PdfMappingError('Review the current preview before saving these account details.', 409)
         account_changes, duplicate_cache = [], {}
@@ -364,9 +610,10 @@ def save(session, *, case_id, request, actor):
                 fields = {key: after[key] for key in ('holder', 'account_number', 'institution', 'period_start', 'period_end')}
                 if 'currency' in row['changes']:
                     fields['currency'] = after['currency']
+                view = read_statement_details(session, case_id=case_id, source_id=target.source_id)
                 result = update_statement_details(session, case_id=case_id, source_id=target.source_id,
-                    request=StatementDetailsRequest(expected_revision=state['view']['revision'], **fields), actor=actor, commit=False)
-                account_changes.append(dict(before=state['view']['account_id'], after=result['account_id']))
+                    request=StatementDetailsRequest(expected_revision=view['revision'], **fields), actor=actor, commit=False)
+                account_changes.append(dict(before=view['account_id'], after=result['account_id']))
             else:
                 raw = {**state['raw'], **after}
                 if request.changes.period_start_unprinted:

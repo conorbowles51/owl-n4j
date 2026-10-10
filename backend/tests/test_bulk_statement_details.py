@@ -220,3 +220,72 @@ class BulkStatementDetailsTests(TestCase):
         self.assertEqual(first, plain)
         self.assertEqual(again, plain)
         self.assertTrue(any(isinstance(key, tuple) and key[0] == 'existing_sources' for key in memo))
+
+    # Listing and previewing use saved records and stored batch readings; the
+    # PDF is read again only for a change that depends on the reading.
+    def prepare_batch(self):
+        batch_id = uuid4()
+        with self.f.SessionLocal() as db:
+            batch = Batch(id=batch_id, case_id=self.f.case.id, created_by=self.f.user.id, status='ready', actor={}, files=[])
+            db.add(batch); db.commit()
+            for file in (self.f.file, self.second):
+                import_batches.prepare_reviews(db, batch, dict(file_id=str(file.id), source_id=str(file.id), filename=file.original_filename))
+        return batch_id
+
+    def unread(self):
+        def refuse(*args, **kwargs):
+            raise AssertionError('The PDF was read again.')
+        return patch.object(service, 'read_statement_import', side_effect=refuse)
+
+    def without_revisions(self, listing):
+        return dict(listing, items=[{k: v for k, v in row.items() if k != 'revision'} for row in listing['items']])
+
+    def read_listing(self):
+        with patch.object(service, '_stored_statements', side_effect=lambda session, case_id, files, cache: {f.id: None for f in files}), \
+                patch.object(service, '_stored_draft', return_value=None):
+            return self.listing()
+
+    def test_saved_and_batch_read_statements_list_and_preview_without_reading(self):
+        self.f.confirm()
+        self.prepare_batch()
+        with self.unread():
+            stored = self.listing()
+            request = service.BulkEdit(targets=[{k: row[k] for k in ('file_id', 'source_id', 'statement_id', 'revision')}
+                for row in stored['items']], changes=dict(holder='Reviewed Company'), mode='replace', request_id=uuid4())
+            with self.f.SessionLocal() as db:
+                preview = service.preview(db, case_id=self.f.case.id, request=request)
+        self.assertEqual({row['status'] for row in stored['items']}, {'Imported', 'Not imported'})
+        self.assertEqual(self.without_revisions(stored), self.without_revisions(self.read_listing()))
+        self.assertEqual(preview['updated'], 2)
+        # Saving the draft reads its PDF once more and applies the same change.
+        self.save(request.model_copy(update={'preview_revision': preview['preview_revision']}))
+        self.assertEqual({row['values']['holder'] for row in self.listing()['items']}, {'Reviewed Company'})
+
+    def test_a_stored_reading_that_no_longer_matches_is_refused_at_save(self):
+        batch_id = self.prepare_batch()
+        with self.f.SessionLocal() as db:
+            for item in db.scalars(select(Item).where(Item.batch_id == batch_id, Item.file_id == self.second.id)):
+                item.summary = {**item.summary, 'holder': 'Earlier reading'}
+            db.commit()
+        rows = self.listing()['items']
+        self.assertIn('Earlier reading', {row['values']['holder'] for row in rows})
+        request = service.BulkEdit(targets=[{k: row[k] for k in ('file_id', 'source_id', 'statement_id', 'revision')} for row in rows],
+            changes=dict(institution='Reviewed Bank'), mode='replace', request_id=uuid4())
+        with self.f.SessionLocal() as db:
+            preview = service.preview(db, case_id=self.f.case.id, request=request)
+        with self.assertRaisesRegex(PdfMappingError, 'read again since its batch check'):
+            self.save(request.model_copy(update={'preview_revision': preview['preview_revision']}))
+        self.assertEqual(self.listing()['items'], rows)
+
+    def test_a_currency_change_reads_only_the_affected_statements(self):
+        self.prepare_batch()
+        rows = self.listing()['items']
+        request = service.BulkEdit(targets=[{k: rows[0][k] for k in ('file_id', 'source_id', 'statement_id', 'revision')}],
+            changes=dict(currency='KWD'), mode='replace', request_id=uuid4())
+        real = service.read_statement_import
+        with patch.object(service, 'read_statement_import', side_effect=real) as reads:
+            with self.f.SessionLocal() as db:
+                preview = service.preview(db, case_id=self.f.case.id, request=request)
+        self.assertEqual(preview['updated'], 1)
+        self.assertTrue(reads.call_count)
+        self.assertEqual({call.kwargs['evidence_file_id'] for call in reads.call_args_list}, {UUID(rows[0]['file_id'])})
