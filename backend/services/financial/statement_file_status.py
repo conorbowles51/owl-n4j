@@ -137,7 +137,8 @@ def _statement_file_status(session, *, case_id):
     truncated = truncated or len(incomplete_sources) > 5000
     saved_dates = {str(row[0].source_document_id): row[0] for row in periods}
     for source_id, file_id, records, blockers, request_start, request_end in incomplete_sources[:5000]:
-        open_records = [row for row in records or [] if not row.get('resolved_transaction_id')]
+        from services.financial.record_withdrawal import is_open
+        open_records = [row for row in records or [] if is_open(row)]
         if open_records:
             key = str(file_id)
             item = files.setdefault(key, dict(evidence_file_id=key, current_transactions=0, periods=[]))
