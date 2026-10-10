@@ -1016,6 +1016,46 @@ class BatchImportTests(TestCase):
         with f.SessionLocal() as db:
             self.assertEqual(len(list(db.scalars(select(FinancialTransaction)))),12)
 
+    def test_sliced_worker_review_commits_between_statements_with_the_same_items(self):
+        # The worker's file review gives the case back between statements (an
+        # import of the same case must not wait minutes behind a large PDF). The
+        # items it writes are those of the single-transaction review.
+        from unittest.mock import patch
+        from sqlalchemy import event
+        f=self.f;batch=self.create();base=f.preview()
+        choices=[dict(id='a'*64),dict(id='b'*64),dict(id='c'*64)]
+        def reading(*args,**kwargs):
+            result=deepcopy(base);result['statement_choices']=choices
+            result['statement_id']=kwargs.get('statement_id')
+            if result['statement_id']=='b'*64:
+                next(row for row in result['rows'] if not row['excluded'])['issues']=['Check the date.']
+            return result
+        def items():
+            with f.SessionLocal() as db:
+                return {str(i.id):(i.statement_key,i.status,deepcopy(i.summary),deepcopy(i.review_request))
+                        for i in db.scalars(select(Item).where(Item.batch_id==batch))}
+        outcomes={}
+        for lock_slice in (None,0):
+            commits=[]
+            with f.SessionLocal() as db, patch.object(service,'read_statement_import',side_effect=reading):
+                event.listen(db,'after_commit',lambda session:commits.append(1))
+                owner=db.get(Batch,batch)
+                service.prepare_reviews(db,owner,owner.files[0],lock_slice=lock_slice)
+            outcomes[lock_slice]=(len(commits),items())
+        self.assertEqual(outcomes[None][0],1)
+        self.assertGreaterEqual(outcomes[0][0],len(choices)+1)
+        self.assertEqual(outcomes[0][1],outcomes[None][1])
+        self.assertEqual(sorted(v[1] for v in outcomes[0][1].values()),['attention','ready','ready'])
+
+    def test_sliced_review_keeps_only_reading_cache_entries_across_a_release(self):
+        case=str(self.f.case.id);source=(case,str(self.f.file.id),'sha')
+        cache={('printed_header',str(self.f.file.id),'sha'):1,('geometry_pages',*source):2,source:3,
+               ('catalog',source):4,('currencies',source):5,('checks',source,'USD'):6,
+               ('previous-reviews',str(self.f.file.id)):7,('layout_memory',case):8,
+               ('assignment-base',str(self.f.file.id),'USD',None):9,('bulk_listed_reading',str(self.f.file.id),'x'):10,uuid4():11}
+        kept={key for key in cache if service._reading_entry(key,self.f.case.id)}
+        self.assertEqual(sorted(cache[key] for key in kept),[1,2,3,4,5,6])
+
     def test_each_recognised_period_is_checked_separately_and_unknown_currency_stays_out(self):
         from unittest.mock import patch
         f=self.f;batch=self.create();base=f.preview()
