@@ -118,6 +118,13 @@ def complete_currency_records(session, *, document, period, metadata, currency, 
     for item in metadata.get('statement_incomplete_records', []):
         if item.get('resolved_transaction_id'):
             continue
+        if item.get('withdrawn'):
+            # Withdrawn by the investigator: outside totals, never drafted. A
+            # withdrawn correction leaves the printed row's own reading open.
+            item.pop('hold_reason', None); item.pop('hold_blockers', None); item.pop('hold_repeat_of', None)
+            if item['original'].get('kind') != 'manual_entry':
+                item['missing_fields'] = incomplete_fields(DraftImportRow.model_validate(item['fields']), request)
+            continue
         fields = deepcopy(item.get('correction') or item['fields'])
         previous_currency = item.get('correction_currency') or raw.get('currency')
         if previous_currency and previous_currency != currency:
@@ -137,7 +144,7 @@ def complete_currency_records(session, *, document, period, metadata, currency, 
             item.update(correction=fields, correction_currency=currency)
         row = DraftImportRow.model_validate(fields)
         item['missing_fields'] = incomplete_fields(row, request)
-        item.pop('hold_reason', None); item.pop('hold_blockers', None)
+        item.pop('hold_reason', None); item.pop('hold_blockers', None); item.pop('hold_repeat_of', None)
         if item['missing_fields'] or row.excluded:
             continue
         # Drafting validates every completed row (for example its counterparty
@@ -149,20 +156,25 @@ def complete_currency_records(session, *, document, period, metadata, currency, 
     # to reconcile with it (see held_record_admission); the rest stay held
     # with their specific reason.
     from services.financial.held_record_admission import plan
+    planned = {}
     admit, held, admission, held_checks = plan(session, document, period, metadata, currency,
-        {item['id']: (item.get('correction') or item['fields']) for item, _, _ in pending}) if pending else (set(), {}, None, {})
+        {item['id']: (item.get('correction') or item['fields']) for item, _, _ in pending}, details=planned) if pending else (set(), {}, None, {})
     for item, _, _ in pending:
         if item['id'] in held:
             item['hold_reason'] = held[item['id']]
             if held_checks.get(item['id']):
                 item['hold_blockers'] = held_checks[item['id']]
+            if planned.get('repeats', {}).get(item['id']):
+                item['hold_repeat_of'] = planned['repeats'][item['id']]
     drafts = [draft for item, _, draft in pending if item['id'] in admit]
     pending = [(item, row) for item, row, _ in pending if item['id'] in admit]
     if admission:
         metadata['statement_import_issues'] = admission['blockers'] + [
             issue for issue in metadata.get('statement_import_issues', []) if issue.get('kind') == 'coverage']
         metadata['statement_admission'] = admission
-        if not admission['can_import'] or not drafts:
+        # ``rows_proven``: the admitted rows prove exactly although other
+        # printed rows still miss a date or name (see held_record_admission).
+        if not (admission['can_import'] or planned.get('rows_proven')) or not drafts:
             return admission
     transactions = record_transactions(session, review_run(document), document, drafts, retain_prior_versions=True) if drafts else []
     for (item, row), transaction in zip(pending, transactions, strict=True):

@@ -32,8 +32,10 @@ def assess_saved_additions(session, document, period, metadata, currency, *, no_
                     row[key] = rescale_minor(value, original_currency, currency)
     # Already admitted records are part of the statement in every candidate.
     # Records held with a reason (held_record_admission) are outside totals.
-    tested = lambda r: bool(r.get('resolved_transaction_id')) or (
-        not r.get('hold_reason') if include is None else r['id'] in include)
+    # A withdrawn record takes no part: a withdrawn addition is left out and a
+    # withdrawn correction leaves its printed row on its original reading.
+    tested = lambda r: bool(r.get('resolved_transaction_id')) or (not r.get('withdrawn') and (
+        not r.get('hold_reason') if include is None else r['id'] in include))
     corrections = {r['id']:(r.get('correction') if tested(r) else None) or r['fields'] for r in metadata.get('statement_incomplete_records', [])}
     # Investigator additions are retained alongside the sealed reading, not
     # written into the original extraction or its original import request.
