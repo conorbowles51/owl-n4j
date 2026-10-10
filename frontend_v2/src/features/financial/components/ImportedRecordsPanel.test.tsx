@@ -253,7 +253,7 @@ it("shows why a completed record is held and adds the ones that check out", asyn
     can_enter_now: true,
     fields: { ...record.fields, amount_minor: "12500" },
   }
-  vi.mocked(fetchAPI).mockImplementation(async (url, options) =>
+  vi.mocked(fetchAPI).mockImplementation(async (_url, options) =>
     options?.method === "POST"
       ? ({ admitted: 1, held: [] } as never)
       : ({ records: [held, ready], total: 2 } as never)

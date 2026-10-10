@@ -330,9 +330,9 @@ run(
     cleanup()
     useFinancialDraftStore.setState({ drafts: {} })
     mount(<StatementImportPanel caseId={caseId} onImported={imported} />)
-    (await screen.findAllByRole("button", {
+    await screen.findAllByRole("button", {
       name: "Import 12 transactions",
-    }))[0]
+    })
     expect(
       within(
         screen.getByLabelText(`Balance correction ${source.row_id}`)

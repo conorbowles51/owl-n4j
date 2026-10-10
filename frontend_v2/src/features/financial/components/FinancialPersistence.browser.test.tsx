@@ -189,9 +189,9 @@ run(
     fireEvent.click(
       within(copy).getByRole("button", { name: "Leave unimported" })
     )
-    (await screen.findAllByRole("button", {
+    await screen.findAllByRole("button", {
       name: "Import 12 transactions",
-    }))[0]
+    })
     await page
       .getByRole("button", { name: "Import 12 transactions", exact: true })
       .click()
@@ -578,9 +578,9 @@ run(
       .getByRole("button", { name: "Clear reason filter", exact: true })
       .click()
     await screen.findByText(/Synthetic reviewed holder/)
-    (await screen.findAllByRole("button", {
+    await screen.findAllByRole("button", {
       name: "Import 12 transactions",
-    }))[0]
+    })
     screen
       .getByRole("heading", {
         name: "Prepare statements for import",
