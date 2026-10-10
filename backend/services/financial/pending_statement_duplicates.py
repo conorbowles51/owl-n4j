@@ -518,18 +518,21 @@ def ignored_receipt(case_id, file, decision):
         transaction_count=0, record_count=0, incomplete_count=0, issues=[], duplicate_disposition=decision)
 
 
-def prepare_batch_dispositions(session, batch, file_id, *, cache=None):
+def prepare_batch_dispositions(session, batch, file_id, *, cache=None, review_lock=None):
     """Recheck only this file's exact matching periods, preserving saved imports.
 
     Preparation already holds the case lock. Comparing peers also handles a
     batch whose upload order differs from the stable retained-source ordering.
+    A worker review passes its `review_lock`: the case may then be released
+    between items, after which each item is re-read before it is decided.
     """
     from postgres.models.financial_import_batches import FinancialImportBatchItem as Item
     from services.financial.statement_import import read_statement_import
     from services.financial.statement_import_overlap import summary_request
     cache = cache if cache is not None else {}
+    eligible = ('ready', 'attention', 'duplicate_ignored')
     items = list(session.scalars(select(Item).where(Item.batch_id == batch.id,
-        Item.status.in_(('ready', 'attention', 'duplicate_ignored'))).order_by(Item.file_id, Item.statement_key)))
+        Item.status.in_(eligible)).order_by(Item.file_id, Item.statement_key)))
     scopes = [scope({**(item.review_request or summary_request(item.summary)),
         'account_type': item.summary.get('account_type', '')}) for item in items if item.file_id == file_id]
     # Loading the case's comparison sources reads every pending item and file
@@ -545,11 +548,26 @@ def prepare_batch_dispositions(session, batch, file_id, *, cache=None):
     def inputs(item, file):
         return (item.status, deepcopy(item.review_request), deepcopy(file.metadata_),
                 {key: deepcopy(value) for key, value in (item.summary or {}).items() if key != 'duplicate_disposition'})
-    for item in items:
+    def matches(item):
         descriptor = scope({**(item.review_request or summary_request(item.summary)),
             'account_type': item.summary.get('account_type', '')})
-        if item.file_id != file_id and not any(same_statement(descriptor, own) or same_printed_period(descriptor, own) for own in scopes):
+        return item.file_id == file_id or any(same_statement(descriptor, own) or same_printed_period(descriptor, own) for own in scopes)
+    def current(item):
+        # The case was released at a statement boundary (a sliced worker
+        # review): another save may have claimed, edited or removed this item.
+        snapshot.clear()
+        return session.scalar(select(Item).where(Item.id == item.id, Item.status.in_(eligible)))
+    for item in items:
+        if review_lock is not None and review_lock.yield_case():
+            item = current(item)
+            if item is None:
+                continue
+        if not matches(item):
             continue
+        if review_lock is not None and review_lock.warm(item.file_id, item.summary.get('currency') or None):
+            item = current(item)
+            if item is None or not matches(item):
+                continue
         file = session.scalar(select(EvidenceFile).where(EvidenceFile.id == item.file_id,
             EvidenceFile.case_id == batch.case_id).with_for_update().execution_options(populate_existing=True))
         if file is None:

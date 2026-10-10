@@ -37,6 +37,8 @@ const statement = z.object({
   convention_after: z.string(),
   reconciles: z.boolean().nullable(),
   reconciles_with_flagged_flipped: z.boolean().nullable(),
+  // Flipped with the type change: adds up exactly only with them reversed.
+  auto_flip: z.boolean().optional().default(false),
   flagged_rows: z.array(flaggedRow),
 })
 const state = z.object({
@@ -49,6 +51,7 @@ const state = z.object({
   card_signals: z.array(z.string()),
   suggested_type: z.string().nullable(),
   flagged_rows: z.number(),
+  auto_flipped_rows: z.number().optional(),
   revision: z.string(),
 })
 const preview = z.object({
@@ -58,6 +61,7 @@ const preview = z.object({
   statements: z.array(statement),
   changed_statements: z.number(),
   flagged_rows: z.number(),
+  auto_flip_rows: z.number().optional(),
   revision: z.string(),
 })
 type Statement = z.infer<typeof statement>
@@ -86,10 +90,10 @@ export function AccountTypeEditor({
     <section aria-label="Account type" className="space-y-3 rounded border p-3">
       <h3 className="font-semibold">Account type</h3>
       <p className="text-sm text-muted-foreground">
-        A credit card statement prints the amount owed; a bank statement
-        prints the money held. Changing the type checks the saved statements
-        again without reading the PDFs again. Your corrections stay, and the
-        earlier type remains in the account history.
+        A credit card statement prints the amount owed; a bank statement prints
+        the money held. Changing the type checks the saved statements again
+        without reading the PDFs again. Your corrections stay, and the earlier
+        type remains in the account history.
       </p>
       {ids.map((id) => (
         <AccountTypeRow key={id} caseId={caseId} accountId={id} />
@@ -108,9 +112,7 @@ function AccountTypeRow({
   const { canEdit } = useFinancialAccess()
   const client = useQueryClient()
   const [choice, setChoice] = useState<AccountType | "">("")
-  const [proposal, setProposal] = useState<z.infer<typeof preview> | null>(
-    null
-  )
+  const [proposal, setProposal] = useState<z.infer<typeof preview> | null>(null)
   const [notice, setNotice] = useState("")
   const base = `/api/financial/statement-import/accounts/${encodeURIComponent(accountId)}/type`
   const query = useQuery({
@@ -158,7 +160,7 @@ function AccountTypeRow({
       setProposal(null)
       setChoice("")
       setNotice(
-        `Saved as ${typeLabel(result.account_type).toLowerCase()}. ${result.statements.length} saved ${result.statements.length === 1 ? "statement was" : "statements were"} checked again.${result.flagged_rows ? ` ${result.flagged_rows} ${result.flagged_rows === 1 ? "row you entered is" : "rows you entered are"} listed below to check.` : ""}`
+        `Saved as ${typeLabel(result.account_type).toLowerCase()}. ${result.statements.length} saved ${result.statements.length === 1 ? "statement was" : "statements were"} checked again.${result.auto_flipped_rows ? ` ${result.auto_flipped_rows} ${result.auto_flipped_rows === 1 ? "row you entered was" : "rows you entered were"} flipped because ${result.auto_flipped_rows === 1 ? "its statement" : "their statements"} now add up exactly; the originals stay in the correction history.` : ""}${result.flagged_rows ? ` ${result.flagged_rows} ${result.flagged_rows === 1 ? "row you entered is" : "rows you entered are"} listed below to check.` : ""}`
       )
       void client.invalidateQueries()
     },
@@ -189,8 +191,7 @@ function AccountTypeRow({
       void client.invalidateQueries()
     },
   })
-  if (query.isPending)
-    return <p role="status">Loading account type…</p>
+  if (query.isPending) return <p role="status">Loading account type…</p>
   if (query.isError)
     // Not an alert: the surrounding editor keeps working without it.
     return (
@@ -277,7 +278,9 @@ function AccountTypeRow({
                     ? "adds up after the change"
                     : "does not add up after the change"}
                 {s.flagged_rows.length
-                  ? ` · ${s.flagged_rows.length} ${s.flagged_rows.length === 1 ? "row you entered is" : "rows you entered are"} flagged to check${s.reconciles_with_flagged_flipped ? " (it adds up if they are flipped)" : ""}`
+                  ? s.auto_flip
+                    ? ` · ${s.flagged_rows.length} ${s.flagged_rows.length === 1 ? "row you entered" : "rows you entered"} will be flipped, because the statement adds up exactly with ${s.flagged_rows.length === 1 ? "it" : "them"} flipped and not without`
+                    : ` · ${s.flagged_rows.length} ${s.flagged_rows.length === 1 ? "row you entered is" : "rows you entered are"} flagged to check${s.reconciles_with_flagged_flipped ? " (it adds up if they are flipped)" : ""}`
                   : ""}
               </li>
             ))}
@@ -313,8 +316,9 @@ function AccountTypeRow({
           <ul>
             {s.flagged_rows.map((row) => (
               <li key={row.transaction_id}>
-                {row.date || "Date not read"} · {row.description || "No description"}{" "}
-                · {correctionMoney(row.amount_minor, s.currency || "")} ·{" "}
+                {row.date || "Date not read"} ·{" "}
+                {row.description || "No description"} ·{" "}
+                {correctionMoney(row.amount_minor, s.currency || "")} ·{" "}
                 {direction(row.direction)} → {direction(row.proposed_direction)}
               </li>
             ))}
