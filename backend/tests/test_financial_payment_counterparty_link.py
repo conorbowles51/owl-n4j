@@ -95,34 +95,26 @@ class LinkedManualPaymentTests(ManualPaymentTests):
             self.assertEqual({row.id: row.ref_id for row in db.scalars(select(FinancialTransaction))}, existing)
             self.assertEqual(counterparty_parties(db, case_id=self.f.case.id)['history'], [])
 
-        # Explicitly positioned offsetting payments complete the statement;
-        # its two retained additions and the first one's link are saved together.
+        # Explicitly positioned offsetting payments only reconcile together,
+        # which proves neither row: both stay held, and no link is recorded.
+        from services.financial.held_record_admission import PAIR_REASON
         offset = self.request()
         offset['row'].update(date='2023-12-31', direction='credit', source_order_anchor=anchor,
                              description='Synthetic offsetting payment')
         completed = self.save(offset)
-        self.assertFalse(completed['pending_reconciliation'])
-        self.assertTrue(completed['created'])
-        result = self.save(request)  # The original lost-response receipt now resolves to its saved payment.
-        self.assertFalse(result['pending_reconciliation'])
+        self.assertTrue(completed['pending_reconciliation'])
+        self.assertFalse(completed['created'])
+        self.assertEqual(completed['message'], PAIR_REASON)
+        result = self.save(request)  # The lost-response receipt replays as still held.
+        self.assertTrue(result['pending_reconciliation'])
         self.assertFalse(result['created'])
-        self.assertEqual(result['transaction_id'], self.save(request)['transaction_id'])
-        self.assertEqual(completed['transaction_id'], self.save(offset)['transaction_id'])
-        self.assertFalse(self.save(offset)['created'])
         with self.f.SessionLocal() as db:
-            row = db.get(FinancialTransaction, UUID(result['transaction_id']))
-            self.assertEqual(row.counterparty_raw, 'Synthetic supplier')
-            view = to_view(row, account=row.account)
-            self.assertEqual(view.counterparty_link['id'], str(account.id))
-            self.assertEqual(view.to_name, view.counterparty_link['label'])
-            self.assertEqual(row.provenance['statement_import_review']['source_order_anchor'], anchor)
-            state = counterparty_parties(db, case_id=self.f.case.id)
-            self.assertEqual(len([h for h in state['history'] if h['transaction_id'] == result['transaction_id']]), 1)
-            self.assertEqual(next(r for r in state['readings'] if r['transaction_id'] == result['transaction_id'])['account']['id'], str(account.id))
-            all_rows = list(db.scalars(select(FinancialTransaction)))
-            self.assertEqual(len(all_rows), len(existing) + 2)
-            self.assertEqual({row.id: row.ref_id for row in all_rows if row.id in existing}, existing)
-            self.assertEqual(imported_records(db, case_id=self.f.case.id)['records'], [])
+            self.assertEqual({row.id: row.ref_id for row in db.scalars(select(FinancialTransaction))}, existing)
+            held = imported_records(db, case_id=self.f.case.id)['records']
+            self.assertEqual([r['hold_reason'] for r in held], [PAIR_REASON] * 2)
+            self.assertEqual(next(r for r in held if r['fields']['description'] != 'Synthetic offsetting payment')
+                ['fields']['counterparty_link'], request['row']['counterparty_link'])
+            self.assertEqual(counterparty_parties(db, case_id=self.f.case.id)['history'], [])
             self.assertEqual(db.get(FinancialSourceDocument, self.source).metadata_['statement_import_request'], original)
             self.assertEqual(account_history(db, case_id=self.f.case.id)['groups'][0]['periods'][0]['status'], 'reconciled')
 

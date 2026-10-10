@@ -19,6 +19,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { beforeEach, expect, it, vi } from "vitest"
@@ -281,10 +282,13 @@ it("imports directly from a batch review, carrying account edits into the visibl
   fireEvent.change(screen.getByLabelText("Account holder"), {
     target: { value: "Reviewed holder" },
   })
+  // The top summary and the bottom confirmation offer the same two actions.
+  expect(screen.getAllByRole("button", { name: "Import 1 transaction" })).toHaveLength(2)
+  expect(screen.getAllByRole("button", { name: "Save for bulk import" })).toHaveLength(2)
   fireEvent.click(
-    screen.getByRole("button", {
-      name: "Import 1 payments and view Transactions",
-    })
+    screen.getAllByRole("button", {
+      name: "Import 1 transaction",
+    })[1]
   )
   await waitFor(() =>
     expect(done).toHaveBeenCalledWith(
@@ -495,7 +499,7 @@ it("imports completed Merrick years through the normal recorded correction reque
   )
   expect(screen.getByLabelText("Date 1:0:1")).toHaveValue("2023-01-02")
   fireEvent.click(
-    screen.getByRole("button", { name: "Confirm import of 1 transactions" })
+    screen.getAllByRole("button", { name: "Import 1 transaction" })[0]
   )
   await waitFor(() => expect(sent).toHaveLength(1))
   expect(sent[0]).toMatchObject({
@@ -526,7 +530,7 @@ it("retains an additional printed date without requiring a per-row decision", as
   expect(screen.getByText(/Also printed: 01\/01/)).toBeInTheDocument()
   expect(screen.getByLabelText("Date 1:0:1")).toHaveValue("2023-01-02")
   fireEvent.click(
-    screen.getByRole("button", { name: "Confirm import of 1 transactions" })
+    screen.getAllByRole("button", { name: "Import 1 transaction" })[0]
   )
   await waitFor(() => expect(sent).toHaveLength(1))
   expect(sent[0]).toMatchObject({
@@ -555,7 +559,7 @@ it("pre-fills closing-only statement dates from the reading without treating the
   expect(screen.getByLabelText("Period end")).toHaveValue("2023-01-25")
   expect(screen.queryByLabelText("Reason for detail corrections")).toBeNull()
   fireEvent.click(
-    screen.getByRole("button", { name: "Confirm import of 1 transactions" })
+    screen.getAllByRole("button", { name: "Import 1 transaction" })[0]
   )
   await waitFor(() => expect(sent).toHaveLength(1))
   expect(sent[0]).toMatchObject({
@@ -592,9 +596,9 @@ it("imports recognised undated interest without inventing a date and supports a 
   mount()
   await open()
   expect(screen.getByText("Date not printed")).toBeInTheDocument()
-  const confirm = screen.getByRole("button", {
-    name: "Confirm import of 1 transactions",
-  })
+  const confirm = screen.getAllByRole("button", {
+    name: "Import 1 transaction",
+  })[0]
   expect(confirm).toBeEnabled()
   fireEvent.change(screen.getByLabelText("Date 1:0:1"), {
     target: { value: "2023-01-30" },
@@ -668,7 +672,7 @@ it("saves an incomplete individual review to the case and restores it without br
     "Corrected source description"
   )
   expect(
-    screen.getByRole("button", { name: /Confirm import of/ })
+    screen.getAllByRole("button", { name: /^Import \d+ transactions?$/ })[0]
   ).toBeEnabled()
   fireEvent.click(screen.getByRole("button", { name: "Save progress" }))
   await screen.findByText(
@@ -898,7 +902,7 @@ it("shows earlier corrections when a reprocessed reading differs and requires a 
   expect(screen.getByLabelText("Description 1:0:1")).toHaveValue("Payment")
   expect(screen.getByRole("button", { name: "Save progress" })).toBeDisabled()
   expect(
-    screen.getByRole("button", { name: /Confirm import of/ })
+    screen.getAllByRole("button", { name: /^Import \d+ transactions?$/ })[0]
   ).toBeDisabled()
   fireEvent.click(
     screen.getByLabelText("I have compared the previous saved review")
@@ -1098,16 +1102,62 @@ it("opens and focuses a flagged row's import choice while retaining another corr
   expect(screen.getByLabelText("Credit 1:0:1")).toHaveValue("130.00")
   expect(sent).toEqual([])
 })
+it("offers the same import action at the top and bottom and reports beside the one pressed", async () => {
+  failure = true
+  mount()
+  await open()
+  const buttons = screen.getAllByRole("button", { name: "Import 1 transaction" })
+  expect(buttons).toHaveLength(2)
+  const summary = screen.getByRole("region", { name: "Statement checks" })
+  expect(summary).toContainElement(buttons[0])
+  expect(summary).not.toContainElement(buttons[1])
+  fireEvent.click(buttons[1])
+  const alert = await screen.findByText("Source changed. Reload review.")
+  expect(buttons[1].parentElement).toContainElement(alert)
+  expect(within(summary).queryByText("Source changed. Reload review.")).toBeNull()
+  fireEvent.click(buttons[0])
+  await waitFor(() =>
+    expect(within(summary).getByRole("alert")).toHaveTextContent("Source changed. Reload review.")
+  )
+  expect(buttons[1].parentElement).not.toHaveTextContent("Source changed")
+})
+it("shows an accepted import that is still saving as progress, not an error", async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true })
+  try {
+    const base = vi.mocked(fetchAPI).getMockImplementation()!
+    vi.mocked(fetchAPI).mockImplementation(async (url, options) =>
+      String(url).includes("/confirm-result?")
+        ? ({ receipt: null, operation: { batch_id: "job", status: "in_progress", outcomes: [] } } as never)
+        : String(url).includes("/queue-import?")
+          ? ({ operation: { batch_id: "job", status: "in_progress", outcomes: [] } } as never)
+          : base(url, options)
+    )
+    const done = mount()
+    await open()
+    const summary = screen.getByRole("region", { name: "Statement checks" })
+    fireEvent.click(within(summary).getByRole("button", { name: "Import 1 transaction" }))
+    await act(() => vi.advanceTimersByTimeAsync(30000))
+    await waitFor(() =>
+      expect(within(summary).getAllByRole("status").map((node) => node.textContent).join(" "))
+        .toMatch(/Import accepted — still saving/)
+    )
+    expect(screen.queryByRole("alert")).toBeNull()
+    expect(within(summary).getByRole("link", { name: "Open processing batch and saved result" })).toBeVisible()
+    expect(done).not.toHaveBeenCalled()
+  } finally {
+    vi.useRealTimers()
+  }
+})
 it("automatically fills a statement and imports once", async () => {
   const done = mount()
   await open()
   expect(screen.getByLabelText("Account holder")).toHaveValue("Example Ltd")
   expect(screen.getByLabelText("Date 1:0:1")).toHaveValue("2023-01-02")
   expect(
-    screen.getByRole("button", { name: "Confirm import of 1 transactions" })
+    screen.getAllByRole("button", { name: "Import 1 transaction" })[0]
   ).toBeEnabled()
   fireEvent.click(
-    screen.getByRole("button", { name: "Confirm import of 1 transactions" })
+    screen.getAllByRole("button", { name: "Import 1 transaction" })[0]
   )
   await waitFor(() => expect(done).toHaveBeenCalledTimes(1))
   expect(sent).toHaveLength(1)
@@ -1151,14 +1201,14 @@ it("edits posting and value dates separately and records a reason without changi
     target: { value: "" },
   })
   expect(
-    screen.getByRole("button", { name: "Confirm import of 1 transactions" })
+    screen.getAllByRole("button", { name: "Import 1 transaction" })[0]
   ).toBeEnabled()
   expect(screen.getByLabelText("Date 1:0:1")).toHaveValue("2023-01-02")
   fireEvent.change(screen.getByLabelText("Reason 1:0:1"), {
     target: { value: "Checked posting date; value date cannot be confirmed." },
   })
   fireEvent.click(
-    screen.getByRole("button", { name: "Confirm import of 1 transactions" })
+    screen.getAllByRole("button", { name: "Import 1 transaction" })[0]
   )
   await waitFor(() => expect(done).toHaveBeenCalledTimes(1))
   expect(sent[0]).toMatchObject({
@@ -1199,7 +1249,7 @@ it("offers the missing transaction date separately when the posting date was rea
     target: { value: "Read the transaction date from the PDF." },
   })
   fireEvent.click(
-    screen.getByRole("button", { name: "Confirm import of 1 transactions" })
+    screen.getAllByRole("button", { name: "Import 1 transaction" })[0]
   )
   await waitFor(() => expect(done).toHaveBeenCalledTimes(1))
   expect(sent[0]).toMatchObject({
@@ -1225,9 +1275,9 @@ it("imports unknown directions and allows corrections without a mandatory note",
   expect(screen.getByLabelText("Credit 1:0:1")).toHaveValue("")
   expect(screen.getByLabelText("Debit 1:0:1")).toHaveValue("")
   expect(screen.getByText(/Totals are incomplete/)).toBeVisible()
-  const confirm = screen.getByRole("button", {
-    name: "Confirm import of 1 transactions",
-  })
+  const confirm = screen.getAllByRole("button", {
+    name: "Import 1 transaction",
+  })[0]
   expect(confirm).toBeEnabled()
   fireEvent.change(screen.getByLabelText("Credit 1:0:1"), {
     target: { value: "125.00" },
@@ -1328,7 +1378,7 @@ it("opens card-balance corrections from the summary and submits the printed sign
     target: { value: "Corrected against the PDF" },
   })
   fireEvent.click(
-    screen.getByRole("button", { name: "Confirm import of 1 transactions" })
+    screen.getAllByRole("button", { name: "Import 1 transaction" })[0]
   )
   await waitFor(() => expect(sent.length).toBe(1))
   const request = sent[0] as {
@@ -1394,7 +1444,7 @@ it("keeps repeated statement balances editable instead of calling them missing",
     target: { value: "Page 4 repeats the statement on page 1" },
   })
   fireEvent.click(
-    screen.getByRole("button", { name: "Confirm import of 1 transactions" })
+    screen.getAllByRole("button", { name: "Import 1 transaction" })[0]
   )
   await waitFor(() => expect(sent.length).toBe(1))
   const request = sent[0] as {
@@ -1434,7 +1484,7 @@ it("keeps recognised information pages available without asking to correct them 
     screen.queryByText(/pages need a coverage check/)
   ).not.toBeInTheDocument()
   expect(
-    screen.getByRole("button", { name: "Confirm import of 1 transactions" })
+    screen.getAllByRole("button", { name: "Import 1 transaction" })[0]
   ).toBeEnabled()
   fireEvent.change(screen.getByLabelText("Original PDF page"), {
     target: { value: "2" },
@@ -1603,13 +1653,13 @@ it("shows the source alongside correction controls and saves the reason", async 
     target: { value: "125.50" },
   })
   expect(
-    screen.getByRole("button", { name: "Confirm import of 1 transactions" })
+    screen.getAllByRole("button", { name: "Import 1 transaction" })[0]
   ).toBeEnabled()
   fireEvent.change(screen.getByLabelText("Reason 1:0:1"), {
     target: { value: "Corrected against original" },
   })
   fireEvent.click(
-    screen.getByRole("button", { name: "Confirm import of 1 transactions" })
+    screen.getAllByRole("button", { name: "Import 1 transaction" })[0]
   )
   await waitFor(() => expect(sent).toHaveLength(1))
   expect(sent[0]).toMatchObject({
@@ -1627,7 +1677,7 @@ it("keeps edits after a failed confirmation", async () => {
     target: { value: "Checked original" },
   })
   fireEvent.click(
-    screen.getByRole("button", { name: "Confirm import of 1 transactions" })
+    screen.getAllByRole("button", { name: "Import 1 transaction" })[0]
   )
   await screen.findByRole("alert")
   expect(screen.getByLabelText("Description 1:0:1")).toHaveValue(
@@ -1660,7 +1710,7 @@ it("distinguishes a new reading's currency from saved corrections", async () => 
   expect(details).toHaveTextContent("Currency in this readingEUR")
   expect(details).not.toHaveTextContent("USD")
   expect(
-    screen.getByRole("button", { name: "Confirm import of 1 transactions" })
+    screen.getAllByRole("button", { name: "Import 1 transaction" })[0]
   ).toBeDisabled()
 })
 
@@ -1681,9 +1731,9 @@ it("requires an explicit replacement decision and reason for an existing import"
   })
   mount()
   await open()
-  const confirm = screen.getByRole("button", {
-    name: "Confirm import of 1 transactions",
-  })
+  const confirm = screen.getAllByRole("button", {
+    name: "Import 1 transaction",
+  })[0]
   expect(confirm).toBeDisabled()
   fireEvent.click(
     screen.getByRole("checkbox", { name: /Replace the previous import/ })
@@ -1733,9 +1783,9 @@ it("does not confirm a newer evidence version while its currency conflicts with 
   fireEvent.change(screen.getByLabelText("Reason for detail corrections"), {
     target: { value: "Compared the newer reading." },
   })
-  const confirm = screen.getByRole("button", {
-    name: "Confirm import of 1 transactions",
-  })
+  const confirm = screen.getAllByRole("button", {
+    name: "Import 1 transaction",
+  })[0]
   expect(confirm).toBeDisabled()
   fireEvent.click(confirm)
   expect(sent).toHaveLength(0)
@@ -2060,7 +2110,7 @@ it("does not offer to import the same active reading twice", async () => {
     screen.getByText("These payments have not reached Transactions")
   ).toBeVisible()
   expect(
-    screen.queryByRole("button", { name: "Confirm import of 1 transactions" })
+    (screen.queryAllByRole("button", { name: "Import 1 transaction" })[0] ?? null)
   ).not.toBeInTheDocument()
   expect(
     screen.getByText(/those readings are not payments in Transactions/)
@@ -2097,7 +2147,7 @@ it("adds missing statement balances in labelled fields without inventing payment
     target: { value: "10.00" },
   })
   fireEvent.click(
-    screen.getByRole("button", { name: /Confirm import of 1 transactions/ })
+    screen.getAllByRole("button", { name: /^Import 1 transaction$/ })[0]
   )
   await waitFor(() => expect(sent).toHaveLength(1))
   expect(sent[0]).toMatchObject({
@@ -2146,7 +2196,7 @@ it("takes a balance-only review directly to its missing balance and saves it to 
     </QueryClientProvider>
   )
   await screen.findByText("Review statement.pdf")
-  const submit = screen.getByRole("button", { name: "Save statement balances" })
+  const submit = screen.getAllByRole("button", { name: "Save statement balances" })[0]
   expect(submit).toBeDisabled()
   fireEvent.click(screen.getByRole("button", { name: "Show items to check" }))
   expect(
@@ -2186,7 +2236,7 @@ it("hides an excluded payment and lets the investigator restore it without a rea
   expect(screen.getByLabelText("Include row 1:0:1")).not.toBeChecked()
   fireEvent.click(screen.getByLabelText("Include row 1:0:1"))
   expect(
-    screen.getByRole("button", { name: "Confirm import of 1 transactions" })
+    screen.getAllByRole("button", { name: "Import 1 transaction" })[0]
   ).toBeEnabled()
 })
 
@@ -2228,7 +2278,7 @@ it("saves a statement with matching balances and no payments, with a clear confi
   })
   const done = mount()
   await open()
-  const save = screen.getByRole("button", { name: "Save statement balances" })
+  const save = screen.getAllByRole("button", { name: "Save statement balances" })[0]
   expect(save).toBeEnabled()
   fireEvent.click(save)
   await waitFor(() => expect(done).toHaveBeenCalledTimes(1))
@@ -2300,7 +2350,7 @@ it("records a closure notice with no payments and no invented closing balance", 
   expect(
     screen.getByRole("button", { name: "View account closure in PDF" })
   ).toBeVisible()
-  fireEvent.click(screen.getByRole("button", { name: "Save account closure" }))
+  fireEvent.click(screen.getAllByRole("button", { name: "Save account closure" })[0])
   await waitFor(() => expect(done).toHaveBeenCalledTimes(1))
   expect(done).toHaveBeenCalledWith(
     expect.objectContaining({
@@ -2393,9 +2443,9 @@ it("allows importing an unchanged flagged reading without an acknowledgement", a
   fireEvent.click(
     screen.getByRole("button", { name: "Hide corrections and import choices" })
   )
-  const button = screen.getByRole("button", {
-    name: "Confirm import of 1 transactions",
-  })
+  const button = screen.getAllByRole("button", {
+    name: "Import 1 transaction",
+  })[0]
   expect(button).toBeEnabled()
   fireEvent.click(button)
   await waitFor(() => expect(done).toHaveBeenCalledTimes(1))
@@ -2431,7 +2481,7 @@ it("marks a valid flagged row checked without typing a reason and retains that d
     screen.getByRole("button", { name: "Hide corrections and import choices" })
   )
   fireEvent.click(
-    screen.getByRole("button", { name: "Confirm import of 1 transactions" })
+    screen.getAllByRole("button", { name: "Import 1 transaction" })[0]
   )
   await waitFor(() => expect(done).toHaveBeenCalledTimes(1))
   expect(sent[0]).toMatchObject({
@@ -2449,7 +2499,7 @@ it("holds import for missing account details and opens the field before clearing
     target: { value: "" },
   })
   expect(
-    screen.getByRole("button", { name: "Confirm import of 1 transactions" })
+    screen.getAllByRole("button", { name: "Import 1 transaction" })[0]
   ).toBeDisabled()
   expect(
     screen.getByRole("region", { name: "Statement issues and edits" })
@@ -2468,7 +2518,7 @@ it("holds import for missing account details and opens the field before clearing
     screen.queryByRole("region", { name: "Statement issues and edits" })
   ).not.toBeInTheDocument()
   expect(
-    screen.getByRole("button", { name: "Confirm import of 1 transactions" })
+    screen.getAllByRole("button", { name: "Import 1 transaction" })[0]
   ).toBeEnabled()
 })
 
@@ -2647,7 +2697,7 @@ it("shows a clean statement ready for a single confirmation without opening corr
     screen.getByRole("region", { name: "Statement checks" })
   ).toHaveTextContent("Opening and closing balance: matches")
   fireEvent.click(
-    screen.getByRole("button", { name: "Confirm import of 1 transactions" })
+    screen.getAllByRole("button", { name: "Import 1 transaction" })[0]
   )
   await waitFor(() => expect(done).toHaveBeenCalledTimes(1))
 })
@@ -2703,7 +2753,7 @@ it("restores a server-saved bulk review, focuses its row and saves without impor
     "Corrected description"
   )
   expect(screen.queryByLabelText("Uploaded statement")).not.toBeInTheDocument()
-  fireEvent.click(screen.getByRole("button", { name: "Save for bulk import" }))
+  fireEvent.click(screen.getAllByRole("button", { name: "Save for bulk import" })[0])
   await waitFor(() => expect(saved).toHaveBeenCalled())
   expect(save).toHaveBeenCalledWith(
     expect.objectContaining({
@@ -2748,9 +2798,9 @@ it("holds a printed difference even after an explanation is saved", async () => 
   })
   const done = mount()
   await open()
-  const confirm = screen.getByRole("button", {
-    name: "Confirm import of 1 transactions",
-  })
+  const confirm = screen.getAllByRole("button", {
+    name: "Import 1 transaction",
+  })[0]
   expect(confirm).toBeDisabled()
   fireEvent.click(
     screen.getByLabelText("I checked these differences against the PDF")
@@ -2774,9 +2824,9 @@ it("holds import while checks are pending or fail without blocking corrections",
   vi.mocked(useStatementChecks).mockReturnValue(state)
   mount()
   await open()
-  const confirm = screen.getByRole("button", {
-    name: "Confirm import of 1 transactions",
-  })
+  const confirm = screen.getAllByRole("button", {
+    name: "Import 1 transaction",
+  })[0]
   expect(confirm).toBeDisabled()
   state.pending = false
   state.error = "Connection interrupted"
@@ -2809,7 +2859,7 @@ it("edits beside a printed row, preserves its source text and uses the correctio
     screen.queryByRole("region", { name: "Edit selected statement row" })
   ).toBeNull()
   fireEvent.click(
-    screen.getByRole("button", { name: "Confirm import of 1 transactions" })
+    screen.getAllByRole("button", { name: "Import 1 transaction" })[0]
   )
   await waitFor(() => expect(done).toHaveBeenCalledTimes(1))
   expect((sent[0] as { rows: unknown[] }).rows).toContainEqual(
@@ -2847,9 +2897,9 @@ it.each([false, true])(
     })
     mount()
     await open()
-    const confirm = screen.getByRole<HTMLButtonElement>("button", {
-      name: "Confirm import of 1 transactions",
-    })
+    const confirm = screen.getAllByRole<HTMLButtonElement>("button", {
+      name: "Import 1 transaction",
+    })[0]
     expect(confirm.disabled).toBe(matching)
     expect(screen.getByText("Other statement.pdf")).toBeVisible()
     fireEvent.click(
@@ -2896,7 +2946,7 @@ it("keeps labels beside correction inputs and imports routine changes without re
     target: { value: "Corrected holder" },
   })
   fireEvent.click(
-    screen.getByRole("button", { name: "Confirm import of 1 transactions" })
+    screen.getAllByRole("button", { name: "Import 1 transaction" })[0]
   )
   await waitFor(() => expect(sent).toHaveLength(1))
   expect(sent[0]).toMatchObject({
@@ -2928,7 +2978,7 @@ it("saves a single zero closing balance without asking for an opening balance or
   mount()
   await open()
   fireEvent.click(
-    screen.getByRole("button", { name: "Save statement balances" })
+    screen.getAllByRole("button", { name: "Save statement balances" })[0]
   )
   await waitFor(() => expect(sent).toHaveLength(1))
   expect(sent[0]).toMatchObject({
@@ -3023,7 +3073,7 @@ it.each([
   fireEvent.change(screen.getByLabelText("Account holder"), { target: { value: "Reviewed holder" } })
   await screen.findByText(message)
   if (!ready) expect(screen.queryByText("You need editing access to this case to confirm an import.")).not.toBeInTheDocument()
-  expect(screen.getByRole("button", { name: /Confirm import of/ })).toBeDisabled()
+  expect(screen.getAllByRole("button", { name: /^Import \d+ transactions?$/ })[0]).toBeDisabled()
 })
 
 it("saves and restores explicit unprinted start without inventing coverage", async () => {

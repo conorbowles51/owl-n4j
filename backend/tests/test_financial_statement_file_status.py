@@ -116,3 +116,61 @@ class StatementFileStatusTests(DuplicateTestCase):
         document.status = 'superseded'
         self.db.commit()
         self.assertEqual(statement_file_status(self.db, case_id=self.case.id)['files'], [])
+
+    def test_incomplete_records_name_their_period_and_separate_complete_values_held_for_reconciliation(self):
+        document = self.make_document()
+        document.document_type = 'statement_review'
+        period = self.make_period(document)
+        blocker = dict(kind='arithmetic', message='The payments do not add up to the printed closing balance.')
+        document.metadata_ = {'statement_admission': {'blockers': [blocker]}, 'statement_incomplete_records': [
+            dict(id='7:0:17', missing_fields=['date']),
+            dict(id='manual:one', missing_fields=[]),
+            dict(id='manual:two', missing_fields=[], resolved_transaction_id='saved')]}
+        self.db.commit()
+        item = statement_file_status(self.db, case_id=self.case.id)['files'][0]
+        self.assertEqual(item['incomplete_count'], 2)
+        self.assertEqual(item['awaiting_reconciliation_count'], 1)
+        self.assertEqual(item['incomplete_sources'], [dict(source_document_id=str(document.id),
+            period_start=period.period_start.isoformat(), period_end=period.period_end.isoformat(),
+            missing_count=1, awaiting_reconciliation_count=1, blockers=[blocker['message']])])
+
+    def _prepared(self, document, rows):
+        from uuid import uuid4
+        from postgres.models.financial_import_batches import FinancialImportBatch as Batch, FinancialImportBatchItem as Item
+        batch = Batch(id=uuid4(), case_id=self.case.id, created_by=self.user.id, actor={}, files=[], status='review')
+        self.db.add(batch); self.db.flush()
+        for key, status, summary in rows:
+            self.db.add(Item(id=uuid4(), batch_id=batch.id, file_id=document.evidence_file_id,
+                statement_key=key, status=status, summary=summary))
+        self.db.commit()
+        return statement_file_status(self.db, case_id=self.case.id)['files'][0]
+
+    def test_a_coverage_note_is_counted_as_an_overlap_not_a_check(self):
+        document = self.make_document()
+        document.document_type = 'statement_review'
+        document.metadata_ = {'statement_import_statement_id': 'saved'}
+        self.make_period(document)
+        coverage = dict(kind='coverage', row_id=None, message='Another supplied statement covers some of these dates.')
+        file = self._prepared(document, [
+            ('saved', 'imported', dict(problem_count=1, problems=[coverage])),
+            ('flagged', 'imported', dict(problem_count=2, problems=[coverage, dict(kind='reading', message='Check the date.')])),
+            ('legacy', 'imported', dict(problem_count=1))])
+        self.assertEqual(file['overlapping_periods'], 1)
+        self.assertEqual(file['periods_with_checks'], 2)
+
+    def test_a_second_reading_of_a_saved_period_is_a_repeat_not_unsaved(self):
+        document = self.make_document()
+        document.document_type = 'statement_review'
+        document.metadata_ = {'statement_import_statement_id': 'saved'}
+        period = self.make_period(document)
+        dates = dict(period_start=period.period_start.isoformat(), period_end=period.period_end.isoformat())
+        coverage = dict(kind='coverage', message='Another supplied statement covers some of these dates.')
+        file = self._prepared(document, [
+            ('saved', 'imported', dict(dates, problem_count=1, problems=[coverage])),
+            ('second-key', 'imported', dict(dates, problem_count=1, problems=[coverage])),
+            ('other-dates', 'imported', dict(period_start='2001-01-01', period_end='2001-01-31'))])
+        self.assertEqual(file['prepared_periods'], 3)
+        self.assertEqual(file['repeat_periods'], 1)
+        self.assertEqual(len(file['periods']), 1)
+        self.assertEqual(file['overlapping_periods'], 1)
+        self.assertEqual(file['periods_with_checks'], 0)

@@ -25,6 +25,12 @@ const recordSchema = z.object({
   locator: z.unknown(),
   original_text: z.string(),
   missing_fields: z.array(z.string()),
+  // Complete values held until the statement reconciles, with what blocks it.
+  awaiting_reconciliation: z.boolean().default(false),
+  statement_blockers: z.array(z.string()).default([]),
+  // Why a completed record is held, or that it already checks out on its own.
+  hold_reason: z.string().nullish(),
+  can_enter_now: z.boolean().default(false),
   version: z.number(),
   fields: z.object({
     id: z.string(),
@@ -53,16 +59,22 @@ export function ImportedRecordsPanel({
   params,
   onOpen,
   onReviewFile,
+  evidenceFileIds,
+  expanded = false,
 }: {
   caseId: string
   params: LedgerQueryParams
   onOpen: (id: string) => void
   onReviewFile?: (fileId: string) => void
+  /** Limit the list to one statement file (all its reading versions). */
+  evidenceFileIds?: string[]
+  /** Show the list open, for example when the investigator asked for it. */
+  expanded?: boolean
 }) {
   const [active, setActive] = useState<ImportedRecord | null>(null)
   const [page, setPage] = useState(0)
   const query = useQuery({
-    queryKey: ["financial-incomplete-records", caseId, params, page],
+    queryKey: ["financial-incomplete-records", caseId, params, evidenceFileIds ?? null, page],
     queryFn: async () => {
       const search = new URLSearchParams({
         case_id: caseId,
@@ -72,6 +84,7 @@ export function ImportedRecordsPanel({
       appendAccountSelection(search, params)
       if (params.sourceDocumentId)
         search.set("source_document_id", params.sourceDocumentId)
+      for (const id of evidenceFileIds ?? []) search.append("evidence_file_id", id)
       if (params.accountId) search.set("account_id", params.accountId)
       if (params.startDate) search.set("start_date", params.startDate)
       if (params.endDate) search.set("end_date", params.endDate)
@@ -143,11 +156,10 @@ export function ImportedRecordsPanel({
           Review statement: {files[0].filename}
         </Button>
       )}
-      <details open={!!active}>
+      <details open={!!active || expanded}>
         <summary className="cursor-pointer text-sm font-medium">
-          {query.data.total} imported{" "}
-          {query.data.total === 1 ? "record has" : "records have"} missing
-          values · kept outside totals
+          {recordsSummary(query.data.total, query.data.records)} · kept
+          outside totals
         </summary>
         <div className="mt-3 space-y-3">
           {onReviewFile && files.length > 1 && (
@@ -172,6 +184,19 @@ export function ImportedRecordsPanel({
             including undated records. Payment search and category filters apply
             to the transaction table below.
           </p>
+          {!active && (
+            <AdmitReadyRecords
+              caseId={caseId}
+              sources={[
+                ...new Set(
+                  query.data.records
+                    .filter((r) => r.can_enter_now)
+                    .map((r) => r.source_document_id)
+                ),
+              ]}
+              count={query.data.records.filter((r) => r.can_enter_now).length}
+            />
+          )}
           {!active ? (
             <div className="divide-y">
               {query.data.records.map((r) => (
@@ -185,9 +210,23 @@ export function ImportedRecordsPanel({
                       {r.fields.description || "Description unreadable"}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      {r.filename} · page {r.page_number ?? "unknown"} · Check{" "}
-                      {r.missing_fields.join(", ")}
+                      {r.filename} · page {r.page_number ?? "unknown"} ·{" "}
+                      {!r.awaiting_reconciliation
+                        ? `Check ${r.missing_fields.join(", ")}`
+                        : r.can_enter_now
+                          ? "Values complete · checks out against the statement on its own"
+                          : "Values complete · held outside totals"}
                     </p>
+                    {r.awaiting_reconciliation && !r.can_enter_now &&
+                      (r.hold_reason ? (
+                        <p className="text-xs">{r.hold_reason}</p>
+                      ) : (
+                        r.statement_blockers.length > 0 && (
+                          <p className="text-xs">
+                            Still needed: {r.statement_blockers.join(" ")}
+                          </p>
+                        )
+                      ))}
                   </div>
                   <Button
                     size="sm"
@@ -237,6 +276,75 @@ export function ImportedRecordsPanel({
       </details>
     </section>
   )
+}
+
+function AdmitReadyRecords({
+  caseId,
+  sources,
+  count,
+}: {
+  caseId: string
+  sources: string[]
+  count: number
+}) {
+  const { canEdit } = useFinancialAccess()
+  const cache = useQueryClient()
+  const admit = useMutation({
+    mutationFn: async () => {
+      let admitted = 0
+      for (const source of sources)
+        admitted += z
+          .object({ admitted: z.number() })
+          .parse(
+            await fetchAPI(
+              `/api/financial/statement-import/sources/${source}/admit-ready-records?case_id=${caseId}`,
+              { method: "POST" }
+            )
+          ).admitted
+      return admitted
+    },
+    onSettled: () => void cache.invalidateQueries(),
+  })
+  if (!canEdit || (!count && !admit.isSuccess)) return null
+  return (
+    <div className="space-y-1 text-sm">
+      {count > 0 && (
+        <Button
+          variant="outline"
+          disabled={admit.isPending}
+          onClick={() => admit.mutate()}
+        >
+          {admit.isPending
+            ? "Adding records…"
+            : `Add ${count} ${count === 1 ? "record that checks" : "records that check"} out to Transactions`}
+        </Button>
+      )}
+      {admit.isSuccess && (
+        <p role="status">
+          {admit.data
+            ? `${admit.data} ${admit.data === 1 ? "record" : "records"} added to Transactions.`
+            : "No record could be added. Each held record shows why."}
+        </p>
+      )}
+      {admit.isError && <p role="alert">{admit.error.message}</p>}
+    </div>
+  )
+}
+
+function recordsSummary(total: number, records: ImportedRecord[]) {
+  const waiting = records.filter((r) => r.awaiting_reconciliation).length
+  const waitingText = (n: number) =>
+    `${n} completed ${n === 1 ? "record is" : "records are"} waiting for the statement to reconcile`
+  const missingText = (n: number) =>
+    `${n} imported ${n === 1 ? "record has" : "records have"} missing values`
+  // Exact split only when every record is on this page.
+  if (total > records.length)
+    return waiting
+      ? `${total} imported records have missing values or are waiting for the statement to reconcile`
+      : missingText(total)
+  if (!waiting) return missingText(total)
+  if (waiting === total) return waitingText(total)
+  return `${missingText(total - waiting)} · ${waitingText(waiting)}`
 }
 
 function ImportedRecordEditor({

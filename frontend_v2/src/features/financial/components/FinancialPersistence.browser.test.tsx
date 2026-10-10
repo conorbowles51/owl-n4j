@@ -159,7 +159,7 @@ run(
       name: "Possible duplicate statement — import on hold",
     })
     expect(
-      screen.getByRole("button", { name: "Confirm import of 12 transactions" })
+      screen.getAllByRole("button", { name: "Import 12 transactions" })[0]
     ).toBeDisabled()
     held.scrollIntoView({ block: "center" })
     await page.screenshot({
@@ -189,9 +189,9 @@ run(
     fireEvent.click(
       within(copy).getByRole("button", { name: "Leave unimported" })
     )
-    await screen.findByRole("button", {
+    (await screen.findAllByRole("button", {
       name: "Import 12 transactions",
-    })
+    }))[0]
     await page
       .getByRole("button", { name: "Import 12 transactions", exact: true })
       .click()
@@ -307,9 +307,9 @@ run(
     fireEvent.click(
       within(card).getByRole("button", { name: "Review and import" })
     )
-    const importButton = await screen.findByRole("button", {
-      name: "Import 3 payments and view Transactions",
-    })
+    const importButton = (await screen.findAllByRole("button", {
+      name: "Import 3 transactions",
+    }))[0]
     expect((await service("/__fixture/payments")).payments).toHaveLength(0)
     fireEvent.click(importButton)
     await waitFor(() => expect(receipt?.transaction_count).toBe(3))
@@ -413,9 +413,9 @@ run(
       "Credit card"
     )
     fireEvent.click(
-      await screen.findByRole("button", {
-        name: /Import 3 payments and view Transactions/,
-      })
+      (await screen.findAllByRole("button", {
+        name: /^Import 3 transactions$/,
+      }))[0]
     )
     await waitFor(() => expect(receipt?.transaction_count).toBe(3), {
       timeout: 15000,
@@ -578,9 +578,9 @@ run(
       .getByRole("button", { name: "Clear reason filter", exact: true })
       .click()
     await screen.findByText(/Synthetic reviewed holder/)
-    await screen.findByRole("button", {
+    (await screen.findAllByRole("button", {
       name: "Import 12 transactions",
-    })
+    }))[0]
     screen
       .getByRole("heading", {
         name: "Prepare statements for import",
@@ -944,9 +944,9 @@ run(
       { timeout: 5000 }
     )
     fireEvent.click(
-      await screen.findByRole("button", {
-        name: /Import 12 payments and view Transactions/,
-      })
+      (await screen.findAllByRole("button", {
+        name: /^Import 12 transactions$/,
+      }))[0]
     )
     await waitFor(() => expect(receipt?.source_document_id).toBeTruthy(), {
       timeout: 15000,

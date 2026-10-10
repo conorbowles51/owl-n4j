@@ -108,14 +108,15 @@ def save_statement_details(source_id: UUID, body: StatementDetailsRequest, case_
 
 @router.get('/incomplete-records')
 def incomplete_records(account_ids: Annotated[list[UUID] | None, Query()] = None, account_holders: Annotated[list[str] | None, Query()] = None, case_id: UUID = Query(...), account_id: UUID | None = Query(None),
-        source_document_id: UUID | None = None,
+        source_document_id: UUID | None = None, evidence_file_id: Annotated[list[UUID] | None, Query()] = None,
         start_date: date | None = Query(None), end_date: date | None = Query(None),
         offset: int = Query(0, ge=0), limit: int = Query(50, ge=1, le=100), db: Session = Depends(get_db)):
     from services.financial.imported_records import imported_records
     if start_date and end_date and start_date > end_date:
         raise HTTPException(status_code=422, detail='The end date must be on or after the start date.')
     return imported_records(db, case_id=case_id, account_id=account_id, account_ids=account_ids, account_holders=account_holders,
-        start_date=start_date, end_date=end_date, offset=offset, limit=limit, source_document_id=source_document_id)
+        start_date=start_date, end_date=end_date, offset=offset, limit=limit, source_document_id=source_document_id,
+        evidence_file_ids=evidence_file_id)
 
 
 @router.get('/deployment-recovery')
@@ -325,6 +326,20 @@ def add_manual_statement_payment(source_id: UUID, body: ManualStatementPayment, 
             source_id=source_id, request=body, actor=actor_from_user(user))
     except PdfMappingError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+@router.post('/sources/{source_id}/admit-ready-records', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
+def admit_ready_imported_records(source_id: UUID, case_id: UUID = Query(...),
+        user=Depends(get_current_db_user), db: Session = Depends(get_db)):
+    from services.financial.imported_records import admit_ready_records
+    try:
+        return admit_ready_records(session_factory=sessionmaker(bind=db.get_bind()), case_id=case_id,
+            source_id=source_id, actor=actor_from_user(user))
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception:
+        logger.exception('Ready imported records could not be added')
+        raise HTTPException(status_code=500, detail='The records could not be added. They remain retained; retry to check again.')
 
 
 @router.post('/sources/{source_id}/complete-record', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])

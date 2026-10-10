@@ -36,7 +36,7 @@ import {
 } from "../lib/statement-assessment"
 import { ReprocessStatement } from "./ReprocessStatement"
 import { newReviewId } from "../lib/statement-review-id"
-import { hasPendingStatementImport, importWithReceiptRecovery } from "../lib/statement-import-recovery"
+import { hasPendingStatementImport, importWithReceiptRecovery, ImportStillSavingError } from "../lib/statement-import-recovery"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { z } from "zod"
@@ -324,6 +324,9 @@ const receipt = z.object({
   duplicate_disposition: statementDuplicateDisposition.optional(),
   account_closed_on: z.string().nullable().optional(),
 })
+
+// 15 s apart: about ten minutes, longer than a save held behind a case lock.
+const MAX_BACKGROUND_IMPORT_CHECKS = 40
 
 function initialRows(data: Proposal): Edit[] {
   return data.rows.map((r) => ({
@@ -2014,6 +2017,10 @@ function EditableStatement({
   const resumedImportKey = useRef<string | null>(null)
   const backgroundChecks = useRef(0)
   useEffect(() => { backgroundChecks.current = 0 }, [pendingImportKey])
+  // An accepted import can wait minutes behind another save on this case.
+  const stillSaving = confirm.isError &&
+    (confirm.error instanceof ImportStillSavingError || backgroundImportStatus === "in_progress") &&
+    backgroundChecks.current < MAX_BACKGROUND_IMPORT_CHECKS
   useEffect(() => {
     if (pendingImportKey && resumedImportKey.current !== pendingImportKey && hasPendingStatementImport(pendingImportKey)) {
       resumedImportKey.current = pendingImportKey
@@ -2021,14 +2028,13 @@ function EditableStatement({
     }
   }, [pendingImportKey, resumeImport])
   useEffect(() => {
-    if (!confirm.isError || backgroundImportStatus !== "in_progress" ||
-        !hasPendingStatementImport(pendingImportKey) || backgroundChecks.current >= 10) return
+    if (!stillSaving || !hasPendingStatementImport(pendingImportKey)) return
     const timer = window.setTimeout(() => {
       backgroundChecks.current += 1
       resumeImport(true)
     }, 15000)
     return () => window.clearTimeout(timer)
-  }, [confirm.isError, backgroundImportStatus, pendingImportKey, resumeImport])
+  }, [stillSaving, pendingImportKey, resumeImport])
   useEffect(() => {
     if ((confirm.isSuccess && !confirm.data.ignored) || importedHere) {
       if (draftKey)
@@ -2188,6 +2194,108 @@ function EditableStatement({
     if (batchReview) saveBatchReview.mutate("done")
     else confirm.mutate(false)
   }
+  // The summary and the confirmation area offer the same actions with the
+  // same labels. Progress and errors appear beside the copy that was used, so
+  // a slow import is never silent wherever the investigator pressed it.
+  const summaryActionsShown =
+    !data.assignment_only && (!data.current_import || replacePrevious)
+  const [pressedImportPlace, setPressedImportPlace] = useState<
+    "summary" | "confirmation"
+  >("summary")
+  const importStatusPlace =
+    pressedImportPlace === "summary" && !summaryActionsShown
+      ? "confirmation"
+      : pressedImportPlace
+  const primaryImport = () => {
+    if (batchReview && !batchReview.confirm) submitImport()
+    else if (!importDisabled) confirm.mutate(false)
+  }
+  const primaryImportLabel = confirm.isPending
+    ? checkingImport
+      ? "Checking saved import result…"
+      : "Importing statement…"
+    : saveBatchReview.isPending
+      ? "Saving statement…"
+      : batchReview && !batchReview.confirm && included.length
+        ? "Save for bulk import"
+        : included.length
+          ? `Import ${included.length} ${included.length === 1 ? "transaction" : "transactions"}`
+          : data.can_record_account_closure
+            ? "Save account closure"
+            : "Save statement balances"
+  const importStatus = (
+    <div className="w-full space-y-2 text-sm">
+      {confirm.isPending && (
+        <p role="status">
+          {backgroundImportStatus === "in_progress"
+            ? "Import accepted — still saving. Checking for its saved result…"
+            : checkingImport
+              ? "Import submitted. Checking for its saved result…"
+              : "Importing statement… This can take a few minutes while another save on this case finishes."}
+        </p>
+      )}
+      {backgroundImportBatch && !confirm.isSuccess && (
+        <p>
+          This import is saved as a background job. You can leave this
+          screen.{" "}
+          <a
+            className="underline"
+            href={`/cases/${caseId}/financial?view=statements&batch=${backgroundImportBatch}`}
+          >
+            Open processing batch and saved result
+          </a>
+        </p>
+      )}
+      {confirm.isError &&
+        (stillSaving ? (
+          <p role="status">
+            Import accepted — still saving. Checking automatically; you can
+            leave this screen. This will not repeat the import.
+          </p>
+        ) : (
+          <p role="alert">{confirm.error.message}</p>
+        ))}
+      {confirm.isError && hasPendingStatementImport(pendingImportKey) && (
+        <Button variant="outline" onClick={() => confirm.mutate(true)}>
+          Check saved result
+        </Button>
+      )}
+    </div>
+  )
+  const importActions = (place: "summary" | "confirmation") => (
+    <>
+      <Button
+        disabled={!!importDisabled}
+        aria-describedby={
+          place === "confirmation" &&
+          (blockedRows.length || detailProblems.length)
+            ? "statement-import-blockers"
+            : undefined
+        }
+        onClick={() => {
+          setPressedImportPlace(place)
+          primaryImport()
+        }}
+      >
+        {primaryImportLabel}
+      </Button>
+      {batchReview?.confirm && (
+        <Button
+          variant="outline"
+          disabled={!canEdit || confirm.isPending || saveBatchReview.isPending}
+          onClick={() => {
+            setPressedImportPlace(place)
+            saveBatchReview.mutate("done")
+          }}
+        >
+          {saveBatchReview.isPending
+            ? "Saving checked statement…"
+            : "Save for bulk import"}
+        </Button>
+      )}
+      {importStatusPlace === place && importStatus}
+    </>
+  )
   const activeTransaction = included.findIndex((row) => row.id === focus?.rowId)
   const showTransaction = (index: number) => {
     const transaction = included[index]
@@ -3179,32 +3287,7 @@ function EditableStatement({
                       : "Confirm once to import this statement. You do not need to accept each line separately."}
               </p>
             </div>
-            <Button
-              disabled={!!importDisabled}
-              onClick={() => {
-                if (batchReview && !batchReview.confirm) submitImport()
-                else if (!importDisabled) confirm.mutate(false)
-              }}
-            >
-              {confirm.isPending || saveBatchReview.isPending
-                ? checkingImport ? "Checking saved import result…" : "Saving statement…"
-                : batchReview && !batchReview.confirm
-                  ? "Save and return to batch"
-                  : included.length
-                    ? `Import ${included.length - incompleteCount} payments and view Transactions`
-                    : data.can_record_account_closure
-                      ? "Save closure now"
-                      : "Save balances now"}
-            </Button>
-            {batchReview?.confirm && (
-              <Button
-                variant="outline"
-                disabled={!canEdit || saveBatchReview.isPending}
-                onClick={() => saveBatchReview.mutate("done")}
-              >
-                Save draft and return to batch
-              </Button>
-            )}
+            {importActions("summary")}
             {!included.length &&
               hasStatementBalance &&
               !data.current_import &&
@@ -3218,7 +3301,10 @@ function EditableStatement({
                     serverChecks.pending ||
                     !!data.reading_failure
                   }
-                  onClick={() => confirm.mutate(false)}
+                  onClick={() => {
+                    setPressedImportPlace("summary")
+                    confirm.mutate(false)
+                  }}
                 >
                   Save balances for review
                 </Button>
@@ -3232,24 +3318,6 @@ function EditableStatement({
                   does not mark it as having no activity.
                 </p>
               )}
-            {backgroundImportBatch && !confirm.isSuccess && (
-              <p className="w-full text-sm" role="status">
-                This import is saved as a background job. You can leave this screen.{' '}
-                <a className="underline" href={`/cases/${caseId}/financial?view=statements&batch=${backgroundImportBatch}`}>
-                  Open processing batch and saved result
-                </a>
-              </p>
-            )}
-            {confirm.isError && (
-              <div className="w-full space-y-2">
-                {backgroundImportStatus === "in_progress" && backgroundChecks.current < 10
-                  ? <p role="status">The accepted import is still running. Checking automatically; you can leave this screen.</p>
-                  : <p role="alert">{confirm.error.message}</p>}
-                {hasPendingStatementImport(pendingImportKey) && (
-                  <Button variant="outline" onClick={() => confirm.mutate(true)}>Check saved result</Button>
-                )}
-              </div>
-            )}
             {serverChecks.error && (
               <div role="alert" className="w-full">
                 <p>{serverChecks.error}</p>
@@ -4835,35 +4903,15 @@ function EditableStatement({
                   ? "Save the account, statement period and printed closure notice. No transaction rows were found in this section. This does not supply a missing closing balance."
                   : included.length === 0
                     ? "Save the account, statement period and printed balances without adding transactions. Enter any missing printed balance in Statement balances above."
-                    : batchReview
+                    : batchReview?.confirm
+                      ? `Import these ${included.length} records now, or save them for bulk import with the rest of the batch. Issues can be checked later.`
+                      : batchReview
                       ? `Save these ${included.length} records to the batch for import together. Issues can be checked later.`
                       : `Import ${included.length} records with their originals. You can correct values later. Incomplete records stay visible outside calculated totals.`}
               </p>
-              <Button
-                disabled={!!importDisabled}
-                aria-describedby={
-                  blockedRows.length || detailProblems.length
-                    ? "statement-import-blockers"
-                    : undefined
-                }
-                onClick={submitImport}
-              >
-                {batchReview
-                  ? saveBatchReview.isPending
-                    ? "Saving checked statement…"
-                    : included.length === 0
-                      ? data.can_record_account_closure
-                        ? "Save account closure"
-                        : "Save statement balances"
-                      : "Save for bulk import"
-                  : confirm.isPending
-                    ? "Importing statement…"
-                    : data.can_record_account_closure && included.length === 0
-                      ? "Save account closure"
-                      : included.length === 0
-                        ? "Save statement balances"
-                        : `Confirm import of ${included.length} transactions`}
-              </Button>
+              <div className="flex flex-wrap items-center gap-2">
+                {importActions("confirmation")}
+              </div>
               {serverChecks.pending && (
                 <p role="status">
                   Checking the current values before confirmation…

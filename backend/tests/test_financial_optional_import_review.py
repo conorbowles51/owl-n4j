@@ -66,7 +66,12 @@ class OptionalImportReviewTests(TestCase):
             self.assertEqual(result['total'], 1)
             record = result['records'][0]
             self.assertEqual(record['fields']['amount_minor'], '')
+            self.assertEqual((record['awaiting_reconciliation'], record['statement_blockers']), (False, []))
             self.assertEqual(imported_records(db, case_id=uuid4())['total'], 0)
+            # A file card lists only its own records.
+            self.assertEqual(imported_records(db, case_id=self.f.case.id,
+                evidence_file_ids=[UUID(record['evidence_file_id']), uuid4()])['total'], 1)
+            self.assertEqual(imported_records(db, case_id=self.f.case.id, evidence_file_ids=[uuid4()])['total'], 0)
             self.assertTrue(all(t.amount_minor > 0 for t in db.scalars(select(FinancialTransaction))))
         corrected = {**record['fields'], 'amount_minor':'12500000', 'reason':''}
         request = CompleteImportedRecord(row=corrected, currency='EUR', version=0)

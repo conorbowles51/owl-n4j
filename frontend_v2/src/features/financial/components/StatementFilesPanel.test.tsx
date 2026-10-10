@@ -735,3 +735,80 @@ it("identifies a saved copy without counting its payments a second time", async 
     Object.values(useStatementWorkspace.getState().selections)
   ).toContainEqual({ fileId: "file", open: true })
 })
+
+it("names the period of incomplete records and opens them from the card without nesting buttons", async () => {
+  const period = (id: string, start: string, end: string) => ({
+    id,
+    account_id: "account",
+    account_label: "Card account",
+    start,
+    end,
+    source_status: "admitted",
+  })
+  vi.mocked(fetchAPI).mockImplementation(async (url) =>
+    url.includes("/statement-import/files")
+      ? {
+          case_id: "case",
+          truncated: false,
+          files: [
+            {
+              evidence_file_id: "file",
+              current_transactions: 300,
+              incomplete_count: 3,
+              awaiting_reconciliation_count: 2,
+              incomplete_sources: [
+                {
+                  source_document_id: "source",
+                  period_start: "2020-10-08",
+                  period_end: "2020-11-09",
+                  missing_count: 1,
+                  awaiting_reconciliation_count: 2,
+                  blockers: [
+                    "The payments do not add up to the printed closing balance.",
+                  ],
+                },
+              ],
+              prepared_periods: 3,
+              repeat_periods: 1,
+              overlapping_periods: 2,
+              periods_with_checks: 0,
+              periods: [
+                period("one", "2020-10-08", "2020-11-09"),
+                period("two", "2020-11-10", "2020-12-09"),
+              ],
+            },
+          ],
+        }
+      : url.includes("/incomplete-records?")
+        ? { records: [], total: 0, statements: [] }
+        : { files: [{ ...file, status: "processed" }] }
+  )
+  mount()
+  expect(
+    await screen.findByText(
+      "300 usable transactions · 1 incomplete record to check · 2 completed records waiting for the statement to reconcile"
+    )
+  ).toBeInTheDocument()
+  expect(
+    screen.getByText(
+      /2 of 2 statement periods saved · 1 repeat reading of an already saved period, not imported again · 2 periods overlap another supplied statement/
+    )
+  ).toBeInTheDocument()
+  expect(screen.queryByText(/checks to review/)).toBeNull()
+  expect(
+    screen.getByText(/Period 2020-10-08 to 2020-11-09: 1 incomplete record to check/)
+  ).toHaveTextContent(
+    "Still needed before they enter Transactions: The payments do not add up to the printed closing balance."
+  )
+  const show = screen.getByRole("button", {
+    name: "Show 3 records to check in statement.pdf",
+  })
+  expect(show.closest("button")?.parentElement?.closest("button")).toBeNull()
+  fireEvent.click(show)
+  expect(show).toHaveAttribute("aria-expanded", "true")
+  await waitFor(() =>
+    expect(fetchAPI).toHaveBeenCalledWith(
+      expect.stringMatching(/incomplete-records\?.*evidence_file_id=file/)
+    )
+  )
+})

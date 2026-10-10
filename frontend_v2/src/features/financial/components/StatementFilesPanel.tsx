@@ -4,6 +4,7 @@ import { ReadyStatementPeriods } from "./ReadyStatementPeriods"
 import { ResumableUploadsPanel } from "@/features/evidence/components/ResumableUploadsPanel"
 import { BulkStatementDetails } from "./BulkStatementDetails"
 import { FinancialRemovalAction } from "./FinancialRemovalAction"
+import { ImportedRecordsPanel } from "./ImportedRecordsPanel"
 import {
   useStatementRegister,
   groupStatementReadings,
@@ -28,6 +29,22 @@ import {
   uploadStatementFiles,
   useStatementUploads,
 } from "../stores/statement-upload-queue"
+
+const count = (n: number, one: string, many: string) =>
+  `${n} ${n === 1 ? one : many}`
+
+// Incomplete records are either missing values or complete values held until
+// their statement reconciles. The card says which, and for which period.
+function incompleteSummary(missing: number, waiting: number) {
+  return [
+    missing ? `${count(missing, "incomplete record", "incomplete records")} to check` : "",
+    waiting
+      ? `${count(waiting, "completed record", "completed records")} waiting for the statement to reconcile`
+      : "",
+  ]
+    .filter(Boolean)
+    .join(" · ")
+}
 
 export function StatementFilesPanel({
   caseId,
@@ -75,6 +92,7 @@ export function StatementFilesPanel({
     visibilityNotice.current?.scrollIntoView({ block: "nearest" })
   }, [visibilityResult, caseId])
   const [error, setError] = useState("")
+  const [recordsFile, setRecordsFile] = useState<string | null>(null)
   const [reading, setReading] = useState<Record<string, boolean>>({})
   const [selection, setSelection] = useState<{ scope: string; ids: string[] }>({
     scope,
@@ -906,7 +924,7 @@ export function StatementFilesPanel({
                     : saved?.wire_review_count
                       ? `${saved.wire_review_count} saved wire ${saved.wire_review_count === 1 ? "review" : "reviews"}`
                       : saved?.incomplete_count
-                        ? `${saved.current_transactions} usable transactions · ${saved.incomplete_count} incomplete records to check`
+                        ? `${count(saved.current_transactions, "usable transaction", "usable transactions")} · ${incompleteSummary(saved.incomplete_count - saved.awaiting_reconciliation_count, saved.awaiting_reconciliation_count)}`
                         : saved?.periods.length && !saved.current_transactions
                           ? `Statement saved · ${saved.periods.length} recorded ${saved.periods.length === 1 ? "period" : "periods"} · no payments`
                           : saved?.same_pdf_saved_file_ids.length
@@ -914,9 +932,9 @@ export function StatementFilesPanel({
                             : saved &&
                                 (saved.current_transactions ||
                                   saved.periods.length)
-                              ? `${saved.current_transactions} imported payments · ${saved.periods.length} recorded ${saved.periods.length === 1 ? "period" : "periods"}`
+                              ? `${count(saved.current_transactions, "imported payment", "imported payments")} · ${saved.periods.length} recorded ${saved.periods.length === 1 ? "period" : "periods"}`
                               : saved?.available_periods
-                                ? `${saved.available_periods} statements ready to save · not saved yet`
+                                ? `${count(saved.available_periods, "statement", "statements")} ready to save · not saved yet`
                                 : file.status === "processed"
                                   ? imports.data && !imports.data.truncated
                                     ? "PDF read · open review to check and import"
@@ -929,16 +947,29 @@ export function StatementFilesPanel({
               {saved?.prepared_periods !== undefined && (
                 <span className="block text-sm">
                   {saved.periods.length} of{" "}
-                  {Math.max(saved.prepared_periods, saved.periods.length)}{" "}
-                  statement periods saved
+                  {count(
+                    Math.max(
+                      saved.prepared_periods - saved.repeat_periods,
+                      saved.periods.length
+                    ),
+                    "statement period",
+                    "statement periods"
+                  )}{" "}
+                  saved
+                  {saved.repeat_periods
+                    ? ` · ${count(saved.repeat_periods, "repeat reading", "repeat readings")} of an already saved period, not imported again`
+                    : ""}
                   {saved.available_periods
                     ? ` · ${saved.available_periods} available to import`
                     : ""}
                   {saved.pending_periods
-                    ? ` · ${saved.pending_periods} imports pending`
+                    ? ` · ${count(saved.pending_periods, "import", "imports")} pending`
                     : ""}
                   {saved.periods_with_checks
-                    ? ` · ${saved.periods_with_checks} periods have checks to review`
+                    ? ` · ${count(saved.periods_with_checks, "period has", "periods have")} checks to review`
+                    : ""}
+                  {saved.overlapping_periods
+                    ? ` · ${count(saved.overlapping_periods, "period overlaps", "periods overlap")} another supplied statement (compare if needed)`
                     : ""}
                   {saved.ignored_periods
                     ? ` · ${saved.ignored_periods} duplicate ${saved.ignored_periods === 1 ? "period" : "periods"} ignored`
@@ -959,7 +990,7 @@ export function StatementFilesPanel({
                 <span className="text-xs">
                   {removalMode
                     ? `All ${saved!.periods.length} periods will be included in the removal preview.`
-                    : `${saved!.periods.length - 2} more periods in this PDF. Open the file to choose a period.`}
+                    : `${count(saved!.periods.length - 2, "more period", "more periods")} in this PDF. Open the file to choose a period.`}
                 </span>
               )}
               {!!saved?.receipt_review_count && (
@@ -978,6 +1009,53 @@ export function StatementFilesPanel({
                 </span>
               )}
             </button>
+            {!!saved?.incomplete_sources.length && !removalMode && !removed && (
+              <div className="space-y-2 text-sm">
+                <ul className="space-y-1">
+                  {saved.incomplete_sources.map((source) => (
+                    <li key={source.source_document_id}>
+                      Period {source.period_start || "start not recorded"} to{" "}
+                      {source.period_end || "end not recorded"}:{" "}
+                      {incompleteSummary(
+                        source.missing_count,
+                        source.awaiting_reconciliation_count
+                      )}
+                      .
+                      {source.blockers.length > 0 &&
+                        ` Still needed before they enter Transactions: ${source.blockers.join(" ")}`}
+                    </li>
+                  ))}
+                </ul>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  aria-expanded={recordsFile === file.id}
+                  aria-controls={`incomplete-records-${file.id}`}
+                  onClick={() =>
+                    setRecordsFile(recordsFile === file.id ? null : file.id)
+                  }
+                >
+                  {recordsFile === file.id
+                    ? "Hide records to check"
+                    : `Show ${count(saved.incomplete_count, "record", "records")} to check in ${file.original_filename}`}
+                </Button>
+                {recordsFile === file.id && (
+                  <div id={`incomplete-records-${file.id}`}>
+                    <ImportedRecordsPanel
+                      caseId={caseId}
+                      params={{}}
+                      evidenceFileIds={file.readingVersions.map(
+                        (version) => version.id
+                      )}
+                      expanded
+                      onOpen={() => openStatement(file.id)}
+                      onReviewFile={() => openStatement(file.id)}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
             {!!saved?.duplicate_dispositions.length &&
               !removalMode &&
               !removed && (

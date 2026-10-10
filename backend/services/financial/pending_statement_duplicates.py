@@ -345,7 +345,7 @@ def apply_duplicate_disposition(session, *, case_id, file, proposal, request=Non
     if not own:
         return _persist(file, proposal, request, dict(status='not_duplicate', label='No confirmed duplicate', basis=None,
             retained=None, reason='Complete bank, full account, holder, currency and exact dates are required.'), actor)
-    sources = sources if sources is not None else comparison_sources(session, case_id)[0]
+    sources = sources() if callable(sources) else sources if sources is not None else comparison_sources(session, case_id)[0]
     content_peers = {str(peer.id) for peer in session.scalars(select(EvidenceFile).where(
         EvidenceFile.case_id == case_id, EvidenceFile.sha256 == file.sha256))} if file.sha256 else set()
     def own_period(entry):
@@ -532,6 +532,19 @@ def prepare_batch_dispositions(session, batch, file_id, *, cache=None):
         Item.status.in_(('ready', 'attention', 'duplicate_ignored'))).order_by(Item.file_id, Item.statement_key)))
     scopes = [scope({**(item.review_request or summary_request(item.summary)),
         'account_type': item.summary.get('account_type', '')}) for item in items if item.file_id == file_id]
+    # Loading the case's comparison sources reads every pending item and file
+    # (seconds on a large case), and this loop held the case lock while doing
+    # it once per matching period. Reuse one snapshot until a decision here
+    # changes something it was built from: this item's status, review or
+    # summary (other than its own copy of the decision), or the file's metadata.
+    snapshot = {}
+    def sources():
+        if 'value' not in snapshot:
+            snapshot['value'] = comparison_sources(session, batch.case_id)[0]
+        return snapshot['value']
+    def inputs(item, file):
+        return (item.status, deepcopy(item.review_request), deepcopy(file.metadata_),
+                {key: deepcopy(value) for key, value in (item.summary or {}).items() if key != 'duplicate_disposition'})
     for item in items:
         descriptor = scope({**(item.review_request or summary_request(item.summary)),
             'account_type': item.summary.get('account_type', '')})
@@ -547,8 +560,9 @@ def prepare_batch_dispositions(session, batch, file_id, *, cache=None):
                 _cache=cache, _include_period_checks=False, _include_duplicate_disposition=False)
         except PdfMappingError:
             continue  # Existing reading failure remains visible in the batch.
+        before = inputs(item, file)
         decision = apply_duplicate_disposition(session, case_id=batch.case_id, file=file,
-            proposal=proposal, request=item.review_request)
+            proposal=proposal, request=item.review_request, sources=sources)
         item.summary = {**item.summary, 'duplicate_disposition': decision}
         if decision['status'] == 'ignored':
             item.status = 'duplicate_ignored'
@@ -559,3 +573,5 @@ def prepare_batch_dispositions(session, batch, file_id, *, cache=None):
             item.status = state
             item.summary = {**item.summary, **summary, 'duplicate_disposition': decision}
         session.flush()
+        if inputs(item, file) != before:
+            snapshot.clear()

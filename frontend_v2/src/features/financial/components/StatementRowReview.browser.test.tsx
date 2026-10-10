@@ -317,9 +317,9 @@ it.each([1280, 390])(
       expect(screen.getByLabelText("Corrected transaction date")).toHaveFocus()
     )
     expect(
-      screen.getByRole("button", {
-        name: /^Import \d+ payments and view Transactions$/,
-      })
+      screen.getAllByRole("button", {
+        name: /^Import \d+ transactions?$/,
+      })[0]
     ).toBeDisabled()
     expect(unexpected).toEqual([])
   }

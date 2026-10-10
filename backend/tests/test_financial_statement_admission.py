@@ -356,33 +356,122 @@ class StatementAdmissionTests(TestCase):
                     **{key:view['details'][key] for key in ('holder','account_number','institution')}))
             self.assertEqual(account_history(db,case_id=self.f.case.id)['groups'][0]['periods'][0]['status'],'confirmed_no_activity')
 
-    def test_manual_additions_wait_for_complete_statement_then_promote_once(self):
-        from services.financial.manual_statement_payment import ManualStatementPayment, append_payment
+    def _manual(self, source, *, direction, amount='100', date='2023-12-31', description='Synthetic offsetting payment'):
+        from services.financial.manual_statement_payment import ManualStatementPayment
         from services.financial.statement_details import read_statement_details
-        from services.financial.imported_records import imported_records
-        saved = self.f.confirm(self.request().model_dump()); source=UUID(saved['source_document_id'])
         last_printed = next(row['id'] for row in reversed(self.f.preview()['rows']) if not row['excluded'])
-        def request(direction):
-            with self.f.SessionLocal() as db:
-                revision=read_statement_details(db,case_id=self.f.case.id,source_id=source)['revision']
-            identity=uuid4()
-            return ManualStatementPayment(request_id=identity,expected_revision=revision,row=dict(
-                id='manual:'+str(identity), manual_page=1, date='2023-12-31', description='Synthetic offsetting payment',
-                amount_minor='100',direction=direction, source_order_anchor=dict(relation='after', row_id=last_printed)))
-        def save(req):return append_payment(session_factory=self.f.SessionLocal,case_id=self.f.case.id,source_id=source,request=req,actor=self.f.actor)
-        first=request('credit'); result=save(first)
+        with self.f.SessionLocal() as db:
+            revision=read_statement_details(db,case_id=self.f.case.id,source_id=source)['revision']
+        identity=uuid4()
+        return ManualStatementPayment(request_id=identity,expected_revision=revision,row=dict(
+            id='manual:'+str(identity), manual_page=1, date=date, description=description,
+            amount_minor=amount,direction=direction, source_order_anchor=dict(relation='after', row_id=last_printed)))
+
+    def _append(self, source, request):
+        from services.financial.manual_statement_payment import append_payment
+        return append_payment(session_factory=self.f.SessionLocal,case_id=self.f.case.id,source_id=source,request=request,actor=self.f.actor)
+
+    def test_manual_additions_that_only_reconcile_together_stay_held(self):
+        from services.financial.imported_records import imported_records
+        from services.financial.held_record_admission import NO_FIT_REASON, PAIR_REASON
+        saved = self.f.confirm(self.request().model_dump()); source=UUID(saved['source_document_id'])
+        first=self._manual(source, direction='credit'); result=self._append(source, first)
         self.assertTrue(result['pending_reconciliation'])
-        self.assertFalse(save(first)['created'])
+        self.assertEqual(result['message'], NO_FIT_REASON)
+        self.assertFalse(self._append(source, first)['created'])
         with self.f.SessionLocal() as db:
             self.assertEqual(len(imported_records(db,case_id=self.f.case.id)['records']),1)
             self.assertEqual(len(list(db.scalars(select(FinancialTransaction)))),12)
-        second=request('debit'); result=save(second)
-        self.assertFalse(result['pending_reconciliation'])
-        self.assertFalse(save(second)['created'])
+        # Each offsetting row breaks the statement alone; together they add up.
+        # That is not a proof for either one, so both stay held (fail closed).
+        second=self._manual(source, direction='debit'); result=self._append(source, second)
+        self.assertTrue(result['pending_reconciliation'])
+        self.assertFalse(self._append(source, second)['created'])
         with self.f.SessionLocal() as db:
-            self.assertEqual(len(list(db.scalars(select(FinancialTransaction)))),14)
-            self.assertEqual(imported_records(db,case_id=self.f.case.id)['records'],[])
+            self.assertEqual(len(list(db.scalars(select(FinancialTransaction)))),12)
+            records = imported_records(db,case_id=self.f.case.id)['records']
+            self.assertEqual([(r['hold_reason'], r['can_enter_now']) for r in records], [(PAIR_REASON, False)] * 2)
+            # Held rows stay outside totals; the saved statement still reconciles.
             self.assertEqual(account_history(db,case_id=self.f.case.id)['groups'][0]['periods'][0]['status'],'reconciled')
+
+    def test_manual_addition_matching_a_saved_row_is_held_as_a_likely_repeat(self):
+        from services.financial.imported_records import imported_records
+        saved = self.f.confirm(self.request().model_dump()); source=UUID(saved['source_document_id'])
+        with self.f.SessionLocal() as db:
+            existing = next(t for t in db.scalars(select(FinancialTransaction)) if t.ledger_status == 'admitted')
+            day = existing.transaction_date or existing.posted_date or existing.value_date or existing.effective_date
+            repeat = self._manual(source, direction=getattr(existing.direction, 'value', existing.direction),
+                amount=str(existing.amount_minor), date=day.isoformat(), description='Re-entered payment')
+        result = self._append(source, repeat)
+        self.assertTrue(result['pending_reconciliation'])
+        self.assertTrue(result['message'].startswith('Looks like a repeat of an existing row'))
+        with self.f.SessionLocal() as db:
+            self.assertEqual(len(list(db.scalars(select(FinancialTransaction)))),12)
+            [record] = imported_records(db,case_id=self.f.case.id)['records']
+            self.assertIn('Looks like a repeat', record['hold_reason'])
+
+    def _retained_unreadable_amount(self):
+        from services.financial.pdf_candidates import _digest
+        request=self.request().model_dump(); saved=self.f.confirm(request); source=UUID(saved['source_document_id'])
+        repaired=[r for r in request['rows'] if not r['excluded']][0]
+        with self.f.SessionLocal() as db:
+            document=db.get(FinancialSourceDocument,source)
+            metadata=deepcopy(document.metadata_)
+            rows=list(db.scalars(select(FinancialTransaction).where(FinancialTransaction.source_document_id==document.id)))
+            # Emulate a retained printed row whose amount was unreadable.
+            target=next(tx for tx in rows if tx.provenance['statement_import_original']['id']==repaired['id'])
+            target.ledger_status='superseded'; target.superseded_by_id=next(t.id for t in rows if t is not target)
+            originals={r['id']:r for r in metadata['statement_import_original']['rows']}
+            for row in metadata['statement_import_request']['rows']:
+                if row['id']==repaired['id']:
+                    row['amount_minor']=''
+                    metadata['statement_incomplete_records']=[dict(id=row['id'],fields=deepcopy(row),original=originals[row['id']],missing_fields=['amount'],version=0)]
+            metadata['statement_import_request_sha256']=_digest(metadata['statement_import_request'])
+            metadata.pop('statement_admission',None);document.metadata_=metadata;db.commit()
+        return source, repaired
+
+    def _complete(self, source, repaired):
+        from services.financial.imported_records import complete_record, CompleteImportedRecord
+        return complete_record(session_factory=self.f.SessionLocal,case_id=self.f.case.id,source_id=source,actor=self.f.actor,
+            request=CompleteImportedRecord(row=repaired,currency='EUR',version=0))
+
+    def _assert_correction_in_and_addition_held(self):
+        from services.financial.imported_records import imported_records
+        from services.financial.held_record_admission import NO_FIT_REASON
+        with self.f.SessionLocal() as db:
+            [held] = imported_records(db,case_id=self.f.case.id)['records']
+            self.assertEqual((held['fields']['description'], held['hold_reason'], held['can_enter_now']),
+                ('Wrong addition', NO_FIT_REASON, False))
+            self.assertEqual(len([t for t in db.scalars(select(FinancialTransaction)) if t.ledger_status=='admitted']),12)
+            self.assertEqual(account_history(db,case_id=self.f.case.id)['groups'][0]['periods'][0]['status'],'reconciled')
+
+    def test_lone_valid_correction_enters_while_a_bad_addition_stays_held(self):
+        source, repaired = self._retained_unreadable_amount()
+        bad=self._append(source, self._manual(source, direction='credit', description='Wrong addition'))
+        self.assertTrue(bad['pending_reconciliation'])
+        done=self._complete(source, repaired)
+        self.assertFalse(done['pending_reconciliation'])
+        self.assertTrue(done['transaction_id'])
+        self._assert_correction_in_and_addition_held()
+
+    def test_records_held_under_the_old_rule_are_admitted_when_checked_again(self):
+        from unittest.mock import patch
+        from services.financial.imported_records import imported_records, admit_ready_records
+        from services.financial import held_record_admission
+        source, repaired = self._retained_unreadable_amount()
+        with patch.object(held_record_admission, 'INDIVIDUAL_ADMISSION', False):
+            self._append(source, self._manual(source, direction='credit', description='Wrong addition'))
+            self.assertTrue(self._complete(source, repaired)['pending_reconciliation'])
+        with self.f.SessionLocal() as db:
+            records = {r['id']: r for r in imported_records(db,case_id=self.f.case.id)['records']}
+            self.assertEqual(len(records), 2)
+            # The read is a dry run: it reports what would enter without writing.
+            self.assertTrue(records[repaired['id']]['can_enter_now'])
+            self.assertEqual(len([t for t in db.scalars(select(FinancialTransaction)) if t.ledger_status=='admitted']),11)
+        result = admit_ready_records(session_factory=self.f.SessionLocal, case_id=self.f.case.id, source_id=source, actor=self.f.actor)
+        self.assertEqual(result['admitted'], 1)
+        self.assertEqual([r['reason'] for r in result['held']], [held_record_admission.NO_FIT_REASON])
+        self._assert_correction_in_and_addition_held()
 
     def test_saved_unread_page_addition_can_be_corrected_then_promoted_without_losing_position(self):
         from services.financial.manual_statement_payment import ManualStatementPayment, append_payment
@@ -430,16 +519,19 @@ class StatementAdmissionTests(TestCase):
             self.assertEqual(again['version'], retained['version'] + 1)
             self.assertEqual(again['fields']['source_order_anchor'], anchor)
             self.assertEqual(again['fields']['manual_page'], 2)
+        # An offsetting pair only reconciles together, which proves neither row:
+        # both stay held outside totals with their position retained.
+        from services.financial.held_record_admission import PAIR_REASON
         outgoing = request('debit')
-        self.assertFalse(append_payment(**args, request=outgoing)['pending_reconciliation'])
+        self.assertTrue(append_payment(**args, request=outgoing)['pending_reconciliation'])
         self.assertFalse(append_payment(**args, request=outgoing)['created'])
         with self.f.SessionLocal() as db:
             current = list(db.scalars(select(FinancialTransaction)))
             self.assertEqual({row.id: row.ref_id for row in current if row.id in existing}, existing)
-            self.assertEqual(len(current), len(existing) + 2)
-            additions = [row for row in current if row.id not in existing]
-            self.assertTrue(all(row.provenance['statement_import_review']['source_order_anchor'] == anchor for row in additions))
-            self.assertTrue(all(row.provenance['statement_import_original']['page_number'] == 2 for row in additions))
+            self.assertEqual(len(current), len(existing))
+            held = imported_records(db, case_id=self.f.case.id)['records']
+            self.assertEqual([r['hold_reason'] for r in held], [PAIR_REASON] * 2)
+            self.assertTrue(all(r['fields']['source_order_anchor'] == anchor and r['fields']['manual_page'] == 2 for r in held))
             self.assertEqual(account_history(db,case_id=self.f.case.id)['groups'][0]['periods'][0]['status'],'reconciled')
 
     def test_saved_record_completion_rejects_tampered_sealed_source_before_saving(self):
