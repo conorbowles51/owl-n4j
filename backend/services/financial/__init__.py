@@ -2199,3 +2199,5 @@ from services.financial.held_record_admission import plan as plan_held_record_ad
 __all__ += ["plan_held_record_admission", "held_blockers"]
 from services.financial.record_withdrawal import RecordWithdrawal, change as change_statement_record
 __all__ += ["RecordWithdrawal", "change_statement_record"]
+from services.financial.late_posted_card_dates import LATE_POSTED_CARD_DATES, proposed_date as late_posted_card_date
+__all__ += ["LATE_POSTED_CARD_DATES", "late_posted_card_date"]

@@ -99,7 +99,10 @@ def imported_records(session, *, case_id, account_id=None, start_date=None, end_
                 withdrawn=item.get('withdrawn'),
                 has_withdrawn_correction=bool(item.get('withdrawn')) and not manual,
                 repeat_of=plan['repeats'].get(item['id']) or (None if item['id'] in held else item.get('hold_repeat_of')),
-                without_this=(plan['effects'] or {}).get('without_each', {}).get(item['id'])))
+                without_this=(plan['effects'] or {}).get('without_each', {}).get(item['id']),
+                # A late-posted card charge's printed date, proposed by the
+                # reader rule; it enters only with the statement reconciling.
+                proposed_date=plan['proposals'].get(item['id'])))
     statements = {}
     for record in records:
         summary = statements.setdefault(record['evidence_file_id'], dict(
@@ -121,8 +124,8 @@ def held_record_plan(session, source_id, items):
     ``repeats`` (id -> the row a likely repeat matches) and ``effects`` (the
     statement's balance with and without each added row, or None).
     """
-    empty = dict(admit=set(), held={}, repeats={}, effects=None)
-    if not any(not item.get('resolved_transaction_id') and item.get('missing_fields') == [] and not item.get('withdrawn')
+    empty = dict(admit=set(), held={}, repeats={}, effects=None, proposals={})
+    if not any(not item.get('resolved_transaction_id') and item.get('missing_fields') in ([], ['date']) and not item.get('withdrawn')
                for item in items or []):
         return empty
     from services.financial.held_record_admission import plan, addition_effects
@@ -132,15 +135,29 @@ def held_record_plan(session, source_id, items):
         if period is None:
             return empty
         metadata = deepcopy(document.metadata_)
-        ready = {item['id']: item.get('correction') or item['fields'] for item in metadata.get('statement_incomplete_records', [])
-            if not item.get('resolved_transaction_id') and item.get('missing_fields') == [] and not item.get('withdrawn')}
+        from services.financial import late_posted_card_dates as late
+        records = metadata.get('statement_incomplete_records', [])
+        currency = metadata['statement_import_request'].get('currency')
+        proposals = late.propose([item for item in records
+            if (item.get('correction_currency') or currency) == period.currency], period)
+
+        def ready_now():
+            return {item['id']: item.get('correction') or item['fields'] for item in records
+                if not item.get('resolved_transaction_id') and item.get('missing_fields') == [] and not item.get('withdrawn')}
         details = {}
+        ready = ready_now()
         admit, held, admission, _checks = plan(session, document, period, metadata, period.currency, ready, details=details)
+        if proposals and not set(proposals) <= admit:
+            late.withdraw_proposals(records, proposals)
+            proposals = {}
+            details, ready = {}, ready_now()
+            admit, held, admission, _checks = plan(session, document, period, metadata, period.currency, ready, details=details) if ready else (set(), {}, None, {})
         effects = addition_effects(session, document, period, metadata, period.currency, ready)
     except (PdfMappingError, KeyError, TypeError, ValueError):  # ValidationError is a ValueError
         return empty
     proven = admission and (admission['can_import'] or details.get('rows_proven'))
-    return dict(admit=admit if proven else set(), held=held, repeats=details.get('repeats', {}), effects=effects)
+    return dict(admit=admit if proven else set(), held=held, repeats=details.get('repeats', {}), effects=effects,
+                proposals={key: late.provenance(value) for key, value in proposals.items()} if proven else {})
 
 
 def document_case(session, source_id):

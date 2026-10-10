@@ -115,7 +115,13 @@ def complete_currency_records(session, *, document, period, metadata, currency, 
     from services.financial.statement_details import effective_convention
     sign = -1 if effective_convention(metadata) == 'liability_owed' else 1
     pending, drafts = [], []
-    for item in metadata.get('statement_incomplete_records', []):
+    # Saved late-posted card charges get their printed date as a candidate
+    # (late_posted_card_dates); it is kept only if the statement then proves.
+    from services.financial import late_posted_card_dates as late
+    items = metadata.get('statement_incomplete_records', [])
+    proposals = late.propose([item for item in items
+        if (item.get('correction_currency') or raw.get('currency')) == currency], period)
+    for item in items:
         if item.get('resolved_transaction_id'):
             continue
         if item.get('withdrawn'):
@@ -157,8 +163,19 @@ def complete_currency_records(session, *, document, period, metadata, currency, 
     # with their specific reason.
     from services.financial.held_record_admission import plan
     planned = {}
-    admit, held, admission, held_checks = plan(session, document, period, metadata, currency,
-        {item['id']: (item.get('correction') or item['fields']) for item, _, _ in pending}, details=planned) if pending else (set(), {}, None, {})
+
+    def run_plan():
+        planned.clear()
+        return plan(session, document, period, metadata, currency,
+            {item['id']: (item.get('correction') or item['fields']) for item, _, _ in pending}, details=planned) if pending else (set(), {}, None, {})
+    admit, held, admission, held_checks = run_plan()
+    if proposals and not set(proposals) <= admit:
+        # A proposed date that does not prove leaves its record untouched, and
+        # the other records are decided without it.
+        late.withdraw_proposals(items, proposals)
+        pending = [entry for entry in pending if entry[0]['id'] not in proposals]
+        proposals = {}
+        admit, held, admission, held_checks = run_plan()
     for item, _, _ in pending:
         if item['id'] in held:
             item['hold_reason'] = held[item['id']]
@@ -181,6 +198,8 @@ def complete_currency_records(session, *, document, period, metadata, currency, 
         item.update(resolved_transaction_id=str(transaction.id), correction=row.model_dump(mode='json'),
             correction_currency=currency, version=item.get('version', 0) + 1,
             corrected_by=str(actor.user_id), corrected_at=datetime.now(timezone.utc).isoformat())
+        if item['id'] in proposals:
+            item['completed_by_rule'] = late.provenance(proposals[item['id']])
     resolved = {item['id'] for item, _ in pending}
     metadata['statement_import_issues'] = [issue for issue in metadata.get('statement_import_issues', [])
         if not (issue.get('kind') == 'missing_field' and issue.get('row_id') in resolved)]

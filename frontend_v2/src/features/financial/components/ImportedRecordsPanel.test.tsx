@@ -460,3 +460,37 @@ it("explains a likely repeat, withdraws it in one click and lists withdrawn rows
     )
   )
 })
+it("explains a late-posted card charge's printed date and offers to add it", async () => {
+  const late = {
+    ...record,
+    missing_fields: ["date"],
+    can_enter_now: true,
+    proposed_date: { date: "2023-02-28", printed_text: "Feb 28" },
+    fields: { ...record.fields, date: "", amount_minor: "12500" },
+  }
+  vi.mocked(fetchAPI).mockResolvedValue({ records: [late], total: 1 } as never)
+  render(
+    <QueryClientProvider
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
+    >
+      <ImportedRecordsPanel
+        caseId="case"
+        params={{}}
+        expanded
+        onOpen={vi.fn()}
+      />
+    </QueryClientProvider>
+  )
+  expect(
+    await screen.findByText(
+      /Printed date “Feb 28” is 2023-02-28, just before the billing cycle/
+    )
+  ).toBeVisible()
+  expect(
+    screen.getByRole("button", {
+      name: "Add 1 record that checks out to Transactions",
+    })
+  ).toBeVisible()
+})

@@ -82,6 +82,11 @@ const recordSchema = z.object({
   has_withdrawn_correction: z.boolean().default(false),
   repeat_of: repeatOf.nullish(),
   without_this: balanceEffect.nullish(),
+  // A late-posted card charge: its printed date just before the cycle,
+  // proposed because the statement reconciles with it.
+  proposed_date: z
+    .object({ date: z.string(), printed_text: z.string() })
+    .nullish(),
   version: z.number(),
   fields: z.object({
     id: z.string(),
@@ -288,6 +293,13 @@ export function ImportedRecordsPanel({
                           ? "Values complete · checks out against the statement on its own"
                           : "Values complete · held outside totals"}
                     </p>
+                    {r.proposed_date && (
+                      <p className="text-xs">
+                        Printed date “{r.proposed_date.printed_text}” is{" "}
+                        {r.proposed_date.date}, just before the billing cycle (a
+                        late-posted charge). The statement reconciles with it.
+                      </p>
+                    )}
                     {r.repeat_of && (
                       <p className="text-xs font-medium">
                         This looks like a repeat of{" "}
