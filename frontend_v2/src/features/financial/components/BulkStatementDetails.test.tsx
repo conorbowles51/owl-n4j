@@ -232,3 +232,21 @@ it("sets an explicit month, retains custom dates and previews dates only", async
   })
   expect(sent.some((c) => c.url.includes("/save?"))).toBe(false)
 })
+it("says when loading the statement periods ran past the time limit and offers to try again", async () => {
+  let calls = 0
+  vi.mocked(fetchAPI).mockImplementation(async (url) => {
+    if (url.includes("/statements?") && calls++ === 0)
+      throw new DOMException("signal is aborted without reason", "AbortError")
+    return { case_id: "case", items, notices: [] } as never
+  })
+  mount()
+  fireEvent.click(screen.getByRole("button", { name: "Edit account details" }))
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "took longer than the 5-minute limit and was stopped. Nothing was changed."
+  )
+  fireEvent.click(screen.getByRole("button", { name: "Try again" }))
+  expect(
+    await screen.findByRole("button", { name: "Select all 52 matching statements" })
+  ).toBeInTheDocument()
+  expect(calls).toBe(2)
+})
