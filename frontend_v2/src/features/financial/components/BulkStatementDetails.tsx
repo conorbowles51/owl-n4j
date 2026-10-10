@@ -17,6 +17,7 @@ import { newReviewId } from "../lib/statement-review-id"
 import { useAuthStore } from "@/features/auth/hooks/use-auth"
 import { statementMonth } from "../lib/statement-month"
 import { AccountTypeEditor } from "./AccountTypeEditor"
+import { requestFailure, useElapsedSeconds } from "../lib/request-wait"
 
 const fields = [
   ["holder", "Account holder"],
@@ -248,6 +249,14 @@ function Editor({
     },
   })
   const busy = review.isPending || save.isPending
+  // Show how long a request has been running; a stopped one says why.
+  const loadingFor = useElapsedSeconds(query.isFetching)
+  const workingFor = useElapsedSeconds(busy)
+  const actionError = save.error
+    ? requestFailure(save.error, "Saving the account details", { writes: true })
+    : review.error
+      ? requestFailure(review.error, "Preparing the preview")
+      : null
   const changeDraft = (value: Partial<Draft>) => {
     setDraft({ ...draft, ...value, requestId: newReviewId() })
     setPreview(null)
@@ -426,10 +435,21 @@ function Editor({
             ) : (
               <>
                 <h3 className="font-semibold">1. Choose statement periods</h3>
-                {query.isPending ? (
-                  <p role="status">Loading statement periods…</p>
-                ) : query.isError ? (
-                  <p role="alert">{query.error.message}</p>
+                {query.isError && !query.isFetching ? (
+                  <div className="space-y-2" role="alert">
+                    <p>
+                      {requestFailure(query.error, "Loading the statement periods").message}
+                    </p>
+                    <Button variant="outline" onClick={() => void query.refetch()}>
+                      Try again
+                    </Button>
+                  </div>
+                ) : query.isPending || (query.isError && query.isFetching) ? (
+                  <p role="status">
+                    Loading statement periods… {loadingFor} s
+                    {loadingFor >= 15 &&
+                      ". Large PDFs take longer; if this stops, it will say so and offer to try again."}
+                  </p>
                 ) : (
                   <>
                     {accountOptions.length > 1 && <label className="block text-sm">
@@ -733,12 +753,20 @@ function Editor({
                 )}
               </>
             )}
-            {(review.error || save.error) && (
+            {actionError && (
               <div className="space-y-2">
                 <p role="alert">
-                  {(review.error || save.error)?.message} Your selection and
-                  edits are kept.
+                  {actionError.message} Your selection and edits are kept.
                 </p>
+                {actionError.retry && (
+                  <Button
+                    variant="outline"
+                    disabled={busy}
+                    onClick={() => (save.error ? save.mutate() : review.mutate())}
+                  >
+                    Try again
+                  </Button>
+                )}
                 <Button
                   variant="outline"
                   disabled={busy || query.isFetching}
@@ -762,7 +790,7 @@ function Editor({
                   onClick={() => save.mutate()}
                 >
                   {save.isPending
-                    ? "Saving account details…"
+                    ? `Saving account details… ${workingFor} s`
                     : `Save changes to ${preview.updated} statements`}
                 </Button>
                 <Button
@@ -783,7 +811,7 @@ function Editor({
                   onClick={() => review.mutate()}
                 >
                   {review.isPending
-                    ? "Preparing preview…"
+                    ? `Preparing preview… ${workingFor} s`
                     : `Review changes for ${selected.length} statements`}
                 </Button>
                 <Button
