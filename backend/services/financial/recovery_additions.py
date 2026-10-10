@@ -29,8 +29,8 @@ def value_key(row):
 
 def plan_additions(proposal, document, transactions):
     metadata = document.metadata_ or {}
-    pending_manual = {row.get('id') for row in metadata.get('statement_incomplete_records', [])
-        if not row.get('resolved_transaction_id')}
+    from services.financial.record_withdrawal import is_open
+    pending_manual = {row.get('id') for row in metadata.get('statement_incomplete_records', []) if is_open(row)}
     if any((entry.get('row') or {}).get('id') in pending_manual
             for entry in metadata.get('statement_manual_additions', {}).values()):
         raise PdfMappingError('Manually added payments are still awaiting reconciliation. Compare those saved additions with this reading before recovering payments; the investigator’s work was retained.', 409)

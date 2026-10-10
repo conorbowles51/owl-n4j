@@ -208,7 +208,9 @@ it("lists one file's completed records as waiting for reconciliation with what i
   } as never)
   render(
     <QueryClientProvider
-      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
     >
       <ImportedRecordsPanel
         caseId="case"
@@ -242,7 +244,8 @@ it("shows why a completed record is held and adds the ones that check out", asyn
     id: "manual:held",
     missing_fields: [],
     awaiting_reconciliation: true,
-    hold_reason: "Looks like a repeat of an existing row (saved Incoming payment).",
+    hold_reason:
+      "Looks like a repeat of an existing row (saved Incoming payment).",
     can_enter_now: false,
     fields: { ...record.fields, id: "manual:held", amount_minor: "12500" },
   }
@@ -260,9 +263,16 @@ it("shows why a completed record is held and adds the ones that check out", asyn
   )
   render(
     <QueryClientProvider
-      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
     >
-      <ImportedRecordsPanel caseId="case" params={{}} expanded onOpen={vi.fn()} />
+      <ImportedRecordsPanel
+        caseId="case"
+        params={{}}
+        expanded
+        onOpen={vi.fn()}
+      />
     </QueryClientProvider>
   )
   expect(
@@ -307,7 +317,9 @@ it("names each record's statement period, or says the period dates were not read
   } as never)
   render(
     <QueryClientProvider
-      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
     >
       <ImportedRecordsPanel
         caseId="case"
@@ -327,5 +339,158 @@ it("names each record's statement period, or says the period dates were not read
     screen.getByText(
       /Statement.pdf · statement period dates not read · page 31 · Check amount/
     )
+  ).toBeVisible()
+})
+it("explains a likely repeat, withdraws it in one click and lists withdrawn rows to restore", async () => {
+  const repeat = {
+    ...record,
+    id: "manual:repeat",
+    kind: "added",
+    missing_fields: [],
+    awaiting_reconciliation: true,
+    hold_reason:
+      "Looks like a repeat of an existing row (corrected Card charge).",
+    can_withdraw: true,
+    repeat_of: {
+      kind: "corrected",
+      date: "2023-03-17",
+      amount_minor: "12500",
+      direction: "debit",
+      description: "Card charge",
+      page: 7,
+    },
+    without_this: {
+      reconciles: true,
+      calculated_closing_minor: 100,
+      printed_closing_minor: 100,
+      difference_minor: 0,
+    },
+    fields: { ...record.fields, id: "manual:repeat", amount_minor: "12500" },
+  }
+  const withdrawn = {
+    ...repeat,
+    id: "manual:old",
+    can_withdraw: false,
+    repeat_of: null,
+    withdrawn: { reason: "Entered twice" },
+    fields: { ...repeat.fields, id: "manual:old", description: "Old entry" },
+  }
+  vi.mocked(fetchAPI).mockImplementation(async (url, options) =>
+    options?.method === "POST"
+      ? ({ withdrawn: !String(url).includes("restore"), admitted: 1 } as never)
+      : ({
+          records: [repeat],
+          total: 1,
+          withdrawn: [withdrawn],
+          withdrawn_total: 1,
+          addition_effects: [
+            {
+              source_document_id: "source",
+              filename: "Statement.pdf",
+              currency: "EUR",
+              period_start: "2023-03-01",
+              period_end: "2023-03-31",
+              held_only_by_additions: true,
+              with_all: {
+                reconciles: false,
+                calculated_closing_minor: -12400,
+                printed_closing_minor: 100,
+                difference_minor: -12500,
+              },
+              without_additions: {
+                reconciles: true,
+                calculated_closing_minor: 100,
+                printed_closing_minor: 100,
+                difference_minor: 0,
+              },
+            },
+          ],
+        } as never)
+  )
+  render(
+    <QueryClientProvider
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
+    >
+      <ImportedRecordsPanel
+        caseId="case"
+        params={{}}
+        expanded
+        onOpen={vi.fn()}
+      />
+    </QueryClientProvider>
+  )
+  expect(
+    await screen.findByText(
+      "This looks like a repeat of your correction of the printed row on page 7: 2023-03-17 · Card charge · 125.00 EUR out."
+    )
+  ).toBeVisible()
+  expect(
+    screen.getByText(/this statement adds up without the rows you added/)
+  ).toBeVisible()
+  expect(screen.getByText(/is still 125.00 EUR off/)).toBeVisible()
+  expect(
+    screen.getByText("Without this row the statement adds up exactly.")
+  ).toBeVisible()
+  expect(screen.getByText(/withdrawn: Entered twice/)).toBeVisible()
+  fireEvent.click(screen.getByRole("button", { name: "Withdraw this row" }))
+  await waitFor(() =>
+    expect(fetchAPI).toHaveBeenCalledWith(
+      "/api/financial/statement-import/sources/source/withdraw-record?case_id=case",
+      {
+        method: "POST",
+        body: {
+          record_id: "manual:repeat",
+          version: 0,
+          reason:
+            "Repeat of your correction of the printed row on page 7: 2023-03-17 · Card charge · 125.00 EUR out",
+        },
+      }
+    )
+  )
+  fireEvent.click(screen.getByRole("button", { name: "Restore this row" }))
+  await waitFor(() =>
+    expect(fetchAPI).toHaveBeenCalledWith(
+      "/api/financial/statement-import/sources/source/restore-record?case_id=case",
+      {
+        method: "POST",
+        body: { record_id: "manual:old", version: 0, reason: "" },
+      }
+    )
+  )
+})
+it("explains a late-posted card charge's printed date and offers to add it", async () => {
+  const late = {
+    ...record,
+    missing_fields: ["date"],
+    can_enter_now: true,
+    proposed_date: { date: "2023-02-28", printed_text: "Feb 28" },
+    fields: { ...record.fields, date: "", amount_minor: "12500" },
+  }
+  vi.mocked(fetchAPI).mockResolvedValue({ records: [late], total: 1 } as never)
+  render(
+    <QueryClientProvider
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
+    >
+      <ImportedRecordsPanel
+        caseId="case"
+        params={{}}
+        expanded
+        onOpen={vi.fn()}
+      />
+    </QueryClientProvider>
+  )
+  expect(
+    await screen.findByText(
+      /Printed date “Feb 28” is 2023-02-28, just before the billing cycle/
+    )
+  ).toBeVisible()
+  expect(
+    screen.getByRole("button", {
+      name: "Add 1 record that checks out to Transactions",
+    })
   ).toBeVisible()
 })

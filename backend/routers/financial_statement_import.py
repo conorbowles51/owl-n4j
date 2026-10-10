@@ -14,6 +14,7 @@ from services.financial.statement_import import read_statement_import
 from services.financial.currency_correction import CurrencyCode
 from services.financial.imported_records import CompleteImportedRecord
 from services.financial.manual_statement_payment import ManualStatementPayment
+from services.financial.record_withdrawal import RecordWithdrawal
 from services.financial.statement_check_request import StatementCheckRequest, check_statement_request
 from services.financial.statement_file_status import statement_file_status
 from services.financial.payment_document_review import (
@@ -397,6 +398,32 @@ def admit_ready_imported_records(source_id: UUID, case_id: UUID = Query(...),
     except Exception:
         logger.exception('Ready imported records could not be added')
         raise HTTPException(status_code=500, detail='The records could not be added. They remain retained; retry to check again.')
+
+
+def _change_record(source_id, body, case_id, user, db, restore):
+    from services.financial.record_withdrawal import change
+    try:
+        return change(session_factory=sessionmaker(bind=db.get_bind()), case_id=case_id, source_id=source_id,
+            request=body, actor=actor_from_user(user), restore=restore)
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception:
+        logger.exception('Statement record withdrawal failed')
+        raise HTTPException(status_code=500, detail='The row could not be changed. Nothing was changed; retry to check again.')
+
+
+@router.post('/sources/{source_id}/withdraw-record', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
+def withdraw_statement_record(source_id: UUID, body: RecordWithdrawal, case_id: UUID = Query(...),
+        user=Depends(get_current_db_user), db: Session = Depends(get_db)):
+    """Withdraw a row the investigator added or corrected (kept, reversible)."""
+    return _change_record(source_id, body, case_id, user, db, restore=False)
+
+
+@router.post('/sources/{source_id}/restore-record', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
+def restore_statement_record(source_id: UUID, body: RecordWithdrawal, case_id: UUID = Query(...),
+        user=Depends(get_current_db_user), db: Session = Depends(get_db)):
+    """Restore a withdrawn row."""
+    return _change_record(source_id, body, case_id, user, db, restore=True)
 
 
 @router.post('/sources/{source_id}/complete-record', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
