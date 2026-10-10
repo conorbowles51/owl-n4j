@@ -162,7 +162,8 @@ def append_recovered(session, *, document, proposal, plan, run, actor, release):
     account_id = account.id
     position = session.scalar(select(func.max(FinancialTransaction.row_index)).where(
         FinancialTransaction.case_id == document.case_id, FinancialTransaction.source_document_id == document.id))
-    sign = -1 if metadata['statement_import_original']['metadata'].get('balance_convention') == 'liability_owed' else 1
+    from services.financial.statement_details import effective_convention
+    sign = -1 if effective_convention(metadata) == 'liability_owed' else 1
     drafts = [transaction_draft(row, original, account_id=account_id, period_id=period.id if period else None,
         currency=saved_currency(document), position=(position if position is not None else -1) + index + 1,
         actor=actor, balance_sign=sign, period_end=metadata['statement_import_request'].get('period_end', ''),

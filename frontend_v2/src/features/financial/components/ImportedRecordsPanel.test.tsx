@@ -286,3 +286,46 @@ it("shows why a completed record is held and adds the ones that check out", asyn
     { method: "POST" }
   )
 })
+it("names each record's statement period, or says the period dates were not read", async () => {
+  vi.mocked(fetchAPI).mockResolvedValue({
+    records: [
+      {
+        ...record,
+        period_start: "2020-10-08",
+        period_end: "2020-11-09",
+      },
+      {
+        ...record,
+        id: "2:0:1",
+        fields: { ...record.fields, id: "2:0:1" },
+        page_number: 31,
+        period_start: null,
+        period_end: null,
+      },
+    ],
+    total: 2,
+  } as never)
+  render(
+    <QueryClientProvider
+      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+    >
+      <ImportedRecordsPanel
+        caseId="case"
+        params={{}}
+        evidenceFileIds={["file"]}
+        expanded
+        onOpen={vi.fn()}
+      />
+    </QueryClientProvider>
+  )
+  expect(
+    await screen.findByText(
+      /Statement.pdf · statement 2020-10-08 to 2020-11-09 · page 1 · Check amount/
+    )
+  ).toBeVisible()
+  expect(
+    screen.getByText(
+      /Statement.pdf · statement period dates not read · page 31 · Check amount/
+    )
+  ).toBeVisible()
+})

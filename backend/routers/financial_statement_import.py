@@ -106,6 +106,63 @@ def save_statement_details(source_id: UUID, body: StatementDetailsRequest, case_
         raise HTTPException(status_code=500, detail='The changes could not be saved. Your previous values are unchanged.')
 
 
+from pydantic import BaseModel, ConfigDict
+from services.financial import account_type_change
+
+
+class _AccountTypePreview(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    account_type: Literal['credit_card', 'checking', 'savings']
+
+
+@router.get('/account-types')
+def account_types(case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    try:
+        return account_type_change.account_type_review(db, case_id=case_id)
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+@router.get('/accounts/{account_id}/type')
+def account_type(account_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    try:
+        return account_type_change.account_type_state(db, case_id=case_id, account_id=account_id)
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+@router.post('/accounts/{account_id}/type/preview')
+def preview_account_type(account_id: UUID, body: _AccountTypePreview, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    try:
+        return account_type_change.preview_account_type(db, case_id=case_id, account_id=account_id, account_type=body.account_type)
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+@router.post('/accounts/{account_id}/type', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
+def save_account_type(account_id: UUID, body: account_type_change.AccountTypeRequest, case_id: UUID = Query(...),
+        user=Depends(get_current_db_user), db: Session = Depends(get_db)):
+    try:
+        return account_type_change.save_account_type(db, case_id=case_id, account_id=account_id, request=body, actor=actor_from_user(user))
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception:
+        logger.exception('Account type could not be saved')
+        raise HTTPException(status_code=500, detail='The account type could not be saved. Nothing was changed.')
+
+
+@router.post('/accounts/{account_id}/type/flip-rows', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
+def flip_account_rows(account_id: UUID, body: account_type_change.FlipRowsRequest, case_id: UUID = Query(...),
+        user=Depends(get_current_db_user), db: Session = Depends(get_db)):
+    try:
+        return account_type_change.flip_flagged_rows(db, case_id=case_id, account_id=account_id, request=body, actor=actor_from_user(user))
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception:
+        logger.exception('Flagged rows could not be flipped')
+        raise HTTPException(status_code=500, detail='The rows could not be flipped. Nothing was changed.')
+
+
 @router.get('/incomplete-records')
 def incomplete_records(account_ids: Annotated[list[UUID] | None, Query()] = None, account_holders: Annotated[list[str] | None, Query()] = None, case_id: UUID = Query(...), account_id: UUID | None = Query(None),
         source_document_id: UUID | None = None, evidence_file_id: Annotated[list[UUID] | None, Query()] = None,

@@ -67,6 +67,12 @@ class OptionalImportReviewTests(TestCase):
             record = result['records'][0]
             self.assertEqual(record['fields']['amount_minor'], '')
             self.assertEqual((record['awaiting_reconciliation'], record['statement_blockers']), (False, []))
+            # Each record names its statement period (the saved period's dates).
+            from postgres.models.financial import FinancialStatementPeriod
+            period = db.scalar(select(FinancialStatementPeriod).where(
+                FinancialStatementPeriod.source_document_id == UUID(record['source_document_id'])))
+            self.assertEqual((record['period_start'], record['period_end']),
+                (period.period_start.isoformat(), period.period_end.isoformat()))
             self.assertEqual(imported_records(db, case_id=uuid4())['total'], 0)
             # A file card lists only its own records.
             self.assertEqual(imported_records(db, case_id=self.f.case.id,

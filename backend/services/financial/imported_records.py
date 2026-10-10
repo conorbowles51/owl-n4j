@@ -27,7 +27,9 @@ def imported_records(session, *, case_id, account_id=None, start_date=None, end_
         FinancialSourceDocument.metadata_['statement_incomplete_records'],
         func.coalesce(FinancialSourceDocument.metadata_['statement_details_review']['currency'].as_string(),
             FinancialSourceDocument.metadata_['statement_import_request']['currency'].as_string()),
-        EvidenceFile.original_filename, FinancialSourceDocument.metadata_['statement_admission']['blockers']).join(EvidenceFile, EvidenceFile.id == FinancialSourceDocument.evidence_file_id).where(
+        EvidenceFile.original_filename, FinancialSourceDocument.metadata_['statement_admission']['blockers'],
+        FinancialSourceDocument.metadata_['statement_import_request']['period_start'].as_string(),
+        FinancialSourceDocument.metadata_['statement_import_request']['period_end'].as_string()).join(EvidenceFile, EvidenceFile.id == FinancialSourceDocument.evidence_file_id).where(
             FinancialSourceDocument.case_id == case_id, EvidenceFile.case_id == case_id,
             FinancialSourceDocument.status == 'admitted').order_by(FinancialSourceDocument.id)
     if source_document_id:
@@ -44,7 +46,18 @@ def imported_records(session, *, case_id, account_id=None, start_date=None, end_
         ids = [str(id) for id in holder_account_ids(session, case_id, account_holders)]
         query = query.where(FinancialSourceDocument.metadata_['statement_account_id'].as_string().in_(ids))
     records = []
-    for source_id, file_id, account, items, currency, filename, blockers in session.execute(query):
+    rows = session.execute(query).all()
+    # Each record names its statement period: the saved period's dates, else
+    # the dates on the saved review, else none ("period dates not read").
+    from postgres.models.financial import FinancialStatementPeriod
+    saved_periods = {source: (start, end) for source, start, end in session.execute(select(
+        FinancialStatementPeriod.source_document_id, FinancialStatementPeriod.period_start,
+        FinancialStatementPeriod.period_end).where(FinancialStatementPeriod.case_id == case_id,
+        FinancialStatementPeriod.source_document_id.in_([row[0] for row in rows])))} if rows else {}
+    for source_id, file_id, account, items, currency, filename, blockers, request_start, request_end in rows:
+        saved_start, saved_end = saved_periods.get(source_id, (None, None))
+        period_start = saved_start.isoformat() if saved_start else (request_start or None)
+        period_end = saved_end.isoformat() if saved_end else (request_end or None)
         blockers = [issue.get('message') for issue in blockers or [] if isinstance(issue, dict) and issue.get('message')][:3]
         admit, held = held_record_plan(session, source_id, items)
         for item in items or []:
@@ -59,6 +72,7 @@ def imported_records(session, *, case_id, account_id=None, start_date=None, end_
             original = item.get('original', {})
             records.append(dict(id=item['id'], source_document_id=str(source_id), evidence_file_id=str(file_id),
                 account_id=account, filename=filename, currency=item.get('correction_currency') or currency or '', fields=fields,
+                period_start=period_start, period_end=period_end,
                 page_number=original.get('page_number'), locator=(original.get('source_cells') or [{}])[0].get('locator'),
                 original_text=' '.join(c.get('expected_text', '') for c in original.get('source_cells', [])),
                 missing_fields=item['missing_fields'], version=item.get('version', 0),

@@ -100,7 +100,7 @@ def summary_request(summary):
         period_start=summary.get('period_start', ''), period_end=summary.get('period_end', ''))
 
 
-def comparison_sources(session, case_id, pending=None, *, read_pending=None):
+def comparison_sources(session, case_id, pending=None, *, read_pending=None, duplicate_context=None):
     """Load a case once per batch check, without loading imported PDF readings."""
     imported = session.execute(select(
         FinancialAccount.identity_key, FinancialStatementPeriod.currency,
@@ -120,10 +120,15 @@ def comparison_sources(session, case_id, pending=None, *, read_pending=None):
                FinancialAccount.case_id == case_id, EvidenceFile.case_id == case_id,
                FinancialSourceDocument.status == 'admitted')).all()
     if pending is None:
-        pending = session.execute(select(Item, EvidenceFile).join(Batch, Batch.id == Item.batch_id)
+        items = session.scalars(select(Item).join(Batch, Batch.id == Item.batch_id)
             .join(EvidenceFile, EvidenceFile.id == Item.file_id)
             .where(Batch.case_id == case_id, EvidenceFile.case_id == case_id,
                    Batch.status != 'removed', Item.status.in_(('ready', 'attention', 'pending_import')))).all()
+        # One evidence row per PDF, not one per prepared period: joining the file
+        # to every item decoded its metadata thousands of times on a large case.
+        owners = {file.id: file for file in session.scalars(select(EvidenceFile).where(
+            EvidenceFile.case_id == case_id, EvidenceFile.id.in_({item.file_id for item in items})))} if items else {}
+        pending = [(item, owners[item.file_id]) for item in items]
     from services.financial.source_lineage import case_lineage, current_version
     groups = case_lineage(session, case_id)
     families = {str(file.id): root for root, versions in groups.items() for file in versions}
@@ -143,8 +148,14 @@ def comparison_sources(session, case_id, pending=None, *, read_pending=None):
                 decision_ids.add(str(file.id))
                 decision_ids.add((decision.get('retained') or {}).get('evidence_file_id'))
     if decision_ids:
-        entries.duplicate_context = load_projection_context(session, case_id,
-            [file for file in all_files if str(file.id) in decision_ids])
+        needed = [file for file in all_files if str(file.id) in decision_ids]
+        # A caller that already fingerprinted a superset of these files (the
+        # file register does) passes its context; each file's guard is computed
+        # independently, so a superset gives the same answers.
+        if duplicate_context is not None and all(str(file.id) in duplicate_context['files'] for file in needed):
+            entries.duplicate_context = duplicate_context
+        else:
+            entries.duplicate_context = load_projection_context(session, case_id, needed)
     def reading(item, *, include_duplicate_disposition=True):
         if read_pending is not None:
             return read_pending(item, include_duplicate_disposition=include_duplicate_disposition)
@@ -270,6 +281,10 @@ def coverage_review(session, *, case_id, file_id, request, sources=None):
     for other in sources.get((own['identity'], own['currency']), []):
         identifier = other['key']
         if identifier == own_key or (other['source_document_id'] and other['source_document_id'] == str(request.get('replaces_source_document_id', ''))):
+            continue
+        # Periods that do not share a date are never candidates (both branches
+        # below end in this test); skip the printed-reference comparison.
+        if own['start'] > other['period_end'] or other['period_start'] > own['end']:
             continue
         # A masked card reference cannot meet ``same_statement``. The same bank,
         # reference and exact printed period is still another copy of this

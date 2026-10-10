@@ -108,6 +108,14 @@ def preview_consolidation(session, *, case_id, request):
         raise AccountPartyError('These records already use the same reviewed account. No additional merge is needed.')
     banks = {bank_key(a['institution']) for a in chosen if a['institution']}
     if len(banks) > 1:
+        # "<bank> card" and "<bank>" printed with the same full card number are
+        # one card read twice (an issuer's product name is not another bank).
+        from services.financial.account_type_change import bank_root, full_card_number
+        rows = [session.get(FinancialAccount, UUID(a['id'])) for a in chosen]
+        numbers = {full_card_number(row.identifier_as_printed) if not (row.metadata_ or {}).get('identity_provisional') else None for row in rows}
+        if len(numbers) == 1 and None not in numbers and len({bank_root(a['institution']) for a in chosen if a['institution']}) == 1:
+            banks = {bank_root(a['institution']) for a in chosen if a['institution']}
+    if len(banks) > 1:
         raise AccountPartyError('These accounts name different banks. Correct incorrect statement details, or link their common owner instead.')
     identifiers = {}
     for item in chosen:

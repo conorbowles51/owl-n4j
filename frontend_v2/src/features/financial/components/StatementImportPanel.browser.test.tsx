@@ -743,7 +743,7 @@ it("opens a newly read file from its explicit action and returns without importi
     screen.getByRole("button", { name: "Review and import" })
   ).toBeVisible()
   expect(
-    screen.getByRole("button", { name: "Review 1 read file together" })
+    screen.getByRole("button", { name: "Start batch check of 1 read file" })
   ).toBeVisible()
   expect(sent).toEqual([])
   screen
