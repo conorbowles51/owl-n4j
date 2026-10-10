@@ -394,3 +394,55 @@ def test_batch_turn_defers_a_held_case_lock_without_stalling_the_event_loop(pg, 
         assert {c.scalar(text('SHOW lock_timeout')) for c in connections} == {'5s'}
     finally:
         for c in connections: c.close()
+
+
+
+def test_import_is_not_held_behind_a_slow_worker_file_review(pg, monkeypatch):
+    """A batch file review must not keep a statement import waiting for its whole file.
+
+    On 2026-10-09 the worker's review of one large PDF held the case row FOR
+    UPDATE for 9-41 minutes per file (on a 286-statement PDF, ~95 s just to
+    build its reading, then ~0.4 s a statement), and a standalone import of the
+    same case waited behind it. Here building the file's reading takes 6 s and
+    each statement 0.5 s: the import must get the case within a few seconds.
+    """
+    from time import sleep
+    from postgres.models.financial_import_batches import FinancialImportBatch as Batch
+    cold, warm = 6.0, 0.5
+    review_locked = Event()
+    original = batches.read_statement_import
+    def reading(*args, **kwargs):
+        if current_thread().name == 'synthetic-file-review':
+            built = any(isinstance(key, tuple) and key and key[0] == 'printed_header' for key in kwargs.get('_cache') or {})
+            sleep(warm if built else cold)
+        return original(*args, **kwargs)
+    def capture(conn, cursor, statement, parameters, context, many):
+        if current_thread().name == 'synthetic-file-review' and 'FROM cases' in statement and 'FOR UPDATE' in statement:
+            review_locked.set()
+    with pg.SessionLocal() as db:
+        entry = deepcopy(db.get(Batch, pg.batch_id).files[0])
+    def review():
+        current_thread().name = 'synthetic-file-review'
+        started = monotonic()
+        batches._review_file(pg.SessionLocal, pg.batch_id, pg.case_id, entry)
+        return monotonic() - started
+    def timed_import():
+        assert review_locked.wait(15)
+        started = monotonic()
+        run(pg)
+        return monotonic() - started
+    monkeypatch.setattr(batches, 'read_statement_import', reading)
+    event.listen(pg.engine, 'after_cursor_execute', capture)
+    try:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            reviewing = pool.submit(review)
+            importing = pool.submit(timed_import)
+            waited = importing.result(timeout=30)
+            reviewed = reviewing.result(timeout=60)
+    finally:
+        event.remove(pg.engine, 'after_cursor_execute', capture)
+    assert reviewed >= cold + warm
+    assert waited < 3.5, f'The import waited {waited:.1f}s behind the file review.'
+    after = state(pg)
+    assert after['status'] == 'imported' and len(after['payments']) == 12
+    assert after['outcomes'][0]['status'] == 'imported'

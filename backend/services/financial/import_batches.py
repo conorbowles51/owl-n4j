@@ -225,18 +225,122 @@ def assess(proposal, request=None):
     return ('attention' if problems else 'ready'), summary
 
 
-def prepare_reviews(session, batch, file):
+# A file review holds the case row FOR UPDATE, and every statement import of
+# the case waits for that row. Reading a large PDF under it held the case for
+# minutes (one 286-statement file: ~95 s to build its reading, then ~0.4 s a
+# statement), so an investigator's Import appeared to do nothing. The worker's
+# review therefore builds a file's reading before it locks, and once it has held
+# the case this long it gives it back at the next statement boundary whenever
+# another transaction is waiting for it.
+REVIEW_LOCK_SLICE_SECONDS = 1.0
+_READING_KEYS = ('printed_header', 'geometry_pages')
+_READING_DERIVED_KEYS = ('catalog', 'currencies', 'checks')
+
+
+def _reading_entry(key, case_id):
+    """Whether a statement-reading cache entry depends only on stored text/geometry.
+
+    Those entries are keyed by the text's content hash and stay valid across
+    transactions. Everything else (saved reviews, assignments, layout memory,
+    loaded rows) may be changed by another save once the case is released.
+    """
+    if not isinstance(key, tuple) or not key:
+        return False
+    if key[0] in _READING_KEYS:
+        return True
+    if key[0] in _READING_DERIVED_KEYS:
+        return len(key) > 1 and _reading_entry(key[1], case_id)
+    return len(key) == 3 and key[0] == str(case_id) and all(isinstance(part, str) for part in key)
+
+
+class _ReviewLock:
+    """The case/file locks of one file review, held in slices when `seconds` is set.
+
+    Unsliced (the default) it locks once and keeps the review one transaction.
+    Sliced, a file's reading is built before the lock is taken; and when another
+    transaction waits, the per-statement writes so far are committed at a
+    statement boundary, the case is released, and both rows are locked again
+    before the next statement. Only reading-only cache entries survive a release.
+    """
+    def __init__(self, session, case_id, file_id, cache, seconds=None):
+        self.session, self.case_id, self.file_id, self.cache, self.seconds = session, case_id, file_id, cache, seconds
+        self.since = None
+        self.releases = 0
+
+    def lock(self):
+        from postgres.models.case import Case
+        self.session.execute(select(Case.id).where(Case.id == self.case_id).with_for_update()).all()
+        self.session.execute(select(EvidenceFile).where(EvidenceFile.id == self.file_id,
+            EvidenceFile.case_id == self.case_id).with_for_update().execution_options(populate_existing=True)).all()
+        self.since = time.monotonic()
+
+    def _release(self):
+        self.session.flush()
+        self.session.commit()
+        kept = {key: value for key, value in self.cache.items() if _reading_entry(key, self.case_id)}
+        self.cache.clear()
+        self.cache.update(kept)
+        self.releases += 1
+
+    def _wanted(self):
+        # Releasing costs the review its per-transaction caches (the duplicate
+        # comparison snapshot is rebuilt), so it gives the case back only when
+        # another transaction is actually waiting for a lock it holds.
+        if self.session.get_bind().dialect.name != 'postgresql':
+            return True
+        from sqlalchemy import text
+        return bool(self.session.scalar(text('SELECT EXISTS (SELECT 1 FROM pg_stat_activity '
+            'WHERE pg_backend_pid() = ANY (pg_blocking_pids(pid)))')))
+
+    def yield_case(self):
+        """At a statement boundary: after the slice, release and relock if another save waits."""
+        if self.seconds is None or time.monotonic() - self.since < self.seconds or not self._wanted():
+            return False
+        self._release()
+        self.lock()
+        return True
+
+    def warm(self, file_id, currency=None):
+        """Build a file's reading without holding the case (sliced reviews only).
+
+        Returns True when the case was released to do it.
+        """
+        if self.seconds is None or any(_reading_entry(key, self.case_id) and key[1] == str(file_id)
+                                       for key in self.cache if isinstance(key, tuple) and len(key) == 3):
+            return False
+        held = self.since is not None
+        if held:
+            self._release()
+        else:
+            self.session.commit()
+        try:
+            read_statement_import(self.session, case_id=self.case_id, evidence_file_id=file_id,
+                                  currency=currency, _cache=self.cache)
+        except PdfMappingError:
+            pass  # Read again under the lock, where the failure is reported.
+        finally:
+            self.session.rollback()
+            kept = {key: value for key, value in self.cache.items() if _reading_entry(key, self.case_id)}
+            self.cache.clear()
+            self.cache.update(kept)
+        self.lock()
+        return held
+
+
+def prepare_reviews(session, batch, file, *, lock_slice=None):
     cache = {}
     fid = UUID(file['file_id'])
-    from postgres.models.case import Case
-    session.execute(select(Case.id).where(Case.id == batch.case_id).with_for_update()).all()
-    session.execute(select(EvidenceFile).where(EvidenceFile.id == fid,
-        EvidenceFile.case_id == batch.case_id).with_for_update().execution_options(populate_existing=True)).all()
+    batch_id, case_id = batch.id, batch.case_id
+    review_lock = _ReviewLock(session, case_id, fid, cache, lock_slice)
+    if not review_lock.warm(fid, file.get('currency')):
+        review_lock.lock()
+    batch = SimpleNamespace(id=batch_id, case_id=case_id)
     first = read_statement_import(session,case_id=batch.case_id,evidence_file_id=fid,currency=file.get('currency'),_cache=cache)
     choices = first.get('statement_choices',[])
     identifiers = [c['id'] for c in choices]
     if not identifiers: identifiers=[None]
     for statement_id in identifiers:
+        review_lock.yield_case()
         proposal = read_statement_import(session,case_id=batch.case_id,evidence_file_id=fid,currency=file.get('currency') or None,statement_id=statement_id,_cache=cache)
         key = statement_id or proposal.get('statement_id') or ''
         if file.get('standalone_import') and key != (file.get('statement_id') or ''):
@@ -280,7 +384,7 @@ def prepare_reviews(session, batch, file):
             session.delete(stale)
     session.flush()
     from services.financial.pending_statement_duplicates import prepare_batch_dispositions
-    prepare_batch_dispositions(session, batch, fid, cache=cache)
+    prepare_batch_dispositions(session, batch, fid, cache=cache, review_lock=review_lock)
     session.commit()
 
 
@@ -1680,7 +1784,7 @@ async def advance_batch(factory,batch_id,resolve_path,process_files):
 
 def _review_file(factory,batch_id,case_id,file):
     with factory() as db:
-        prepare_reviews(db,batch_for(db,case_id,batch_id),file)
+        prepare_reviews(db,batch_for(db,case_id,batch_id),file,lock_slice=REVIEW_LOCK_SLICE_SECONDS)
         # Saved reviews, earlier imports or duplicate decisions on this file can
         # leave its periods needing a reading at list time. Store it now.
         refresh_file_readiness(db, case_id=case_id, file_id=UUID(file['file_id']))
