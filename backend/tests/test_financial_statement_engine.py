@@ -1295,3 +1295,53 @@ class RoutingScopeTests(unittest.TestCase):
         self.assertTrue(_same_identity('institution', 'Banco Ejemplo, S.A.', 'EJEMPLO'))
         self.assertFalse(_same_identity('institution', 'Ejemplo', 'OTRO BANCO'))
         self.assertFalse(_same_identity('institution', 'BANCO', 'BANK'))
+
+
+class ScanDamageR5Tests(unittest.TestCase):
+    """r5-any-layout: further scan damage around amounts and dates, and a period printed as a cut date plus
+    a day count."""
+
+    words = ScanDamageTests.words
+
+    def test_a_space_beside_the_decimal_mark_inside_one_cell(self):
+        self.assertEqual(self.words('715 .00?'), ['715.00'])
+        self.assertEqual(self.words('11,206,500. 63?'), ['11,206,500.63'])
+        self.assertEqual(self.words('DIC 22 715 .00'), ['DIC', '22', '715.00'])
+        # Without a printed mark nothing is joined (a count before an amount stays two words).
+        self.assertEqual(self.words('2 00'), ['2', '00'])
+        self.assertEqual(self.words('2 100.00'), ['2', '100.00'])
+
+    def test_more_letter_digit_confusions_in_dates(self):
+        for text in ('Q1-FEB-2024', 'L1-MAR-2024', '23-FEB~2024', '03-0CT-2024', 'I5/03/2024'):
+            self.assertTrue(E.is_date_token(text), text)
+        for text in ('QQ-FEB', 'L-MAR-2024', 'CL1-MAR-2024', '0CT'):
+            self.assertFalse(E.is_date_token(text), text)
+
+    def lines(self, cut='CORTE AL 31/03/2024', days='DIAS DEL PERIODO 31', printed=None):
+        lines = [[('BANCO EJEMPLO DEL NORTE, S.A., INSTITUCION DE BANCA MULTIPLE', 20000, 400000)],
+                 [(days, 20000, 200000)], [(cut, 20000, 200000)], [('HOJA 1 DE 2', 400000, 500000)]]
+        second = [[('HOJA 2 DE 2', 400000, 500000)]] + ([[(printed, 20000, 300000)]] if printed else [])
+        return E._pages([page(1, lines), page(2, second)])
+
+    def segments(self, **kwargs):
+        pages = self.lines(**kwargs)
+        facts = {p: E.page_facts(rows, 'dot') for p, rows in pages.items()}
+        return [(s['period'], s['pages']) for s in E._segments(pages, facts)]
+
+    def test_a_cut_date_and_a_day_count_print_the_period(self):
+        from datetime import date
+        self.assertEqual(self.segments(), [((date(2024, 3, 1), date(2024, 3, 31)), [1, 2])])
+        self.assertEqual(self.segments(days='DIAS DEL PERTODO 31'), [((date(2024, 3, 1), date(2024, 3, 31)), [1, 2])])
+        # The period printed on a later page of the same run agrees: one statement.
+        self.assertEqual(self.segments(printed='PERIODO : 01 AL 31 DE MARZO DE 2024'),
+                         [((date(2024, 3, 1), date(2024, 3, 31)), [1, 2])])
+
+    def test_a_labelled_period_of_the_same_run_wins_over_a_misread_day_count(self):
+        from datetime import date
+        # The derived 3-31 March is dropped: page 1 continues into page 2's printed period.
+        self.assertEqual(self.segments(days='DIAS DEL PERIODO 29', printed='PERIODO : 01 AL 31 DE MARZO DE 2024'),
+                         [((date(2024, 3, 1), date(2024, 3, 31)), [1, 2])])
+
+    def test_one_fact_alone_is_not_a_period(self):
+        self.assertEqual(self.segments(days='SALDO PROMEDIO'), [(None, [1, 2])])
+        self.assertEqual(self.segments(cut='SUCURSAL 123'), [(None, [1, 2])])

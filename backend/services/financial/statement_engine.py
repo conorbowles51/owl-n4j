@@ -172,6 +172,7 @@ def _rejoin_amounts(words):
         if double:
             word = double[1] + double[2]
         cleaned.append((s, e, word))
+    cleaned = _rejoin_decimal_mark(cleaned)
     out, index = [], 0
     while index < len(cleaned):
         s, e, word = cleaned[index]
@@ -205,6 +206,31 @@ def _rejoin_amounts(words):
         else:
             out.append((s, e, word))
             index += 1
+    return out
+
+
+_MARK_HEAD = re.compile(r'^[-−(]?(?:US\$|\$)?\d{1,3}(?:,\d{3})*$')
+_MARK_CENTS = re.compile(r'^[.,]\d{2}(?:\)|-|−|CR)?$')
+_MARKED_HEAD = re.compile(r'^[-−(]?(?:US\$|\$)?\d{1,3}(?:,\d{3})*[.,]$')
+_BARE_CENTS = re.compile(r'^\d{2}(?:\)|-|−|CR)?$')
+
+
+def _rejoin_decimal_mark(words):
+    """A space read beside the decimal mark inside one cell line ('715 .00', '11,206,500. 63'): the two
+    words are one amount when the mark is printed and two cents digits follow it (C11)."""
+    out, index = [], 0
+    while index < len(words):
+        s, e, word = words[index]
+        if index + 1 < len(words):
+            _, e2, after = words[index + 1]
+            # (A grouped head with detached cents, '8,463,157 .26', is left to the thousands-group rule.)
+            if (_MARK_HEAD.fullmatch(word) and ',' not in word and _MARK_CENTS.fullmatch(after)
+                    or _MARKED_HEAD.fullmatch(word) and _BARE_CENTS.fullmatch(after)):
+                out.append((s, e2, word + after))
+                index += 2
+                continue
+        out.append((s, e, word))
+        index += 1
     return out
 
 
@@ -375,14 +401,18 @@ def _dnorm(text):
     return ' '.join(upper.replace('–', '-').replace('−', '-').split())
 
 
-_OCR_ZERO = re.compile(r'(?<![A-Z])O(?=\d)|(?<=\d)O(?![A-Z])')
-_OCR_MONTH_O = re.compile(r'(?<=[A-Z]{2})0(?=$|[-/ .])')
+_OCR_ZERO = re.compile(r'(?<![A-Z])[OQ](?=\d)|(?<=\d)[OQ](?![A-Z])')
+_OCR_MONTH_O = re.compile(r'(?<=[A-Z]{2})0(?=$|[-/ .])|(?<=[-/ .])0(?=[A-Z]{2})')
 
 
 def _ocr_date(text):
-    """A date token with the scan's letter O / digit zero confusion undone ('O1-JUN-2021',
-    '02-AG0-2021'): O counts as 0 only between digits or before one, 0 as O only at the end of
-    a month word. Only used when the token reads as no date as printed."""
+    """A date token with the scan's letter / digit confusions undone ('O1-JUN-2021', 'Q1-JUN-2021', 'L1-JUN-2021',
+    '02-AG0-2021', '03-0CT-2024'): O or Q counts as 0 only between digits or before one, 0 as O only at
+    either end of a month word. Only used when the token reads as no date as printed."""
+    # A tilde read for the hyphen between a date's parts ('23-FEB~2024').
+    text = re.sub(r'(?<=[A-Z0-9])~(?=[A-Z0-9])', '-', text)
+    # A day's leading 1 read as a letter at the start of a date ('L1-MAR-2024', 'I5/03/2024').
+    text = re.sub(r'^[LI|](?=\d[-/.])', '1', text)
     return _OCR_MONTH_O.sub('O', _OCR_ZERO.sub('0', text))
 
 
@@ -679,7 +709,39 @@ def page_facts(rows, style, exponent=2):
             if any(word in folded for word in INSTITUTION_WORDS) and 6 <= len(folded) <= 160:
                 facts['legal'].add(folded)
             _holder_label(row, facts['holders'])
+    _derived_period(rows, style, exponent, facts)
     return facts
+
+
+# A cut date and the number of days in the period, both printed on a statement's heading ('CORTE AL
+# 31/01/2024', 'FECHA DE CORTE 31/01/2024', 'DIAS DEL PERIODO 31'; Mexican layouts that print the period
+# itself only on a later page or not at all). One letter of PERIODO may be misread by the scan.
+_CUT_DATE = re.compile(r'\b(?:FECHA DE )?CORTE(?: AL)?\s+(\d{1,2}/\d{1,2}/\d{4})\b')
+_PERIOD_DAYS = re.compile(r'\bDIAS (?:DEL|EN EL) PER[A-Z]ODO\s+(\d{1,2})\b')
+
+
+def _derived_period(rows, style, exponent, facts):
+    """(B1) A page printing exactly one cut date and one day count, and no labelled period of its own,
+    prints the period (cut - days + 1, cut). Recorded as labelled (two printed facts) and as derived:
+    a labelled period printed elsewhere in the same printed page run wins over it (_segments)."""
+    if facts['labelled_periods']:
+        return
+    cuts, days = set(), set()
+    for row in rows:
+        if not row['tokens'] or _row_is_movement(row, style, exponent):
+            continue
+        folded = fold(row['text'])
+        cuts.update(m[1] for m in _CUT_DATE.finditer(folded))
+        days.update(int(m[1]) for m in _PERIOD_DAYS.finditer(folded))
+    if len(cuts) != 1 or len(days) != 1:
+        return
+    end, count = _full_date(next(iter(cuts)), 'dmy'), next(iter(days))
+    if end is None or not 1 <= count <= MAX_PERIOD_DAYS:
+        return
+    period = (end - timedelta(days=count - 1), end)
+    facts['periods'].add(period)
+    facts['labelled_periods'].add(period)
+    facts['derived_periods'] = {period}
 
 
 _ACCOUNT_VALUE = re.compile(r'^(?:\*{2,}|X{2,}|#)?[\d][\d -]{3,30}\d$|^(?:\*{2,}|X{2,})\d{3,6}$')
@@ -1298,6 +1360,7 @@ _NAME_END = re.compile(r'\s+(?=S\.?\s?A\.?\b|S\.?\s?P\.?\s?A\.?\b|N\.?\s?A\.?\b|
 
 def _segments(pages, facts):
     """[(period or None, [page numbers])]: a new printed period, or numbering restarting at 1, starts a segment."""
+    _drop_contradicted_derived(pages, facts)
     segments = []
     for page in sorted(pages):
         f = facts[page]
@@ -1316,6 +1379,28 @@ def _segments(pages, facts):
         current['pages'].append(page)
         current['conflict'] = current['conflict'] or (len(candidates) > 1 and not f['labelled_periods'])
     return segments
+
+
+def _drop_contradicted_derived(pages, facts):
+    """A period derived from a cut date and a day count (B1) yields to a labelled period printed in the
+    same printed page run (pages from a page numbered 1 up to the next): if the run labels another
+    period, the derived one is a misreading and is dropped."""
+    runs, current = [], []
+    for page in sorted(pages):
+        if any(n == 1 for n, _ in facts[page]['numbering']) and current:
+            runs.append(current)
+            current = []
+        current.append(page)
+    if current:
+        runs.append(current)
+    for run in runs:
+        printed = set().union(*(facts[p]['labelled_periods'] - facts[p].get('derived_periods', set()) for p in run))
+        for page in run:
+            derived = facts[page].get('derived_periods', set())
+            if derived and printed and not derived <= printed:
+                facts[page]['labelled_periods'] -= derived
+                facts[page]['periods'] -= derived
+                facts[page]['derived_periods'] = set()
 
 
 def _numbering_complete(pages, facts):
