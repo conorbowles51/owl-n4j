@@ -400,3 +400,56 @@ class ContinuationOnlyPageTests(unittest.TestCase):
         self.assertIsNone(andrews_page(second, allow_unbranded=True))
         _, second = self.pages('06/0B/20 06/30/20')
         self.assertIsNone(andrews_page(second, allow_unbranded=True))
+
+
+class OrderedDamagedDateTests(unittest.TestCase):
+    """A row date damaged only by OCR marks is read when the payment order fixes it."""
+
+    def read(self, damaged, before='06/03', after='06/05', second=None):
+        data = source([
+            [(15, '06/01 ID 0040 FREE CHECKING Previous Balance'), (350, '100.00')],
+            [(15, before), (75, 'Withdrawal Debit Card'), (310, '-1.00'), (350, '99.00')],
+            [(15, damaged), (75, (second + ' ' if second else '') + 'Withdrawal Debit Card'), (310, '-2.00'), (350, '97.00')],
+            [(15, after), (75, 'Withdrawal Debit Card'), (310, '-3.00'), (350, '94.00')],
+            [(15, '06/30'), (75, 'Ending Balance'), (350, '94.00')]])
+        groups, _, _ = andrews_catalog([data])
+        rows = propose_andrews_statement([data], 'USD', groups[0])['rows']
+        return [r for r in rows if not r['excluded'] and r['kind'] in ('transaction', 'unresolved')][1]
+
+    def test_marks_and_measured_lookalikes_are_set_aside_between_ordered_neighbours(self):
+        from services.financial.statement_import_andrews import DATE_READ_IN_ORDER
+        for damaged in ('06/04·', '_06/04', '06/04.', '-06/04', '06/O4', 'O6/O4', '06/:04', '06/0.4', '06i04'):
+            with self.subTest(damaged=damaged):
+                row = self.read(damaged)
+                self.assertEqual((row['fields'].get('date'), row['fields'].get('date_reading'), row['issues']),
+                                 ('2020-06-04', DATE_READ_IN_ORDER, []))
+                self.assertEqual(row['source_cells'][0]['expected_text'], damaged)
+        self.assertEqual(self.read('06/l4', before='06/13', after='06/15')['fields'].get('date'), '2020-06-14')
+
+    def test_it_stays_held_out_of_order_without_clean_neighbours_or_with_other_damage(self):
+        cases = (dict(damaged='06/0l', before='06/12', after='06/14'),    # reads 06/01: before the payment above
+                 dict(damaged='06/04·', before='06/0?'),            # neighbour not read cleanly
+                 dict(damaged='06/0B'), dict(damaged='06/04 x'), dict(damaged='0604'), dict(damaged='06/41'),
+                 dict(damaged='07/04·', after='07/05'))            # outside the printed period
+        for case in cases:
+            with self.subTest(**case):
+                row = self.read(**case)
+                self.assertIsNone(row['fields'].get('date'))
+                self.assertTrue(row['issues'])
+
+    def test_the_opening_and_ending_lines_bound_the_first_and_last_payment(self):
+        data = source([
+            [(15, '06/01 ID 0040 FREE CHECKING Previous Balance'), (350, '100.00')],
+            [(15, 'O6/02'), (75, 'Withdrawal Debit Card'), (310, '-1.00'), (350, '99.00')],
+            [(15, '06/30'), (75, 'Ending Balance'), (350, '99.00')]])
+        groups, _, _ = andrews_catalog([data])
+        rows = propose_andrews_statement([data], 'USD', groups[0])['rows']
+        self.assertEqual(next(r for r in rows if r['kind'] == 'transaction')['fields'].get('date'), '2020-06-02')
+
+    def test_switch_turns_the_rule_off(self):
+        from services.financial import statement_import_andrews as reader
+        try:
+            reader.ORDERED_DAMAGED_DATES = False
+            self.assertIsNone(self.read('06/04·')['fields'].get('date'))
+        finally:
+            reader.ORDERED_DAMAGED_DATES = True

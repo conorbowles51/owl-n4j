@@ -700,8 +700,71 @@ def _voucher_money(row, following, width, currency):
                 source_row=following if wrapped else row, wrapped=wrapped)
 
 
+_DATE_UNREAD = 'Check the full date in the PDF. It could not be read within this statement period.'
+_ADDITIONAL_UNREAD = ('Check the additional date printed beside this payment. It is unreadable, later than '
+                      'the row date or more than 31 days earlier.')
+# A payment's printed row date whose only damage is OCR marks (a speck before
+# or after it, a point or colon inside it, a letter measured to stand for a
+# digit or for the slash) is read only when it lies within the period and
+# between the cleanly read dates of the payments before and after it: this
+# statement prints its payments in date order (0 of 6,465 verified rows out of
+# order). Reverse in one place: False.
+ORDERED_DAMAGED_DATES = True
+DATE_READ_IN_ORDER = 'printed_date_marks_ignored_in_payment_order'
+_DATE_DIGIT_LOOKALIKES = str.maketrans({'O': '0', 'o': '0', 'l': '1', 'I': '1'})
+
+
+def _damaged_date(text, statement):
+    """``(row date, additional printed date or None)`` once OCR marks are set aside, else ``None``."""
+    tokens = text.split()
+    if not 1 <= len(tokens) <= 2:
+        return None
+    cleaned = []
+    for token in tokens:
+        token = re.sub(r'^[^\dOolI]+|[^\dOolI]+$', '', token)
+        token = re.sub(r'(?<=[\dOolI/])[.:](?=[\dOolI/])', '', token)
+        if len(token) == 5 and token[2] in 'ilI|' and re.fullmatch(r'[\dOolI]{4}', token[:2] + token[3:]):
+            token = token[:2] + '/' + token[3:]
+        token = token.translate(_DATE_DIGIT_LOOKALIKES)
+        if not re.fullmatch(r'\d{2}/\d{2}', token):
+            return None
+        cleaned.append(token)
+    value = _period_date(cleaned[0], statement)
+    if not value:
+        return None
+    if len(cleaned) == 2 and not _ordinary_additional_date(cleaned[1], value):
+        return None
+    return value, cleaned[1] if len(cleaned) == 2 else None
+
+
+def _date_damaged_rows_in_order(rows, damaged, statement):
+    """Read the damaged row dates that the period's payment order fixes (``ORDERED_DAMAGED_DATES``)."""
+    # The section's printed opening and ending balance lines carry the
+    # period's first and last dates: they bound its first and last payment.
+    chain = [r for r in rows if r['kind'] == 'balance' or not r['excluded'] and r['kind'] in ('transaction', 'unresolved')]
+    clean = [None if r['id'] in damaged else r['fields'].get('date') for r in chain]
+    for index, row in enumerate(chain):
+        if row['id'] not in damaged:
+            continue
+        found = _damaged_date(damaged[row['id']], statement)
+        before = clean[index - 1] if index else None
+        after = clean[index + 1] if index + 1 < len(chain) else None
+        if not found or not before or not after or not before <= found[0] <= after:
+            continue
+        fields = row['fields']
+        fields['date'] = found[0]
+        fields['date_reading'] = DATE_READ_IN_ORDER
+        row['issues'] = [issue for issue in row['issues'] if issue != _DATE_UNREAD]
+        if found[1] is not None:
+            fields['additional_printed_date'] = found[1]
+            row['issues'] = [issue for issue in row['issues'] if issue != _ADDITIONAL_UNREAD]
+        elif fields.get('additional_printed_date') and _ordinary_additional_date(fields['additional_printed_date'], found[0]):
+            row['issues'] = [issue for issue in row['issues'] if issue != _ADDITIONAL_UNREAD]
+
+
 def propose_andrews_statement(sources, currency, statement):
     result = []
+    damaged_dates = {}
     previous_balance = None
     previous_payment = None
     scopes = {(s['page_number'], s['table_index']):s for s in statement['sources']}
@@ -794,7 +857,8 @@ def propose_andrews_statement(sources, currency, statement):
                 if value:
                     fields['date'] = value
                 else:
-                    item['issues'].append('Check the full date in the PDF. It could not be read within this statement period.')
+                    item['issues'].append(_DATE_UNREAD)
+                    damaged_dates[item['id']] = date_text
                 fields['date_column'] = str(cells[0]['column_index'])
                 fields['description'] = parsed[3] if parsed else damaged_date_payment[2] if damaged_date_payment else body.partition(' ')[2]
                 fields['counterparty'] = ''
@@ -805,7 +869,7 @@ def propose_andrews_statement(sources, currency, statement):
                     # line. Retain the other text without calling it a posting,
                     # value or transaction date. Unusual dates still need review.
                     if not _ordinary_additional_date(parsed[2], value):
-                        item['issues'].append('Check the additional date printed beside this payment. It is unreadable, later than the row date or more than 31 days earlier.')
+                        item['issues'].append(_ADDITIONAL_UNREAD)
                 pair = re.fullmatch(r'(' + _SPACED_MONEY + r')\s+(.+)', money)
                 amount_text, balance_text = (pair[1], pair[2]) if pair else ('', '')
                 if pair is None:
@@ -873,6 +937,8 @@ def propose_andrews_statement(sources, currency, statement):
             else:
                 item.update(excluded=False, kind='unresolved')
                 item['issues'].append('Check this line in the account section. It could not be linked to a transaction.')
+    if ORDERED_DAMAGED_DATES and damaged_dates:
+        _date_damaged_rows_in_order(result, damaged_dates, statement)
     issues = []
     for name in ('Opening Balance', 'Closing Balance'):
         controls = [r for r in result if r['kind'] == 'balance' and r['fields'].get('description') == name]
