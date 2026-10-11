@@ -1460,7 +1460,7 @@ def _empty_section(statement):
 def _sections(segment, pages, style):
     """Split a segment at an opening balance that follows a closing balance and movement lines (A7)."""
     rows = [row for page in segment['pages'] for row in pages[page]]
-    sections, current, closed, moved, after_close = [], [], False, False, None
+    sections, current, closed, moved, after_close, reopened = [], [], False, False, None, False
     for row in rows:
         pairs = [(text, values) for text, values in label_pairs(row, style, 2) if values]
         roles = {_role_of(text, False) for text, values in pairs}
@@ -1475,9 +1475,14 @@ def _sections(segment, pages, style):
             # Lines printed after the closing balance (the next section's heading) open the next section.
             carried = current[after_close:] if after_close is not None else []
             sections.append(current[:after_close] if after_close is not None else current)
-            current, closed, moved, after_close = list(carried), False, False, None
+            current, closed, moved, after_close, reopened = list(carried), False, False, None, False
+        elif 'opening' in roles and closed and current and new_opening and not repeated and 'closing' not in roles:
+            # The section's own opening printed again after its summary's closing opens its movement
+            # table (D6: table endpoints repeat the summary): the lines that follow are still this
+            # section's, even where no movement line in them is read; the table's total line ends it.
+            after_close, reopened = None, True
         current.append(row)
-        if 'closing' in roles or ('column_total' in roles and moved):
+        if 'closing' in roles or ('column_total' in roles and (moved or reopened)):
             # A table's own total line after its movements closes it as its closing balance does: lines
             # printed after it are the next section's heading.
             closed = True

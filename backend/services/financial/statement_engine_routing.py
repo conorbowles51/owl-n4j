@@ -18,8 +18,9 @@
   date, direction and amount, and both balances: two readers agree; the library
   was held for something else). When the engine section reads every page of
   the library period plus covers or continuation pages holding no other library
-  period (row-level scope), the same applies to the one library period of the
-  same printed period, currency, account and opening balance.
+  period, or only library periods whose recorded rows it does not share
+  (row-level scope), the same applies to the one library period of the same
+  printed period, currency, account and opening balance.
   Identity facts that differ only by case or a printed legal form are the same
   fact; any other identity difference keeps the library period.
 * A layout fingerprint routed ``library_first`` in the route table (data,
@@ -110,6 +111,8 @@ def _same_account(a, b):
     return len(shorter) >= 4 and shorter in longer
 
 
+_BANKING_WORDS = {'BANCO', 'BANK', 'THE', 'NA', 'N', 'A', 'SA', 'S', 'INSTITUCION', 'DE', 'BANCA', 'MULTIPLE',
+                  'GRUPO', 'FINANCIERO'}
 _LEGAL_FORM_TAIL = re.compile(r'(?:\s*,)?\s+(?:S\.?\s*A\.?\s*(?:P\.?\s*I\.?\s*)?|S\.?\s*DE\s*R\.?\s*L\.?\s*)(?:DE\s+C\.?\s*V\.?)?$')
 
 
@@ -125,10 +128,53 @@ def _same_identity(field, a, b):
     fa, fb = fold(a), fold(b)
     if fa == fb:
         return True
+    if field == 'institution':
+        # 'Intercam' and 'INTERCAM BANCO': the issuer's name with or without a generic banking word.
+        plain = lambda text: [w for w in re.sub(r'[^A-Z0-9 ]', ' ', text).split() if w not in _BANKING_WORDS]
+        return bool(plain(fa)) and plain(fa) == plain(fb)
     if field == 'holder':
         bare = lambda text: ' '.join(_LEGAL_FORM_TAIL.sub('', text).replace('.', ' ').replace(',', ' ').split())
         return bare(fa) == bare(fb) and bool(bare(fa))
     return False
+
+
+def _scope_rows(statement):
+    """{(page, table, row)} a reader attributes to a period, or None when it records no row scope."""
+    scope = statement.get('section_sources')
+    if not scope:
+        return None
+    return {(s['page_number'], s['table_index'], row) for s in scope for row in s['row_indices']}
+
+
+def _covers(engine_statement, library_period):
+    """The engine section read everything the library period claims: every row of its recorded row scope
+    when both readers record one, else every page of it."""
+    ours, theirs = _scope_rows(engine_statement), _scope_rows(library_period)
+    if ours is not None and theirs is not None:
+        return theirs <= ours
+    return _pages(library_period) <= _pages(engine_statement)
+
+
+_VALUE = re.compile(r'\d[.,]\d{2}(?!\d)')
+
+
+def _rows_apart(engine_statement, library_period, by_address):
+    """Both readers record row scopes and no row printing an amount or a date belongs to both: the library
+    period is another section on a shared page, not part of what the engine section read (page furniture,
+    a page number or a footer line, may be counted by both)."""
+    from services.financial.statement_engine import is_date_token
+    ours, theirs = _scope_rows(engine_statement), _scope_rows(library_period)
+    if ours is None or theirs is None:
+        return False
+    rows = {(s['page_number'], s['table_index'], r['row_index']): r for s in by_address.values() for r in s['rows']}
+    for key in ours & theirs:
+        row = rows.get(key)
+        if row is None:
+            return False
+        text = ' '.join(c['expected_text'] for c in row['cells'])
+        if _VALUE.search(text) or any(is_date_token(word) for word in text.split()):
+            return False
+    return True
 
 
 def disagreement_row(rows, choice):
@@ -264,10 +310,11 @@ def route_catalog(sources, library_catalog):
             if not exact:
                 routing['scoped_unchecked'] = routing.get('scoped_unchecked', 0) + 1
             continue
-        if not exact and (not _pages(group) <= pages or any(other is not group and _pages(other) & pages
+        if not exact and (not _covers(statement, group) or any(other is not group and _pages(other) & pages
+                                                              and not _rows_apart(statement, other, by_address)
                                                               for other in groups if not other.get('document_kind'))):
             # Row-level scope: the library period claims a page the engine section does not read, or the
-            # engine's pages also hold another library period; nothing is replaced.
+            # engine's pages also hold another library period whose rows it may share; nothing is replaced.
             routing['scoped_unchecked'] = routing.get('scoped_unchecked', 0) + 1
             continue
         conflicts = [field for field in IDENTITY if public.get(field) and group.get(field)

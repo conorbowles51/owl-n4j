@@ -1232,3 +1232,66 @@ class ScanNoiseAddressTests(unittest.TestCase):
         self.assertEqual(matching_profile('Escribenos a aclaraciones@kapital.com')['institution'], 'Kapital')
         # The Kapital bank name alone (other banks' transfer lines print it) does not select the profile.
         self.assertIsNone(matching_profile('SPEI ENVIADO KAPITAL BANK'))
+
+
+class SharedPageSectionTests(unittest.TestCase):
+    """r5-any-layout: two currency sections on shared pages, the first one's movement lines unreadable."""
+
+    LINES = [[('CUENTA EN PESOS', 20000, 200000)],
+             [('SALDO INICIAL', 20000, 150000), ('1,000.00', 500000, 560000)],
+             [('DEPOSITOS', 20000, 150000), ('500.00', 500000, 560000)],
+             [('RETIROS', 20000, 150000), ('500.00', 500000, 560000)],
+             [('SALDO FINAL', 20000, 150000), ('1,000.00', 500000, 560000)],
+             [('SALDO INICIAL', 330000, 430000), ('1,000.00', 500000, 560000)],
+             [('ABONO RECIBIDO', 80000, 300000), ('500.00', 350000, 380000), ('1,500.00', 512000, 560000)],
+             [('CARGO ENVIADO', 80000, 300000), ('500.00', 428000, 460000), ('1,000.00', 512000, 560000)],
+             [('TOTAL', 80000, 120000), ('500.00', 350000, 380000), ('500.00', 428000, 460000), ('1,000.00', 512000, 560000)],
+             [('CUENTA EN DOLARES', 20000, 200000)],
+             [('SALDO INICIAL', 20000, 150000), ('0.00', 500000, 560000)],
+             [('DEPOSITOS', 20000, 150000), ('0.00', 500000, 560000)],
+             [('RETIROS', 20000, 150000), ('0.00', 500000, 560000)],
+             [('SALDO FINAL', 20000, 150000), ('0.00', 500000, 560000)]]
+
+    def test_the_sections_own_opening_after_its_closing_keeps_its_table_in_the_section(self):
+        pages = E._pages([page(1, self.LINES)])
+        sections = E._sections(dict(pages=[1]), pages, 'dot')
+        self.assertEqual([[row['text'] for row in section][-1] for section in sections][:1], ['TOTAL 500.00 500.00 1,000.00'])
+        self.assertEqual(sections[1][0]['text'], 'CUENTA EN DOLARES')
+        self.assertEqual(len(sections), 2)
+
+
+class RoutingScopeTests(unittest.TestCase):
+    """r5-any-layout: row-level scope comparisons between the engine and a library period."""
+
+    @staticmethod
+    def scoped(pages_rows):
+        return dict(sources=[dict(page_number=p) for p in sorted({p for p, _ in pages_rows})],
+                    section_sources=[dict(page_number=p, table_index=0, row_indices=rows) for p, rows in pages_rows])
+
+    def by_address(self, texts):
+        return {(1, 0): dict(page_number=1, table_index=0,
+                             rows=[dict(row_index=i, cells=[dict(expected_text=t)]) for i, t in enumerate(texts)])}
+
+    def test_a_library_period_is_covered_by_its_recorded_rows_not_its_pages(self):
+        from services.financial.statement_engine_routing import _covers
+        engine = self.scoped([(2, [5, 6, 7]), (3, [0, 1])])
+        self.assertTrue(_covers(engine, self.scoped([(2, [5, 6])])))
+        self.assertFalse(_covers(engine, self.scoped([(1, [3]), (2, [5])])))
+        # Without a recorded row scope the pages decide, as before.
+        self.assertFalse(_covers(engine, dict(sources=[dict(page_number=1), dict(page_number=2)])))
+
+    def test_another_library_period_on_a_shared_page_is_apart_only_without_shared_value_rows(self):
+        from services.financial.statement_engine_routing import _rows_apart
+        texts = ['SALDO FINAL 1,000.00', 'PAGINA 1 DE 2', 'ABONO 05/03/2024', 'NOTA']
+        engine = self.scoped([(1, [1, 3])])
+        self.assertTrue(_rows_apart(engine, self.scoped([(1, [0, 1])]), self.by_address(texts)))
+        self.assertFalse(_rows_apart(self.scoped([(1, [0])]), self.scoped([(1, [0])]), self.by_address(texts)))
+        self.assertFalse(_rows_apart(self.scoped([(1, [2])]), self.scoped([(1, [2])]), self.by_address(texts)))
+        self.assertFalse(_rows_apart(engine, dict(sources=[dict(page_number=1)]), self.by_address(texts)))
+
+    def test_an_institution_named_with_or_without_a_banking_word_is_the_same(self):
+        from services.financial.statement_engine_routing import _same_identity
+        self.assertTrue(_same_identity('institution', 'Ejemplo', 'EJEMPLO BANCO'))
+        self.assertTrue(_same_identity('institution', 'Banco Ejemplo, S.A.', 'EJEMPLO'))
+        self.assertFalse(_same_identity('institution', 'Ejemplo', 'OTRO BANCO'))
+        self.assertFalse(_same_identity('institution', 'BANCO', 'BANK'))
