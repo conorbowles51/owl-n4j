@@ -1087,7 +1087,7 @@ def _grow_block(located, index, x, style):
         ex = min(t['x0'] for t in earlier['tokens'])
         if earlier['y0'] > block[-1]['y0']:
             continue
-        if abs(ex - x) > row['width'] * 0.015:
+        if abs(ex - x) > row['width'] * 0.015 and not _lead_noise(earlier, x):
             # A movement line printed between two lines means they are not one address block.
             if _row_is_movement(earlier, style or 'dot', 2):
                 break
@@ -1113,18 +1113,40 @@ def _grow_block(located, index, x, style):
     return block
 
 
+def _lead_noise(row, x):
+    """The scan-noise glyph printed left of an address block's edge x at the start of a line, or None.
+
+    A lone mark of one character, or of up to three with no letter pair ('|', '@', 'N', 'i)'), standing
+    before a word that starts on the block's edge is noise from the scan, not part of the line (F2).
+    """
+    tokens = sorted((t for t in row['tokens'] if t['line'] == 0), key=lambda t: t['x0'])
+    if len(tokens) < 2:
+        return None
+    lead, word = tokens[0], tokens[1]
+    tolerance = row['width'] * 0.015
+    noise = len(lead['t']) == 1 or (len(lead['t']) <= 3 and re.search(r'[^A-Za-z0-9]', lead['t']))
+    if noise and abs(lead['x0'] - x) > tolerance and abs(word['x0'] - x) <= tolerance and len(word['t']) > 1:
+        return lead
+    return None
+
+
+def _aligned_tokens(row, x):
+    """The tokens of the cells of a line that start at the left edge x (a leading noise glyph dropped)."""
+    noise = _lead_noise(row, x)
+    tolerance = row['width'] * 0.015
+    aligned = {id(t['cell']) for t in row['tokens'] if t['first'] and (abs(t['x0'] - x) <= tolerance or t is noise)}
+    return [t for t in sorted(row['tokens'], key=lambda t: (t['line'], t['x0'])) if id(t['cell']) in aligned and t is not noise]
+
+
 def _aligned_text(row, x):
     """Folded text of the cells of a line that start at the left edge x."""
-    aligned = {id(t['cell']) for t in row['tokens'] if abs(t['x0'] - x) <= row['width'] * 0.015 and t['first']}
-    return fold(' '.join(t['t'] for t in row['tokens'] if id(t['cell']) in aligned))
+    return fold(' '.join(t['t'] for t in _aligned_tokens(row, x)))
 
 
 def _block_top(block, x):
     """(y0, name, accepted) of a block's top line, or None."""
     top = block[-1]
-    aligned = {id(t['cell']) for t in top['tokens'] if abs(t['x0'] - x) <= top['width'] * 0.015 and t['first']}
-    name = ' '.join(t['t'] for t in sorted(top['tokens'], key=lambda t: (t['line'], t['x0']))
-                    if id(t['cell']) in aligned and t['line'] == 0)
+    name = ' '.join(t['t'] for t in _aligned_tokens(top, x) if t['line'] == 0)
     accepted = _name_like(name)
     if not accepted:
         # A row recognised as one cell can run into the right-hand column ("<name> CLIENTE No. 123"):

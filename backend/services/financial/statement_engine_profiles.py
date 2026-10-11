@@ -33,8 +33,8 @@ Profile format (every key optional except ``name`` and ``match``):
                  period's movements, up to a line starting with an ``end`` phrase
 
 Capital One and BBVA are expressed below to prove the format (their code
-readers stay in the library unchanged); Monex, Santander, Intercam, Citi and
-M&T supply only their institution. Facts a person confirms per layout and account
+readers stay in the library unchanged); Monex, Santander, Intercam, Citi,
+M&T, Scotiabank and Kapital supply only their institution. Facts a person confirms per layout and account
 are not profiles: they are case data (``layout_memory``).
 """
 
@@ -82,6 +82,12 @@ PROFILES = (
     # every M&T statement in the real collection (83 documents) and by no other document.
     # A US bank: a bare '$' is US dollars (used only when the statement prints no currency of its own).
     dict(name='mt-bank', match=dict(any=['m&t telephone banking center']), institution='M&T Bank', currency='USD'),
+    # Scotiabank Mexico and Kapital (r5): institution only. The Scotiabank legal name is printed by every
+    # Scotiabank statement in the real collection and by no other document; Kapital's own bank name also
+    # appears in other banks' transfer lines, so its phrase is the complaints-contact furniture printed by
+    # every Kapital statement and by no other document.
+    dict(name='scotiabank-mexico', match=dict(any=['scotiabank inverlat, s.a.']), institution='Scotiabank'),
+    dict(name='kapital-mexico', match=dict(any=['aclaraciones@kapital.com']), institution='Kapital'),
 )
 
 _KEYS = {'name', 'match', 'institution', 'currency', 'convention', 'date_order', 'labels', 'columns', 'account_heading',

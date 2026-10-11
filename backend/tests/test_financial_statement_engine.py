@@ -1206,3 +1206,29 @@ class AddresseeConfirmationTests(unittest.TestCase):
         # A recipient no heading line prints, or a heading line adding more than a legal form, is not the holder.
         self.assertEqual(self.holder(addressee_statement(receipt='OTRA EMPRESA')), '')
         self.assertEqual(self.holder(addressee_statement(receipt='EMPRESA')), '')
+
+
+class ScanNoiseAddressTests(unittest.TestCase):
+    def holder(self, name_cell, street_cell=('CALLE FALSA 123', 20000, 150000)):
+        lines = [[('BANCO EJEMPLO DEL NORTE, S.A., INSTITUCION DE BANCA MULTIPLE', 20000, 400000)],
+                 [name_cell, ('PERIODO DEL 01/03/2024 AL 31/03/2024', 330000, 590000)],
+                 [street_cell], [('COL CENTRO', 20000, 120000)], [('CIUDAD DE MEXICO C.P. 06000', 20000, 220000)]]
+        return E.address_holder(E._pages([page(1, lines)])[1])
+
+    def test_a_noise_glyph_left_of_the_address_edge_is_not_part_of_the_line(self):
+        self.assertEqual(self.holder(('N EMPRESA DE PRUEBA SA DE CV', 2000, 200000)), 'EMPRESA DE PRUEBA SA DE CV')
+        self.assertEqual(self.holder(('EMPRESA DE PRUEBA SA DE CV', 20000, 200000), ('@ CALLE FALSA 123', 2000, 150000)),
+                         'EMPRESA DE PRUEBA SA DE CV')
+
+    def test_an_initial_on_the_address_edge_is_kept_and_a_word_is_never_noise(self):
+        self.assertEqual(self.holder(('J PRUEBA EJEMPLO', 20000, 200000)), 'J PRUEBA EJEMPLO')
+        # A whole word left of the edge is a different column, not noise: no block.
+        self.assertEqual(self.holder(('NOTA EMPRESA DE PRUEBA SA DE CV', 2000, 200000)), '')
+
+    def test_institution_profiles_for_two_more_mexican_banks(self):
+        from services.financial.statement_engine_profiles import matching_profile
+        self.assertEqual(matching_profile('Scotiabank Inverlat, S.A., Institucion de Banca Multiple')['institution'],
+                         'Scotiabank')
+        self.assertEqual(matching_profile('Escribenos a aclaraciones@kapital.com')['institution'], 'Kapital')
+        # The Kapital bank name alone (other banks' transfer lines print it) does not select the profile.
+        self.assertIsNone(matching_profile('SPEI ENVIADO KAPITAL BANK'))
