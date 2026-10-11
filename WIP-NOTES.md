@@ -69,10 +69,15 @@ Copy bench/wave4-a152-v17 of bench/wave4-a152 (a15230a0 readings), harness --res
   copies 148/151. No ready period lost.
 - **Compare: statements compared 567 -> 583** (of 827 statement documents in compare's count), periods+items
   1,445 -> 1,461, without disagreement 1,150 -> 1,150.
-- Secondary figures move in the rescore for a reason unrelated to this truth: the rescore re-pairs 30 batch items
-  (none Synchrony: unmatched 11, santander 8, andrews 5, monex 3, merrick 2, bbva 1) and drops their proposal checks
-  and simulated corrections, so actions (5,637 -> 4,505) and valid-looking wrong values (73 -> 9) are not comparable
-  with the original run. CONTROL: see below.
+- CONTROL (bench/wave4-a152-ctl17: same copy, same code, rescored against truth-backup-pre-v17, compare to a private
+  dir): 1,034/1,237, recoverable 1,034/1,233, wrong 0; the rescore re-pairs the SAME 30 batch items there too (none
+  Synchrony: unmatched 11, santander 8, andrews 5, monex 3, merrick 2, bbva 1) and drops their proposal checks and
+  simulated corrections. So the rescore's secondary figures differ from the original wave-4 run (actions 5,637 ->
+  4,489, valid-looking wrong values 73 -> 9) for a reason unrelated to this truth (open for the integration session).
+  **Attributable to the v17 truth, control vs new:** distinct periods 1,237 -> 1,253, not_detected 8 -> 24, actions
+  4,489 -> 4,505 single / 4,330 -> 4,346 grouped (one per not-detected period), compared 567 -> 583; ready, recoverable
+  ready, field edits, decisions, rows to add, valid-looking wrong values, unmatched items, ledger: identical;
+  ready lost 0, gained 0.
 
 ## Live ledger (read-only audit audit-v17; READ ONLY transaction; nothing written)
 
