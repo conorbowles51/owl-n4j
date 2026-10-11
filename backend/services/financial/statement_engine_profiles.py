@@ -27,10 +27,14 @@ Profile format (every key optional except ``name`` and ``match``):
     statement_account  True: a section sharing pages with another section and
                  printing no account of its own takes the statement's single
                  top-ranked heading account (one contract, several currencies)
+    prior_period_block  {'start': [...], 'end': [...]}: a line starting with a
+                 ``start`` phrase opens a block of earlier periods' operations
+                 repeated to explain a balance (E7); its lines are not this
+                 period's movements, up to a line starting with an ``end`` phrase
 
 Capital One and BBVA are expressed below to prove the format (their code
-readers stay in the library unchanged); Monex, Santander, Intercam and Citi
-supply only their institution. Facts a person confirms per layout and account
+readers stay in the library unchanged); Monex, Santander, Intercam, Citi and
+M&T supply only their institution. Facts a person confirms per layout and account
 are not profiles: they are case data (``layout_memory``).
 """
 
@@ -56,6 +60,9 @@ PROFILES = (
                     credit_total=['DEPOSITOS / ABONOS'], debit_total=['RETIROS / CARGOS'],
                     column_total=['TOTAL DE MOVIMIENTOS']),
         columns=dict(date=['OPER', 'LIQ'], debit=['CARGOS'], credit=['ABONOS'], balance=['OPERACION', 'LIQUIDACION']),
+        # The BBVA reader's rule: operations booked in an earlier period, repeated to explain the settlement
+        # balance, outside this period's printed counts and totals.
+        prior_period_block=dict(start=['MOVIMIENTOS DE PERIODOS ANTERIORES'], end=['TOTAL DE MOVIMIENTOS']),
     ),
     # Institution-only profiles (r3): these layouts do not always print their legal name on the pages
     # the engine reads it from. Each match phrase is printed by every statement of its family in the
@@ -70,10 +77,15 @@ PROFILES = (
          account_heading=True),
     dict(name='intercam-mexico', match=dict(any=['intercam grupo financiero']), institution='Intercam'),
     dict(name='citi-card', match=dict(any=['citibank, n.a']), institution='Citibank'),
+    # M&T Bank (r4): its scanned logo reads as other letters beside the printed name, so the printed
+    # name is not unique on the page; the phrase is its balancing-instructions page furniture, printed by
+    # every M&T statement in the real collection (83 documents) and by no other document.
+    # A US bank: a bare '$' is US dollars (used only when the statement prints no currency of its own).
+    dict(name='mt-bank', match=dict(any=['m&t telephone banking center']), institution='M&T Bank', currency='USD'),
 )
 
 _KEYS = {'name', 'match', 'institution', 'currency', 'convention', 'date_order', 'labels', 'columns', 'account_heading',
-         'statement_account'}
+         'statement_account', 'prior_period_block'}
 _LABEL_ROLES = {'opening', 'closing', 'subtotal', 'credit_total', 'debit_total', 'credit_component',
                 'debit_component', 'column_total'}
 _COLUMN_ROLES = {'date', 'description', 'credit', 'debit', 'balance', 'amount'}
@@ -92,6 +104,10 @@ def validate(profile):
         raise ValueError('Invalid profile label or column role.')
     if profile.get('account_heading') not in (None, True) or profile.get('statement_account') not in (None, True):
         raise ValueError('Invalid profile account heading flag.')
+    block = profile.get('prior_period_block')
+    if block is not None and (not isinstance(block, dict) or set(block) != {'start', 'end'}
+                              or not all(isinstance(v, list) and v for v in block.values())):
+        raise ValueError('Invalid profile prior-period block.')
     if profile.get('currency'):
         from services.financial.money import get_currency
         get_currency(profile['currency'])
