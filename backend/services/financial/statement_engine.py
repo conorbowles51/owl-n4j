@@ -327,7 +327,61 @@ def _pages(sources):
     for rows in pages.values():
         rows.sort(key=lambda r: (r['y0'] if r['y0'] is not None else float('inf'), r['source']['table_index'],
                                  r['raw']['row_index']))
+        _mark_chart_scale(rows)
     return pages
+
+
+_SCALE_VALUE = re.compile(r'^[-−]?\$?(\d{1,3}(?:,\d{3})*|\d+)[.,]00$')
+
+
+def _mark_chart_scale(rows):
+    """(C11) A chart's axis printed beside summary labels: four or more whole values, each alone at the end
+    of its line's cells in one column (same right edge), on successive lines, whose sizes step by one
+    constant amount (75, 150, 225, 300). They are tick labels, never amounts: marked so no reading takes
+    them as money."""
+    candidates = []
+    for row in rows:
+        for token in row['tokens']:
+            m = _SCALE_VALUE.match(token['t'].rstrip('?'))
+            alone = sum(1 for other in row['tokens'] if other['cell'] is token['cell']) == 1
+            if m and alone and row['width']:
+                candidates.append((token, int(m[1].replace(',', '')), row['width']))
+    used = set()
+    for token, _, width in candidates:
+        if id(token) in used:
+            continue
+        column = sorted((c for c in candidates if abs(c[0]['x1'] - token['x1']) <= width * 0.01),
+                        key=lambda c: c[0]['y0'])
+        for chain in _arithmetic_chains(column):
+            for item in chain:
+                item[0]['axis'] = True
+                used.add(id(item[0]))
+
+
+def _arithmetic_chains(column):
+    """Runs of at least four entries whose values, in size order, step by one constant amount."""
+    ordered = sorted(column, key=lambda c: c[1])
+    chains, best = [], []
+    for step in {b[1] - a[1] for a, b in zip(ordered, ordered[1:])} - {0}:
+        for start in ordered:
+            chain = [start]
+            while True:
+                following = next((c for c in ordered if c[1] == chain[-1][1] + step), None)
+                if following is None:
+                    break
+                chain.append(following)
+            if len(chain) > len(best):
+                best = chain
+    # An axis prints each tick once, one under another: every value of the run occurs once in the column
+    # and no other value of the column lies between them.
+    counts = {}
+    for item in column:
+        counts[item[1]] = counts.get(item[1], 0) + 1
+    positions = sorted(column.index(item) for item in best)
+    if (len(best) >= 4 and all(counts[item[1]] == 1 for item in best)
+            and positions == list(range(positions[0], positions[0] + len(positions)))):
+        chains.append(best)
+    return chains
 
 
 # ---------------------------------------------------------------------------
@@ -556,6 +610,8 @@ def period_ranges(text, order=None):
 # ---------------------------------------------------------------------------
 
 def _value_kind(token, style, exponent):
+    if token.get('axis'):
+        return None
     if money(token['t'], style, exponent) is not None and (exponent or re.search(r'\d', token['t'])):
         if exponent == 0 and _is_count(token['t']) and not token.get('money_column'):
             return 'count'

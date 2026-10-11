@@ -1528,3 +1528,35 @@ class LostDayHeadingTests(unittest.TestCase):
         sources = self.statement(tail=')')
         sources[0]['rows'][0]['cells'].append(cell('(12.00)', 450000, 500000, 40000, 1))
         self.assertFalse(read_statements(sources)[0]['engine']['proved'])
+
+
+class ChartScaleTests(unittest.TestCase):
+    """r5-any-layout: a chart's axis printed beside the summary labels is not a set of amounts."""
+
+    def statement(self, ticks=('0.00', '-75.00', '150.00', '-225.00', '300.00', '375.00')):
+        labels = ['(+) DEPOSITOS', '', '(+) INTERESES', '(-) RETIROS', '(-) COMISIONES', '']
+        lines = [
+            [('BANCO EJEMPLO DEL NORTE, S.A., INSTITUCION DE BANCA MULTIPLE', 20000, 400000)],
+            [('PERIODO DEL 01/03/2024 AL 31/03/2024', 330000, 590000)],
+            [('MONEDA', 330000, 380000), ('PESOS', 390000, 450000)],
+            [('SALDO INICIAL', 20000, 150000), ('$1,000.00', 190000, 240000)],
+        ]
+        for text, tick in zip(labels, ticks):
+            lines.append(([(text, 20000, 150000)] if text else []) + [(tick, 270000, 292000)])
+        lines += [
+            [('(=) SALDO FINAL DE LA CUENTA', 20000, 160000), ('$750.00', 190000, 240000)],
+            [('FECHA', 20000, 60000), ('CONCEPTO', 80000, 160000), ('DEPOSITO', 400000, 450000), ('RETIRO', 460000, 510000),
+             ('SALDO', 540000, 580000)],
+            [('15 MAR', 20000, 60000), ('COBRO DE COMISION', 80000, 200000), ('$250.00', 480000, 508000),
+             ('$750.00', 540000, 582000)],
+        ]
+        return [page(1, lines)]
+
+    def test_axis_ticks_beside_summary_labels_are_not_totals(self):
+        st = read_statements(self.statement())[0]
+        self.assertTrue(st['engine']['proved'], st['engine'])
+        self.assertEqual([r['fields']['balance'] for r in st['_rows'] if r['kind'] == 'balance'], ['100000', '75000'])
+
+    def test_values_without_a_constant_step_stay_amounts(self):
+        st = read_statements(self.statement(ticks=('0.00', '75.00', '120.00', '225.00', '300.00', '375.00')))[0]
+        self.assertFalse(st['engine']['proved'])
