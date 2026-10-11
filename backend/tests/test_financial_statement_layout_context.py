@@ -143,6 +143,33 @@ class PurchaseBeforeCycleTests(unittest.TestCase):
         self.assertEqual(card_row_dates('May 11', 'May 13', start, end)[1:4:2], (['2020-05-11'], 'printed_posting_date'))
 
 
+    def test_a_charge_posted_just_before_the_cycle_keeps_both_printed_dates(self):
+        from datetime import date
+        import importlib
+        # The package exports a function of the module's name.
+        layout = importlib.import_module('services.financial.statement_layout_context')
+        start, end = date(2020, 5, 12), date(2020, 6, 11)
+        self.assertEqual(layout.card_row_dates('May 9', 'May 11', start, end)[1:],
+                         (['2020-05-09'], ['2020-05-11'], 'printed_posting_before_cycle'))
+        self.assertEqual(layout.card_row_dates('05/11', '05/11', start, end)[1:],
+                         (['2020-05-11'], ['2020-05-11'], 'printed_posting_before_cycle'))
+        for text, posting in (('May 11', 'May 9'),      # purchase after its posting
+                              ('Apr 1', 'May 9'),       # purchase more than 31 days before the posting
+                              ('May 9', 'Apr 10'),      # posting more than 31 days before the cycle
+                              ('May 9', 'Feb 30'),      # posting not a date
+                              ('May 9', 'May 1l'),      # posting unreadable
+                              ('Jun 20', 'May 11')):    # purchase inside the cycle, posting before it
+            with self.subTest(text=text, posting=posting):
+                self.assertEqual(layout.card_row_dates(text, posting, start, end)[1], [])
+        try:
+            layout.LATE_POSTED_CHARGES = False
+            self.assertEqual(layout.card_row_dates('May 9', 'May 11', start, end)[1], [])
+            self.assertEqual(layout.card_row_dates('May 11', 'May 13', start, end)[1], [])
+            self.assertEqual(layout.card_row_dates('May 11', None, start, end)[1], [])
+            self.assertEqual(layout.card_row_dates('May 13', 'May 14', start, end)[1], ['2020-05-13'])
+        finally:
+            layout.LATE_POSTED_CHARGES = True
+
 class RepeatedDateCellTests(unittest.TestCase):
     def test_a_date_printed_twice_in_one_cell_is_read_from_its_readable_copy(self):
         from datetime import date

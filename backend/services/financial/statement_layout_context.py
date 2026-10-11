@@ -76,27 +76,44 @@ def _repeated_date(text):
     return text
 
 
+# Neil's ruling of 2026-10-09: a card charge printed shortly before the
+# billing-cycle start (late-posted) keeps its printed date instead of losing it
+# as outside the billing period; the statement must still reconcile with it
+# before the period can be imported. Reverse in one place: False.
+LATE_POSTED_CHARGES = True
+
+
 def card_row_dates(text, posting_text, start, end):
     """Keep both printed dates; a valid posting can anchor a recent purchase.
 
     A purchase shortly before the cycle can post inside it. Resolve its printed
-    month/day against that posting date, at most 31 days earlier. More distant,
-    invalid, ambiguous or reversed dates still need review. A cell repeating
-    its date (``_repeated_date``) is read from its readable copy.
+    month/day against that posting date, at most 31 days earlier. A charge the
+    issuer lists in this cycle can also print both dates before it (posted in
+    the previous cycle's last days): its posting date then names exactly one
+    date in the 31 days before the cycle and anchors the purchase the same way.
+    More distant, invalid, ambiguous or reversed dates still need review. A cell
+    repeating its date (``_repeated_date``) is read from its readable copy.
     """
     text, posting_text = _repeated_date(text), _repeated_date(posting_text) if posting_text is not None else None
     reading, possible = _dates_within(text, start, end)
     postings = _dates_within(posting_text, start, end)[1] if posting_text else []
     basis = 'printed_cycle'
+    if LATE_POSTED_CHARGES and posting_text and not postings and not possible:
+        early = _dates_within(posting_text, start - timedelta(days=31), start - timedelta(days=1))[1]
+        anchored = (_dates_within(text, date.fromisoformat(early[0]) - timedelta(days=31),
+                                  date.fromisoformat(early[0]))[1] if len(early) == 1 else [])
+        if len(anchored) == 1:
+            return reading, anchored, early, 'printed_posting_before_cycle'
     if len(postings) == 1:
         posted = date.fromisoformat(postings[0])
         if possible:
             possible = [value for value in possible if value <= posted.isoformat()]
         else:
-            possible = _dates_within(text, posted - timedelta(days=31), min(start - timedelta(days=1), posted))[1]
+            possible = (_dates_within(text, posted - timedelta(days=31), min(start - timedelta(days=1), posted))[1]
+                        if LATE_POSTED_CHARGES else [])
             if possible:
                 basis = 'printed_posting_date'
-    elif posting_text is None and not possible:
+    elif LATE_POSTED_CHARGES and posting_text is None and not possible:
         # A table that prints one date column has no posting date to anchor
         # an earlier purchase, yet the issuer lists it in this cycle's table
         # and counts it in the printed totals. Its month and day name exactly

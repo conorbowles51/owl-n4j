@@ -50,7 +50,7 @@ def proposed_date(record, period_start, period_end):
     end = period_end if isinstance(period_end, date) else date.fromisoformat(str(period_end)[:10])
     from services.financial.statement_layout_context import card_row_dates
     _reading, possible, _postings, basis = card_row_dates(text, posting_text, start, end)
-    if len(possible) != 1 or basis not in ('printed_before_cycle', 'printed_posting_date'):
+    if len(possible) != 1 or basis not in ('printed_before_cycle', 'printed_posting_date', 'printed_posting_before_cycle'):
         return None
     value = date.fromisoformat(possible[0])
     if not (0 < (start - value).days <= 31):
