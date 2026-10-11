@@ -456,6 +456,93 @@ class InventoryTests(unittest.TestCase):
 
 
 @unittest.skipUnless(READERS, 'pdfplumber and PyMuPDF are needed for the end-to-end reading check')
+def placed(number, lines):
+    """A page from lines of ``(text, x0)`` words (layouts where columns share a printed line)."""
+    built = [rt.Line(10.0 * i, [word(text, x0, 10.0 * i) for text, x0 in line]) for i, line in enumerate(lines)]
+    return rt.Page(number, 500.0, built, '\n'.join(l.text for l in built))
+
+
+def at(x0, text):
+    return [(w, x0 + 30.0 * i) for i, w in enumerate(text.split())]
+
+
+class SynchronyTruthTests(unittest.TestCase):
+    """Synchrony card: summary from the left box only, sections, wrapped descriptions, page continuation."""
+    TABLE = at(10, 'Tran Date Post Date Reference') + at(230, 'Description') + at(420, 'Amount')
+
+    def row(self, tran, post, reference, description, amount):
+        return at(10, tran) + at(70, post) + (at(130, reference) if reference else []) + at(230, description) \
+            + at(420, amount)
+
+    def pages(self, fee='$12.00', late_fee=True):
+        first = placed(1, [
+            at(10, 'EXAMPLE/SYNCHRONY BANK') + at(260, 'JANE Q SAMPLE'),
+            at(260, 'Account Number : 1111 2222 3333 4444'),
+            at(260, 'Statement Closing Date: 03/12/2024'),
+            at(10, 'Summary of Account Activity') + at(260, 'Payment Information'),
+            at(10, 'Previous Balance') + at(200, '$1,000.00') + at(260, 'New Balance') + at(440, '$1,315.00'),
+            at(10, '+ New Purchases') + at(200, '$300.00') + at(260, 'Total Minimum Payment Due $40.00'),
+            at(10, '- Payments') + at(200, '$100.00'),
+            at(10, '+/- Credits, Fees & Adjustments (net)') + at(200, '$105.00'),
+            at(10, '+/- Interest Charge (net)') + at(200, '$10.00'),
+            at(10, 'New Balance') + at(200, '$1,315.00') + at(260, 'reverse side.'),
+            at(10, 'Transaction Summary'), self.TABLE,
+            self.row('02/20/2024', '02/21/2024', 'REF001', 'PAYMENT - THANK YOU', '($100.00)'),
+            self.row('02/25/2024', '02/25/2024', 'REF002', 'EXAMPLE CLINIC', '$300.00'),
+            at(230, 'SOMEWHERE DC'),
+            self.row('03/01/2024', '03/01/2024', 'REF003', 'MERCHANT CREDIT', '($7.00)'),
+            at(10, 'Continued on next page'),
+            at(10, 'PAGE 1 of 2')])
+        terms = placed(2, [])  # the printed reverse side: an image, no text layer
+        fees = [self.row('03/12/2024', '03/12/2024', None, 'PAPER STATEMENT FEE', fee)]
+        if late_fee:
+            fees.append(self.row('03/04/2024', '03/04/2024', None, 'LATE FEE', '$100.00'))
+        second = placed(3, [
+            at(10, 'Transaction Summary (Continued)'), self.TABLE, at(230, 'FEES')] + fees + [
+            at(230, 'TOTAL FEES FOR THIS PERIOD') + at(420, '$112.00'),
+            at(230, 'INTEREST CHARGED'),
+            self.row('03/12/2024', '03/12/2024', None, 'INTEREST CHARGE ON PURCHASES', '$10.00'),
+            self.row('03/12/2024', '03/12/2024', None, 'INTEREST CHARGE ON CASH ADVANCES', '$0.00'),
+            at(230, 'TOTAL INTEREST FOR THIS PERIOD') + at(420, '$10.00'),
+            at(100, '2024 Totals Year-to-Date'),
+            at(100, 'Total Fees Charged in 2024') + at(300, '$112.00'),
+            at(10, 'PAGE 2 of 2')])
+        return [first, terms, second]
+
+    def test_a_reconciled_statement_is_verified(self):
+        (found,) = rt.parse_synchrony(self.pages())
+        self.assertEqual((found.family, found.kind, found.currency, found.account, found.holder),
+                         ('synchrony-card', 'card', 'USD', '4444', 'JANE Q SAMPLE'))
+        self.assertEqual((found.period_start, found.period_end, found.opening_minor, found.closing_minor),
+                         (None, '2024-03-12', 100000, 131500))
+        self.assertIn(rt.START_UNPRINTED, found.notes)
+        self.assertEqual([(r['date'], r['amount_minor'], r['direction']) for r in found.rows], [
+            ('2024-02-20', 10000, 'credit'), ('2024-02-25', 30000, 'debit'), ('2024-03-01', 700, 'credit'),
+            ('2024-03-12', 1200, 'debit'), ('2024-03-04', 10000, 'debit'), ('2024-03-12', 1000, 'debit')])
+        self.assertEqual(found.rows[1]['description'], 'EXAMPLE CLINIC SOMEWHERE DC')  # wrapped, reference apart
+        self.assertEqual(found.rows[1]['reference'], 'REF002')
+        self.assertEqual(found.page_sequence, {1: 1, 2: 3})
+        self.assertEqual(rt.reconcile(found), ('verified', []))
+
+    def test_a_row_the_reader_missed_is_not_verified(self):
+        (found,) = rt.parse_synchrony(self.pages(late_fee=False))
+        status, reasons = rt.reconcile(found)
+        self.assertEqual(status, 'unverified')
+        self.assertIn('fee rows differ from the printed fee total', reasons)
+
+    def test_a_misread_section_total_is_not_verified(self):
+        # A fee read one dollar high: the printed fee total and the summary both disagree.
+        (found,) = rt.parse_synchrony(self.pages(fee='$13.00'))
+        self.assertEqual(rt.reconcile(found)[0], 'unverified')
+
+    def test_the_card_named_in_a_bank_statement_does_not_decide_the_issuer(self):
+        body = ['row %d SYNCHRONY BANK PAYMENT' % i for i in range(3)]
+        pages = [page(n, ['Wells Fargo Everyday Checking'] + body) for n in (1, 2, 3)]
+        self.assertEqual(rt.detect_issuer(pages), 'wells-fargo')
+        self.assertEqual(rt.detect_issuer([placed(1, [at(10, 'EXAMPLE/SYNCHRONY BANK JANE Q SAMPLE')])]),
+                         'synchrony-card')
+
+
 class SyntheticCorpusTruthTests(unittest.TestCase):
     """Whatever the independent reader verifies on the synthetic corpus equals the known truth."""
 

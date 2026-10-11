@@ -80,6 +80,8 @@ ISSUER_MARKS = (
     ('andrews-share', r'Andrews\s+Federal|ndrewsfcu|^Andrews$|Box\s+4000\s*/\s*Clinton'),
     ('citibank', r'Citibank|citi\.com'),
     ('wells-fargo', r'Wells\s+Fargo'),
+    # Last: a payment to the card named on a bank statement must not outrank that bank's own marks.
+    ('synchrony-card', r'SYNCHRONY\s+BANK|\bsynchrony\.com|\bsyf\.com'),
 )
 
 
@@ -1526,6 +1528,157 @@ def _citi_run(run):
 
 
 # ---------------------------------------------------------------------------
+# Synchrony Bank card statements ("Summary of Account Activity", "Transaction Summary")
+# ---------------------------------------------------------------------------
+
+SYNCHRONY_ROW = re.compile(r'^(\d{2})/(\d{2})/(\d{4})\s+(\d{2})/(\d{2})/(\d{4})\s+(.*?)\s*(\(?-?\$-?[\d,]+\.\d{2}\)?)$')
+SYNCHRONY_SUMMARY = (('previous', r'Previous Balance'), ('purchases', r'\+\s*New Purchases'),
+                     ('payments', r'-\s*Payments'), ('credits_fees_net', r'\+/-\s*Credits, Fees & Adjustments \(net\)'),
+                     ('interest_net', r'\+/-\s*Interest Charge \(net\)'), ('new', r'New Balance'))
+SYNCHRONY_MONEY = r'\s+(\(?-?\$-?[\d,]+\.\d{2}\)?)$'
+
+
+def parse_synchrony(pages):
+    return [_synchrony_run(run) for run in split_runs(pages, r'PAGE\s+(\d+)\s+of\s+(\d+)')]
+
+
+def _synchrony_summary(page):
+    """The 'Summary of Account Activity' box. The 'Payment Information' box to its right shares its
+    lines (and repeats 'New Balance'), so only words left of that box's heading are read."""
+    right, values, holder, account = None, {}, None, None
+    for index, line in enumerate(page.lines):
+        words = [w['text'] for w in line.words]
+        if right is None and 'Summary' in words and 'Payment' in words and 'Information' in words:
+            right = line.words[words.index('Payment')]['x0'] - 2
+        for at in range(len(words) - 2):
+            if words[at:at + 3] == ['Account', 'Number', ':'] and account is None:
+                account = last4(''.join(words[at + 3:]))
+                left = line.words[at]['x0'] - 2
+                if index:
+                    holder = ' '.join(w['text'] for w in page.lines[index - 1].words if w['x0'] >= left) or None
+    if right is None:
+        return None, holder, account
+    for line in page.lines:
+        t = ' '.join(w['text'] for w in line.words if w['x1'] <= right)
+        for name, label in SYNCHRONY_SUMMARY:
+            m = re.match(r'^' + label + SYNCHRONY_MONEY, t)
+            if m and name not in values:
+                values[name] = money_minor(m.group(1))
+    return values, holder, account
+
+
+def _synchrony_run(run):
+    pages = run['pages']
+    text = '\n'.join(p.text for p in pages)
+    period = Period(family='synchrony-card', institution='Synchrony Bank', currency='USD', kind='card',
+                    pages=[p.number for p in pages], page_sequence=run['seq'], page_total=run['total'])
+    period.notes.append(START_UNPRINTED)  # only the closing date and the days in the cycle are printed
+    m = re.search(r'Statement Closing Date:\s*(\d{2})/(\d{2})/(\d{4})', text)
+    if m:
+        period.period_end = iso(int(m.group(3)), int(m.group(1)), int(m.group(2)))
+    summary, period.holder, period.account = (None, None, None)
+    for page in pages:
+        found = _synchrony_summary(page)
+        if found[0] is not None:
+            summary, period.holder, period.account = found
+            break
+    names = [name for name, _ in SYNCHRONY_SUMMARY]
+    if summary is None or any(summary.get(name) is None for name in names):
+        period.problems.append('account summary not fully read')
+        summary = None
+    else:
+        period.controls['summary'] = summary
+        period.opening_minor, period.closing_minor = summary['previous'], summary['new']
+    section, resume, rows, totals, columns = None, None, [], {}, {}
+    for page in pages:
+        follows = False  # the previous line was a row: a line under its description continues it
+        for line in page.lines:
+            words = [w['text'] for w in line.words]
+            t = line.text
+            if re.match(r'^Transaction Summary( \(Continued\))?$', t):
+                section, follows = (resume or 'main') if 'Continued' in t else 'main', False
+                continue
+            if section is None:
+                continue
+            if words[:4] == ['Tran', 'Date', 'Post', 'Date']:
+                columns = {w['text']: w['x0'] for w in line.words}
+                follows = False
+                continue
+            if t == 'FEES' or t == 'INTEREST CHARGED':
+                section, follows = ('fees' if t == 'FEES' else 'interest'), False
+                continue
+            total = re.match(r'^TOTAL (FEES|INTEREST) FOR THIS PERIOD' + SYNCHRONY_MONEY, t)
+            if total:
+                totals[total.group(1).lower()] = money_minor(total.group(2))
+                follows = False
+                continue
+            if t == 'Continued on next page':
+                section, resume, follows = None, section, False
+                continue
+            if re.match(r'^\d{4} Totals Year-to-Date$', t):
+                section, resume = None, None
+                continue
+            m = SYNCHRONY_ROW.match(t)
+            if not m:
+                money = any(is_money(w) for w in words)
+                description_x = columns.get('Description')
+                if follows and not money and description_x is not None and line.words[0]['x0'] >= description_x - 2:
+                    rows[-1]['description'] += ' ' + t  # the description wraps onto the next line
+                    continue
+                if money:
+                    period.problems.append('amount line without a date')
+                follows = False
+                continue
+            mo, dy, yr, pmo, pdy, pyr, rest, amount = m.groups()
+            value = money_minor(amount)
+            if value is None:
+                period.problems.append('amount not read')
+                continue
+            follows = False
+            if not value:
+                period.notes.append('zero-amount line')  # e.g. "INTEREST CHARGE ON PURCHASES $0.00"
+                continue
+            parts, reference = rest.split(), None
+            description_x = columns.get('Description')
+            first = next((w for w in line.words if w['text'] == parts[0]), None) if parts else None
+            if first is not None and description_x is not None and first['x1'] < description_x:
+                reference, parts = parts[0], parts[1:]
+            row = dict(date=iso(int(yr), int(mo), int(dy)), posted_date=iso(int(pyr), int(pmo), int(pdy)),
+                       description=' '.join(parts), amount_minor=abs(value),
+                       direction='credit' if value < 0 else 'debit', group=section)
+            if reference:
+                row['reference'] = reference
+            rows.append(row)
+            follows = True
+    period.rows = rows
+    if section is not None:
+        period.problems.append('transaction summary not closed by its year-to-date totals')
+
+    def signed(group, payment=None):
+        return sum((r['amount_minor'] if r['direction'] == 'debit' else -r['amount_minor']) for r in rows
+                   if r['group'] == group and (payment is None or
+                                               (r['direction'] == 'credit' and r['description'].startswith('PAYMENT'))
+                                               == payment))
+    if summary is not None:
+        payments = -signed('main', payment=True)
+        others = signed('main', payment=False)  # purchases (debits) less any merchant credits
+        purchases = sum(r['amount_minor'] for r in rows if r['group'] == 'main' and r['direction'] == 'debit')
+        fees, interest = signed('fees'), signed('interest')
+        period.controls['other_checks'] = [
+            dict(ok=payments == summary['payments'], reason='payment rows differ from printed payments'),
+            dict(ok=purchases == summary['purchases'], reason='purchase rows differ from printed new purchases'),
+            dict(ok=fees + (others - purchases) == summary['credits_fees_net'],
+                 reason='fee and credit rows differ from printed credits, fees and adjustments'),
+            dict(ok=interest == summary['interest_net'], reason='interest rows differ from printed interest'),
+            dict(ok=totals.get('fees', 0) == fees, reason='fee rows differ from the printed fee total'),
+            dict(ok=totals.get('interest', 0) == interest,
+                 reason='interest rows differ from the printed interest total')]
+    for row in rows:
+        row.pop('group', None)
+    return period
+
+
+# ---------------------------------------------------------------------------
 # Andrews Federal Credit Union (scanned; the producer's OCR text layer)
 # ---------------------------------------------------------------------------
 
@@ -1677,6 +1830,7 @@ PARSERS = {
     'capital-one-card': parse_capital_one,
     'citibank': parse_citi,
     'andrews-share': parse_andrews,
+    'synchrony-card': parse_synchrony,
 }
 
 
