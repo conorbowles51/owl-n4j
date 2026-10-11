@@ -1345,3 +1345,52 @@ class ScanDamageR5Tests(unittest.TestCase):
     def test_one_fact_alone_is_not_a_period(self):
         self.assertEqual(self.segments(days='SALDO PROMEDIO'), [(None, [1, 2])])
         self.assertEqual(self.segments(cut='SUCURSAL 123'), [(None, [1, 2])])
+
+
+class SecondTableTests(unittest.TestCase):
+    """r5-any-layout: a table printed after the movement table's total line with other amount columns."""
+
+    def statement(self, heading=(('FECHA', 20000, 60000), ('DESCRIPCION', 80000, 200000), ('ENTRADAS', 500000, 560000)),
+                  spaced=False):
+        date_word = [('F', 20000, 24000), ('E', 26000, 30000), ('C', 32000, 36000), ('H', 38000, 42000),
+                     ('A', 44000, 48000)] if spaced else [('FECHA', 20000, 60000)]
+        lines = [
+            [('BANCO EJEMPLO DEL NORTE, S.A., INSTITUCION DE BANCA MULTIPLE', 20000, 400000)],
+            [('PERIODO DEL 01/03/2024 AL 31/03/2024', 330000, 590000)],
+            [('MONEDA', 330000, 380000), ('PESOS', 390000, 450000)],
+            [('SALDO ANTERIOR', 330000, 430000), ('1,000.00', 500000, 560000)],
+            [('SALDO FINAL', 330000, 400000), ('1,250.00', 500000, 560000)],
+            date_word + [('CONCEPTO', 80000, 160000), ('ABONOS', 330000, 380000), ('CARGOS', 410000, 460000),
+                         ('SALDO', 520000, 560000)],
+        ]
+        for day, text, credit, debit, balance in MOVES:
+            line = [(day, 20000, 60000), (text, 80000, 300000)]
+            if credit:
+                line.append((credit, 380000 - 6000 * len(credit), 380000))
+            if debit:
+                line.append((debit, 460000 - 6000 * len(debit), 460000))
+            line.append((balance, 560000 - 6000 * len(balance), 560000))
+            lines.append(line)
+        lines.append([('TOTAL', 80000, 120000), ('500.00', 350000, 380000), ('250.00', 430000, 460000),
+                      ('1,250.00', 512000, 560000)])
+        lines.append([('COMISIONES PENDIENTES DE PAGO', 20000, 200000)])
+        lines.append(list(heading))
+        lines.append([('02/FEB', 20000, 60000), ('COMISION POR MANEJO', 80000, 300000), ('50.00', 530000, 560000)])
+        return [page(1, lines)]
+
+    def test_lines_of_another_table_after_the_total_are_not_movements(self):
+        st = read_statements(self.statement())[0]
+        self.assertTrue(st['engine']['proved'], st['engine'])
+        self.assertEqual(sum(1 for r in st['_rows'] if r['kind'] == 'transaction'), 3)
+
+    def test_the_same_columns_again_continue_the_movement_table(self):
+        heading = (('FECHA', 20000, 60000), ('CONCEPTO', 80000, 160000), ('ABONOS', 330000, 380000),
+                   ('CARGOS', 410000, 460000), ('SALDO', 520000, 560000))
+        st = read_statements(self.statement(heading=heading))[0]
+        # The extra line is read as a movement again: the period no longer proves (fail closed).
+        self.assertFalse(st['engine']['proved'])
+
+    def test_a_letter_spaced_heading_word_is_one_word(self):
+        rows = E._pages(self.statement(spaced=True))[1]
+        self.assertTrue(E._is_header(next(r for r in rows if r['text'].startswith('F E C H A'))))
+        self.assertEqual(E._letter_spaced([dict(t=t, line=0) for t in ('A', 'B', 'SALDO')]), [('A', 0), ('B', 0), ('SALDO', 0)])

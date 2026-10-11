@@ -2010,6 +2010,18 @@ def _hints(header_rows, columns, width):
     return {i: next(iter(roles)) for i, roles in hints.items() if len(roles) == 1}
 
 
+def _money_roles(header):
+    """The amount-column roles a movement heading prints (credit, debit, balance, amount)."""
+    roles = set()
+    tokens = sorted(header['tokens'], key=lambda t: (t['line'], t['x0']))
+    for size in (3, 2, 1):
+        for index in range(len(tokens) - size + 1):
+            role = column_role(label(' '.join(t['t'] for t in tokens[index:index + size])))
+            if role in ('credit', 'debit', 'balance', 'amount'):
+                roles.add(role)
+    return frozenset(roles)
+
+
 def _reading(rows, statement, style, exponent, liability, period):
     width = next((r['width'] for r in rows if r['width']), None)
     proof = dict(engine=ENGINE_VERSION, proved=False, reason='', convention='liability_owed' if liability else 'asset_balance')
@@ -2040,9 +2052,21 @@ def _reading(rows, statement, style, exponent, liability, period):
     early_columns = _columns(early, width or 1) if early else []
     block = (_PROFILE.get() or {}).get('prior_period_block')
     prior = False
+    # (E9) The movement table's amount columns, from its first heading; after the table's own total line,
+    # a heading printing another set of amount columns opens another table (pending charges, a schedule):
+    # its lines are not this period's movements, up to a heading of the movement table again or a balance.
+    main_roles, totalled, other_table = None, False, False
     for index, row in enumerate(rows):
         if not row['tokens']:
             continue
+        if other_table:
+            if _is_header(row) and _money_roles(row) == main_roles:
+                other_table = False
+            elif any(_role_of(text, liability) in ('opening', 'closing')
+                     for text, values in label_pairs(row, style or 'dot', exponent) if values):
+                other_table = False
+            else:
+                continue
         if block:
             # Library profile (data): earlier periods' operations repeated to explain a balance (E7).
             folded = fold(row['text'])
@@ -2054,6 +2078,12 @@ def _reading(rows, statement, style, exponent, liability, period):
                 continue
         words = {label(t['t']) for t in row['tokens']}
         if _is_header(row):
+            roles = _money_roles(row)
+            if main_roles is None:
+                main_roles = roles
+            elif totalled and roles != main_roles:
+                other_table = True
+                continue
             headers.append(row)
             labels_seen.update(w for w in words if column_role(w))
             region = True
@@ -2106,6 +2136,7 @@ def _reading(rows, statement, style, exponent, liability, period):
                 column_totals.append(dict(row=row, tokens=money_values))
                 labels_seen.add(text)
                 handled = True
+                totalled = totalled or main_roles is not None
             elif role == 'subtotal':
                 handled = True
         if handled:
@@ -2226,13 +2257,14 @@ def _undated_charge(row, style, exponent):
 def _is_header(row):
     """A movement-table heading: a date word, a money word, and mostly column words (E1)."""
     tokens = sorted(row['tokens'], key=lambda t: (t['line'], t['x0']))
-    if not tokens or len(tokens) > 16:
+    words = _letter_spaced(tokens)
+    if not tokens or len(words) > 16:
         return False
     roles, covered, index = [], 0, 0
-    while index < len(tokens):
+    while index < len(words):
         for size in (3, 2, 1):
-            group = tokens[index:index + size]
-            role = column_role(label(' '.join(t['t'] for t in group))) if len(group) == size else None
+            group = words[index:index + size]
+            role = column_role(label(' '.join(text for text, _ in group))) if len(group) == size else None
             if role:
                 roles.append(role)
                 covered += size
@@ -2241,7 +2273,25 @@ def _is_header(row):
         else:
             index += 1
     return ('date' in roles and bool(set(roles) & {'credit', 'debit', 'amount', 'balance'})
-            and covered * 2 >= len(tokens))
+            and covered * 2 >= len(words))
+
+
+def _letter_spaced(tokens):
+    """[(word, line)]: a heading word printed letter-spaced ('F E C H A') is one word (E1): a run of at least
+    three single letters on one line is joined."""
+    words, index = [], 0
+    while index < len(tokens):
+        end = index
+        while (end < len(tokens) and len(tokens[end]['t']) == 1 and tokens[end]['t'].isalpha()
+               and tokens[end]['line'] == tokens[index]['line']):
+            end += 1
+        if end - index >= 3:
+            words.append((''.join(t['t'] for t in tokens[index:end]), tokens[index]['line']))
+            index = end
+        else:
+            words.append((tokens[index]['t'], tokens[index]['line']))
+            index += 1
+    return words
 
 
 def _below(row, move):
