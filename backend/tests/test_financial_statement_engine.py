@@ -1148,3 +1148,61 @@ class HolderAndInterbankTests(unittest.TestCase):
     def test_the_interbank_numbers_own_digit_groups_are_not_a_printed_account(self):
         self.assertEqual(E._printed_over_interbank('002180012345678901', E._pages([page(1, [
             [('CLABE 002 180 01234567890 1', 20000, 300000)]])])[1]), ('002180012345678901', 'interbank_number'))
+
+
+def addressee_statement(fiscal=(), receipt=None):
+    """An invented layout whose addressee block prints no postal line; optionally a fiscal-domicile block
+    (lines given) and a fiscal receipt page naming its recipient."""
+    lines = [
+        [('BANCO EJEMPLO DEL NORTE, S.A., INSTITUCION DE BANCA MULTIPLE', 20000, 400000)],
+        [('EMPRESA DE PRUEBA SA DE CV', 20000, 200000), ('PERIODO', 330000, 380000),
+         ('DEL 01/03/2024 AL 31/03/2024', 390000, 590000)],
+        [('AVENIDA DEL EJEMPLO 45', 20000, 200000), ('MONEDA', 330000, 380000), ('PESOS', 390000, 450000)],
+        [('COLONIA CENTRO NORTE', 20000, 200000), ('NO. DE CUENTA', 330000, 400000), ('0012345678', 410000, 500000)],
+        [('MUNICIPIO EJEMPLO', 20000, 200000)],
+        [],
+        *[[(text, 20000, 300000)] for text in fiscal],
+        [],
+        [('SALDO ANTERIOR', 330000, 430000), ('1,000.00', 500000, 560000)],
+        [('SALDO FINAL', 330000, 400000), ('1,250.00', 500000, 560000)],
+        [('FECHA', 20000, 60000), ('CONCEPTO', 80000, 160000), ('ABONOS', 330000, 380000),
+         ('CARGOS', 410000, 460000), ('SALDO', 520000, 560000)],
+    ]
+    for day, text, credit, debit, balance in MOVES:
+        line = [(day, 20000, 60000), (text, 80000, 300000)]
+        if credit:
+            line.append((credit, 380000 - 6000 * len(credit), 380000))
+        if debit:
+            line.append((debit, 460000 - 6000 * len(debit), 460000))
+        line.append((balance, 560000 - 6000 * len(balance), 560000))
+        lines.append(line)
+    pages = [page(1, [line for line in lines if line] if not fiscal else [line or [('', 0, 0)] for line in lines])]
+    if receipt:
+        pages.append(page(2, [[('INFORMACION FISCAL', 20000, 200000)], [('Nombre del Receptor : ' + receipt, 20000, 300000)]]))
+    return pages
+
+
+class AddresseeConfirmationTests(unittest.TestCase):
+    """r5-any-layout: an addressee block without a postal line is read only when a second printed fact
+    agrees with it."""
+
+    def holder(self, sources):
+        return read_statements(sources)[0]['holder']
+
+    def test_an_addressee_block_without_a_postal_line_is_not_read_alone(self):
+        self.assertEqual(self.holder(addressee_statement()), '')
+
+    def test_its_lines_reprinted_in_a_postal_anchored_fiscal_block_confirm_it(self):
+        fiscal = ('DOMICILIO FISCAL', 'AVENIDA DEL EJEMPLO 45 INT 2', 'COLONIA CENTRO NORTE', 'MUNICIPIO EJEMPLO C.P. 06000')
+        self.assertEqual(self.holder(addressee_statement(fiscal)), 'EMPRESA DE PRUEBA SA DE CV')
+
+    def test_one_reprinted_line_is_not_enough(self):
+        fiscal = ('DOMICILIO FISCAL', 'OTRA CALLE 99', 'COLONIA CENTRO NORTE', 'OTRO MUNICIPIO C.P. 06000')
+        self.assertEqual(self.holder(addressee_statement(fiscal)), '')
+
+    def test_the_fiscal_receipt_recipient_agreeing_with_the_heading_line_confirms_it(self):
+        self.assertEqual(self.holder(addressee_statement(receipt='EMPRESA DE PRUEBA')), 'EMPRESA DE PRUEBA SA DE CV')
+        self.assertEqual(self.holder(addressee_statement(receipt='EMPRESA DE PRUEBA SA DE CV')), 'EMPRESA DE PRUEBA SA DE CV')
+        # A recipient no heading line prints, or a heading line adding more than a legal form, is not the holder.
+        self.assertEqual(self.holder(addressee_statement(receipt='OTRA EMPRESA')), '')
+        self.assertEqual(self.holder(addressee_statement(receipt='EMPRESA')), '')

@@ -915,7 +915,47 @@ def _section_holder(section_pages, pages, facts, style=None):
         if addressed and fold(addressed) not in fold(name) and fold(name) not in fold(addressed):
             return ''
         return name
-    return addressed
+    return addressed or _receipt_holder(section_pages, pages, heading)
+
+
+# Mexican statements are fiscal receipts (CFDI): the receipt names its recipient, the account holder,
+# under this label, usually on the statement's last page.
+_RECEIPT_RECIPIENT = re.compile(r'^\s*NOMBRE DEL RECEPTOR\s*:?\s*(.{3,120}?)\s*$')
+_COMPANY_FORM = re.compile(r'^,?\s*(?:S\.?\s*A\.?\s*(?:P\.?\s*I\.?\s*)?(?:B\.?\s*)?|S\.?\s*DE\s*R\.?\s*L\.?\s*|S\.?\s*C\.?\s*)'
+                           r'(?:DE\s*C\.?\s*V\.?)?$')
+
+
+def _receipt_holder(section_pages, pages, heading):
+    """The holder when the statement's fiscal receipt names one recipient and a heading line above the
+    movements prints that same name, alone or followed by a company legal form (A8): two printed
+    facts agree. The heading line's text is the holder (it carries the legal form). Otherwise ''.
+    """
+    recipients = set()
+    for page in section_pages:
+        for row in pages[page]:
+            if row['tokens']:
+                m = _RECEIPT_RECIPIENT.match(' '.join(fold(row['text']).split()))
+                if m:
+                    recipients.add(m[1])
+    if len(recipients) != 1:
+        return ''
+    recipient = next(iter(recipients))
+    if not _name_like(recipient):
+        return ''
+    found = []
+    for _, rows in heading:
+        for row in rows:
+            if not row['tokens']:
+                continue
+            x = min(t['x0'] for t in row['tokens'])
+            cells = {id(t['cell']) for t in row['tokens'] if t['first'] and abs(t['x0'] - x) <= row['width'] * 0.015}
+            text = ' '.join(t['t'] for t in sorted(row['tokens'], key=lambda t: (t['line'], t['x0']))
+                            if id(t['cell']) in cells and t['line'] == 0)
+            folded = ' '.join(fold(text).split())
+            if folded == recipient or (folded.startswith(recipient + ' ') or folded.startswith(recipient + ','))  \
+                    and _COMPANY_FORM.match(folded[len(recipient):].strip()):
+                found.append(' '.join(text.split()))
+    return found[0] if len({fold(name) for name in found}) == 1 else ''
 
 
 _HEADING_CURRENCIES = sorted(CURRENCY_NAMES, key=len, reverse=True)
@@ -1014,62 +1054,122 @@ def address_holder(rows, style=None):
 
 
 def _address_tops(rows, style=None):
-    """[(y0, top line, accepted as a name)] of every address block ending with a postal-code line."""
+    """[(y0, top line, accepted as a name)] of every address block ending with a postal-code line, and of
+    every addressee block confirmed by its reprint in one (A8)."""
     located = [r for r in rows if r['tokens'] and r['width']]
     if not located:
         return []
-    found = []
+    found, anchored = [], []
     for index, row in enumerate(located):
         if not _postal(fold(row['text'])):
             continue
         x = min(t['x0'] for t in row['tokens'])
         if _not_address(row, x, style):
             continue
-        block = [row]
-        for earlier in reversed(located[:index]):
-            ex = min(t['x0'] for t in earlier['tokens'])
-            if earlier['y0'] > block[-1]['y0']:
-                continue
-            if abs(ex - x) > row['width'] * 0.015:
-                # A movement line printed between two lines means they are not one address block.
-                if _row_is_movement(earlier, style or 'dot', 2):
-                    break
-                continue
-            if _not_address(earlier, x, style):
-                break
-            # The issuer's own legal-name or heading line above is not part of the addressee block.
-            # Only the cells aligned with the block's left edge count (the issuer's name can share the row).
-            aligned = {id(t['cell']) for t in earlier['tokens'] if abs(t['x0'] - x) <= row['width'] * 0.015 and t['first']}
-            first_words = fold(' '.join(t['t'] for t in earlier['tokens'] if id(t['cell']) in aligned))
-            if any(word in first_words for word in INSTITUTION_WORDS) or 'ESTADO DE CUENTA' in first_words or 'STATEMENT' in first_words:
-                break
-            gap = block[-1]['y0'] - earlier['y0']
-            height = max(t['y1'] - t['y0'] for t in block[-1]['tokens'])
-            previous_gap = (block[-2]['y0'] - block[-1]['y0']) if len(block) > 1 else 0
-            # One blank line in the address column is allowed where the page prints other columns
-            # beside it (the space is not a gap between blocks).
-            beside = any(earlier['y0'] < other['y0'] < block[-1]['y0'] for other in located)
-            if gap > max(height * (4 if beside else 2.6), previous_gap * 1.6):
-                break
-            block.append(earlier)
-            if len(block) >= 7:
-                break
+        block = _grow_block(located, index, x, style)
         if 3 <= len(block) <= 7:
-            top = block[-1]
-            aligned = {id(t['cell']) for t in top['tokens'] if abs(t['x0'] - x) <= row['width'] * 0.015 and t['first']}
-            name = ' '.join(t['t'] for t in sorted(top['tokens'], key=lambda t: (t['line'], t['x0']))
-                            if id(t['cell']) in aligned and t['line'] == 0)
-            accepted = _name_like(name)
-            if not accepted:
-                # A row recognised as one cell can run into the right-hand column ("<name> CLIENTE No. 123"):
-                # the words before the first label word are the name when they read as one.
-                words = name.split()
-                cut = next((i for i, w in enumerate(words) if fold(w).strip(':') in _LABEL_WORDS), None)
-                if cut is not None and cut >= 2 and _name_like(' '.join(words[:cut])):
-                    name, accepted = ' '.join(words[:cut]), True
-            if name.strip():
-                found.append((top['y0'], name, accepted))
+            anchored.append((block, x))
+            top = _block_top(block, x)
+            if top:
+                found.append(top)
+    for block, x in anchored:
+        top = _reprinted_block(located, block, x, style)
+        if top:
+            found.append(top)
     return found
+
+
+def _grow_block(located, index, x, style):
+    """The left-aligned block of lines ending at located[index], bottom first (A8)."""
+    row = located[index]
+    block = [row]
+    for earlier in reversed(located[:index]):
+        ex = min(t['x0'] for t in earlier['tokens'])
+        if earlier['y0'] > block[-1]['y0']:
+            continue
+        if abs(ex - x) > row['width'] * 0.015:
+            # A movement line printed between two lines means they are not one address block.
+            if _row_is_movement(earlier, style or 'dot', 2):
+                break
+            continue
+        if _not_address(earlier, x, style):
+            break
+        # The issuer's own legal-name or heading line above is not part of the addressee block.
+        # Only the cells aligned with the block's left edge count (the issuer's name can share the row).
+        first_words = _aligned_text(earlier, x)
+        if any(word in first_words for word in INSTITUTION_WORDS) or 'ESTADO DE CUENTA' in first_words or 'STATEMENT' in first_words:
+            break
+        gap = block[-1]['y0'] - earlier['y0']
+        height = max(t['y1'] - t['y0'] for t in block[-1]['tokens'])
+        previous_gap = (block[-2]['y0'] - block[-1]['y0']) if len(block) > 1 else 0
+        # One blank line in the address column is allowed where the page prints other columns
+        # beside it (the space is not a gap between blocks).
+        beside = any(earlier['y0'] < other['y0'] < block[-1]['y0'] for other in located)
+        if gap > max(height * (4 if beside else 2.6), previous_gap * 1.6):
+            break
+        block.append(earlier)
+        if len(block) >= 7:
+            break
+    return block
+
+
+def _aligned_text(row, x):
+    """Folded text of the cells of a line that start at the left edge x."""
+    aligned = {id(t['cell']) for t in row['tokens'] if abs(t['x0'] - x) <= row['width'] * 0.015 and t['first']}
+    return fold(' '.join(t['t'] for t in row['tokens'] if id(t['cell']) in aligned))
+
+
+def _block_top(block, x):
+    """(y0, name, accepted) of a block's top line, or None."""
+    top = block[-1]
+    aligned = {id(t['cell']) for t in top['tokens'] if abs(t['x0'] - x) <= top['width'] * 0.015 and t['first']}
+    name = ' '.join(t['t'] for t in sorted(top['tokens'], key=lambda t: (t['line'], t['x0']))
+                    if id(t['cell']) in aligned and t['line'] == 0)
+    accepted = _name_like(name)
+    if not accepted:
+        # A row recognised as one cell can run into the right-hand column ("<name> CLIENTE No. 123"):
+        # the words before the first label word are the name when they read as one.
+        words = name.split()
+        cut = next((i for i, w in enumerate(words) if fold(w).strip(':') in _LABEL_WORDS), None)
+        if cut is not None and cut >= 2 and _name_like(' '.join(words[:cut])):
+            name, accepted = ' '.join(words[:cut]), True
+    return (top['y0'], name, accepted) if name.strip() else None
+
+
+def _reprinted_block(located, anchored, x, style):
+    """The top of an addressee block printed without a postal line whose address lines are reprinted in
+    the postal-anchored block ``anchored`` (the addressee and the fiscal domicile both printed), or None.
+
+    Two of its lines below the top, each of at least two words, must open two different lines of the
+    anchored block; the block is grown from the lower of them like any address block and must hold
+    both, with a name line above them. Two printed blocks agreeing is the proof that it is an address.
+    """
+    inside = {id(r) for r in anchored}
+    lines = [_aligned_text(r, x) for r in anchored]
+    matched = {}
+    for index, row in enumerate(located):
+        if id(row) in inside:
+            continue
+        rx = min(t['x0'] for t in row['tokens'])
+        text = _aligned_text(row, rx)
+        if len(text) < 8 or len(text.split()) < 2:
+            continue
+        hits = [j for j, line in enumerate(lines) if line == text or line.startswith(text + ' ')]
+        if len(hits) == 1:
+            matched.setdefault(round(rx / (row['width'] * 0.015)), []).append((index, hits[0]))
+    for pairs in matched.values():
+        if len({j for _, j in pairs}) < 2 or len(pairs) != len({j for _, j in pairs}):
+            continue
+        lowest = max(index for index, _ in pairs)
+        rx = min(t['x0'] for t in located[lowest]['tokens'])
+        block = _grow_block(located, lowest, rx, style)
+        ids = {id(r) for r in block}
+        if not 3 <= len(block) <= 7 or not all(id(located[i]) in ids for i, _ in pairs):
+            continue
+        if id(block[-1]) in {id(located[i]) for i, _ in pairs}:
+            continue
+        return _block_top(block, rx)
+    return None
 
 
 _MONEY_MARK = re.compile(r'^[-−+(]?\s*(US\$|\$|€|£|¥)|(MN|M\.N\.|MXN|USD|EUR|DLS)$')
