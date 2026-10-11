@@ -1486,3 +1486,45 @@ class CreditLineTests(unittest.TestCase):
         # Other text printed above a block whose top line is its name does not withhold it.
         named = [[('CLIENTE PREFERENTE', 120000, 200000)], [('EMPRESA DE PRUEBA SA DE CV', 20000, 200000)]] + lines[1:]
         self.assertEqual(E.address_holder(E._pages([page(1, named)])[1]), 'EMPRESA DE PRUEBA SA DE CV')
+
+
+class LostDayHeadingTests(unittest.TestCase):
+    """r5-any-layout: a day column whose heading word the scan lost; column-rule noise after amounts."""
+
+    def statement(self, heading=True, credit='500.00', tail=''):
+        lines = [
+            [('BANCO EJEMPLO DEL NORTE, S.A., INSTITUCION DE BANCA MULTIPLE', 20000, 400000)],
+            [('PERIODO DEL 01/03/2024 AL 31/03/2024', 330000, 590000)],
+            [('MONEDA', 330000, 380000), ('PESOS', 390000, 450000)],
+            [('SALDO INICIAL', 330000, 430000), ('1,000.00', 500000, 560000)],
+            [('DEPOSITOS', 330000, 430000), ('500.00', 500000, 560000)],
+            [('RETIROS', 330000, 430000), ('500.00', 500000, 560000)],
+            [('SALDO FINAL', 330000, 430000), ('1,000.00', 500000, 560000)],
+        ]
+        if heading:
+            lines.append([('CONCEPTO', 150000, 200000), ('DEPOSITOS', 300000, 350000), ('RETIROS', 380000, 430000)])
+        lines += [
+            [('5', 20000, 30000), ('ABONO A CUENTA', 150000, 260000), (credit + tail, 290000, 350000),
+             ('1,500.00', 520000, 560000)],
+            [('20', 20000, 30000), ('CARGO A CUENTA', 150000, 260000), ('500.00', 400000, 430000),
+             ('1,000.00', 520000, 560000)],
+            [('TOTAL', 100000, 140000), ('500.00', 320000, 350000), ('500.00', 400000, 430000)],
+        ]
+        return [page(1, lines)]
+
+    def test_day_numbered_lines_under_a_dateless_heading_are_movements(self):
+        st = read_statements(self.statement())[0]
+        self.assertTrue(st['engine']['proved'], st['engine'])
+        self.assertEqual([(r['fields']['date'], r['fields']['direction']) for r in st['_rows'] if r['kind'] == 'transaction'],
+                         [('2024-03-05', 'credit'), ('2024-03-20', 'debit')])
+
+    def test_without_the_heading_no_day_column_is_inferred(self):
+        self.assertFalse(read_statements(self.statement(heading=False))[0]['engine']['proved'])
+
+    def test_a_column_rule_or_a_lone_parenthesis_after_an_amount_is_noise(self):
+        self.assertTrue(read_statements(self.statement(tail='|'))[0]['engine']['proved'])
+        self.assertTrue(read_statements(self.statement(tail=')'))[0]['engine']['proved'])
+        # A document printing amounts in parentheses keeps them meaningful: the lone ')' stays unread.
+        sources = self.statement(tail=')')
+        sources[0]['rows'][0]['cells'].append(cell('(12.00)', 450000, 500000, 40000, 1))
+        self.assertFalse(read_statements(sources)[0]['engine']['proved'])

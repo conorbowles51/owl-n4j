@@ -48,6 +48,9 @@ LAYOUT = 'generic'
 _PROFILE = ContextVar('statement_engine_profile', default=None)
 # The document's movement headings name the date column "DIA"/"DAY": a row may start with the day alone (B2).
 _DAY_COLUMN = ContextVar('statement_engine_day_column', default=False)
+# The document never prints an amount in parentheses: a ')' read after an amount is scan noise, not the
+# parentheses-for-negative convention (C4, C11).
+_NO_PARENS = ContextVar('statement_engine_no_parentheses', default=False)
 ENGINE_VERSION = 'statement-engine-v1'
 MAX_ASSIGNMENTS = 4000
 MAX_PERIOD_DAYS = 95
@@ -144,6 +147,10 @@ def _cell_tokens(cell, rotation=0):
 # OCR damage around one printed amount (C11): a stray '?' read after it (scan noise beside the
 # figure), and the amount split by a space inside one cell ("135 , 700.06", "5,173 846,29").
 _NOISE_TAIL = re.compile(r'^([-−(]?(?:US\$|\$)?(?:\d{1,3}(?:,\d{3})*)?[.,]?\d{2}(?:\)|-|−|CR)?)\?$')
+# A table's column rule read after an amount ('4,318,207.55|'), and, in a document that prints no amount in
+# parentheses, a ')' read there ('1,045,320.00)').
+_RULE_TAIL = re.compile(r'^([-−(]?(?:US\$|\$)?(?:\d{1,3}(?:,\d{3})*)?[.,]?\d{2}(?:\)|-|−|CR)?)\|$')
+_PAREN_TAIL = re.compile(r'^([-−]?(?:US\$|\$)?\d{1,3}(?:,\d{3})*[.,]\d{2})\)$')
 # Two separators read before the cents ('2,617,384,.91'): the one next to the cents is the decimal mark.
 _DOUBLE_MARK = re.compile(r'^([-−(]?(?:US\$|\$)?\d{1,3}(?:,\d{3})*)[.,]([.,]\d{2}(?:\)|-|−|CR)?)$')
 _SPLIT_HEAD = re.compile(r'^[-−(]?(?:US\$|\$)?\d{1,3}(?:,\d{3})*,?$')
@@ -165,7 +172,8 @@ def _rejoin_amounts(words):
     """
     cleaned = []
     for s, e, word in words:
-        noise = _NOISE_TAIL.fullmatch(word)
+        noise = _NOISE_TAIL.fullmatch(word) or _RULE_TAIL.fullmatch(word) or (
+            _NO_PARENS.get() and '(' not in word and _PAREN_TAIL.fullmatch(word))
         if noise:
             e, word = e - 1, noise[1]
         double = _DOUBLE_MARK.fullmatch(word)
@@ -1538,12 +1546,22 @@ def read_statements(sources, *, profile=None):
 
 
 def _read_statements(sources, *, profile=None):
+    parens = any(re.search(r'\(\s*(?:US\$|\$)?\s*\d{1,3}(?:,\d{3})*[.,]\d{2}\s*\)', cell['expected_text'])
+                 for source in sources for row in source['rows'] for cell in row['cells'])
+    marker = _NO_PARENS.set(not parens)
+    try:
+        return _read_statements_parens(sources, profile)
+    finally:
+        _NO_PARENS.reset(marker)
+
+
+def _read_statements_parens(sources, profile):
     pages = _pages(sources)
     if not pages:
         return []
     day_column = any(_is_header(row) and any(column_role(label(t['t'])) == 'date' and label(t['t']) in _DAY_WORDS
                                              for t in row['tokens'])
-                     for rows in pages.values() for row in rows if row['tokens'])
+                     for rows in pages.values() for row in rows if row['tokens']) or _lost_day_heading(pages)
     token = _DAY_COLUMN.set(day_column)
     try:
         return _read_statements_in(pages, sources, profile)
@@ -1552,6 +1570,29 @@ def _read_statements(sources, *, profile=None):
 
 
 _DAY_WORDS = {'DIA', 'DAY'}
+
+
+def _dateless_heading(row):
+    """A movement heading printing credit and debit columns and a description but no date word."""
+    words = {column_role(label(t['t'])) for t in row['tokens']}
+    return {'credit', 'debit'} <= _money_roles(row) and 'description' in words and 'date' not in words
+
+
+def _lost_day_heading(pages):
+    """(B2) A day column whose heading word the scan lost: a movement heading printing credit and debit
+    columns and a description but no date word, whose next line starts with a day of the month (1-31)
+    alone and carries an amount."""
+    style = separator_style(pages) or 'dot'
+    for rows in pages.values():
+        located = [r for r in rows if r['tokens']]
+        for heading, following in zip(located, located[1:]):
+            if not _dateless_heading(heading):
+                continue
+            first = min(following['tokens'], key=lambda t: (t['line'], t['x0']))['t']
+            if (re.fullmatch(r'\d{1,2}', first) and 1 <= int(first) <= 31
+                    and any(_value_kind(t, style, 2) == 'money' for t in following['tokens'])):
+                return True
+    return False
 
 
 def _read_statements_in(pages, sources, profile):
@@ -2165,7 +2206,7 @@ def _reading(rows, statement, style, exponent, liability, period):
             if prior:
                 continue
         words = {label(t['t']) for t in row['tokens']}
-        if _is_header(row):
+        if _is_header(row) or _DAY_COLUMN.get() and _dateless_heading(row):
             roles = _money_roles(row)
             if main_roles is None:
                 main_roles = roles
