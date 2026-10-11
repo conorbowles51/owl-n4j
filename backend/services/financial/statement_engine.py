@@ -266,6 +266,30 @@ def _rejoin_split_cells(tokens):
     return out
 
 
+_PLAIN_AMOUNT = re.compile(r'^\d{1,3}(?:,\d{3})*[.,]\d{2}$|^\d+[.,]\d{2}$')
+
+
+def _attach_detached_minus(tokens):
+    """(C4) A minus printed alone in its own cell, directly before an unsigned amount that opens the next
+    cell of the line, after a currency or operator marker ('+$', '$') or a label word, is that amount's
+    sign: '+$ | - | 120.45' is -120.45."""
+    out, index = [], 0
+    while index < len(tokens):
+        token = tokens[index]
+        after = tokens[index + 1] if index + 1 < len(tokens) else None
+        before = out[-1] if out else None
+        if (after is not None and token['t'] in ('-', '−') and token['first'] and token['last']
+                and after['first'] and after['line'] == token['line'] and after['cell'] is not token['cell']
+                and _PLAIN_AMOUNT.match(after['t'])
+                and (before is None or before['t'].endswith('$') or not re.search(r'\d', before['t']))):
+            out.append(dict(after, t='-' + after['t'], f=fold('-' + after['t']), x0=token['x0'], exact=False))
+            index += 2
+            continue
+        out.append(token)
+        index += 1
+    return out
+
+
 def _pages(sources):
     """Rows of every page in reading order, each with its located tokens."""
     pages = {}
@@ -287,7 +311,7 @@ def _pages(sources):
                         located=False, text=' '.join(c['expected_text'] for c in raw['cells'])))
                 continue
             tokens.sort(key=lambda t: (t['line'], t['x0']))
-            tokens = _rejoin_split_cells(tokens)
+            tokens = _attach_detached_minus(_rejoin_split_cells(tokens))
             pages.setdefault(source['page_number'], []).append(dict(
                 page=source['page_number'], source=source, raw=raw, tokens=tokens,
                 y0=min(t['y0'] for t in tokens), width=width, located=located,
@@ -709,8 +733,32 @@ def page_facts(rows, style, exponent=2):
             if any(word in folded for word in INSTITUTION_WORDS) and 6 <= len(folded) <= 160:
                 facts['legal'].add(folded)
             _holder_label(row, facts['holders'])
+    _two_line_period(rows, facts)
     _derived_period(rows, style, exponent, facts)
     return facts
+
+
+_PERIOD_FROM = re.compile(r'^(?:PERIODO\s*:?\s*)?DEL\s+(\S+)$')
+_PERIOD_TO = re.compile(r'^AL\s+(\S+)$')
+
+
+def _two_line_period(rows, facts):
+    """(B1) A period printed across two lines of one column: a cell 'Del <date>' with the cell directly
+    below it, horizontally overlapping, 'al <date>'. Labelled (the range words are printed)."""
+    located = [r for r in rows if r['tokens'] and r['y0'] is not None]
+    for upper, lower in zip(located, located[1:]):
+        for top in upper['raw']['cells']:
+            m = _PERIOD_FROM.match(' '.join(fold(top['expected_text']).split()))
+            rect = (top.get('locator') or {}).get('rect')
+            if not m or not rect:
+                continue
+            for bottom in lower['raw']['cells']:
+                n = _PERIOD_TO.match(' '.join(fold(bottom['expected_text']).split()))
+                other = (bottom.get('locator') or {}).get('rect')
+                if n and other and other[0] < rect[2] and rect[0] < other[2]:
+                    for period in period_ranges('DEL %s AL %s' % (m[1], n[1])):
+                        facts['periods'].add(period)
+                        facts['labelled_periods'].add(period)
 
 
 # A cut date and the number of days in the period, both printed on a statement's heading ('CORTE AL
@@ -1132,6 +1180,8 @@ def _address_tops(rows, style=None):
         if 3 <= len(block) <= 7:
             anchored.append((block, x))
             top = _block_top(block, x)
+            if top and _damaged_above(located, block, x):
+                top = (top[0], top[1], False)
             if top:
                 found.append(top)
     for block, x in anchored:
@@ -1198,6 +1248,31 @@ def _aligned_tokens(row, x):
     tolerance = row['width'] * 0.015
     aligned = {id(t['cell']) for t in row['tokens'] if t['first'] and (abs(t['x0'] - x) <= tolerance or t is noise)}
     return [t for t in sorted(row['tokens'], key=lambda t: (t['line'], t['x0'])) if id(t['cell']) in aligned and t is not noise]
+
+
+def _damaged_above(located, block, x):
+    """(A8) The end of a company name (its legal form) printed directly above a block's top, inside the
+    block's column but not on its edge: the scan lost the start of the name line ('...RESAS SA DE CV'), so
+    the block's top line is not its first and is not taken as the name."""
+    top = block[-1]
+    tolerance = top['width'] * 0.015
+    right = max(t['x1'] for row in block for t in row['tokens'] if abs(min(u['x0'] for u in row['tokens']) - x) <= tolerance
+                or _lead_noise(row, x))
+    height = max(t['y1'] - t['y0'] for t in top['tokens'])
+    for row in located:
+        if row['y0'] is None or not top['y0'] - height * 2.6 <= row['y0'] < top['y0']:
+            continue
+        lead, end = min(t['x0'] for t in row['tokens']), max(t['x1'] for t in row['tokens'])
+        words = ' '.join(fold(row['text']).split())
+        if (x + tolerance < lead < right and end <= right + tolerance and _NAME_TAIL.search(words)
+                and not any(word in words for word in INSTITUTION_WORDS)):
+            return True
+    return False
+
+
+# The end of a company name: its printed legal form.
+_NAME_TAIL = re.compile(r'(?:\bS\.?\s?A\.?(?:\s?P\.?\s?I\.?)?|\bS\.?\s?DE\s?R\.?\s?L\.?|\bS\.?\s?C\.?)\s?DE\s?C\.?\s?V\.?$'
+                        r'|\b(?:INC|LLC|LTD|CORP)\.?$')
 
 
 def _aligned_text(row, x):

@@ -1295,6 +1295,10 @@ class RoutingScopeTests(unittest.TestCase):
         self.assertTrue(_same_identity('institution', 'Banco Ejemplo, S.A.', 'EJEMPLO'))
         self.assertFalse(_same_identity('institution', 'Ejemplo', 'OTRO BANCO'))
         self.assertFalse(_same_identity('institution', 'BANCO', 'BANK'))
+        # One issuer under its current and former names; different issuers stay different.
+        self.assertTrue(_same_identity('institution', 'Ejemplo Mexico', 'EJEMPLO ANTERIOR'))
+        self.assertFalse(_same_identity('institution', 'Banco del Ejemplo', 'Banco del Otro'))
+        self.assertFalse(_same_identity('institution', 'Bank of Example', 'Bank of the Other'))
 
 
 class ScanDamageR5Tests(unittest.TestCase):
@@ -1431,3 +1435,54 @@ class SectionAccountTests(unittest.TestCase):
     def test_a_heading_account_is_read_from_one_whole_line_of_a_cell(self):
         row = E._pages([page(1, [[('DETALLE DE MOVIMIENTOS\nCUENTA EJEMPLO PYME 12-34567890-1', 20000, 300000)]])])[1][0]
         self.assertEqual(E._heading_account(row), '12-34567890-1')
+
+
+class CreditLineTests(unittest.TestCase):
+    """r5-any-layout: a credit-line statement (amounts owed) with its period over two lines, a detached minus
+    sign and the credit's number as its account."""
+
+    def statement(self, minus=True, period=True):
+        lines = [
+            [('BANCO EJEMPLO DEL NORTE, S.A., INSTITUCION DE BANCA MULTIPLE', 20000, 400000)],
+            [('NO. DE CREDITO', 300000, 380000), ('1234', 400000, 430000), ('5678', 435000, 465000),
+             ('9012', 470000, 500000), ('3456', 505000, 535000)],
+            [('EMPRESA DE PRUEBA SA DE CV', 20000, 200000)],
+            [('CALLE FALSA 123', 20000, 150000)],
+            [('COL CENTRO', 20000, 120000)],
+            [('CIUDAD DE MEXICO C.P. 06000', 20000, 220000)],
+            [('MONEDA NACIONAL', 20000, 120000)],
+            [('SALDO INICIAL DEL PERIODO', 200000, 300000), ('+$', 323000, 336000)]
+            + ([('-', 360000, 362000)] if minus else []) + [('120.45', 389000, 420000)],
+            [('DISPOSICIONES', 200000, 300000), ('+$', 323000, 336000), ('0.00', 398000, 415000)],
+            [('PAGOS', 200000, 300000), ('-$', 323000, 336000), ('0.00', 398000, 415000)],
+            [('PAGO MINIMO', 420000, 480000), ('0.00', 560000, 590000)],
+            [('SALDO AL CORTE', 200000, 260000), ('$', 333000, 337000), ('120.45-', 388000, 418000)],
+            [('FECHA', 30000, 60000), ('CONCEPTO', 200000, 250000), ('CARGOS', 410000, 450000), ('ABONOS', 510000, 550000)],
+            [('TASA ANUAL', 50000, 100000), ('PERIODO', 520000, 560000)],
+        ]
+        if period:
+            lines += [[('0.00 %', 60000, 90000), ('DEL 03/01/26', 510000, 565000)], [('AL 02/02/26', 513000, 561000)]]
+        return [page(1, lines)]
+
+    def test_a_quiet_credit_line_with_a_detached_minus_proves(self):
+        from datetime import date
+        st = read_statements(self.statement())[0]
+        self.assertEqual((st['period_start'], st['period_end']), (date(2026, 1, 3).isoformat(), date(2026, 2, 2).isoformat()))
+        self.assertEqual([r['fields']['balance'] for r in st['_rows'] if r['kind'] == 'balance'], ['-12045', '-12045'])
+        self.assertTrue(st['engine']['proved'], st['engine'])
+        self.assertEqual((st['account_reference'], st['balance_convention']), ('1234567890123456', 'liability_owed'))
+
+    def test_without_the_minus_the_balances_disagree_and_it_holds(self):
+        self.assertFalse(read_statements(self.statement(minus=False))[0]['engine']['proved'])
+
+    def test_one_period_line_alone_is_not_a_period(self):
+        self.assertEqual(read_statements(self.statement(period=False))[0]['period_start'], '')
+
+    def test_a_name_tail_above_an_address_block_withholds_its_top_line(self):
+        lines = [[('RESAS SA DE CV', 120000, 200000)],
+                 [('AV SAN EJEMPLO', 20000, 150000)], [('COL CENTRO', 20000, 120000)],
+                 [('06000 CIUDAD DE MEXICO', 20000, 220000)]]
+        self.assertEqual(E.address_holder(E._pages([page(1, lines)])[1]), '')
+        # Other text printed above a block whose top line is its name does not withhold it.
+        named = [[('CLIENTE PREFERENTE', 120000, 200000)], [('EMPRESA DE PRUEBA SA DE CV', 20000, 200000)]] + lines[1:]
+        self.assertEqual(E.address_holder(E._pages([page(1, named)])[1]), 'EMPRESA DE PRUEBA SA DE CV')

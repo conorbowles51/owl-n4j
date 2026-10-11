@@ -111,8 +111,8 @@ def _same_account(a, b):
     return len(shorter) >= 4 and shorter in longer
 
 
-_BANKING_WORDS = {'BANCO', 'BANK', 'THE', 'NA', 'N', 'A', 'SA', 'S', 'INSTITUCION', 'DE', 'BANCA', 'MULTIPLE',
-                  'GRUPO', 'FINANCIERO'}
+_BANKING_WORDS = {'BANCO', 'BANK', 'THE', 'NA', 'N', 'A', 'SA', 'S', 'INSTITUCION', 'DE', 'DEL', 'LA', 'EL', 'BANCA',
+                  'MULTIPLE', 'GRUPO', 'FINANCIERO', 'OF'}
 _LEGAL_FORM_TAIL = re.compile(r'(?:\s*,)?\s+(?:S\.?\s*A\.?\s*(?:P\.?\s*I\.?\s*)?|S\.?\s*DE\s*R\.?\s*L\.?\s*)(?:DE\s+C\.?\s*V\.?)?$')
 
 
@@ -129,9 +129,12 @@ def _same_identity(field, a, b):
     if fa == fb:
         return True
     if field == 'institution':
-        # 'Intercam' and 'INTERCAM BANCO': the issuer's name with or without a generic banking word.
+        # 'Intercam' and 'INTERCAM BANCO': the issuer's name with or without a generic banking word; 'BBVA
+        # Mexico' and 'BBVA BANCOMER': one issuer under its current and former names (both readers read the
+        # same document; the first distinctive word of the name is the same).
         plain = lambda text: [w for w in re.sub(r'[^A-Z0-9 ]', ' ', text).split() if w not in _BANKING_WORDS]
-        return bool(plain(fa)) and plain(fa) == plain(fb)
+        pa, pb = plain(fa), plain(fb)
+        return bool(pa) and bool(pb) and (pa == pb or pa[0] == pb[0] and len(pa[0]) >= 3)
     if field == 'holder':
         bare = lambda text: ' '.join(_LEGAL_FORM_TAIL.sub('', text).replace('.', ' ').replace(',', ' ').split())
         return bare(fa) == bare(fb) and bool(bare(fa))

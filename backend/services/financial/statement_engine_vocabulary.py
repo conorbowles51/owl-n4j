@@ -100,6 +100,8 @@ ACCOUNT_LABELS = (
     ('NO. DE CUENTA', 3), ('NO DE CUENTA', 3), ('NUMERO DE CUENTA', 3), ('NO. CUENTA', 3), ('NUM. DE CUENTA', 3),
     ('CUENTA', 2), ('ACCOUNT NUMBER', 3), ('ACCOUNT NO.', 3), ('ACCOUNT NO', 3), ('ACCOUNT #', 3), ('ACCOUNT', 2),
     ('NO. DE CONTRATO', 1), ('NUMERO DE CONTRATO', 1), ('CONTRATO', 1), ('CLABE', 0), ('CUENTA CLABE', 0),
+    # A credit line or loan statement names its account as the credit's number (r5).
+    ('NO. DE CREDITO', 3), ('NO DE CREDITO', 3), ('NUMERO DE CREDITO', 3),
     ('NO. CUENTA CLABE', 0),
 )
 HOLDER_LABELS = ('NOMBRE DEL RECEPTOR', 'TITULAR', 'NOMBRE DEL CLIENTE', 'NOMBRE DEL TITULAR', 'ACCOUNT NAME',
