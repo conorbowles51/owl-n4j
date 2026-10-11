@@ -227,7 +227,7 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
     checks_key = ('checks', source_key, chosen_currency)
     if _include_period_checks:
         if checks_key not in cache:
-            cache[checks_key] = add_period_checks(choices, all_sources, currency)
+            cache[checks_key] = add_period_checks(choices, all_sources, currency, text.source_locations)
         choices = cache[checks_key]
         if _apply_assignments:
             from services.financial.statement_row_assignment import assignment_choices
@@ -415,6 +415,7 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
     if not chosen_currency and current_import:
         chosen_currency = current_import['currency']
     rows = []
+    andrews_period_pinned = None
     if not chosen_currency:
         recovery, _ = recovery_state(session, file, sources=all_sources, choices=choices,
             statement_id=statement_id, revision=None, cache=cache)
@@ -430,7 +431,13 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
         raise PdfMappingError(str(exc), 422) from exc
     if selected and selected.get('layout_id') == 'andrews-share-statement':
         from services.financial.statement_import_andrews import propose_andrews_statement
+        from services.financial.andrews_period_pinning import pin_period
         proposal = propose_andrews_statement(sources, chosen_currency, selected)
+        # Held money cells that the period's printed controls pin across its
+        # pages (the engine could only use one page's controls).
+        proposal = pin_period(proposal, sources, chosen_currency, selected, text.source_locations)
+        if proposal.get('period_pinned'):
+            andrews_period_pinned = [repair for row in proposal['rows'] for repair in row.get('value_repairs', [])]
         rows.extend(proposal['rows'])
         issues.extend(proposal.get('issues', []))
         # Other tables read from the same page are checked too, so text the
@@ -581,6 +588,9 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
         snapshot['reading_failure'] = 'unseparated-statement-periods-v1'
     if row_addresses is not None:
         snapshot['statement_row_addresses'] = row_addresses
+    if andrews_period_pinned:
+        # Only statements whose held cells were pinned get a new revision.
+        snapshot['andrews_period_pinned_v1'] = andrews_period_pinned
     standalone_balances = [row for row in rows if row['fields'].get('standalone_balance') or row['fields'].get('normalized_balance_label')]
     if standalone_balances:
         # Only these newly recognised summaries need a new review revision.

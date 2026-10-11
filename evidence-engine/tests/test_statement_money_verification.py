@@ -168,3 +168,12 @@ def test_real_tesseract_contradicts_a_cancelling_text_layer(tmp_path):
     assert statuses == {'28.11': 'contradicted', '-40.00': 'confirmed', '15.79': 'contradicted'}
     text = '\n'.join(result.tables)
     assert '2?.11' in text and '1?.79' in text and '28.11' not in text
+
+
+def test_held_cells_store_their_printed_readings_for_the_statements_other_pages(monkeypatch):
+    _, _, records = _run(monkeypatch, {'28.11': ['25.11'] * 6, '-40.00': ['-40.00'] * 3 + ['40.00'] * 3})
+    cells = {c['original_text']: c for c in records[0]['cells']}
+    # Only the readings a recogniser produced from the print, as the page's own pinned rule offers them.
+    assert cells['28.11']['printed_readings'] == [['25.11', 'crop_reading']]
+    assert cells['-40.00']['printed_readings'] == [['-40.00', 'page_reading']]
+    assert 'printed_readings' not in cells['15.79']

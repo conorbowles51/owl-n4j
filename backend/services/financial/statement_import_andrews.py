@@ -38,6 +38,16 @@ _SHARE = re.compile(r'^(' + _HEADING_DATE + r') ID (' + _SHARE_ID + r') (' + _LA
 _SHARE_LABEL = re.compile(r'^' + _HEADING_DATE + r' ID \S+(?: \S+)? (' + _LABELS + ')(?: |$)')
 
 _CLOSED = re.compile(r'^(' + _HEADING_DATE + r') ID (' + _SHARE_ID + r') (' + _LABELS + ') Closed$')
+# The printed continuation notice. OCR can put spaces or a stray point or
+# middle dot between its letters (``Continued·on fol low.ing page``); every
+# letter must still be read exactly and in order.
+_CONTINUED = re.compile(r'[\s.·]*'.join('Continuedonfollowingpage'))
+
+
+def _continued(text):
+    return bool(_CONTINUED.search(text))
+
+
 _WITHDRAWAL = r'\s*'.join('Withdrawal')
 _DEPOSIT = r'\s*'.join('Deposit')
 _RECURRING = r'\s*'.join('Recurring')
@@ -315,7 +325,7 @@ def _opening_corroborated_by_next_page(source, page, following):
             or following['page_number'] != source['page_number'] + 1
             or following['table_index'] != source['table_index']
             or not any(_SHARE.match(_text(r)) for r in source['rows'] if r['row_index'] >= page['body_start'])
-            or not any('Continued on following page' in _text(r) for r in source['rows'])):
+            or not any(_continued(_text(r)) for r in source['rows'])):
         return False
     next_page = andrews_page(following)
     return (next_page is not None and next_page['printed_page'] == 2
@@ -386,7 +396,7 @@ def andrews_catalog(sources):
             if row['row_index'] < page['body_start']:
                 continue
             text = _text(row)
-            if 'Continued on following page' in text:
+            if _continued(text):
                 break
             match = _SHARE.match(text)
             if _PREVIOUS.search(text) or (_SHARE_LABEL.match(text) and not _CLOSED.fullmatch(text)):
@@ -434,7 +444,7 @@ def andrews_catalog(sources):
         if unknown:
             incomplete.add(key)
         previous = dict(**page, pdf_page=key[0], table_index=key[1], order_group=order_group,
-                        continues=any('Continued on following page' in _text(r) for r in source['rows']))
+                        continues=any(_continued(_text(r)) for r in source['rows']))
     return list(groups.values()), handled, incomplete
 
 
@@ -454,7 +464,7 @@ def leading_continuation_rows(source, page):
         if row['row_index'] < page['body_start']:
             continue
         text = _text(row)
-        if _PREVIOUS.search(text) or _SHARE_LABEL.match(text) or 'Continued on following page' in text:
+        if _PREVIOUS.search(text) or _SHARE_LABEL.match(text) or _continued(text):
             break
         rows.append(row)
         if re.match(r'^\d{2}/\d{2} Ending Balance(?: |$)', text) or _ending_balance(row, page['width']):
@@ -492,7 +502,7 @@ def unassigned_andrews_groups(sources, handled):
         for row in body:
             if row['row_index'] < first['row_index']:
                 continue
-            if 'Continued on following page' in _text(row):
+            if _continued(_text(row)):
                 break
             indices.append(row['row_index'])
             if _ending_balance(row, page['width']):
@@ -693,7 +703,7 @@ def propose_andrews_statement(sources, currency, statement):
             if (cells and cells[0]['expected_text'].strip() in
                     ('Total Returned Item Fees', 'Total Overdraft Fees') and len(cells) == 3):
                 continue
-            if 'Continued on following page' in text:
+            if _continued(text):
                 continue
             closure = statement.get('account_closure')
             if (closure and source['page_number'] == closure['page_number']

@@ -41,7 +41,7 @@ MAX_OSD_TIMEOUT_SECONDS = 30.0
 # read for the dollar sign is confirmed when the crops read the sign; card row
 # dates are reread from their cells; an image reading replaces a recognised
 # layer that cannot read the statement identity or the card summary balances.
-PDF_READING_REVISION = 'bank-payment-rows-v16'
+PDF_READING_REVISION = 'bank-payment-rows-v17'
 OSD_INSUFFICIENT_TEXT_MARKERS = ("too few characters", "skipping this page")
 
 

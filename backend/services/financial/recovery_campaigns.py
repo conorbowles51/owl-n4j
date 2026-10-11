@@ -75,7 +75,12 @@ READER_RECOVERY_FLAG = 'LOUPE_FINANCIAL_READER_RECOVERY'
 # its readings held every card credit whose minus the crops lost, every card
 # row date whose slash the layer read as 1, every summary balance whose dollar
 # sign it read as S, and kept garbled Merrick layers that cannot read the
-# statement date. If a later change edits pdf_extraction.py, add the
+# statement date. r5-andrews-cards (revision v17) added r4-cards' file b9248b80:
+# its readings stored no printed readings for held money cells, so no
+# statement-wide control could pin a cell its own page could not (first and
+# last payments of a page), offered no page reading whose minus the crops
+# read as 2 or +, and pinned no cell whose neighbour was itself only pinned.
+# If a later change edits pdf_extraction.py, add the
 # digest of the current file here.
 AFFECTED_EXTRACTION_SHA256 = (
     '838372af7b656fa02f655aaa564582ff7ba15c5c17ff46020935ce3356152495',  # 7b0013fb
@@ -98,6 +103,7 @@ AFFECTED_EXTRACTION_SHA256 = (
     '6d388613fcdb471890f68921103ad8db18f1a4db91bedc44049e9d28a394db1e',  # wave 5 (v13)
     '5eca9825fe4fdd4c06783eb7820fb91d8bc359cd8d77bb45487e307161d6942e',  # 7b00e2f3 r1-reproduced (v14)
     '3e2343916ad66c94b85230947d48841235f8c4ff22963adb1f7c3a58c6591149',  # bffe7375 r3-andrews (v15)
+    'b9248b807d535565e21969c81fcc59adb148cf1d6f185232958afb181bc129a1',  # r4-cards (v16)
 )
 READER_RECOVERY = RecoveryCampaign(READER_RECOVERY_RELEASE, {'pdf_extraction.py': AFFECTED_EXTRACTION_SHA256},
     batch_reread=True)

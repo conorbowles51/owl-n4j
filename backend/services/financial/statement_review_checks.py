@@ -32,7 +32,7 @@ def check_statement_rows(rows, *, liability=False):
     return result
 
 
-def add_period_checks(choices, sources, currency):
+def add_period_checks(choices, sources, currency, source_locations=None):
     """Check all periods from the same saved extraction, without database writes.
 
     A balance match is arithmetic only. Missing controls and unreadable amounts
@@ -56,7 +56,7 @@ def add_period_checks(choices, sources, currency):
             continue
         selected = [by_address[(s['page_number'], s['table_index'])] for s in choice['sources']]
         try:
-            rows = statement_rows(choice, selected, chosen_currency, sources)
+            rows = statement_rows(choice, selected, chosen_currency, sources, source_locations)
             if rows is None:
                 result.append(choice)
                 continue
@@ -75,11 +75,14 @@ def is_liability(choice):
     return layout in ('capital-one-card', 'merrick-card', 'credit-one-card', 'citi-card')
 
 
-def statement_rows(choice, selected, chosen_currency, all_sources=None):
+def statement_rows(choice, selected, chosen_currency, all_sources=None, source_locations=None):
     """The reading of one recognised period by its reader (engine or library); None for unread layouts.
 
     The engine finds its period again in a reading of the whole document
     (``all_sources``); library readers read only the period's own sources.
+    With the stored page records (``source_locations``), an Andrews period
+    also takes the held money cells its printed controls pin across pages,
+    as its review does (``andrews_period_pinning``).
     """
     layout = choice.get('layout_id')
     if layout == 'generic':
@@ -87,7 +90,11 @@ def statement_rows(choice, selected, chosen_currency, all_sources=None):
         rows = propose_engine_statement(all_sources if all_sources is not None else selected, chosen_currency, choice)['rows']
     elif layout == 'andrews-share-statement':
         from services.financial.statement_import_andrews import propose_andrews_statement
-        rows = propose_andrews_statement(selected, chosen_currency, choice)['rows']
+        proposal = propose_andrews_statement(selected, chosen_currency, choice)
+        if source_locations is not None:
+            from services.financial.andrews_period_pinning import pin_period
+            proposal = pin_period(proposal, selected, chosen_currency, choice, source_locations)
+        rows = proposal['rows']
     elif layout == 'bbva-mexico-cash-management':
         from services.financial.statement_import_bbva import propose_bbva_statement
         rows = propose_bbva_statement(selected, chosen_currency, choice)['rows']

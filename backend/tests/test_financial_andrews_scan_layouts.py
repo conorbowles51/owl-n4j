@@ -287,6 +287,43 @@ class SpacedHeadingTests(unittest.TestCase):
         balances = (whole - held) | {(0, 11, 2, 'balance')}
         self.assertEqual(pinned_andrews_values(tables(data), candidates, balances), {})
 
+    def test_a_pinned_cell_pins_its_disputed_neighbour_in_the_next_round(self):
+        from services.financial import statement_reading_quality as quality
+        data = source([
+            [(15, '06/01 ID 0040 FREE CHECKING Previous Balance'), (350, '100.00')],
+            [(15, '06/03'), (75, 'Withdrawal Debit Card'), (310, '-10.00'), (350, '9?.00')],
+            [(15, '06/04'), (75, 'Withdrawal Debit Card'), (310, '-?.00'), (350, '85.00')],
+            [(15, '06/30'), (75, 'Ending Balance'), (350, '85.00')]])
+        held = {(0, 10, 3), (0, 11, 2)}
+        confirmed = money_cells(data) - held
+        candidates = {(0, 10, 3): ['90.00', '96.00'], (0, 11, 2): ['-5.00', '-6.00']}
+        result = quality.pinned_andrews_values(tables(data), candidates, confirmed)
+        self.assertEqual(result['values'], {(0, 10, 3): dict(text='90.00', pinned_by=[[0, 9, 1], [0, 10, 2]]),
+                                            (0, 11, 2): dict(text='-5.00', pinned_by=[[0, 10, 3], [0, 11, 3]])})
+        try:
+            quality.PROPAGATE_PINNED = False
+            self.assertEqual(quality.pinned_andrews_values(tables(data), candidates, confirmed), {})
+        finally:
+            quality.PROPAGATE_PINNED = True
+        # A neighbour that is itself only fixed by a disputed cell is never used.
+        self.assertEqual(quality.pinned_andrews_values(tables(data), {(0, 10, 3): [], (0, 11, 2): ['-5.00']},
+                                                       confirmed), {})
+
+    def test_a_continuation_notice_read_with_spaces_or_stray_points_links_the_next_page(self):
+        first = source([
+            [(15, '06/01 ID 0040 FREE CHECKING Previous Balance'), (350, '100.00')],
+            [(15, '06/03'), (75, 'Withdrawal Debit Card'), (310, '-10.00'), (350, '90.00')],
+            [(15, '- - - Continued\u00b7on fol low.ing page - - -')]])
+        second = source([
+            [(15, '06/05'), (75, 'Withdrawal Debit Card'), (310, '-5.00'), (350, '85.00')],
+            [(15, '06/30'), (75, 'Ending Balance'), (350, '85.00')]], page=2, printed_page=2, names=False)
+        groups, _, _ = andrews_catalog([first, second])
+        self.assertEqual([g['page_numbers'] for g in groups], [[1, 2]])
+        # A letter misread inside the notice is not a notice.
+        first['rows'][-1]['cells'][0]['expected_text'] = '--- Continued on fo1lowing page ---'
+        groups, _, _ = andrews_catalog([first, second])
+        self.assertEqual([g['page_numbers'] for g in groups], [[1]])
+
     def test_a_confirmed_part_of_a_held_neighbour_opens_the_next_equation(self):
         from services.financial.statement_reading_quality import pinned_andrews_values
         data = source([
@@ -298,8 +335,19 @@ class SpacedHeadingTests(unittest.TestCase):
         held = {(0, 10, 2), (0, 11, 2)}
         confirmed = (money_cells(data) | {(0, 12, 2)}) - held | {(0, 10, 2, 'balance')}
         candidates = {(0, 10, 2): ['-1.00 99.00'], (0, 11, 2): ['-26.11 72.89']}
-        # Without the neighbour's page reading its confirmed balance cannot be read: nothing is pinned.
-        self.assertEqual(pinned_andrews_values(tables(data), candidates, confirmed), {})
+        # Without the neighbour's page reading its confirmed balance cannot be read in one round:
+        # nothing is pinned when pinned cells do not propagate.
+        from services.financial import statement_reading_quality as quality
+        try:
+            quality.PROPAGATE_PINNED = False
+            self.assertEqual(pinned_andrews_values(tables(data), candidates, confirmed), {})
+        finally:
+            quality.PROPAGATE_PINNED = True
+        # With propagation the neighbour is pinned first by its own payment (its balance confirmed),
+        # and then fixes the next cell: the same readings as with its page reading given.
+        propagated = pinned_andrews_values(tables(data), candidates, confirmed)
+        self.assertEqual({k: v['text'] for k, v in propagated['values'].items()},
+                         {(0, 10, 2): '-1.00 99.00', (0, 11, 2): '-26.11 72.89'})
         result = pinned_andrews_values(tables(data), candidates, confirmed, {(0, 10, 2): '-1.00 99.00'})
         self.assertEqual(result['values'][(0, 11, 2)]['pinned_by'], [[0, 10, 2], [0, 12, 2]])
         self.assertEqual(result['values'][(0, 10, 2)]['pinned_by'], [[0, 9, 1]])

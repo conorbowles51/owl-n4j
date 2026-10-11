@@ -785,6 +785,13 @@ def verify_money_cells(page, tables, *, rotation=0, deadline, language, chunk=No
             entry['marked_text'] = replacements[key] = _dispute_marked(cell.text, contradiction)
             entry['reason'] = ('crop_readings_contradict_page_reading' if status == 'contradicted'
                 else 'cell_not_measured' if rect is None else 'crop_readings_do_not_confirm_page_reading')
+            if rect:
+                # Stored so that the statement's controls on other pages can
+                # pin one of them later (the backend's whole-period pass); a
+                # value is still only ever one of these printed readings.
+                entry['printed_readings'] = [list(item) for item in _printed_readings(entry)]
+                if entry.get('confirmed_parts') and _page_pair(cell.text) is not None:
+                    entry['confirmed_parts_text'] = money_text(_page_pair(cell.text))
         cells_record.append(entry)
     record = dict(method=METHOD, page=page.number + 1,
         decision='held' if replacements else 'all_confirmed',
@@ -886,6 +893,26 @@ def _both_resolutions(observations):
     return {o['dpi'] for o in observations} == {dpi for dpi, _ in PROFILES}
 
 
+def _minus_misread(text, value, pair=False):
+    """Whether a crop reading states ``value`` (a negative amount) with its printed minus read as ``2`` or ``+``.
+
+    Measured on real Andrews scans: at some profiles the crops read the
+    leading minus of a payment as ``2`` (``223.45`` for ``-23.45``) or ``+``.
+    Such a reading supports the page reading as a candidate only; it is never
+    a value, and the page reading is accepted only when agreed controls pin it.
+    """
+    compact = re.sub(r'\s+', '', text or '')
+    if not compact or compact[0] not in '2+':
+        return False
+    amount = value[0] if pair else value
+    if not amount or not amount[0]:
+        return False
+    if pair:
+        parsed = crop_money_pair('-' + compact[1:])
+        return parsed is not None and parsed == value
+    return crop_money_value('-' + compact[1:]) == value
+
+
 def _printed_readings(cell):
     """``[(text, source)]``: the readings of one held cell that came from the print.
 
@@ -931,7 +958,8 @@ def _printed_readings(cell):
         if normalised is None:
             normalised = lookalike_money(original, 'pair' if pair else 'single')
     for value, source in ((page_value, 'page_reading'), (normalised, 'page_reading_normalised')):
-        if value is not None and any(image(o['text']) == value for o in observations):
+        if value is not None and any(image(o['text']) == value or _minus_misread(o['text'], value, pair)
+                                     for o in observations):
             found.append((original.strip() if source == 'page_reading'
                           else original.strip().replace('S', '$', 1) if dollar is not None else money_text(value), source))
     known = page_value if page_value is not None else normalised

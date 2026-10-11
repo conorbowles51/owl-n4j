@@ -172,3 +172,23 @@ def test_corpus_compensating_andrews_misreads_are_left_to_the_second_reader():
     assert [(r['decision'], r['reason']) for r in _records(result, verification.PINNED_READING_METHOD)] == [
         ('declined', 'not_every_held_cell_is_pinned_by_agreed_controls')]
     assert [r['decision'] for r in _records(result, verification.SECOND_READER_METHOD)] == ['repaired']
+
+
+@pytest.mark.parametrize('texts, expected', [
+    # Real scans: crops read the printed minus as 2 or +. That supports the page reading
+    # as a candidate only; the agreed controls must still pin it.
+    (['223.45'] * 6, [('-23.45', 'page_reading'), ('223.45', 'crop_reading')]),
+    (['+23.45'] * 3 + ['223.45'] * 3, [('-23.45', 'page_reading')]),
+    # Other digits after the 2 are not this amount.
+    (['224.45'] * 6, [('224.45', 'crop_reading')]),
+])
+def test_a_minus_the_crops_read_as_2_or_plus_supports_the_page_reading(texts, expected):
+    observations = [dict(dpi=300 if i < 3 else 450, threshold=0, text=t) for i, t in enumerate(texts)]
+    assert verification._printed_readings(dict(original_text='-23.45', rect=[1, 2, 3, 4],
+                                               observations=observations)) == expected
+
+
+def test_a_plus_amount_is_never_supported_by_a_leading_2():
+    observations = [dict(dpi=300 if i < 3 else 450, threshold=0, text='223.45') for i in range(6)]
+    assert verification._printed_readings(dict(original_text='23.45', rect=[1, 2, 3, 4],
+                                               observations=observations)) == [('223.45', 'crop_reading')]
