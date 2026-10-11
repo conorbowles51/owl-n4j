@@ -1618,8 +1618,15 @@ _HEADING_ACCOUNT_NOT = ('TEL', 'TELEFONO', 'FAX', 'RFC', 'R.F.C', 'CLIENTE', 'CO
 
 
 def _heading_account(row):
-    """'<product name> <hyphenated account number>' as a whole heading line, or ''."""
-    m = _HEADING_ACCOUNT.match(_dnorm(row['text']))
+    """'<product name> <hyphenated account number>' as a whole heading line, or as one whole line of one of
+    its cells (a heading recognised together with the text beside or above it), or ''. One number or none."""
+    lines = [row['text']] + [line for cell in row['raw']['cells'] for line in cell['expected_text'].split('\n')]
+    found = {_heading_line_account(line) for line in lines} - {''}
+    return found.pop() if len(found) == 1 else ''
+
+
+def _heading_line_account(text):
+    m = _HEADING_ACCOUNT.match(_dnorm(text))
     if not m or is_date_token(m[2]) or any(w.strip('.:') in _HEADING_ACCOUNT_NOT for w in m[1].split()):
         return ''
     return m[2] if 9 <= len(re.sub(r'\D', '', m[2])) <= 14 else ''
@@ -1684,10 +1691,16 @@ def _read_section(rows, segment, pages, facts, style, sources, profile, shared=F
         head.append(row)
         if row['tokens'] and any(_role_of(text, False) == 'closing' for text, values in label_pairs(row, style or 'dot', 2) if values):
             break
+    # A section on shared pages names its account in its heading lines on the page where its opening
+    # balance is printed: lines left on an earlier page (another section's chart legend or note printed
+    # after that section's closing) do not name this one (A6, A7).
+    opening_page = next((row['page'] for row in head if row['tokens'] and any(
+        _role_of(text, False) == 'opening' for text, values in label_pairs(row, style or 'dot', 2) if values)), None)
+    own_head = [row for row in head if row['page'] == opening_page] if opening_page is not None else head
     accounts = {}
     if shared:
         own = {}
-        for row in head:
+        for row in own_head:
             if row['tokens']:
                 _accounts(row, own)
         accounts = own
@@ -1717,7 +1730,7 @@ def _read_section(rows, segment, pages, facts, style, sources, profile, shared=F
         # Library profile (data): this layout prints the account only after the product name in a
         # section heading ("<product name> 12-34567890-1"). One distinct heading number or none.
         heading_pages = set(_heading_pages(segment['pages'], facts))
-        scope = head if shared else [row for row in rows if row['page'] in heading_pages]
+        scope = own_head if shared else [row for row in rows if row['page'] in heading_pages]
         found = {_heading_account(row) for row in scope if row['tokens']} - {''}
         account = found.pop() if len(found) == 1 else ''
     account_basis = ''

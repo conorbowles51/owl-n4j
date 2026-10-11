@@ -1394,3 +1394,40 @@ class SecondTableTests(unittest.TestCase):
         rows = E._pages(self.statement(spaced=True))[1]
         self.assertTrue(E._is_header(next(r for r in rows if r['text'].startswith('F E C H A'))))
         self.assertEqual(E._letter_spaced([dict(t=t, line=0) for t in ('A', 'B', 'SALDO')]), [('A', 0), ('B', 0), ('SALDO', 0)])
+
+
+class SectionAccountTests(unittest.TestCase):
+    """r5-any-layout: a section on shared pages takes the account printed with its own opening."""
+
+    def statement(self):
+        page_one = [
+            [('BANCO EJEMPLO DEL NORTE, S.A., INSTITUCION DE BANCA MULTIPLE', 20000, 400000)],
+            [('PERIODO DEL 01/03/2024 AL 31/03/2024', 330000, 590000)],
+            [('MONEDA', 330000, 380000), ('PESOS', 390000, 450000)],
+            [('CUENTA EJEMPLO PYME', 20000, 200000), ('12-34567890-1', 210000, 300000)],
+            [('SALDO INICIAL', 20000, 150000), ('1,000.00', 500000, 560000)],
+            [('DEPOSITOS', 20000, 150000), ('0.00', 500000, 560000)],
+            [('RETIROS', 20000, 150000), ('0.00', 500000, 560000)],
+            [('SALDO FINAL', 20000, 150000), ('1,000.00', 500000, 560000)],
+            # The first section's chart legend, printed after its closing line.
+            [('NO. DE CUENTA', 20000, 120000), ('12-34567890-1', 130000, 220000)],
+            [('PAGINA 1 DE 2', 400000, 500000)],
+        ]
+        page_two = [
+            [('INVERSION EJEMPLO 98-76543210-2', 20000, 250000), ('ESTADO ENVIADO POR CORREO', 300000, 500000)],
+            [('SALDO INICIAL', 20000, 150000), ('0.00', 500000, 560000)],
+            [('DEPOSITOS', 20000, 150000), ('0.00', 500000, 560000)],
+            [('RETIROS', 20000, 150000), ('0.00', 500000, 560000)],
+            [('SALDO FINAL', 20000, 150000), ('0.00', 500000, 560000)],
+            [('PAGINA 2 DE 2', 400000, 500000)],
+        ]
+        return [page(1, page_one), page(2, page_two)]
+
+    def test_a_legend_left_on_an_earlier_page_does_not_name_the_next_section(self):
+        profile = dict(name='invented-bank', match=dict(any=['banco ejemplo del norte']), account_heading=True)
+        statements = read_statements(self.statement(), profile=profile)
+        self.assertEqual([st['account_reference'] for st in statements], ['12-34567890-1', '98-76543210-2'])
+
+    def test_a_heading_account_is_read_from_one_whole_line_of_a_cell(self):
+        row = E._pages([page(1, [[('DETALLE DE MOVIMIENTOS\nCUENTA EJEMPLO PYME 12-34567890-1', 20000, 300000)]])])[1][0]
+        self.assertEqual(E._heading_account(row), '12-34567890-1')
