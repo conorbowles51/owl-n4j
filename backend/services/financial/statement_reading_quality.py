@@ -213,6 +213,14 @@ def _assess(tables):
     result = dict(identity=identity, payments=len(payments), payment_rows=len(payments) + zero_charges,
         zero_charge_rows=zero_charges, balances=len(balances), missing_fields=missing, unreadable=sum(missing.values()),
         identity_complete=complete)
+    if identity[0] == 'merrick-card':
+        # Kept with the assessment the engine stores when it prefers the page
+        # image, so the reader can still use this labelled fact of the page
+        # if the image reading loses it (``merrick_statement``).
+        from services.financial.statement_import_merrick import merrick_statement
+        merrick = merrick_statement(sources[0]) if len(sources) == 1 else None
+        if merrick and merrick['holder'] and not merrick.get('holder_sources'):
+            result['labelled_holder'] = merrick['holder']
     # Preserve readable facts across every supported family, not just counts.
     # One repaired cell must not silently alter another payment or control.
     known = [r for r in rows if r in payments or r['kind'] in ('zero_charge', 'balance', 'statement_total')]

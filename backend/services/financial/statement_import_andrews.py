@@ -152,6 +152,11 @@ def _full_date(value):
         return None
 
 
+# Letters an OCR layer was measured to put for digits in the heading's cycle
+# line; used only to compare a continuation page with the page before it.
+_CYCLE_LOOKALIKES = str.maketrans({'O': '0', 'o': '0', 'l': '1', 'I': '1'})
+
+
 def andrews_page(source, *, allow_unbranded=False):
     """Identify the heading, never a number from the body or an application."""
     rows = source['rows']
@@ -159,6 +164,13 @@ def andrews_page(source, *, allow_unbranded=False):
     marks = [c for c in cells if re.fullmatch(r'\.?Andrews', c['expected_text'].strip()) and _box(c)]
     # OCR can put a stray mark between the two printed words; their letters must be exact.
     titles = [c for c in cells if re.fullmatch(r'Account[-·.,]?Statement', re.sub(r'\s+', '', c['expected_text'])) and _box(c)]
+    # A title read with a lower-case ``s`` is accepted only on a page without
+    # the brand mark, which opens nothing unless it continues the previous
+    # page's statement (``andrews_catalog``).
+    lowercase_title = False
+    if not titles and not marks:
+        titles = [c for c in cells if re.fullmatch(r'Account[-·.,]?statement', re.sub(r'\s+', '', c['expected_text'])) and _box(c)]
+        lowercase_title = bool(titles)
     if len(titles) != 1 or len(marks) > 1 or (not marks and not allow_unbranded):
         return None
     size = titles[0]['locator'].get('page_size', [])
@@ -181,6 +193,21 @@ def andrews_page(source, *, allow_unbranded=False):
             a, b = _full_date(m[1]), _full_date(m[2])
             if a and b and 0 <= (b-a).days <= 62:
                 cycles.append((row, a, b))
+    cycle_lookalike = False
+    if not cycles:
+        # A cycle read with a letter for a digit (``09/0l/23``) can only
+        # continue the previous page's statement: the catalog accepts such a
+        # page only when the dates then equal that page's exactly.
+        for row in top:
+            text = _text(row)
+            if not re.search(r'[OolI]', text):
+                continue
+            m = re.fullmatch(r'(' + _FULL_DATE + r')\s+(' + _FULL_DATE + r')', text.translate(_CYCLE_LOOKALIKES))
+            if m and re.fullmatch(r'[\dOolI/\s]+', text):
+                a, b = _full_date(m[1]), _full_date(m[2])
+                if a and b and 0 <= (b-a).days <= 62:
+                    cycles.append((row, a, b))
+        cycle_lookalike = bool(cycles)
     if len(accounts) != 1 or len(cycles) != 1:
         return None
     account_row, account = accounts[0]
@@ -195,7 +222,8 @@ def andrews_page(source, *, allow_unbranded=False):
     return dict(account=re.sub(r'\s+', '', account['expected_text']), start=start.isoformat(), end=end.isoformat(),
                 branded=bool(marks), account_spaced=bool(re.search(r'\s', account['expected_text'].strip())),
                 printed_page=page_number, body_start=body, width=width,
-                heading_rows=[r['row_index'] for r in rows if r['row_index'] < body])
+                heading_rows=[r['row_index'] for r in rows if r['row_index'] < body],
+                **(dict(continuation_only=True) if cycle_lookalike or lowercase_title else {}))
 
 
 _NAME_LINE = re.compile(r'[A-Z][A-Z .\'-]{3,95}')
@@ -378,6 +406,10 @@ def andrews_catalog(sources):
                           or page['printed_page'] == previous['printed_page'] + 1)
                      and page['printed_page'] != 1)
         following = ordered[index + 1][0] if index + 1 < len(ordered) else None
+        if page.get('continuation_only') and not continues:
+            active = None
+            previous = None
+            continue
         if page['account_spaced'] and not continues and not _account_corroborated(page, ordered, index):
             active = None
             previous = None
@@ -488,7 +520,8 @@ def unassigned_andrews_groups(sources, handled):
         if key in handled:
             continue
         page = andrews_page(source)
-        if not page:
+        if not page or page.get('continuation_only'):
+            # Its dates were read with a letter: they name no period of their own.
             continue
         body = [r for r in source['rows'] if r['row_index'] >= page['body_start']]
         if any(_SHARE_LABEL.match(_text(r)) or _PREVIOUS.search(_text(r)) for r in body):

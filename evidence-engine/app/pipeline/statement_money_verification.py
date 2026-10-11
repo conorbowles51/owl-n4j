@@ -201,6 +201,33 @@ def lookalike_money(text, kind='single'):
     return crop_money_pair(mapped) if kind == 'pair' else crop_money_value(mapped)
 
 
+# Marks an embedded OCR layer was measured to put before or inside Andrews
+# money cells, where the print has none (``·-7.64``, ``-403_. 95``,
+# ``-2.5°0``), and a point it read twice (``56 .. 35``).
+_STRAY_MARKS = '·•_°`^!~"\''
+
+
+def stray_marked_money(text, kind='single'):
+    """The amount(s) a page reading states once measured stray marks are dropped, else ``None``.
+
+    ``None`` unless the text holds such a mark (or a doubled point) and then
+    reads as an amount (``kind='pair'``: two), letters measured to stand for
+    digits read as digits. Like ``lookalike_money`` this is an interpretation
+    of the page's glyphs, never confirmed on its own: the cell is reread from
+    the image and only the agreed controls may pin a reading of it.
+    """
+    compact = re.sub(r'\s+', '', text or '')
+    if not any(ch in _STRAY_MARKS for ch in compact) and '..' not in compact:
+        return None
+    cleaned = re.sub(r'\.{2,}', '.', ''.join(ch for ch in compact if ch not in _STRAY_MARKS))
+    if not cleaned:
+        return None
+    value = crop_money_pair(cleaned) if kind == 'pair' else crop_money_value(cleaned)
+    if value is None:
+        value = lookalike_money(cleaned, kind)
+    return value
+
+
 def _split_pair(text, parse):
     """The two amounts of a cell printing an amount and a running balance side by side, else ``None``.
 
@@ -668,6 +695,10 @@ def _target_kind(cell, page, andrews):
         return 'single'
     if lookalike_money(cell.text, 'pair') is not None:
         return 'pair'
+    if stray_marked_money(cell.text) is not None:
+        return 'single'
+    if stray_marked_money(cell.text, 'pair') is not None:
+        return 'pair'
     return None
 
 
@@ -957,6 +988,8 @@ def _printed_readings(cell):
             normalised = dollar = dollar_garbled_money(original)
         if normalised is None:
             normalised = lookalike_money(original, 'pair' if pair else 'single')
+        if normalised is None:
+            normalised = stray_marked_money(original, 'pair' if pair else 'single')
     for value, source in ((page_value, 'page_reading'), (normalised, 'page_reading_normalised')):
         if value is not None and any(image(o['text']) == value or _minus_misread(o['text'], value, pair)
                                      for o in observations):

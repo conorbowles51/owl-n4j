@@ -356,3 +356,47 @@ class SpacedHeadingTests(unittest.TestCase):
         result = pinned_andrews_values(tables(data), {(0, 10, 2): ['-2.00 99.00'], (0, 11, 2): ['-26.11 72.89']},
                                        confirmed, {(0, 10, 2): '-2.00 99.00'})
         self.assertEqual(result, {})
+
+
+class ContinuationOnlyPageTests(unittest.TestCase):
+    """A page whose cycle reads a letter for a digit, or whose title reads a lower-case s, only continues."""
+
+    def pages(self, period='06/0l/20 06/30/20', title=None, mark=True):
+        first = source([
+            [(15, '06/01 ID 0040 FREE CHECKING Previous Balance'), (350, '100.00')],
+            [(15, '06/03'), (75, 'Withdrawal Debit Card'), (310, '-10.00'), (350, '90.00')],
+            [(15, '--- Continued on following page ---')]])
+        second = source([
+            [(15, '06/05'), (75, 'Withdrawal Debit Card'), (310, '-5.00'), (350, '85.00')],
+            [(15, '06/30'), (75, 'Ending Balance'), (350, '85.00')]], page=2, printed_page=2, names=False, period=period)
+        if title:
+            second['rows'][0]['cells'][0]['expected_text'] = title
+        if not mark:
+            second['rows'][1]['cells'][0]['expected_text'] = 'unreadable logo'
+        return first, second
+
+    def test_it_continues_the_previous_page_when_the_dates_then_agree_exactly(self):
+        for period, title, mark in (('06/0l/20 06/30/20', None, True), ('06/01/20 O6/30/20', None, True),
+                                    ('06/01/20 06/30/20', 'Ac count statement', False)):
+            with self.subTest(period=period, title=title):
+                first, second = self.pages(period, title, mark)
+                self.assertTrue(andrews_page(second, allow_unbranded=True)['continuation_only'])
+                groups, _, _ = andrews_catalog([first, second])
+                self.assertEqual([g['page_numbers'] for g in groups], [[1, 2]])
+                rows = propose_andrews_statement([first, second], 'USD', groups[0])['rows']
+                self.assertEqual([r['fields']['balance'] for r in rows if r['kind'] == 'balance'], ['10000', '8500'])
+
+    def test_it_never_opens_a_period_or_continues_other_dates(self):
+        # Other dates once the letter is read as a digit.
+        first, second = self.pages('06/0l/20 06/29/20')
+        self.assertEqual([g['page_numbers'] for g in andrews_catalog([first, second])[0]], [[1]])
+        # Alone, it opens nothing, not even an unassigned group.
+        from services.financial.statement_import_andrews import unassigned_andrews_groups
+        _, second = self.pages()
+        self.assertEqual(andrews_catalog([second])[0], [])
+        self.assertEqual(unassigned_andrews_groups([second], set()), [])
+        # A branded page's lower-case title is still not a title; other letters are not digits.
+        _, second = self.pages('06/01/20 06/30/20', 'Ac count statement', True)
+        self.assertIsNone(andrews_page(second, allow_unbranded=True))
+        _, second = self.pages('06/0B/20 06/30/20')
+        self.assertIsNone(andrews_page(second, allow_unbranded=True))
