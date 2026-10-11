@@ -643,32 +643,73 @@ def _money_cells(row, width):
     return [c for c in row['cells'] if _box(c) and _box(c)[0] >= width * .46]
 
 
-def _voucher_money(row, following, width, currency):
-    """Read two specific long credit-voucher layouts, retaining their cells.
+# The long credit-voucher payment label. OCR may put spaces inside its
+# words or read the C of "Credit" in lower case; every other letter must be
+# read exactly.
+_VOUCHER_LABEL = (r'((?:Recurring\s+)?Withdrawal\s+Adjustment\s+Debit\s+Card\s+'
+                  r'[Cc]\s*r\s*e\s*d\s*i\s*t\s+Voucher)')
 
-    A numeric suffix is accepted only after the exact printed payment label.
-    A following line must contain only two measured money cells immediately
+
+def _voucher_money(row, following, width, currency):
+    """Read the long credit-voucher layouts, retaining their cells.
+
+    A numeric suffix is accepted only after the printed payment label. A
+    following line must contain only two measured money cells immediately
     beneath that label. No digit, sign, account or balance is inferred.
+
+    The label cell can also hold both the amount and the running balance
+    (``... Credit Voucher 0.25 1234.56``) when it reaches the money columns.
+    Those two values are then read from that cell's page text only, never
+    crop-checked as money: the payment's own running balance check and the
+    next line's (whose cells are) must both hold, or the period stays held.
+    The date cell may also hold the printed date, an additional date and the
+    label together, when the money is printed on the following line.
     """
     cells = row['cells']
-    if len(cells) not in (2, 3) or not all(_box(c) for c in cells):
+    if not cells or len(cells) > 3 or not all(_box(c) for c in cells):
         return None
-    date_cell, description_cell = cells[:2]
-    if not (_box(date_cell)[0] < width * .08 and
-            _box(date_cell)[2] <= _box(description_cell)[0] < width * .46):
-        return None
-    match = re.fullmatch(r'((?:Recurring )?Withdrawal Adjustment Debit Card Credit Voucher)'
-                         r'(?:\s+(' + _SPACED_MONEY + r'))?', description_cell['expected_text'].strip())
+    joined = None
+    if len(cells) == 1:
+        joined = re.fullmatch(r'(' + _DATE + r'(?:\s+' + _DATE + r')?)\s+' + _VOUCHER_LABEL, cells[0]['expected_text'].strip())
+        if not joined or _box(cells[0])[0] >= width * .08:
+            return None
+        date_cell = description_cell = cells[0]
+        match = re.fullmatch(_VOUCHER_LABEL + r'()()', joined[2])
+        date_text = joined[1]
+    else:
+        date_cell, description_cell = cells[:2]
+        if not (_box(date_cell)[0] < width * .08 and
+                _box(date_cell)[2] <= _box(description_cell)[0] < width * .46):
+            return None
+        match = re.fullmatch(_VOUCHER_LABEL + r'(?:\s+(' + _SPACED_MONEY + r'))?(?:\s+(' + _SPACED_MONEY + r'))?',
+                             description_cell['expected_text'].strip())
+        date_text = date_cell['expected_text'].strip()
     if not match:
         return None
-    wrapped = match[2] is None
+    inline_pair = bool(match[2] and match[3])
+    wrapped = not match[2]
     if wrapped:
-        if len(cells) != 2 or following is None or len(following['cells']) != 2:
+        if len(cells) != (1 if joined else 2) or following is None or len(following['cells']) not in (1, 2):
             return None
         money_cells = _money_cells(following, width)
-        if len(money_cells) != 2:
+        if len(money_cells) != len(following['cells']):
             return None
-        amount_text, balance_text = [c['expected_text'].strip() for c in money_cells]
+        if len(money_cells) == 1:
+            # The following line read as one joined amount and balance cell
+            # (crop-checked as such): exactly one space separates two amounts.
+            pair = re.fullmatch(r'(' + _SPACED_MONEY + r')\s+(' + _SPACED_MONEY + r')', money_cells[0]['expected_text'].strip())
+            if not pair or len(re.findall(r'\.', money_cells[0]['expected_text'])) != 2:
+                return None
+            inline_pair = True
+            money_cells = money_cells * 2
+            amount_text, balance_text = pair[1], pair[2]
+        else:
+            amount_text, balance_text = [c['expected_text'].strip() for c in money_cells]
+    elif inline_pair:
+        if len(cells) != 2 or _box(description_cell)[2] < width * .46:
+            return None
+        money_cells = [description_cell, description_cell]
+        amount_text, balance_text = match[2], match[3]
     else:
         if len(cells) != 3 or _box(cells[2])[0] < width * .46:
             return None
@@ -680,7 +721,7 @@ def _voucher_money(row, following, width, currency):
            for c in measured):
         return None
     left, right = [_box(c) for c in money_cells]
-    if left[2] > right[0] or max(left[1], right[1]) >= min(left[3], right[3]):
+    if not inline_pair and (left[2] > right[0] or max(left[1], right[1]) >= min(left[3], right[3])):
         return None
     description_box = _box(description_cell)
     if wrapped:
@@ -691,13 +732,13 @@ def _voucher_money(row, following, width, currency):
     elif max(description_box[1], _box(date_cell)[1]) >= min(description_box[3], _box(date_cell)[3]):
         return None
     try:
-        _amount(amount_text, currency, separate_cell=wrapped)
-        _amount(balance_text, currency, separate_cell=True)
+        _amount(amount_text, currency, separate_cell=wrapped and not inline_pair)
+        _amount(balance_text, currency, separate_cell=not inline_pair)
     except ValueError:
         return None
-    return dict(body=date_cell['expected_text'].strip() + ' ' + match[1],
+    return dict(body=date_text + ' ' + match[1],
                 money_cells=money_cells, amount_text=amount_text, balance_text=balance_text,
-                source_row=following if wrapped else row, wrapped=wrapped)
+                source_row=following if wrapped else row, wrapped=wrapped, inline_pair=inline_pair)
 
 
 _DATE_UNREAD = 'Check the full date in the PDF. It could not be read within this statement period.'

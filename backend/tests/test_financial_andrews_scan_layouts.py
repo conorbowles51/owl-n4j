@@ -453,3 +453,60 @@ class OrderedDamagedDateTests(unittest.TestCase):
             self.assertIsNone(self.read('06/04·')['fields'].get('date'))
         finally:
             reader.ORDERED_DAMAGED_DATES = True
+
+
+class VoucherLayoutTests(unittest.TestCase):
+    """Long credit-voucher payments printed in three more ways."""
+
+    def read(self, voucher_rows, after=('06/05', '-3.00', '97.36')):
+        data = source([
+            [(15, '06/01 ID 0040 FREE CHECKING Previous Balance'), (350, '100.00')],
+            *voucher_rows,
+            [(75, 'EXAMPLE REFUND')],
+            [(15, after[0]), (75, 'Withdrawal Debit Card'), (310, after[1]), (350, after[2])],
+            [(15, '06/30'), (75, 'Ending Balance'), (350, after[2])]])
+        return data, data['rows'][10]
+
+    def payments(self, data):
+        groups, _, _ = andrews_catalog([data])
+        result = propose_andrews_statement([data], 'USD', groups[0])
+        return [r for r in result['rows'] if not r['excluded'] and r['kind'] in ('transaction', 'unresolved')]
+
+    def test_amount_and_balance_inside_the_label_cell_are_read_and_checked_by_both_balances(self):
+        data, label_row = self.read([[(15, '06/03'), (75, 'Recurring Withdrawal Adjustment Debit Card Credit Voucher 0.36 100.36')]])
+        label_row['cells'][1]['locator']['rect'][2] = 375000   # the label cell reaches the balance column
+        voucher, after = self.payments(data)
+        self.assertEqual((voucher['fields']['amount_minor'], voucher['fields']['direction'], voucher['fields']['balance'],
+                          voucher['issues']), ('36', 'credit', '10036', []))
+        self.assertEqual(set(voucher['value_sources']), {'amount', 'balance'})
+        self.assertEqual(after['issues'], [])
+        # A misread balance in the label cell breaks the next payment's check: held.
+        label_row['cells'][1]['expected_text'] = 'Recurring Withdrawal Adjustment Debit Card Credit Voucher 0.36 100.63'
+        voucher, after = self.payments(data)
+        self.assertTrue(voucher['issues'] or after['issues'])
+        # A label cell that stops short of the money columns is not this layout.
+        label_row['cells'][1]['expected_text'] = 'Recurring Withdrawal Adjustment Debit Card Credit Voucher 0.36 100.36'
+        label_row['cells'][1]['locator']['rect'][2] = 250000
+        self.assertNotIn('amount_minor', self.payments(data)[0]['fields'])
+
+    def test_a_lower_case_or_spaced_credit_and_a_joined_wrapped_money_line(self):
+        for label in ('Recurring Withdrawal Adjustment Debit Card credit Voucher',
+                      'Recurring Withdrawal Adjustment Debit Card Cr edit Voucher'):
+            with self.subTest(label=label):
+                data, label_row = self.read([[(15, '06/03'), (75, label)], [(310, '0.36 100.36')]])
+                data['rows'][11]['cells'][0]['locator']['rect'][2] = 375000
+                voucher = self.payments(data)[0]
+                self.assertEqual((voucher['fields']['amount_minor'], voucher['fields']['balance'], voucher['issues']),
+                                 ('36', '10036', []))
+        # Other letters read wrongly are not the label.
+        data, _ = self.read([[(15, '06/03'), (75, 'Recurring Withdrawal Adjustment Debit Card Credlt Voucher')],
+                             [(310, '0.36'), (350, '100.36')]])
+        self.assertNotIn('amount_minor', self.payments(data)[0]['fields'])
+
+    def test_date_additional_date_and_label_read_as_one_cell(self):
+        data, _ = self.read([[(15, '06/03 06/02 Recurring Withdrawal Adjustment Debit Card Credit Voucher')],
+                             [(310, '0.36'), (350, '100.36')]])
+        data['rows'][10]['cells'][0]['locator']['rect'][2] = 300000
+        voucher = self.payments(data)[0]
+        self.assertEqual((voucher['fields']['date'], voucher['fields']['additional_printed_date'],
+                          voucher['fields']['amount_minor'], voucher['issues']), ('2020-06-03', '06/02', '36', []))
