@@ -8,6 +8,7 @@ Original cells are retained, including joined or damaged OCR money fields.
 """
 import re
 from datetime import date
+from difflib import SequenceMatcher
 
 from services.financial.pdf_candidates import _digest
 from services.financial.statement_import_proposal import exact_amount
@@ -44,6 +45,43 @@ _PAYMENT = re.compile(r'^(' + _DATE + r'|\S+)(?: (' + _DATE + r'))? ((?:' + _REC
                       r'\s+)?(' + _WITHDRAWAL + '|' + _DEPOSIT + r')\b.*)$')
 _DAMAGED_DATE_PAYMENT = re.compile(r'^(.{1,12}?) ((?:' + _RECURRING +
                                  r'\s+)?(' + _WITHDRAWAL + '|' + _DEPOSIT + r')\b.*)$')
+
+# Neil's ruling of 2026-10-09: a payment whose Withdrawal/Deposit word OCR
+# misread takes its direction from its printed amount (minus or no sign) only
+# when the previous and the new printed balances agree with it exactly: three
+# printed facts agree. Anything unread or disagreeing stays held. Reverse: False.
+MISREAD_VERB_DIRECTION = True
+DIRECTION_FROM_SIGN_AND_BALANCES = 'printed_sign_and_balances'
+_VERBS = ('Withdrawal', 'Deposit')
+_DIRECTION_UNREAD = ('Check the amount and whether money entered or left the account. '
+                     'The number or its minus sign may have been read incorrectly.')
+
+
+def _resemblance(letters, word):
+    """How closely the start of ``letters`` reads as ``word`` (best of three lengths)."""
+    return max(SequenceMatcher(None, letters[:size], word.lower()).ratio()
+               for size in (len(word) - 1, len(word), len(word) + 1))
+
+
+def _misread_verb(description):
+    """The printed payment word a damaged first word stands for, or None.
+
+    Only its letters are compared: OCR spaces and stray marks inside the word
+    are dropped (``Wi thdraw;al``, ``IHthdrawal``, ``WithQrawal``), and a
+    damaged ``Recurring`` before it is passed over. The word must read at least
+    three quarters like exactly one of the two printed words and clearly not
+    like the other. It only keeps the sign/word conflict hold; the direction
+    itself is never taken from this resemblance.
+    """
+    letters = re.sub(r'[^A-Za-z]', '', description).lower()
+    if _resemblance(letters, 'Recurring') >= .75:
+        letters = letters[len('Recurring'):]
+    scores = {verb: _resemblance(letters, verb) for verb in _VERBS}
+    found = [verb for verb, score in scores.items() if score >= .75]
+    if len(found) != 1 or min(scores.values()) >= .5:
+        return None
+    return found[0]
+
 
 def _text(row):
     return ' '.join(c['expected_text'].strip() for c in row['cells']).strip()
@@ -742,6 +780,7 @@ def propose_andrews_statement(sources, currency, statement):
                     # fail parsing. Wrapped/merged cells are not crop targets.
                     fields['amount_column'] = str(money_cells[0]['column_index'])
                     fields['balance_column'] = str(money_cells[1]['column_index'])
+                misread_sign = None
                 try:
                     amount = _amount(amount_text, currency, separate_cell=separate_cells)
                     fields['amount_minor'] = str(abs(amount))
@@ -749,10 +788,14 @@ def propose_andrews_statement(sources, currency, statement):
                         fields['amount_column'] = str(money_cells[0]['column_index'])
                     description = fields['description']
                     verb = re.sub(r'\s+', '', parsed[4] if parsed else damaged_date_payment[3]) if parsed or damaged_date_payment else None
-                    conflict = (amount > 0 and verb == 'Withdrawal' and 'Adjustment' not in description
-                                or amount < 0 and verb == 'Deposit')
-                    if conflict or verb is None:
-                        item['issues'].append('Check the amount and whether money entered or left the account. The number or its minus sign may have been read incorrectly.')
+                    misread = None if verb or not MISREAD_VERB_DIRECTION else _misread_verb(description)
+                    conflict = (amount > 0 and (verb or misread) == 'Withdrawal' and 'Adjustment' not in description
+                                or amount < 0 and (verb or misread) == 'Deposit')
+                    if not conflict and verb is None and misread and amount:
+                        # Decided below, once both printed balances are known.
+                        misread_sign = amount
+                    elif conflict or verb is None:
+                        item['issues'].append(_DIRECTION_UNREAD)
                     else:
                         fields['direction'] = 'credit' if amount >= 0 else 'debit'
                 except ValueError:
@@ -763,6 +806,14 @@ def propose_andrews_statement(sources, currency, statement):
                         fields['balance_column'] = str(money_cells[-1]['column_index'])
                 except ValueError:
                     item['issues'].append('Check the running balance in the PDF. It could not be read separately from the transaction amount.')
+                if misread_sign is not None:
+                    if (previous_balance is not None and 'balance' in fields
+                            and int(fields['balance']) - previous_balance == misread_sign):
+                        fields.update(direction='credit' if misread_sign > 0 else 'debit',
+                                      direction_basis=DIRECTION_FROM_SIGN_AND_BALANCES)
+                        item['kind'] = 'transaction'
+                    else:
+                        item['issues'].append(_DIRECTION_UNREAD)
                 if previous_balance is not None and all(k in fields for k in ('balance', 'amount_minor', 'direction')):
                     movement = int(fields['amount_minor']) * (1 if fields['direction'] == 'credit' else -1)
                     delta = int(fields['balance']) - previous_balance - movement
