@@ -868,22 +868,44 @@ def _heading_pages(segment_pages, facts):
     return heading
 
 
-def _section_holder(section_pages, pages, facts):
-    """Holder from the statement's heading pages only (A8): up to the first page printing the period.
+def _identity_rows(segment_pages, pages, facts, style):
+    """[(page, rows)] of the statement's heading pages, cut at its first movement table (A8).
+
+    The holder is printed above the movements: once a movement-table heading or a
+    movement line has been printed, every later line (the rest of that page and
+    every later page) is movement text, whose description lines name transfer
+    counterparties and their accounts, never the holder.
+    """
+    result = []
+    for page in _heading_pages(segment_pages, facts):
+        rows = pages[page]
+        cut = next((row['y0'] for row in rows if row['tokens'] and row['y0'] is not None
+                    and (_is_header(row) or _row_is_movement(row, style or 'dot', 2))), None)
+        if cut is None:
+            result.append((page, rows))
+            continue
+        result.append((page, [row for row in rows if row['y0'] is not None and row['y0'] < cut]))
+        break
+    return result
+
+
+def _section_holder(section_pages, pages, facts, style=None):
+    """Holder from the statement's heading pages only (A8): up to the first page printing the period,
+    and above the statement's first movement table.
 
     Legal pages print other people's names under the same labels (a complaints
     officer as "Titular"), so labels elsewhere never count. A labelled name and
     the addressee block that disagree give no holder (a person decides).
     """
-    heading = _heading_pages(section_pages, facts)
+    heading = _identity_rows(section_pages, pages, facts, style)
     labelled = set()
-    for page in heading:
-        for row in pages[page]:
+    for _, rows in heading:
+        for row in rows:
             if row['tokens'] and len(row['text']) <= 160:
                 _holder_label(row, labelled)
     addressed = ''
-    for page in heading:
-        addressed = address_holder(pages[page])
+    for _, rows in heading:
+        addressed = address_holder(rows, style)
         if addressed:
             break
     if len(labelled) > 1:
@@ -944,8 +966,32 @@ def _holder_label(row, found):
                 found.add(value)
 
 
-# Folding turns a ZIP+4 hyphen into a space ("20009 6857").
-_POSTAL = re.compile(r'(?:\bC\.?\s?P\.?\s*\d{5}\b|\b\d{5}(?:[- ]\d{4})?\s*$|^\d{5}\s)')
+# A postal-code line (A8): a labelled code ('C.P. 01234', 'CODIGO POSTAL 01234', 'ZIP 12345'), a code
+# opening a place line ('01234 CIUDAD ...'), or a code closing a place line after a state or a comma
+# ('..., ST 12345', '... CITY, PLACE 12345'). A five-digit number closing any other line is a reference
+# (a transfer description, a split account number), not an address. Folding turns a ZIP+4 hyphen into a
+# space ("20009 6857").
+# The 'C.P.' label is matched with one scan substitution between its letters and either mark after it
+# ('CAP.', 'C,P.', 'CAP,') (F1).
+_POSTAL_LABELLED = re.compile(r'(?:\bC[.,]?\s?[A-Z]?[.,]?\s?P\b[.,]?|\bCODIGO POSTAL|\bZIP(?: CODE)?)\s*:?\s*\d{5}\b')
+_POSTAL_LEADING = re.compile(r'^\d{5}\s+[A-Z]{3,}')
+_POSTAL_PLACE = re.compile(r'[A-Z]{2,}\.?\s*,\s*[A-Z][A-Z. ]*?\s\d{5}(?:[- ]\d{4})?\s*$')
+
+
+def _postal(text):
+    """Whether a folded line reads as the postal-code line of an address."""
+    return bool(_POSTAL_LABELLED.search(text) or _POSTAL_LEADING.search(text) or _POSTAL_PLACE.search(text)
+                or _US_ADDRESS.search(text) and re.search(r'\d{5}(?:[- ]\d{4})?\s*$', text))
+
+
+def _not_address(row, x, style):
+    """A movement line, or a line whose cells at the block's left edge carry money or a date, is never part
+    of an address block (A8). Cells further right (a period or an account printed beside the address)
+    do not count."""
+    if _row_is_movement(row, style or 'dot', 2):
+        return True
+    cells = {id(t['cell']) for t in row['tokens'] if t['first'] and abs(t['x0'] - x) <= row['width'] * 0.015}
+    return any(_value_kind(t, style or 'dot', 2) in ('money', 'date') for t in row['tokens'] if id(t['cell']) in cells)
 
 
 _LABEL_WORDS = {fold(word) for word in NOT_A_NAME} | {'NO', 'NUM', 'NUMERO', 'RFC', 'CONTRATO', 'CLIENTE'}
@@ -960,28 +1006,37 @@ def _name_like(name):
                 and not any(re.search(r'\b' + re.escape(word) + r'\b', fold(name)) for word in NOT_A_NAME))
 
 
-def address_holder(rows):
+def address_holder(rows, style=None):
     """The top line of the left address block ending with a postal-code line (A8)."""
-    found = [(y0, name) for y0, name, accepted in _address_tops(rows) if accepted]
+    found = [(y0, name) for y0, name, accepted in _address_tops(rows, style) if accepted]
     # The addressee block is the topmost one; a second (fiscal) address block below it is not the holder.
     return min(found)[1] if found else ''
 
 
-def _address_tops(rows):
+def _address_tops(rows, style=None):
     """[(y0, top line, accepted as a name)] of every address block ending with a postal-code line."""
     located = [r for r in rows if r['tokens'] and r['width']]
     if not located:
         return []
     found = []
     for index, row in enumerate(located):
-        if not _POSTAL.search(fold(row['text'])):
+        if not _postal(fold(row['text'])):
             continue
         x = min(t['x0'] for t in row['tokens'])
+        if _not_address(row, x, style):
+            continue
         block = [row]
         for earlier in reversed(located[:index]):
             ex = min(t['x0'] for t in earlier['tokens'])
-            if abs(ex - x) > row['width'] * 0.015 or earlier['y0'] > block[-1]['y0']:
+            if earlier['y0'] > block[-1]['y0']:
                 continue
+            if abs(ex - x) > row['width'] * 0.015:
+                # A movement line printed between two lines means they are not one address block.
+                if _row_is_movement(earlier, style or 'dot', 2):
+                    break
+                continue
+            if _not_address(earlier, x, style):
+                break
             # The issuer's own legal-name or heading line above is not part of the addressee block.
             # Only the cells aligned with the block's left edge count (the issuer's name can share the row).
             aligned = {id(t['cell']) for t in earlier['tokens'] if abs(t['x0'] - x) <= row['width'] * 0.015 and t['first']}
@@ -1030,11 +1085,11 @@ def identity_evidence(segment, section_pages, rows, pages, facts, style):
     A remembered fact applies to another period only when this evidence is the same.
     """
     holder = set()
-    for page in _heading_pages(segment['pages'], facts):
-        for row in pages[page]:
+    for _, heading_rows in _identity_rows(segment['pages'], pages, facts, style):
+        for row in heading_rows:
             if row['tokens'] and len(row['text']) <= 160:
                 _holder_label(row, holder)
-        holder.update(name for _, name, _ in _address_tops(pages[page]))
+        holder.update(name for _, name, _ in _address_tops(heading_rows, style))
     legal = _repeated_legal([facts[p]['legal'] for p in section_pages])
     currency = {'named:' + code for _, code in segment.get('currency_mentions', [])}
     for row in rows:
@@ -1358,6 +1413,41 @@ def _heading_account(row):
     return m[2] if 9 <= len(re.sub(r'\D', '', m[2])) <= 14 else ''
 
 
+_INTERBANK_DIGITS = 18
+_PRINTED_NUMBER = re.compile(r'(?<![\d-])\d[\d-]{6,16}\d(?![\d-])')
+
+
+def _printed_over_interbank(account, rows):
+    """(account, basis): the printed account number rather than the 18-digit interbank number (A6).
+
+    An interbank number (CLABE: bank 3 + branch 3 + account 11 + check digit 1)
+    carries the account number right-aligned in its account field. When the
+    statement also prints that account number on its own (any digit run of 8 to
+    11 digits that is exactly the end of the account field, outside the
+    interbank number's own printing), the account is that printed number; one
+    such number or none. Without one the interbank number stays the account
+    and the basis says so.
+    """
+    digits = re.sub(r'\D', '', account)
+    if len(digits) != _INTERBANK_DIGITS:
+        return account, 'account_number'
+    field = digits[6:17]
+    own = re.compile(r'[\s-]?'.join(digits))
+    found = {}
+    for row in rows:
+        if not row['tokens']:
+            continue
+        text = own.sub(' ', row['text'])
+        for m in _PRINTED_NUMBER.finditer(text):
+            value = m[0].strip('-')
+            number = re.sub(r'\D', '', value)
+            if 8 <= len(number) <= 11 and field.endswith(number) and field[:len(field) - len(number)].strip('0') == '':
+                found.setdefault(number, value)
+    if len(found) == 1:
+        return next(iter(found.values())), 'account_number'
+    return account, 'interbank_number'
+
+
 def layout_key(header_words, convention):
     """The layout as a person recognises it: its movement headings and balance convention.
 
@@ -1418,6 +1508,10 @@ def _read_section(rows, segment, pages, facts, style, sources, profile, shared=F
         scope = head if shared else [row for row in rows if row['page'] in heading_pages]
         found = {_heading_account(row) for row in scope if row['tokens']} - {''}
         account = found.pop() if len(found) == 1 else ''
+    account_basis = ''
+    if account:
+        scope = head if shared else [row for page in _heading_pages(segment['pages'], facts) for row in pages[page]]
+        account, account_basis = _printed_over_interbank(account, scope)
     own_currencies = set()
     for row in head:
         if row['tokens']:
@@ -1450,7 +1544,7 @@ def _read_section(rows, segment, pages, facts, style, sources, profile, shared=F
         except MoneyError:
             exponent = 2
     # The holder belongs to the statement, printed on its first pages, for every one of its sections.
-    holder = _section_holder(segment['pages'], pages, facts)
+    holder = _section_holder(segment['pages'], pages, facts, style)
     institution = (_institution([item['legal'] for item in f],
                                 {line for page in set(_heading_pages(segment['pages'], facts)) | set(segment['pages'][:2])
                                  for line in facts[page]['legal']})
@@ -1461,7 +1555,7 @@ def _read_section(rows, segment, pages, facts, style, sources, profile, shared=F
     period = segment['period']
     statement = dict(layout_id=LAYOUT, institution=institution, account_reference=account,
                      period_start=period[0].isoformat() if period else '', period_end=period[1].isoformat() if period else '',
-                     holder=holder, currency=currency,
+                     holder=holder, currency=currency, account_basis=account_basis,
                      # A shared page cannot lend its currency to this section: an unread one stays unread.
                      currency_source=currency_basis or ('printed_account_section' if shared else ''),
                      account_type='credit_card' if liability else 'checking',

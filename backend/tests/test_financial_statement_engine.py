@@ -1045,3 +1045,106 @@ class RoutingAgreementTests(unittest.TestCase):
         self.assertFalse(_same_identity('holder', 'SA DE CV', ''))
         self.assertFalse(_same_identity('currency', 'MXN', 'USD'))
         self.assertTrue(_same_identity('account_reference', '0012345678', '12345678'))
+
+
+def transfer_statement(postal_line='CIUDAD DE MEXICO C.P. 06000', account_line=None, second_page=True):
+    """An invented Spanish layout whose transfer movements print several description lines at one left
+    edge, the last ending in a five-digit reference; optionally continued on a second page that opens
+    with more transfer lines (the shape of the r4-any-layout wrong admission, with invented text)."""
+    lines = [
+        [('BANCO EJEMPLO DEL NORTE, S.A., INSTITUCION DE BANCA MULTIPLE', 20000, 400000)],
+        [('EMPRESA DE PRUEBA SA DE CV', 20000, 200000), ('PERIODO', 330000, 380000),
+         ('DEL 01/03/2024 AL 31/03/2024', 390000, 590000)],
+        [('CALLE FALSA 123', 20000, 150000), ('MONEDA', 330000, 380000), ('PESOS', 390000, 450000)],
+        [('COL CENTRO', 20000, 120000)],
+    ]
+    if postal_line:
+        lines.append([(postal_line, 20000, 220000)])
+    lines.append(account_line or [('CUENTA EJEMPLO PYME 12-34567890-1', 20000, 250000), ('CLABE', 260000, 300000),
+                                  ('002180123456789017', 310000, 420000)])
+    lines += [
+        [('SALDO ANTERIOR', 330000, 430000), ('1,000.00', 500000, 560000)],
+        [('SALDO FINAL', 330000, 400000), ('1,250.00', 500000, 560000)],
+        [('FECHA', 20000, 60000), ('CONCEPTO', 80000, 160000), ('ABONOS', 330000, 380000),
+         ('CARGOS', 410000, 460000), ('SALDO', 520000, 560000)],
+        [('05/MAR', 20000, 60000), ('ABONO TRANSFERENCIA', 80000, 300000), ('500.00', 350000, 380000),
+         ('1,500.00', 512000, 560000)],
+    ]
+    description = [[('RECIBIDO DE EJEMPLOMEX', 120000, 300000)],
+                   [('DEL CLIENTE COMERCIAL EJEMPLO', 120000, 300000)],
+                   [('CONCEPTO OC 54321', 120000, 300000)]]
+    page_one = lines + description
+    later = [[('10/MAR', 20000, 60000), ('PAGO DE SERVICIO', 80000, 300000), ('200.00', 428000, 460000),
+              ('1,300.00', 512000, 560000)],
+             [('20/MAR', 20000, 60000), ('COMISION', 80000, 300000), ('50.00', 430000, 460000),
+              ('1,250.00', 512000, 560000)]]
+    if not second_page:
+        return [page(1, page_one + later)]
+    page_two = [[('FECHA', 20000, 60000), ('CONCEPTO', 80000, 160000), ('ABONOS', 330000, 380000),
+                 ('CARGOS', 410000, 460000), ('SALDO', 520000, 560000)],
+                [('ENVIADO A EJEMPLOMEX', 120000, 300000)],
+                [('AL CLIENTE COMERCIAL EJEMPLO', 120000, 300000)],
+                [('A LA CUENTA 0012345 67812', 120000, 300000)]] + later
+    return [page(1, page_one), page(2, page_two)]
+
+
+class HolderAndInterbankTests(unittest.TestCase):
+    """r5-any-layout: the holder never comes from movement text, and the printed account number wins over
+    the interbank number that contains it."""
+
+    def first(self, sources):
+        return read_statements(sources)[0]
+
+    def test_the_addressee_block_is_still_read(self):
+        st = self.first(transfer_statement())
+        self.assertTrue(st['engine']['proved'], st['engine'])
+        self.assertEqual(st['holder'], 'EMPRESA DE PRUEBA SA DE CV')
+
+    def test_movement_description_lines_ending_in_a_reference_are_never_the_holder(self):
+        # The addressee's postal line is unreadable: no address block on the heading; the transfer
+        # descriptions on page 1 (below the first movement) and page 2 (a movement table) are not one.
+        for second_page in (True, False):
+            st = self.first(transfer_statement(postal_line=None, second_page=second_page))
+            self.assertTrue(st['engine']['proved'], st['engine'])
+            self.assertEqual(st['holder'], '')
+            self.assertNotIn('RECIBIDO DE EJEMPLOMEX', st['identity_evidence']['holder'])
+            self.assertNotIn('ENVIADO A EJEMPLOMEX', st['identity_evidence']['holder'])
+
+    def test_a_postal_line_must_read_as_an_address_line(self):
+        for text in ('CIUDAD DE MEXICO C.P. 06000', 'C.P.: 06000', 'CAP. 06000', 'CAP, 06000', 'CODIGO POSTAL 06000', '06000 CIUDAD DE MEXICO',
+                     'SPRINGFIELD, IL 62701', 'SPRINGFIELD, IL 62701-1234', 'CIUDAD EJEMPLO, ESTADO 06000'):
+            self.assertTrue(E._postal(E.fold(text)), text)
+        for text in ('CONCEPTO OC 54321', 'A LA CUENTA 0012345 67812', 'REF 12345', 'CLAVE DE RASTREO 2024 12345',
+                     'TOTAL 12345'):
+            self.assertFalse(E._postal(E.fold(text)), text)
+
+    def test_a_line_with_money_or_a_date_at_the_block_edge_is_not_part_of_an_address(self):
+        lines = [[('EMPRESA DE PRUEBA SA DE CV', 20000, 200000)],
+                 [('05/03/2024 PAGO RECIBIDO', 20000, 200000)],
+                 [('CALLE FALSA 123', 20000, 150000)],
+                 [('COL CENTRO', 20000, 120000)],
+                 [('CIUDAD DE MEXICO C.P. 06000', 20000, 220000)]]
+        rows = E._pages([page(1, lines)])[1]
+        # The dated line stops the block: three lines remain, topped by the street line (not a name).
+        self.assertEqual(E.address_holder(rows), '')
+        lines[1] = [('CALLE FALSA 123 INT 4', 20000, 200000), ('DEL 01/03/2024 AL 31/03/2024', 330000, 590000)]
+        rows = E._pages([page(1, lines)])[1]
+        # A period printed further right beside an address line does not count against it.
+        self.assertEqual(E.address_holder(rows), 'EMPRESA DE PRUEBA SA DE CV')
+
+    def test_the_printed_account_number_wins_over_the_interbank_number_containing_it(self):
+        st = self.first(transfer_statement())
+        self.assertEqual((st['account_reference'], st['account_basis']), ('12-34567890-1', 'account_number'))
+
+    def test_an_interbank_number_alone_stays_the_account_and_says_so(self):
+        st = self.first(transfer_statement(account_line=[('CUENTA CLABE', 20000, 120000),
+                                                          ('002180012345678901', 130000, 240000)]))
+        self.assertEqual((st['account_reference'], st['account_basis']), ('002180012345678901', 'interbank_number'))
+        # A number printed beside it that is not its account field is not the account.
+        st = self.first(transfer_statement(account_line=[('CUENTA EJEMPLO 98-76543210-1', 20000, 250000),
+                                                          ('CLABE', 260000, 300000), ('002180123456789017', 310000, 420000)]))
+        self.assertEqual((st['account_reference'], st['account_basis']), ('002180123456789017', 'interbank_number'))
+
+    def test_the_interbank_numbers_own_digit_groups_are_not_a_printed_account(self):
+        self.assertEqual(E._printed_over_interbank('002180012345678901', E._pages([page(1, [
+            [('CLABE 002 180 01234567890 1', 20000, 300000)]])])[1]), ('002180012345678901', 'interbank_number'))
