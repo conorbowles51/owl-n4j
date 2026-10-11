@@ -752,21 +752,27 @@ _ADDITIONAL_UNREAD = ('Check the additional date printed beside this payment. It
 # order). Reverse in one place: False.
 ORDERED_DAMAGED_DATES = True
 DATE_READ_IN_ORDER = 'printed_date_marks_ignored_in_payment_order'
+ENDING_DATE_IS_PERIOD_END = 'printed_date_marks_ignored_period_end'
 _DATE_DIGIT_LOOKALIKES = str.maketrans({'O': '0', 'o': '0', 'l': '1', 'I': '1'})
+# The Ending Balance date must equal the printed period end, so the wider set
+# measured in Andrews money cells may stand for its digits.
+_ENDING_DATE_LOOKALIKES = str.maketrans({'O': '0', 'o': '0', 'D': '0', 'l': '1', 'I': '1', 'B': '8', 'S': '5', 'Z': '2'})
 
 
-def _damaged_date(text, statement):
+def _damaged_date(text, statement, lookalikes=_DATE_DIGIT_LOOKALIKES):
     """``(row date, additional printed date or None)`` once OCR marks are set aside, else ``None``."""
     tokens = text.split()
     if not 1 <= len(tokens) <= 2:
         return None
     cleaned = []
     for token in tokens:
-        token = re.sub(r'^[^\dOolI]+|[^\dOolI]+$', '', token)
-        token = re.sub(r'(?<=[\dOolI/])[.:](?=[\dOolI/])', '', token)
-        if len(token) == 5 and token[2] in 'ilI|' and re.fullmatch(r'[\dOolI]{4}', token[:2] + token[3:]):
+        letters = ''.join(sorted(k for k in map(chr, lookalikes)))
+        keep = '\\d' + re.escape(letters)
+        token = re.sub(r'^[^' + keep + r']+|[^' + keep + r']+$', '', token)
+        token = re.sub(r'(?<=[' + keep + r'/])[.:](?=[' + keep + r'/])', '', token)
+        if len(token) == 5 and token[2] in 'ilI|' and re.fullmatch(r'[' + keep + r']{4}', token[:2] + token[3:]):
             token = token[:2] + '/' + token[3:]
-        token = token.translate(_DATE_DIGIT_LOOKALIKES)
+        token = token.translate(lookalikes)
         if not re.fullmatch(r'\d{2}/\d{2}', token):
             return None
         cleaned.append(token)
@@ -858,6 +864,12 @@ def propose_andrews_statement(sources, currency, statement):
                 fields = item['fields']
                 fields['description'] = 'Opening Balance' if opening else 'Closing Balance'
                 fields['date'] = (_period_date((opening or closing)[1], statement) or '') if opening or closing else ''
+                if damaged_closing and ORDERED_DAMAGED_DATES:
+                    # A speck or a measured look-alike in the Ending Balance
+                    # date: read only when it is then the printed period end.
+                    found = _damaged_date(damaged_closing[0], statement, _ENDING_DATE_LOOKALIKES)
+                    if found and found[1] is None and found[0] == statement.get('period_end'):
+                        fields.update(date=found[0], date_reading=ENDING_DATE_IS_PERIOD_END)
                 if money_cells:
                     fields['balance_column'] = str(money_cells[-1]['column_index'])
                 try:
@@ -1044,7 +1056,9 @@ def andrews_no_activity_evidence(sources, statement, rows):
     close_money, close_text = label(source_rows[closing['row_index']]) if page else ([], '')
     if (not page or len(open_money) != 1 or len(close_money) != 1
             or not _QUIET_OPENING.fullmatch(re.sub(r'\s+', '', open_text))
-            or not _QUIET_CLOSING.fullmatch(re.sub(r'\s+', '', close_text))):
+            or not (_QUIET_CLOSING.fullmatch(re.sub(r'\s+', '', close_text))
+                    or closing['fields'].get('date_reading') == ENDING_DATE_IS_PERIOD_END
+                    and re.fullmatch(r'\S+ Ending Balance', close_text))):
         return held('endpoint_label', 'The opening or ending balance line was not read exactly as printed. Check the page before confirming that it contains no transactions.', page_number=key[0])
     if 'balance' not in opening['fields'] or 'balance' not in closing['fields']:
         return held('endpoint_unreadable', 'An opening or ending balance could not be read. Check the page before confirming that it contains no transactions.', page_number=key[0])
@@ -1069,8 +1083,10 @@ def andrews_no_activity_evidence(sources, statement, rows):
             return None
         return [min(b[0] for b in boxes), min(b[1] for b in boxes), max(b[2] for b in boxes), max(b[3] for b in boxes)]
 
-    first = extent(source_rows[opening['row_index']]['cells'])
-    second = extent(source_rows[closing['row_index']]['cells'])
+    # Positions of the printed labels: a money cell's box can be read taller
+    # than its line, which would hide or invent room for an unread line.
+    first = extent([c for c in source_rows[opening['row_index']]['cells'] if c not in open_money])
+    second = extent([c for c in source_rows[closing['row_index']]['cells'] if c not in close_money])
     space = (source_rows[opening['row_index']]['cells'][0].get('locator') or {})
     # Measure spacing only among account-section lines, never the address block.
     body = [r for r in (source_rows[i] for i in ordered) if r['row_index'] >= page['body_start'] and r['cells']]
