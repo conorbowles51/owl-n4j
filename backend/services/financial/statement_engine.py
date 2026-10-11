@@ -208,6 +208,8 @@ def _rejoin_amounts(words):
                 if _GROUPED_AMOUNT.fullmatch(text):
                     joined = (s, following[size - 1][1], text, size)
                     break
+        if not joined and _SPLIT_HEAD.fullmatch(word):
+            joined = _rejoin_detached_marks(cleaned, index)
         if joined:
             out.append(joined[:3])
             index += 1 + joined[3]
@@ -215,6 +217,32 @@ def _rejoin_amounts(words):
             out.append((s, e, word))
             index += 1
     return out
+
+
+_MARKED_GROUP = re.compile(r'^,\d{3}$')
+_MARKED_CENTS = re.compile(r'^[.,]{1,2}\d{2}(?:\)|-|−|CR)?$')
+
+
+def _rejoin_detached_marks(words, index):
+    """(C11) Separators the scan detached onto the following groups ('300 ,000 ,00', '1,724,615 ,.38'):
+    a head, then any comma-prefixed three-digit groups, then the cents with their own mark (a doubled mark
+    keeps the one next to the cents). Only when the result is one amount with complete thousands groups."""
+    s, _, head = words[index]
+    parts, end = [head.rstrip(',')], index + 1
+    while end < len(words) and _MARKED_GROUP.fullmatch(words[end][2]):
+        parts.append(words[end][2])
+        end += 1
+    if end >= len(words) or not _MARKED_CENTS.fullmatch(words[end][2]):
+        return None
+    cents = words[end][2]
+    if len(cents) > 1 and cents[1] in '.,':
+        cents = cents[1:]
+    text = ''.join(parts) + cents
+    if end == index + 1 and ',' not in head:
+        return None  # a bare count before marked cents is not joined here (the decimal-mark rule decides)
+    if not _GROUPED_AMOUNT.fullmatch(text):
+        return None
+    return (s, words[end][1], text, end - index)
 
 
 _MARK_HEAD = re.compile(r'^[-−(]?(?:US\$|\$)?\d{1,3}(?:,\d{3})*$')
@@ -744,6 +772,10 @@ def _role_of(text, liability):
     for role in ('opening', 'closing', 'subtotal', 'credit_total', 'debit_total'):
         if any(pattern.fullmatch(text) for pattern in FUZZY_INDEX[role]):
             return role
+    # A dot or comma the scan glued to a word inside the label ('SALDO. INICIAL') (F1).
+    bare = ' '.join(word.strip('.,') for word in text.split())
+    if bare != text and bare:
+        return _role_of(bare, liability)
     return None
 
 

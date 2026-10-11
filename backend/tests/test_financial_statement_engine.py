@@ -1560,3 +1560,20 @@ class ChartScaleTests(unittest.TestCase):
     def test_values_without_a_constant_step_stay_amounts(self):
         st = read_statements(self.statement(ticks=('0.00', '75.00', '120.00', '225.00', '300.00', '375.00')))[0]
         self.assertFalse(st['engine']['proved'])
+
+
+class ScanDamageRound2Tests(unittest.TestCase):
+    words = ScanDamageTests.words
+
+    def test_separators_detached_onto_the_following_groups(self):
+        self.assertEqual(self.words('300 ,000 ,00'), ['300,000,00'])
+        self.assertEqual(self.words('1,724,615 ,.38'), ['1,724,615.38'])
+        # Never a thousands group invented (cents before a group stay apart from it), never a count joined.
+        self.assertEqual(self.words('300 ,00 ,000'), ['300,00', ',000'])
+        self.assertEqual(self.words('2 100,000.00'), ['2', '100,000.00'])
+
+    def test_a_dot_glued_to_a_word_inside_a_balance_label(self):
+        self.assertEqual(E._role_of('SALDO. INICIAL', False), 'opening')
+        self.assertEqual(E._role_of('SALDO, FINAL', False), 'closing')
+        self.assertEqual(E._role_of('SALDO. PROMEDIO', False), E._role_of('SALDO PROMEDIO', False))
+        self.assertIsNone(E._role_of('SALDO. EJEMPLO', False))
