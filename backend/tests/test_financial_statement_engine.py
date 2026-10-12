@@ -1577,3 +1577,40 @@ class ScanDamageRound2Tests(unittest.TestCase):
         self.assertEqual(E._role_of('SALDO, FINAL', False), 'closing')
         self.assertEqual(E._role_of('SALDO. PROMEDIO', False), E._role_of('SALDO PROMEDIO', False))
         self.assertIsNone(E._role_of('SALDO. EJEMPLO', False))
+
+
+class ServedScopeTests(unittest.TestCase):
+    """r5-any-layout: a period the engine serves on pages shared with another library period keeps no row,
+    and no page region, that would make the other period read as already imported."""
+
+    def sources(self):
+        lines = [[('LINEA %d' % i, 20000, 200000)] for i in range(10)]
+        pages = [page(1, lines), page(2, lines)]
+        for source in pages:
+            for row in source['rows']:
+                for c in row['cells']:
+                    c['locator']['space'] = 'pdf_displayed'
+        return pages
+
+    @staticmethod
+    def scoped(pages_rows):
+        return dict(section_sources=[dict(page_number=p, table_index=0, row_indices=rows) for p, rows in pages_rows])
+
+    def test_shared_footer_rows_are_left_to_the_other_period(self):
+        from services.financial.statement_engine_routing import _own_scope
+        other = self.scoped([(1, list(range(0, 10)))])
+        engine = self.scoped([(1, [8, 9]), (2, [0, 1, 2])])
+        self.assertEqual(_own_scope(engine, [other], self.sources()),
+                         [dict(page_number=2, table_index=0, row_indices=[0, 1, 2])])
+
+    def test_rows_below_the_other_period_on_its_page_are_kept(self):
+        from services.financial.statement_engine_routing import _own_scope
+        other = self.scoped([(1, [0, 1, 2, 3])])
+        engine = self.scoped([(1, [5, 6, 7])])
+        self.assertEqual(_own_scope(engine, [other], self.sources()), engine['section_sources'])
+
+    def test_rows_inside_the_other_periods_region_refuse_the_replacement(self):
+        from services.financial.statement_engine_routing import _own_scope
+        other = self.scoped([(1, [0, 1, 2, 6, 7])])
+        engine = self.scoped([(1, [4, 5])])
+        self.assertIsNone(_own_scope(engine, [other], self.sources()))

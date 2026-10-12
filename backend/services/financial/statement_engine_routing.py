@@ -149,6 +149,33 @@ def _scope_rows(statement):
     return {(s['page_number'], s['table_index'], row) for s in scope for row in s['row_indices']}
 
 
+def _own_scope(engine_statement, others, sources):
+    """The engine section's row scope without the rows other library periods on its pages also claim
+    (page furniture the scope check allowed both to count), or None when its import region would still
+    overlap another period's region on a page (the import's overlap guard compares each page's vertical
+    extent; an overlap would make the other period read as already imported)."""
+    from services.financial.statement_import_andrews import andrews_source_regions, source_regions_overlap
+    ours = _scope_rows(engine_statement)
+    theirs = set()
+    for other in others:
+        theirs |= _scope_rows(other) or set()
+    if ours is None or not theirs:
+        return engine_statement.get('section_sources')
+    kept = ours - theirs
+    if not kept:
+        return None
+    grouped = {}
+    for page, table, row in sorted(kept):
+        grouped.setdefault((page, table), []).append(row)
+    scope = [dict(page_number=page, table_index=table, row_indices=rows) for (page, table), rows in grouped.items()]
+    mine = andrews_source_regions(sources, dict(sources=scope))
+    for other in others:
+        region = andrews_source_regions(sources, dict(sources=other.get('section_sources') or []))
+        if mine is None or region is None or source_regions_overlap(mine, region) is not False:
+            return None
+    return scope
+
+
 def _covers(engine_statement, library_period):
     """The engine section read everything the library period claims: every row of its recorded row scope
     when both readers record one, else every page of it."""
@@ -327,6 +354,15 @@ def route_catalog(sources, library_catalog):
         # The library cannot reconcile this period and the engine proves it: the engine serves under the
         # library id, with the library's identity facts where the engine read none.
         replaced = dict(public, id=group['id'], engine_id=statement['id'], replaced_layout=group.get('layout_id'))
+        if not exact:
+            scope = _own_scope(statement, [other for other in groups if other is not group
+                                            and not other.get('document_kind') and _pages(other) & pages], sources)
+            if scope is None:
+                # After leaving out the rows another library period also claims, the engine section's
+                # import region would still overlap that period's region on a shared page.
+                routing['scoped_unchecked'] = routing.get('scoped_unchecked', 0) + 1
+                continue
+            replaced['section_sources'] = scope
         for field in IDENTITY:
             if not replaced.get(field) and group.get(field):
                 replaced[field] = group[field]
