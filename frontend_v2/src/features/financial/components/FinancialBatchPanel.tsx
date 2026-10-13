@@ -1673,6 +1673,9 @@ export type QueueNavigation = {
   issue?: string
   field?: "holder" | "account_number" | "period" | "currency" | "institution"
   proposals?: Record<string, { value: string; label: string; confirmed?: boolean }>
+  /** The other blockers, so fixing the stated one is never mistaken for the end. */
+  also?: string[]
+  fixMakesReady?: boolean
   position: number
   total: number
   onNext: () => void
@@ -1907,6 +1910,9 @@ export function BatchStatementReview({
             className="w-full rounded border border-amber-500/60 bg-amber-50/60 p-2 text-sm font-medium dark:bg-amber-950/20"
           >
             To fix: {queue.issue}
+            {!!queue.also?.length && (
+              <span className="block font-normal">Also: {queue.also.join("; ")}</span>
+            )}
           </p>
         )}
         {item && (
@@ -2038,6 +2044,7 @@ export function BatchStatementReview({
                 )?.field as "holder" | "account_number" | "period" | undefined)
               : undefined),
             proposals: queue?.proposals,
+            remaining: queue ? (queue.fixMakesReady ? [] : queue.also ?? []) : undefined,
             draftRevision: item.review_revision,
             save,
             confirm: (request) =>

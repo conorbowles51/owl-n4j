@@ -289,3 +289,18 @@ it("lists statements whose details were filled automatically, with each value an
   expect(screen.getByRole("button", { name: "Open to change" })).toBeVisible()
   expect(screen.getByRole("button", { name: "Save all 4 ready statements" })).toBeVisible()
 })
+
+it("shows every blocker after the summary sentence", async () => {
+  const withAlso = {
+    ...queue,
+    items: [{ ...entries[0], also: ["Account number not found: enter it", "Account holder not found: enter it"] }, entries[1]],
+  }
+  vi.mocked(fetchAPI).mockImplementation(async (url: string) => {
+    if (url.includes("/review/queue")) return withAlso as never
+    throw Error(`unexpected ${url}`)
+  })
+  mount("/cases/case/financial?view=statements&queue=1")
+  expect((await screen.findAllByLabelText("Also to fix"))[0]).toHaveTextContent(
+    "also: Account number not found: enter it; Account holder not found: enter it"
+  )
+})

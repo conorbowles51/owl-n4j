@@ -790,6 +790,7 @@ function StatementReview({
         <StatementCurrencyControl
           focus={batchReview?.field === "currency"}
           proposal={batchReview?.proposals?.currency}
+          remaining={batchReview?.remaining}
           currency={query.data.current_import?.currency || query.data.currency}
           detectedCurrency={query.data.detected_currency}
           disabled={

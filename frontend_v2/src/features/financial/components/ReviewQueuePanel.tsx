@@ -29,6 +29,7 @@ function listOf(data: ReviewQueue | undefined, name: ListName): QueueEntry[] {
     ? data.copies
     : name === "filled"
       ? data.filled
+
       : name === "unreadable"
       ? data.unreadable
       : data.items
@@ -237,6 +238,8 @@ export function ReviewQueuePanel({
             issue: active.issue,
             field: active.field ?? undefined,
             proposals: active.proposals,
+            also: active.also,
+            fixMakesReady: active.fix_makes_ready,
             position: Math.max(index, 0) + 1,
             total: entries.length || 1,
             onNext: () => step(1),
@@ -393,8 +396,14 @@ export function ReviewQueuePanel({
                     {entry.issue && (
                       <p className="mt-1 font-medium" aria-label="Issue">
                         {entry.issue}
-                        {entry.other_problems > 0 &&
+                        {!entry.also.length &&
+                          entry.other_problems > 0 &&
                           ` (and ${entry.other_problems} more ${entry.other_problems === 1 ? "check" : "checks"})`}
+                      </p>
+                    )}
+                    {entry.issue && entry.also.length > 0 && (
+                      <p className="text-sm" aria-label="Also to fix">
+                        also: {entry.also.join("; ")}
                       </p>
                     )}
                     {entry.proposals && (list === "filled" || list === "waiting") && (

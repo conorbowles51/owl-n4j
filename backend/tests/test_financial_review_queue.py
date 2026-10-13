@@ -209,3 +209,22 @@ class QueueReadTests(TestCase):
         with self.f.SessionLocal() as db:
             state = service.batch_status(db, case_id=self.f.case.id, batch_id=batch)
         self.assertEqual((state['statements_with_issues'], state['needs_decision']), (1, 1))
+
+
+class AllBlockersTests(TestCase):
+    def test_every_other_blocker_is_named_after_the_summary(self):
+        detail = describe(item(CURRENCY, READING, dict(kind='statement_detail', field='holder',
+            message='The account holder has not been identified.'), account='123', institution='Bank').summary)
+        self.assertEqual(detail['sentence'], 'Currency not printed: choose one')
+        self.assertEqual(detail['reasons'][0], 'currency')
+        self.assertEqual(len(detail['also']), 2)
+        self.assertIn('1 row unreadable on page 7', detail['also'])
+        self.assertEqual(describe(item(READING).summary)['also'], [])
+
+    def test_a_currency_question_names_the_identity_the_reader_has_not_read(self):
+        # The reader asks for the currency first; empty identity fields are named too.
+        detail = describe(item(CURRENCY, holder='', account='', institution='Bank').summary)
+        self.assertEqual(detail['reasons'], ['currency', 'holder', 'account'])
+        self.assertEqual(detail['also'], ['Account holder not found: enter it', 'Account number not found: enter it'])
+        full = describe(item(CURRENCY, holder='H', account='123', institution='Bank').summary)
+        self.assertEqual((full['reasons'], full['also']), (['currency'], []))

@@ -159,8 +159,20 @@ def describe(summary):
     page = next((p['page'] for p in chosen if isinstance(p.get('page'), int)), None) or summary.get('page_number')
     field = DETAIL_FIELDS.get(reason)
     others = len(problems) - len(chosen) + max(0, (summary.get('problem_count') or 0) - len(summary.get('problems') or []))
+    ordered = [key for key in REASON_ORDER if key in by_reason] + [key for key in by_reason if key not in REASON_ORDER]
+    # Every other blocker, in plain words: fixing the stated issue alone must
+    # never look like the end of the work when more remains.
+    if 'currency' in by_reason:
+        # The reader stops at the currency question: a statement waiting for
+        # its currency is not checked further, so its unread identity is named
+        # too, and a currency choice alone is never presented as the last step.
+        for key, value in (('institution', 'institution'), ('holder', 'holder'), ('account', 'account')):
+            if key not in ordered and not str(summary.get(value) or '').strip():
+                ordered.append(key)
+                by_reason[key] = []
+    also = [issue_sentence(key, by_reason[key], summary) for key in ordered if key != reason]
     return dict(reason=reason, sentence=issue_sentence(reason, chosen, summary), row_id=row, field=field,
-                page=page, other_problems=others, problem_total=len(problems))
+                page=page, other_problems=others, problem_total=len(problems), reasons=ordered, also=also)
 
 
 def _empty_reading(summary):
@@ -253,7 +265,8 @@ def _entry(item, batch_id, describe_result=None):
     if describe_result:
         entry.update(issue=describe_result['sentence'], issue_reason=describe_result['reason'],
             row_id=describe_result['row_id'], field=describe_result['field'], page=describe_result['page'],
-            other_problems=describe_result['other_problems'], problem_total=describe_result['problem_total'])
+            other_problems=describe_result['other_problems'], problem_total=describe_result['problem_total'],
+            reasons=describe_result.get('reasons') or [describe_result['reason']], also=describe_result.get('also') or [])
     return entry
 
 
@@ -347,6 +360,11 @@ def _build(session, case_id):
         entry = _entry(item, batch_of[item.id], detail)
         if proposals:
             entry['proposals'] = proposals
+            # A one-click fix is claimed only when that click leaves nothing
+            # else: the proposal covers the statement's one and only blocker.
+            single = entry.get('reasons') or []
+            entry['fix_makes_ready'] = len(single) == 1 and any(
+                field_proposals.REASONS.get(name) == single[0] for name in proposals)
         entry.update(bucket=bucket, root=identity[0], file_ids=sorted({str(i.file_id) for i in identities[identity]}
             | {source for i in identities[identity] for source in sources.get(str(i.file_id), ())}))
         if bucket == 'copies':

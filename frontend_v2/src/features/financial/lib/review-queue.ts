@@ -32,6 +32,11 @@ const entry = z.object({
     .nullish(),
   other_problems: z.number().default(0),
   problem_total: z.number().default(0),
+  /** Every actionable blocker, the summary's first; `also` names the others in plain words. */
+  reasons: z.array(z.string()).default([]),
+  also: z.array(z.string()).default([]),
+  /** True only when the proposed one-click fix leaves nothing else to fix. */
+  fix_makes_ready: z.boolean().default(false),
   copy_of: z.string().nullish(),
   set_aside: z.boolean().optional(),
   /** Proposed values for missing details (value, its source, whether it is certain). */

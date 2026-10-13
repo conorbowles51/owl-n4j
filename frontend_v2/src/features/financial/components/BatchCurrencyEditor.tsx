@@ -79,19 +79,23 @@ export function BatchCurrencyEditor({
   const queue = useReviewQueue(caseId, [], open)
   const proposal = (() => {
     if (!query.data || !queue.data) return null
-    const byStatement = new Map<string, { value: string; label: string }>()
+    const byStatement = new Map<string, { value: string; label: string; ready: boolean }>()
     for (const entry of [...queue.data.items, ...queue.data.filled]) {
       const currencyProposal = entry.proposals?.currency
       if (currencyProposal)
-        byStatement.set(`${entry.file_id}:${entry.statement_id ?? ""}`, currencyProposal)
+        byStatement.set(`${entry.file_id}:${entry.statement_id ?? ""}`, {
+          ...currencyProposal,
+          ready: entry.fix_makes_ready,
+        })
     }
-    const groups = new Map<string, { value: string; label: string; items: Item[] }>()
+    const groups = new Map<string, { value: string; label: string; items: Item[]; ready: number }>()
     for (const item of query.data) {
       if (item.currency) continue
       const found = byStatement.get(`${item.file_id}:${item.statement_id ?? ""}`)
       if (!found) continue
-      const group = groups.get(found.value) ?? { ...found, items: [] }
+      const group = groups.get(found.value) ?? { value: found.value, label: found.label, items: [], ready: 0 }
       group.items.push(item)
+      if (found.ready) group.ready += 1
       groups.set(found.value, group)
     }
     return [...groups.values()].sort((a, b) => b.items.length - a.items.length)[0] ?? null
@@ -201,7 +205,10 @@ export function BatchCurrencyEditor({
                 Proposed for {proposal.items.length}{" "}
                 {proposal.items.length === 1 ? "statement" : "statements"}{" "}
                 without a currency: <strong>{proposal.value}</strong> (
-                {proposal.label})
+                {proposal.label}).{" "}
+                {proposal.ready === proposal.items.length
+                  ? "Nothing else is missing: they are then ready to save."
+                  : `${proposal.ready} of them ${proposal.ready === 1 ? "is" : "are"} then ready to save; the others have more to fix.`}
               </span>
               <Button
                 ref={proposalButton}
