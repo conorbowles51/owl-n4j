@@ -720,6 +720,25 @@ def _statement_reader(session, case_id, target_ids, allowed):
     return read_pending
 
 
+def _pending_with_files(session, case_id):
+    """(item, evidence file) for every prepared, unsaved period of the case.
+
+    One evidence row per PDF, not one per prepared period: joining the file to
+    every item transferred and decoded its metadata once per period (about
+    100 MB and 16 s on a case with 3,000 prepared periods). Same rows, same
+    order of filters as the join it replaces.
+    """
+    items = session.scalars(select(Item).join(Batch, Batch.id == Item.batch_id)
+        .join(EvidenceFile, EvidenceFile.id == Item.file_id).where(Batch.case_id == case_id,
+        EvidenceFile.case_id == case_id, Batch.status != 'removed',
+        Item.status.in_(('ready', 'attention', 'pending_import')))).all()
+    if not items:
+        return []
+    owners = {file.id: file for file in session.scalars(select(EvidenceFile).where(
+        EvidenceFile.case_id == case_id, EvidenceFile.id.in_({item.file_id for item in items})))}
+    return [(item, owners[item.file_id]) for item in items]
+
+
 def checked_batch_items(session, case_id, items, *, validate_reviews=False, reading='stored'):
     """Project batch items for display, navigation and admission.
 
@@ -745,9 +764,7 @@ def _checked_batch_items(session, case_id, items, *, validate_reviews=False, rea
     from services.financial.statement_import_overlap import (coverage_review, summary_request, requires_decision,
         comparison_sources, duplicate_hold, ReadingDeferred)
     with stage('batch_pending'):
-        pending = session.execute(select(Item, EvidenceFile).join(Batch, Batch.id == Item.batch_id)
-            .join(EvidenceFile, EvidenceFile.id == Item.file_id).where(Batch.case_id == case_id,
-            EvidenceFile.case_id == case_id, Batch.status != 'removed', Item.status.in_(('ready','attention','pending_import')))).all()
+        pending = _pending_with_files(session, case_id)
     target_ids = {item.id for item in items}
     read_pending = _statement_reader(session, case_id, target_ids,
         lambda item: reading == 'all' or (reading == 'targets' and item.id in target_ids))
