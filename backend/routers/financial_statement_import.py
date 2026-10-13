@@ -805,6 +805,35 @@ def financial_review_status(case_id: UUID = Query(...), db: Session = Depends(ge
     return case_status(db, case_id=case_id)
 
 
+class QueueSave(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    item_ids: list[UUID] = Field(min_length=1, max_length=500)
+    request_id: UUID
+
+
+@router.post('/review/save', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
+def save_from_review_queue(body: QueueSave, case_id: UUID = Query(...), user=Depends(get_current_db_user),
+        db: Session = Depends(get_db)):
+    """Save ready statements from the queue, across batches, with the batch save's admission checks."""
+    from services.financial.queue_save import save_statements
+    from services.financial.request_timing import stage
+    try:
+        with stage('review_queue_save'):
+            return save_statements(db, case_id=case_id, item_ids=body.item_ids, actor=actor_from_user(user),
+                                   request_id=body.request_id)
+    except PdfMappingError as exc:
+        db.rollback()
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+@router.get('/review/save-result')
+def review_queue_save_result(case_id: UUID = Query(...), operation_id: list[UUID] = Query([]),
+        db: Session = Depends(get_db)):
+    """Progress of a queue save: its import receipts added together."""
+    from services.financial.queue_save import save_result
+    return save_result(db, case_id=case_id, operation_ids=operation_id[:200])
+
+
 @router.get('/review/cases')
 def financial_review_cases(user=Depends(get_current_db_user), db: Session = Depends(get_db)):
     """Cases this user can view that hold statement batches. Counts load per case from /review/status."""

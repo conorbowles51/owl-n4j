@@ -1,6 +1,7 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query"
 import { z } from "zod"
 import { fetchAPI } from "@/lib/api-client"
+import { randomRequestId } from "@/lib/browser-crypto"
 import type { StatementImportReceipt } from "../components/StatementImportPanel"
 
 const entry = z.object({
@@ -210,4 +211,136 @@ export function importOutcome(receipt?: StatementImportReceipt) {
 export function entryPeriod(entry: QueueEntry) {
   if (!entry.period_start && !entry.period_end) return "dates not read"
   return `${entry.period_start || "?"} to ${entry.period_end || "?"}`
+}
+
+const heldEntry = z.object({
+  item_id: z.string().nullable(),
+  filename: z.string().default(""),
+  period_start: z.string().default(""),
+  period_end: z.string().default(""),
+  reason: z.string(),
+})
+export type HeldStatement = z.infer<typeof heldEntry>
+const saveResponse = z.object({
+  request_id: z.string(),
+  queued: z.number(),
+  held: z.array(heldEntry),
+  operations: z.array(
+    z.object({ batch_id: z.string(), operation_id: z.string(), queued: z.number() })
+  ),
+})
+const saveProgress = z.object({
+  case_id: z.string(),
+  found: z.number(),
+  pending: z.number(),
+  imported: z.number(),
+  already_present: z.number(),
+  duplicate_ignored: z.number(),
+  failed: z.array(heldEntry),
+  transaction_count: z.number(),
+})
+
+export type QueueSaveResult = {
+  imported: number
+  held: HeldStatement[]
+  stillSaving: number
+  message: string
+}
+
+/** "3 currency not printed: choose one, 1 already saved" — reasons, most common first. */
+export function heldReasons(held: HeldStatement[]) {
+  const counts = new Map<string, number>()
+  for (const entry of held) counts.set(entry.reason, (counts.get(entry.reason) ?? 0) + 1)
+  return [...counts]
+    .sort((a, b) => b[1] - a[1])
+    .map(([reason, n]) => `${n} ${reason.charAt(0).toLowerCase()}${reason.slice(1)}`)
+    .join(", ")
+}
+
+export function saveResultLine(result: Omit<QueueSaveResult, "message">) {
+  const parts = [`${result.imported} imported`]
+  if (result.held.length)
+    parts.push(`${result.held.length} held: ${heldReasons(result.held)}`)
+  if (result.stillSaving)
+    parts.push(
+      `${result.stillSaving} still saving in the background (refresh the queue later)`
+    )
+  return parts.join(", ")
+}
+
+// About 2.5 s of admission per statement on the live case: ~25 s per request,
+// so batch and evidence locks are held briefly and progress shows often.
+const SAVE_CHUNK = 10
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+/**
+ * Save ready statements from the queue, across batches. Each chunk is checked
+ * on the server with the batch save's admission; accepted statements are
+ * imported by the batch worker, which this waits for (bounded).
+ */
+export async function saveReadyStatements(
+  caseId: string,
+  itemIds: string[],
+  {
+    onProgress,
+    pollMs = 3000,
+    maxWaitMs = 10 * 60 * 1000,
+  }: {
+    onProgress?: (text: string) => void
+    pollMs?: number
+    maxWaitMs?: number
+  } = {}
+): Promise<QueueSaveResult> {
+  const held: HeldStatement[] = []
+  const operations: string[] = []
+  for (let start = 0; start < itemIds.length; start += SAVE_CHUNK) {
+    onProgress?.(
+      `Checking statements ${start + 1}–${Math.min(start + SAVE_CHUNK, itemIds.length)} of ${itemIds.length}…`
+    )
+    const response = saveResponse.parse(
+      await fetchAPI(
+        `/api/financial/statement-import/review/save?case_id=${caseId}`,
+        {
+          method: "POST",
+          body: {
+            item_ids: itemIds.slice(start, start + SAVE_CHUNK),
+            request_id: randomRequestId(),
+          },
+          timeout: 300000,
+        }
+      )
+    )
+    held.push(...response.held)
+    operations.push(...response.operations.map((op) => op.operation_id))
+  }
+  let progress: z.infer<typeof saveProgress> | null = null
+  const started = Date.now()
+  while (operations.length) {
+    const search = new URLSearchParams({ case_id: caseId })
+    for (const id of operations) search.append("operation_id", id)
+    progress = saveProgress.parse(
+      await fetchAPI(`/api/financial/statement-import/review/save-result?${search}`)
+    )
+    if (!progress.pending || Date.now() - started > maxWaitMs) break
+    onProgress?.(
+      `Saving: ${progress.imported + progress.already_present} imported, ${progress.pending} still saving…`
+    )
+    await sleep(pollMs)
+  }
+  const result = {
+    imported: (progress?.imported ?? 0) + (progress?.already_present ?? 0),
+    held: [
+      ...held,
+      ...(progress?.failed ?? []),
+      ...Array.from({ length: progress?.duplicate_ignored ?? 0 }, () => ({
+        item_id: null,
+        filename: "",
+        period_start: "",
+        period_end: "",
+        reason: "Set aside as a copy of another statement",
+      })),
+    ],
+    stillSaving: progress?.pending ?? 0,
+  }
+  return { ...result, message: saveResultLine(result) }
 }

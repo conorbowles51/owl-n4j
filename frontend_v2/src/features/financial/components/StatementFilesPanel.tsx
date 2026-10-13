@@ -18,7 +18,7 @@ import {
 import { FinancialFileAction } from "./FinancialFileAction"
 import { EvidenceFinancialPicker } from "./EvidenceFinancialPicker"
 import { BatchStartChoice } from "./BatchStartChoice"
-import { queueFileWork, queueHref, useReviewQueue } from "../lib/review-queue"
+import { queueFileWork, queueHref, saveReadyStatements, useReviewQueue } from "../lib/review-queue"
 import {
   needsBatchStartChoice,
   previewBatchStart,
@@ -224,6 +224,30 @@ export function StatementFilesPanel({
   const queueByFile = new Map(
     [...fileWork].map(([id, work]) => [id, work.waiting] as const)
   )
+  const [queueSaving, setQueueSaving] = useState("")
+  const [queueSaveLine, setQueueSaveLine] = useState("")
+  // Ready statements are saved from the queue (statement by statement, the
+  // batch save's checks), never by starting another batch over their files.
+  const saveReadyFromQueue = async () => {
+    const ids = reviewQueue.data?.ready.map((entry) => entry.id) ?? []
+    if (!ids.length || queueSaving) return
+    setQueueSaveLine("")
+    setQueueSaving("Checking the ready statements…")
+    try {
+      const result = await saveReadyStatements(caseId, ids, {
+        onProgress: setQueueSaving,
+      })
+      setQueueSaveLine(result.message)
+    } catch (failure) {
+      setQueueSaveLine(
+        `${failure instanceof Error ? failure.message : "Saving could not start."} Statements already accepted keep saving; refresh to see where each one stands.`
+      )
+    } finally {
+      setQueueSaving("")
+      void reviewQueue.refetch()
+      void imports.refetch()
+    }
+  }
   // Non-PDF sources open their own review; they are listed under Needs action
   // until something has been saved from them, but never counted as a PDF
   // statement that is not imported.
@@ -719,25 +743,42 @@ export function StatementFilesPanel({
               </p>
             </div>
             <div className="space-y-2">
-              {canEdit && canUpload && (
+              {canEdit && queueKnown ? (
                 <Button
                   className="h-auto max-w-full whitespace-normal py-2 text-left"
-                  disabled={preparing || !readyCount || imports.data.truncated}
-                  onClick={() =>
-                    void prepareSelected(
-                      readyFiles.map((file) => file.evidence_file_id)
-                    )
-                  }
+                  disabled={!!queueSaving || !readyCount}
+                  onClick={() => void saveReadyFromQueue()}
                 >
-                  {preparing
-                    ? "Opening group review…"
-                    : `Review and save ${readyCount} ready statements together`}
+                  {queueSaving ||
+                    `Save ${readyCount} ready ${readyCount === 1 ? "statement" : "statements"}`}
                 </Button>
+              ) : (
+                canEdit &&
+                canUpload && (
+                  <Button
+                    className="h-auto max-w-full whitespace-normal py-2 text-left"
+                    disabled={preparing || !readyCount || imports.data.truncated}
+                    onClick={() =>
+                      void prepareSelected(
+                        readyFiles.map((file) => file.evidence_file_id)
+                      )
+                    }
+                  >
+                    {preparing
+                      ? "Opening group review…"
+                      : `Review and save ${readyCount} ready statements together`}
+                  </Button>
+                )
+              )}
+              {queueSaveLine && (
+                <p role="status" className="text-sm font-medium">
+                  {queueSaveLine}
+                </p>
               )}
               <p className="text-sm text-muted-foreground">
-                Opens a group summary for one confirmation. Statements needing
-                corrections and duplicate copies stay out of the ready
-                selection.
+                {queueKnown
+                  ? "Each statement is checked again with the batch save's rules and saved from the review queue; nothing is read again. Statements needing corrections and copies stay out."
+                  : "Opens a group summary for one confirmation. Statements needing corrections and duplicate copies stay out of the ready selection."}
               </p>
             </div>
           </div>

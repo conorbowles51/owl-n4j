@@ -3,11 +3,14 @@ import { useSearchParams } from "react-router-dom"
 import { useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { BatchStatementReview } from "./FinancialBatchPanel"
+import { useFinancialAccess } from "../hooks/use-financial-access"
 import {
   entryPeriod,
   importOutcome,
+  saveReadyStatements,
   useReviewQueue,
   type QueueEntry,
+  type QueueSaveResult,
   type ReviewQueue,
 } from "../lib/review-queue"
 
@@ -27,9 +30,14 @@ function listOf(data: ReviewQueue | undefined, name: ListName): QueueEntry[] {
 export function ReviewStatusLine({
   data,
   onOpen,
+  onSaveReady,
+  saving = false,
 }: {
   data: Pick<ReviewQueue, "counts">
   onOpen?: (list: ListName) => void
+  /** One click: save every ready statement of the case (or of the filtered files). */
+  onSaveReady?: () => void
+  saving?: boolean
 }) {
   const c = data.counts
   const part = (label: string, value: number, list?: ListName) =>
@@ -57,14 +65,23 @@ export function ReviewStatusLine({
     ...(c.left_unimported ? [part("Left unimported", c.left_unimported)] : []),
   ]
   return (
-    <p className="text-sm" aria-label="Statement status">
-      {parts.map((value, index) => (
-        <span key={index}>
-          {index > 0 && " · "}
-          {value}
-        </span>
-      ))}
-    </p>
+    <div className="flex flex-wrap items-center gap-2">
+      <p className="text-sm" aria-label="Statement status">
+        {parts.map((value, index) => (
+          <span key={index}>
+            {index > 0 && " · "}
+            {value}
+          </span>
+        ))}
+      </p>
+      {onSaveReady && c.ready > 0 && (
+        <Button size="sm" disabled={saving} onClick={onSaveReady}>
+          {saving
+            ? "Saving ready statements…"
+            : `Save all ${c.ready} ready ${c.ready === 1 ? "statement" : "statements"}`}
+        </Button>
+      )}
+    </div>
   )
 }
 
@@ -107,6 +124,32 @@ export function ReviewQueuePanel({
   const list = (params.get("queueList") as ListName | null) || "waiting"
   const query = useReviewQueue(caseId, fileIds)
   const client = useQueryClient()
+  const { canEdit } = useFinancialAccess()
+  const [saving, setSaving] = useState("")
+  const [saveResult, setSaveResult] = useState<QueueSaveResult | null>(null)
+  const [saveError, setSaveError] = useState("")
+  // Saves straight from the queue, across batches, with the batch save's
+  // admission checks; the result is one line: N imported, M held: reason.
+  const saveReady = async () => {
+    const ids = query.data?.ready.map((entry) => entry.id) ?? []
+    if (!ids.length || saving) return
+    setSaveError("")
+    setSaveResult(null)
+    setSaving("Checking the ready statements…")
+    try {
+      setSaveResult(
+        await saveReadyStatements(caseId, ids, { onProgress: setSaving })
+      )
+    } catch (error) {
+      setSaveError(
+        `${error instanceof Error ? error.message : "Saving could not start."} Statements already accepted keep saving on the server; refresh the queue to see where each one stands.`
+      )
+    } finally {
+      setSaving("")
+      void client.invalidateQueries({ queryKey: ["financial-review-queue", caseId] })
+      void client.invalidateQueries({ queryKey: ["financial-review-status", caseId] })
+    }
+  }
   const [outcome, setOutcome] = useState<{
     entry: QueueEntry
     message: string
@@ -245,13 +288,46 @@ export function ReviewQueuePanel({
         <p role="status">Loading the review queue…</p>
       ) : (
         <>
-          <ReviewStatusLine data={query.data} onOpen={showList} />
+          <ReviewStatusLine
+            data={query.data}
+            onOpen={showList}
+            onSaveReady={canEdit ? () => void saveReady() : undefined}
+            saving={!!saving}
+          />
+          {saving && <p role="status" className="text-sm">{saving}</p>}
+          {saveError && <p role="alert" className="text-sm">{saveError}</p>}
+          {saveResult && (
+            <div
+              role="status"
+              aria-label="Result of saving ready statements"
+              className={`space-y-1 rounded border p-3 text-sm ${saveResult.held.length ? "border-amber-500/60" : "border-teal-500/60"}`}
+            >
+              <p className="font-medium">{saveResult.message}</p>
+              {saveResult.held.some((entry) => entry.filename) && (
+                <details>
+                  <summary className="cursor-pointer">Which statements were held</summary>
+                  <ul className="mt-1 space-y-1">
+                    {saveResult.held
+                      .filter((entry) => entry.filename)
+                      .map((entry, index) => (
+                        <li key={`${entry.item_id}:${index}`}>
+                          {entry.filename} ({entry.period_start || "?"} to {entry.period_end || "?"}): {entry.reason}
+                        </li>
+                      ))}
+                  </ul>
+                </details>
+              )}
+              <Button size="sm" variant="ghost" onClick={() => setSaveResult(null)}>
+                Dismiss
+              </Button>
+            </div>
+          )}
           {list !== "waiting" && (
             <Button variant="outline" size="sm" onClick={() => showList("waiting")}>
               Back to waiting for you ({query.data.counts.waiting})
             </Button>
           )}
-          {list === "waiting" && query.data.ready_batches.length > 0 && (
+          {list === "waiting" && query.data.counts.ready > 0 && (
             <div className="rounded border p-3 text-sm space-y-2" aria-label="Ready to save">
               <p>
                 {query.data.counts.ready}{" "}
@@ -259,21 +335,15 @@ export function ReviewQueuePanel({
                   ? "statement checks out"
                   : "statements check out"}{" "}
                 and can be saved. Nothing needs fixing in{" "}
-                {query.data.counts.ready === 1 ? "it" : "them"}.
+                {query.data.counts.ready === 1 ? "it" : "them"}. Each is checked
+                again with the same rules as a batch save before it is imported.
               </p>
-              <div className="flex flex-wrap gap-2">
-                {query.data.ready_batches.map((batch) => (
-                  <Button
-                    key={batch.batch_id}
-                    size="sm"
-                    variant="outline"
-                    onClick={() => onOpenBatch(batch.batch_id, "ready_to_save")}
-                  >
-                    Save {batch.statements} ready{" "}
-                    {batch.statements === 1 ? "statement" : "statements"}
-                  </Button>
-                ))}
-              </div>
+              {canEdit && (
+                <Button size="sm" disabled={!!saving} onClick={() => void saveReady()}>
+                  Save {query.data.counts.ready} ready{" "}
+                  {query.data.counts.ready === 1 ? "statement" : "statements"}
+                </Button>
+              )}
             </div>
           )}
           {list === "waiting" && query.data.copies.length > 0 && (
