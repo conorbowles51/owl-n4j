@@ -286,6 +286,10 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
         metadata.update(account_type=selected.get('account_type', 'credit_card'), institution=selected['institution'], account_number=selected['account_reference'],
                         period_start=selected['period_start'], period_end=selected['period_end'],
                         period=(selected['period_start'] + ' - ' + selected['period_end']) if selected['period_start'] else selected.get('printed_statement_date') or selected.get('printed_closing_date', ''))
+        if selected.get('period_start_basis') == 'printed_day_count':
+            # Only the closing date is printed: the start the engine worked out from the printed days in the
+            # billing cycle is derived (period_dates), never a printed date in the header.
+            metadata.update(period_start='', period=selected.get('printed_closing_date') or selected['period_end'])
         if selected.get('layout_id') in ('capital-one-card', 'merrick-card', 'credit-one-card', 'citi-card'):
             metadata['balance_convention'] = 'liability_owed'
         if selected.get('layout_id') in ('bbva-mexico-cash-management', 'scotiabank-mexico-zero-activity', 'scotiabank-mexico-movements', 'monex-mexico-currency-summary', 'kapital-mexico-product-statement', 'intercam-mexico-product-statement', 'santander-mexico-movements'):
