@@ -1164,9 +1164,16 @@ export function StatementFilesPanel({
                   {saved.pending_periods
                     ? ` · ${count(saved.pending_periods, "import", "imports")} in progress`
                     : ""}
-                  {saved.periods_with_checks
-                    ? ` · ${count(saved.periods_with_checks, "period has", "periods have")} checks to review`
-                    : ""}
+                  {(() => {
+                    // Statements to fix are the queue's own count for this file.
+                    const work = queueKnown ? workFor(file.id) : null
+                    const checks = work
+                      ? work.waiting + work.unreadable
+                      : saved.periods_with_checks
+                    return checks
+                      ? ` · ${count(checks, "statement has", "statements have")} something to fix in the review queue`
+                      : ""
+                  })()}
                   {saved.overlapping_periods
                     ? ` · ${count(saved.overlapping_periods, "period overlaps", "periods overlap")} another supplied statement (compare if needed)`
                     : ""}
