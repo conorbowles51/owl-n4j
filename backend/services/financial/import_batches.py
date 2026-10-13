@@ -1797,8 +1797,17 @@ async def advance_batch(factory,batch_id,resolve_path,process_files):
                     batch=batch_for(db,case_id,batch_id)
                     actor=Actor(name=batch.actor['name'],email=batch.actor['email'],user_id=UUID(batch.actor['user_id']))
                     if file['status']=='waiting':
-                        result=await _prepare_retry(db, case_id=case_id, file=file, actor=actor,
-                            resolve_path=resolve_path, process_files=process_files) if file.get('recovery') else await prepare_existing_financial_file(db,case_id=case_id,evidence_file_id=UUID(file['source_id']),expected_revision=file['expected_revision'],actor=actor,resolve_path=resolve_path,process_files=process_files)
+                        from services.financial.auto_read import detected_only, prepare_detected
+                        if file.get('recovery'):
+                            result=await _prepare_retry(db, case_id=case_id, file=file, actor=actor,
+                                resolve_path=resolve_path, process_files=process_files)
+                        elif detected_only(file):
+                            # Recognised in an Evidence upload: read an internal copy, so the
+                            # Evidence pipeline still processes the original as normal.
+                            result=await prepare_detected(db, case_id=case_id, file=file, actor=actor,
+                                resolve_path=resolve_path, process_files=process_files)
+                        else:
+                            result=await prepare_existing_financial_file(db,case_id=case_id,evidence_file_id=UUID(file['source_id']),expected_revision=file['expected_revision'],actor=actor,resolve_path=resolve_path,process_files=process_files)
                         file['file_id']=result['evidence_file_id'];file['status']='processing'
                         _reading_progress(file, 'reading', 'The retained reading is queued or running; statement review follows when it finishes.', reading_file_id=file['file_id'])
                     target=db.get(EvidenceFile,UUID(file['file_id']))

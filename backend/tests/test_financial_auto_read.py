@@ -78,7 +78,7 @@ class TurnTests(TestCase):
         self.assertTrue(paused.startswith('Reading paused at 1 of 4 files'), paused)
 
 
-class AutoReadTests(TestCase):
+class AutoReadBase(TestCase):
     def setUp(self):
         self.f = fixture_module.StatementImportTests('test_existing_import_and_same_request_keep_the_saved_account_for_navigation')
         self.f.setUp()
@@ -106,6 +106,8 @@ class AutoReadTests(TestCase):
         with self.f.SessionLocal() as db:
             return list(db.query(Batch).filter(Batch.case_id == self.f.case.id))
 
+
+class AutoReadTests(AutoReadBase):
     def test_a_financial_reading_reaches_the_queue_without_a_batch_click(self):
         to_read, copies = self.intake(self.f.file.id)
         self.assertEqual((to_read, copies), ([self.f.file.id], []))
@@ -200,3 +202,71 @@ class AutoReadTests(TestCase):
         self.assertEqual(states, ['enrolled', 'not_statement', None])
         [batch] = self.batches()
         self.assertEqual([f['file_id'] for f in batch.files], [str(ids[0])])
+
+
+class EvidenceProcessingTests(AutoReadBase):
+    """Who put the file in Financial decides which file the statement reading runs on."""
+
+    def pdf(self, name, text):
+        import fitz
+        path = Path(self.f._directory) / name
+        with fitz.open() as document:
+            document.new_page().insert_text((40, 60), text, fontsize=8)
+            document.save(path)
+        import hashlib
+        return path, hashlib.sha256(path.read_bytes()).hexdigest()
+
+    def register(self, name, detect):
+        from services.evidence_db_storage import EvidenceDBStorage
+        path, sha = self.pdf(name, STATEMENT_TEXT + name)
+        with patch('services.financial.auto_read.detect_enabled', return_value=detect), self.f.SessionLocal() as db:
+            [row] = EvidenceDBStorage.add_files(db, case_id=self.f.case.id, created_by_id=self.f.user.id,
+                files_data=[dict(original_filename=name, stored_path=str(path), sha256=sha, size=1)])
+            db.commit()
+            return row.id
+
+    def run_batch(self):
+        """One worker turn; returns the evidence ids the reading was requested for."""
+        asked = []
+
+        async def process(session, *, case_id, file_ids, **kwargs):
+            asked.extend(file_ids)
+            for identifier in file_ids:
+                session.get(EvidenceFile, identifier).status = 'processing'
+            session.commit()
+            return dict(job_ids=[str(uuid4()) for _ in file_ids])
+        [batch] = self.batches()
+        asyncio.run(service.advance_batch(self.f.SessionLocal, batch.id, Path, process))
+        return asked
+
+    def test_a_detected_evidence_upload_is_read_from_a_copy_and_keeps_its_evidence_processing(self):
+        original = self.register('detected.pdf', detect=True)
+        with patch('services.financial.auto_read.detect_enabled', return_value=True):
+            self.assertEqual(auto_read.sweep(self.f.SessionLocal, Path)['added'], 1)
+        asked = self.run_batch()
+        self.assertEqual(len(asked), 1)
+        self.assertNotEqual(asked[0], original)
+        with self.f.SessionLocal() as db:
+            source = db.get(EvidenceFile, original)
+            version = db.get(EvidenceFile, asked[0])
+            self.assertEqual(source.status, 'unprocessed')  # the Evidence pipeline still processes it
+            self.assertEqual(version.metadata_['statement_root_evidence_id'], str(original))
+            self.assertEqual(version.sha256, source.sha256)
+        # Evidence processing of the original is not refused or skipped.
+        from services.evidence_processing_service import process_db_files
+        with self.f.SessionLocal() as db, \
+                patch('services.evidence_processing_service.reconcile_case_jobs', AsyncMock()), \
+                patch('services.evidence_processing_service.gate_document_processing'), \
+                patch('services.evidence_processing_service.build_processing_snapshot', return_value={}), \
+                patch('services.evidence_processing_service.evidence_engine_client.upload_file_paths_batch',
+                      AsyncMock(return_value=[dict(id=str(uuid4()))])), \
+                patch('services.evidence_processing_service.get_subscriber') as subscriber:
+            subscriber.return_value.track_jobs = AsyncMock()
+            result = asyncio.run(process_db_files(db, case_id=self.f.case.id, file_ids=[original]))
+        self.assertEqual(result['file_count'], 1)
+
+    def test_a_file_put_in_financial_is_read_itself(self):
+        original = self.register('chosen.pdf', detect=False)
+        self.intake(original)
+        self.assertEqual(self.sweep()['added'], 1)
+        self.assertEqual(self.run_batch(), [original])

@@ -18,6 +18,9 @@ Which files enter
   (``statement_detection``) finds statement furniture on its first pages and
   ``LOUPE_FINANCIAL_AUTO_DETECT_STATEMENTS`` is on. Media, office files, archives
   and scanned PDFs without a text layer never enter.
+  Such a file keeps its ordinary Evidence processing (search, entities): the
+  statement reading runs on an internal copy of the same bytes (a statement
+  version), never on the original (``prepare_detected``).
 * Files already in Financial that were never read or prepared enter only through
   the explicit "Read N unread statement files" action (or its CLI), never on
   deploy.
@@ -283,6 +286,44 @@ def enroll(session, *, case_id, files, reason, requested_by=None, commit=True):
     if commit:
         session.commit()
     return batch.id
+
+
+# Reasons a file reached the automatic batch without a person putting it in Financial.
+DETECTED_REASONS = frozenset({'detected', 'evidence_backfill'})
+
+
+def detected_only(entry):
+    """A batch entry added only because the detector recognised an Evidence upload."""
+    return 'auto_read' in entry and (entry['auto_read'] or {}).get('reason') in DETECTED_REASONS
+
+
+async def prepare_detected(session, *, case_id, file, actor, resolve_path, process_files):
+    """Read a detected statement without touching the original's Evidence processing.
+
+    A person who puts a PDF in Financial reads the original itself (it then
+    counts as processed and the Evidence AI pipeline leaves it alone). A file
+    that only the detector picked keeps its ordinary Evidence life: the
+    statement reading runs on an internal copy of the same bytes (a statement
+    version, hidden from Evidence listings), so Evidence search and entities
+    still come from processing the original as normal. An original the
+    Evidence pipeline has already processed is used as it is.
+    """
+    from uuid import NAMESPACE_URL, uuid5
+    from services.financial.evidence_intake import prepare_existing_financial_file
+    from services.financial.file_visibility import financial_file_visibility
+    from services.financial.statement_reprocessing import create_statement_version
+    original = session.scalar(select(EvidenceFile).where(EvidenceFile.id == UUID(file['source_id']),
+        EvidenceFile.case_id == case_id))
+    if original is not None and original.status == 'processed':
+        return await prepare_existing_financial_file(session, case_id=case_id, evidence_file_id=original.id,
+            expected_revision=file['expected_revision'], actor=actor, resolve_path=resolve_path,
+            process_files=process_files)
+    version = create_statement_version(session, case_id=case_id, evidence_file_id=UUID(file['source_id']),
+        request_id=uuid5(NAMESPACE_URL, f"loupe-financial-auto-detect:{case_id}:{file['source_id']}"),
+        actor=actor, resolve_path=resolve_path)
+    return await prepare_existing_financial_file(session, case_id=case_id, evidence_file_id=version.id,
+        expected_revision=financial_file_visibility(version)['financial_visibility_revision'], actor=actor,
+        resolve_path=resolve_path, process_files=process_files)
 
 
 def _lock_case(session, case_id):
