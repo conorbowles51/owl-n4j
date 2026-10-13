@@ -37,6 +37,7 @@ const entry = z.object({
   also: z.array(z.string()).default([]),
   /** True only when the proposed one-click fix leaves nothing else to fix. */
   fix_makes_ready: z.boolean().default(false),
+  reader_file: z.boolean().optional(),
   copy_of: z.string().nullish(),
   set_aside: z.boolean().optional(),
   /** Proposed values for missing details (value, its source, whether it is certain). */
@@ -58,6 +59,7 @@ export const queueCounts = z.object({
   saving: z.number().default(0),
   waiting: z.number(),
   filled: z.number().default(0),
+  reader_fix: z.number().default(0),
   ready: z.number(),
   copies: z.number(),
   unreadable: z.number(),
@@ -91,6 +93,20 @@ export const reviewQueue = z.object({
   rechecking: z.array(entry).default([]),
   ready: z.array(entry).default([]),
   filled: z.array(entry).default([]),
+  reader_fix: z.array(entry).default([]),
+  reader_files: z
+    .array(
+      z.object({
+        file_id: z.string(),
+        filename: z.string(),
+        batch_id: z.string().nullable(),
+        statements: z.number(),
+        file_statements: z.number().default(0),
+        item_ids: z.array(z.string()),
+        message: z.string(),
+      })
+    )
+    .default([]),
   ready_batches: z
     .array(z.object({ batch_id: z.string(), statements: z.number() }))
     .default([]),

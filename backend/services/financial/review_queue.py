@@ -43,7 +43,7 @@ REASON_ORDER = ('import_failed', 'saved_review', 'reprint', 'assignment', 'curre
 # The one control a single-field issue opens on (the field its sentence names).
 DETAIL_FIELDS = {'holder': 'holder', 'account': 'account_number', 'dates': 'period', 'currency': 'currency',
                  'institution': 'institution'}
-BUCKETS = ('imported', 'saving', 'waiting', 'filled', 'ready', 'copies', 'unreadable', 'rechecking', 'left_unimported',
+BUCKETS = ('imported', 'saving', 'waiting', 'reader_fix', 'filled', 'ready', 'copies', 'unreadable', 'rechecking', 'left_unimported',
            'assigned', 'unexplained')
 
 
@@ -381,8 +381,64 @@ def _build(session, case_id):
         group.sort(key=lambda e: (e['period_start'], e['period_end'], e['statement_id'] or ''))
         for index, entry in enumerate(group, 1):
             entry.update(file_position=index, file_statements=len(group))
+    reader_collapse(result)
     result.sort(key=lambda e: (e['filename'], e['account'], e['period_start'], e['id']))
     return result
+
+
+# A file the reader cannot handle yet: most of its statements are blocked by
+# reading or identity problems and none would be ready after one field fix.
+# Its blocked statements leave "Waiting for you" as one file entry ("Waiting
+# for a reader fix"); nothing is changed or hidden, they stay listed under it.
+READER_REASONS = frozenset({'reading', 'incomplete', 'count', 'unreadable',
+                            'holder', 'account', 'institution', 'dates'})
+SINGLE_FIELD_REASONS = frozenset({'currency', 'institution', 'holder', 'account', 'dates', 'no_activity'})
+READER_MIN_STATEMENTS = 5
+READER_SHARE = 0.5
+
+
+def _reader_blocked(entry):
+    return entry['bucket'] == 'unreadable' or (entry['bucket'] == 'waiting' and bool(
+        set(entry.get('reasons') or [entry.get('issue_reason')]) & READER_REASONS))
+
+
+def _single_fix(entry):
+    reasons = entry.get('reasons') or []
+    return entry['bucket'] in ('waiting', 'filled') and len(reasons) == 1 and reasons[0] in SINGLE_FIELD_REASONS
+
+
+def reader_collapse(entries):
+    """Move the blocked waiting statements of files the reader cannot handle yet to 'reader_fix'. In place."""
+    by_file = {}
+    for entry in entries:
+        if entry['bucket'] != 'copies':
+            by_file.setdefault(entry['root'], []).append(entry)
+    for group in by_file.values():
+        blocked = [e for e in group if _reader_blocked(e)]
+        if (len(group) >= READER_MIN_STATEMENTS and len(blocked) >= READER_SHARE * len(group)
+                and not any(_single_fix(e) for e in group)):
+            for entry in blocked:
+                entry['reader_file'] = True
+                if entry['bucket'] == 'waiting':
+                    entry['bucket'] = 'reader_fix'
+    return entries
+
+
+def reader_files(entries):
+    """One line per file waiting for a reader fix."""
+    files = OrderedDict()
+    for entry in entries:
+        if entry['bucket'] != 'reader_fix':
+            continue
+        line = files.setdefault(entry['root'], dict(file_id=entry['file_id'], filename=entry['filename'],
+            batch_id=entry['batch_id'], statements=0, file_statements=entry.get('file_statements', 0), item_ids=[]))
+        line['statements'] += 1
+        line['item_ids'].append(entry['id'])
+    for line in files.values():
+        n = line['statements']
+        line['message'] = (f"Loupe can't read this file reliably yet ({n} statement{'s' if n != 1 else ''}). No need to "
+                           "review it by hand; it will be re-read when the reader is fixed.")
+    return list(files.values())
 
 
 _CACHE_SIZE = 16
@@ -501,6 +557,7 @@ def case_review_queue(session, *, case_id, file_ids=None, use_cache=True):
     failed = _failed_files(session, case_id, file_filter)
     counts = _counts(entries)
     counts['unreadable_files'] = len(failed)
+    waiting_for_reader = reader_files(entries)
     for entry in entries:
         entry.pop('root', None)
     pick = lambda bucket: [e for e in entries if e['bucket'] == bucket]
@@ -511,6 +568,7 @@ def case_review_queue(session, *, case_id, file_ids=None, use_cache=True):
         status_line=status_line(counts), items=pick('waiting'), copies=pick('copies'),
         unreadable=pick('unreadable'), unreadable_files=failed, rechecking=pick('rechecking'),
         unexplained=pick('unexplained'), ready=pick('ready'), filled=pick('filled'),
+        reader_fix=pick('reader_fix'), reader_files=waiting_for_reader,
         ready_batches=[dict(batch_id=key, statements=value) for key, value in
                        sorted(ready_batches.items(), key=lambda pair: -pair[1])],
         elapsed_ms=round((time.perf_counter() - started) * 1000))
@@ -522,6 +580,8 @@ def status_line(counts):
              f"Copies set aside {counts['copies']}", f"Couldn't read {counts['unreadable'] + counts['unreadable_files']}"]
     if counts['ready']:
         parts.insert(2, f"Ready to save {counts['ready']}")
+    if counts.get('reader_fix'):
+        parts.insert(2, f"Waiting for a reader fix {counts['reader_fix']}")
     if counts.get('filled'):
         parts.insert(2, f"Details filled automatically {counts['filled']}")
     if counts['saving']:

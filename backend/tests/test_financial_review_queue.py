@@ -228,3 +228,45 @@ class AllBlockersTests(TestCase):
         self.assertEqual(detail['also'], ['Account holder not found: enter it', 'Account number not found: enter it'])
         full = describe(item(CURRENCY, holder='H', account='123', institution='Bank').summary)
         self.assertEqual((full['reasons'], full['also']), (['currency'], []))
+
+
+def entry(root, bucket='waiting', reasons=('reading',), **extra):
+    return dict(root=root, bucket=bucket, reasons=list(reasons), issue_reason=reasons[0] if reasons else None,
+                id=f'{root}-{extra.pop("n", 0)}', file_id=root, filename=f'{root}.pdf', batch_id='b', **extra)
+
+
+class ReaderCollapseTests(TestCase):
+    """A file the reader cannot handle yet becomes one 'waiting for a reader fix' line."""
+
+    def test_a_file_mostly_blocked_by_reading_or_identity_with_no_single_fix_collapses(self):
+        from services.financial.review_queue import reader_collapse, reader_files
+        group = [entry('f', reasons=('currency', 'account', 'holder'), n=i) for i in range(4)] + \
+                [entry('f', reasons=('balance',), n=9), entry('f', bucket='imported', reasons=(), n=10)]
+        reader_collapse(group)
+        self.assertEqual([e['bucket'] for e in group][:4], ['reader_fix'] * 4)
+        self.assertEqual(group[4]['bucket'], 'waiting')  # not a reading/identity blocker: still work
+        line = reader_files(group)[0]
+        self.assertEqual(line['statements'], 4)
+        self.assertIn("Loupe can't read this file reliably yet (4 statements)", line['message'])
+
+    def test_thresholds(self):
+        from services.financial.review_queue import reader_collapse
+        # Under half blocked: stays.
+        group = [entry('g', n=i) for i in range(2)] + [entry('g', bucket='imported', reasons=(), n=5 + i) for i in range(3)]
+        self.assertEqual([e['bucket'] for e in reader_collapse(group)][:2], ['waiting', 'waiting'])
+        # Too small a file to call it a reader problem.
+        small = [entry('h', n=i) for i in range(4)]
+        self.assertEqual({e['bucket'] for e in reader_collapse(small)}, {'waiting'})
+        # One statement a single field fix would make ready: the file stays work.
+        fixable = [entry('k', n=i) for i in range(5)] + [entry('k', reasons=('currency',), n=9)]
+        self.assertEqual({e['bucket'] for e in reader_collapse(fixable)}, {'waiting'})
+        # Unreadable statements count as blocked; copies are not the file's statements.
+        mixed = [entry('m', bucket='unreadable', reasons=('unreadable',), n=i) for i in range(3)] + \
+                [entry('m', n=7), entry('m', n=8)] + [entry('m', bucket='copies', reasons=(), n=20 + i) for i in range(9)]
+        reader_collapse(mixed)
+        self.assertEqual([e['bucket'] for e in mixed][:5], ['unreadable'] * 3 + ['reader_fix'] * 2)
+
+    def test_status_line_counts_reader_fix(self):
+        counts = dict(imported=5, saving=0, waiting=2, reader_fix=7, filled=0, ready=0, copies=0, unreadable=0,
+                      rechecking=0, left_unimported=0, assigned=0, unexplained=0, unreadable_files=0)
+        self.assertIn('Waiting for you 2 · Waiting for a reader fix 7', status_line(counts))

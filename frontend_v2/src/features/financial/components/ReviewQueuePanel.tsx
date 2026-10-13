@@ -14,7 +14,7 @@ import {
   type ReviewQueue,
 } from "../lib/review-queue"
 
-type ListName = "waiting" | "filled" | "copies" | "unreadable"
+type ListName = "waiting" | "filled" | "reader" | "copies" | "unreadable"
 const QUEUE_KEYS = ["queueItem", "queueList", "queueFiles"]
 const FIELD_NAMES: Record<string, string> = {
   currency: "currency",
@@ -29,7 +29,8 @@ function listOf(data: ReviewQueue | undefined, name: ListName): QueueEntry[] {
     ? data.copies
     : name === "filled"
       ? data.filled
-
+      : name === "reader"
+        ? data.reader_fix
       : name === "unreadable"
       ? data.unreadable
       : data.items
@@ -66,6 +67,7 @@ export function ReviewStatusLine({
   const parts = [
     part("Imported", c.imported),
     part("Waiting for you", c.waiting, "waiting"),
+    ...(c.reader_fix ? [part("Waiting for a reader fix", c.reader_fix, "reader")] : []),
     ...(c.filled ? [part("Details filled automatically", c.filled, "filled")] : []),
     ...(c.ready ? [part("Ready to save", c.ready)] : []),
     part("Copies set aside", c.copies, "copies"),
@@ -264,12 +266,16 @@ export function ReviewQueuePanel({
             ? "Review copies"
             : list === "filled"
               ? "Details filled automatically"
+              : list === "reader"
+                ? "Waiting for a reader fix"
               : list === "unreadable"
               ? "Couldn't read"
               : "Waiting for you"}
         </h3>
         <p className="text-sm text-muted-foreground">
-          {list === "filled"
+          {list === "reader"
+            ? "Files Loupe cannot read reliably yet: most of their statements fail on reading or on the account's identity, and no single field would make one ready. Nothing needs reviewing by hand; they are re-read when the reader is fixed. Their statements are listed below each file and can still be opened."
+            : list === "filled"
             ? "Statements whose only missing details were found with certainty in the same account's saved statements. Saving fills them as System (each change is kept in the file's account-detail history) and the statement is saved only if everything else checks out. To use another value, open the statement and change it before or after saving."
             : list === "copies"
             ? "Statements that are copies of another statement in this case. Copies the system set aside count nothing; possible copies wait for you to compare them with the original."
@@ -374,7 +380,50 @@ export function ReviewQueuePanel({
               Review copies ({query.data.copies.length})
             </Button>
           )}
-          {current.length === 0 ? (
+          {list === "waiting" && query.data.reader_files.length > 0 && (
+            <Button variant="outline" size="sm" onClick={() => showList("reader")}>
+              Waiting for a reader fix ({query.data.counts.reader_fix} in{" "}
+              {query.data.reader_files.length}{" "}
+              {query.data.reader_files.length === 1 ? "file" : "files"})
+            </Button>
+          )}
+          {list === "reader" && (
+            <ul className="space-y-2" aria-label="Files waiting for a reader fix">
+              {query.data.reader_files.map((file) => (
+                <li key={file.file_id} className="rounded border p-3 text-sm">
+                  <p className="font-medium">{file.filename}</p>
+                  <p>{file.message}</p>
+                </li>
+              ))}
+            </ul>
+          )}
+          {list === "reader" ? (
+            <details>
+              <summary className="cursor-pointer text-sm">
+                Show their {current.length} statements
+              </summary>
+              <ol className="divide-y rounded border" aria-label="Statements waiting for a reader fix">
+                {current.map((entry) => (
+                  <li key={entry.id} className="flex flex-wrap items-center justify-between gap-3 p-3 text-sm">
+                    <div className="min-w-0 flex-1 basis-72">
+                      <EntryLine entry={entry} />
+                      {entry.issue && <p className="mt-1">{entry.issue}</p>}
+                      {entry.also.length > 0 && <p>also: {entry.also.join("; ")}</p>}
+                    </div>
+                    {entry.batch_id && (
+                      <Button size="sm" variant="outline" onClick={() => {
+                        setOrder(current)
+                        appliedOrder.current = orderKey
+                        open(entry)
+                      }}>
+                        Open
+                      </Button>
+                    )}
+                  </li>
+                ))}
+              </ol>
+            </details>
+          ) : current.length === 0 ? (
             <p role="status" className="rounded border p-3">
               {list === "waiting"
                 ? "Nothing is waiting for you."
