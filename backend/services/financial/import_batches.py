@@ -1786,8 +1786,7 @@ async def advance_batch(factory,batch_id,resolve_path,process_files):
             await _finish_atomic(_import_item,factory,case_id,batch_id,item_id,resolve_path)
             if not await asyncio.to_thread(extend_lease): return
         files = await asyncio.to_thread(batch_files)
-        candidates = sorted(((index, file) for index, file in enumerate(files) if file['status'] not in TERMINAL_FILES),
-            key=lambda pair: (pair[1].get('last_checked_at', ''), pair[0]))[:FILES_PER_TURN]
+        candidates = _turn_candidates(files)
         for index,file in candidates:
             if await should_stop() or time.monotonic() - started >= TURN_SECONDS:
                 break
@@ -1796,7 +1795,7 @@ async def advance_batch(factory,batch_id,resolve_path,process_files):
             try:
                 with factory() as session, _bounded_lock_waits(session) as db:
                     batch=batch_for(db,case_id,batch_id)
-                    actor=Actor(**{**batch.actor,'user_id':UUID(batch.actor['user_id'])})
+                    actor=Actor(name=batch.actor['name'],email=batch.actor['email'],user_id=UUID(batch.actor['user_id']))
                     if file['status']=='waiting':
                         result=await _prepare_retry(db, case_id=case_id, file=file, actor=actor,
                             resolve_path=resolve_path, process_files=process_files) if file.get('recovery') else await prepare_existing_financial_file(db,case_id=case_id,evidence_file_id=UUID(file['source_id']),expected_revision=file['expected_revision'],actor=actor,resolve_path=resolve_path,process_files=process_files)
@@ -1854,6 +1853,28 @@ async def advance_batch(factory,batch_id,resolve_path,process_files):
         heartbeat.cancel()
         await asyncio.gather(heartbeat,return_exceptions=True)
         await asyncio.shield(asyncio.to_thread(release, interrupted))
+
+
+def _turn_candidates(files):
+    """Files this turn works on. Automatic reading keeps few readings in flight.
+
+    Files added by automatic reading start their reading only while fewer than
+    ``auto_read.IN_FLIGHT`` of them are queued or running; files already
+    reading are always looked at first, so a waiting file never starves them.
+    """
+    from services.financial.auto_read import IN_FLIGHT
+    pending = sorted(((index, file) for index, file in enumerate(files) if file['status'] not in TERMINAL_FILES),
+        key=lambda pair: (pair[1].get('last_checked_at', ''), pair[0]))
+    automatic = lambda file: 'auto_read' in file
+    if not any(automatic(file) for _, file in pending):
+        return pending[:FILES_PER_TURN]
+    started = [pair for pair in pending if pair[1]['status'] != 'waiting' or not automatic(pair[1])]
+    waiting = sorted((pair for pair in pending if pair[1]['status'] == 'waiting' and automatic(pair[1])),
+        key=lambda pair: pair[0])
+    in_flight = sum(file['status'] == 'processing' for _, file in started)
+    chosen = started[:FILES_PER_TURN]
+    room = max(0, min(IN_FLIGHT - in_flight, FILES_PER_TURN - len(chosen)))
+    return chosen + waiting[:room]
 
 
 def _review_file(factory,batch_id,case_id,file):
@@ -2009,6 +2030,7 @@ def _import_item(factory,case_id,batch_id,item_id,resolve_path):
 
 
 READINESS_SWEEP_SECONDS = 60
+AUTO_READ_SWEEP_SECONDS = 10
 READINESS_SWEEP_BUDGET = 20.0
 
 
@@ -2017,6 +2039,7 @@ async def run_batches_forever():
     from routers.evidence import _resolve_stored_path
     from services.evidence_processing_service import process_db_files
     next_sweep = time.monotonic() + READINESS_SWEEP_SECONDS
+    next_auto_read = time.monotonic()
     while True:
         try:
             factory=_get_session_local()
@@ -2042,6 +2065,19 @@ async def run_batches_forever():
                 except Exception:
                     log.exception('Financial graph follow-up round failed; it will retry')
             await asyncio.gather(*(advance(identifier) for identifier in ids), graph_follow_up())
+            if time.monotonic() >= next_auto_read:
+                # Statement files that entered Financial (or were recognised in
+                # an Evidence upload) join the case's automatic batch.
+                next_auto_read = time.monotonic() + AUTO_READ_SWEEP_SECONDS
+                from services.financial.auto_read import sweep as auto_read_sweep
+                try:
+                    swept = await _finish_atomic(auto_read_sweep, factory, _resolve_stored_path)
+                    if swept['checked'] or swept['added']:
+                        log.info('Automatic statement reading: %s', swept)
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    log.exception('Automatic statement reading round failed; it will retry')
             if time.monotonic() >= next_sweep:
                 # Batch reads never re-read PDFs. Inputs changed by paths
                 # without their own refresh are brought current here.
