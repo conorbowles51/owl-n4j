@@ -227,7 +227,7 @@ it("lists one file's completed records as waiting for reconciliation with what i
     )
   ).toBeVisible()
   expect(
-    screen.getByText(/Values complete · held outside totals/)
+    screen.getByText(/Saved but held outside totals until the statement reconciles\./)
   ).toBeVisible()
   expect(
     screen.getByText(
@@ -281,7 +281,7 @@ it("shows why a completed record is held and adds the ones that check out", asyn
     )
   ).toBeVisible()
   expect(
-    screen.getByText(/checks out against the statement on its own/)
+    screen.getByText(/Fixed and it checks out: not in the ledger yet\. One click: Add to ledger\./)
   ).toBeVisible()
   fireEvent.click(
     screen.getByRole("button", {
@@ -289,7 +289,7 @@ it("shows why a completed record is held and adds the ones that check out", asyn
     })
   )
   expect(
-    await screen.findByText("1 record added to Transactions.")
+    await screen.findByText("Imported: 1 record is now in the ledger.")
   ).toBeVisible()
   expect(fetchAPI).toHaveBeenCalledWith(
     "/api/financial/statement-import/sources/source/admit-ready-records?case_id=case",
@@ -332,12 +332,12 @@ it("names each record's statement period, or says the period dates were not read
   )
   expect(
     await screen.findByText(
-      /Statement.pdf · statement 2020-10-08 to 2020-11-09 · page 1 · Check amount/
+      /Statement.pdf · statement 2020-10-08 to 2020-11-09 · page 1 · Not in the ledger: amount missing/
     )
   ).toBeVisible()
   expect(
     screen.getByText(
-      /Statement.pdf · statement period dates not read · page 31 · Check amount/
+      /Statement.pdf · statement period dates not read · page 31 · Not in the ledger: amount missing/
     )
   ).toBeVisible()
 })

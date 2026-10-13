@@ -154,9 +154,14 @@ class StatementFileStatusTests(DuplicateTestCase):
         file = self._prepared(document, [
             ('saved', 'imported', dict(problem_count=1, problems=[coverage])),
             ('flagged', 'imported', dict(problem_count=2, problems=[coverage, dict(kind='reading', message='Check the date.')])),
-            ('legacy', 'imported', dict(problem_count=1))])
+            ('legacy', 'imported', dict(problem_count=1)),
+            ('unsaved', 'attention', dict(problem_count=1, can_import=False, problems=[dict(kind='reading', message='Check the date.')])),
+            ('unsaved-note', 'attention', dict(problem_count=1, can_import=True, problems=[
+                dict(message='Not enough readable balances for an automatic balance check.')]))])
         self.assertEqual(file['overlapping_periods'], 1)
-        self.assertEqual(file['periods_with_checks'], 2)
+        # Saved periods keep their check history without becoming work again;
+        # only the unsaved period with something to act on is a check.
+        self.assertEqual(file['periods_with_checks'], 1)
 
     def test_a_second_reading_of_a_saved_period_is_a_repeat_not_unsaved(self):
         document = self.make_document()

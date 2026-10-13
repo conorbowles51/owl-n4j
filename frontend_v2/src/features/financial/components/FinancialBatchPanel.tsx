@@ -27,7 +27,7 @@ import { randomRequestId } from "@/lib/browser-crypto"
 import { useAuthStore } from "@/features/auth/hooks/use-auth"
 import { useStatementWorkspace } from "../stores/statement-workspace"
 import { useFinancialAccess } from "../hooks/use-financial-access"
-import { StatementImportPanel } from "./StatementImportPanel"
+import { StatementImportPanel, type StatementImportReceipt } from "./StatementImportPanel"
 import { serverStatementDraft } from "../lib/statement-review-draft"
 import { BatchReviewContext } from "../lib/batch-review-context"
 import { resetPaymentTableView } from "../lib/payment-table-draft"
@@ -1623,21 +1623,35 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
   )
 }
 
-function BatchStatementReview({
+/** Navigation supplied by the case review queue instead of the batch's own lists. */
+export type QueueNavigation = {
+  /** The plain sentence naming the problem, shown before anything else. */
+  issue?: string
+  field?: "holder" | "account_number" | "period"
+  position: number
+  total: number
+  onNext: () => void
+  onPrevious: () => void
+  onImported: (receipt?: StatementImportReceipt) => void
+}
+
+export function BatchStatementReview({
   caseId,
   batchId,
   itemId,
   rowId,
   onBack,
+  queue,
 }: {
   caseId: string
   batchId: string
   itemId: string
   rowId?: string
   onBack: () => void
+  queue?: QueueNavigation
 }) {
   const [params, setParams] = useSearchParams()
-  const reviewGroup = params.get("batchCheck") ?? "unfinished"
+  const reviewGroup = queue ? "" : (params.get("batchCheck") ?? "unfinished")
   const reviewGroupQuery = reviewGroup
     ? `&review_group=${encodeURIComponent(reviewGroup)}`
     : ""
@@ -1726,7 +1740,29 @@ function BatchStatementReview({
       setNavigating(false)
     }
   }
+  const queueStep = async (direction: "next" | "previous") => {
+    setNavigating(true)
+    setNavigationError("")
+    try {
+      await beforeNavigate.current?.()
+      if (direction === "next") queue!.onNext()
+      else queue!.onPrevious()
+    } catch (error) {
+      setNavigationError(
+        error instanceof Error
+          ? error.message
+          : "Your review could not be saved before moving. Your edits are retained."
+      )
+    } finally {
+      setNavigating(false)
+    }
+  }
   const nextProblem = async (direction: "next" | "previous" = "next") => {
+    if (queue) {
+      if (direction === "next") queue.onNext()
+      else queue.onPrevious()
+      return
+    }
     setNavigationError("")
     try {
       const result = z
@@ -1783,19 +1819,31 @@ function BatchStatementReview({
   return (
     <div className="space-y-3">
       <Button variant="outline" onClick={onBack}>
-        Back to bulk import
+        {queue ? "Back to review queue" : "Back to bulk import"}
       </Button>
       <div
         className="flex flex-wrap gap-2 items-center sticky top-0 z-10 bg-background p-2 border rounded"
         aria-label="Review batch statements"
       >
+        {queue?.issue && (
+          <p
+            role="note"
+            aria-label="What needs fixing"
+            className="w-full rounded border border-amber-500/60 bg-amber-50/60 p-2 text-sm font-medium dark:bg-amber-950/20"
+          >
+            To fix: {queue.issue}
+          </p>
+        )}
         {item && (
           <div
             className="w-full text-sm"
             aria-label="Current batch statement status"
           >
             <p className="font-semibold">
-              Batch {batchId.slice(0, 8)} · {item.filename}
+              {queue
+                ? `Statement ${queue.position} of ${queue.total} waiting for you`
+                : `Batch ${batchId.slice(0, 8)}`}{" "}
+              · {item.filename}
             </p>
             <p>
               {[
@@ -1823,27 +1871,49 @@ function BatchStatementReview({
             </p>
           </div>
         )}
-        <Button
-          variant="outline"
-          disabled={!item || navigating}
-          onClick={() => void adjacentStatement("previous")}
-        >
-          Previous statement
-        </Button>
-        <Button
-          variant="outline"
-          disabled={!item || navigating}
-          onClick={() => void adjacentStatement("next")}
-        >
-          Next statement
-        </Button>
-        <Button
-          variant="outline"
-          disabled={!item || navigating}
-          onClick={() => void adjacentStatement("next", "unfinished")}
-        >
-          Next unfinished statement
-        </Button>
+        {queue ? (
+          <>
+            <Button
+              variant="outline"
+              disabled={navigating || queue.position <= 1}
+              onClick={() => void queueStep("previous")}
+            >
+              Previous statement with issues
+            </Button>
+            <Button
+              disabled={navigating}
+              onClick={() => void queueStep("next")}
+            >
+              {queue.position < queue.total
+                ? `Next statement with issues (${queue.position + 1} of ${queue.total})`
+                : "Back to the queue"}
+            </Button>
+          </>
+        ) : (
+          <>
+            <Button
+              variant="outline"
+              disabled={!item || navigating}
+              onClick={() => void adjacentStatement("previous")}
+            >
+              Previous statement
+            </Button>
+            <Button
+              variant="outline"
+              disabled={!item || navigating}
+              onClick={() => void adjacentStatement("next")}
+            >
+              Next statement
+            </Button>
+            <Button
+              variant="outline"
+              disabled={!item || navigating}
+              onClick={() => void adjacentStatement("next", "needs_decision")}
+            >
+              Next statement with something to fix
+            </Button>
+          </>
+        )}
         <span className="text-sm">
           {navigating
             ? "Saving review and opening statement…"
@@ -1851,7 +1921,7 @@ function BatchStatementReview({
         </span>
         {navigationStatus && <p role="status">{navigationStatus}</p>}
       </div>
-      {reviewGroup && (
+      {reviewGroup && !queue && (
         <p className="text-sm">
           Previous and next stay within the selected filter. Return to the batch
           to change or clear this filter.
@@ -1881,7 +1951,7 @@ function BatchStatementReview({
             batchId,
             beforeNavigate,
             rowId,
-            field: !rowId
+            field: queue?.field ?? (!rowId
               ? (reviewProblems(item, reviewGroup).find(
                   (problem) =>
                     (!reviewGroup ||
@@ -1891,7 +1961,7 @@ function BatchStatementReview({
                       problem.field || ""
                     )
                 )?.field as "holder" | "account_number" | "period" | undefined)
-              : undefined,
+              : undefined),
             draftRevision: item.review_revision,
             save,
             confirm: (request) =>
@@ -1917,6 +1987,13 @@ function BatchStatementReview({
           <StatementImportPanel
             caseId={caseId}
             onImported={(receipt) => {
+              if (queue) {
+                // The queue says what happened and moves on; the investigator
+                // stays in the queue instead of being sent to Transactions.
+                void client.invalidateQueries()
+                queue.onImported(receipt)
+                return
+              }
               if ((receipt?.record_count ?? receipt?.transaction_count) === 0) {
                 setSavedBalances(true)
                 void client.invalidateQueries()

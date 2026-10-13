@@ -788,6 +788,44 @@ def preview_financial_batch(body: FinancialBatchPreview, case_id: UUID = Query(.
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
 
+@router.get('/review/queue')
+def financial_review_queue(case_id: UUID = Query(...), file_id: list[UUID] = Query([]),
+        db: Session = Depends(get_db)):
+    """The case's statements that need a decision now, from stored readings. Read only; nothing is re-read."""
+    from services.financial.review_queue import case_review_queue
+    from services.financial.request_timing import stage
+    with stage('review_queue'):
+        return case_review_queue(db, case_id=case_id, file_ids=file_id)
+
+
+@router.get('/review/status')
+def financial_review_status(case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    """The per-case status line (counts of the same queue)."""
+    from services.financial.review_queue import case_status
+    return case_status(db, case_id=case_id)
+
+
+@router.get('/review/cases')
+def financial_review_cases(user=Depends(get_current_db_user), db: Session = Depends(get_db)):
+    """Cases this user can view that hold statement batches. Counts load per case from /review/status."""
+    from sqlalchemy import select, func
+    from postgres.models.case import Case
+    from postgres.models.financial_import_batches import FinancialImportBatch
+    from services.case_service import check_case_access, CaseAccessDenied, CaseNotFound
+    rows = db.execute(select(Case.id, Case.title, func.max(FinancialImportBatch.updated_at))
+        .join(FinancialImportBatch, FinancialImportBatch.case_id == Case.id)
+        .where(FinancialImportBatch.status != 'removed', Case.archived.is_not(True))
+        .group_by(Case.id, Case.title).order_by(func.max(FinancialImportBatch.updated_at).desc()).limit(200)).all()
+    cases = []
+    for case_id, title, updated in rows:
+        try:
+            check_case_access(db, case_id, user, required_permission=('case', 'view'))
+        except (CaseAccessDenied, CaseNotFound):
+            continue
+        cases.append(dict(case_id=str(case_id), title=title, last_batch_activity=updated.isoformat() if updated else None))
+    return dict(cases=cases)
+
+
 @router.get('/batches/list')
 def list_financial_batches(case_id: UUID = Query(...), db: Session = Depends(get_db)):
     from services.financial.batch_review_summary import statement_summary

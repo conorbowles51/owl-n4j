@@ -129,6 +129,7 @@ export function ImportedRecordsPanel({
 }) {
   const [active, setActive] = useState<ImportedRecord | null>(null)
   const [page, setPage] = useState(0)
+  const [outcome, setOutcome] = useState<RecordOutcome | null>(null)
   const query = useQuery({
     queryKey: [
       "financial-incomplete-records",
@@ -190,7 +191,8 @@ export function ImportedRecordsPanel({
         </Button>
       </p>
     )
-  if (!query.data.total && !query.data.withdrawn_total) return null
+  if (!query.data.total && !query.data.withdrawn_total)
+    return outcome ? <RecordOutcomeNote outcome={outcome} onOpen={onOpen} /> : null
   const files =
     query.data.statements ??
     (query.data.total <= query.data.records.length
@@ -208,11 +210,13 @@ export function ImportedRecordsPanel({
       className="rounded-lg border border-amber-500/40 bg-amber-50/50 p-3 dark:bg-amber-950/15"
       aria-label="Imported records with missing values"
     >
+      <h3 className="font-semibold">Records kept outside totals</h3>
       <p className="text-sm mb-2">
         Some statements still have readings to review. Their missing values are
         not included in payment totals. The payments below are available to
         investigate.
       </p>
+      {outcome && <RecordOutcomeNote outcome={outcome} onOpen={onOpen} />}
       {onReviewFile && files.length === 1 && (
         <Button
           variant="outline"
@@ -287,11 +291,7 @@ export function ImportedRecordsPanel({
                     <p className="text-xs text-muted-foreground">
                       {r.filename} · {recordPeriod(r)} · page{" "}
                       {r.page_number ?? "unknown"} ·{" "}
-                      {!r.awaiting_reconciliation
-                        ? `Check ${r.missing_fields.join(", ")}`
-                        : r.can_enter_now
-                          ? "Values complete · checks out against the statement on its own"
-                          : "Values complete · held outside totals"}
+                      {recordStatus(r)}
                     </p>
                     {r.proposed_date && (
                       <p className="text-xs">
@@ -332,6 +332,23 @@ export function ImportedRecordsPanel({
                       ))}
                   </div>
                   <div className="flex flex-wrap gap-2">
+                    {r.can_enter_now && (
+                      <AdmitReadyRecords
+                        caseId={caseId}
+                        sources={[r.source_document_id]}
+                        count={1}
+                        label="Add to ledger"
+                        onAdmitted={(admitted) =>
+                          setOutcome({
+                            tone: admitted ? "imported" : "held",
+                            label: recordLabel(r),
+                            message: admitted
+                              ? `Imported: now in the ledger.${admitted > 1 ? ` ${admitted} records from this statement entered the ledger together.` : ""}`
+                              : "Saved but held: it could not be added. The record shows why.",
+                          })
+                        }
+                      />
+                    )}
                     {r.can_withdraw && (
                       <WithdrawRecord caseId={caseId} record={r} />
                     )}
@@ -359,6 +376,7 @@ export function ImportedRecordsPanel({
                 setPage(0)
                 onOpen(id)
               }}
+              onSaved={setOutcome}
             />
           )}
           {!active && query.data.withdrawn_total > 0 && (
@@ -423,10 +441,14 @@ function AdmitReadyRecords({
   caseId,
   sources,
   count,
+  label,
+  onAdmitted,
 }: {
   caseId: string
   sources: string[]
   count: number
+  label?: string
+  onAdmitted?: (admitted: number) => void
 }) {
   const { canEdit } = useFinancialAccess()
   const cache = useQueryClient()
@@ -444,9 +466,16 @@ function AdmitReadyRecords({
           ).admitted
       return admitted
     },
+    onSuccess: (admitted) => onAdmitted?.(admitted),
     onSettled: () => void cache.invalidateQueries(),
   })
   if (!canEdit || (!count && !admit.isSuccess)) return null
+  if (label)
+    return (
+      <Button size="sm" variant="outline" disabled={admit.isPending} onClick={() => admit.mutate()}>
+        {admit.isPending ? "Adding…" : label}
+      </Button>
+    )
   return (
     <div className="space-y-1 text-sm">
       {count > 0 && (
@@ -463,11 +492,68 @@ function AdmitReadyRecords({
       {admit.isSuccess && (
         <p role="status">
           {admit.data
-            ? `${admit.data} ${admit.data === 1 ? "record" : "records"} added to Transactions.`
-            : "No record could be added. Each held record shows why."}
+            ? `Imported: ${admit.data} ${admit.data === 1 ? "record is" : "records are"} now in the ledger.`
+            : "Saved but held: no record could be added. Each held record shows why."}
         </p>
       )}
       {admit.isError && <p role="alert">{admit.error.message}</p>}
+    </div>
+  )
+}
+
+type RecordOutcome = {
+  tone: "imported" | "held"
+  label: string
+  message: string
+  transactionId?: string
+}
+
+function recordLabel(record: ImportedRecord) {
+  return `${record.filename} · page ${record.page_number ?? "unknown"} · ${record.fields.date || "date unreadable"}`
+}
+
+/** One plain status per record: is it in the ledger, and if not, what is still needed. */
+export function recordStatus(record: {
+  awaiting_reconciliation: boolean
+  can_enter_now: boolean
+  missing_fields: string[]
+  hold_reason?: string | null
+  repeat_of?: unknown
+}) {
+  if (!record.awaiting_reconciliation)
+    return `Not in the ledger: ${record.missing_fields.join(", ") || "a value"} missing. Open the record to fix it.`
+  if (record.can_enter_now)
+    return "Fixed and it checks out: not in the ledger yet. One click: Add to ledger."
+  if (record.repeat_of)
+    return "Saved but held: it looks like a repeat of another row."
+  return `Saved but held outside totals${record.hold_reason ? `: ${record.hold_reason}` : " until the statement reconciles."}`
+}
+
+function heldMessage(message: string | undefined, blockers: string[]) {
+  return `Saved but held: not in the ledger yet. ${message || ""}${blockers.length ? ` One more step: ${blockers[0]}` : ""}`.trim()
+}
+
+function RecordOutcomeNote({
+  outcome,
+  onOpen,
+}: {
+  outcome: RecordOutcome
+  onOpen: (id: string) => void
+}) {
+  return (
+    <div
+      role="status"
+      aria-label="Result of your last fix"
+      className={`mb-2 rounded border p-2 text-sm ${outcome.tone === "held" ? "border-amber-500/60" : "border-teal-500/60"}`}
+    >
+      <p>
+        <span className="font-medium">{outcome.label}:</span> {outcome.message}
+      </p>
+      {outcome.transactionId && (
+        <Button size="sm" variant="link" onClick={() => onOpen(outcome.transactionId!)}>
+          Open it in Transactions
+        </Button>
+      )}
     </div>
   )
 }
@@ -615,11 +701,13 @@ function ImportedRecordEditor({
   record,
   onClose,
   onOpen,
+  onSaved,
 }: {
   caseId: string
   record: ImportedRecord
   onClose: () => void
   onOpen: (id: string) => void
+  onSaved?: (outcome: RecordOutcome) => void
 }) {
   const { canEdit } = useFinancialAccess()
   const cache = useQueryClient()
@@ -713,6 +801,7 @@ function ImportedRecordEditor({
         .object({
           transaction_id: z.string().nullable(),
           pending_reconciliation: z.boolean().optional(),
+          admitted: z.number().default(0),
           message: z.string().optional(),
           blockers: z.array(statementBlocker).default([]),
         })
@@ -742,8 +831,20 @@ function ImportedRecordEditor({
       })
       clearDraft()
       if (result.transaction_id) {
+        onSaved?.({
+          tone: "imported",
+          label: recordLabel(record),
+          transactionId: result.transaction_id,
+          message: `Imported: now in the ledger.${result.admitted > 1 ? ` ${result.admitted} records from this statement entered the ledger together.` : ""}`,
+        })
         onClose()
         onOpen(result.transaction_id)
+      } else {
+        onSaved?.({
+          tone: "held",
+          label: recordLabel(record),
+          message: heldMessage(result.message, result.blockers.map((blocker) => blocker.message)),
+        })
       }
     },
   })
@@ -952,7 +1053,13 @@ function ImportedRecordEditor({
           )}
           {save.data?.pending_reconciliation && (
             <div role="status" className="rounded border p-3">
+              <p className="font-medium">
+                Saved but held: not in the ledger yet.
+              </p>
               <p>{save.data.message}</p>
+              {!!save.data.blockers.length && (
+                <p>One more step: {save.data.blockers[0].message}</p>
+              )}
               {!!save.data.blockers.length && (
                 <ul className="list-disc pl-5">
                   {save.data.blockers.map((blocker, index) => (
@@ -961,7 +1068,7 @@ function ImportedRecordEditor({
                 </ul>
               )}
               <Button type="button" variant="outline" onClick={onClose}>
-                Back to records — correction saved
+                Back to records (correction saved)
               </Button>
             </div>
           )}

@@ -362,7 +362,15 @@ def _statement_file_status(session, *, case_id):
         problems = summary.get('problems') or []
         overlap_only = (bool(problems) and all(problem.get('kind') == 'coverage' for problem in problems)
             and summary.get('problem_count', 0) <= len(problems))
-        has_checks = duplicate_review or held or (bool(summary.get('problem_count', 0)) and not overlap_only)
+        # Only unsaved periods with something to act on are checks. A saved
+        # period's retained check history and notes that ask nothing (overlap,
+        # a comparison that could not run) would send the investigator to a
+        # statement with nothing to fix; open incomplete records of saved
+        # statements are counted separately above.
+        from services.financial.review_queue import actionable_problems
+        unsaved = prepared_item.status in ('ready', 'attention') and not already_saved
+        has_checks = duplicate_review or held or (unsaved and not overlap_only and (bool(actionable_problems(summary))
+            or summary.get('problem_count', 0) > len(problems)))
         # A reading that found nothing at all (no rows, records, dates or
         # balances) is not "read and waiting for review": the card must say so.
         if not ignored and prepared_item.status != 'skipped':

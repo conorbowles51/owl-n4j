@@ -2852,7 +2852,16 @@ function EditableStatement({
   const initialBatchRow = useRef(batchReview?.rowId)
   const initialBatchField = useRef(batchReview?.field)
   useEffect(() => {
-    if (initialBatchRow.current) {
+    if (initialBatchRow.current?.startsWith("page:")) {
+      // A problem tied to a page, not a row (for example a printed total):
+      // open the statement's source at that page.
+      const page = Number(initialBatchRow.current.slice(5))
+      if (Number.isInteger(page) && page > 0) {
+        setSourcePage(page)
+        setFocus({ rowId: "", locator: { kind: "page_only", page } })
+      }
+      initialBatchRow.current = undefined
+    } else if (initialBatchRow.current) {
       openInlineRow(initialBatchRow.current)
       initialBatchRow.current = undefined
     }
