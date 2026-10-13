@@ -585,6 +585,11 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
         rows.extend(proposed)
         # Printed zero totals and equal balances of this period only (B7).
         no_activity_evidence = zero_totals_evidence(proposed, selected, chosen_currency, family='generic')
+        if not (no_activity_evidence or {}).get('verified'):
+            # The section prints that nothing moved, between equal balances (B7), where the reader proved it.
+            from services.financial.statement_printed_no_activity import printed_line_evidence
+            no_activity_evidence = (printed_line_evidence(proposed, selected, chosen_currency, all_sources, family='generic')
+                                    or no_activity_evidence)
         _check_review_size(rows)
     if selected and selected.get('layout_id') == 'santander-mexico-movements':
         from services.financial.statement_import_santander import propose_santander_statement, santander_no_activity_evidence
