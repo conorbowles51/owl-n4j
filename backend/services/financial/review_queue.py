@@ -41,7 +41,7 @@ SYSTEM_KINDS = frozenset({'readiness_pending', 'coverage_load'})
 REASON_ORDER = ('import_failed', 'saved_review', 'reprint', 'assignment', 'currency', 'institution', 'holder',
                 'account', 'dates', 'balance', 'incomplete', 'count', 'no_activity', 'reading')
 DETAIL_FIELDS = {'holder': 'holder', 'account': 'account_number', 'dates': 'period'}
-BUCKETS = ('imported', 'saving', 'waiting', 'ready', 'copies', 'unreadable', 'rechecking', 'left_unimported',
+BUCKETS = ('imported', 'saving', 'waiting', 'filled', 'ready', 'copies', 'unreadable', 'rechecking', 'left_unimported',
            'assigned', 'unexplained')
 
 
@@ -226,6 +226,19 @@ def _saved_scopes(session, case_id):
     return scopes, current
 
 
+def _proposals(summary, knowledge, detail):
+    """Proposals for a waiting statement's missing details; True when they resolve every problem."""
+    from services.financial import field_proposals
+    proposals = field_proposals.propose(field_proposals.summary_values(summary), knowledge)
+    if not proposals:
+        return {}, False
+    reasons = {p['review_reason'] for p in actionable_problems(summary)}
+    text = field_proposals.sentence(detail['reason'], proposals) if detail else None
+    if text:
+        detail['sentence'] = text
+    return proposals, field_proposals.resolves_all(reasons, proposals)
+
+
 def _entry(item, batch_id, describe_result=None):
     summary = item.summary
     entry = dict(id=str(item.id), batch_id=str(batch_id), file_id=str(item.file_id),
@@ -290,7 +303,9 @@ def _build(session, case_id):
     rows = []
     for identity, (bucket, item) in decided.items():
         if item.id in full:
-            rows.append((identity, bucket, full[item.id], None))
+            rows.append((identity, bucket, full[item.id], None, None))
+    from services.financial import field_proposals
+    knowledge = []  # loaded once, only when a waiting statement lacks a detail
     for identity, item in representatives.items():
         current = projected.get(item.id)
         if current is None:
@@ -302,7 +317,17 @@ def _build(session, case_id):
             detail = dict(detail or dict(row_id=None, field=None, other_problems=0, problem_total=0),
                 reason='unreadable', page=page, sentence='Nothing could be read from this statement'
                 + (f' (page {page})' if isinstance(page, int) else '') + ': check its pages in the PDF')
-        rows.append((identity, bucket, current, detail))
+        proposals = None
+        if bucket == 'waiting' and field_proposals.enabled_fields():
+            if not knowledge:
+                knowledge.append(field_proposals.case_knowledge(session, case_id))
+            proposals, resolved = _proposals(current.summary, knowledge[0], detail)
+            if resolved:
+                # Every problem is a detail the case establishes exactly: not
+                # work for the investigator. Saved only by the queue's save,
+                # which applies the values and checks the statement again.
+                bucket = 'filled'
+        rows.append((identity, bucket, current, detail, proposals))
     items = light
     batch_of = {item.id: item.batch_id for item in items}
     result = []
@@ -316,8 +341,10 @@ def _build(session, case_id):
             statement_id=key or None, filename=names.get(file_id) or 'Source unavailable', holder='', account='',
             institution='', currency='', period_start='', period_end='', page=None, can_import=False,
             status='imported', bucket='imported', root=f'saved:{sha}', file_ids=[str(file_id)]))
-    for identity, bucket, item, detail in rows:
+    for identity, bucket, item, detail, proposals in rows:
         entry = _entry(item, batch_of[item.id], detail)
+        if proposals:
+            entry['proposals'] = proposals
         entry.update(bucket=bucket, root=identity[0], file_ids=sorted({str(i.file_id) for i in identities[identity]}
             | {source for i in identities[identity] for source in sources.get(str(i.file_id), ())}))
         if bucket == 'copies':
@@ -420,7 +447,7 @@ def case_review_queue(session, *, case_id, file_ids=None, use_cache=True):
     return dict(case_id=str(case_id), file_ids=sorted(file_filter), counts=counts,
         status_line=status_line(counts), items=pick('waiting'), copies=pick('copies'),
         unreadable=pick('unreadable'), unreadable_files=failed, rechecking=pick('rechecking'),
-        unexplained=pick('unexplained'),
+        unexplained=pick('unexplained'), filled=pick('filled'),
         ready_batches=[dict(batch_id=key, statements=value) for key, value in
                        sorted(ready_batches.items(), key=lambda pair: -pair[1])],
         elapsed_ms=round((time.perf_counter() - started) * 1000))
@@ -432,6 +459,8 @@ def status_line(counts):
              f"Copies set aside {counts['copies']}", f"Couldn't read {counts['unreadable'] + counts['unreadable_files']}"]
     if counts['ready']:
         parts.insert(2, f"Ready to save {counts['ready']}")
+    if counts.get('filled'):
+        parts.insert(2, f"Details filled automatically {counts['filled']}")
     if counts['saving']:
         parts.append(f"Saving {counts['saving']}")
     if counts['rechecking']:
