@@ -1,5 +1,6 @@
 import { CurrencyOptions } from "./CurrencyOptions"
-import { useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
+import { useReviewQueue } from "../lib/review-queue"
 import { newReviewId } from "../lib/statement-review-id"
 import { useMutation, useQuery } from "@tanstack/react-query"
 import { z } from "zod"
@@ -8,6 +9,8 @@ import { fetchAPI } from "@/lib/api-client"
 
 const statement = z.object({
   id: z.string(),
+  file_id: z.string().optional(),
+  statement_id: z.string().nullish(),
   filename: z.string(),
   account: z.string().optional(),
   period_start: z.string().optional(),
@@ -36,6 +39,7 @@ export function BatchCurrencyEditor({
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState("")
   const [currency, setCurrency] = useState("")
+  const chosenCurrency = currency
   const [selected, setSelected] = useState<Record<string, Item>>({})
   const [page, setPage] = useState(0)
   const [message, setMessage] = useState("")
@@ -70,10 +74,42 @@ export function BatchCurrencyEditor({
       }
     },
   })
+  // The queue's proposed currency for this batch's statements without one
+  // (value + the saved statements it comes from): one click applies it.
+  const queue = useReviewQueue(caseId, [], open)
+  const proposal = (() => {
+    if (!query.data || !queue.data) return null
+    const byStatement = new Map<string, { value: string; label: string }>()
+    for (const entry of [...queue.data.items, ...queue.data.filled]) {
+      const currencyProposal = entry.proposals?.currency
+      if (currencyProposal)
+        byStatement.set(`${entry.file_id}:${entry.statement_id ?? ""}`, currencyProposal)
+    }
+    const groups = new Map<string, { value: string; label: string; items: Item[] }>()
+    for (const item of query.data) {
+      if (item.currency) continue
+      const found = byStatement.get(`${item.file_id}:${item.statement_id ?? ""}`)
+      if (!found) continue
+      const group = groups.get(found.value) ?? { ...found, items: [] }
+      group.items.push(item)
+      groups.set(found.value, group)
+    }
+    return [...groups.values()].sort((a, b) => b.items.length - a.items.length)[0] ?? null
+  })()
+  const proposalButton = useRef<HTMLButtonElement>(null)
+  const focusedProposal = useRef(false)
+  useEffect(() => {
+    if (!proposal || focusedProposal.current) return
+    focusedProposal.current = true
+    proposalButton.current?.focus({ preventScroll: true })
+  }, [proposal])
   const save = useMutation({
     retry: false,
-    mutationFn: async () => {
-      const statements = Object.values(selected)
+    mutationFn: async (
+      chosen: { currency: string; items: Item[] } | void
+    ) => {
+      const currency = chosen ? chosen.currency : chosenCurrency
+      const statements = (chosen ? chosen.items : Object.values(selected))
         .map((item) => ({ id: item.id, revision: item.currency_revision }))
         .sort((a, b) => a.id.localeCompare(b.id))
       const fingerprint = JSON.stringify({ currency, statements })
@@ -156,6 +192,31 @@ export function BatchCurrencyEditor({
             choose their currency. This labels the amounts; it does not exchange
             currencies. Already imported statements are not changed.
           </p>
+          {proposal && (
+            <div
+              aria-label="Proposed currency"
+              className="flex flex-wrap items-center gap-2 rounded border border-teal-500/50 p-2 text-sm"
+            >
+              <span>
+                Proposed for {proposal.items.length}{" "}
+                {proposal.items.length === 1 ? "statement" : "statements"}{" "}
+                without a currency: <strong>{proposal.value}</strong> (
+                {proposal.label})
+              </span>
+              <Button
+                ref={proposalButton}
+                size="sm"
+                disabled={save.isPending}
+                onClick={() => {
+                  setMessage("")
+                  save.mutate({ currency: proposal.value, items: proposal.items })
+                }}
+              >
+                Use {proposal.value} for {proposal.items.length}{" "}
+                {proposal.items.length === 1 ? "statement" : "statements"}
+              </Button>
+            </div>
+          )}
           {query.isPending ? (
             <p role="status">Loading all statement periods…</p>
           ) : query.isError ? (
@@ -279,7 +340,7 @@ export function BatchCurrencyEditor({
                   disabled={!count || !currency || save.isPending}
                   onClick={() => {
                     setMessage("")
-                    save.mutate()
+                    save.mutate(undefined)
                   }}
                 >
                   {save.isPending

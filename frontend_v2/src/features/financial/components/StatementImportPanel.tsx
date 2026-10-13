@@ -788,6 +788,8 @@ function StatementReview({
         </div>
       ) : (
         <StatementCurrencyControl
+          focus={batchReview?.field === "currency"}
+          proposal={batchReview?.proposals?.currency}
           currency={query.data.current_import?.currency || query.data.currency}
           detectedCurrency={query.data.detected_currency}
           disabled={
@@ -2866,10 +2868,13 @@ function EditableStatement({
       initialBatchRow.current = undefined
     }
     if (initialBatchField.current) {
+      // The currency control lives outside these details and focuses itself.
       const label = {
         holder: "Account holder",
         account_number: "Account number",
         period: "Period start",
+        institution: "Bank",
+        currency: "",
       }[initialBatchField.current]
       if (label) focusDetail(label)
       initialBatchField.current = undefined

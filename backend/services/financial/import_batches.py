@@ -1507,6 +1507,30 @@ def queue_import(session, *, case_id,batch_id,expected_revision,actor,request_id
     ready_ids={i.id for i in checked if import_available(i)}
     ready=[i for i in items if i.id in ready_ids]
     if not ready: raise PdfMappingError('There are no new statement records available to import.',422)
+    operation = claim_ready(session, case_id=case_id, batch=batch, ready=ready, checked=checked,
+        operation_id=operation_id, expected_revision=expected_revision, actor=actor)
+    if operation is None:
+        existing = session.get(Operation, operation_id)
+        if existing and (existing.case_id, existing.batch_id, existing.expected_revision) == (case_id, batch_id, expected_revision):
+            return dict(queued=len(existing.outcomes), operation=operation_view(existing))
+        raise PdfMappingError('The ready statements changed. Refresh the batch before confirming.', 409)
+    session.commit()
+    return dict(queued=len(ready), operation=operation_view(operation))
+
+
+def _actor_id(actor):
+    return str(actor.user_id) if getattr(actor, 'user_id', None) else None
+
+
+def claim_ready(session, *, case_id, batch, ready, checked, operation_id, expected_revision, actor):
+    """Claim validated ready items for import under one receipt; the worker imports them.
+
+    The caller holds the batch, item and evidence locks and has validated
+    `ready` (rows) against `checked` (their current projections). Returns the
+    receipt, or None (rolled back) when another confirmation claimed any of
+    them first. Does not commit.
+    """
+    batch_id = batch.id
     # Claim each statement only while it is still unclaimed. In PostgreSQL the
     # batch row lock already serialises confirmations; this compare-and-set
     # keeps "imported once" independent of lock order and of databases without
@@ -1516,12 +1540,9 @@ def queue_import(session, *, case_id,batch_id,expected_revision,actor,request_id
         .execution_options(synchronize_session=False)).rowcount
     if claimed != len(ready):
         session.rollback()
-        existing = session.get(Operation, operation_id)
-        if existing and (existing.case_id, existing.batch_id, existing.expected_revision) == (case_id, batch_id, expected_revision):
-            return dict(queued=len(existing.outcomes), operation=operation_view(existing))
-        raise PdfMappingError('The ready statements changed. Refresh the batch before confirming.', 409)
+        return None
     operation = Operation(id=operation_id, case_id=case_id, batch_id=batch_id, expected_revision=expected_revision,
-        actor=dict(name=actor.name, user_id=str(actor.user_id)),
+        actor=dict(name=actor.name, user_id=_actor_id(actor)),
         outcomes=[dict(item_id=str(i.id), file_id=str(i.file_id), filename=i.summary.get('filename', ''),
             period_start=i.summary.get('period_start', ''), period_end=i.summary.get('period_end', ''),
             status='queued') for i in ready])
@@ -1532,14 +1553,13 @@ def queue_import(session, *, case_id,batch_id,expected_revision,actor,request_id
         if projection.review_request != item.review_request:
             metadata = deepcopy(item.summary)
             metadata.setdefault('review_upgrade_history', []).append(dict(request=item.review_request,
-                at=datetime.now(timezone.utc).isoformat(), actor_id=str(actor.user_id)))
+                at=datetime.now(timezone.utc).isoformat(), actor_id=_actor_id(actor)))
             item.summary = metadata
             item.review_request = projection.review_request
         checked_summary = {key: value for key, value in {**item.summary, **projection.summary}.items() if key != 'readiness'}
-        item.summary={**checked_summary,'import_operation_id':str(operation_id), 'import_actor':dict(name=actor.name,email=actor.email,user_id=str(actor.user_id))}
+        item.summary={**checked_summary,'import_operation_id':str(operation_id), 'import_actor':dict(name=actor.name,email=actor.email,user_id=_actor_id(actor))}
     batch.status='preparing'
-    session.commit()
-    return dict(queued=len(ready), operation=operation_view(operation))
+    return operation
 
 
 def leave_unimported(session, *, case_id, batch_id, item_id, action, reason, expected_revision, actor):
@@ -1903,6 +1923,10 @@ def _review_file(factory,batch_id,case_id,file):
                         'superseded_by_reading': file['file_id'],
                         'recovery_message': 'A newer reading of this original is available. This earlier preparation is retained in history.'}
             db.commit()
+        # Statements that check out completely (no check, no edit) are saved
+        # as System when their file's preparation ends (flag AUTO_SAVE_READY).
+        from services.financial.queue_save import auto_save_prepared
+        auto_save_prepared(db, case_id=case_id, batch_id=batch_id, file_id=UUID(file['file_id']))
 
 
 def _waiting_for_previous_statement(item):
@@ -1982,7 +2006,7 @@ def _import_item(factory,case_id,batch_id,item_id,resolve_path):
             if raw['expected_revision']!=accepted['summary']['revision'] or proposal['revision']!=accepted['summary']['revision']:
                 raise PdfMappingError('The statement changed after the batch was checked. Open it and review the new reading.',409)
             request=StatementImportRequest.model_validate(raw)
-            actor=accepted['summary']['import_actor'];actor=Actor(**{**actor,'user_id':UUID(actor['user_id'])})
+            actor=accepted['summary']['import_actor'];actor=Actor(**{**actor,'user_id':UUID(actor['user_id']) if actor.get('user_id') else None})
         # The strict writer rechecks the current source, removal, reading,
         # duplicate and reconciliation state under its Case/Evidence locks.
         # Concurrent retries of this same accepted request reuse its receipt.
@@ -2094,6 +2118,13 @@ async def run_batches_forever():
                 refreshed = await _finish_atomic(refresh_stale_readiness, factory)
                 if refreshed:
                     log.info('Stored batch readiness refreshed: %s', refreshed)
+                # Precompute the review queue of recently opened cases whose
+                # inputs changed, so the next open reads it from the cache.
+                try:
+                    from services.financial.review_queue import prewarm
+                    await _finish_atomic(prewarm, factory)
+                except Exception:
+                    log.exception('Review queue precompute failed; queues are built on open instead')
         except asyncio.CancelledError:
             raise
         except Exception:

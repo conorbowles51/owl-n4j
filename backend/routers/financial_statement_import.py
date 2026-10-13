@@ -816,6 +816,49 @@ def financial_read_unread(case_id: UUID = Query(...), user=Depends(get_current_d
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
 
+class QueueSave(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    item_ids: list[UUID] = Field(min_length=1, max_length=500)
+    request_id: UUID
+
+
+@router.post('/review/save', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
+def save_from_review_queue(body: QueueSave, case_id: UUID = Query(...), user=Depends(get_current_db_user),
+        db: Session = Depends(get_db)):
+    """Save ready statements from the queue, across batches, with the batch save's admission checks."""
+    from services.financial.queue_save import save_statements
+    from services.financial.request_timing import stage
+    try:
+        with stage('review_queue_save'):
+            return save_statements(db, case_id=case_id, item_ids=body.item_ids, actor=actor_from_user(user),
+                                   request_id=body.request_id)
+    except PdfMappingError as exc:
+        db.rollback()
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+class QueueFill(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    file_ids: list[UUID] = Field(default_factory=list, max_length=10000)
+
+
+@router.post('/review/fill', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
+def fill_from_review_queue(body: QueueFill, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    """Before a queue save: save the details the system filled with certainty (confirmed proposals) as System."""
+    from services.financial.queue_save import fill_from_queue
+    from services.financial.request_timing import stage
+    with stage('review_queue_fill'):
+        return fill_from_queue(db, case_id=case_id, file_ids=body.file_ids)
+
+
+@router.get('/review/save-result')
+def review_queue_save_result(case_id: UUID = Query(...), operation_id: list[UUID] = Query([]),
+        db: Session = Depends(get_db)):
+    """Progress of a queue save: its import receipts added together."""
+    from services.financial.queue_save import save_result
+    return save_result(db, case_id=case_id, operation_ids=operation_id[:200])
+
+
 @router.get('/review/cases')
 def financial_review_cases(user=Depends(get_current_db_user), db: Session = Depends(get_db)):
     """Cases this user can view that hold statement batches. Counts load per case from /review/status."""
@@ -846,9 +889,12 @@ def list_financial_batches(case_id: UUID = Query(...), db: Session = Depends(get
     references = import_batches.available_batch_references(db, case_id, [f for b in batches for f in b.files])
     files_by_batch = {b.id: import_batches.project_batch_files(b.files, references) for b in batches}
     by_batch = {b.id: [] for b in batches}
+    superseded = {}
     if by_batch:
         from services.financial.batch_import_history import project_individual_receipts
+        from services.financial.batch_supersession import superseded_batches
         items = list(db.scalars(select(FinancialImportBatchItem).where(FinancialImportBatchItem.batch_id.in_(by_batch), FinancialImportBatchItem.status != 'removed')))
+        superseded = superseded_batches(db, case_id, batches, items)
         for item in import_batches.project_list_items(db, case_id, project_individual_receipts(db, case_id, items)):
             by_batch[item.batch_id].append(item)
     def counts(batch):
@@ -860,6 +906,7 @@ def list_financial_batches(case_id: UUID = Query(...), db: Session = Depends(get
                     statement_summary=statement_summary(items))
     return dict(case_id=str(case_id),batches=[dict(id=str(b.id),status=b.status,created_at=b.created_at.isoformat(),file_count=len(b.files), **counts(b),
         created_by=(b.actor or {}).get('name', ''), filenames=[f['filename'] for f in b.files[:3]],
+        superseded=bool(superseded.get(b.id)),
         checked_files=sum(f['status'] == 'checked' for f in files_by_batch[b.id]),
         failed_files=sum(f['status'] == 'error' for f in files_by_batch[b.id])) for b in batches])
 
