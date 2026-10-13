@@ -1,0 +1,448 @@
+"""One review queue per case: the statements that need an investigator's decision now.
+
+Read only. Built from the batches' stored readings (the same projection a batch
+read uses, ``reading='stored'``): nothing is re-read from a PDF, nothing is
+written, and nothing is admitted. It regroups what the batches already hold so
+that every statement appears once:
+
+* a statement is identified by its file's bytes (sha256) and its statement key,
+  so the same statement prepared in several batches, or in two uploads of the
+  same PDF, is one entry;
+* anything saved (imported, or being saved) is never queue work;
+* copies the system set aside, and possible copies that need a comparison, are
+  counted under copies and listed separately, never in the queue;
+* a statement whose problems are all notes (an overlap of dates, a balance
+  comparison that could not be made, a background update) is not work;
+* every queue entry carries at least one actionable problem, and the plain
+  sentence that names it, before it is opened.
+
+The per-case status line (imported, waiting, copies, couldn't read) is counted
+from the same classification, so it always agrees with the queue.
+"""
+import threading
+import time
+from collections import OrderedDict
+from copy import deepcopy
+from types import SimpleNamespace
+from uuid import UUID
+
+from sqlalchemy import select
+
+from postgres.models.evidence import EvidenceFile
+from postgres.models.financial_import_batches import FinancialImportBatch as Batch, FinancialImportBatchItem as Item
+
+# Review reasons that never ask the investigator for anything.
+NOTE_REASONS = frozenset({'overlap', 'balance_unavailable', 'readiness_update', 'duplicate'})
+# Problem kinds raised by the system about itself (a comparison or update it
+# could not finish). They hold a statement but give the investigator nothing
+# to fix; the statement is counted as being rechecked.
+SYSTEM_KINDS = frozenset({'readiness_pending', 'coverage_load'})
+# Most important first: the reason a statement is opened for.
+REASON_ORDER = ('import_failed', 'saved_review', 'reprint', 'assignment', 'currency', 'institution', 'holder',
+                'account', 'dates', 'balance', 'incomplete', 'count', 'no_activity', 'reading')
+DETAIL_FIELDS = {'holder': 'holder', 'account': 'account_number', 'dates': 'period'}
+BUCKETS = ('imported', 'saving', 'waiting', 'ready', 'copies', 'unreadable', 'rechecking', 'left_unimported',
+           'assigned', 'unexplained')
+
+
+def actionable_problems(summary):
+    """Problems on a projected summary that ask the investigator to do something."""
+    from services.financial.batch_review_summary import reason
+    result = []
+    for problem in summary.get('problems') or []:
+        if not (problem.get('message') or '').strip() or problem.get('kind') in SYSTEM_KINDS:
+            continue
+        key = 'import_failed' if summary.get('import_failed') else (problem.get('review_reason') or reason(problem))
+        if key in NOTE_REASONS:
+            continue
+        result.append({**problem, 'review_reason': key})
+    return result
+
+
+def _money(minor, currency):
+    try:
+        value = int(str(minor).lstrip('-'))
+    except (TypeError, ValueError):
+        return None
+    exponent = 2
+    try:
+        from services.financial.money import get_currency
+        exponent = get_currency(currency).exponent if currency else 2
+    except Exception:
+        exponent = 2
+    whole, part = divmod(value, 10 ** exponent) if exponent else (value, 0)
+    text = f'{whole:,}' + (f'.{part:0{exponent}d}' if exponent else '')
+    return f'{text} {currency}'.strip() if currency else text
+
+
+def _pages(problems):
+    pages = sorted({p['page'] for p in problems if isinstance(p.get('page'), int)})
+    if not pages:
+        return ''
+    if len(pages) == 1:
+        return f' on page {pages[0]}'
+    if len(pages) <= 3:
+        return ' on pages ' + ', '.join(map(str, pages[:-1])) + f' and {pages[-1]}'
+    return f' on {len(pages)} pages'
+
+
+def _rows(problems):
+    return len({p['row_id'] for p in problems if p.get('row_id')})
+
+
+def issue_sentence(reason, problems, summary):
+    """One plain sentence naming the problem, for the queue entry before it is opened."""
+    rows = _rows(problems)
+    where = _pages(problems)
+    plural = lambda n, one, many: f'{n} {one if n == 1 else many}'
+    if reason == 'import_failed':
+        return 'Saving did not finish: open it to retry'
+    if reason == 'saved_review':
+        return 'Your earlier corrections need comparing with a new reading'
+    if reason == 'reprint':
+        return 'This statement is printed twice in the file and the copies differ: choose one'
+    if reason == 'assignment':
+        return 'Payments need an account: choose where they belong'
+    if reason == 'currency':
+        return 'Currency not printed: choose one'
+    if reason == 'institution':
+        return 'Bank name not found: enter it'
+    if reason == 'holder':
+        return 'Account holder not found: enter it'
+    if reason == 'account':
+        return 'Account number not found: enter it'
+    if reason == 'dates':
+        return 'Statement dates not found: enter them'
+    if reason == 'balance':
+        currency = summary.get('currency') or ''
+        closing = next((p for p in problems if p.get('check') == 'closing_balance'), None)
+        if closing and _money(closing.get('difference_minor'), currency):
+            return f'Closing balance off by {_money(closing["difference_minor"], currency)}'
+        if any(p.get('kind') == 'arithmetic' and 'opening and one closing balance' in (p.get('message') or '')
+               for p in problems):
+            return 'Opening or closing balance not read: enter both from the statement'
+        running = [p for p in problems if p.get('check') == 'running_balance'
+                   or 'running balance' in (p.get('message') or '').lower()]
+        if running:
+            n = _rows(running) or len(running)
+            return f'{plural(n, "printed balance does", "printed balances do")} not add up{_pages(running)}'
+        totals = [p for p in problems if p.get('check') in ('credit_total', 'debit_total', 'fee_total', 'interest_total')]
+        if totals:
+            return f'A printed total does not agree with the payments{_pages(totals)}'
+        return 'Balances do not add up: compare with the PDF'
+    if reason == 'incomplete':
+        count = rows or len(problems)
+        return f'{plural(count, "record is", "records are")} missing a value{where}'
+    if reason == 'count':
+        return 'The printed number of payments does not match: some rows may be missing'
+    if reason == 'no_activity':
+        return 'No payments were read: confirm the period had none'
+    count = rows or len(problems)
+    if rows:
+        return f'{plural(count, "row", "rows")} unreadable{where}'
+    return problems[0]['message'] if len(problems) == 1 else f'{plural(count, "reading", "readings")} to check{where}'
+
+
+def describe(summary):
+    """(reason, sentence, target row, target field, page, other problem count) for an actionable item."""
+    problems = actionable_problems(summary)
+    if not problems:
+        return None
+    by_reason = {}
+    for problem in problems:
+        by_reason.setdefault(problem['review_reason'], []).append(problem)
+    reason = next((key for key in REASON_ORDER if key in by_reason), next(iter(by_reason)))
+    chosen = by_reason[reason]
+    row = next((p['row_id'] for p in chosen if p.get('row_id')), None)
+    page = next((p['page'] for p in chosen if isinstance(p.get('page'), int)), None) or summary.get('page_number')
+    field = DETAIL_FIELDS.get(reason)
+    others = len(problems) - len(chosen) + max(0, (summary.get('problem_count') or 0) - len(summary.get('problems') or []))
+    return dict(reason=reason, sentence=issue_sentence(reason, chosen, summary), row_id=row, field=field,
+                page=page, other_problems=others, problem_total=len(problems))
+
+
+def _empty_reading(summary):
+    return not (summary.get('transaction_count') or summary.get('record_count') or summary.get('incomplete_count')
+                or summary.get('unclassified_count') or summary.get('period_start') or summary.get('period_end'))
+
+
+def classify(item):
+    """Queue bucket of one projected (stored-reading) batch item."""
+    from services.financial.batch_review_summary import is_duplicate_review
+    summary = item.summary
+    if item.status == 'imported':
+        return 'imported'
+    if item.status == 'pending_import':
+        return 'saving'
+    if item.status == 'skipped':
+        return 'left_unimported'
+    if item.status == 'assigned':
+        return 'assigned'
+    if item.status not in ('ready', 'attention') or is_duplicate_review(item):
+        return 'copies' if item.status == 'duplicate_ignored' or is_duplicate_review(item) else 'unexplained'
+    if summary.get('readiness_pending') or summary.get('comparison_pending'):
+        return 'rechecking'
+    if actionable_problems(summary):
+        return 'unreadable' if _empty_reading(summary) and not summary.get('assignment_only') else 'waiting'
+    if summary.get('can_import', item.status == 'ready'):
+        return 'ready'
+    if any(p.get('kind') in SYSTEM_KINDS for p in summary.get('problems') or []):
+        return 'rechecking'
+    if _empty_reading(summary):
+        return 'unreadable'
+    # Held, yet no problem says why: the state the investigator could open and
+    # find nothing to do. Counted so it is never silent; never queued.
+    return 'unexplained'
+
+
+def _saved_scopes(session, case_id):
+    """(file bytes, statement key) of every saved statement, including replaced scopes."""
+    from postgres.models.financial import FinancialSourceDocument as Source
+    columns = (Source.id, Source.sha256_at_ingestion, Source.metadata_['statement_import_statement_id'].as_string(),
+               Source.metadata_['statement_recovery_parent_id'].as_string(),
+               Source.metadata_['financial_import_removal'].as_string(), Source.evidence_file_id)
+    rows = session.execute(select(*columns).where(Source.case_id == case_id, Source.status == 'admitted',
+        Source.document_type == 'statement_review')).all()
+    current = {}
+    for _, sha, key, _, removed, file_id in rows:
+        if not removed:
+            current.setdefault((sha, key or ''), file_id)
+    scopes = set(current)
+    parents, seen = {parent for _, _, _, parent, removed, _ in rows if parent and not removed}, set()
+    while parents - seen:
+        current = parents - seen
+        seen |= current
+        parents = set()
+        ids = []
+        for value in current:
+            try:
+                ids.append(UUID(value))
+            except ValueError:
+                continue
+        for _, sha, key, parent, _, _ in session.execute(select(*columns).where(Source.case_id == case_id, Source.id.in_(ids))):
+            scopes.add((sha, key or ''))
+            if parent:
+                parents.add(parent)
+    return scopes, current
+
+
+def _entry(item, batch_id, describe_result=None):
+    summary = item.summary
+    entry = dict(id=str(item.id), batch_id=str(batch_id), file_id=str(item.file_id),
+        source_id=summary.get('source_id') or str(item.file_id), statement_id=item.statement_key or None,
+        filename=summary.get('filename') or 'Source unavailable', holder=summary.get('holder') or '',
+        account=summary.get('account') or '', institution=summary.get('institution') or '',
+        currency=summary.get('currency') or '', period_start=summary.get('period_start') or '',
+        period_end=summary.get('period_end') or '', page=summary.get('page_number'),
+        can_import=bool(summary.get('can_import')), status=item.status)
+    if describe_result:
+        entry.update(issue=describe_result['sentence'], issue_reason=describe_result['reason'],
+            row_id=describe_result['row_id'], field=describe_result['field'], page=describe_result['page'],
+            other_problems=describe_result['other_problems'], problem_total=describe_result['problem_total'])
+    return entry
+
+
+def _build(session, case_id):
+    batches = {batch.id: batch for batch in session.scalars(select(Batch).where(
+        Batch.case_id == case_id, Batch.status != 'removed'))}
+    # Identity columns first; whole items (their stored summaries) are loaded
+    # only for the one preparation that stands for each statement.
+    light = [SimpleNamespace(id=row[0], batch_id=row[1], file_id=row[2], statement_key=row[3], status=row[4])
+             for row in session.execute(select(Item.id, Item.batch_id, Item.file_id, Item.statement_key, Item.status)
+                 .where(Item.batch_id.in_(list(batches)), Item.status.notin_(('removed', 'superseded_reading'))))] if batches else []
+    files = {row[0]: row for row in session.execute(select(EvidenceFile.id, EvidenceFile.sha256,
+        EvidenceFile.original_filename).where(EvidenceFile.case_id == case_id,
+        EvidenceFile.id.in_({item.file_id for item in light})))} if light else {}
+    sources = {}
+    for batch in batches.values():
+        for file in batch.files or []:
+            if file.get('file_id') and file.get('source_id'):
+                sources.setdefault(file['file_id'], set()).add(file['source_id'])
+    saved, current_saved = _saved_scopes(session, case_id)
+    # A statement is its original PDF (every reading of it) and its statement
+    # key. A second upload of the same bytes is a different file: the copy
+    # review decides about it, so it stays a separate (copy) entry.
+    identities = OrderedDict()
+    for item in sorted(light, key=lambda i: (batches[i.batch_id].created_at, str(i.batch_id), str(i.id))):
+        if item.file_id not in files:
+            continue
+        root = min(sources.get(str(item.file_id)) or {str(item.file_id)})
+        identities.setdefault((root, item.statement_key or ''), []).append(item)
+    shas = {identity: {files[i.file_id][1] for i in group} for identity, group in identities.items()}
+    chosen, decided = {}, {}
+    for identity, group in identities.items():
+        if any((sha, identity[1]) in saved for sha in shas[identity]) or any(i.status == 'imported' for i in group):
+            decided[identity] = ('imported', next((i for i in group if i.status == 'imported'), group[-1]))
+        elif any(i.status == 'pending_import' for i in group):
+            decided[identity] = ('saving', next(i for i in group if i.status == 'pending_import'))
+        elif any(i.status == 'skipped' for i in group):
+            decided[identity] = ('left_unimported', next(i for i in group if i.status == 'skipped'))
+        else:
+            # The newest batch's preparation stands for the statement.
+            chosen[identity] = group[-1]
+    wanted = [i.id for i in chosen.values()] + [i.id for _, i in decided.values()]
+    full = {}
+    for start in range(0, len(wanted), 2000):
+        full.update({item.id: item for item in session.scalars(select(Item).where(Item.id.in_(wanted[start:start + 2000])))})
+    from services.financial.import_batches import checked_batch_items
+    representatives = {identity: full[item.id] for identity, item in chosen.items() if item.id in full}
+    projected = {p.id: p for p in checked_batch_items(session, case_id, list(representatives.values()))}
+    rows = []
+    for identity, (bucket, item) in decided.items():
+        if item.id in full:
+            rows.append((identity, bucket, full[item.id], None))
+    for identity, item in representatives.items():
+        current = projected.get(item.id)
+        if current is None:
+            continue
+        bucket = classify(current)
+        detail = describe(current.summary) if bucket in ('waiting', 'unreadable') else None
+        if bucket == 'unreadable':
+            page = current.summary.get('page_number')
+            detail = dict(detail or dict(row_id=None, field=None, other_problems=0, problem_total=0),
+                reason='unreadable', page=page, sentence='Nothing could be read from this statement'
+                + (f' (page {page})' if isinstance(page, int) else '') + ': check its pages in the PDF')
+        rows.append((identity, bucket, current, detail))
+    items = light
+    batch_of = {item.id: item.batch_id for item in items}
+    result = []
+    # Statements saved outside any batch (an individual review) are imported too.
+    known = {(sha, identity[1]) for identity, values in shas.items() for sha in values}
+    outside = {scope: file_id for scope, file_id in current_saved.items() if scope not in known}
+    names = dict(session.execute(select(EvidenceFile.id, EvidenceFile.original_filename).where(
+        EvidenceFile.case_id == case_id, EvidenceFile.id.in_(set(outside.values()))))) if outside else {}
+    for (sha, key), file_id in outside.items():
+        result.append(dict(id=f'saved:{file_id}:{key}', batch_id=None, file_id=str(file_id), source_id=str(file_id),
+            statement_id=key or None, filename=names.get(file_id) or 'Source unavailable', holder='', account='',
+            institution='', currency='', period_start='', period_end='', page=None, can_import=False,
+            status='imported', bucket='imported', root=f'saved:{sha}', file_ids=[str(file_id)]))
+    for identity, bucket, item, detail in rows:
+        entry = _entry(item, batch_of[item.id], detail)
+        entry.update(bucket=bucket, root=identity[0], file_ids=sorted({str(i.file_id) for i in identities[identity]}
+            | {source for i in identities[identity] for source in sources.get(str(i.file_id), ())}))
+        if bucket == 'copies':
+            disposition = item.summary.get('duplicate_disposition') or {}
+            retained = disposition.get('retained') or {}
+            entry.update(copy_of=retained.get('filename') or None,
+                set_aside=item.status == 'duplicate_ignored')
+        result.append(entry)
+    # Statement order inside its file, so an entry can say "statement 12 of 54".
+    by_file = {}
+    for entry in result:
+        by_file.setdefault(entry['root'], []).append(entry)
+    for group in by_file.values():
+        group.sort(key=lambda e: (e['period_start'], e['period_end'], e['statement_id'] or ''))
+        for index, entry in enumerate(group, 1):
+            entry.update(file_position=index, file_statements=len(group))
+    result.sort(key=lambda e: (e['filename'], e['account'], e['period_start'], e['id']))
+    return result
+
+
+_CACHE_SIZE = 16
+_cache = OrderedDict()
+_lock = threading.Lock()
+
+
+def _entries(session, case_id, use_cache=True):
+    from services.financial.statement_file_status import status_fingerprint
+    fingerprint = status_fingerprint(session, case_id) if use_cache else None
+    key = str(case_id)
+    if fingerprint is not None:
+        with _lock:
+            hit = _cache.get(key)
+            if hit and hit[0] == fingerprint:
+                _cache.move_to_end(key)
+                return deepcopy(hit[1])
+    entries = _build(session, case_id)
+    if fingerprint is not None:
+        with _lock:
+            _cache[key] = (fingerprint, deepcopy(entries))
+            _cache.move_to_end(key)
+            while len(_cache) > _CACHE_SIZE:
+                _cache.popitem(last=False)
+    return entries
+
+
+def _counts(entries):
+    counts = {bucket: 0 for bucket in BUCKETS}
+    for entry in entries:
+        counts[entry['bucket']] += 1
+    return counts
+
+
+def _failed_files(session, case_id, file_filter):
+    """Files a batch could not prepare and that have no statement at all."""
+    prepared = set(session.scalars(select(Item.file_id).join(Batch, Batch.id == Item.batch_id).where(
+        Batch.case_id == case_id, Batch.status != 'removed', Item.status != 'removed')))
+    failed = {}
+    for batch in session.scalars(select(Batch).where(Batch.case_id == case_id, Batch.status != 'removed')
+            .order_by(Batch.created_at)):
+        for file in batch.files or []:
+            ids = {file.get('file_id'), file.get('source_id')} - {None}
+            if file_filter and not ids & file_filter:
+                continue
+            if any(UUID(i) in prepared for i in ids if _uuid(i)):
+                failed.pop(file.get('source_id'), None)
+                continue
+            if file.get('status') == 'error':
+                failed[file.get('source_id')] = dict(batch_id=str(batch.id), source_id=file.get('source_id'),
+                    file_id=file.get('file_id'), filename=file.get('filename') or 'Source unavailable',
+                    message=file.get('error') or 'This file could not be prepared.')
+            else:
+                failed.pop(file.get('source_id'), None)
+    return list(failed.values())
+
+
+def _uuid(value):
+    try:
+        UUID(str(value))
+        return True
+    except ValueError:
+        return False
+
+
+def case_review_queue(session, *, case_id, file_ids=None, use_cache=True):
+    """The case's queue and status line, optionally limited to some files (evidence ids)."""
+    started = time.perf_counter()
+    entries = _entries(session, case_id, use_cache=use_cache)
+    file_filter = {str(i) for i in file_ids or []}
+    if file_filter:
+        entries = [e for e in entries if file_filter & set(e['file_ids'])]
+    failed = _failed_files(session, case_id, file_filter)
+    counts = _counts(entries)
+    counts['unreadable_files'] = len(failed)
+    for entry in entries:
+        entry.pop('root', None)
+    pick = lambda bucket: [e for e in entries if e['bucket'] == bucket]
+    ready_batches = {}
+    for entry in pick('ready'):
+        ready_batches[entry['batch_id']] = ready_batches.get(entry['batch_id'], 0) + 1
+    return dict(case_id=str(case_id), file_ids=sorted(file_filter), counts=counts,
+        status_line=status_line(counts), items=pick('waiting'), copies=pick('copies'),
+        unreadable=pick('unreadable'), unreadable_files=failed, rechecking=pick('rechecking'),
+        unexplained=pick('unexplained'),
+        ready_batches=[dict(batch_id=key, statements=value) for key, value in
+                       sorted(ready_batches.items(), key=lambda pair: -pair[1])],
+        elapsed_ms=round((time.perf_counter() - started) * 1000))
+
+
+def status_line(counts):
+    """The plain per-case status line. Every number is a count of the queue's own buckets."""
+    parts = [f"Imported {counts['imported']} statements", f"Waiting for you {counts['waiting']}",
+             f"Copies set aside {counts['copies']}", f"Couldn't read {counts['unreadable'] + counts['unreadable_files']}"]
+    if counts['ready']:
+        parts.insert(2, f"Ready to save {counts['ready']}")
+    if counts['saving']:
+        parts.append(f"Saving {counts['saving']}")
+    if counts['rechecking']:
+        parts.append(f"Being rechecked {counts['rechecking']}")
+    if counts['left_unimported']:
+        parts.append(f"Left unimported {counts['left_unimported']}")
+    return ' · '.join(parts)
+
+
+def case_status(session, *, case_id):
+    """Counts only, for the cross-case view."""
+    queue = case_review_queue(session, case_id=case_id)
+    return dict(case_id=queue['case_id'], counts=queue['counts'], status_line=queue['status_line'],
+                elapsed_ms=queue['elapsed_ms'])

@@ -42,17 +42,41 @@ class BatchReviewSummaryTests(TestCase):
         self.assertEqual(groups['incomplete']['statement_count'], 1)
         self.assertEqual(groups['holder']['statement_count'], 1)
 
-    def test_retained_import_checks_and_truncated_checks_are_not_lost_or_counted_as_blockers(self):
+    def test_retained_import_checks_are_counted_as_history_not_as_reasons_to_reopen(self):
+        # A saved statement's check history is never sent back as work: the
+        # reason groups (and their "Show statements" / next-problem walk) list
+        # unsaved statements only. The history stays counted.
         saved = item(dict(kind='coverage', message='Overlapping dates'), status='imported', can_import=False)
         saved.summary['problem_count'] = 75
         skipped = item(dict(kind='missing_field', field='date', message='Missing date'), status='skipped', can_import=False)
-        result = review_summary([saved, skipped])
-        self.assertEqual(result['blocked_statements'], 0)
+        unsaved = item(dict(kind='missing_field', field='date', message='Missing date'), status='attention', can_import=False)
+        unsaved.summary['problem_count'] = 40
+        result = review_summary([saved, skipped, unsaved])
+        self.assertEqual(result['blocked_statements'], 1)
         self.assertEqual(result['imported_with_checks'], 1)
-        self.assertEqual(sum(group['check_count'] for group in result['groups']), 75)
+        # Truncated checks of unsaved statements are still not lost.
+        self.assertEqual(sum(group['check_count'] for group in result['groups']), 40)
+        self.assertEqual({group['id'] for group in result['groups']}, {'incomplete', 'additional'})
+        self.assertTrue(all(group['imported_statements'] == 0 for group in result['groups']))
         self.assertEqual(item_reasons(skipped), {})
-        self.assertTrue(matches_group(saved, 'additional'))
+        self.assertFalse(matches_group(saved, 'additional'))
+        self.assertTrue(matches_group(unsaved, 'additional'))
         self.assertFalse(matches_group(saved, 'blocked'))
+        self.assertTrue(matches_group(saved, 'saved'))
+
+    def test_needs_decision_is_only_unsaved_statements_with_something_to_act_on(self):
+        from services.financial.batch_review_summary import needs_decision
+        fix = item(dict(kind='missing_field', field='date', message='Missing date'), status='attention', can_import=False)
+        saved = item(dict(kind='missing_field', field='date', message='Missing date'), status='imported', can_import=False)
+        clean = item(status='ready', can_import=True)
+        notes = item(dict(kind='coverage', message='Another statement covers some of these dates.'),
+            dict(message='Not enough readable balances for an automatic balance check.'), status='attention', can_import=True)
+        background = item(dict(kind='readiness_pending', message='Being updated'), status='attention', can_import=False)
+        copy = item(dict(kind='coverage', matching_statement=True, message='A separate file matches.'), status='attention', can_import=False)
+        self.assertEqual([needs_decision(i) for i in (fix, saved, clean, notes, background, copy)],
+                         [True, False, False, False, False, False])
+        self.assertTrue(matches_group(fix, 'needs_decision'))
+        validate_group('needs_decision')
 
     def test_legacy_checks_are_explained_without_dismissing_unknown_messages(self):
         legacy = item(dict(message='The account number has not been identified.'),
