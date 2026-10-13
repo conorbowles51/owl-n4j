@@ -164,6 +164,7 @@ const listSchema = z.object({
       checked_files: z.number().optional(),
       failed_files: z.number().optional(),
       completed: z.boolean().default(false),
+      superseded: z.boolean().default(false),
       available_statements: z.number().optional(),
       statements_with_checks: z.number().optional(),
       statement_summary: batchStatementSummary.optional(),
@@ -197,6 +198,7 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
   const [error, setError] = useState("")
   const [visibleBatches, setVisibleBatches] = useState(8)
   const [showCompleted, setShowCompleted] = useState(false)
+  const [showOlder, setShowOlder] = useState(false)
   const [selectedBatches, setSelectedBatches] = useState<string[]>([])
   const [submission, setSubmission, clearSubmission] = useFinancialDraft<{
     request_id: string
@@ -560,8 +562,15 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
       setParams({ view: "transactions" })
     },
   })
+  // A batch whose statements are all held by a newer batch (or already
+  // saved) is hidden, never deleted: "Show N older batches" lists it again.
+  const olderBatches =
+    batches.data?.filter((batch) => batch.superseded && !batch.completed)
+      .length ?? 0
   const listedBatches = batches.data?.filter(
-    (batch) => showCompleted || !batch.completed
+    (batch) =>
+      (showCompleted || !batch.completed) &&
+      (showOlder || batch.completed || !batch.superseded)
   )
   if (!batchId)
     return (
@@ -590,6 +599,21 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
           />{" "}
           Show completed batches (history)
         </label>
+        {olderBatches > 0 && (
+          <label className="block text-sm">
+            <input
+              type="checkbox"
+              checked={showOlder}
+              onChange={(e) => {
+                setShowOlder(e.target.checked)
+                setVisibleBatches(8)
+              }}
+            />{" "}
+            Show {olderBatches} older{" "}
+            {olderBatches === 1 ? "batch" : "batches"} (every statement is in a
+            newer batch or already saved)
+          </label>
+        )}
         {listedBatches?.length === 0 && (
           <p>No active batches. Completed work remains in history.</p>
         )}

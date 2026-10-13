@@ -218,3 +218,48 @@ class BacklogCommandTests(Base):
         self.advance(batch)
         with self.f.SessionLocal() as db:
             self.assertEqual(db.query(Item).filter(Item.batch_id == batch).one().status, 'imported')
+
+
+class SupersededBatchTests(Base):
+    test_a_statement_in_two_batches_is_one_entry_and_leaves_once_saved = None
+    test_a_statement_with_a_problem_is_queued_with_its_sentence_and_file_filter_applies = None
+
+    def flags(self):
+        from services.financial.batch_supersession import superseded_batches
+        with self.f.SessionLocal() as db:
+            batches = list(db.query(service.Batch).filter(service.Batch.case_id == self.f.case.id))
+            items = list(db.query(Item).filter(Item.batch_id.in_([b.id for b in batches])))
+            return superseded_batches(db, self.f.case.id, batches, items)
+
+    def test_an_older_batch_whose_statements_a_newer_batch_holds_is_hidden_not_deleted(self):
+        newer = self.create(); self.advance(newer)
+        older = self.older_copy_of(newer)
+        self.assertEqual(self.flags(), {older: True})
+        # Nothing is removed: both batches and their items remain.
+        with self.f.SessionLocal() as db:
+            self.assertEqual(db.query(service.Batch).count(), 2)
+            self.assertEqual(db.query(Item).filter(Item.batch_id == older).count(), 1)
+
+    def test_a_batch_still_preparing_or_with_unique_statements_stays(self):
+        newer = self.create(); self.advance(newer)
+        older = self.older_copy_of(newer)
+        with self.f.SessionLocal() as db:
+            db.get(service.Batch, older).status = 'preparing'
+            db.commit()
+        self.assertEqual(self.flags(), {})
+        with self.f.SessionLocal() as db:
+            db.get(service.Batch, older).status = 'review'
+            # The older batch also holds a statement no newer batch has.
+            record = db.query(Item).filter(Item.batch_id == older).first()
+            db.add(Item(id=uuid4(), batch_id=older, file_id=record.file_id, statement_key='only-here',
+                        status='attention', summary=dict(record.summary)))
+            db.commit()
+        self.assertEqual(self.flags(), {})
+
+    def test_list_reports_superseded(self):
+        newer = self.create(); self.advance(newer)
+        self.older_copy_of(newer)
+        from routers.financial_statement_import import list_financial_batches
+        with self.f.SessionLocal() as db:
+            listing = list_financial_batches(case_id=self.f.case.id, db=db)
+        self.assertEqual(sorted(b['superseded'] for b in listing['batches']), [False, True])

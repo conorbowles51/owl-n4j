@@ -532,6 +532,24 @@ it("distinguishes repeated file runs and opens the selected saved batch", async 
   )
 })
 
+it("hides batches whose statements a newer batch holds, behind Show N older batches", async () => {
+  const run = (id: string, superseded: boolean) => ({
+    id, status: "review", created_at: "2026-09-19T17:00:00Z", file_count: 3, superseded,
+    filenames: [`${id}.pdf`],
+  })
+  vi.mocked(fetchAPI).mockImplementation(async (url) => {
+    if (url.includes("/list?"))
+      return { case_id: "case", batches: [run("newest", false), run("older-a", true), run("older-b", true)] } as never
+    return batch as never
+  })
+  mount("/cases/case/financial?view=statements")
+  expect(await screen.findByText(/newest\.pdf/)).toBeVisible()
+  expect(screen.queryByText(/older-a\.pdf/)).toBeNull()
+  fireEvent.click(screen.getByRole("checkbox", { name: /Show 2 older batches/ }))
+  expect(await screen.findByText(/older-a\.pdf/)).toBeVisible()
+  expect(screen.getByText(/older-b\.pdf/)).toBeVisible()
+})
+
 it("confirms the displayed ready list and filters problems across the batch", async () => {
   mount()
   fireEvent.click(

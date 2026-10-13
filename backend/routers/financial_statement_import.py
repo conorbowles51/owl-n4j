@@ -864,9 +864,12 @@ def list_financial_batches(case_id: UUID = Query(...), db: Session = Depends(get
     references = import_batches.available_batch_references(db, case_id, [f for b in batches for f in b.files])
     files_by_batch = {b.id: import_batches.project_batch_files(b.files, references) for b in batches}
     by_batch = {b.id: [] for b in batches}
+    superseded = {}
     if by_batch:
         from services.financial.batch_import_history import project_individual_receipts
+        from services.financial.batch_supersession import superseded_batches
         items = list(db.scalars(select(FinancialImportBatchItem).where(FinancialImportBatchItem.batch_id.in_(by_batch), FinancialImportBatchItem.status != 'removed')))
+        superseded = superseded_batches(db, case_id, batches, items)
         for item in import_batches.project_list_items(db, case_id, project_individual_receipts(db, case_id, items)):
             by_batch[item.batch_id].append(item)
     def counts(batch):
@@ -878,6 +881,7 @@ def list_financial_batches(case_id: UUID = Query(...), db: Session = Depends(get
                     statement_summary=statement_summary(items))
     return dict(case_id=str(case_id),batches=[dict(id=str(b.id),status=b.status,created_at=b.created_at.isoformat(),file_count=len(b.files), **counts(b),
         created_by=(b.actor or {}).get('name', ''), filenames=[f['filename'] for f in b.files[:3]],
+        superseded=bool(superseded.get(b.id)),
         checked_files=sum(f['status'] == 'checked' for f in files_by_batch[b.id]),
         failed_files=sum(f['status'] == 'error' for f in files_by_batch[b.id])) for b in batches])
 
