@@ -17,6 +17,14 @@ import {
 } from "../lib/statement-file-state"
 import { FinancialFileAction } from "./FinancialFileAction"
 import { EvidenceFinancialPicker } from "./EvidenceFinancialPicker"
+import { BatchStartChoice } from "./BatchStartChoice"
+import {
+  needsBatchStartChoice,
+  previewBatchStart,
+  startStatementBatch,
+  type BatchStartChoiceValue,
+  type BatchStartPreview,
+} from "../lib/batch-start"
 import { useFinancialAccess } from "../hooks/use-financial-access"
 import { useEffect, useRef, useState } from "react"
 import { useNavigate } from "react-router-dom"
@@ -24,7 +32,6 @@ import { useQueryClient } from "@tanstack/react-query"
 import { z } from "zod"
 import { Button } from "@/components/ui/button"
 import { evidenceAPI } from "@/features/evidence/api"
-import { fetchAPI } from "@/lib/api-client"
 import { newReviewId } from "../lib/statement-review-id"
 import { useAuthStore } from "@/features/auth/hooks/use-auth"
 import { useFinancialStore } from "../stores/financial.store"
@@ -94,6 +101,22 @@ export function StatementFilesPanel({
   })
   const [preparing, setPreparing] = useState(false)
   const batchRequest = useRef<{ selection: string; id: string } | null>(null)
+  // Shown before a batch starts when the files are already in an unfinished
+  // batch or hold copies; continuing that batch is the default choice.
+  const [startChoice, setStartChoice] = useState<{
+    scope: string
+    snapshot: string
+    ids: string[]
+    preview: BatchStartPreview
+  } | null>(null)
+  const startChoiceRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (startChoice)
+      startChoiceRef.current?.scrollIntoView({
+        block: "center",
+        behavior: "smooth",
+      })
+  }, [startChoice])
   const queue = useStatementUploads((state) => state.queues[scope])
   const queuedReadings = new Set(
     queue?.items.flatMap((item) =>
@@ -201,7 +224,12 @@ export function StatementFilesPanel({
         !saved?.current_transactions &&
         !saved?.wire_review_count &&
         !saved?.receipt_review_count
-      return { label: "", tone: "review", notImported: false, needsAction: pending }
+      return {
+        label: "",
+        tone: "review",
+        notImported: false,
+        needsAction: pending,
+      }
     }
     return statementFileCard(file, saved, {
       removed: file.financial_removed,
@@ -209,7 +237,8 @@ export function StatementFilesPanel({
       queued: queuedReadings.has(file.id),
     })
   }
-  const activeFiles = files.data?.filter((file) => !file.financial_removed) ?? []
+  const activeFiles =
+    files.data?.filter((file) => !file.financial_removed) ?? []
   const notImportedCount = activeFiles.filter(
     (file) => cardFor(file).notImported
   ).length
@@ -334,7 +363,10 @@ export function StatementFilesPanel({
             item.incomplete_count)
       )
   )
-  const prepareSelected = async (ids = selectedIds) => {
+  const prepareSelected = async (
+    ids = selectedIds,
+    choice?: BatchStartChoiceValue
+  ) => {
     if (!canEdit || !canUpload || preparing || !ids.length) return
     const snapshot = JSON.stringify([scope, [...ids].sort()])
     if (batchRequest.current?.selection !== snapshot)
@@ -342,24 +374,28 @@ export function StatementFilesPanel({
     setPreparing(true)
     setError("")
     try {
-      const batch = z.object({ id: z.string(), case_id: z.string() }).parse(
-        await fetchAPI(
-          `/api/financial/statement-import/batches?case_id=${caseId}`,
-          {
-            method: "POST",
-            body: {
-              request_id: batchRequest.current.id,
-              file_ids: ids,
-              folder_ids: [],
-            },
-          }
-        )
-      )
-      if (batch.case_id !== caseId)
-        throw Error("The batch belongs to another case.")
+      let preview =
+        startChoice?.snapshot === snapshot ? startChoice.preview : null
+      if (!choice) {
+        // The check is advisory. If it cannot run, the server still continues
+        // an unfinished batch that holds every selected file.
+        preview = await previewBatchStart(caseId, ids).catch(() => null)
+        if (preview && needsBatchStartChoice(preview)) {
+          setStartChoice({ scope, snapshot, ids, preview })
+          return
+        }
+      }
+      const batchId = await startStatementBatch({
+        caseId,
+        fileIds: ids,
+        requestId: batchRequest.current.id,
+        preview,
+        choice,
+      })
+      setStartChoice(null)
       void client.invalidateQueries({ queryKey: ["financial-batches", caseId] })
       navigate(
-        `/cases/${caseId}/financial?view=statements&batch=${encodeURIComponent(batch.id)}`
+        `/cases/${caseId}/financial?view=statements&batch=${encodeURIComponent(batchId)}`
       )
     } catch (failure) {
       setError(
@@ -537,6 +573,24 @@ export function StatementFilesPanel({
         />
       )}
       {error && <p role="alert">{error}</p>}
+      {startChoice?.scope === scope && (
+        <div ref={startChoiceRef} className="scroll-mt-24">
+          <BatchStartChoice
+            preview={startChoice.preview}
+            selectedCount={startChoice.ids.length}
+            busy={preparing}
+            onChoose={(choice) => void prepareSelected(startChoice.ids, choice)}
+            onLeaveOut={(fileIds) => {
+              const kept = startChoice.ids.filter((id) => !fileIds.includes(id))
+              setStartChoice(null)
+              if (selection.scope === scope)
+                selectFiles(selectedIds.filter((id) => !fileIds.includes(id)))
+              void prepareSelected(kept)
+            }}
+            onCancel={() => setStartChoice(null)}
+          />
+        </div>
+      )}
       {queue && (
         <div aria-live="polite" className="space-y-2">
           {queue.items

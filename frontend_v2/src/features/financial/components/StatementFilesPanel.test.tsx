@@ -382,6 +382,7 @@ it("prepares all selected files directly, keeps hidden selections and reuses a f
   }))
   const attempts: unknown[] = []
   vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
+    if (url.includes("/batches/preview")) return noOpenBatch as never
     if (options?.method === "POST") {
       attempts.push(options.body)
       if (attempts.length === 1) throw Error("Connection lost")
@@ -430,6 +431,82 @@ it("prepares all selected files directly, keeps hidden selections and reuses a f
     expect.stringContaining("/confirm"),
     expect.anything()
   )
+})
+
+const noOpenBatch = {
+  case_id: "case",
+  selected_files: 0,
+  suggested_batch_id: null,
+  open_batches: [],
+  copies: [],
+}
+
+it("offers to continue the unfinished batch that already holds the selection, and starts a fresh one only when asked", async () => {
+  const files = Array.from({ length: 3 }, (_, n) => ({
+    ...file,
+    id: `file-${n}`,
+    original_filename: `Statements ${n}.pdf`,
+    status: "processed",
+  }))
+  const created: unknown[] = []
+  vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
+    if (url.includes("/batches/preview"))
+      return {
+        case_id: "case",
+        selected_files: 3,
+        suggested_batch_id: "open-batch",
+        open_batches: [
+          {
+            id: "open-batch",
+            created_at: "2026-10-08T23:53:35Z",
+            status: "review",
+            created_by: "",
+            file_count: 4,
+            shared_files: 2,
+            selected_files: 3,
+            covers_selection: false,
+            other_files: ["file-2"],
+            unfinished_statements: 9,
+            files_reading: 0,
+          },
+        ],
+        copies: [],
+      } as never
+    if (options?.method === "POST") {
+      created.push(options.body)
+      return { id: "small-batch", case_id: "case" } as never
+    }
+    return (
+      url.includes("/statement-import/files") ? status : { files }
+    ) as never
+  })
+  mount(true)
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Select all 3 shown files" })
+  )
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: "Review and save selected files together (3)",
+    })
+  )
+  expect(
+    await screen.findByText(/2 of these 3 files are already in the batch from/)
+  ).toBeInTheDocument()
+  expect(created).toHaveLength(0)
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: "Continue that batch and prepare the other 1 file",
+    })
+  )
+  await waitFor(() =>
+    expect(screen.getByLabelText("Location")).toHaveTextContent(
+      "/cases/case/financial?view=statements&batch=open-batch"
+    )
+  )
+  // Only the file the open batch does not hold gets a batch of its own.
+  expect(created).toEqual([
+    expect.objectContaining({ file_ids: ["file-2"], start_new: true }),
+  ])
 })
 
 it("does not navigate to a batch belonging to a different case", async () => {
