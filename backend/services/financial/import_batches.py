@@ -1893,6 +1893,10 @@ def _review_file(factory,batch_id,case_id,file):
                         'superseded_by_reading': file['file_id'],
                         'recovery_message': 'A newer reading of this original is available. This earlier preparation is retained in history.'}
             db.commit()
+        # Statements that check out completely (no check, no edit) are saved
+        # as System when their file's preparation ends (flag AUTO_SAVE_READY).
+        from services.financial.queue_save import auto_save_prepared
+        auto_save_prepared(db, case_id=case_id, batch_id=batch_id, file_id=UUID(file['file_id']))
 
 
 def _waiting_for_previous_statement(item):

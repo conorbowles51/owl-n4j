@@ -157,3 +157,64 @@ class QueueSaveTests(Base):
     def test_held_summary_counts_reasons(self):
         held = [dict(reason='Currency not printed: choose one')] * 3 + [dict(reason='Already saved')]
         self.assertEqual(queue_save.held_summary(held), '3 currency not printed: choose one, 1 already saved')
+
+
+class AutomaticSaveTests(Base):
+    test_a_statement_in_two_batches_is_one_entry_and_leaves_once_saved = None
+    test_a_statement_with_a_problem_is_queued_with_its_sentence_and_file_filter_applies = None
+
+    def test_preparation_saves_a_fully_reconciled_statement_as_system(self):
+        """The real hook: preparation ends, the statement checks out with no edit, the worker imports it."""
+        batch = self.create()
+        with patch.object(queue_save, 'AUTO_SAVE_READY', True), \
+                patch.object(queue_save, 'fully_reconciled', return_value=True):
+            self.advance(batch)   # prepares the file; the hook claims the ready statement
+            with self.f.SessionLocal() as db:
+                record = db.query(Item).filter(Item.batch_id == batch).one()
+                self.assertEqual(record.status, 'pending_import')
+                self.assertEqual(record.summary['import_actor']['name'], 'System')
+            self.advance(batch)   # the worker imports it like any accepted save
+        with self.f.SessionLocal() as db:
+            self.assertEqual(db.query(Item).filter(Item.batch_id == batch).one().status, 'imported')
+            self.assertEqual(db.query(Operation).one().actor['name'], 'System')
+
+    def test_preparation_leaves_a_statement_with_a_check_for_the_investigator(self):
+        batch = self.create()
+        with patch.object(queue_save, 'AUTO_SAVE_READY', True), \
+                patch.object(queue_save, 'fully_reconciled', return_value=False):
+            self.advance(batch)
+        with self.f.SessionLocal() as db:
+            self.assertEqual(db.query(Item).filter(Item.batch_id == batch).one().status, 'ready')
+            self.assertEqual(db.query(Operation).count(), 0)
+
+    def test_fully_reconciled_rule(self):
+        from types import SimpleNamespace as NS
+        ready = NS(status='ready', summary=dict(can_import=True, problems=[], problem_count=0))
+        plain = NS(review_request=None, statement_key='')
+        self.assertTrue(queue_save.fully_reconciled(plain, ready, None))
+        self.assertFalse(queue_save.fully_reconciled(NS(review_request={'x': 1}, statement_key=''), ready, None))
+        note = NS(status='ready', summary=dict(can_import=True, problems=[CURRENCY], problem_count=1))
+        self.assertFalse(queue_save.fully_reconciled(plain, note, None))
+        held = NS(status='attention', summary=dict(can_import=True, problems=[], problem_count=0))
+        self.assertFalse(queue_save.fully_reconciled(plain, held, None))
+        draft = NS(metadata_={'financial_review_progress': {'': {'assessment': {}}}})
+        self.assertFalse(queue_save.fully_reconciled(plain, ready, draft))
+
+
+class BacklogCommandTests(Base):
+    test_a_statement_in_two_batches_is_one_entry_and_leaves_once_saved = None
+    test_a_statement_with_a_problem_is_queued_with_its_sentence_and_file_filter_applies = None
+
+    def test_dry_run_counts_and_apply_is_idempotent(self):
+        from scripts import financial_save_ready_backlog as command
+        batch = self.create(); self.advance(batch)
+        with self.f.SessionLocal() as db:
+            counts, chosen = command.candidates(db, self.f.case.id)
+        self.assertEqual((counts['ready'], len(chosen)), (1, 1))
+        with patch.object(queue_save, 'fully_reconciled', return_value=True):
+            rows = command.apply(self.f.SessionLocal, [self.f.case.id])
+            self.assertEqual(rows[0]['queued'], 1)
+            self.assertEqual(command.apply(self.f.SessionLocal, [self.f.case.id])[0]['queued'], 0)
+        self.advance(batch)
+        with self.f.SessionLocal() as db:
+            self.assertEqual(db.query(Item).filter(Item.batch_id == batch).one().status, 'imported')
