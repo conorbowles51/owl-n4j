@@ -95,6 +95,27 @@ so absolute seconds are high; compare within a row.
 - Not run: browser project (BulkStatementDetails.browser expectation text updated, not executed); no click test over
   the server IP.
 
+## Priority additions after release of 2689d01a (coordinator, Alex's case first)
+- 64f6872d (B) Every queue item names ALL its blockers: the summary sentence stays, then "also: ..." (entry
+  `reasons` + `also`), in the list and in the statement's "To fix" banner. A statement waiting for its currency is
+  not checked further by the reader, so its empty bank / holder / account number are named too. `fix_makes_ready`
+  is true only when the proposal covers the one and only blocker; otherwise the currency control says "This fills
+  the currency only. Still to fix: ..." and the batch currency editor says how many become ready.
+- 2f873f4a (A) "Waiting for a reader fix": a file with >= 5 statements (copies excluded) where >= 50% are blocked by
+  reading/identity problems (reading, incomplete, count, couldn't read, bank, holder, account, dates) and none would
+  be ready after one field fix becomes ONE line outside "Waiting for you": "Loupe can't read this file reliably yet
+  (N statements). No need to review it by hand; it will be re-read when the reader is fixed." Status line "Waiting
+  for a reader fix N"; its statements stay listed (expandable) and openable; no data change. Constants
+  READER_MIN_STATEMENTS / READER_SHARE in review_queue.py; tests ReaderCollapseTests, AllBlockersTests.
+- Live 49494305 (read-only, use_cache=False): waiting 436 -> 150; waiting for a reader fix 286 (one file,
+  6e611846, 286 of its 287 statements); waiting with blockers beyond the sentence 193 (of 436) -> 101 (of 150), all
+  now shown; statements claiming a one-click fix that would make them ready 194 -> 0 (the 194 currency statements
+  also lack bank/holder/account). Remaining waiting by file: 41, 29, 25, 24, 21 (the Andrews OCR files: under the
+  50% reading/identity threshold or with single-fix statements, so they stay work). d5b330d1: waiting 146
+  unchanged, 15 entries truly one click from ready.
+- Tests: review_queue + queue_save 78 passed; ReviewQueuePanel / StatementCurrencyControl / BatchCurrencyEditor
+  vitest passed; tsc clean; `npm run build` (tsc -b + vite) passed as conorbowles51; no root-owned files in node_modules/.tmp.
+
 ## Observations for the coordinator
 - Case f887b0d9: its batches (2 at 20:40) are gone from financial_import_batches (no rows at all, not 'removed') by
   21:30. Not caused by this unit (every probe read-only). Worth checking who deleted them.
