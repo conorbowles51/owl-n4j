@@ -26,6 +26,10 @@ const answer = z.object({
 const started = z.object({
   job_ids: z.array(z.string()).optional().nullable(),
   message: z.string().optional(),
+  // Exact copies of a file already in Financial are not read again.
+  copies: z
+    .array(z.object({ file_id: z.string(), copy_of: z.string() }))
+    .optional(),
 })
 
 export async function uploadStatementFiles(
@@ -111,6 +115,15 @@ export async function uploadStatementFiles(
         const preparation = started.parse(
           await evidenceAPI.preparePdfReview(caseId, item.fileId!)
         )
+        const copy = preparation.copies?.find(
+          (entry) => entry.file_id === item.fileId
+        )
+        if (copy) {
+          item.status = `Same file as ${copy.copy_of}, already in Financial — not read again`
+          publish(true)
+          changed()
+          continue
+        }
         if (preparation.job_ids?.length !== 1)
           throw Error(
             preparation.message ||

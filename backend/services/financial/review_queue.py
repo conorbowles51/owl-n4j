@@ -344,7 +344,9 @@ _lock = threading.Lock()
 
 
 def _entries(session, case_id, use_cache=True):
+    """(queue entries, unread statement files) for the case, reused while its rows are unchanged."""
     from services.financial.statement_file_status import status_fingerprint
+    from services.financial.auto_read import unread_statement_files
     fingerprint = status_fingerprint(session, case_id) if use_cache else None
     key = str(case_id)
     if fingerprint is not None:
@@ -352,15 +354,16 @@ def _entries(session, case_id, use_cache=True):
             hit = _cache.get(key)
             if hit and hit[0] == fingerprint:
                 _cache.move_to_end(key)
-                return deepcopy(hit[1])
+                return deepcopy(hit[1]), hit[2]
     entries = _build(session, case_id)
+    unread = len(unread_statement_files(session, case_id=case_id))
     if fingerprint is not None:
         with _lock:
-            _cache[key] = (fingerprint, deepcopy(entries))
+            _cache[key] = (fingerprint, deepcopy(entries), unread)
             _cache.move_to_end(key)
             while len(_cache) > _CACHE_SIZE:
                 _cache.popitem(last=False)
-    return entries
+    return entries, unread
 
 
 def _counts(entries):
@@ -403,8 +406,11 @@ def _uuid(value):
 
 def case_review_queue(session, *, case_id, file_ids=None, use_cache=True):
     """The case's queue and status line, optionally limited to some files (evidence ids)."""
+    from services.financial.auto_read import reading_progress
     started = time.perf_counter()
-    entries = _entries(session, case_id, use_cache=use_cache)
+    entries, unread = _entries(session, case_id, use_cache=use_cache)
+    # Live (not cached): files being read or prepared, for "Reading 12 of 40 files".
+    reading = dict(reading_progress(session, case_id=case_id), unread_statement_files=unread)
     file_filter = {str(i) for i in file_ids or []}
     if file_filter:
         entries = [e for e in entries if file_filter & set(e['file_ids'])]
@@ -418,7 +424,7 @@ def case_review_queue(session, *, case_id, file_ids=None, use_cache=True):
     for entry in pick('ready'):
         ready_batches[entry['batch_id']] = ready_batches.get(entry['batch_id'], 0) + 1
     return dict(case_id=str(case_id), file_ids=sorted(file_filter), counts=counts,
-        status_line=status_line(counts), items=pick('waiting'), copies=pick('copies'),
+        status_line=status_line(counts, reading), reading=reading, items=pick('waiting'), copies=pick('copies'),
         unreadable=pick('unreadable'), unreadable_files=failed, rechecking=pick('rechecking'),
         unexplained=pick('unexplained'),
         ready_batches=[dict(batch_id=key, statements=value) for key, value in
@@ -426,7 +432,20 @@ def case_review_queue(session, *, case_id, file_ids=None, use_cache=True):
         elapsed_ms=round((time.perf_counter() - started) * 1000))
 
 
-def status_line(counts):
+def reading_sentence(reading):
+    """'Reading 12 of 40 files…' while statement files are being read or prepared, else ''."""
+    if not reading:
+        return ''
+    total = reading.get('files_total', 0) + reading.get('files_waiting_to_start', 0)
+    if not reading.get('files_reading') and not reading.get('files_waiting_to_start'):
+        return ''
+    done = reading.get('files_done', 0)
+    if reading.get('paused'):
+        return f'Reading paused at {done} of {total} files'
+    return f'Reading {min(done + 1, total)} of {total} files…'
+
+
+def status_line(counts, reading=None):
     """The plain per-case status line. Every number is a count of the queue's own buckets."""
     parts = [f"Imported {counts['imported']} statements", f"Waiting for you {counts['waiting']}",
              f"Copies set aside {counts['copies']}", f"Couldn't read {counts['unreadable'] + counts['unreadable_files']}"]
@@ -438,6 +457,9 @@ def status_line(counts):
         parts.append(f"Being rechecked {counts['rechecking']}")
     if counts['left_unimported']:
         parts.append(f"Left unimported {counts['left_unimported']}")
+    sentence = reading_sentence(reading)
+    if sentence:
+        parts.insert(0, sentence)
     return ' · '.join(parts)
 
 
@@ -445,4 +467,4 @@ def case_status(session, *, case_id):
     """Counts only, for the cross-case view."""
     queue = case_review_queue(session, case_id=case_id)
     return dict(case_id=queue['case_id'], counts=queue['counts'], status_line=queue['status_line'],
-                elapsed_ms=queue['elapsed_ms'])
+                reading=queue['reading'], elapsed_ms=queue['elapsed_ms'])

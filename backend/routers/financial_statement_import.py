@@ -805,6 +805,17 @@ def financial_review_status(case_id: UUID = Query(...), db: Session = Depends(ge
     return case_status(db, case_id=case_id)
 
 
+@router.post('/review/read-unread', dependencies=[Depends(case_access_dependency(lambda request,payload: ('case','edit'))), Depends(case_access_dependency(lambda request,payload: ('evidence','upload')))])
+def financial_read_unread(case_id: UUID = Query(...), user=Depends(get_current_db_user), db: Session = Depends(get_db)):
+    """Read the case's statement files that were never read or prepared (one explicit action)."""
+    from services.financial.auto_read import read_unread
+    try:
+        return read_unread(db, case_id=case_id, actor=actor_from_user(user))
+    except PdfMappingError as exc:
+        db.rollback()
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
 @router.get('/review/cases')
 def financial_review_cases(user=Depends(get_current_db_user), db: Session = Depends(get_db)):
     """Cases this user can view that hold statement batches. Counts load per case from /review/status."""
