@@ -34,6 +34,17 @@ const entry = z.object({
   problem_total: z.number().default(0),
   copy_of: z.string().nullish(),
   set_aside: z.boolean().optional(),
+  /** Proposed values for missing details (value, its source, whether it is certain). */
+  proposals: z
+    .record(
+      z.string(),
+      z.object({
+        value: z.string(),
+        label: z.string(),
+        confirmed: z.boolean().default(false),
+      })
+    )
+    .optional(),
 })
 export type QueueEntry = z.infer<typeof entry>
 
@@ -41,6 +52,7 @@ export const queueCounts = z.object({
   imported: z.number(),
   saving: z.number().default(0),
   waiting: z.number(),
+  filled: z.number().default(0),
   ready: z.number(),
   copies: z.number(),
   unreadable: z.number(),
@@ -73,6 +85,7 @@ export const reviewQueue = z.object({
     .default([]),
   rechecking: z.array(entry).default([]),
   ready: z.array(entry).default([]),
+  filled: z.array(entry).default([]),
   ready_batches: z
     .array(z.object({ batch_id: z.string(), statements: z.number() }))
     .default([]),
@@ -345,4 +358,55 @@ export async function saveReadyStatements(
     stillSaving: progress?.pending ?? 0,
   }
   return { ...result, message: saveResultLine(result) }
+}
+
+const fillResponse = z.object({
+  case_id: z.string(),
+  filled: z.number(),
+  statements: z.number(),
+  failed: z.number(),
+  ready_item_ids: z.array(z.string()),
+})
+
+const hasConfirmed = (entry: QueueEntry) =>
+  Object.values(entry.proposals ?? {}).some((proposal) => proposal.confirmed)
+
+/**
+ * The queue's save: first the details the system filled with certainty
+ * (confirmed proposals, saved as System), then every ready statement, each
+ * checked again with the batch save's admission.
+ */
+export async function fillAndSaveReady(
+  caseId: string,
+  data: ReviewQueue,
+  options: Parameters<typeof saveReadyStatements>[2] = {}
+): Promise<QueueSaveResult & { filled: number }> {
+  let filled = 0
+  const ids = data.ready.map((entry) => entry.id)
+  if (data.filled.length || data.items.some(hasConfirmed)) {
+    options.onProgress?.("Filling the details found automatically…")
+    const response = fillResponse.parse(
+      await fetchAPI(`/api/financial/statement-import/review/fill?case_id=${caseId}`, {
+        method: "POST",
+        body: { file_ids: data.file_ids },
+        timeout: 300000,
+      })
+    )
+    filled = response.filled
+    ids.push(...response.ready_item_ids.filter((id) => !ids.includes(id)))
+  }
+  if (!ids.length) {
+    const line = filled
+      ? `${filled} ${filled === 1 ? "statement's details" : "statements' details"} filled automatically; none is ready to save yet`
+      : "Nothing is ready to save"
+    return { imported: 0, held: [], stillSaving: 0, message: line, filled }
+  }
+  const result = await saveReadyStatements(caseId, ids, options)
+  return {
+    ...result,
+    filled,
+    message: filled
+      ? `${result.message} (details filled automatically on ${filled} as System; change any in its statement)`
+      : result.message,
+  }
 }

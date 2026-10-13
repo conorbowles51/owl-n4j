@@ -7,7 +7,7 @@ import { useFinancialAccess } from "../hooks/use-financial-access"
 import {
   entryPeriod,
   importOutcome,
-  saveReadyStatements,
+  fillAndSaveReady,
   useReviewQueue,
   type QueueEntry,
   type QueueSaveResult,
@@ -131,15 +131,13 @@ export function ReviewQueuePanel({
   // Saves straight from the queue, across batches, with the batch save's
   // admission checks; the result is one line: N imported, M held: reason.
   const saveReady = async () => {
-    const ids = query.data?.ready.map((entry) => entry.id) ?? []
-    if (!ids.length || saving) return
+    const data = query.data
+    if (!data || !(data.ready.length || data.filled.length) || saving) return
     setSaveError("")
     setSaveResult(null)
     setSaving("Checking the ready statements…")
     try {
-      setSaveResult(
-        await saveReadyStatements(caseId, ids, { onProgress: setSaving })
-      )
+      setSaveResult(await fillAndSaveReady(caseId, data, { onProgress: setSaving }))
     } catch (error) {
       setSaveError(
         `${error instanceof Error ? error.message : "Saving could not start."} Statements already accepted keep saving on the server; refresh the queue to see where each one stands.`

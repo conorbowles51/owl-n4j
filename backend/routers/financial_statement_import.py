@@ -826,6 +826,20 @@ def save_from_review_queue(body: QueueSave, case_id: UUID = Query(...), user=Dep
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
 
+class QueueFill(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    file_ids: list[UUID] = Field(default_factory=list, max_length=10000)
+
+
+@router.post('/review/fill', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
+def fill_from_review_queue(body: QueueFill, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    """Before a queue save: save the details the system filled with certainty (confirmed proposals) as System."""
+    from services.financial.queue_save import fill_from_queue
+    from services.financial.request_timing import stage
+    with stage('review_queue_fill'):
+        return fill_from_queue(db, case_id=case_id, file_ids=body.file_ids)
+
+
 @router.get('/review/save-result')
 def review_queue_save_result(case_id: UUID = Query(...), operation_id: list[UUID] = Query([]),
         db: Session = Depends(get_db)):

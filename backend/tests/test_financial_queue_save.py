@@ -10,6 +10,7 @@ from uuid import UUID, uuid4
 from postgres.models.financial_import_batches import (FinancialImportBatchItem as Item,
                                                       FinancialImportOperation as Operation)
 from services.financial import import_batches as service
+from services.financial.pdf_candidates import _digest
 from services.financial import queue_save
 from services.financial.review_queue import case_review_queue
 from tests.test_financial_review_queue import QueueReadTests as Base, CURRENCY
@@ -263,3 +264,89 @@ class SupersededBatchTests(Base):
         with self.f.SessionLocal() as db:
             listing = list_financial_batches(case_id=self.f.case.id, db=db)
         self.assertEqual(sorted(b['superseded'] for b in listing['batches']), [False, True])
+
+
+class FilledDetailsTests(Base):
+    """Confirmed proposals are filled (System) before saving; a System fill is not an investigator edit."""
+    test_a_statement_in_two_batches_is_one_entry_and_leaves_once_saved = None
+    test_a_statement_with_a_problem_is_queued_with_its_sentence_and_file_filter_applies = None
+    PROPOSALS = dict(currency=dict(value='USD', confirmed=True, label="same account's 3 saved statements, all USD",
+                                   field='currency'))
+
+    def hold_for_currency(self, batch):
+        with self.f.SessionLocal() as db:
+            record = db.query(Item).filter(Item.batch_id == batch).one()
+            self.ready_summary = {k: v for k, v in record.summary.items() if k != 'readiness'}
+            summary = dict(self.ready_summary, can_import=False, problems=[CURRENCY], problem_count=1)
+            record.summary, record.status, record.review_request = summary, 'attention', None
+            db.commit()
+            return record.id
+
+    def fake_fill(self, item_id, name='System'):
+        """Stands in for the details save (tested in test_bulk_statement_details): saves a review as `name`."""
+        def fill(session, *, case_id, entries, apply=False, actor=None, owned_batch_id=None):
+            self.fill_calls.append(dict(entries=entries, apply=apply, owned_batch_id=owned_batch_id))
+            from postgres.models.evidence import EvidenceFile
+            record = session.get(Item, item_id)
+            file = session.get(EvidenceFile, record.file_id)
+            request = service.initial_request(service.read_statement_import(session, case_id=case_id,
+                evidence_file_id=record.file_id, currency=None, statement_id=record.statement_key or None))
+            metadata = dict(file.metadata_ or {})
+            metadata['financial_review_progress'] = {record.statement_key or '': dict(
+                request=request, review_revision=_digest(request), saved_by=dict(user_id='None', name=name))}
+            file.metadata_ = metadata
+            record.review_request, record.status, record.summary = request, 'ready', dict(self.ready_summary)
+            session.commit()
+            return dict(statements=1, saved=1, failed=0, groups=[])
+        return fill
+
+    def setUp(self):
+        super().setUp()
+        self.fill_calls = []
+
+    def test_preparation_fills_confirmed_details_then_saves_as_system(self):
+        batch = self.create()
+        with patch.object(queue_save, 'AUTO_SAVE_READY', False):
+            self.advance(batch)
+        item_id = self.hold_for_currency(batch)
+        from services.financial import field_proposals
+        with patch.object(field_proposals, 'propose', return_value=self.PROPOSALS), \
+                patch.object(field_proposals, 'apply_confirmed_proposals', self.fake_fill(item_id)), \
+                patch.object(queue_save, 'AUTO_SAVE_READY', True):
+            with self.f.SessionLocal() as db:
+                result = queue_save.auto_save_prepared(db, case_id=self.f.case.id, batch_id=batch,
+                                                       file_id=self.f.file.id)
+        self.assertEqual(self.fill_calls[0]['owned_batch_id'], batch)
+        self.assertTrue(self.fill_calls[0]['apply'])
+        self.assertEqual(result['queued'], 1, result)
+        with self.f.SessionLocal() as db:
+            self.assertEqual(db.get(Item, item_id).status, 'pending_import')
+
+    def test_an_investigator_review_is_not_a_system_fill(self):
+        batch = self.create()
+        with patch.object(queue_save, 'AUTO_SAVE_READY', False):
+            self.advance(batch)
+        item_id = self.hold_for_currency(batch)
+        from services.financial import field_proposals
+        with patch.object(field_proposals, 'propose', return_value=self.PROPOSALS), \
+                patch.object(field_proposals, 'apply_confirmed_proposals', self.fake_fill(item_id, name='Alex')), \
+                patch.object(queue_save, 'AUTO_SAVE_READY', True):
+            with self.f.SessionLocal() as db:
+                result = queue_save.auto_save_prepared(db, case_id=self.f.case.id, batch_id=batch,
+                                                       file_id=self.f.file.id)
+        self.assertIsNone(result)  # nothing a System save may take
+        with self.f.SessionLocal() as db:
+            self.assertEqual(db.get(Item, item_id).status, 'ready')
+
+    def test_queue_fill_returns_statements_now_ready(self):
+        batch = self.create(); self.advance(batch)
+        item_id = self.hold_for_currency(batch)
+        entry = dict(id=str(item_id), batch_id=str(batch), file_id=str(self.f.file.id), statement_id=None,
+                     proposals=self.PROPOSALS, bucket='filled')
+        from services.financial import field_proposals
+        with patch('services.financial.review_queue.case_review_queue',
+                   return_value=dict(filled=[entry], items=[])), \
+                patch.object(field_proposals, 'apply_confirmed_proposals', self.fake_fill(item_id)):
+            with self.f.SessionLocal() as db:
+                result = queue_save.fill_from_queue(db, case_id=self.f.case.id)
+        self.assertEqual((result['filled'], result['ready_item_ids']), (1, [str(item_id)]))

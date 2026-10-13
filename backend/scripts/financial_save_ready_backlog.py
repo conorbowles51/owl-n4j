@@ -24,6 +24,7 @@ environment loaded:
     python3 scripts/financial_save_ready_backlog.py                      # dry run, every case
     python3 scripts/financial_save_ready_backlog.py --case <uuid> --check
     python3 scripts/financial_save_ready_backlog.py --case <uuid> --apply
+    python3 scripts/financial_save_ready_backlog.py --case <uuid> --apply --fill   # confirmed details first
 """
 import argparse
 import json
@@ -58,9 +59,10 @@ def candidates(session, case_id):
     items = list(session.scalars(select(Item).where(Item.id.in_(ids)))) if ids else []
     files = {f.id: f for f in session.scalars(select(EvidenceFile).where(
              EvidenceFile.id.in_({i.file_id for i in items})))} if items else {}
-    chosen = [i.id for i in items if not i.review_request and not (i.summary or {}).get('problems')
-              and not (i.summary or {}).get('problem_count')
-              and not (i.file_id in files and review_progress(files[i.file_id], i.statement_key))]
+    from services.financial.queue_save import system_filled_only
+    chosen = [i.id for i in items if not (i.summary or {}).get('problems') and not (i.summary or {}).get('problem_count')
+              and ((not i.review_request and not (i.file_id in files and review_progress(files[i.file_id], i.statement_key)))
+                   or system_filled_only(i, files.get(i.file_id)))]
     return queue['counts'], chosen
 
 
@@ -103,13 +105,18 @@ def _check(session, case_id, ids):
     return dict(would_save=would, would_hold=held)
 
 
-def apply(factory, requested):
-    from services.financial.queue_save import SYSTEM_ACTOR, save_statements
+def apply(factory, requested, fill=False):
+    from services.financial.queue_save import SYSTEM_ACTOR, fill_from_queue, save_statements
     rows = []
     with factory() as session:
         cases = _cases(session, requested)
         session.rollback()
     for case_id in cases:
+        filled = 0
+        if fill:
+            # Confirmed field proposals first (System, through the details save).
+            with factory() as session:
+                filled = fill_from_queue(session, case_id=case_id)['filled']
         with factory() as session:
             counts, chosen = candidates(session, case_id)
             session.rollback()
@@ -121,7 +128,7 @@ def apply(factory, requested):
             queued += result['queued']
             held.update(entry['reason'] for entry in result['held'])
         rows.append(dict(case=str(case_id)[:8], ready=counts['ready'], candidates=len(chosen), queued=queued,
-                         held=dict(held)))
+                         held=dict(held), details_filled=filled))
     return rows
 
 
@@ -131,13 +138,14 @@ def main(argv=None):
     parser.add_argument('--all-cases', action='store_true', help='required with --apply when no --case is given')
     parser.add_argument('--check', action='store_true', help='dry run: also run the full admission (read only, slow)')
     parser.add_argument('--apply', action='store_true', help='claim the statements for import as System (writes)')
+    parser.add_argument('--fill', action='store_true', help='with --apply: first save confirmed field proposals (System)')
     args = parser.parse_args(argv)
     from postgres.session import _get_session_local
     factory = _get_session_local()
     if args.apply:
         if not args.case and not args.all_cases:
             parser.error('--apply needs --case <id> or --all-cases')
-        rows = apply(factory, args.case)
+        rows = apply(factory, args.case, fill=args.fill)
     else:
         rows = dry_run(factory, args.case, args.check)
     for row in rows:

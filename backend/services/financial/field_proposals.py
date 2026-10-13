@@ -437,7 +437,7 @@ SYSTEM_NAME = 'System'
 SYSTEM_EMAIL = 'field-proposals@system.local'
 
 
-def apply_confirmed_proposals(session, *, case_id, entries, apply=False, actor=None):
+def apply_confirmed_proposals(session, *, case_id, entries, apply=False, actor=None, owned_batch_id=None):
     """Save automatically confirmed proposals of queue entries through the statement-details save.
 
     ``entries`` are review-queue entries (``case_review_queue``) carrying
@@ -492,7 +492,8 @@ def apply_confirmed_proposals(session, *, case_id, entries, apply=False, actor=N
             if apply:
                 request = request.model_copy(update=dict(preview_revision=preview['preview_revision'],
                                                          basis=group['basis']))
-                saved = bulk.save(session, case_id=case_id, request=request, actor=actor)
+                saved = bulk.save(session, case_id=case_id, request=request, actor=actor,
+                                  owned_batch_id=owned_batch_id)
                 line['updated'] = saved['updated']
                 report['saved'] += saved['updated']
             else:

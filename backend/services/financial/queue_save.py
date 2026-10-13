@@ -15,7 +15,10 @@ it uses the batch save's own admission, statement by statement:
 
 Automatic save (``AUTO_SAVE_READY``): when a file's preparation finishes, its
 statements that are ready with no check at all (no problem, not even a note)
-and no investigator edit or draft are claimed with the actor "System". It
+and no investigator edit or draft are claimed with the actor "System".
+Details missing only where a proposal is automatically confirmed
+(``field_proposals``) are filled first, as System, through the statement
+details save; such a statement then saves only if it checks out completely. It
 fires only from preparation, so statements read before deploy are untouched;
 the backlog is an explicit action (the queue's "Save all N ready statements",
 or ``scripts/financial_save_ready_backlog.py``). Every automatic save is an
@@ -65,14 +68,81 @@ def _not_ready_reason(projection):
     return 'No longer ready: open it in the queue'
 
 
+def system_filled_only(item, file):
+    """The statement's only saved review is details System filled from confirmed proposals."""
+    from services.financial.field_proposals import SYSTEM_NAME
+    from services.financial.statement_progress import review_progress
+    progress = review_progress(file, item.statement_key) if file is not None else None
+    return bool(progress and item.review_request and (progress.get('saved_by') or {}).get('name') == SYSTEM_NAME
+                and progress.get('request') == item.review_request)
+
+
 def fully_reconciled(item, projection, file):
-    """Ready under today's admission with no check at all and no investigator edit or draft."""
+    """Ready under today's admission with no check at all and no investigator edit or draft.
+
+    Details System filled from automatically confirmed proposals are not an
+    investigator edit; any other saved review or draft is.
+    """
     from services.financial.import_batches import import_available
     from services.financial.statement_progress import review_progress
     summary = projection.summary
+    untouched = not item.review_request and not (file is not None and review_progress(file, item.statement_key))
     return (projection.status == 'ready' and import_available(projection) and not summary.get('problems')
-            and not summary.get('problem_count') and not item.review_request
-            and not (file is not None and review_progress(file, item.statement_key)))
+            and not summary.get('problem_count') and (untouched or system_filled_only(item, file)))
+
+
+def fill_confirmed(session, *, case_id, entries, owned_batch_id=None):
+    """Save the automatically confirmed proposals of queue entries (System), before a save. Never raises.
+
+    Returns (report, item ids whose statement is ready after the fill).
+    """
+    from services.financial.field_proposals import apply_confirmed_proposals
+    wanted = [e for e in entries if any(p.get('confirmed') for p in (e.get('proposals') or {}).values())]
+    if not wanted:
+        return dict(statements=0, saved=0, failed=0, groups=[]), []
+    try:
+        report = apply_confirmed_proposals(session, case_id=case_id, entries=wanted, apply=True,
+                                           owned_batch_id=owned_batch_id)
+    except Exception:
+        session.rollback()
+        log.exception('Filling confirmed proposals failed; the statements stay in the queue')
+        return dict(statements=len(wanted), saved=0, failed=len(wanted), groups=[]), []
+    session.expire_all()
+    ids = [UUID(e['id']) for e in wanted if e.get('id') and ':' not in e['id']]
+    ready = [str(i) for i in session.scalars(select(Item.id).where(Item.id.in_(ids), Item.status == 'ready'))] if ids else []
+    return report, ready
+
+
+def fill_from_queue(session, *, case_id, file_ids=None):
+    """The queue save's first step: fill confirmed details of 'filled' (and waiting) statements."""
+    from services.financial.review_queue import case_review_queue
+    queue = case_review_queue(session, case_id=case_id, file_ids=file_ids)
+    session.rollback()
+    report, ready = fill_confirmed(session, case_id=case_id, entries=queue.get('filled', []) + queue['items'])
+    return dict(case_id=str(case_id), filled=report.get('saved', 0), statements=report.get('statements', 0),
+                failed=report.get('failed', 0), ready_item_ids=ready)
+
+
+def _prepared_entries(session, case_id, batch_id, file_id):
+    """Queue-like entries with proposals for a just-prepared file's held, untouched statements."""
+    from services.financial import field_proposals
+    from services.financial.review_queue import actionable_problems
+    if not field_proposals.enabled_fields():
+        return []
+    items = [i for i in session.scalars(select(Item).where(Item.batch_id == batch_id, Item.file_id == file_id,
+             Item.status == 'attention')) if not i.review_request]
+    if not items:
+        return []
+    knowledge = field_proposals.case_knowledge(session, case_id)
+    entries = []
+    for item in items:
+        summary = item.summary or {}
+        proposals = field_proposals.propose(field_proposals.summary_values(summary), knowledge)
+        reasons = {p['review_reason'] for p in actionable_problems(summary)}
+        if proposals and field_proposals.resolves_all(reasons, proposals):
+            entries.append(dict(id=str(item.id), batch_id=str(batch_id), file_id=str(file_id),
+                                statement_id=item.statement_key or None, proposals=proposals))
+    return entries
 
 
 def operation_id_for(request_id, batch_id):
@@ -213,8 +283,16 @@ def auto_save_prepared(session, *, case_id, batch_id, file_id):
     if not AUTO_SAVE_READY:
         return None
     try:
-        ids = [item_id for item_id, request in session.execute(select(Item.id, Item.review_request).where(
-               Item.batch_id == batch_id, Item.file_id == file_id, Item.status == 'ready')) if not request]
+        # Details the system can fill with certainty (confirmed proposals) are
+        # filled first, as System; the statement then saves only when it
+        # checks out completely like any other.
+        entries = _prepared_entries(session, case_id, batch_id, file_id)
+        if entries:
+            fill_confirmed(session, case_id=case_id, entries=entries, owned_batch_id=batch_id)
+        file = session.get(EvidenceFile, file_id)
+        ids = [item.id for item in session.scalars(select(Item).where(Item.batch_id == batch_id,
+               Item.file_id == file_id, Item.status == 'ready'))
+               if not item.review_request or system_filled_only(item, file)]
         if not ids:
             return None
         result = save_statements(session, case_id=case_id, item_ids=ids, actor=SYSTEM_ACTOR,

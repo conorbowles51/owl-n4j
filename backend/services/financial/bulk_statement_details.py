@@ -588,7 +588,9 @@ def preview(session, *, case_id, request):
     return _plan(session, case_id, request)[0]
 
 
-def save(session, *, case_id, request, actor):
+def save(session, *, case_id, request, actor, owned_batch_id=None):
+    # owned_batch_id: the batch worker saving from inside its own turn (its
+    # file's preparation has finished), whose lease is its own, not a conflict.
     try:
         # Same lock order as batch review/import: batches, evidence, saved sources.
         file_ids = sorted({target.file_id for target in request.targets}, key=str)
@@ -597,7 +599,8 @@ def save(session, *, case_id, request, actor):
         for batch in batches:
             locked = session.scalar(select(Batch).where(Batch.id == batch.id, Batch.case_id == case_id)
                 .with_for_update().execution_options(populate_existing=True))
-            if locked.worker_token and locked.lease_until and locked.lease_until.replace(tzinfo=timezone.utc) > datetime.now(timezone.utc):
+            if (locked.id != owned_batch_id and locked.worker_token and locked.lease_until
+                    and locked.lease_until.replace(tzinfo=timezone.utc) > datetime.now(timezone.utc)):
                 raise PdfMappingError('A selected file is still being processed. Pause its batch or wait for it to finish, then retry. Your selection is kept.', 409)
         files = list(session.scalars(select(EvidenceFile).where(EvidenceFile.case_id == case_id,
             EvidenceFile.id.in_(file_ids)).order_by(EvidenceFile.id).with_for_update().execution_options(populate_existing=True)))
