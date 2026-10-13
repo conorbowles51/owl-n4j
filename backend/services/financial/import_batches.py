@@ -36,7 +36,7 @@ def batch_for(session, case_id, batch_id, lock=False):
     return batch
 
 
-def create_batch(session, *, case_id, request_id, file_ids, folder_ids, actor):
+def create_batch(session, *, case_id, request_id, file_ids, folder_ids, actor, start_new=False):
     from postgres.models.case import Case
     session.execute(select(Case.id).where(Case.id == case_id).with_for_update()).all()
     selection = resolve_financial_selection(session, case_id=case_id, file_ids=file_ids, folder_ids=folder_ids)
@@ -65,6 +65,13 @@ def create_batch(session, *, case_id, request_id, file_ids, folder_ids, actor):
                 continue  # A single accepted period is not a whole-file selection.
             if {f['file_id'] for f in previous.files} == selected_ids:
                 return previous.id
+        if not start_new:
+            # Files already in an unfinished batch continue that batch by
+            # default; a fresh preparation of the same files is an explicit choice.
+            from services.financial.batch_selection_preview import open_batches
+            covering = [b for b in open_batches(session, case_id, {str(i) for i in selected_ids}) if b['covers_selection']]
+            if covering:
+                return UUID(covering[0]['id'])
     session.add(Batch(id=request_id, case_id=case_id, created_by=actor.user_id, status='preparing',
         actor=dict(name=actor.name, email=actor.email, user_id=str(actor.user_id)),
         files=[dict(source_id=f['id'], file_id=f['id'], filename=f['original_filename'],
@@ -419,7 +426,11 @@ def _sort_statements(session, case_id, items):
     missing = {item.file_id for item in items if item.summary.get('filename') is None}
     names = dict(session.execute(select(EvidenceFile.id, EvidenceFile.original_filename).where(
         EvidenceFile.case_id == case_id, EvidenceFile.id.in_(missing))).all()) if missing else {}
-    items.sort(key=lambda item: (
+    # Files whose every statement is a copy the system set aside go last: they
+    # hold nothing to review, so the to-do order never starts with them.
+    from services.financial.batch_file_overview import copy_files
+    copies = copy_files(items)
+    items.sort(key=lambda item: (item.file_id in copies,
         item.summary.get('filename') if item.summary.get('filename') is not None else names.get(item.file_id, 'Source unavailable'),
         item.summary.get('account') or '', item.summary.get('period_start') or '', str(item.id)))
 
@@ -637,6 +648,32 @@ def _project_item(session, case_id, item, file, *, read, saved_files, duplicate_
             except PdfMappingError as error:
                 summary.update(can_import=False, problems=[dict(message=str(error), row_id=None)], problem_count=1)
     return state, summary, projected_request
+
+
+def stored_copy_dispositions(session, case_id, items):
+    """{item id: disposition} for system-ignored copies whose stored readiness is still current.
+
+    The same test a batch read applies before showing an item as a copy: the
+    readiness record the write side stored must match every current input
+    (reading, saved review, duplicate decision, retained source). Nothing is
+    read from a PDF and nothing is written; an outdated or missing record
+    leaves the item out, so it stays work rather than being hidden.
+    """
+    items = [item for item in items if item.status == 'duplicate_ignored'
+             and isinstance(item.summary.get('readiness'), dict)]
+    if not items:
+        return {}
+    inputs = _ProjectionInputs(session, case_id, items)
+    result = {}
+    for item in items:
+        stored = inputs.stored_readiness(item)
+        if stored is None:
+            continue
+        state, summary, _ = stored
+        disposition = summary.get('duplicate_disposition') or {}
+        if state == 'duplicate_ignored' and disposition.get('status') == 'ignored' and disposition.get('current') is True:
+            result[item.id] = disposition
+    return result
 
 
 def _readiness_pending(item):
@@ -1198,11 +1235,15 @@ def next_statement(session, *, case_id, batch_id, item_id, direction="next", rev
     from services.financial.batch_review_summary import matches_group, validate_group
     validate_group(review_group)
     batch_for(session, case_id, batch_id)
+    from services.financial.batch_file_overview import is_system_copy
     items = list(session.scalars(select(Item).where(Item.batch_id == batch_id,
         Item.status.notin_(('removed', 'superseded_reading')))))
-    if review_group:
-        items = checked_batch_items(session, case_id, items)
+    items = checked_batch_items(session, case_id, items)
     _sort_statements(session, case_id, items)
+    if not review_group:
+        # Unfiltered Previous/Next still steps over copies the system set aside;
+        # they stay listed (and openable) in the batch, but are not work.
+        items = [i for i in items if i.id == item_id or not is_system_copy(i)]
     index = next((n for n, item in enumerate(items) if item.id == item_id), None)
     if index is None:
         raise PdfMappingError('Statement not found in this batch.', 404)
@@ -1265,8 +1306,9 @@ def _batch_view(session, case_id, batch_id, batch, items, *, offset, limit, only
     file_ids = {UUID(f['file_id']) for f in batch.files if f.get('file_id')}
     job_ids = list(session.scalars(select(EvidenceFile.engine_job_id).where(EvidenceFile.case_id == case_id, EvidenceFile.id.in_(file_ids), EvidenceFile.engine_job_id.is_not(None)))) if file_ids else []
     files = project_batch_files(batch.files, available_batch_references(session, case_id, batch.files))
+    from services.financial.batch_file_overview import file_overview
     return dict(id=str(batch.id),case_id=str(case_id),status=batch.status,files=files,counts=counts, reading_job_ids=job_ids,
-        statement_summary=statement_summary(items),
+        statement_summary=statement_summary(items), file_overview=file_overview(items),
         review_summary=review_summary(items), review_group=review_group, review_group_label=group_label(review_group),
         operations=operations_for(session, case_id, batch_id),
         statements_with_issues=sum(bool(i.summary.get('problem_count', 0)) for i in items if i.status != 'skipped'),

@@ -267,6 +267,12 @@ def _statement_file_status(session, *, case_id):
                 item = files.setdefault(str(file.id), dict(evidence_file_id=str(file.id), current_transactions=0, periods=[]))
                 item.setdefault('duplicate_dispositions', []).append(dict(statement_id=statement_id or None,
                     currency=(decision.get('scope') or {}).get('currency'), decision=decision))
+    # Copies a batch read sets aside (no investigator decision on the file)
+    # count as ignored here too, but only while their stored readiness is
+    # current; otherwise they stay checks, as before.
+    from services.financial.import_batches import stored_copy_dispositions
+    system_copies = stored_copy_dispositions(session, case_id, [p for p in prepared[:20000]
+        if p.status == 'duplicate_ignored' and (str(p.file_id), p.statement_key) not in decisions])
     seen_periods = set()
     empty_scan = {}
     from services.financial.statement_import_overlap import comparison_sources, coverage_review, summary_request, duplicate_hold, scope
@@ -305,6 +311,11 @@ def _statement_file_status(session, *, case_id):
         source_file = prepared_files.get(prepared_item.file_id)
         previous_decision = ((source_file.metadata_ or {}).get(METADATA_KEY, {}).get(prepared_item.statement_key or '') or {}) if source_file else {}
         ignored = bool(decision and decision['current'] and decision['status'] == 'ignored')
+        system_copy = system_copies.get(prepared_item.id) if decision is None else None
+        if system_copy is not None:
+            ignored = True
+            item.setdefault('duplicate_dispositions', []).append(dict(statement_id=prepared_item.statement_key or None,
+                currency=summary.get('currency') or None, decision=system_copy))
         duplicate_review = bool(decision and (not decision['current'] or
             decision['status'] in ('needs_comparison', 'restored'))) or (
             prepared_item.status == 'duplicate_ignored' and not ignored)
