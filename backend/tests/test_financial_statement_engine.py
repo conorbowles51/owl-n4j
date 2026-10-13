@@ -1795,3 +1795,21 @@ class MultiAccountStatementTests(unittest.TestCase):
         served = {(st['account_reference'], st['balance_convention']): st['engine'] for st in catalog['statements']}
         self.assertTrue(served[('1111', 'asset_balance')]['proved'])
         self.assertEqual(served[('1111', 'liability_owed')]['reason'], 'account_shared')
+
+    def test_a_summary_closed_before_the_movement_table_does_not_make_it_another_table(self):
+        sources = mx_statement(MOVES, closing='1,250.00')
+        rows = sources[0]['rows']
+        # A summary heading (date and amount words) printed above the summary's closing balance.
+        rows.insert(1, dict(row_index=900, cells=[cell('FECHA', 20000, 60000, 33000, 0), cell('IMPORTE', 500000, 560000, 33000, 1)]))
+        st = read_statements(sources)[0]
+        self.assertTrue(st['engine']['proved'], st['engine'])
+        self.assertEqual(len(self.moves(st)), 3)
+
+    def test_a_stray_date_in_another_form_after_the_movements_does_not_hold(self):
+        sources = credit_union_statement()
+        rows = sources[1]['rows']
+        index = next(i for i, r in enumerate(rows) if r['cells'][0]['expected_text'] == '02-01')
+        y = rows[index]['cells'][0]['locator']['rect'][1] + 5000
+        rows.insert(index + 1, dict(row_index=901, cells=[cell('01-Feb', 14000, 50000, y, 0)]))
+        checking = self.sections(sources)[0]
+        self.assertTrue(checking['engine']['proved'], checking['engine'])

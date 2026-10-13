@@ -1841,8 +1841,10 @@ def _sections(segment, pages, style):
         roles = {_role_of(text, False) for text, values in pairs}
         if row['tokens'] and _is_header(row):
             header_roles = _money_roles(row)
-            if main_roles is None:
-                main_roles = header_roles
+            if main_roles is None or not moved:
+                # The movement table's heading is the one its movements are printed under; a summary printed
+                # (and closed) before the movement table has no movements of its own.
+                main_roles, other_table = header_roles, False
             elif closed and header_roles != main_roles:
                 other_table = True
                 continue
@@ -2582,6 +2584,14 @@ def _reading(rows, statement, style, exponent, liability, period):
         spans.setdefault(move['row']['page'], []).append(move['row']['_index'])
     unplaced = [row for row in unplaced if row['page'] in spans
                 and min(spans[row['page']]) < row['_index'] < max(spans[row['page']])]
+    # A dated line printing nothing else counts only where movement lines of the table follow it on its page
+    # (rows blacked out inside the table); a stray date after the table's last movement, or printed in
+    # another form than the movement dates (a column of authorisation dates read apart), is not one.
+    # Only a date printed in the form the table's movement lines use is a blacked-out movement line.
+    shape = lambda text: re.sub(r'[A-Za-z]', 'A', re.sub(r'\d', '9', text))
+    forms = {shape(move['date_tokens'][0]['t']) for move in movements if move['date_tokens']}
+    blank_dated = [row for row in blank_dated if row['page'] in spans and row['_index'] < max(spans[row['page']])
+                   and shape(row['tokens'][0]['t']) in forms]
     # Undated card charges (B6) inside the region are movements ordered at the period end.
     undated = []
     for row in undated_rows:
