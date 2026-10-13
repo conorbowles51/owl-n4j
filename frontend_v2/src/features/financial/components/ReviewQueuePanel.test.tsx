@@ -289,3 +289,39 @@ it("lists statements whose details were filled automatically, with each value an
   expect(screen.getByRole("button", { name: "Open to change" })).toBeVisible()
   expect(screen.getByRole("button", { name: "Save all 4 ready statements" })).toBeVisible()
 })
+
+it("shows every blocker after the summary sentence", async () => {
+  const withAlso = {
+    ...queue,
+    items: [{ ...entries[0], also: ["Account number not found: enter it", "Account holder not found: enter it"] }, entries[1]],
+  }
+  vi.mocked(fetchAPI).mockImplementation(async (url: string) => {
+    if (url.includes("/review/queue")) return withAlso as never
+    throw Error(`unexpected ${url}`)
+  })
+  mount("/cases/case/financial?view=statements&queue=1")
+  expect((await screen.findAllByLabelText("Also to fix"))[0]).toHaveTextContent(
+    "also: Account number not found: enter it; Account holder not found: enter it"
+  )
+})
+
+it("collapses a file the reader cannot handle yet into one line outside the waiting list", async () => {
+  const reader = {
+    ...queue,
+    counts: { ...queue.counts, reader_fix: 2 },
+    reader_fix: [0, 1].map((n) => ({ ...base, id: `x${n}`, batch_id: "b1", filename: "Subpoena.pdf", bucket: "reader_fix",
+      period_start: "", period_end: "", issue: "Currency not printed: choose one", also: ["Account number not found: enter it"] })),
+    reader_files: [{ file_id: "f9", filename: "Subpoena.pdf", batch_id: "b1", statements: 2, file_statements: 3,
+      item_ids: ["x0", "x1"], message: "Loupe can't read this file reliably yet (2 statements). No need to review it by hand; it will be re-read when the reader is fixed." }],
+  }
+  vi.mocked(fetchAPI).mockImplementation(async (url: string) => {
+    if (url.includes("/review/queue")) return reader as never
+    throw Error(`unexpected ${url}`)
+  })
+  mount("/cases/case/financial?view=statements&queue=1")
+  expect(await screen.findByLabelText("Statement status")).toHaveTextContent("Waiting for a reader fix 2")
+  expect(screen.queryByText("Subpoena.pdf")).toBeNull()
+  fireEvent.click(screen.getByRole("button", { name: "Waiting for a reader fix (2 in 1 file)" }))
+  expect(await screen.findByText(/Loupe can't read this file reliably yet \(2 statements\)/)).toBeVisible()
+  expect(screen.getByText("Show their 2 statements")).toBeVisible()
+})

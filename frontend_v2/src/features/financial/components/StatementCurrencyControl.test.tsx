@@ -36,3 +36,11 @@ it("offers the proposed currency as one click, focused when the issue is the cur
   use.click()
   expect(changes).toEqual(["USD"])
 })
+
+it("says what still remains when the proposal alone does not make the statement ready", () => {
+  render(
+    <StatementCurrencyControl currency="" disabled={false} onChange={() => {}}
+      proposal={{ value: "USD", label: "case default" }} remaining={["Account number not found: enter it"]} />
+  )
+  expect(screen.getByText(/This fills the currency only. Still to fix: Account number not found: enter it./)).toBeVisible()
+})

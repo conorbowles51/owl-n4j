@@ -9,6 +9,7 @@ export function StatementCurrencyControl({
   onChange,
   focus = false,
   proposal,
+  remaining,
 }: {
   currency: string
   detectedCurrency?: string
@@ -18,6 +19,8 @@ export function StatementCurrencyControl({
   focus?: boolean
   /** A proposed currency (value + where it comes from): one click uses it. */
   proposal?: { value: string; label: string; confirmed?: boolean }
+  /** Blockers left after using the proposal; empty means it makes the statement ready. */
+  remaining?: string[]
 }) {
   const useProposal = useRef<HTMLButtonElement>(null)
   const offered = !disabled && !currency && proposal?.value ? proposal : null
@@ -61,6 +64,13 @@ export function StatementCurrencyControl({
           <Button ref={useProposal} size="sm" onClick={() => onChange(offered.value)}>
             Use {offered.value}
           </Button>
+          {remaining && (
+            <span className="w-full text-xs">
+              {remaining.length
+                ? `This fills the currency only. Still to fix: ${remaining.join("; ")}.`
+                : "This is the only thing left: the statement is then ready to save."}
+            </span>
+          )}
         </div>
       )}
       {conflict && (
