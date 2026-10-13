@@ -115,3 +115,30 @@ it("rejects non-PDF selections before uploading anything", async () => {
   ).rejects.toThrow("PDF files only")
   expect(fetchAPI).not.toHaveBeenCalled()
 })
+
+it("names an exact copy of a file already in Financial instead of reading it again", async () => {
+  vi.mocked(uploadFolderOrArchive).mockResolvedValue({
+    file_ids: ["first.pdf", "copy.pdf"],
+  })
+  vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
+    if (!options?.method) {
+      const name = url.split("/").at(-1)!
+      return { id: name, case_id: "case", original_filename: name }
+    }
+    const [id] = (options.body as { file_ids: string[] }).file_ids
+    return id === "copy.pdf"
+      ? { job_ids: null, copies: [{ file_id: "copy.pdf", copy_of: "kept.pdf" }] }
+      : { job_ids: ["job"] }
+  })
+  await uploadStatementFiles(
+    [pdf("first.pdf"), pdf("copy.pdf")],
+    "case",
+    "anonymous",
+    vi.fn()
+  )
+  const items = useStatementUploads.getState().queues["anonymous:case"].items
+  expect(items.map((item) => [item.status, item.error])).toEqual([
+    ["Reading queued", undefined],
+    ["Same file as kept.pdf, already in Financial — not read again", undefined],
+  ])
+})

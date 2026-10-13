@@ -1339,6 +1339,15 @@ async def process_evidence_background(
 
         messages = []
         job_ids = []
+        copies = []
+
+        if db_backed_ids and request.preparation_mode == "pdf_review" and request.case_id:
+            # Financial reading: exact copies of a file already in Financial are
+            # not read again; the rest join the case's automatic statement batch.
+            from services.financial.auto_read import intake_pdf_review
+            db_backed_ids, copies = intake_pdf_review(db, case_id=UUID(request.case_id), file_ids=db_backed_ids)
+            if copies:
+                messages.append(f"{len(copies)} file(s) already in Financial; not read again")
 
         if db_backed_ids:
             if not request.case_id:
@@ -1359,6 +1368,7 @@ async def process_evidence_background(
             "task_id": None,
             "job_ids": job_ids or None,
             "message": "; ".join(messages) if messages else "No files to process",
+            **({"copies": copies} if copies else {}),
         }
     except UnadmittedFileError as e:
         # 409 and not 403.  The caller has the permission this route asks for

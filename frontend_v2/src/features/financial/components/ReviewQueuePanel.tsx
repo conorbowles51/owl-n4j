@@ -10,6 +10,7 @@ import {
   type QueueEntry,
   type ReviewQueue,
 } from "../lib/review-queue"
+import { ReadingProgress } from "./ReadingProgress"
 
 type ListName = "waiting" | "copies" | "unreadable"
 const QUEUE_KEYS = ["queueItem", "queueList", "queueFiles"]
@@ -246,6 +247,7 @@ export function ReviewQueuePanel({
       ) : (
         <>
           <ReviewStatusLine data={query.data} onOpen={showList} />
+          <ReadingProgress caseId={caseId} reading={query.data.reading} />
           {list !== "waiting" && (
             <Button variant="outline" size="sm" onClick={() => showList("waiting")}>
               Back to waiting for you ({query.data.counts.waiting})
