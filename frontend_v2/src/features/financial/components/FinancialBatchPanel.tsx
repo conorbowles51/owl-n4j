@@ -3,6 +3,8 @@ import { statementDuplicateDisposition } from "../lib/statement-duplicate"
 import { StatementReconciliationSummary } from "./StatementReconciliationSummary"
 import { formatLedgerAmount } from "../lib/ledger-format"
 import { BatchProgressSummary } from "./BatchProgressSummary"
+import { BatchFileOverview, batchFileOverview } from "./BatchFileOverview"
+import { copyBadge, isCurrentCopy } from "../lib/statement-copies"
 import { BatchReadyAction } from "./BatchReadyAction"
 import { batchSavedAccountsScope } from "../lib/batch-saved-accounts"
 import { batchStatementSummary } from "../lib/batch-statement-summary"
@@ -139,6 +141,7 @@ const batchSchema = z.object({
   statements_with_issues: z.number().optional(),
   review_summary: batchReviewSummarySchema.optional(),
   statement_summary: batchStatementSummary.optional(),
+  file_overview: batchFileOverview.default([]),
   review_group: z.string().nullish(),
   review_group_label: z.string().nullish(),
   operations: z.array(operationSchema).default([]),
@@ -915,6 +918,7 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
         assigned={batch.counts.assigned || 0}
         onSelect={selectReviewGroup}
       />
+      <BatchFileOverview files={batch.file_overview} />
       {(confirm.isError || error) && (
         <div role="alert">
           <p>{confirm.error?.message || error}</p>
@@ -1316,6 +1320,13 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <h3 className="font-semibold">{item.filename}</h3>
+                {isCurrentCopy(item.duplicate_disposition) &&
+                  item.status === "duplicate_ignored" && (
+                    <span className="inline-block rounded border px-2 py-0.5 text-xs">
+                      {copyBadge(item.duplicate_disposition)} · nothing to
+                      review
+                    </span>
+                  )}
                 <p className="text-sm">
                   {[
                     item.holder,
