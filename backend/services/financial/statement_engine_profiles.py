@@ -27,6 +27,12 @@ Profile format (every key optional except ``name`` and ``match``):
     statement_account  True: a section sharing pages with another section and
                  printing no account of its own takes the statement's single
                  top-ranked heading account (one contract, several currencies)
+    account_suffix_heading  True: each section's account is the number printed after
+                 its product name in the section's own heading ('<product> - 1234'),
+                 never a number from the statement's other pages; one or none
+    holder_heading  {'title': [...], 'prefix': 'FOR'}: the holder is the name printed
+                 on the line under a title line ('Statement of Account' / 'For <name>'),
+                 the same on every page printing it
     prior_period_block  {'start': [...], 'end': [...]}: a line starting with a
                  ``start`` phrase opens a block of earlier periods' operations
                  repeated to explain a balance (E7); its lines are not this
@@ -88,10 +94,17 @@ PROFILES = (
     # every Kapital statement and by no other document.
     dict(name='scotiabank-mexico', match=dict(any=['scotiabank inverlat, s.a.']), institution='Scotiabank'),
     dict(name='kapital-mexico', match=dict(any=['aclaraciones@kapital.com']), institution='Kapital'),
+    # Navy Federal Credit Union statements of account: one statement prints several accounts (checking,
+    # its line of credit, savings), each in a section headed '<product name> - <last four digits>'; the
+    # holder is printed under the title on every continuation page ('Statement of Account' / 'For <name>');
+    # amounts carry a bare '$' (a US credit union) and no page names a currency.
+    dict(name='navy-federal', match=dict(all=['navy federal credit union', 'statement of account', 'access no.']),
+         institution='Navy Federal Credit Union', currency='USD', account_suffix_heading=True,
+         holder_heading=dict(title=['STATEMENT OF ACCOUNT'], prefix='FOR')),
 )
 
 _KEYS = {'name', 'match', 'institution', 'currency', 'convention', 'date_order', 'labels', 'columns', 'account_heading',
-         'statement_account', 'prior_period_block'}
+         'statement_account', 'prior_period_block', 'account_suffix_heading', 'holder_heading'}
 _LABEL_ROLES = {'opening', 'closing', 'subtotal', 'credit_total', 'debit_total', 'credit_component',
                 'debit_component', 'column_total'}
 _COLUMN_ROLES = {'date', 'description', 'credit', 'debit', 'balance', 'amount'}
@@ -108,8 +121,14 @@ def validate(profile):
         raise ValueError('Invalid profile date order.')
     if set(profile.get('labels') or {}) - _LABEL_ROLES or set(profile.get('columns') or {}) - _COLUMN_ROLES:
         raise ValueError('Invalid profile label or column role.')
-    if profile.get('account_heading') not in (None, True) or profile.get('statement_account') not in (None, True):
+    if (profile.get('account_heading') not in (None, True) or profile.get('statement_account') not in (None, True)
+            or profile.get('account_suffix_heading') not in (None, True)):
         raise ValueError('Invalid profile account heading flag.')
+    titled = profile.get('holder_heading')
+    if titled is not None and (not isinstance(titled, dict) or set(titled) != {'title', 'prefix'}
+                               or not (isinstance(titled['title'], list) and titled['title'])
+                               or not (isinstance(titled['prefix'], str) and titled['prefix'].strip())):
+        raise ValueError('Invalid profile holder heading.')
     block = profile.get('prior_period_block')
     if block is not None and (not isinstance(block, dict) or set(block) != {'start', 'end'}
                               or not all(isinstance(v, list) and v for v in block.values())):
@@ -132,6 +151,12 @@ def matching_profile(text):
         rule = profile['match']
         if all(p in lowered for p in rule.get('all', [])) and (not rule.get('any') or any(p in lowered for p in rule['any'])):
             found.append(profile)
+    if len(found) > 1:
+        # A profile matched only by phrases that must all occur (no 'any' list) is specific to one layout:
+        # it outranks profiles matched by a single phrase, which a transaction line can print (a payment
+        # to a card issuer names that issuer).
+        specific = [p for p in found if not p['match'].get('any')]
+        found = specific if len(specific) == 1 else found
     return found[0] if len(found) == 1 else None
 
 

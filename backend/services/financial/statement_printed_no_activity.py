@@ -88,3 +88,57 @@ def zero_totals_evidence(rows, statement, currency, *, family, guard=None, zero_
         period_start=statement.get('period_start'), period_end=statement.get('period_end'),
         cited=[_cite(row) for row in controls] + [dict(page_number=(c.get('locator') or {}).get('page'),
             text=c.get('expected_text', '').strip()[:300], locator=c.get('locator')) for c in zero_cells or []])
+
+
+LINE_METHOD = 'printed-no-transactions-line-v1'
+LINE_BASIS = 'printed_no_transactions'
+
+
+def printed_line_evidence(rows, statement, currency, sources, *, family):
+    """Source proof of a quiet period from a line the statement prints inside the section ('No Transactions
+    This Period'), found by the general reader between the section's equal opening and closing balances.
+
+    Verified only when, again on the proposal: nothing but excluded rows was read, exactly one opening and
+    one closing balance row are read and equal, the cited line still reads as a no-activity phrase, the
+    printed period is read and the review currency is the currency read for the section. Admission binds
+    the proof to the two balance rows (``statement_admission.source_proves_no_activity``). Returns None
+    when the reader did not prove the period from such a line (not this proof's question).
+    """
+    from services.financial.statement_engine import NO_TRANSACTIONS
+    from services.financial.statement_engine_vocabulary import fold
+    engine = statement.get('engine') or {}
+    cited = engine.get('no_transactions_row')
+    if engine.get('basis') != LINE_BASIS or not engine.get('proved') or not cited or len(cited) != 3:
+        return None
+    if statement.get('assignment_only') or any(not row['excluded'] for row in rows):
+        return None
+
+    def refuse(reason, message):
+        return dict(verified=False, method=LINE_METHOD, family=family, reason=reason, message=message)
+    balances = [row for row in rows if row['kind'] == 'balance']
+    openings = [row for row in balances if row['fields'].get('description') == 'Opening Balance']
+    closings = [row for row in balances if row['fields'].get('description') == 'Closing Balance']
+    if len(openings) != 1 or len(closings) != 1 or len(balances) != 2:
+        return refuse('controls_missing', 'The opening and closing balances of this account section were not each read exactly once. Check the page before confirming that it contains no transactions.')
+    opening, closing = openings[0], closings[0]
+    if any(row['issues'] or row['fields'].get('balance') in (None, '') for row in (opening, closing)):
+        return refuse('control_unreadable', 'A printed balance of this account section could not be read. Check the page before confirming that it contains no transactions.')
+    if opening['fields']['balance'] != closing['fields']['balance']:
+        return refuse('endpoints_differ', 'The opening and closing balances differ, so money moved in this period. Check the page for transactions that were not read.')
+    page, table, index = cited
+    source = next((s for s in sources if s['page_number'] == page and s['table_index'] == table), None)
+    line = next((r for r in (source or {}).get('rows', []) if r['row_index'] == index), None)
+    text = ' '.join(c.get('expected_text', '').strip() for c in (line or {}).get('cells', [])).strip()
+    if not line or ' '.join(fold(text).split()) not in NO_TRANSACTIONS:
+        return refuse('line_missing', 'The line saying that nothing moved in this account section could not be found again. Check the page before confirming that it contains no transactions.')
+    if not calendar_date(statement.get('period_start') or '') or not calendar_date(statement.get('period_end') or ''):
+        return refuse('period_dates', 'The printed statement period was not read. Check the page before confirming that it contains no transactions.')
+    if not statement.get('currency') or currency != statement['currency']:
+        return refuse('currency_differs', 'The currency of this review differs from the currency read for this account section. Check the currency before confirming that it contains no transactions.')
+    return dict(verified=True, method=LINE_METHOD, basis=LINE_BASIS, family=family, reason=LINE_BASIS,
+                message='The statement prints that this account section had no transactions in the period, and its opening and closing balances are equal.',
+                page_number=page, opening_row_id=opening['id'], closing_row_id=closing['id'], zero_total_row_ids=[],
+                balance_minor=opening['fields']['balance'], currency=currency,
+                period_start=statement.get('period_start'), period_end=statement.get('period_end'),
+                cited=[_cite(opening), _cite(closing), dict(page_number=page, text=text[:300],
+                                                             locator=(line['cells'][0].get('locator') if line['cells'] else None))])
