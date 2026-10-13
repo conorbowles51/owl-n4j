@@ -215,9 +215,23 @@ class EngineReadingTests(unittest.TestCase):
         self.assertEqual(self.movements(st)[0][2], '50000')
 
     def test_mixed_decimal_conventions_hold(self):
-        moves = [('05/MAR', 'ENTRADA', '500,00', None, '1,500.00'), ('10/MAR', 'SALIDA', None, '200,00', '1,300.00')]
+        # Dot thousands with a decimal comma ('1.500,00') beside comma thousands with a decimal point.
+        moves = [('05/MAR', 'ENTRADA', '500,00', None, '1.500,00'), ('10/MAR', 'SALIDA', None, '200,00', '1,300.00')]
         st = self.one(mx_statement(moves, opening='1,000.00', closing='1,300.00'))
         self.assertFalse(st['engine']['proved'])
+        self.assertEqual(st['engine']['reason'], 'separators_mixed')
+
+    def test_worn_decimal_points_in_a_dot_document_are_read_by_the_dot_convention(self):
+        # A scan prints some decimal points as commas; comma thousands show the convention.
+        moves = [('05/MAR', 'ENTRADA', '500,00', None, '1,500.00'), ('10/MAR', 'SALIDA', None, '200.00', '1,300,00'),
+                 ('12/MAR', 'COMISION', None, '50.00', '1,250.00')]
+        sources = mx_statement(moves, opening='1,000.00', closing='1,250.00')
+        self.assertEqual(E.separator_style(E._pages(sources)), 'dot_worn')
+        st = self.one(sources)
+        self.assertTrue(st['engine']['proved'], st['engine'])
+        self.assertEqual([m[2:] for m in self.movements(st)], [('50000', '150000'), ('20000', '130000'), ('5000', '125000')])
+        self.assertEqual(E.money('147,382,26', 'dot_worn'), 14738226)
+        self.assertIsNone(E.money('147,382,26', 'dot'))
 
     def test_missing_printed_page_holds(self):
         sources = mx_statement(MOVES, closing='1,250.00', page_count=3)
@@ -672,3 +686,931 @@ class IdentityReadingTests(unittest.TestCase):
     def test_a_currency_value_repeating_the_label_word_is_read(self):
         st = self.one(mx_statement(MOVES, closing='1,250.00', currency_line=('MONEDA', 'MONEDA NACIONAL')))
         self.assertEqual(st['currency'], 'MXN')
+
+
+class ScanDamageTests(unittest.TestCase):
+    """OCR damage on scanned statements (r4): every repair keeps the printed digits; the proof decides."""
+
+    def one(self, sources):
+        statements = read_statements(sources)
+        self.assertEqual(len(statements), 1, [s['engine'] for s in statements])
+        return statements[0]
+
+    def words(self, text):
+        import re
+        return [w for _, _, w in E._rejoin_amounts([(m.start(), m.end(), m.group()) for m in re.finditer(r'\S+', text)])]
+
+    def test_noise_and_split_amounts_inside_one_cell_are_rejoined(self):
+        self.assertEqual(self.words('650.00?'), ['650.00'])
+        self.assertEqual(self.words('8,463,157 .26?'), ['8,463,157,26'])
+        self.assertEqual(self.words('135 , 700.06'), ['135,700.06'])
+        self.assertEqual(self.words('3,215 , 677.12'), ['3,215,677.12'])
+        self.assertEqual(self.words('12,486, 37'), ['12,486,37'])
+        self.assertEqual(self.words('5,291 157,82'), ['5,291,157,82'])
+        self.assertEqual(self.words('5,733,642 43'), ['5,733,642,43'])
+        self.assertEqual(self.words('140,527 ,00'), ['140,527,00'])
+        self.assertEqual(self.words('2,617,384,.91'), ['2,617,384.91'])
+
+    def test_a_count_before_an_amount_is_never_joined(self):
+        self.assertEqual(self.words('2 100,000.00'), ['2', '100,000.00'])
+        self.assertEqual(self.words('12 345.67'), ['12', '345.67'])
+        self.assertEqual(self.words('1,234 5,678.90'), ['1,234', '5,678.90'])
+
+    def test_an_amount_split_into_two_cells_at_its_thousands_separator_is_rejoined_only_when_adjacent(self):
+        near = page(1, [[('SALDO INICIAL', 100000, 200000), ('157', 400000, 412000), ('913.46', 414000, 438000)]])
+        far = page(1, [[('DEPOSITOS', 100000, 200000), ('2', 300000, 304000), ('100,000.00', 400000, 440000)]])
+        tokens = [t['t'] for t in E._pages([near])[1][0]['tokens']]
+        self.assertEqual(tokens[-1], '157,913.46')
+        tokens = [t['t'] for t in E._pages([far])[1][0]['tokens']]
+        self.assertEqual(tokens[-2:], ['2', '100,000.00'])
+
+    def test_letter_o_and_digit_zero_confusion_in_dates(self):
+        from datetime import date
+        self.assertTrue(E.is_date_token('O1-JUN-2021'))
+        self.assertTrue(E.is_date_token('02-AG0-2021'))
+        self.assertFalse(E.is_date_token('OO-JUN'))
+        self.assertEqual(E.period_ranges('PERIODO : O1 AL 31 DE MAYO DE 2022'), [(date(2022, 5, 1), date(2022, 5, 31))])
+
+    def test_a_period_quoted_in_a_damaged_movement_line_is_not_the_statement_period(self):
+        moves = [('O5/MAR', 'INTERESES DEL PERIODO 01/02/2024 AL 29/02/2024', '500.00', None, '1,500.00'),
+                 ('10/MAR', 'PAGO DE SERVICIO', None, '200.00', '1,300.00'),
+                 ('20/MAR', 'COMISION', None, '50.00', '1,250.00')]
+        st = self.one(mx_statement(moves, closing='1,250.00'))
+        self.assertEqual((st['period_start'], st['period_end']), ('2024-03-01', '2024-03-31'))
+        self.assertTrue(st['engine']['proved'], st['engine'])
+
+    def test_slash_period_with_hyphenated_dates_and_a_split_month(self):
+        from datetime import date
+        self.assertEqual(E.period_ranges('Periodo 04-MAY-26/29-MAY-26'), [(date(2026, 5, 4), date(2026, 5, 29))])
+        self.assertEqual(E.period_ranges('Periodo 03-FEB-26/27-F EB-26'), [(date(2026, 2, 3), date(2026, 2, 27))])
+
+    def test_currency_label_values_read_with_ocr_damage_or_split_from_the_label(self):
+        self.assertEqual(E.labelled_currency('MONEDA', 'MONEDA NACTONAL'), 'MXN')
+        self.assertEqual(E.labelled_currency('MONEDA', 'NONEDA NACTONAL'), 'MXN')
+        self.assertEqual(E.labelled_currency('MONEDA', 'NACIONAL'), 'MXN')
+        self.assertEqual(E.labelled_currency('MONEDA', 'DOLARES'), 'USD')
+        self.assertEqual(E.labelled_currency('MONEDA', 'EXTRANJERA'), '')
+        self.assertEqual(E.labelled_currency('MONEDA', 'NACIONALES DEL'), '')
+        st = self.one(mx_statement(MOVES, closing='1,250.00', currency_line=('MONEDA', 'MONEDA NACTONAL')))
+        self.assertEqual(st['currency'], 'MXN')
+
+    def test_an_impossible_page_number_counts_as_an_unnumbered_page(self):
+        facts = E.page_facts(E._pages([page(1, [[('HOJA 10DE 2', 400000, 500000)]])])[1], 'dot')
+        self.assertEqual(facts['numbering'], set())
+
+    def test_a_scanned_page_placed_further_right_is_aligned_to_the_first_page(self):
+        sources = mx_statement(MOVES[:2], closing='1,250.00')
+        shift = 9000  # 1.5% of the width: one printed column lands in a band of its own.
+        lines = [[('FECHA', 20000, 60000), ('CONCEPTO', 80000, 160000)],
+                 [('20/MAR', 20000 + shift, 60000 + shift), ('COMISION', 80000 + shift, 300000 + shift),
+                  ('50.00', 430000 + shift, 460000 + shift), ('1,250.00', 512000 + shift, 560000 + shift)],
+                 [('21/MAR', 20000 + shift, 60000 + shift), ('COMISION', 80000 + shift, 300000 + shift),
+                  ('0.00', 436000 + shift, 460000 + shift), ('1,250.00', 512000 + shift, 560000 + shift)]]
+        sources.append(page(2, lines))
+        st = self.one(sources)
+        self.assertTrue(st['engine']['proved'], st['engine'])
+        self.assertEqual(len([m for m in st['_rows'] if m['kind'] == 'transaction']), 3)
+
+    def test_a_total_line_printing_the_running_balance_closes_the_table(self):
+        sources = mx_statement(MOVES)
+        sources[0]['rows'].append(dict(row_index=len(sources[0]['rows']), cells=[
+            cell('TOTAL', 80000, 120000, 400000, 0), cell('500.00', 350000, 380000, 400000, 1),
+            cell('250.00', 430000, 460000, 400000, 2), cell('1,250.00', 512000, 560000, 400000, 3)]))
+        st = self.one(sources)
+        self.assertTrue(st['engine']['proved'], st['engine'])
+        closing = [r['fields']['balance'] for r in st['_rows'] if r['fields'].get('description') == 'Closing Balance']
+        self.assertEqual(closing, ['125000'])
+
+
+def day_column_statement(page_two_heading=True, usd_section=True):
+    """An invented two-currency layout: summary, a DIA | FOLIO | CONCEPTO table with day-only dates and a
+    Total line, the heading line repeated on the next page, then a quiet second currency section."""
+    head = [('Saldo minimo requerido', 20000, 150000), ('0.00', 160000, 190000), ('Saldo Inicial', 330000, 400000),
+            ('1,000.00', 500000, 560000)]
+    table = [('DIA', 20000, 40000), ('FOLIO', 60000, 100000), ('CONCEPTO', 120000, 200000),
+             ('DEPOSITOS', 330000, 380000), ('RETIROS', 410000, 460000), ('SALDO', 520000, 560000)]
+    one = [
+        [('BANCO EJEMPLO DEL SUR, S.A., INSTITUCION DE BANCA MULTIPLE', 20000, 400000)],
+        [('Periodo DEL 2024-03-01 AL 2024-03-31', 330000, 590000)],
+        [('EMPRESA DE PRUEBA SA DE CV', 20000, 200000)],
+        [('CALLE FALSA 123', 20000, 150000)],
+        [('CIUDAD DE MEXICO C.P. 06000', 20000, 220000)],
+        [('CUENTA DE CHEQUES 123-45678-001-2', 20000, 300000)],
+        [('Moneda', 20000, 80000), ('MN', 100000, 120000)],
+        [('Saldo Inicial', 20000, 100000), ('1,000.00', 200000, 250000)],
+        [('+ Depositos', 20000, 100000), ('500.00', 200000, 250000)],
+        [('- Retiros', 20000, 100000), ('250.00', 200000, 250000)],
+        [('Saldo Final', 20000, 100000), ('1,250.00', 200000, 250000)],
+        head, table,
+        [('5', 20000, 30000), ('101', 60000, 100000), ('TRANSFERENCIA RECIBIDA', 120000, 300000),
+         ('500.00', 350000, 380000), ('1,500.00', 512000, 560000)],
+    ]
+    two = [head] if page_two_heading else []
+    two += [table,
+            [('28', 20000, 34000), ('102', 60000, 100000), ('PAGO DE SERVICIO', 120000, 300000),
+             ('250.00', 430000, 460000), ('1,250.00', 512000, 560000)],
+            [('Total', 120000, 160000), ('500.00', 350000, 380000), ('250.00', 430000, 460000),
+             ('1,250.00', 512000, 560000)]]
+    if usd_section:
+        two += [[('CUENTA DE CHEQUES USD 123-45678-002-0', 20000, 300000)],
+                [('Moneda', 20000, 80000), ('USD', 100000, 130000)],
+                [('Saldo Inicial', 20000, 100000), ('0.00 USD', 200000, 250000)],
+                [('+ Depositos', 20000, 100000), ('0.00 USD', 200000, 250000)],
+                [('- Retiros', 20000, 100000), ('0.00 USD', 200000, 250000)],
+                [('Saldo Final', 20000, 100000), ('0.00', 200000, 250000)]]
+    return [page(1, one), page(2, two)]
+
+
+class DayColumnAndSectionTests(unittest.TestCase):
+    def test_a_day_column_dates_rows_inside_the_printed_period(self):
+        statements = read_statements(day_column_statement(usd_section=False))
+        self.assertEqual(len(statements), 1, [s['engine'] for s in statements])
+        st = statements[0]
+        self.assertTrue(st['engine']['proved'], st['engine'])
+        self.assertEqual([(r['fields']['date'], r['fields']['direction'], r['fields']['amount_minor'])
+                          for r in st['_rows'] if r['kind'] == 'transaction'],
+                         [('2024-03-05', 'credit', '50000'), ('2024-03-28', 'debit', '25000')])
+
+    def test_a_day_alone_is_not_a_date_without_a_day_column_heading(self):
+        sources = day_column_statement(usd_section=False)
+        for source in sources:
+            for row in source['rows']:
+                for c in row['cells']:
+                    if c['expected_text'] == 'DIA':
+                        c['expected_text'] = 'FECHA'
+        st = read_statements(sources)[0]
+        self.assertFalse(st['engine']['proved'])
+
+    def test_a_heading_line_repeated_on_the_next_page_continues_the_section(self):
+        sources = day_column_statement(page_two_heading=True, usd_section=False)
+        for source in sources:
+            for row in source['rows']:
+                for c in row['cells']:
+                    c['expected_text'] = {'5': '05/03', '28': '28/03'}.get(c['expected_text'], c['expected_text'])
+        statements = read_statements(sources)
+        self.assertEqual(len(statements), 1, [s['engine'] for s in statements])
+        self.assertEqual(statements[0]['page_numbers'], [1, 2])
+        self.assertTrue(statements[0]['engine']['proved'], statements[0]['engine'])
+
+    def test_a_total_line_ends_the_table_and_the_next_section_takes_its_own_currency(self):
+        statements = read_statements(day_column_statement())
+        self.assertEqual([(s['currency'], s['engine']['proved']) for s in statements], [('MXN', True), ('USD', True)])
+
+
+class SharedYearAndStackedAccountTests(unittest.TestCase):
+    def test_month_day_range_with_one_printed_year(self):
+        from datetime import date
+        self.assertEqual(E.period_ranges('MAR.24-APR.23,2024'), [(date(2024, 3, 24), date(2024, 4, 23))])
+        self.assertEqual(E.period_ranges('Statement period Dec 24 - Jan 23, 2024'), [(date(2023, 12, 24), date(2024, 1, 23))])
+        self.assertEqual(E.period_ranges('FEB.24-MAY.21,2021'), [(date(2021, 2, 24), date(2021, 5, 21))])
+
+    def stacked(self, value, label='ACCOUNT NUMBER', inline=None):
+        lines = [[('BANK OF EXAMPLE', 20000, 200000)],
+                 [(label, 380000, 470000), ('STATEMENT PERIOD', 480000, 580000)],
+                 [(value, 400000, 440000), ('MAR.24-APR.23,2024', 480000, 580000)]]
+        if inline:
+            lines.append([('ACCOUNT NUMBER ' + inline, 20000, 300000)])
+        pages = E._pages([page(1, lines)])
+        return E._stacked_accounts(pages[1])
+
+    def test_an_account_number_printed_under_its_column_heading(self):
+        self.assertEqual(self.stacked('2489'), [('2489', 3)])
+        self.assertEqual(self.stacked('12 3456 7890'), [('1234567890', 3)])
+        # Four digits only under a full account-number label; a short reference under 'CUENTA' is not one.
+        self.assertEqual(self.stacked('2489', label='CUENTA'), [])
+        self.assertEqual(self.stacked('PYME'), [])
+
+    def test_the_same_number_printed_inline_and_stacked_is_one_account(self):
+        lines = [[('BANCO EJEMPLO, S.A., INSTITUCION DE BANCA MULTIPLE', 20000, 400000)],
+                 [('PERIODO DEL 01/03/2024 AL 31/03/2024', 330000, 590000)],
+                 [('NO. DE CUENTA', 380000, 470000)],
+                 [('12-34567890-1', 380000, 470000)],
+                 [('NO. DE CUENTA 1234567890 1', 20000, 300000)],
+                 [('SALDO ANTERIOR', 330000, 430000), ('1,000.00', 500000, 560000)],
+                 [('SALDO FINAL', 330000, 430000), ('1,000.00', 500000, 560000)],
+                 [('TOTAL DEPOSITOS', 330000, 430000), ('0.00', 500000, 560000)],
+                 [('TOTAL RETIROS', 330000, 430000), ('0.00', 500000, 560000)]]
+        statements = read_statements([page(1, lines)])
+        # Without the digit comparison the two printed forms would be two top-ranked accounts and none would be read.
+        self.assertEqual(statements[0]['account_reference'], '12345678901')
+
+
+class SummaryAndContinuationTests(unittest.TestCase):
+    def us_statement(self, summary_opening=True, balance_on_second_line=True):
+        """An invented US layout: summary box, then DATE | DESCRIPTION | CREDITS | DEBITS | DAILY BALANCE with the
+        day's balance printed on an entry's second line."""
+        lines = [[('EXAMPLE SAVINGS BANK, N.A.', 20000, 300000)],
+                 [('ACCOUNT NUMBER', 380000, 470000), ('STATEMENT PERIOD', 480000, 580000)],
+                 [('987654', 400000, 440000), ('MAR.24-APR.23,2024', 480000, 580000)],
+                 [('JANE Q SAMPLE', 20000, 150000)],
+                 [('100 MAIN ST', 20000, 150000)],
+                 [('SPRINGFIELD, IL 62701', 20000, 170000)]]
+        if summary_opening:
+            lines.append([('BEGINNING BALANCE', 330000, 430000), ('$1,000.00', 500000, 560000)])
+        lines += [[('ENDING BALANCE', 330000, 430000), ('$1,250.00', 500000, 560000)],
+                  [('DATE', 20000, 60000), ('DESCRIPTION', 80000, 160000), ('CREDITS', 330000, 380000),
+                   ('DEBITS', 410000, 460000), ('BALANCE', 520000, 560000)],
+                  [('03/24/2024', 20000, 70000), ('BEGINNING BALANCE', 80000, 200000), ('$1,000.00', 512000, 560000)],
+                  [('04/08/2024', 20000, 70000), ('MOBILE DEPOSIT', 80000, 200000), ('$300.00', 344000, 380000)]]
+        if balance_on_second_line:
+            lines.append([('BRANCH 12 SPRINGFIELD', 80000, 220000), ('1,300.00', 512000, 560000)])
+        else:
+            lines[-1].append(('1,300.00', 512000, 560000))
+        lines += [[('04/09/2024', 20000, 70000), ('SERVICE CHARGE', 80000, 200000), ('50.00', 430000, 460000),
+                   ('1,250.00', 512000, 560000)],
+                  [('ENDING BALANCE', 80000, 200000), ('$1,250.00', 512000, 560000)]]
+        return [page(1, lines)]
+
+    def test_a_balance_printed_on_an_entrys_second_line_belongs_to_the_entry(self):
+        statements = read_statements(self.us_statement())
+        self.assertEqual(len(statements), 1, [s['engine'] for s in statements])
+        st = statements[0]
+        self.assertTrue(st['engine']['proved'], st['engine'])
+        rows = [r for r in st['_rows'] if r['kind'] == 'transaction']
+        self.assertEqual([(r['fields']['amount_minor'], r['fields'].get('balance')) for r in rows],
+                         [('30000', '130000'), ('5000', '125000')])
+        self.assertEqual(rows[0]['fields']['description'], 'MOBILE DEPOSIT BRANCH 12 SPRINGFIELD')
+
+    def test_a_summary_whose_opening_was_not_read_is_the_tables_heading(self):
+        statements = read_statements(self.us_statement(summary_opening=False))
+        self.assertEqual(len(statements), 1, [s['engine'] for s in statements])
+        self.assertTrue(statements[0]['engine']['proved'], statements[0]['engine'])
+        self.assertEqual((statements[0]['currency'], statements[0]['account_reference']), ('USD', '987654'))
+
+    def test_a_section_sharing_a_page_takes_the_one_currency_the_statement_names(self):
+        sources = mx_statement(MOVES, closing='1,250.00')
+        lines = sources[0]['rows']
+        y = 40000 + len(lines) * 12000
+        extra = [[('SALDO ANTERIOR', 330000, 430000), ('0.00', 530000, 560000)],
+                 [('INVERSION CRECIENTE', 20000, 150000), ('NO. DE CUENTA', 330000, 400000), ('9876543210', 410000, 500000)],
+                 [('SALDO FINAL', 330000, 400000), ('0.00', 530000, 560000)],
+                 [('DEPOSITOS', 330000, 400000), ('0.00', 530000, 560000)],
+                 [('RETIROS', 330000, 400000), ('0.00', 530000, 560000)]]
+        for offset, line in enumerate(extra):
+            lines.append(dict(row_index=len(lines), cells=[cell(t, x0, x1, y + offset * 12000, c)
+                                                           for c, (t, x0, x1) in enumerate(line)]))
+        statements = read_statements(sources)
+        self.assertEqual(len(statements), 2, [s['engine'] for s in statements])
+        self.assertEqual([s['currency'] for s in statements], ['MXN', 'MXN'])
+        self.assertEqual(statements[1]['currency_source'], 'printed_statement_currency')
+        # A statement naming two currencies leaves the shared section's currency to its own heading.
+        dollars = mx_statement(MOVES, closing='1,250.00')
+        dollars[0]['rows'].append(dict(row_index=99, cells=[cell('MONEDA DOLARES', 20000, 200000, y - 6000, 0)]))
+        dollars[0]['rows'] += [dict(row_index=100 + i, cells=[cell(t, x0, x1, y + i * 12000, c) for c, (t, x0, x1) in enumerate(line)])
+                               for i, line in enumerate(extra)]
+        self.assertNotEqual(read_statements(dollars)[-1].get('currency_source'), 'printed_statement_currency')
+        # A zero block with no account of its own (annex pages) stays out, whatever the statement's currency.
+        extra[1] = [('INVERSION CRECIENTE', 20000, 150000)]
+        annex = mx_statement(MOVES, closing='1,250.00')
+        annex[0]['rows'] += [dict(row_index=100 + i, cells=[cell(t, x0, x1, y + i * 12000, c) for c, (t, x0, x1) in enumerate(line)])
+                             for i, line in enumerate(extra)]
+        self.assertEqual(len(read_statements(annex)), 1)
+
+
+class QualifiedDollarTests(unittest.TestCase):
+    def test_a_qualified_dollar_heading_is_not_us_dollars(self):
+        rows = E._pages([page(1, [[('DOLAR AUSTRALIANO', 20000, 200000)], [('DOLAR CANADA', 20000, 200000)],
+                                  [('DOLAR AMERICANO SOBRE CUENTAS', 20000, 200000)], [('DOLARES', 20000, 200000)]])])[1]
+        self.assertEqual([E._heading_currencies([row], 'dot') for row in rows], [set(), set(), {'USD'}, {'USD'}])
+
+
+class SettlementDateTests(unittest.TestCase):
+    def test_a_settlement_date_after_the_period_keeps_the_row_dated_inside_it(self):
+        moves = [('05/MAR 05/MAR', 'TRANSFERENCIA RECIBIDA', '500.00', None, '1,500.00'),
+                 ('10/MAR 10/MAR', 'PAGO DE SERVICIO', None, '200.00', '1,300.00'),
+                 ('31/MAR 02/ABR', 'PAGO DE NOMINA', None, '50.00', '1,250.00')]
+        st = read_statements(mx_statement(moves, closing='1,250.00'))[0]
+        self.assertTrue(st['engine']['proved'], st['engine'])
+        last = [r for r in st['_rows'] if r['kind'] == 'transaction'][-1]['fields']
+        self.assertEqual((last['date'], last['value_date']), ('2024-03-31', '2024-04-02'))
+
+    def test_a_row_dated_before_the_period_is_still_unresolved(self):
+        moves = [('29/FEB 01/MAR', 'PAGO DE NOMINA', None, '50.00', '950.00')]
+        st = read_statements(mx_statement(moves, closing='950.00'))[0]
+        self.assertFalse(st['engine']['proved'])
+        self.assertEqual(st['engine']['reason'], 'date_unresolved')
+
+
+class PriorPeriodBlockTests(unittest.TestCase):
+    def test_a_profile_block_of_earlier_periods_operations_is_not_this_periods_movements(self):
+        from services.financial.statement_engine_profiles import validate
+        sources = mx_statement(MOVES, closing='1,250.00')
+        rows = sources[0]['rows']
+        y = 40000 + len(rows) * 12000
+        block = [[('MOVIMIENTOS DE PERIODOS ANTERIORES DE EJEMPLO', 20000, 400000)],
+                 [('28/FEB', 20000, 60000), ('PAGO DE NOMINA', 80000, 300000), ('900.00', 430000, 460000)],
+                 [('TOTAL DE MOVIMIENTOS', 20000, 200000)]]
+        rows += [dict(row_index=len(rows) + i, cells=[cell(t, x0, x1, y + i * 12000, c) for c, (t, x0, x1) in enumerate(line)])
+                 for i, line in enumerate(block)]
+        self.assertFalse(read_statements(sources)[0]['engine']['proved'])
+        profile = validate(dict(name='example', match=dict(any=['banco ejemplo']),
+                                prior_period_block=dict(start=['MOVIMIENTOS DE PERIODOS ANTERIORES'],
+                                                        end=['TOTAL DE MOVIMIENTOS'])))
+        st = read_statements(sources, profile=profile)[0]
+        self.assertTrue(st['engine']['proved'], st['engine'])
+        self.assertEqual(len([r for r in st['_rows'] if r['kind'] == 'transaction']), 3)
+        with self.assertRaises(ValueError):
+            validate(dict(name='bad', match=dict(any=['x']), prior_period_block=dict(start=['X'])))
+
+
+class RoutingAgreementTests(unittest.TestCase):
+    _library = EngineRoutingTests._library
+    _route = EngineRoutingTests._route
+
+    def test_a_held_library_period_reading_exactly_what_the_engine_proves_is_served_by_the_engine(self):
+        sources = mx_statement(MOVES, closing='1,250.00')
+        rows = [dict(r, fields=dict(r['fields']), issues=list(r['issues'])) for r in read_statements(sources)[0]['_rows']]
+        # The library reads the same money and dates but holds the period on a flagged field.
+        [r for r in rows if not r['excluded']][2]['issues'].append('Check the printed liquidation date.')
+        catalog, group = self._route(sources, rows)
+        self.assertEqual((catalog['statements'][0]['id'], catalog['statements'][0]['layout_id']), ('LIB', 'generic'))
+        self.assertEqual(catalog['engine_routing']['replaced'], ['LIB'])
+
+    def test_a_held_library_period_reconciling_a_different_reading_keeps_the_period(self):
+        sources = mx_statement(MOVES, closing='1,250.00')
+        rows = [dict(r, fields=dict(r['fields']), issues=list(r['issues'])) for r in read_statements(sources)[0]['_rows']]
+        moved = [r for r in rows if not r['excluded']]
+        moved[2]['fields'].update(date='2024-03-21')
+        moved[2]['issues'].append('Check the printed date.')
+        catalog, group = self._route(sources, rows)
+        self.assertEqual(catalog['statements'], [group])
+        self.assertEqual(catalog['engine_routing']['replaced'], [])
+
+    def test_identity_read_with_case_or_legal_form_differences_is_the_same_fact(self):
+        from services.financial.statement_engine_routing import _same_identity
+        self.assertTrue(_same_identity('institution', 'BBVA Mexico', 'BBVA MEXICO'))
+        self.assertTrue(_same_identity('holder', 'EMPRESA DE PRUEBA', 'EMPRESA DE PRUEBA SA DE CV'))
+        self.assertTrue(_same_identity('holder', 'EMPRESA DE PRUEBA S.A. DE C.V.', 'EMPRESA DE PRUEBA SA DE CV'))
+        self.assertFalse(_same_identity('holder', 'EMPRESA DE PRUEBA', 'OTRA EMPRESA SA DE CV'))
+        self.assertFalse(_same_identity('holder', 'SA DE CV', ''))
+        self.assertFalse(_same_identity('currency', 'MXN', 'USD'))
+        self.assertTrue(_same_identity('account_reference', '0012345678', '12345678'))
+
+
+def transfer_statement(postal_line='CIUDAD DE MEXICO C.P. 06000', account_line=None, second_page=True):
+    """An invented Spanish layout whose transfer movements print several description lines at one left
+    edge, the last ending in a five-digit reference; optionally continued on a second page that opens
+    with more transfer lines (the shape of the r4-any-layout wrong admission, with invented text)."""
+    lines = [
+        [('BANCO EJEMPLO DEL NORTE, S.A., INSTITUCION DE BANCA MULTIPLE', 20000, 400000)],
+        [('EMPRESA DE PRUEBA SA DE CV', 20000, 200000), ('PERIODO', 330000, 380000),
+         ('DEL 01/03/2024 AL 31/03/2024', 390000, 590000)],
+        [('CALLE FALSA 123', 20000, 150000), ('MONEDA', 330000, 380000), ('PESOS', 390000, 450000)],
+        [('COL CENTRO', 20000, 120000)],
+    ]
+    if postal_line:
+        lines.append([(postal_line, 20000, 220000)])
+    lines.append(account_line or [('CUENTA EJEMPLO PYME 12-34567890-1', 20000, 250000), ('CLABE', 260000, 300000),
+                                  ('002180123456789017', 310000, 420000)])
+    lines += [
+        [('SALDO ANTERIOR', 330000, 430000), ('1,000.00', 500000, 560000)],
+        [('SALDO FINAL', 330000, 400000), ('1,250.00', 500000, 560000)],
+        [('FECHA', 20000, 60000), ('CONCEPTO', 80000, 160000), ('ABONOS', 330000, 380000),
+         ('CARGOS', 410000, 460000), ('SALDO', 520000, 560000)],
+        [('05/MAR', 20000, 60000), ('ABONO TRANSFERENCIA', 80000, 300000), ('500.00', 350000, 380000),
+         ('1,500.00', 512000, 560000)],
+    ]
+    description = [[('RECIBIDO DE EJEMPLOMEX', 120000, 300000)],
+                   [('DEL CLIENTE COMERCIAL EJEMPLO', 120000, 300000)],
+                   [('CONCEPTO OC 54321', 120000, 300000)]]
+    page_one = lines + description
+    later = [[('10/MAR', 20000, 60000), ('PAGO DE SERVICIO', 80000, 300000), ('200.00', 428000, 460000),
+              ('1,300.00', 512000, 560000)],
+             [('20/MAR', 20000, 60000), ('COMISION', 80000, 300000), ('50.00', 430000, 460000),
+              ('1,250.00', 512000, 560000)]]
+    if not second_page:
+        return [page(1, page_one + later)]
+    page_two = [[('FECHA', 20000, 60000), ('CONCEPTO', 80000, 160000), ('ABONOS', 330000, 380000),
+                 ('CARGOS', 410000, 460000), ('SALDO', 520000, 560000)],
+                [('ENVIADO A EJEMPLOMEX', 120000, 300000)],
+                [('AL CLIENTE COMERCIAL EJEMPLO', 120000, 300000)],
+                [('A LA CUENTA 0012345 67812', 120000, 300000)]] + later
+    return [page(1, page_one), page(2, page_two)]
+
+
+class HolderAndInterbankTests(unittest.TestCase):
+    """r5-any-layout: the holder never comes from movement text, and the printed account number wins over
+    the interbank number that contains it."""
+
+    def first(self, sources):
+        return read_statements(sources)[0]
+
+    def test_the_addressee_block_is_still_read(self):
+        st = self.first(transfer_statement())
+        self.assertTrue(st['engine']['proved'], st['engine'])
+        self.assertEqual(st['holder'], 'EMPRESA DE PRUEBA SA DE CV')
+
+    def test_movement_description_lines_ending_in_a_reference_are_never_the_holder(self):
+        # The addressee's postal line is unreadable: no address block on the heading; the transfer
+        # descriptions on page 1 (below the first movement) and page 2 (a movement table) are not one.
+        for second_page in (True, False):
+            st = self.first(transfer_statement(postal_line=None, second_page=second_page))
+            self.assertTrue(st['engine']['proved'], st['engine'])
+            self.assertEqual(st['holder'], '')
+            self.assertNotIn('RECIBIDO DE EJEMPLOMEX', st['identity_evidence']['holder'])
+            self.assertNotIn('ENVIADO A EJEMPLOMEX', st['identity_evidence']['holder'])
+
+    def test_a_postal_line_must_read_as_an_address_line(self):
+        for text in ('CIUDAD DE MEXICO C.P. 06000', 'C.P.: 06000', 'CAP. 06000', 'CAP, 06000', 'CODIGO POSTAL 06000', '06000 CIUDAD DE MEXICO',
+                     'SPRINGFIELD, IL 62701', 'SPRINGFIELD, IL 62701-1234', 'CIUDAD EJEMPLO, ESTADO 06000'):
+            self.assertTrue(E._postal(E.fold(text)), text)
+        for text in ('CONCEPTO OC 54321', 'A LA CUENTA 0012345 67812', 'REF 12345', 'CLAVE DE RASTREO 2024 12345',
+                     'TOTAL 12345'):
+            self.assertFalse(E._postal(E.fold(text)), text)
+
+    def test_a_line_with_money_or_a_date_at_the_block_edge_is_not_part_of_an_address(self):
+        lines = [[('EMPRESA DE PRUEBA SA DE CV', 20000, 200000)],
+                 [('05/03/2024 PAGO RECIBIDO', 20000, 200000)],
+                 [('CALLE FALSA 123', 20000, 150000)],
+                 [('COL CENTRO', 20000, 120000)],
+                 [('CIUDAD DE MEXICO C.P. 06000', 20000, 220000)]]
+        rows = E._pages([page(1, lines)])[1]
+        # The dated line stops the block: three lines remain, topped by the street line (not a name).
+        self.assertEqual(E.address_holder(rows), '')
+        lines[1] = [('CALLE FALSA 123 INT 4', 20000, 200000), ('DEL 01/03/2024 AL 31/03/2024', 330000, 590000)]
+        rows = E._pages([page(1, lines)])[1]
+        # A period printed further right beside an address line does not count against it.
+        self.assertEqual(E.address_holder(rows), 'EMPRESA DE PRUEBA SA DE CV')
+
+    def test_the_printed_account_number_wins_over_the_interbank_number_containing_it(self):
+        st = self.first(transfer_statement())
+        self.assertEqual((st['account_reference'], st['account_basis']), ('12-34567890-1', 'account_number'))
+
+    def test_an_interbank_number_alone_stays_the_account_and_says_so(self):
+        st = self.first(transfer_statement(account_line=[('CUENTA CLABE', 20000, 120000),
+                                                          ('002180012345678901', 130000, 240000)]))
+        self.assertEqual((st['account_reference'], st['account_basis']), ('002180012345678901', 'interbank_number'))
+        # A number printed beside it that is not its account field is not the account.
+        st = self.first(transfer_statement(account_line=[('CUENTA EJEMPLO 98-76543210-1', 20000, 250000),
+                                                          ('CLABE', 260000, 300000), ('002180123456789017', 310000, 420000)]))
+        self.assertEqual((st['account_reference'], st['account_basis']), ('002180123456789017', 'interbank_number'))
+
+    def test_the_interbank_numbers_own_digit_groups_are_not_a_printed_account(self):
+        self.assertEqual(E._printed_over_interbank('002180012345678901', E._pages([page(1, [
+            [('CLABE 002 180 01234567890 1', 20000, 300000)]])])[1]), ('002180012345678901', 'interbank_number'))
+
+
+def addressee_statement(fiscal=(), receipt=None):
+    """An invented layout whose addressee block prints no postal line; optionally a fiscal-domicile block
+    (lines given) and a fiscal receipt page naming its recipient."""
+    lines = [
+        [('BANCO EJEMPLO DEL NORTE, S.A., INSTITUCION DE BANCA MULTIPLE', 20000, 400000)],
+        [('EMPRESA DE PRUEBA SA DE CV', 20000, 200000), ('PERIODO', 330000, 380000),
+         ('DEL 01/03/2024 AL 31/03/2024', 390000, 590000)],
+        [('AVENIDA DEL EJEMPLO 45', 20000, 200000), ('MONEDA', 330000, 380000), ('PESOS', 390000, 450000)],
+        [('COLONIA CENTRO NORTE', 20000, 200000), ('NO. DE CUENTA', 330000, 400000), ('0012345678', 410000, 500000)],
+        [('MUNICIPIO EJEMPLO', 20000, 200000)],
+        [],
+        *[[(text, 20000, 300000)] for text in fiscal],
+        [],
+        [('SALDO ANTERIOR', 330000, 430000), ('1,000.00', 500000, 560000)],
+        [('SALDO FINAL', 330000, 400000), ('1,250.00', 500000, 560000)],
+        [('FECHA', 20000, 60000), ('CONCEPTO', 80000, 160000), ('ABONOS', 330000, 380000),
+         ('CARGOS', 410000, 460000), ('SALDO', 520000, 560000)],
+    ]
+    for day, text, credit, debit, balance in MOVES:
+        line = [(day, 20000, 60000), (text, 80000, 300000)]
+        if credit:
+            line.append((credit, 380000 - 6000 * len(credit), 380000))
+        if debit:
+            line.append((debit, 460000 - 6000 * len(debit), 460000))
+        line.append((balance, 560000 - 6000 * len(balance), 560000))
+        lines.append(line)
+    pages = [page(1, [line for line in lines if line] if not fiscal else [line or [('', 0, 0)] for line in lines])]
+    if receipt:
+        pages.append(page(2, [[('INFORMACION FISCAL', 20000, 200000)], [('Nombre del Receptor : ' + receipt, 20000, 300000)]]))
+    return pages
+
+
+class AddresseeConfirmationTests(unittest.TestCase):
+    """r5-any-layout: an addressee block without a postal line is read only when a second printed fact
+    agrees with it."""
+
+    def holder(self, sources):
+        return read_statements(sources)[0]['holder']
+
+    def test_an_addressee_block_without_a_postal_line_is_not_read_alone(self):
+        self.assertEqual(self.holder(addressee_statement()), '')
+
+    def test_its_lines_reprinted_in_a_postal_anchored_fiscal_block_confirm_it(self):
+        fiscal = ('DOMICILIO FISCAL', 'AVENIDA DEL EJEMPLO 45 INT 2', 'COLONIA CENTRO NORTE', 'MUNICIPIO EJEMPLO C.P. 06000')
+        self.assertEqual(self.holder(addressee_statement(fiscal)), 'EMPRESA DE PRUEBA SA DE CV')
+
+    def test_one_reprinted_line_is_not_enough(self):
+        fiscal = ('DOMICILIO FISCAL', 'OTRA CALLE 99', 'COLONIA CENTRO NORTE', 'OTRO MUNICIPIO C.P. 06000')
+        self.assertEqual(self.holder(addressee_statement(fiscal)), '')
+
+    def test_the_fiscal_receipt_recipient_agreeing_with_the_heading_line_confirms_it(self):
+        self.assertEqual(self.holder(addressee_statement(receipt='EMPRESA DE PRUEBA')), 'EMPRESA DE PRUEBA SA DE CV')
+        self.assertEqual(self.holder(addressee_statement(receipt='EMPRESA DE PRUEBA SA DE CV')), 'EMPRESA DE PRUEBA SA DE CV')
+        # A recipient no heading line prints, or a heading line adding more than a legal form, is not the holder.
+        self.assertEqual(self.holder(addressee_statement(receipt='OTRA EMPRESA')), '')
+        self.assertEqual(self.holder(addressee_statement(receipt='EMPRESA')), '')
+
+
+class ScanNoiseAddressTests(unittest.TestCase):
+    def holder(self, name_cell, street_cell=('CALLE FALSA 123', 20000, 150000)):
+        lines = [[('BANCO EJEMPLO DEL NORTE, S.A., INSTITUCION DE BANCA MULTIPLE', 20000, 400000)],
+                 [name_cell, ('PERIODO DEL 01/03/2024 AL 31/03/2024', 330000, 590000)],
+                 [street_cell], [('COL CENTRO', 20000, 120000)], [('CIUDAD DE MEXICO C.P. 06000', 20000, 220000)]]
+        return E.address_holder(E._pages([page(1, lines)])[1])
+
+    def test_a_noise_glyph_left_of_the_address_edge_is_not_part_of_the_line(self):
+        self.assertEqual(self.holder(('N EMPRESA DE PRUEBA SA DE CV', 2000, 200000)), 'EMPRESA DE PRUEBA SA DE CV')
+        self.assertEqual(self.holder(('EMPRESA DE PRUEBA SA DE CV', 20000, 200000), ('@ CALLE FALSA 123', 2000, 150000)),
+                         'EMPRESA DE PRUEBA SA DE CV')
+
+    def test_an_initial_on_the_address_edge_is_kept_and_a_word_is_never_noise(self):
+        self.assertEqual(self.holder(('J PRUEBA EJEMPLO', 20000, 200000)), 'J PRUEBA EJEMPLO')
+        # A whole word left of the edge is a different column, not noise: no block.
+        self.assertEqual(self.holder(('NOTA EMPRESA DE PRUEBA SA DE CV', 2000, 200000)), '')
+
+    def test_institution_profiles_for_two_more_mexican_banks(self):
+        from services.financial.statement_engine_profiles import matching_profile
+        self.assertEqual(matching_profile('Scotiabank Inverlat, S.A., Institucion de Banca Multiple')['institution'],
+                         'Scotiabank')
+        self.assertEqual(matching_profile('Escribenos a aclaraciones@kapital.com')['institution'], 'Kapital')
+        # The Kapital bank name alone (other banks' transfer lines print it) does not select the profile.
+        self.assertIsNone(matching_profile('SPEI ENVIADO KAPITAL BANK'))
+
+
+class SharedPageSectionTests(unittest.TestCase):
+    """r5-any-layout: two currency sections on shared pages, the first one's movement lines unreadable."""
+
+    LINES = [[('CUENTA EN PESOS', 20000, 200000)],
+             [('SALDO INICIAL', 20000, 150000), ('1,000.00', 500000, 560000)],
+             [('DEPOSITOS', 20000, 150000), ('500.00', 500000, 560000)],
+             [('RETIROS', 20000, 150000), ('500.00', 500000, 560000)],
+             [('SALDO FINAL', 20000, 150000), ('1,000.00', 500000, 560000)],
+             [('SALDO INICIAL', 330000, 430000), ('1,000.00', 500000, 560000)],
+             [('ABONO RECIBIDO', 80000, 300000), ('500.00', 350000, 380000), ('1,500.00', 512000, 560000)],
+             [('CARGO ENVIADO', 80000, 300000), ('500.00', 428000, 460000), ('1,000.00', 512000, 560000)],
+             [('TOTAL', 80000, 120000), ('500.00', 350000, 380000), ('500.00', 428000, 460000), ('1,000.00', 512000, 560000)],
+             [('CUENTA EN DOLARES', 20000, 200000)],
+             [('SALDO INICIAL', 20000, 150000), ('0.00', 500000, 560000)],
+             [('DEPOSITOS', 20000, 150000), ('0.00', 500000, 560000)],
+             [('RETIROS', 20000, 150000), ('0.00', 500000, 560000)],
+             [('SALDO FINAL', 20000, 150000), ('0.00', 500000, 560000)]]
+
+    def test_the_sections_own_opening_after_its_closing_keeps_its_table_in_the_section(self):
+        pages = E._pages([page(1, self.LINES)])
+        sections = E._sections(dict(pages=[1]), pages, 'dot')
+        self.assertEqual([[row['text'] for row in section][-1] for section in sections][:1], ['TOTAL 500.00 500.00 1,000.00'])
+        self.assertEqual(sections[1][0]['text'], 'CUENTA EN DOLARES')
+        self.assertEqual(len(sections), 2)
+
+
+class RoutingScopeTests(unittest.TestCase):
+    """r5-any-layout: row-level scope comparisons between the engine and a library period."""
+
+    @staticmethod
+    def scoped(pages_rows):
+        return dict(sources=[dict(page_number=p) for p in sorted({p for p, _ in pages_rows})],
+                    section_sources=[dict(page_number=p, table_index=0, row_indices=rows) for p, rows in pages_rows])
+
+    def by_address(self, texts):
+        return {(1, 0): dict(page_number=1, table_index=0,
+                             rows=[dict(row_index=i, cells=[dict(expected_text=t)]) for i, t in enumerate(texts)])}
+
+    def test_a_library_period_is_covered_by_its_recorded_rows_not_its_pages(self):
+        from services.financial.statement_engine_routing import _covers
+        engine = self.scoped([(2, [5, 6, 7]), (3, [0, 1])])
+        self.assertTrue(_covers(engine, self.scoped([(2, [5, 6])])))
+        self.assertFalse(_covers(engine, self.scoped([(1, [3]), (2, [5])])))
+        # Without a recorded row scope the pages decide, as before.
+        self.assertFalse(_covers(engine, dict(sources=[dict(page_number=1), dict(page_number=2)])))
+
+    def test_another_library_period_on_a_shared_page_is_apart_only_without_shared_value_rows(self):
+        from services.financial.statement_engine_routing import _rows_apart
+        texts = ['SALDO FINAL 1,000.00', 'PAGINA 1 DE 2', 'ABONO 05/03/2024', 'NOTA']
+        engine = self.scoped([(1, [1, 3])])
+        self.assertTrue(_rows_apart(engine, self.scoped([(1, [0, 1])]), self.by_address(texts)))
+        self.assertFalse(_rows_apart(self.scoped([(1, [0])]), self.scoped([(1, [0])]), self.by_address(texts)))
+        self.assertFalse(_rows_apart(self.scoped([(1, [2])]), self.scoped([(1, [2])]), self.by_address(texts)))
+        self.assertFalse(_rows_apart(engine, dict(sources=[dict(page_number=1)]), self.by_address(texts)))
+
+    def test_an_institution_named_with_or_without_a_banking_word_is_the_same(self):
+        from services.financial.statement_engine_routing import _same_identity
+        self.assertTrue(_same_identity('institution', 'Ejemplo', 'EJEMPLO BANCO'))
+        self.assertTrue(_same_identity('institution', 'Banco Ejemplo, S.A.', 'EJEMPLO'))
+        self.assertFalse(_same_identity('institution', 'Ejemplo', 'OTRO BANCO'))
+        self.assertFalse(_same_identity('institution', 'BANCO', 'BANK'))
+        # One issuer under its current and former names; different issuers stay different.
+        self.assertTrue(_same_identity('institution', 'Ejemplo Mexico', 'EJEMPLO ANTERIOR'))
+        self.assertFalse(_same_identity('institution', 'Banco del Ejemplo', 'Banco del Otro'))
+        self.assertFalse(_same_identity('institution', 'Bank of Example', 'Bank of the Other'))
+
+
+class ScanDamageR5Tests(unittest.TestCase):
+    """r5-any-layout: further scan damage around amounts and dates, and a period printed as a cut date plus
+    a day count."""
+
+    words = ScanDamageTests.words
+
+    def test_a_space_beside_the_decimal_mark_inside_one_cell(self):
+        self.assertEqual(self.words('715 .00?'), ['715.00'])
+        self.assertEqual(self.words('11,206,500. 63?'), ['11,206,500.63'])
+        self.assertEqual(self.words('DIC 22 715 .00'), ['DIC', '22', '715.00'])
+        # Without a printed mark nothing is joined (a count before an amount stays two words).
+        self.assertEqual(self.words('2 00'), ['2', '00'])
+        self.assertEqual(self.words('2 100.00'), ['2', '100.00'])
+
+    def test_more_letter_digit_confusions_in_dates(self):
+        for text in ('Q1-FEB-2024', 'L1-MAR-2024', '23-FEB~2024', '03-0CT-2024', 'I5/03/2024'):
+            self.assertTrue(E.is_date_token(text), text)
+        for text in ('QQ-FEB', 'L-MAR-2024', 'CL1-MAR-2024', '0CT'):
+            self.assertFalse(E.is_date_token(text), text)
+
+    def lines(self, cut='CORTE AL 31/03/2024', days='DIAS DEL PERIODO 31', printed=None):
+        lines = [[('BANCO EJEMPLO DEL NORTE, S.A., INSTITUCION DE BANCA MULTIPLE', 20000, 400000)],
+                 [(days, 20000, 200000)], [(cut, 20000, 200000)], [('HOJA 1 DE 2', 400000, 500000)]]
+        second = [[('HOJA 2 DE 2', 400000, 500000)]] + ([[(printed, 20000, 300000)]] if printed else [])
+        return E._pages([page(1, lines), page(2, second)])
+
+    def segments(self, **kwargs):
+        pages = self.lines(**kwargs)
+        facts = {p: E.page_facts(rows, 'dot') for p, rows in pages.items()}
+        return [(s['period'], s['pages']) for s in E._segments(pages, facts)]
+
+    def test_a_cut_date_and_a_day_count_print_the_period(self):
+        from datetime import date
+        self.assertEqual(self.segments(), [((date(2024, 3, 1), date(2024, 3, 31)), [1, 2])])
+        self.assertEqual(self.segments(days='DIAS DEL PERTODO 31'), [((date(2024, 3, 1), date(2024, 3, 31)), [1, 2])])
+        # The period printed on a later page of the same run agrees: one statement.
+        self.assertEqual(self.segments(printed='PERIODO : 01 AL 31 DE MARZO DE 2024'),
+                         [((date(2024, 3, 1), date(2024, 3, 31)), [1, 2])])
+
+    def test_a_labelled_period_of_the_same_run_wins_over_a_misread_day_count(self):
+        from datetime import date
+        # The derived 3-31 March is dropped: page 1 continues into page 2's printed period.
+        self.assertEqual(self.segments(days='DIAS DEL PERIODO 29', printed='PERIODO : 01 AL 31 DE MARZO DE 2024'),
+                         [((date(2024, 3, 1), date(2024, 3, 31)), [1, 2])])
+
+    def test_one_fact_alone_is_not_a_period(self):
+        self.assertEqual(self.segments(days='SALDO PROMEDIO'), [(None, [1, 2])])
+        self.assertEqual(self.segments(cut='SUCURSAL 123'), [(None, [1, 2])])
+
+
+class SecondTableTests(unittest.TestCase):
+    """r5-any-layout: a table printed after the movement table's total line with other amount columns."""
+
+    def statement(self, heading=(('FECHA', 20000, 60000), ('DESCRIPCION', 80000, 200000), ('ENTRADAS', 500000, 560000)),
+                  spaced=False):
+        date_word = [('F', 20000, 24000), ('E', 26000, 30000), ('C', 32000, 36000), ('H', 38000, 42000),
+                     ('A', 44000, 48000)] if spaced else [('FECHA', 20000, 60000)]
+        lines = [
+            [('BANCO EJEMPLO DEL NORTE, S.A., INSTITUCION DE BANCA MULTIPLE', 20000, 400000)],
+            [('PERIODO DEL 01/03/2024 AL 31/03/2024', 330000, 590000)],
+            [('MONEDA', 330000, 380000), ('PESOS', 390000, 450000)],
+            [('SALDO ANTERIOR', 330000, 430000), ('1,000.00', 500000, 560000)],
+            [('SALDO FINAL', 330000, 400000), ('1,250.00', 500000, 560000)],
+            date_word + [('CONCEPTO', 80000, 160000), ('ABONOS', 330000, 380000), ('CARGOS', 410000, 460000),
+                         ('SALDO', 520000, 560000)],
+        ]
+        for day, text, credit, debit, balance in MOVES:
+            line = [(day, 20000, 60000), (text, 80000, 300000)]
+            if credit:
+                line.append((credit, 380000 - 6000 * len(credit), 380000))
+            if debit:
+                line.append((debit, 460000 - 6000 * len(debit), 460000))
+            line.append((balance, 560000 - 6000 * len(balance), 560000))
+            lines.append(line)
+        lines.append([('TOTAL', 80000, 120000), ('500.00', 350000, 380000), ('250.00', 430000, 460000),
+                      ('1,250.00', 512000, 560000)])
+        lines.append([('COMISIONES PENDIENTES DE PAGO', 20000, 200000)])
+        lines.append(list(heading))
+        lines.append([('02/FEB', 20000, 60000), ('COMISION POR MANEJO', 80000, 300000), ('50.00', 530000, 560000)])
+        return [page(1, lines)]
+
+    def test_lines_of_another_table_after_the_total_are_not_movements(self):
+        st = read_statements(self.statement())[0]
+        self.assertTrue(st['engine']['proved'], st['engine'])
+        self.assertEqual(sum(1 for r in st['_rows'] if r['kind'] == 'transaction'), 3)
+
+    def test_the_same_columns_again_continue_the_movement_table(self):
+        heading = (('FECHA', 20000, 60000), ('CONCEPTO', 80000, 160000), ('ABONOS', 330000, 380000),
+                   ('CARGOS', 410000, 460000), ('SALDO', 520000, 560000))
+        st = read_statements(self.statement(heading=heading))[0]
+        # The extra line is read as a movement again: the period no longer proves (fail closed).
+        self.assertFalse(st['engine']['proved'])
+
+    def test_a_letter_spaced_heading_word_is_one_word(self):
+        rows = E._pages(self.statement(spaced=True))[1]
+        self.assertTrue(E._is_header(next(r for r in rows if r['text'].startswith('F E C H A'))))
+        self.assertEqual(E._letter_spaced([dict(t=t, line=0) for t in ('A', 'B', 'SALDO')]), [('A', 0), ('B', 0), ('SALDO', 0)])
+
+
+class SectionAccountTests(unittest.TestCase):
+    """r5-any-layout: a section on shared pages takes the account printed with its own opening."""
+
+    def statement(self):
+        page_one = [
+            [('BANCO EJEMPLO DEL NORTE, S.A., INSTITUCION DE BANCA MULTIPLE', 20000, 400000)],
+            [('PERIODO DEL 01/03/2024 AL 31/03/2024', 330000, 590000)],
+            [('MONEDA', 330000, 380000), ('PESOS', 390000, 450000)],
+            [('CUENTA EJEMPLO PYME', 20000, 200000), ('12-34567890-1', 210000, 300000)],
+            [('SALDO INICIAL', 20000, 150000), ('1,000.00', 500000, 560000)],
+            [('DEPOSITOS', 20000, 150000), ('0.00', 500000, 560000)],
+            [('RETIROS', 20000, 150000), ('0.00', 500000, 560000)],
+            [('SALDO FINAL', 20000, 150000), ('1,000.00', 500000, 560000)],
+            # The first section's chart legend, printed after its closing line.
+            [('NO. DE CUENTA', 20000, 120000), ('12-34567890-1', 130000, 220000)],
+            [('PAGINA 1 DE 2', 400000, 500000)],
+        ]
+        page_two = [
+            [('INVERSION EJEMPLO 98-76543210-2', 20000, 250000), ('ESTADO ENVIADO POR CORREO', 300000, 500000)],
+            [('SALDO INICIAL', 20000, 150000), ('0.00', 500000, 560000)],
+            [('DEPOSITOS', 20000, 150000), ('0.00', 500000, 560000)],
+            [('RETIROS', 20000, 150000), ('0.00', 500000, 560000)],
+            [('SALDO FINAL', 20000, 150000), ('0.00', 500000, 560000)],
+            [('PAGINA 2 DE 2', 400000, 500000)],
+        ]
+        return [page(1, page_one), page(2, page_two)]
+
+    def test_a_legend_left_on_an_earlier_page_does_not_name_the_next_section(self):
+        profile = dict(name='invented-bank', match=dict(any=['banco ejemplo del norte']), account_heading=True)
+        statements = read_statements(self.statement(), profile=profile)
+        self.assertEqual([st['account_reference'] for st in statements], ['12-34567890-1', '98-76543210-2'])
+
+    def test_a_heading_account_is_read_from_one_whole_line_of_a_cell(self):
+        row = E._pages([page(1, [[('DETALLE DE MOVIMIENTOS\nCUENTA EJEMPLO PYME 12-34567890-1', 20000, 300000)]])])[1][0]
+        self.assertEqual(E._heading_account(row), '12-34567890-1')
+
+
+class CreditLineTests(unittest.TestCase):
+    """r5-any-layout: a credit-line statement (amounts owed) with its period over two lines, a detached minus
+    sign and the credit's number as its account."""
+
+    def statement(self, minus=True, period=True):
+        lines = [
+            [('BANCO EJEMPLO DEL NORTE, S.A., INSTITUCION DE BANCA MULTIPLE', 20000, 400000)],
+            [('NO. DE CREDITO', 300000, 380000), ('1234', 400000, 430000), ('5678', 435000, 465000),
+             ('9012', 470000, 500000), ('3456', 505000, 535000)],
+            [('EMPRESA DE PRUEBA SA DE CV', 20000, 200000)],
+            [('CALLE FALSA 123', 20000, 150000)],
+            [('COL CENTRO', 20000, 120000)],
+            [('CIUDAD DE MEXICO C.P. 06000', 20000, 220000)],
+            [('MONEDA NACIONAL', 20000, 120000)],
+            [('SALDO INICIAL DEL PERIODO', 200000, 300000), ('+$', 323000, 336000)]
+            + ([('-', 360000, 362000)] if minus else []) + [('120.45', 389000, 420000)],
+            [('DISPOSICIONES', 200000, 300000), ('+$', 323000, 336000), ('0.00', 398000, 415000)],
+            [('PAGOS', 200000, 300000), ('-$', 323000, 336000), ('0.00', 398000, 415000)],
+            [('PAGO MINIMO', 420000, 480000), ('0.00', 560000, 590000)],
+            [('SALDO AL CORTE', 200000, 260000), ('$', 333000, 337000), ('120.45-', 388000, 418000)],
+            [('FECHA', 30000, 60000), ('CONCEPTO', 200000, 250000), ('CARGOS', 410000, 450000), ('ABONOS', 510000, 550000)],
+            [('TASA ANUAL', 50000, 100000), ('PERIODO', 520000, 560000)],
+        ]
+        if period:
+            lines += [[('0.00 %', 60000, 90000), ('DEL 03/01/26', 510000, 565000)], [('AL 02/02/26', 513000, 561000)]]
+        return [page(1, lines)]
+
+    def test_a_quiet_credit_line_with_a_detached_minus_proves(self):
+        from datetime import date
+        st = read_statements(self.statement())[0]
+        self.assertEqual((st['period_start'], st['period_end']), (date(2026, 1, 3).isoformat(), date(2026, 2, 2).isoformat()))
+        self.assertEqual([r['fields']['balance'] for r in st['_rows'] if r['kind'] == 'balance'], ['-12045', '-12045'])
+        self.assertTrue(st['engine']['proved'], st['engine'])
+        self.assertEqual((st['account_reference'], st['balance_convention']), ('1234567890123456', 'liability_owed'))
+
+    def test_without_the_minus_the_balances_disagree_and_it_holds(self):
+        self.assertFalse(read_statements(self.statement(minus=False))[0]['engine']['proved'])
+
+    def test_one_period_line_alone_is_not_a_period(self):
+        self.assertEqual(read_statements(self.statement(period=False))[0]['period_start'], '')
+
+    def test_a_name_tail_above_an_address_block_withholds_its_top_line(self):
+        lines = [[('RESAS SA DE CV', 120000, 200000)],
+                 [('AV SAN EJEMPLO', 20000, 150000)], [('COL CENTRO', 20000, 120000)],
+                 [('06000 CIUDAD DE MEXICO', 20000, 220000)]]
+        self.assertEqual(E.address_holder(E._pages([page(1, lines)])[1]), '')
+        # Other text printed above a block whose top line is its name does not withhold it.
+        named = [[('CLIENTE PREFERENTE', 120000, 200000)], [('EMPRESA DE PRUEBA SA DE CV', 20000, 200000)]] + lines[1:]
+        self.assertEqual(E.address_holder(E._pages([page(1, named)])[1]), 'EMPRESA DE PRUEBA SA DE CV')
+
+
+class LostDayHeadingTests(unittest.TestCase):
+    """r5-any-layout: a day column whose heading word the scan lost; column-rule noise after amounts."""
+
+    def statement(self, heading=True, credit='500.00', tail=''):
+        lines = [
+            [('BANCO EJEMPLO DEL NORTE, S.A., INSTITUCION DE BANCA MULTIPLE', 20000, 400000)],
+            [('PERIODO DEL 01/03/2024 AL 31/03/2024', 330000, 590000)],
+            [('MONEDA', 330000, 380000), ('PESOS', 390000, 450000)],
+            [('SALDO INICIAL', 330000, 430000), ('1,000.00', 500000, 560000)],
+            [('DEPOSITOS', 330000, 430000), ('500.00', 500000, 560000)],
+            [('RETIROS', 330000, 430000), ('500.00', 500000, 560000)],
+            [('SALDO FINAL', 330000, 430000), ('1,000.00', 500000, 560000)],
+        ]
+        if heading:
+            lines.append([('CONCEPTO', 150000, 200000), ('DEPOSITOS', 300000, 350000), ('RETIROS', 380000, 430000)])
+        lines += [
+            [('5', 20000, 30000), ('ABONO A CUENTA', 150000, 260000), (credit + tail, 290000, 350000),
+             ('1,500.00', 520000, 560000)],
+            [('20', 20000, 30000), ('CARGO A CUENTA', 150000, 260000), ('500.00', 400000, 430000),
+             ('1,000.00', 520000, 560000)],
+            [('TOTAL', 100000, 140000), ('500.00', 320000, 350000), ('500.00', 400000, 430000)],
+        ]
+        return [page(1, lines)]
+
+    def test_day_numbered_lines_under_a_dateless_heading_are_movements(self):
+        st = read_statements(self.statement())[0]
+        self.assertTrue(st['engine']['proved'], st['engine'])
+        self.assertEqual([(r['fields']['date'], r['fields']['direction']) for r in st['_rows'] if r['kind'] == 'transaction'],
+                         [('2024-03-05', 'credit'), ('2024-03-20', 'debit')])
+
+    def test_without_the_heading_no_day_column_is_inferred(self):
+        self.assertFalse(read_statements(self.statement(heading=False))[0]['engine']['proved'])
+
+    def test_a_column_rule_or_a_lone_parenthesis_after_an_amount_is_noise(self):
+        self.assertTrue(read_statements(self.statement(tail='|'))[0]['engine']['proved'])
+        self.assertTrue(read_statements(self.statement(tail=')'))[0]['engine']['proved'])
+        # A document printing amounts in parentheses keeps them meaningful: the lone ')' stays unread.
+        sources = self.statement(tail=')')
+        sources[0]['rows'][0]['cells'].append(cell('(12.00)', 450000, 500000, 40000, 1))
+        self.assertFalse(read_statements(sources)[0]['engine']['proved'])
+
+
+class ChartScaleTests(unittest.TestCase):
+    """r5-any-layout: a chart's axis printed beside the summary labels is not a set of amounts."""
+
+    def statement(self, ticks=('0.00', '-75.00', '150.00', '-225.00', '300.00', '375.00')):
+        labels = ['(+) DEPOSITOS', '', '(+) INTERESES', '(-) RETIROS', '(-) COMISIONES', '']
+        lines = [
+            [('BANCO EJEMPLO DEL NORTE, S.A., INSTITUCION DE BANCA MULTIPLE', 20000, 400000)],
+            [('PERIODO DEL 01/03/2024 AL 31/03/2024', 330000, 590000)],
+            [('MONEDA', 330000, 380000), ('PESOS', 390000, 450000)],
+            [('SALDO INICIAL', 20000, 150000), ('$1,000.00', 190000, 240000)],
+        ]
+        for text, tick in zip(labels, ticks):
+            lines.append(([(text, 20000, 150000)] if text else []) + [(tick, 270000, 292000)])
+        lines += [
+            [('(=) SALDO FINAL DE LA CUENTA', 20000, 160000), ('$750.00', 190000, 240000)],
+            [('FECHA', 20000, 60000), ('CONCEPTO', 80000, 160000), ('DEPOSITO', 400000, 450000), ('RETIRO', 460000, 510000),
+             ('SALDO', 540000, 580000)],
+            [('15 MAR', 20000, 60000), ('COBRO DE COMISION', 80000, 200000), ('$250.00', 480000, 508000),
+             ('$750.00', 540000, 582000)],
+        ]
+        return [page(1, lines)]
+
+    def test_axis_ticks_beside_summary_labels_are_not_totals(self):
+        st = read_statements(self.statement())[0]
+        self.assertTrue(st['engine']['proved'], st['engine'])
+        self.assertEqual([r['fields']['balance'] for r in st['_rows'] if r['kind'] == 'balance'], ['100000', '75000'])
+
+    def test_values_without_a_constant_step_stay_amounts(self):
+        st = read_statements(self.statement(ticks=('0.00', '75.00', '120.00', '225.00', '300.00', '375.00')))[0]
+        self.assertFalse(st['engine']['proved'])
+
+
+class ScanDamageRound2Tests(unittest.TestCase):
+    words = ScanDamageTests.words
+
+    def test_separators_detached_onto_the_following_groups(self):
+        self.assertEqual(self.words('300 ,000 ,00'), ['300,000,00'])
+        self.assertEqual(self.words('1,724,615 ,.38'), ['1,724,615.38'])
+        # Never a thousands group invented (cents before a group stay apart from it), never a count joined.
+        self.assertEqual(self.words('300 ,00 ,000'), ['300,00', ',000'])
+        self.assertEqual(self.words('2 100,000.00'), ['2', '100,000.00'])
+
+    def test_a_dot_glued_to_a_word_inside_a_balance_label(self):
+        self.assertEqual(E._role_of('SALDO. INICIAL', False), 'opening')
+        self.assertEqual(E._role_of('SALDO, FINAL', False), 'closing')
+        self.assertEqual(E._role_of('SALDO. PROMEDIO', False), E._role_of('SALDO PROMEDIO', False))
+        self.assertIsNone(E._role_of('SALDO. EJEMPLO', False))
+
+
+class ServedScopeTests(unittest.TestCase):
+    """r5-any-layout: a period the engine serves on pages shared with another library period keeps no row,
+    and no page region, that would make the other period read as already imported."""
+
+    def sources(self):
+        lines = [[('LINEA %d' % i, 20000, 200000)] for i in range(10)]
+        pages = [page(1, lines), page(2, lines)]
+        for source in pages:
+            for row in source['rows']:
+                for c in row['cells']:
+                    c['locator']['space'] = 'pdf_displayed'
+        return pages
+
+    @staticmethod
+    def scoped(pages_rows):
+        return dict(section_sources=[dict(page_number=p, table_index=0, row_indices=rows) for p, rows in pages_rows])
+
+    def test_shared_footer_rows_are_left_to_the_other_period(self):
+        from services.financial.statement_engine_routing import _own_scope
+        other = self.scoped([(1, list(range(0, 10)))])
+        engine = self.scoped([(1, [8, 9]), (2, [0, 1, 2])])
+        self.assertEqual(_own_scope(engine, [other], self.sources()),
+                         [dict(page_number=2, table_index=0, row_indices=[0, 1, 2])])
+
+    def test_rows_below_the_other_period_on_its_page_are_kept(self):
+        from services.financial.statement_engine_routing import _own_scope
+        other = self.scoped([(1, [0, 1, 2, 3])])
+        engine = self.scoped([(1, [5, 6, 7])])
+        self.assertEqual(_own_scope(engine, [other], self.sources()), engine['section_sources'])
+
+    def test_rows_inside_the_other_periods_region_refuse_the_replacement(self):
+        from services.financial.statement_engine_routing import _own_scope
+        other = self.scoped([(1, [0, 1, 2, 6, 7])])
+        engine = self.scoped([(1, [4, 5])])
+        self.assertIsNone(_own_scope(engine, [other], self.sources()))

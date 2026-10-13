@@ -46,6 +46,11 @@ from services.financial.statement_engine_vocabulary import (
 LAYOUT = 'generic'
 # The library profile applied to the current reading (None for the plain engine).
 _PROFILE = ContextVar('statement_engine_profile', default=None)
+# The document's movement headings name the date column "DIA"/"DAY": a row may start with the day alone (B2).
+_DAY_COLUMN = ContextVar('statement_engine_day_column', default=False)
+# The document never prints an amount in parentheses: a ')' read after an amount is scan noise, not the
+# parentheses-for-negative convention (C4, C11).
+_NO_PARENS = ContextVar('statement_engine_no_parentheses', default=False)
 ENGINE_VERSION = 'statement-engine-v1'
 MAX_ASSIGNMENTS = 4000
 MAX_PERIOD_DAYS = 95
@@ -129,6 +134,7 @@ def _cell_tokens(cell, rotation=0):
                 merged.append((ps, e, pw + word))
             else:
                 merged.append((s, e, word))
+        merged = _rejoin_amounts(merged)
         for s, e, word in merged:
             exact = count == 1 and len(merged) == 1
             x0 = rect[0] + (rect[2] - rect[0]) * (s - start) / span
@@ -136,6 +142,188 @@ def _cell_tokens(cell, rotation=0):
             tokens.append(dict(t=word, f=fold(word), x0=x0, x1=x1, y0=y0, y1=y1, cell=cell, exact=exact,
                                first=s == start, last=e == end, line=index))
     return tokens, width
+
+
+# OCR damage around one printed amount (C11): a stray '?' read after it (scan noise beside the
+# figure), and the amount split by a space inside one cell ("135 , 700.06", "5,173 846,29").
+_NOISE_TAIL = re.compile(r'^([-−(]?(?:US\$|\$)?(?:\d{1,3}(?:,\d{3})*)?[.,]?\d{2}(?:\)|-|−|CR)?)\?$')
+# A table's column rule read after an amount ('4,318,207.55|'), and, in a document that prints no amount in
+# parentheses, a ')' read there ('1,045,320.00)').
+_RULE_TAIL = re.compile(r'^([-−(]?(?:US\$|\$)?(?:\d{1,3}(?:,\d{3})*)?[.,]?\d{2}(?:\)|-|−|CR)?)\|$')
+_PAREN_TAIL = re.compile(r'^([-−]?(?:US\$|\$)?\d{1,3}(?:,\d{3})*[.,]\d{2})\)$')
+# Two separators read before the cents ('2,617,384,.91'): the one next to the cents is the decimal mark.
+_DOUBLE_MARK = re.compile(r'^([-−(]?(?:US\$|\$)?\d{1,3}(?:,\d{3})*)[.,]([.,]\d{2}(?:\)|-|−|CR)?)$')
+_SPLIT_HEAD = re.compile(r'^[-−(]?(?:US\$|\$)?\d{1,3}(?:,\d{3})*,?$')
+_SPLIT_TAIL = re.compile(r'^,?\d{3}(?:,\d{3})*[.,]\d{2}(?:\)|-|−|CR)?$')
+_SPLIT_CENTS = re.compile(r'^[.,]?\d{2}(?:\)|-|−|CR)?$')
+_GROUPED_AMOUNT = re.compile(r'^[-−(]?(?:US\$|\$)?\d{1,3}(?:,\d{3})+[.,]\d{2}(?:\)|-|−|CR)?$')
+
+
+def _rejoin_amounts(words):
+    """[(start, end, word)] of one cell line with OCR-damaged amounts repaired.
+
+    A trailing '?' after a complete amount (or its cents) is dropped, and of two
+    separators printed before the cents the one next to them is kept. Words are joined only inside
+    one cell line, only across a gap of spaces or a lone comma, and only when the
+    result is one amount with complete three-digit groups (a thousands group is
+    never invented): '3,215 , 677.12' -> '3,215,677.12', '12,486, 37' -> '12,486,37',
+    '5,291 157,82' -> '5,291,157,82' (read by the document's decimal convention).
+    The proof still decides whether the value is used.
+    """
+    cleaned = []
+    for s, e, word in words:
+        noise = _NOISE_TAIL.fullmatch(word) or _RULE_TAIL.fullmatch(word) or (
+            _NO_PARENS.get() and '(' not in word and _PAREN_TAIL.fullmatch(word))
+        if noise:
+            e, word = e - 1, noise[1]
+        double = _DOUBLE_MARK.fullmatch(word)
+        if double:
+            word = double[1] + double[2]
+        cleaned.append((s, e, word))
+    cleaned = _rejoin_decimal_mark(cleaned)
+    out, index = [], 0
+    while index < len(cleaned):
+        s, e, word = cleaned[index]
+        joined = None
+        if _SPLIT_HEAD.fullmatch(word):
+            following = cleaned[index + 1:index + 3]
+            parts = [p for _, _, p in following]
+            for size in (1, 2):
+                if len(parts) < size:
+                    continue
+                if size == 2 and parts[0] != ',' or size == 1 and ',' not in word:
+                    # A head without its own comma (a printed count before an amount) joins only
+                    # across a lone comma.
+                    continue
+                tail = parts[size - 1]
+                head = word.rstrip(',')
+                if _SPLIT_TAIL.fullmatch(tail):
+                    text = head + ',' + tail.lstrip(',')
+                elif _SPLIT_CENTS.fullmatch(tail) and ',' in head and size == 1:
+                    # The decimal separator read as a space or detached onto the cents ('5,733,642 43',
+                    # '140,527 ,00'): only after complete thousands groups.
+                    text = head + ',' + tail.lstrip('.,')
+                else:
+                    continue
+                if _GROUPED_AMOUNT.fullmatch(text):
+                    joined = (s, following[size - 1][1], text, size)
+                    break
+        if not joined and _SPLIT_HEAD.fullmatch(word):
+            joined = _rejoin_detached_marks(cleaned, index)
+        if joined:
+            out.append(joined[:3])
+            index += 1 + joined[3]
+        else:
+            out.append((s, e, word))
+            index += 1
+    return out
+
+
+_MARKED_GROUP = re.compile(r'^,\d{3}$')
+_MARKED_CENTS = re.compile(r'^[.,]{1,2}\d{2}(?:\)|-|−|CR)?$')
+
+
+def _rejoin_detached_marks(words, index):
+    """(C11) Separators the scan detached onto the following groups ('300 ,000 ,00', '1,724,615 ,.38'):
+    a head, then any comma-prefixed three-digit groups, then the cents with their own mark (a doubled mark
+    keeps the one next to the cents). Only when the result is one amount with complete thousands groups."""
+    s, _, head = words[index]
+    parts, end = [head.rstrip(',')], index + 1
+    while end < len(words) and _MARKED_GROUP.fullmatch(words[end][2]):
+        parts.append(words[end][2])
+        end += 1
+    if end >= len(words) or not _MARKED_CENTS.fullmatch(words[end][2]):
+        return None
+    cents = words[end][2]
+    if len(cents) > 1 and cents[1] in '.,':
+        cents = cents[1:]
+    text = ''.join(parts) + cents
+    if end == index + 1 and ',' not in head:
+        return None  # a bare count before marked cents is not joined here (the decimal-mark rule decides)
+    if not _GROUPED_AMOUNT.fullmatch(text):
+        return None
+    return (s, words[end][1], text, end - index)
+
+
+_MARK_HEAD = re.compile(r'^[-−(]?(?:US\$|\$)?\d{1,3}(?:,\d{3})*$')
+_MARK_CENTS = re.compile(r'^[.,]\d{2}(?:\)|-|−|CR)?$')
+_MARKED_HEAD = re.compile(r'^[-−(]?(?:US\$|\$)?\d{1,3}(?:,\d{3})*[.,]$')
+_BARE_CENTS = re.compile(r'^\d{2}(?:\)|-|−|CR)?$')
+
+
+def _rejoin_decimal_mark(words):
+    """A space read beside the decimal mark inside one cell line ('715 .00', '11,206,500. 63'): the two
+    words are one amount when the mark is printed and two cents digits follow it (C11)."""
+    out, index = [], 0
+    while index < len(words):
+        s, e, word = words[index]
+        if index + 1 < len(words):
+            _, e2, after = words[index + 1]
+            # (A grouped head with detached cents, '8,463,157 .26', is left to the thousands-group rule.)
+            if (_MARK_HEAD.fullmatch(word) and ',' not in word and _MARK_CENTS.fullmatch(after)
+                    or _MARKED_HEAD.fullmatch(word) and _BARE_CENTS.fullmatch(after)):
+                out.append((s, e2, word + after))
+                index += 2
+                continue
+        out.append((s, e, word))
+        index += 1
+    return out
+
+
+_CELL_HEAD = re.compile(r'^\d{1,3}(?:,\d{3})*$')
+_CELL_TAIL = re.compile(r'^\d{3}(?:,\d{3})*[.,]\d{2}(?:\)|-|−|CR)?$')
+
+
+def _rejoin_split_cells(tokens):
+    """One amount the OCR split into two cells at a thousands separator ('168 | 802.21').
+
+    Joined only when both cells are single-line, the head is digits in complete
+    groups, the tail starts with a complete three-digit group and ends in cents,
+    and the gap between them is under two character widths of the head (a count
+    printed before an amount stands in its own column, several characters away).
+    """
+    out, index = [], 0
+    while index < len(tokens):
+        head = tokens[index]
+        tail = tokens[index + 1] if index + 1 < len(tokens) else None
+        if (tail is not None and head['cell'] is not tail['cell'] and head['line'] == tail['line'] == 0
+                and head['last'] and tail['first'] and '\n' not in head['cell']['expected_text']
+                and '\n' not in tail['cell']['expected_text']
+                and _CELL_HEAD.fullmatch(head['t']) and _CELL_TAIL.fullmatch(tail['t'])):
+            char = (head['x1'] - head['x0']) / max(len(head['t']), 1)
+            gap = tail['x0'] - head['x1']
+            if char > 0 and -char < gap < 2 * char and min(head['y1'], tail['y1']) > max(head['y0'], tail['y0']):
+                text = head['t'] + ',' + tail['t']
+                out.append(dict(tail, t=text, f=fold(text), x0=head['x0'], exact=False, joined=(head, tail)))
+                index += 2
+                continue
+        out.append(head)
+        index += 1
+    return out
+
+
+_PLAIN_AMOUNT = re.compile(r'^\d{1,3}(?:,\d{3})*[.,]\d{2}$|^\d+[.,]\d{2}$')
+
+
+def _attach_detached_minus(tokens):
+    """(C4) A minus printed alone in its own cell, directly before an unsigned amount that opens the next
+    cell of the line, after a currency or operator marker ('+$', '$') or a label word, is that amount's
+    sign: '+$ | - | 120.45' is -120.45."""
+    out, index = [], 0
+    while index < len(tokens):
+        token = tokens[index]
+        after = tokens[index + 1] if index + 1 < len(tokens) else None
+        before = out[-1] if out else None
+        if (after is not None and token['t'] in ('-', '−') and token['first'] and token['last']
+                and after['first'] and after['line'] == token['line'] and after['cell'] is not token['cell']
+                and _PLAIN_AMOUNT.match(after['t'])
+                and (before is None or before['t'].endswith('$') or not re.search(r'\d', before['t']))):
+            out.append(dict(after, t='-' + after['t'], f=fold('-' + after['t']), x0=token['x0'], exact=False))
+            index += 2
+            continue
+        out.append(token)
+        index += 1
+    return out
 
 
 def _pages(sources):
@@ -159,6 +347,7 @@ def _pages(sources):
                         located=False, text=' '.join(c['expected_text'] for c in raw['cells'])))
                 continue
             tokens.sort(key=lambda t: (t['line'], t['x0']))
+            tokens = _attach_detached_minus(_rejoin_split_cells(tokens))
             pages.setdefault(source['page_number'], []).append(dict(
                 page=source['page_number'], source=source, raw=raw, tokens=tokens,
                 y0=min(t['y0'] for t in tokens), width=width, located=located,
@@ -166,7 +355,61 @@ def _pages(sources):
     for rows in pages.values():
         rows.sort(key=lambda r: (r['y0'] if r['y0'] is not None else float('inf'), r['source']['table_index'],
                                  r['raw']['row_index']))
+        _mark_chart_scale(rows)
     return pages
+
+
+_SCALE_VALUE = re.compile(r'^[-−]?\$?(\d{1,3}(?:,\d{3})*|\d+)[.,]00$')
+
+
+def _mark_chart_scale(rows):
+    """(C11) A chart's axis printed beside summary labels: four or more whole values, each alone at the end
+    of its line's cells in one column (same right edge), on successive lines, whose sizes step by one
+    constant amount (75, 150, 225, 300). They are tick labels, never amounts: marked so no reading takes
+    them as money."""
+    candidates = []
+    for row in rows:
+        for token in row['tokens']:
+            m = _SCALE_VALUE.match(token['t'].rstrip('?'))
+            alone = sum(1 for other in row['tokens'] if other['cell'] is token['cell']) == 1
+            if m and alone and row['width']:
+                candidates.append((token, int(m[1].replace(',', '')), row['width']))
+    used = set()
+    for token, _, width in candidates:
+        if id(token) in used:
+            continue
+        column = sorted((c for c in candidates if abs(c[0]['x1'] - token['x1']) <= width * 0.01),
+                        key=lambda c: c[0]['y0'])
+        for chain in _arithmetic_chains(column):
+            for item in chain:
+                item[0]['axis'] = True
+                used.add(id(item[0]))
+
+
+def _arithmetic_chains(column):
+    """Runs of at least four entries whose values, in size order, step by one constant amount."""
+    ordered = sorted(column, key=lambda c: c[1])
+    chains, best = [], []
+    for step in {b[1] - a[1] for a, b in zip(ordered, ordered[1:])} - {0}:
+        for start in ordered:
+            chain = [start]
+            while True:
+                following = next((c for c in ordered if c[1] == chain[-1][1] + step), None)
+                if following is None:
+                    break
+                chain.append(following)
+            if len(chain) > len(best):
+                best = chain
+    # An axis prints each tick once, one under another: every value of the run occurs once in the column
+    # and no other value of the column lies between them.
+    counts = {}
+    for item in column:
+        counts[item[1]] = counts.get(item[1], 0) + 1
+    positions = sorted(column.index(item) for item in best)
+    if (len(best) >= 4 and all(counts[item[1]] == 1 for item in best)
+            and positions == list(range(positions[0], positions[0] + len(positions)))):
+        chains.append(best)
+    return chains
 
 
 # ---------------------------------------------------------------------------
@@ -183,32 +426,59 @@ _UNAMBIGUOUS_DOT = re.compile(r'\d\.\d{2}(?:\D|$)')
 _UNAMBIGUOUS_COMMA = re.compile(r'\d,\d{2}(?:\D|$)')
 
 
+# A dot-decimal amount whose decimal point the scan printed or read as a comma ('147,382,26'):
+# comma thousands groups, so it can only be the dot convention.
+_WORN = re.compile(r'^(?P<lead>[-−+(]?)\s*(?:US\$|\$|€|£|¥)?\s*(?P<lead2>[-−]?)(?P<int>\d{1,3}(?:,\d{3})*),(?P<frac>\d{2})'
+                   r'(?P<trail>\)|-|−|CR)?(?:MN|M\.N\.|MXN|USD|EUR|DLS)?$')
+_DOT_THOUSANDS = re.compile(r'\d,\d{3}(?:,\d{3})*\.\d{2}(?:\D|$)')
+_COMMA_THOUSANDS = re.compile(r'\d\.\d{3}(?:\.\d{3})*,\d{2}(?:\D|$)')
+
+
 def separator_style(pages):
-    """'dot' or 'comma' decimals for the whole document (C1); None when mixed."""
-    dot = comma = 0
+    """'dot' or 'comma' decimals for the whole document (C1); None when mixed.
+
+    'dot_worn': the document prints dot decimals with comma thousands, and some of
+    its decimal points are printed or read as commas (scans): '1,234.56' and
+    '147,382,26' both occur and no amount uses dot thousands with a decimal comma
+    ('1.234,56'). Such a document is read in the dot convention, a decimal comma
+    included; values are the printed digits either way and the proof decides.
+    """
+    dot = comma = dot_thousands = comma_thousands = 0
     for rows in pages.values():
         for row in rows:
             for token in row['tokens']:
                 text = token['t']
                 if _DOT.fullmatch(text) and _UNAMBIGUOUS_DOT.search(text) and not re.search(r'\d\.\d{3}', text):
                     dot += 1
+                    dot_thousands += bool(_DOT_THOUSANDS.search(text))
                 elif _COMMA.fullmatch(text) and _UNAMBIGUOUS_COMMA.search(text) and not re.search(r'\d,\d{3}', text):
                     comma += 1
+                elif _WORN.fullmatch(text) and re.search(r'\d,\d{3},\d{2}$', text):
+                    comma += 1
+                if _COMMA.fullmatch(text) and _COMMA_THOUSANDS.search(text):
+                    comma_thousands += 1
     if dot and comma:
-        return 'dot' if dot >= 20 * comma else 'comma' if comma >= 20 * dot else None
+        if dot >= 20 * comma:
+            return 'dot'
+        if comma >= 20 * dot:
+            return 'comma'
+        return 'dot_worn' if dot_thousands and not comma_thousands and dot >= 2 * comma else None
     return 'comma' if comma else 'dot'
 
 
 def money(text, style, exponent=2):
     """Signed minor units of one printed amount token, or None."""
+    dot = style in ('dot', 'dot_worn')
     if exponent == 0:
         # Whole-unit currencies (yen) may print ".00": accepted only when the fraction is zero (C3).
-        printed = (_DOT if style == 'dot' else _COMMA).fullmatch(text) if style else None
+        printed = (_DOT if dot else _COMMA).fullmatch(text) if style else None
         if printed and printed['frac'] == '00':
             text = text[:printed.start('frac') - 1] + text[printed.end('frac'):]
         match = _WHOLE.fullmatch(text)
     else:
-        match = (_DOT if style == 'dot' else _COMMA).fullmatch(text)
+        match = (_DOT if dot else _COMMA).fullmatch(text)
+        if not match and style == 'dot_worn':
+            match = _WORN.fullmatch(text)
     if not match or (exponent == 0 and style is None):
         return None
     lead, lead2, trail = match['lead'], match['lead2'], match['trail'] or ''
@@ -245,10 +515,33 @@ def _dnorm(text):
     return ' '.join(upper.replace('–', '-').replace('−', '-').split())
 
 
+_OCR_ZERO = re.compile(r'(?<![A-Z])[OQ](?=\d)|(?<=\d)[OQ](?![A-Z])')
+_OCR_MONTH_O = re.compile(r'(?<=[A-Z]{2})0(?=$|[-/ .])|(?<=[-/ .])0(?=[A-Z]{2})')
+
+
+def _ocr_date(text):
+    """A date token with the scan's letter / digit confusions undone ('O1-JUN-2021', 'Q1-JUN-2021', 'L1-JUN-2021',
+    '02-AG0-2021', '03-0CT-2024'): O or Q counts as 0 only between digits or before one, 0 as O only at
+    either end of a month word. Only used when the token reads as no date as printed."""
+    # A tilde read for the hyphen between a date's parts ('23-FEB~2024').
+    text = re.sub(r'(?<=[A-Z0-9])~(?=[A-Z0-9])', '-', text)
+    # A day's leading 1 read as a letter at the start of a date ('L1-MAR-2024', 'I5/03/2024').
+    text = re.sub(r'^[LI|](?=\d[-/.])', '1', text)
+    return _OCR_MONTH_O.sub('O', _OCR_ZERO.sub('0', text))
+
+
 @lru_cache(maxsize=262144)
 def _date_parts(text):
     """Possible (day, month, year|None, order) readings of one date token."""
-    f = _dnorm(text).strip(',.:;')
+    parts = _date_parts_printed(_dnorm(text).strip(',.:;'))
+    if not parts:
+        repaired = _ocr_date(_dnorm(text).strip(',.:;'))
+        if repaired != _dnorm(text).strip(',.:;') and re.search(r'\d', repaired):
+            parts = _date_parts_printed(repaired)
+    return parts
+
+
+def _date_parts_printed(f):
     if m := _ISO_DATE.fullmatch(f):
         return [(int(m[3]), int(m[2]), int(m[1]), 'iso')]
     if m := _NUM_DATE.fullmatch(f):
@@ -281,9 +574,13 @@ _FULL = (r'(?:\d{1,2}[/.-]\d{1,2}[/.-]\d{4}|\d{4}-\d{2}-\d{2}|\d{1,2}[/.-][A-Z]{
          r'|\d{1,2}[/.-]\d{1,2}[/.-]\d{2})')
 _RANGE = re.compile(r'(?:^|\b)(' + _FULL + r')\s*(?:AL|A|-|TO|THROUGH|THRU|HASTA)\s+(' + _FULL + r')(?:\b|$)')
 _RANGE_TIGHT = re.compile(r'(' + _FULL + r')\s*-\s*(' + _FULL + r')')
-# "03 FEB 26/27 FEB 26": two day-month-year dates joined by a slash.
-_SLASH_RANGE = re.compile(r'\b(\d{1,2}\s+[A-Z]{3,10}\.?\s+\d{2}(?:\d{2})?)\s*/\s*(\d{1,2}\s+[A-Z]{3,10}\.?\s+\d{2}(?:\d{2})?)\b')
+# "03 FEB 26/27 FEB 26", "03-FEB-26/27-FEB-26": two day-month-year dates joined by a slash. The OCR
+# can split the month word with one space ("27-F EB-26"); the joined letters must name a month.
+_SLASH_DATE = r'\d{1,2}[\s-]+[A-Z](?: ?[A-Z]){2,9}\.?[\s-]+\d{2}(?:\d{2})?'
+_SLASH_RANGE = re.compile(r'\b(' + _SLASH_DATE + r')\s*/\s*(' + _SLASH_DATE + r')\b')
 _SHARED_MONTH = re.compile(r'\b(\d{1,2})\s+AL\s+(\d{1,2})\s+DE\s+([A-Z]{3,10})\s+(?:DE\s+|DEL\s+)?(\d{4})\b')
+# "MAR.24-APR.23,2024", "Mar 24 - Apr 23, 2024": month-day to month-day, one year printed for both.
+_SHARED_YEAR = re.compile(r'\b([A-Z]{3,10})\.?\s?(\d{1,2})\s*(?:-|TO|THROUGH|THRU)\s*([A-Z]{3,10})\.?\s?(\d{1,2}),?\s*(\d{4})\b')
 
 
 def _full_date(text, order):
@@ -299,7 +596,7 @@ def _full_date(text, order):
 
 def period_ranges(text, order=None):
     """(start, end) ranges printed in one line of text (B1, B3)."""
-    f = re.sub(r'[^A-Z0-9/.,\- ]+', ' ', _dnorm(text))
+    f = _ocr_date(re.sub(r'[^A-Z0-9/.,\- ]+', ' ', _dnorm(text)))
     found = []
     for pattern in (_RANGE, _RANGE_TIGHT):
         for m in pattern.finditer(f):
@@ -313,11 +610,20 @@ def period_ranges(text, order=None):
     for m in _SLASH_RANGE.finditer(f):
         dates = []
         for part in (m[1], m[2]):
-            d, month, year = part.split()[0], part.split()[1].rstrip('.'), part.split()[2]
+            pieces = re.match(r'(\d{1,2})[\s-]+([A-Z ]+?)\.?[\s-]+(\d{2,4})$', part)
+            d, month, year = pieces[1], pieces[2].replace(' ', ''), pieces[3]
             year = int(year) + (2000 if len(year) == 2 else 0)
             dates.append(_calendar(year, MONTHS.get(month, 0), int(d)) if month in MONTHS else None)
         if all(dates) and dates[0] <= dates[1] and (dates[1] - dates[0]).days <= MAX_PERIOD_DAYS:
             found.append(tuple(dates))
+    for m in _SHARED_YEAR.finditer(f):
+        if m[1] in MONTHS and m[3] in MONTHS:
+            year = int(m[5])
+            # The printed year is the end's; a start month after the end month is in the year before.
+            start = _calendar(year - (MONTHS[m[1]] > MONTHS[m[3]]), MONTHS[m[1]], int(m[2]))
+            end = _calendar(year, MONTHS[m[3]], int(m[4]))
+            if start and end and start <= end and (end - start).days <= MAX_PERIOD_DAYS:
+                found.append((start, end))
     for m in _SHARED_MONTH.finditer(f):
         if m[3] in MONTHS:
             start = _calendar(int(m[4]), MONTHS[m[3]], int(m[1]))
@@ -332,6 +638,8 @@ def period_ranges(text, order=None):
 # ---------------------------------------------------------------------------
 
 def _value_kind(token, style, exponent):
+    if token.get('axis'):
+        return None
     if money(token['t'], style, exponent) is not None and (exponent or re.search(r'\d', token['t'])):
         if exponent == 0 and _is_count(token['t']) and not token.get('money_column'):
             return 'count'
@@ -464,6 +772,10 @@ def _role_of(text, liability):
     for role in ('opening', 'closing', 'subtotal', 'credit_total', 'debit_total'):
         if any(pattern.fullmatch(text) for pattern in FUZZY_INDEX[role]):
             return role
+    # A dot or comma the scan glued to a word inside the label ('SALDO. INICIAL') (F1).
+    bare = ' '.join(word.strip('.,') for word in text.split())
+    if bare != text and bare:
+        return _role_of(bare, liability)
     return None
 
 
@@ -475,9 +787,18 @@ def _row_is_movement(row, style, exponent):
     tokens = merged_dates(row['tokens'])
     if not tokens:
         return False
-    if not is_date_token(tokens[0]['t'].rstrip('.,')):
+    if not _leading_date(tokens[0]['t'].rstrip('.,')):
         return False
     return any(_value_kind(t, style, exponent) == 'money' for t in tokens)
+
+
+def _day_only(text):
+    return _DAY_COLUMN.get() and bool(re.fullmatch(r'\d{1,2}', text)) and 1 <= int(text) <= 31
+
+
+def _leading_date(text):
+    """The first printed word of a dated line: a date, or the day alone under a day column (B2)."""
+    return is_date_token(text) or _day_only(text)
 
 
 def page_facts(rows, style, exponent=2):
@@ -496,7 +817,10 @@ def page_facts(rows, style, exponent=2):
                 if any(word in folded.split() or folded.startswith(word) for word in PERIOD_WORDS):
                     facts['labelled_periods'].update(ranges)
         for m in PAGE_NUMBERING.finditer(folded):
-            facts['numbering'].add((int(m[1]), int(m[2])))
+            # A page number above the printed count ('HOJA 10DE 2' for 'HOJA 1 DE 2') is a misreading,
+            # not a page number: the page counts as unnumbered (A3).
+            if 1 <= int(m[1]) <= int(m[2]):
+                facts['numbering'].add((int(m[1]), int(m[2])))
         if any(phrase in folded for phrase in (fold(p) for p in LIABILITY_EVIDENCE)):
             facts['liability'] = True
         if not movement:
@@ -505,7 +829,63 @@ def page_facts(rows, style, exponent=2):
             if any(word in folded for word in INSTITUTION_WORDS) and 6 <= len(folded) <= 160:
                 facts['legal'].add(folded)
             _holder_label(row, facts['holders'])
+    _two_line_period(rows, facts)
+    _derived_period(rows, style, exponent, facts)
     return facts
+
+
+_PERIOD_FROM = re.compile(r'^(?:PERIODO\s*:?\s*)?DEL\s+(\S+)$')
+_PERIOD_TO = re.compile(r'^AL\s+(\S+)$')
+
+
+def _two_line_period(rows, facts):
+    """(B1) A period printed across two lines of one column: a cell 'Del <date>' with the cell directly
+    below it, horizontally overlapping, 'al <date>'. Labelled (the range words are printed)."""
+    located = [r for r in rows if r['tokens'] and r['y0'] is not None]
+    for upper, lower in zip(located, located[1:]):
+        for top in upper['raw']['cells']:
+            m = _PERIOD_FROM.match(' '.join(fold(top['expected_text']).split()))
+            rect = (top.get('locator') or {}).get('rect')
+            if not m or not rect:
+                continue
+            for bottom in lower['raw']['cells']:
+                n = _PERIOD_TO.match(' '.join(fold(bottom['expected_text']).split()))
+                other = (bottom.get('locator') or {}).get('rect')
+                if n and other and other[0] < rect[2] and rect[0] < other[2]:
+                    for period in period_ranges('DEL %s AL %s' % (m[1], n[1])):
+                        facts['periods'].add(period)
+                        facts['labelled_periods'].add(period)
+
+
+# A cut date and the number of days in the period, both printed on a statement's heading ('CORTE AL
+# 31/01/2024', 'FECHA DE CORTE 31/01/2024', 'DIAS DEL PERIODO 31'; Mexican layouts that print the period
+# itself only on a later page or not at all). One letter of PERIODO may be misread by the scan.
+_CUT_DATE = re.compile(r'\b(?:FECHA DE )?CORTE(?: AL)?\s+(\d{1,2}/\d{1,2}/\d{4})\b')
+_PERIOD_DAYS = re.compile(r'\bDIAS (?:DEL|EN EL) PER[A-Z]ODO\s+(\d{1,2})\b')
+
+
+def _derived_period(rows, style, exponent, facts):
+    """(B1) A page printing exactly one cut date and one day count, and no labelled period of its own,
+    prints the period (cut - days + 1, cut). Recorded as labelled (two printed facts) and as derived:
+    a labelled period printed elsewhere in the same printed page run wins over it (_segments)."""
+    if facts['labelled_periods']:
+        return
+    cuts, days = set(), set()
+    for row in rows:
+        if not row['tokens'] or _row_is_movement(row, style, exponent):
+            continue
+        folded = fold(row['text'])
+        cuts.update(m[1] for m in _CUT_DATE.finditer(folded))
+        days.update(int(m[1]) for m in _PERIOD_DAYS.finditer(folded))
+    if len(cuts) != 1 or len(days) != 1:
+        return
+    end, count = _full_date(next(iter(cuts)), 'dmy'), next(iter(days))
+    if end is None or not 1 <= count <= MAX_PERIOD_DAYS:
+        return
+    period = (end - timedelta(days=count - 1), end)
+    facts['periods'].add(period)
+    facts['labelled_periods'].add(period)
+    facts['derived_periods'] = {period}
 
 
 _ACCOUNT_VALUE = re.compile(r'^(?:\*{2,}|X{2,}|#)?[\d][\d -]{3,30}\d$|^(?:\*{2,}|X{2,})\d{3,6}$')
@@ -565,6 +945,40 @@ def _accounts(row, found):
 _ACCOUNT_LABELS_LONGEST = sorted(ACCOUNT_LABELS, key=lambda item: len(item[0]), reverse=True)
 
 
+def _stacked_accounts(rows):
+    """[(value, rank)] of account labels printed as a column heading with the value in the line below (A6).
+
+    The label is a whole cell ('ACCOUNT NUMBER' above '2489'); the value is the
+    cell of the next line that overlaps it horizontally, digits only. Under a
+    full account-number label (rank 3) four printed digits are enough (statements
+    printing only the last digits of the number); otherwise the usual 6-20.
+    """
+    names = {label(name): rank for name, rank in ACCOUNT_LABELS}
+    located = [r for r in rows if r['tokens'] and r['y0'] is not None]
+    found = []
+    for index, row in enumerate(located):
+        rotation = row['source'].get('reading_rotation') or 0
+        for cell in row['raw']['cells']:
+            rank = names.get(label(cell['expected_text']))
+            rect, _ = _rect(cell, rotation)
+            if rank is None or rect is None:
+                continue
+            height = rect[3] - rect[1]
+            below = next((r for r in located[index + 1:] if r['y0'] > rect[1] + height * 0.5), None)
+            if below is None or below['y0'] - rect[3] > height * 1.5:
+                continue
+            for other in below['raw']['cells']:
+                orect, _ = _rect(other, rotation)
+                text = other['expected_text'].strip()
+                if orect is None or orect[2] <= rect[0] or orect[0] >= rect[2] or not re.fullmatch(r'[\d -]+', text):
+                    continue
+                digits = re.sub(r'\D', '', text)
+                if (4 <= len(digits) <= 20 if rank >= 3 else 6 <= len(digits) <= 20) and not text.startswith('0' * 4):
+                    found.append((text.replace(' ', ''), rank))
+                break
+    return found
+
+
 def _zipped_labels(source_rows):
     """Values of a vertically merged label column (A6): 'L1\\nL2\\nL3' beside rows of values."""
     pairs = []
@@ -583,20 +997,50 @@ def _zipped_labels(source_rows):
     return pairs
 
 
+def _one_substitution(read, word):
+    """A word of six or more letters read with exactly one other character in its place (F1, OCR)."""
+    return read == word or (len(read) == len(word) >= 6 and sum(a != b for a, b in zip(read, word)) == 1)
+
+
+_MULTIWORD_CURRENCIES = [(name.split(), code) for name, code in CURRENCY_NAMES.items() if ' ' in name]
+
+
+def labelled_currency(key, value):
+    """The currency a currency label's value names, or ''.
+
+    The value is a currency name ('MONEDA: PESOS'); the label word and the value
+    together are one ('Moneda: Nacional' = moneda nacional); or, after the label
+    only, a multi-word currency name read with at most one substituted character
+    per word of six or more letters ('MONEDA NACTONAL'), when exactly one
+    currency is that close.
+    """
+    words = value.split()
+    for size in (3, 2, 1):
+        head = ' '.join(words[:size])
+        if len(words) >= size and head in CURRENCY_NAMES:
+            return CURRENCY_NAMES[head]
+    for size in (2, 1):
+        joined = ' '.join([key] + words[:size])
+        if len(words) >= size and joined in CURRENCY_NAMES:
+            return CURRENCY_NAMES[joined]
+    close = set()
+    for candidate in (words, [key] + words):
+        for name, code in _MULTIWORD_CURRENCIES:
+            read = candidate[:len(name)]
+            if len(read) == len(name) and all(_one_substitution(r, w) for r, w in zip(read, name)):
+                close.add(code)
+    return close.pop() if len(close) == 1 else ''
+
+
 def _currency(row, found):
-    pairs = label_pairs(row, 'dot', 2)
     folded = fold(row['text'])
     for name in CURRENCY_LABELS:
         key = fold(name)
         # Every occurrence of the label counts: its value can repeat the label word ("MONEDA: MONEDA NACIONAL").
         for m in re.finditer(r'(?:^|(?<=\s))' + re.escape(key) + r'\s*:?\s+(?=(.+)$)', folded):
-            value = m[1].strip()
-            for size in (3, 2, 1):
-                head = ' '.join(value.split()[:size])
-                if head in CURRENCY_NAMES:
-                    found.add(CURRENCY_NAMES[head])
-                    break
-    del pairs
+            code = labelled_currency(key, m[1].strip())
+            if code:
+                found.add(code)
 
 
 _US_ADDRESS = re.compile(r'\b(?:A[KLRZ]|C[AOT]|D[CE]|FL|GA|HI|I[ADLN]|K[SY]|LA|M[ADEINOST]|N[CDEHJMVY]|O[HKR]|PA|RI|S[CD]|T[NX]|UT|V[AT]|W[AIVY])\s+\d{5}(?:\s?-?\s?\d{4})?\b')
@@ -630,22 +1074,44 @@ def _heading_pages(segment_pages, facts):
     return heading
 
 
-def _section_holder(section_pages, pages, facts):
-    """Holder from the statement's heading pages only (A8): up to the first page printing the period.
+def _identity_rows(segment_pages, pages, facts, style):
+    """[(page, rows)] of the statement's heading pages, cut at its first movement table (A8).
+
+    The holder is printed above the movements: once a movement-table heading or a
+    movement line has been printed, every later line (the rest of that page and
+    every later page) is movement text, whose description lines name transfer
+    counterparties and their accounts, never the holder.
+    """
+    result = []
+    for page in _heading_pages(segment_pages, facts):
+        rows = pages[page]
+        cut = next((row['y0'] for row in rows if row['tokens'] and row['y0'] is not None
+                    and (_is_header(row) or _row_is_movement(row, style or 'dot', 2))), None)
+        if cut is None:
+            result.append((page, rows))
+            continue
+        result.append((page, [row for row in rows if row['y0'] is not None and row['y0'] < cut]))
+        break
+    return result
+
+
+def _section_holder(section_pages, pages, facts, style=None):
+    """Holder from the statement's heading pages only (A8): up to the first page printing the period,
+    and above the statement's first movement table.
 
     Legal pages print other people's names under the same labels (a complaints
     officer as "Titular"), so labels elsewhere never count. A labelled name and
     the addressee block that disagree give no holder (a person decides).
     """
-    heading = _heading_pages(section_pages, facts)
+    heading = _identity_rows(section_pages, pages, facts, style)
     labelled = set()
-    for page in heading:
-        for row in pages[page]:
+    for _, rows in heading:
+        for row in rows:
             if row['tokens'] and len(row['text']) <= 160:
                 _holder_label(row, labelled)
     addressed = ''
-    for page in heading:
-        addressed = address_holder(pages[page])
+    for _, rows in heading:
+        addressed = address_holder(rows, style)
         if addressed:
             break
     if len(labelled) > 1:
@@ -655,7 +1121,47 @@ def _section_holder(section_pages, pages, facts):
         if addressed and fold(addressed) not in fold(name) and fold(name) not in fold(addressed):
             return ''
         return name
-    return addressed
+    return addressed or _receipt_holder(section_pages, pages, heading)
+
+
+# Mexican statements are fiscal receipts (CFDI): the receipt names its recipient, the account holder,
+# under this label, usually on the statement's last page.
+_RECEIPT_RECIPIENT = re.compile(r'^\s*NOMBRE DEL RECEPTOR\s*:?\s*(.{3,120}?)\s*$')
+_COMPANY_FORM = re.compile(r'^,?\s*(?:S\.?\s*A\.?\s*(?:P\.?\s*I\.?\s*)?(?:B\.?\s*)?|S\.?\s*DE\s*R\.?\s*L\.?\s*|S\.?\s*C\.?\s*)'
+                           r'(?:DE\s*C\.?\s*V\.?)?$')
+
+
+def _receipt_holder(section_pages, pages, heading):
+    """The holder when the statement's fiscal receipt names one recipient and a heading line above the
+    movements prints that same name, alone or followed by a company legal form (A8): two printed
+    facts agree. The heading line's text is the holder (it carries the legal form). Otherwise ''.
+    """
+    recipients = set()
+    for page in section_pages:
+        for row in pages[page]:
+            if row['tokens']:
+                m = _RECEIPT_RECIPIENT.match(' '.join(fold(row['text']).split()))
+                if m:
+                    recipients.add(m[1])
+    if len(recipients) != 1:
+        return ''
+    recipient = next(iter(recipients))
+    if not _name_like(recipient):
+        return ''
+    found = []
+    for _, rows in heading:
+        for row in rows:
+            if not row['tokens']:
+                continue
+            x = min(t['x0'] for t in row['tokens'])
+            cells = {id(t['cell']) for t in row['tokens'] if t['first'] and abs(t['x0'] - x) <= row['width'] * 0.015}
+            text = ' '.join(t['t'] for t in sorted(row['tokens'], key=lambda t: (t['line'], t['x0']))
+                            if id(t['cell']) in cells and t['line'] == 0)
+            folded = ' '.join(fold(text).split())
+            if folded == recipient or (folded.startswith(recipient + ' ') or folded.startswith(recipient + ','))  \
+                    and _COMPANY_FORM.match(folded[len(recipient):].strip()):
+                found.append(' '.join(text.split()))
+    return found[0] if len({fold(name) for name in found}) == 1 else ''
 
 
 _HEADING_CURRENCIES = sorted(CURRENCY_NAMES, key=len, reverse=True)
@@ -672,12 +1178,21 @@ def _heading_currencies(rows, style):
         if any(_value_kind(t, style, 2) == 'money' for t in row['tokens']):
             continue
         text = ' ' + fold(row['text']) + ' '
+        words = fold(row['text']).split()
         for name in _HEADING_CURRENCIES:
-            if ' ' + name + ' ' in text and (' ' in name or fold(row['text']).split()[-1:] == [name]
-                                              or fold(row['text']).split()[:1] == [name]):
+            if ' ' + name + ' ' in text and (' ' in name or words[-1:] == [name]
+                                              or words[:1] == [name] and not _qualified_dollar(words)):
                 found.add(CURRENCY_NAMES[name])
                 break
     return found
+
+
+def _qualified_dollar(words):
+    """'DOLAR AUSTRALIANO', 'DOLAR CANADA': a dollar word followed by a qualifier names another dollar,
+    not US dollars (C2). Only the American qualifiers keep the plain reading."""
+    return (words[0] in ('DOLAR', 'DOLARES') and len(words) > 1
+            and words[1] not in ('AMERICANO', 'AMERICANOS', 'ESTADOUNIDENSE', 'ESTADOUNIDENSES', 'US', 'USD', 'EUA',
+                                 'E.U.A.', 'DE', 'SOBRE', 'AL'))
 
 
 def _holder_label(row, found):
@@ -697,8 +1212,32 @@ def _holder_label(row, found):
                 found.add(value)
 
 
-# Folding turns a ZIP+4 hyphen into a space ("20009 6857").
-_POSTAL = re.compile(r'(?:\bC\.?\s?P\.?\s*\d{5}\b|\b\d{5}(?:[- ]\d{4})?\s*$|^\d{5}\s)')
+# A postal-code line (A8): a labelled code ('C.P. 01234', 'CODIGO POSTAL 01234', 'ZIP 12345'), a code
+# opening a place line ('01234 CIUDAD ...'), or a code closing a place line after a state or a comma
+# ('..., ST 12345', '... CITY, PLACE 12345'). A five-digit number closing any other line is a reference
+# (a transfer description, a split account number), not an address. Folding turns a ZIP+4 hyphen into a
+# space ("20009 6857").
+# The 'C.P.' label is matched with one scan substitution between its letters and either mark after it
+# ('CAP.', 'C,P.', 'CAP,') (F1).
+_POSTAL_LABELLED = re.compile(r'(?:\bC[.,]?\s?[A-Z]?[.,]?\s?P\b[.,]?|\bCODIGO POSTAL|\bZIP(?: CODE)?)\s*:?\s*\d{5}\b')
+_POSTAL_LEADING = re.compile(r'^\d{5}\s+[A-Z]{3,}')
+_POSTAL_PLACE = re.compile(r'[A-Z]{2,}\.?\s*,\s*[A-Z][A-Z. ]*?\s\d{5}(?:[- ]\d{4})?\s*$')
+
+
+def _postal(text):
+    """Whether a folded line reads as the postal-code line of an address."""
+    return bool(_POSTAL_LABELLED.search(text) or _POSTAL_LEADING.search(text) or _POSTAL_PLACE.search(text)
+                or _US_ADDRESS.search(text) and re.search(r'\d{5}(?:[- ]\d{4})?\s*$', text))
+
+
+def _not_address(row, x, style):
+    """A movement line, or a line whose cells at the block's left edge carry money or a date, is never part
+    of an address block (A8). Cells further right (a period or an account printed beside the address)
+    do not count."""
+    if _row_is_movement(row, style or 'dot', 2):
+        return True
+    cells = {id(t['cell']) for t in row['tokens'] if t['first'] and abs(t['x0'] - x) <= row['width'] * 0.015}
+    return any(_value_kind(t, style or 'dot', 2) in ('money', 'date') for t in row['tokens'] if id(t['cell']) in cells)
 
 
 _LABEL_WORDS = {fold(word) for word in NOT_A_NAME} | {'NO', 'NUM', 'NUMERO', 'RFC', 'CONTRATO', 'CLIENTE'}
@@ -713,61 +1252,179 @@ def _name_like(name):
                 and not any(re.search(r'\b' + re.escape(word) + r'\b', fold(name)) for word in NOT_A_NAME))
 
 
-def address_holder(rows):
+def address_holder(rows, style=None):
     """The top line of the left address block ending with a postal-code line (A8)."""
-    found = [(y0, name) for y0, name, accepted in _address_tops(rows) if accepted]
+    found = [(y0, name) for y0, name, accepted in _address_tops(rows, style) if accepted]
     # The addressee block is the topmost one; a second (fiscal) address block below it is not the holder.
     return min(found)[1] if found else ''
 
 
-def _address_tops(rows):
-    """[(y0, top line, accepted as a name)] of every address block ending with a postal-code line."""
+def _address_tops(rows, style=None):
+    """[(y0, top line, accepted as a name)] of every address block ending with a postal-code line, and of
+    every addressee block confirmed by its reprint in one (A8)."""
     located = [r for r in rows if r['tokens'] and r['width']]
     if not located:
         return []
-    found = []
+    found, anchored = [], []
     for index, row in enumerate(located):
-        if not _POSTAL.search(fold(row['text'])):
+        if not _postal(fold(row['text'])):
             continue
         x = min(t['x0'] for t in row['tokens'])
-        block = [row]
-        for earlier in reversed(located[:index]):
-            ex = min(t['x0'] for t in earlier['tokens'])
-            if abs(ex - x) > row['width'] * 0.015 or earlier['y0'] > block[-1]['y0']:
-                continue
-            # The issuer's own legal-name or heading line above is not part of the addressee block.
-            # Only the cells aligned with the block's left edge count (the issuer's name can share the row).
-            aligned = {id(t['cell']) for t in earlier['tokens'] if abs(t['x0'] - x) <= row['width'] * 0.015 and t['first']}
-            first_words = fold(' '.join(t['t'] for t in earlier['tokens'] if id(t['cell']) in aligned))
-            if any(word in first_words for word in INSTITUTION_WORDS) or 'ESTADO DE CUENTA' in first_words or 'STATEMENT' in first_words:
-                break
-            gap = block[-1]['y0'] - earlier['y0']
-            height = max(t['y1'] - t['y0'] for t in block[-1]['tokens'])
-            previous_gap = (block[-2]['y0'] - block[-1]['y0']) if len(block) > 1 else 0
-            # One blank line in the address column is allowed where the page prints other columns
-            # beside it (the space is not a gap between blocks).
-            beside = any(earlier['y0'] < other['y0'] < block[-1]['y0'] for other in located)
-            if gap > max(height * (4 if beside else 2.6), previous_gap * 1.6):
-                break
-            block.append(earlier)
-            if len(block) >= 7:
-                break
+        if _not_address(row, x, style):
+            continue
+        block = _grow_block(located, index, x, style)
         if 3 <= len(block) <= 7:
-            top = block[-1]
-            aligned = {id(t['cell']) for t in top['tokens'] if abs(t['x0'] - x) <= row['width'] * 0.015 and t['first']}
-            name = ' '.join(t['t'] for t in sorted(top['tokens'], key=lambda t: (t['line'], t['x0']))
-                            if id(t['cell']) in aligned and t['line'] == 0)
-            accepted = _name_like(name)
-            if not accepted:
-                # A row recognised as one cell can run into the right-hand column ("<name> CLIENTE No. 123"):
-                # the words before the first label word are the name when they read as one.
-                words = name.split()
-                cut = next((i for i, w in enumerate(words) if fold(w).strip(':') in _LABEL_WORDS), None)
-                if cut is not None and cut >= 2 and _name_like(' '.join(words[:cut])):
-                    name, accepted = ' '.join(words[:cut]), True
-            if name.strip():
-                found.append((top['y0'], name, accepted))
+            anchored.append((block, x))
+            top = _block_top(block, x)
+            if top and _damaged_above(located, block, x):
+                top = (top[0], top[1], False)
+            if top:
+                found.append(top)
+    for block, x in anchored:
+        top = _reprinted_block(located, block, x, style)
+        if top:
+            found.append(top)
     return found
+
+
+def _grow_block(located, index, x, style):
+    """The left-aligned block of lines ending at located[index], bottom first (A8)."""
+    row = located[index]
+    block = [row]
+    for earlier in reversed(located[:index]):
+        ex = min(t['x0'] for t in earlier['tokens'])
+        if earlier['y0'] > block[-1]['y0']:
+            continue
+        if abs(ex - x) > row['width'] * 0.015 and not _lead_noise(earlier, x):
+            # A movement line printed between two lines means they are not one address block.
+            if _row_is_movement(earlier, style or 'dot', 2):
+                break
+            continue
+        if _not_address(earlier, x, style):
+            break
+        # The issuer's own legal-name or heading line above is not part of the addressee block.
+        # Only the cells aligned with the block's left edge count (the issuer's name can share the row).
+        first_words = _aligned_text(earlier, x)
+        if any(word in first_words for word in INSTITUTION_WORDS) or 'ESTADO DE CUENTA' in first_words or 'STATEMENT' in first_words:
+            break
+        gap = block[-1]['y0'] - earlier['y0']
+        height = max(t['y1'] - t['y0'] for t in block[-1]['tokens'])
+        previous_gap = (block[-2]['y0'] - block[-1]['y0']) if len(block) > 1 else 0
+        # One blank line in the address column is allowed where the page prints other columns
+        # beside it (the space is not a gap between blocks).
+        beside = any(earlier['y0'] < other['y0'] < block[-1]['y0'] for other in located)
+        if gap > max(height * (4 if beside else 2.6), previous_gap * 1.6):
+            break
+        block.append(earlier)
+        if len(block) >= 7:
+            break
+    return block
+
+
+def _lead_noise(row, x):
+    """The scan-noise glyph printed left of an address block's edge x at the start of a line, or None.
+
+    A lone mark of one character, or of up to three with no letter pair ('|', '@', 'N', 'i)'), standing
+    before a word that starts on the block's edge is noise from the scan, not part of the line (F2).
+    """
+    tokens = sorted((t for t in row['tokens'] if t['line'] == 0), key=lambda t: t['x0'])
+    if len(tokens) < 2:
+        return None
+    lead, word = tokens[0], tokens[1]
+    tolerance = row['width'] * 0.015
+    noise = len(lead['t']) == 1 or (len(lead['t']) <= 3 and re.search(r'[^A-Za-z0-9]', lead['t']))
+    if noise and abs(lead['x0'] - x) > tolerance and abs(word['x0'] - x) <= tolerance and len(word['t']) > 1:
+        return lead
+    return None
+
+
+def _aligned_tokens(row, x):
+    """The tokens of the cells of a line that start at the left edge x (a leading noise glyph dropped)."""
+    noise = _lead_noise(row, x)
+    tolerance = row['width'] * 0.015
+    aligned = {id(t['cell']) for t in row['tokens'] if t['first'] and (abs(t['x0'] - x) <= tolerance or t is noise)}
+    return [t for t in sorted(row['tokens'], key=lambda t: (t['line'], t['x0'])) if id(t['cell']) in aligned and t is not noise]
+
+
+def _damaged_above(located, block, x):
+    """(A8) The end of a company name (its legal form) printed directly above a block's top, inside the
+    block's column but not on its edge: the scan lost the start of the name line ('...RESAS SA DE CV'), so
+    the block's top line is not its first and is not taken as the name."""
+    top = block[-1]
+    tolerance = top['width'] * 0.015
+    right = max(t['x1'] for row in block for t in row['tokens'] if abs(min(u['x0'] for u in row['tokens']) - x) <= tolerance
+                or _lead_noise(row, x))
+    height = max(t['y1'] - t['y0'] for t in top['tokens'])
+    for row in located:
+        if row['y0'] is None or not top['y0'] - height * 2.6 <= row['y0'] < top['y0']:
+            continue
+        lead, end = min(t['x0'] for t in row['tokens']), max(t['x1'] for t in row['tokens'])
+        words = ' '.join(fold(row['text']).split())
+        if (x + tolerance < lead < right and end <= right + tolerance and _NAME_TAIL.search(words)
+                and not any(word in words for word in INSTITUTION_WORDS)):
+            return True
+    return False
+
+
+# The end of a company name: its printed legal form.
+_NAME_TAIL = re.compile(r'(?:\bS\.?\s?A\.?(?:\s?P\.?\s?I\.?)?|\bS\.?\s?DE\s?R\.?\s?L\.?|\bS\.?\s?C\.?)\s?DE\s?C\.?\s?V\.?$'
+                        r'|\b(?:INC|LLC|LTD|CORP)\.?$')
+
+
+def _aligned_text(row, x):
+    """Folded text of the cells of a line that start at the left edge x."""
+    return fold(' '.join(t['t'] for t in _aligned_tokens(row, x)))
+
+
+def _block_top(block, x):
+    """(y0, name, accepted) of a block's top line, or None."""
+    top = block[-1]
+    name = ' '.join(t['t'] for t in _aligned_tokens(top, x) if t['line'] == 0)
+    accepted = _name_like(name)
+    if not accepted:
+        # A row recognised as one cell can run into the right-hand column ("<name> CLIENTE No. 123"):
+        # the words before the first label word are the name when they read as one.
+        words = name.split()
+        cut = next((i for i, w in enumerate(words) if fold(w).strip(':') in _LABEL_WORDS), None)
+        if cut is not None and cut >= 2 and _name_like(' '.join(words[:cut])):
+            name, accepted = ' '.join(words[:cut]), True
+    return (top['y0'], name, accepted) if name.strip() else None
+
+
+def _reprinted_block(located, anchored, x, style):
+    """The top of an addressee block printed without a postal line whose address lines are reprinted in
+    the postal-anchored block ``anchored`` (the addressee and the fiscal domicile both printed), or None.
+
+    Two of its lines below the top, each of at least two words, must open two different lines of the
+    anchored block; the block is grown from the lower of them like any address block and must hold
+    both, with a name line above them. Two printed blocks agreeing is the proof that it is an address.
+    """
+    inside = {id(r) for r in anchored}
+    lines = [_aligned_text(r, x) for r in anchored]
+    matched = {}
+    for index, row in enumerate(located):
+        if id(row) in inside:
+            continue
+        rx = min(t['x0'] for t in row['tokens'])
+        text = _aligned_text(row, rx)
+        if len(text) < 8 or len(text.split()) < 2:
+            continue
+        hits = [j for j, line in enumerate(lines) if line == text or line.startswith(text + ' ')]
+        if len(hits) == 1:
+            matched.setdefault(round(rx / (row['width'] * 0.015)), []).append((index, hits[0]))
+    for pairs in matched.values():
+        if len({j for _, j in pairs}) < 2 or len(pairs) != len({j for _, j in pairs}):
+            continue
+        lowest = max(index for index, _ in pairs)
+        rx = min(t['x0'] for t in located[lowest]['tokens'])
+        block = _grow_block(located, lowest, rx, style)
+        ids = {id(r) for r in block}
+        if not 3 <= len(block) <= 7 or not all(id(located[i]) in ids for i, _ in pairs):
+            continue
+        if id(block[-1]) in {id(located[i]) for i, _ in pairs}:
+            continue
+        return _block_top(block, rx)
+    return None
 
 
 _MONEY_MARK = re.compile(r'^[-−+(]?\s*(US\$|\$|€|£|¥)|(MN|M\.N\.|MXN|USD|EUR|DLS)$')
@@ -783,11 +1440,11 @@ def identity_evidence(segment, section_pages, rows, pages, facts, style):
     A remembered fact applies to another period only when this evidence is the same.
     """
     holder = set()
-    for page in _heading_pages(segment['pages'], facts):
-        for row in pages[page]:
+    for _, heading_rows in _identity_rows(segment['pages'], pages, facts, style):
+        for row in heading_rows:
             if row['tokens'] and len(row['text']) <= 160:
                 _holder_label(row, holder)
-        holder.update(name for _, name, _ in _address_tops(pages[page]))
+        holder.update(name for _, name, _ in _address_tops(heading_rows, style))
     legal = _repeated_legal([facts[p]['legal'] for p in section_pages])
     currency = {'named:' + code for _, code in segment.get('currency_mentions', [])}
     for row in rows:
@@ -874,6 +1531,7 @@ _NAME_END = re.compile(r'\s+(?=S\.?\s?A\.?\b|S\.?\s?P\.?\s?A\.?\b|N\.?\s?A\.?\b|
 
 def _segments(pages, facts):
     """[(period or None, [page numbers])]: a new printed period, or numbering restarting at 1, starts a segment."""
+    _drop_contradicted_derived(pages, facts)
     segments = []
     for page in sorted(pages):
         f = facts[page]
@@ -892,6 +1550,28 @@ def _segments(pages, facts):
         current['pages'].append(page)
         current['conflict'] = current['conflict'] or (len(candidates) > 1 and not f['labelled_periods'])
     return segments
+
+
+def _drop_contradicted_derived(pages, facts):
+    """A period derived from a cut date and a day count (B1) yields to a labelled period printed in the
+    same printed page run (pages from a page numbered 1 up to the next): if the run labels another
+    period, the derived one is a misreading and is dropped."""
+    runs, current = [], []
+    for page in sorted(pages):
+        if any(n == 1 for n, _ in facts[page]['numbering']) and current:
+            runs.append(current)
+            current = []
+        current.append(page)
+    if current:
+        runs.append(current)
+    for run in runs:
+        printed = set().union(*(facts[p]['labelled_periods'] - facts[p].get('derived_periods', set()) for p in run))
+        for page in run:
+            derived = facts[page].get('derived_periods', set())
+            if derived and printed and not derived <= printed:
+                facts[page]['labelled_periods'] -= derived
+                facts[page]['periods'] -= derived
+                facts[page]['derived_periods'] = set()
 
 
 def _numbering_complete(pages, facts):
@@ -954,9 +1634,56 @@ def read_statements(sources, *, profile=None):
 
 
 def _read_statements(sources, *, profile=None):
+    parens = any(re.search(r'\(\s*(?:US\$|\$)?\s*\d{1,3}(?:,\d{3})*[.,]\d{2}\s*\)', cell['expected_text'])
+                 for source in sources for row in source['rows'] for cell in row['cells'])
+    marker = _NO_PARENS.set(not parens)
+    try:
+        return _read_statements_parens(sources, profile)
+    finally:
+        _NO_PARENS.reset(marker)
+
+
+def _read_statements_parens(sources, profile):
     pages = _pages(sources)
     if not pages:
         return []
+    day_column = any(_is_header(row) and any(column_role(label(t['t'])) == 'date' and label(t['t']) in _DAY_WORDS
+                                             for t in row['tokens'])
+                     for rows in pages.values() for row in rows if row['tokens']) or _lost_day_heading(pages)
+    token = _DAY_COLUMN.set(day_column)
+    try:
+        return _read_statements_in(pages, sources, profile)
+    finally:
+        _DAY_COLUMN.reset(token)
+
+
+_DAY_WORDS = {'DIA', 'DAY'}
+
+
+def _dateless_heading(row):
+    """A movement heading printing credit and debit columns and a description but no date word."""
+    words = {column_role(label(t['t'])) for t in row['tokens']}
+    return {'credit', 'debit'} <= _money_roles(row) and 'description' in words and 'date' not in words
+
+
+def _lost_day_heading(pages):
+    """(B2) A day column whose heading word the scan lost: a movement heading printing credit and debit
+    columns and a description but no date word, whose next line starts with a day of the month (1-31)
+    alone and carries an amount."""
+    style = separator_style(pages) or 'dot'
+    for rows in pages.values():
+        located = [r for r in rows if r['tokens']]
+        for heading, following in zip(located, located[1:]):
+            if not _dateless_heading(heading):
+                continue
+            first = min(following['tokens'], key=lambda t: (t['line'], t['x0']))['t']
+            if (re.fullmatch(r'\d{1,2}', first) and 1 <= int(first) <= 31
+                    and any(_value_kind(t, style, 2) == 'money' for t in following['tokens'])):
+                return True
+    return False
+
+
+def _read_statements_in(pages, sources, profile):
     style = separator_style(pages)
     facts = {page: page_facts(rows, style or 'dot') for page, rows in pages.items()}
     by_source = {}
@@ -972,18 +1699,25 @@ def _read_statements(sources, *, profile=None):
                     if name in {label(w) for w in PERIOD_WORDS} or 'PERIODO' in name or 'PERIOD' in name:
                         facts[page]['labelled_periods'].add(period)
                         facts[page]['periods'].add(period)
+    for page, rows in pages.items():
+        for value, rank in _stacked_accounts(rows):
+            printed = {re.sub(r'\D', '', key) for key in facts[page]['accounts']}
+            if re.sub(r'\D', '', value) not in printed:  # the same number printed inline is one account
+                facts[page]['accounts'].setdefault(value, set()).add(rank)
     statements = []
     for segment in _segments(pages, facts):
         ordered = [row for page in segment['pages'] for row in pages[page]]
-        mentions = []
+        mentions, labelled = [], set()
         for position, row in enumerate(ordered):
             row['_seg'] = position
             if row['tokens'] and not _row_is_movement(row, style or 'dot', 2):
                 named = set()
                 _currency(row, named)
+                labelled |= named
                 named |= _heading_currencies([row], style or 'dot')
                 mentions.extend((position, code) for code in named)
         segment['currency_mentions'] = mentions
+        segment['currency_labels'] = labelled
         sections = _sections(segment, pages, style or 'dot')
         page_use = {}
         for section in sections:
@@ -1006,27 +1740,40 @@ def _empty_section(statement):
     if any(r['kind'] == 'transaction' for r in rows) or statement['engine']['proved']:
         return False
     balances = [r['fields'].get('balance') for r in rows if r['kind'] in ('balance', 'statement_total')]
-    return (not statement['currency'] and not statement['account_reference']
+    # A currency inherited from the statement's label is not the section's own.
+    own_currency = statement['currency'] and statement.get('currency_source') != 'printed_statement_currency'
+    return (not own_currency and not statement['account_reference']
             and all(value in (None, '0') for value in balances))
 
 
 def _sections(segment, pages, style):
     """Split a segment at an opening balance that follows a closing balance and movement lines (A7)."""
     rows = [row for page in segment['pages'] for row in pages[page]]
-    sections, current, closed, moved, after_close = [], [], False, False, None
+    sections, current, closed, moved, after_close, reopened = [], [], False, False, None, False
     for row in rows:
         pairs = [(text, values) for text, values in label_pairs(row, style, 2) if values]
         roles = {_role_of(text, False) for text, values in pairs}
         new_opening = {money(_control_value([t for kind, t in values if kind == 'money'])['t'], style)
                        for text, values in pairs if _role_of(text, False) == 'opening'
                        and any(kind == 'money' for kind, _ in values)}
-        if 'opening' in roles and closed and current and (moved or not new_opening <= _endpoints(current, style)['opening']):
+        # A heading line repeated on every page ('... Saldo inicial 1,000.00' above each page's table)
+        # continues the section: the same text printed on an earlier page of it is not a new opening.
+        repeated = any(earlier['page'] != row['page'] and earlier['text'] == row['text'] for earlier in current)
+        if ('opening' in roles and closed and current and not repeated
+                and (moved or not new_opening <= _endpoints(current, style)['opening'])):
             # Lines printed after the closing balance (the next section's heading) open the next section.
             carried = current[after_close:] if after_close is not None else []
             sections.append(current[:after_close] if after_close is not None else current)
-            current, closed, moved, after_close = list(carried), False, False, None
+            current, closed, moved, after_close, reopened = list(carried), False, False, None, False
+        elif 'opening' in roles and closed and current and new_opening and not repeated and 'closing' not in roles:
+            # The section's own opening printed again after its summary's closing opens its movement
+            # table (D6: table endpoints repeat the summary): the lines that follow are still this
+            # section's, even where no movement line in them is read; the table's total line ends it.
+            after_close, reopened = None, True
         current.append(row)
-        if 'closing' in roles:
+        if 'closing' in roles or ('column_total' in roles and (moved or reopened)):
+            # A table's own total line after its movements closes it as its closing balance does: lines
+            # printed after it are the next section's heading.
             closed = True
             after_close = len(current)
         elif _row_is_movement(row, style, 2):
@@ -1041,6 +1788,13 @@ def _sections(segment, pages, style):
         if merged and not any(_row_is_movement(r, style, 2) for r in section):
             previous, here = _endpoints(merged[-1], style), _endpoints(section, style)
             if here['opening'] and here['opening'] <= previous['opening'] and here['closing'] <= previous['closing']:
+                merged[-1] = merged[-1] + section
+                continue
+        if merged and not any(_row_is_movement(r, style, 2) for r in merged[-1]):
+            # A summary block whose opening was not read, printing the closing balance this section prints,
+            # is this section's summary (its heading), not a period of its own.
+            previous, here = _endpoints(merged[-1], style), _endpoints(section, style)
+            if not previous['opening'] and previous['closing'] and previous['closing'] <= here['closing']:
                 merged[-1] = merged[-1] + section
                 continue
         merged.append(section)
@@ -1068,11 +1822,53 @@ _HEADING_ACCOUNT_NOT = ('TEL', 'TELEFONO', 'FAX', 'RFC', 'R.F.C', 'CLIENTE', 'CO
 
 
 def _heading_account(row):
-    """'<product name> <hyphenated account number>' as a whole heading line, or ''."""
-    m = _HEADING_ACCOUNT.match(_dnorm(row['text']))
+    """'<product name> <hyphenated account number>' as a whole heading line, or as one whole line of one of
+    its cells (a heading recognised together with the text beside or above it), or ''. One number or none."""
+    lines = [row['text']] + [line for cell in row['raw']['cells'] for line in cell['expected_text'].split('\n')]
+    found = {_heading_line_account(line) for line in lines} - {''}
+    return found.pop() if len(found) == 1 else ''
+
+
+def _heading_line_account(text):
+    m = _HEADING_ACCOUNT.match(_dnorm(text))
     if not m or is_date_token(m[2]) or any(w.strip('.:') in _HEADING_ACCOUNT_NOT for w in m[1].split()):
         return ''
     return m[2] if 9 <= len(re.sub(r'\D', '', m[2])) <= 14 else ''
+
+
+_INTERBANK_DIGITS = 18
+_PRINTED_NUMBER = re.compile(r'(?<![\d-])\d[\d-]{6,16}\d(?![\d-])')
+
+
+def _printed_over_interbank(account, rows):
+    """(account, basis): the printed account number rather than the 18-digit interbank number (A6).
+
+    An interbank number (CLABE: bank 3 + branch 3 + account 11 + check digit 1)
+    carries the account number right-aligned in its account field. When the
+    statement also prints that account number on its own (any digit run of 8 to
+    11 digits that is exactly the end of the account field, outside the
+    interbank number's own printing), the account is that printed number; one
+    such number or none. Without one the interbank number stays the account
+    and the basis says so.
+    """
+    digits = re.sub(r'\D', '', account)
+    if len(digits) != _INTERBANK_DIGITS:
+        return account, 'account_number'
+    field = digits[6:17]
+    own = re.compile(r'[\s-]?'.join(digits))
+    found = {}
+    for row in rows:
+        if not row['tokens']:
+            continue
+        text = own.sub(' ', row['text'])
+        for m in _PRINTED_NUMBER.finditer(text):
+            value = m[0].strip('-')
+            number = re.sub(r'\D', '', value)
+            if 8 <= len(number) <= 11 and field.endswith(number) and field[:len(field) - len(number)].strip('0') == '':
+                found.setdefault(number, value)
+    if len(found) == 1:
+        return next(iter(found.values())), 'account_number'
+    return account, 'interbank_number'
 
 
 def layout_key(header_words, convention):
@@ -1099,10 +1895,16 @@ def _read_section(rows, segment, pages, facts, style, sources, profile, shared=F
         head.append(row)
         if row['tokens'] and any(_role_of(text, False) == 'closing' for text, values in label_pairs(row, style or 'dot', 2) if values):
             break
+    # A section on shared pages names its account in its heading lines on the page where its opening
+    # balance is printed: lines left on an earlier page (another section's chart legend or note printed
+    # after that section's closing) do not name this one (A6, A7).
+    opening_page = next((row['page'] for row in head if row['tokens'] and any(
+        _role_of(text, False) == 'opening' for text, values in label_pairs(row, style or 'dot', 2) if values)), None)
+    own_head = [row for row in head if row['page'] == opening_page] if opening_page is not None else head
     accounts = {}
     if shared:
         own = {}
-        for row in head:
+        for row in own_head:
             if row['tokens']:
                 _accounts(row, own)
         accounts = own
@@ -1132,9 +1934,13 @@ def _read_section(rows, segment, pages, facts, style, sources, profile, shared=F
         # Library profile (data): this layout prints the account only after the product name in a
         # section heading ("<product name> 12-34567890-1"). One distinct heading number or none.
         heading_pages = set(_heading_pages(segment['pages'], facts))
-        scope = head if shared else [row for row in rows if row['page'] in heading_pages]
+        scope = own_head if shared else [row for row in rows if row['page'] in heading_pages]
         found = {_heading_account(row) for row in scope if row['tokens']} - {''}
         account = found.pop() if len(found) == 1 else ''
+    account_basis = ''
+    if account:
+        scope = head if shared else [row for page in _heading_pages(segment['pages'], facts) for row in pages[page]]
+        account, account_basis = _printed_over_interbank(account, scope)
     own_currencies = set()
     for row in head:
         if row['tokens']:
@@ -1167,7 +1973,7 @@ def _read_section(rows, segment, pages, facts, style, sources, profile, shared=F
         except MoneyError:
             exponent = 2
     # The holder belongs to the statement, printed on its first pages, for every one of its sections.
-    holder = _section_holder(segment['pages'], pages, facts)
+    holder = _section_holder(segment['pages'], pages, facts, style)
     institution = (_institution([item['legal'] for item in f],
                                 {line for page in set(_heading_pages(segment['pages'], facts)) | set(segment['pages'][:2])
                                  for line in facts[page]['legal']})
@@ -1178,7 +1984,7 @@ def _read_section(rows, segment, pages, facts, style, sources, profile, shared=F
     period = segment['period']
     statement = dict(layout_id=LAYOUT, institution=institution, account_reference=account,
                      period_start=period[0].isoformat() if period else '', period_end=period[1].isoformat() if period else '',
-                     holder=holder, currency=currency,
+                     holder=holder, currency=currency, account_basis=account_basis,
                      # A shared page cannot lend its currency to this section: an unread one stays unread.
                      currency_source=currency_basis or ('printed_account_section' if shared else ''),
                      account_type='credit_card' if liability else 'checking',
@@ -1208,6 +2014,23 @@ def _read_section(rows, segment, pages, facts, style, sources, profile, shared=F
     if not period and reading['proof']['proved']:
         reading['proof'].update(proved=False, reason='no_period')
     named = {code for _, code in segment.get('currency_mentions', [])}
+    if shared and not statement['currency'] and len(named) == 1 and segment.get('currency_labels') == named:
+        # A section sharing a page names no currency of its own, and the statement prints exactly one
+        # currency, under a currency label ('MONEDA: ...'): that is the statement's currency, so it is the
+        # section's (C2). A currency named only in another section's heading is that section's; a
+        # statement naming several currencies keeps the rule below (only the section's own heading counts).
+        statement.update(currency=next(iter(named)), currency_source='printed_statement_currency')
+        try:
+            new_exponent = get_currency(statement['currency']).exponent
+        except MoneyError:
+            new_exponent = 2
+        if new_exponent != exponent:
+            reading = _reading(rows, statement, style, new_exponent, liability, period)
+            statement.update(layout_fingerprint=reading['fingerprint'], layout_key=reading['layout_key'],
+                             engine=reading['proof'])
+        statement['id'] = _digest(dict(layout_id=LAYOUT, account=account, start=statement['period_start'],
+                                       end=statement['period_end'], currency=statement['currency'],
+                                       first_page=section_pages[0], first_row=reading['first_row']))
     if len(named) > 1:
         # Several currencies are printed in this statement: the section's own is the nearest one
         # named inside the section above its opening balance; otherwise it stays unread (C2, A7).
@@ -1262,15 +2085,25 @@ def _resolve_dates(movements, period, liability):
         resolved, ok = [], True
         for move in movements:
             dates = []
-            for token in move['date_tokens']:
+            for position, token in enumerate(move['date_tokens']):
+                # The row date lies in the period (the card window below its start); a second printed date
+                # (settlement / value date, B5) may fall up to a month either side of it.
+                first, last = (low, end) if position == 0 else (start - timedelta(days=31), end + timedelta(days=31))
                 found = set()
+                if not _date_parts(token['t']) and _day_only(token['t'].rstrip('.,')):
+                    # The day alone: the one date with that day inside the printed period (B2).
+                    day, cursor = int(token['t'].rstrip('.,')), start
+                    while cursor <= end:
+                        if cursor.day == day:
+                            found.add(cursor)
+                        cursor += timedelta(days=1)
                 for d, mth, y, kind in _date_parts(token['t']):
                     if kind in ('dmy', 'mdy') and kind != order:
                         continue
-                    years = [y] if y else range(low.year, end.year + 1)
+                    years = [y] if y else range(first.year, last.year + 1)
                     for year in years:
                         day = _calendar(year, mth, d)
-                        if day and low <= day <= end:
+                        if day and first <= day <= last:
                             found.add(day)
                 if len(found) != 1:
                     ok = False
@@ -1290,9 +2123,9 @@ def _resolve_dates(movements, period, liability):
 
 def _columns(tokens, width):
     """Right-edge bands of money tokens (E2), as fractions of the page width."""
-    edges = sorted((t['x1'] / (t['_width'] or width)) for t in tokens if t['exact'] or t['last'])
+    edges = sorted(_edge(t, width) for t in tokens if t['exact'] or t['last'])
     if not edges:
-        edges = sorted(t['x1'] / (t['_width'] or width) for t in tokens)
+        edges = sorted(_edge(t, width) for t in tokens)
     bands = []
     for edge in edges:
         if bands and edge - bands[-1][-1] <= 0.012:
@@ -1302,8 +2135,53 @@ def _columns(tokens, width):
     return [sorted(band)[len(band) // 2] for band in bands]
 
 
+def _edge(token, width):
+    """A token's right edge as a fraction of its page width, on its page's aligned position."""
+    return token['x1'] / (token['_width'] or width) - token.get('_shift', 0.0)
+
+
+def _page_shifts(rows, style, exponent, width):
+    """{page: horizontal offset} of scanned pages whose amount columns sit to one side of the
+    reference page's (the page with the most movement amounts) (E2, F).
+
+    A scan places each sheet with its own offset, so one printed column lands a
+    little left or right on each page. A page is aligned only when one offset of
+    at most 4% of the width puts more of its movement amounts on the reference
+    columns than leaving it in place, and puts at least 80% of them there.
+    """
+    edges = {}
+    for row in rows:
+        if row['tokens'] and _row_is_movement(row, style, exponent):
+            for token in row['tokens']:
+                if (token['exact'] or token['last']) and _value_kind(token, style, exponent) == 'money':
+                    edges.setdefault(row['page'], []).append(token['x1'] / (token['_width'] or width))
+    if len(edges) < 2:
+        return {}
+    reference = max(sorted(edges), key=lambda page: len(edges[page]))
+    bands = []
+    for edge in sorted(edges[reference]):
+        if bands and edge - bands[-1][-1] <= 0.012:
+            bands[-1].append(edge)
+        else:
+            bands.append([edge])
+    centres = [sorted(band)[len(band) // 2] for band in bands]
+
+    def placed(values, shift):
+        return sum(any(abs(value - shift - centre) <= 0.006 for centre in centres) for value in values)
+
+    shifts = {}
+    for page, values in edges.items():
+        if page == reference:
+            continue
+        here = placed(values, 0.0)
+        best, shift = max((placed(values, step / 1000), -abs(step), step / 1000) for step in range(-40, 41))[0::2]
+        if best > here and best >= 0.8 * len(values):
+            shifts[page] = shift
+    return shifts
+
+
 def _band(token, columns, width):
-    edge = token['x1'] / (token['_width'] or width)
+    edge = _edge(token, width)
     tolerance = 0.015 if (token['exact'] or token['last']) else 0.03
     near = [i for i, c in enumerate(columns) if abs(edge - c) <= tolerance]
     if len(near) == 1:
@@ -1326,7 +2204,8 @@ def _hints(header_rows, columns, width):
                     continue
                 role = column_role(label(' '.join(t['t'] for t in group)))
                 if role:
-                    words.append((role, group[0]['x0'], group[-1]['x1'], row['width'] or width))
+                    shift = group[0].get('_shift', 0.0) * (row['width'] or width)
+                    words.append((role, group[0]['x0'] - shift, group[-1]['x1'] - shift, row['width'] or width))
                     break
         for i, column in enumerate(columns):
             scored = []
@@ -1348,6 +2227,18 @@ def _hints(header_rows, columns, width):
     return {i: next(iter(roles)) for i, roles in hints.items() if len(roles) == 1}
 
 
+def _money_roles(header):
+    """The amount-column roles a movement heading prints (credit, debit, balance, amount)."""
+    roles = set()
+    tokens = sorted(header['tokens'], key=lambda t: (t['line'], t['x0']))
+    for size in (3, 2, 1):
+        for index in range(len(tokens) - size + 1):
+            role = column_role(label(' '.join(t['t'] for t in tokens[index:index + size])))
+            if role in ('credit', 'debit', 'balance', 'amount'):
+                roles.add(role)
+    return frozenset(roles)
+
+
 def _reading(rows, statement, style, exponent, liability, period):
     width = next((r['width'] for r in rows if r['width']), None)
     proof = dict(engine=ENGINE_VERSION, proved=False, reason='', convention='liability_owed' if liability else 'asset_balance')
@@ -1367,15 +2258,49 @@ def _reading(rows, statement, style, exponent, liability, period):
         row['_index'] = index
         for token in row['tokens']:
             token['_width'] = row['width'] or width
+            token['_shift'] = 0.0
+    shifts = _page_shifts(rows, style or 'dot', exponent, width or 1)
+    for row in rows:
+        for token in row['tokens']:
+            token['_shift'] = shifts.get(row['page'], 0.0)
     # Amount bands from the dated movement lines, before deciding what else carries money (E2).
     early = [t for row in rows if row['tokens'] and _row_is_movement(row, style or 'dot', exponent)
              for t in row['tokens'] if _value_kind(t, style or 'dot', exponent) == 'money']
     early_columns = _columns(early, width or 1) if early else []
+    block = (_PROFILE.get() or {}).get('prior_period_block')
+    prior = False
+    # (E9) The movement table's amount columns, from its first heading; after the table's own total line,
+    # a heading printing another set of amount columns opens another table (pending charges, a schedule):
+    # its lines are not this period's movements, up to a heading of the movement table again or a balance.
+    main_roles, totalled, other_table = None, False, False
     for index, row in enumerate(rows):
         if not row['tokens']:
             continue
+        if other_table:
+            if _is_header(row) and _money_roles(row) == main_roles:
+                other_table = False
+            elif any(_role_of(text, liability) in ('opening', 'closing')
+                     for text, values in label_pairs(row, style or 'dot', exponent) if values):
+                other_table = False
+            else:
+                continue
+        if block:
+            # Library profile (data): earlier periods' operations repeated to explain a balance (E7).
+            folded = fold(row['text'])
+            if any(folded.startswith(fold(p)) for p in block['start']):
+                prior = True
+            elif any(folded.startswith(fold(p)) for p in block['end']):
+                prior = False
+            if prior:
+                continue
         words = {label(t['t']) for t in row['tokens']}
-        if _is_header(row):
+        if _is_header(row) or _DAY_COLUMN.get() and _dateless_heading(row):
+            roles = _money_roles(row)
+            if main_roles is None:
+                main_roles = roles
+            elif totalled and roles != main_roles:
+                other_table = True
+                continue
             headers.append(row)
             labels_seen.update(w for w in words if column_role(w))
             region = True
@@ -1384,6 +2309,8 @@ def _reading(rows, statement, style, exponent, liability, period):
             tokens = merged_dates(row['tokens'])
             date_tokens = []
             rest = list(tokens)
+            if rest and _leading_date(rest[0]['t'].rstrip('.,')):
+                date_tokens.append(rest.pop(0))
             while rest and is_date_token(rest[0]['t']) and len(date_tokens) < 2:
                 date_tokens.append(rest.pop(0))
             money_tokens = [t for t in rest if _value_kind(t, style or 'dot', exponent) == 'money']
@@ -1426,6 +2353,7 @@ def _reading(rows, statement, style, exponent, liability, period):
                 column_totals.append(dict(row=row, tokens=money_values))
                 labels_seen.add(text)
                 handled = True
+                totalled = totalled or main_roles is not None
             elif role == 'subtotal':
                 handled = True
         if handled:
@@ -1451,6 +2379,16 @@ def _reading(rows, statement, style, exponent, liability, period):
                 last_move = None if last_move is not None and row['page'] == last_move['row']['page'] and _below(row, last_move) else last_move
             continue
         if region and last_move is not None and row['page'] == last_move['row']['page']:
+            money_here = [t for t in row['tokens'] if _value_kind(t, style or 'dot', exponent) == 'money']
+            band = _band(money_here[0], early_columns, width or 1) if len(money_here) == 1 and early_columns else None
+            taken = {_band(t, early_columns, width or 1) for t in last_move['money']}
+            if band is not None and band not in taken and _continues(row, last_move):
+                # A multi-line entry prints one more value (its amount, or the day's balance) on its last
+                # line, in a column the dated line left empty (E3, C9). The proof assigns its role.
+                last_move['money'].append(money_here[0])
+                last_move['continuation'].append(row)
+                continuation_of[index] = last_move
+                continue
             unplaced.append(row)
     result['first_row'] = (rows[0]['page'], rows[0]['source']['table_index'], rows[0]['raw']['row_index']) if rows else ''
     # Unplaced money lines only count inside a page's movement region: between its first and last movement.
@@ -1488,7 +2426,7 @@ def _reading(rows, statement, style, exponent, liability, period):
             proof['reason'] = 'no_movements_or_controls'
         elif not controls['opening']:
             proof['reason'] = 'no_opening'
-        elif not controls['closing']:
+        elif not controls['closing'] and not column_totals:
             proof['reason'] = 'no_closing'
         elif date_problem:
             proof['reason'] = date_problem
@@ -1536,13 +2474,14 @@ def _undated_charge(row, style, exponent):
 def _is_header(row):
     """A movement-table heading: a date word, a money word, and mostly column words (E1)."""
     tokens = sorted(row['tokens'], key=lambda t: (t['line'], t['x0']))
-    if not tokens or len(tokens) > 16:
+    words = _letter_spaced(tokens)
+    if not tokens or len(words) > 16:
         return False
     roles, covered, index = [], 0, 0
-    while index < len(tokens):
+    while index < len(words):
         for size in (3, 2, 1):
-            group = tokens[index:index + size]
-            role = column_role(label(' '.join(t['t'] for t in group))) if len(group) == size else None
+            group = words[index:index + size]
+            role = column_role(label(' '.join(text for text, _ in group))) if len(group) == size else None
             if role:
                 roles.append(role)
                 covered += size
@@ -1551,7 +2490,25 @@ def _is_header(row):
         else:
             index += 1
     return ('date' in roles and bool(set(roles) & {'credit', 'debit', 'amount', 'balance'})
-            and covered * 2 >= len(tokens))
+            and covered * 2 >= len(words))
+
+
+def _letter_spaced(tokens):
+    """[(word, line)]: a heading word printed letter-spaced ('F E C H A') is one word (E1): a run of at least
+    three single letters on one line is joined."""
+    words, index = [], 0
+    while index < len(tokens):
+        end = index
+        while (end < len(tokens) and len(tokens[end]['t']) == 1 and tokens[end]['t'].isalpha()
+               and tokens[end]['line'] == tokens[index]['line']):
+            end += 1
+        if end - index >= 3:
+            words.append((''.join(t['t'] for t in tokens[index:end]), tokens[index]['line']))
+            index = end
+        else:
+            words.append((tokens[index]['t'], tokens[index]['line']))
+            index += 1
+    return words
 
 
 def _below(row, move):
@@ -1702,7 +2659,17 @@ def _search(moves, columns, hints, controls, column_totals, style, exponent, lia
                     totals_found += 1
                     if money(token['t'], style, exponent) != (credits if role == 'credit' else debits):
                         totals_ok, totals_failed = False, True
-        for opening, closing in product(openings, closings):
+        # A column-total line printing a value in the running-balance column prints the balance after the
+        # last movement: a closing-balance candidate (D6); unequal candidates cannot both prove.
+        here_closings = dict(closings)
+        for item in column_totals:
+            for token in item['tokens']:
+                band = _band(token, columns, width) if columns else None
+                if band is not None and assignment[band] == 'balance':
+                    value = money(token['t'], style, exponent)
+                    if value is not None:
+                        here_closings.setdefault(value, dict(row=item['row'], value_token=token, count=None))
+        for opening, closing in product(openings, here_closings):
             net = sum(v['effect'] for v in effects)
             closing_ok = opening + net == closing
             chains = []
@@ -1726,7 +2693,7 @@ def _search(moves, columns, hints, controls, column_totals, style, exponent, lia
             key = (opening, closing, tuple((m['row']['_index'], v.get('direction'), v.get('amount')) for m, v in zip(moves, values)))
             results.append(dict(proved=proved, closing_ok=closing_ok, totals_failed=totals_failed, chain_ok=chain_ok,
                                 key=key, assignment=assignment, values=values, opening=opening, closing=closing,
-                                basis=basis, opening_item=openings[opening], closing_item=closings[closing]))
+                                basis=basis, opening_item=openings[opening], closing_item=here_closings[closing]))
     return results
 
 
@@ -1765,7 +2732,8 @@ def _rows(rows, moves, resolved, chosen, controls, column_totals, statement, sty
             fields = item['fields']
             description = ' '.join(t['t'] for t in move['description'])
             for extra in move['continuation']:
-                description += ' ' + extra['text']
+                description += ' ' + ' '.join(t['t'] for t in extra['tokens']
+                                              if not any(t is m for m in move['money']))
                 item.setdefault('continuation_sources', []).append(dict(
                     page_number=extra['page'], table_index=extra['source']['table_index'],
                     row_index=extra['raw']['row_index'], source_cells=extra['raw']['cells']))
