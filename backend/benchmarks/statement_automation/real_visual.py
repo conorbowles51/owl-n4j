@@ -51,6 +51,8 @@ share number uses ``-``::
     control credits_total 50.00   (printed totals and counts: credits_/debits_total, credits_/debits_/rows_count)
     group purchases        (inside a share: the rows that follow belong to this printed section)
     subtotal purchases -20.00     (the section's printed total, signed as rows are: the rows must add up to it)
+    subcount checks 2      (the section's printed number of items: its rows must number exactly that)
+    kind card              (inside a share: this period's kind, e.g. a line of credit mailed with a deposit account)
 
 A ``page`` line whose ``stmt`` dates, ``no 1`` or member differ from the open
 statement starts a new statement; ``cont`` and same-statement pages continue
@@ -213,7 +215,7 @@ class Transcription:
             word, _, rest = line.partition(' ')
             if word == 'doc':
                 self.doc = rest.strip()
-            elif word in ('issuer', 'kind', 'form', 'patch') or word == 'currency' and page is None:
+            elif word in ('issuer', 'form', 'patch') or word in ('currency', 'kind') and page is None:
                 if page is not None:
                     raise ValueError(f'line {number}: {word} belongs before the first page line')
                 self._document_line(word, rest.strip(), number)
@@ -223,13 +225,19 @@ class Transcription:
                 if not re.fullmatch(r'[A-Z]{3}', rest.strip()):
                     raise ValueError(f'line {number}: currency needs a three-letter code')
                 period['currency'] = rest.strip()
+            elif word == 'kind':
+                if period is None:
+                    raise ValueError(f'line {number}: kind inside a statement follows its share line')
+                if rest.strip() not in ('deposit', 'card'):
+                    raise ValueError(f'line {number}: kind is deposit or card')
+                period['kind'] = rest.strip()
             elif word == 'control':
                 fields = rest.split()
                 if period is None or len(fields) != 2 or fields[0] not in CONTROLS:
                     raise ValueError(f'line {number}: control needs a share open and one of {", ".join(CONTROLS)}')
                 period['controls'][fields[0]] = (_minor(fields[1], number) if fields[0].endswith('_total')
                                                  else _count(fields[1], number))
-            elif word in ('group', 'subtotal'):
+            elif word in ('group', 'subtotal', 'subcount'):
                 fields = rest.split()
                 if period is None or len(fields) != (1 if word == 'group' else 2) \
                         or not re.fullmatch(r'[a-z][a-z_]*', fields[0]):
@@ -237,6 +245,8 @@ class Transcription:
                                      + (' and its printed total' if word == 'subtotal' else ''))
                 if word == 'group':
                     period['group'] = fields[0]
+                elif word == 'subcount':
+                    period['subcounts'][fields[0]] = _count(fields[1], number)
                 else:
                     period['subtotals'][fields[0]] = _minor(fields[1], number)
             elif word == 'done':
@@ -275,7 +285,8 @@ class Transcription:
                     raise ValueError(f'line {number}: share line not understood')
                 period = dict(statement=statement, share=fields.group(1), opening=None, closing=None, rows=[],
                               pages=[statement['pages'][-1]], hold=[], unverified=[], expect=None, unread=0,
-                              line=number, currency=None, controls={}, group=None, subtotals={})
+                              line=number, currency=None, controls={}, group=None, subtotals={},
+                              subcounts={}, kind=None)
                 if fields.group(2) == '??':
                     period['unread'] += 1
                 else:
@@ -286,7 +297,8 @@ class Transcription:
                 if period is None and not self.strict and statement is not None:
                     period = dict(statement=statement, share='?', opening=None, closing=None, rows=[],
                                   pages=[statement['pages'][-1]], hold=[], unverified=[], expect=None, unread=0,
-                                  line=number, currency=None, controls={}, group=None, subtotals={})
+                                  line=number, currency=None, controls={}, group=None, subtotals={},
+                              subcounts={}, kind=None)
                     self.periods.append(period)
                 if period is None:
                     raise ValueError(f'line {number}: {word} outside a share')
@@ -385,7 +397,8 @@ def to_period(item, issuer=None):
                     account=s['member'] if s['member'] != '?' else None,
                     period_start=s['start'] if s['start'] != '-' else None,
                     period_end=s['end'], opening_minor=item['opening'], closing_minor=item['closing'],
-                    pages=sorted(set(item['pages'])), share=share if andrews else None, kind=issuer['kind'],
+                    pages=sorted(set(item['pages'])), share=share if andrews else None,
+                    kind=item.get('kind') or issuer['kind'],
                     controls=dict(item.get('controls') or {}))
     if not andrews and item['share'] not in ('-', '?'):
         period.notes.append(f"section {item['share']}")
@@ -399,16 +412,20 @@ def to_period(item, issuer=None):
         if row['balance'] is not None:
             record['balance_after'] = row['balance']
         period.rows.append(record)
-    if item.get('subtotals'):
+    if item.get('subtotals') or item.get('subcounts'):
         # A printed section total (e.g. a card's payments, purchases, fees, interest): the rows
-        # transcribed under that section, signed as transcribed, must add up to it.
-        sections = defaultdict(int)
+        # transcribed under that section, signed as transcribed, must add up to it. A printed
+        # section count (e.g. a deposit account's number of checks paid) must equal its rows.
+        sections, counts = defaultdict(int), Counter()
         for row in item['rows']:
+            counts[row.get('group')] += 1
             if not row.get('unread'):
                 sections[row.get('group')] += row['amount']
         period.controls['other_checks'] = [
             dict(ok=sections[name] == value, reason=f'{name} rows differ from the printed {name} total')
-            for name, value in sorted(item['subtotals'].items())]
+            for name, value in sorted((item.get('subtotals') or {}).items())] + [
+            dict(ok=counts[name] == value, reason=f'{name} rows differ from the printed {name} count')
+            for name, value in sorted((item.get('subcounts') or {}).items())]
     if item['unread']:
         period.problems.append('value not legible on the page image')
     if andrews and period.share is None:
