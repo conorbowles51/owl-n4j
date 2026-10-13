@@ -2,6 +2,7 @@ import type {
   SavedStatementFile,
   StatementFile,
 } from "../hooks/use-statement-register"
+import { fileCopyLine } from "./statement-copies"
 
 const count = (n: number, one: string, many: string) =>
   `${n} ${n === 1 ? one : many}`
@@ -62,8 +63,11 @@ export function statementFileCard(
     !!saved?.incomplete_count ||
     !!saved?.periods_with_checks ||
     !!saved?.available_periods
+  // Statements the system set aside as copies are named on the card, so the
+  // investigator knows before opening the file.
+  const copies = saved ? fileCopyLine(saved) : ""
   const card = (label: string, notImported = false): StatementFileCard => ({
-    label,
+    label: copies && !allPreparedIgnored ? `${label} · ${copies}` : label,
     tone,
     notImported,
     needsAction:
@@ -76,7 +80,7 @@ export function statementFileCard(
     return { label: "Removed from Financial", tone, notImported: false, needsAction: false }
   if (allPreparedIgnored)
     return {
-      label: "Duplicate — left unimported",
+      label: copies || "Duplicate — left unimported",
       tone,
       notImported: false,
       needsAction: false,

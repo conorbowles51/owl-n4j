@@ -644,6 +644,13 @@ from services.financial import import_batches
 
 class CreateFinancialBatch(EvidenceSelectionRequest):
     request_id: UUID
+    # Files already in an unfinished batch continue it unless this is set.
+    start_new: bool = False
+
+
+class FinancialBatchPreview(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    file_ids: list[UUID] = Field(min_length=1, max_length=10000)
 
 
 class ConfirmFinancialBatch(BaseModel):
@@ -735,8 +742,8 @@ def withdraw_layout_memory(confirmation_id: UUID, body: LayoutMemoryWithdrawal, 
 @router.post('/batches', dependencies=[Depends(case_access_dependency(lambda request,payload: ('case','edit'))), Depends(case_access_dependency(lambda request,payload: ('evidence','upload')))])
 def create_financial_batch(body: CreateFinancialBatch, case_id: UUID = Query(...), user=Depends(get_current_db_user), db: Session = Depends(get_db)):
     try:
-        identifier=import_batches.create_batch(db,case_id=case_id,request_id=body.request_id,file_ids=body.file_ids,folder_ids=body.folder_ids,actor=actor_from_user(user))
-        return dict(id=str(identifier),case_id=str(case_id))
+        identifier=import_batches.create_batch(db,case_id=case_id,request_id=body.request_id,file_ids=body.file_ids,folder_ids=body.folder_ids,actor=actor_from_user(user),start_new=body.start_new)
+        return dict(id=str(identifier),case_id=str(case_id),continued=identifier!=body.request_id)
     except PdfMappingError as exc:
         db.rollback();raise HTTPException(status_code=exc.status_code,detail=str(exc)) from exc
 
@@ -768,6 +775,16 @@ def confirm_financial_removal(body: ConfirmFinancialRemoval, case_id: UUID = Que
         return remove_imports(db, case_id=case_id, actor=actor_from_user(user), **body.model_dump())
     except PdfMappingError as exc:
         db.rollback()
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+@router.post('/batches/preview')
+def preview_financial_batch(body: FinancialBatchPreview, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    """Before a batch starts: open batches holding these files, and files that are copies. Read only."""
+    from services.financial.batch_selection_preview import selection_preview
+    try:
+        return selection_preview(db, case_id=case_id, file_ids=body.file_ids)
+    except PdfMappingError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
 

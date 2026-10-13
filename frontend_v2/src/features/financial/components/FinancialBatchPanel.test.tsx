@@ -1089,3 +1089,85 @@ it("keeps the last confirmed batch visible after a failed refresh and requires f
   expect(screen.getByRole("button", { name: "Check for additional statement periods" })).toBeEnabled()
   expect(vi.mocked(fetchAPI).mock.calls.every(([, options]) => !options?.method)).toBe(true)
 })
+
+it("says which files are only copies before anything is opened and badges each copy", async () => {
+  const disposition = {
+    policy: "p",
+    reading_revision: "d".repeat(64),
+    revision: "e".repeat(64),
+    status: "ignored",
+    label: "Duplicate - Ignored by system",
+    reason: "Same statement as a retained file.",
+    current: true,
+    matched_fields: [],
+    basis: "identical_financial_reading",
+    retained: {
+      evidence_file_id: "00000000-0000-4000-8000-000000000001",
+      filename: "Kept.pdf",
+      page_number: 4,
+    },
+  }
+  vi.mocked(fetchAPI).mockImplementation(
+    async () =>
+      ({
+        ...batch,
+        total: 2,
+        items: [
+          item,
+          {
+            ...item,
+            id: "copy",
+            file_id: "copy-file",
+            filename: "Kept - Copy.pdf",
+            status: "duplicate_ignored",
+            problems: [],
+            duplicate_disposition: disposition,
+          },
+        ],
+        file_overview: [
+          {
+            file_id: "file",
+            filename: "Checking.pdf",
+            statements: 3,
+            copies: 1,
+            unfinished: 2,
+            saved: 0,
+            all_copies: false,
+            retained: [
+              { filename: "Kept.pdf", evidence_file_id: null, copies: 1 },
+            ],
+          },
+          {
+            file_id: "copy-file",
+            filename: "Kept - Copy.pdf",
+            statements: 53,
+            copies: 53,
+            unfinished: 0,
+            saved: 0,
+            all_copies: true,
+            retained: [
+              { filename: "Kept.pdf", evidence_file_id: null, copies: 53 },
+            ],
+          },
+        ],
+      }) as never
+  )
+  mount()
+  const copies = await screen.findByRole("region", {
+    name: "Copies in this batch",
+  })
+  expect(
+    within(copies).getByText(
+      "1 file is only copies (53 statements) — nothing to review"
+    )
+  ).toBeInTheDocument()
+  expect(copies).toHaveTextContent(
+    "Kept - Copy.pdf: All 53 statements are copies of Kept.pdf — nothing to review."
+  )
+  expect(copies).toHaveTextContent(
+    "Checking.pdf: 1 of 3 statements are copies of Kept.pdf. 2 still to review."
+  )
+  expect(
+    screen.getByText("Copy of Kept.pdf p.4 · nothing to review")
+  ).toBeInTheDocument()
+})

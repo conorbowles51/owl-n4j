@@ -120,3 +120,54 @@ describe("status polling", () => {
     expect(statusPollInterval({ ...idle, active: false })).toBe(false)
   })
 })
+
+describe("copies on the file card", () => {
+  const ignored = (filename: string) => ({
+    statement_id: null,
+    currency: "USD",
+    decision: {
+      policy: "p",
+      reading_revision: "d".repeat(64),
+      revision: "e".repeat(64),
+      status: "ignored",
+      label: "Duplicate - Ignored by system",
+      reason: "",
+      current: true,
+      matched_fields: [],
+      retained: {
+        evidence_file_id: "00000000-0000-4000-8000-000000000001",
+        filename,
+        page_number: 1,
+      },
+    },
+  })
+  it("names the retained file when every statement is a copy, outside Needs action", () => {
+    const card = statementFileCard(
+      processed,
+      saved({
+        prepared_periods: 2,
+        ignored_periods: 2,
+        duplicate_dispositions: [ignored("Kept.pdf"), ignored("Kept.pdf")],
+      }),
+      { statusLoaded: true }
+    )
+    expect(card.label).toBe(
+      "All 2 statements are copies of Kept.pdf — nothing to review"
+    )
+    expect(card.needsAction).toBe(false)
+  })
+  it("says how many are copies when only some are, and keeps the rest as work", () => {
+    const card = statementFileCard(
+      processed,
+      saved({
+        prepared_periods: 3,
+        ignored_periods: 1,
+        periods_with_checks: 2,
+        duplicate_dispositions: [ignored("Kept.pdf")],
+      }),
+      { statusLoaded: true }
+    )
+    expect(card.label).toContain("1 of 3 statements are copies of Kept.pdf")
+    expect(card.needsAction).toBe(true)
+  })
+})
