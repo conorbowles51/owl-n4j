@@ -265,3 +265,27 @@ it("words outcomes and record statuses plainly", () => {
   for (const text of [held.message, status({}), status({ can_enter_now: true })])
     expect(text).not.toContain("—")
 })
+
+it("lists statements whose details were filled automatically, with each value and its source", async () => {
+  const filledQueue = {
+    ...queue,
+    counts: { ...queue.counts, filled: 1 },
+    filled: [{
+      ...base, id: "f9", batch_id: "b1", filename: "Filled.pdf", bucket: "filled", period_start: "2021-02-01",
+      period_end: "2021-02-28", issue: "Currency filled: USD (same account's 3 saved statements, all USD)",
+      proposals: { currency: { value: "USD", label: "same account's 3 saved statements, all USD", confirmed: true } },
+    }],
+  }
+  vi.mocked(fetchAPI).mockImplementation(async (url: string) => {
+    if (url.includes("/review/queue")) return filledQueue as never
+    throw Error(`unexpected ${url}`)
+  })
+  mount("/cases/case/financial?view=statements&queue=1")
+  fireEvent.click(await screen.findByRole("button", { name: "Details filled automatically 1" }))
+  expect(await screen.findByText("Filled.pdf")).toBeVisible()
+  expect(screen.getByLabelText("Details found automatically")).toHaveTextContent(
+    "Fills currency: USD (same account's 3 saved statements, all USD)"
+  )
+  expect(screen.getByRole("button", { name: "Open to change" })).toBeVisible()
+  expect(screen.getByRole("button", { name: "Save all 4 ready statements" })).toBeVisible()
+})

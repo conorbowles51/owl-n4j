@@ -14,14 +14,22 @@ import {
   type ReviewQueue,
 } from "../lib/review-queue"
 
-type ListName = "waiting" | "copies" | "unreadable"
+type ListName = "waiting" | "filled" | "copies" | "unreadable"
 const QUEUE_KEYS = ["queueItem", "queueList", "queueFiles"]
+const FIELD_NAMES: Record<string, string> = {
+  currency: "currency",
+  institution: "bank",
+  holder: "account holder",
+  account_number: "account number",
+}
 
 function listOf(data: ReviewQueue | undefined, name: ListName): QueueEntry[] {
   if (!data) return []
   return name === "copies"
     ? data.copies
-    : name === "unreadable"
+    : name === "filled"
+      ? data.filled
+      : name === "unreadable"
       ? data.unreadable
       : data.items
 }
@@ -57,6 +65,7 @@ export function ReviewStatusLine({
   const parts = [
     part("Imported", c.imported),
     part("Waiting for you", c.waiting, "waiting"),
+    ...(c.filled ? [part("Details filled automatically", c.filled, "filled")] : []),
     ...(c.ready ? [part("Ready to save", c.ready)] : []),
     part("Copies set aside", c.copies, "copies"),
     part("Couldn't read", c.unreadable + c.unreadable_files, "unreadable"),
@@ -74,11 +83,11 @@ export function ReviewStatusLine({
           </span>
         ))}
       </p>
-      {onSaveReady && c.ready > 0 && (
+      {onSaveReady && c.ready + c.filled > 0 && (
         <Button size="sm" disabled={saving} onClick={onSaveReady}>
           {saving
             ? "Saving ready statements…"
-            : `Save all ${c.ready} ready ${c.ready === 1 ? "statement" : "statements"}`}
+            : `Save all ${c.ready + c.filled} ready ${c.ready + c.filled === 1 ? "statement" : "statements"}`}
         </Button>
       )}
     </div>
@@ -249,12 +258,16 @@ export function ReviewQueuePanel({
         <h3 className="text-lg font-semibold">
           {list === "copies"
             ? "Review copies"
-            : list === "unreadable"
+            : list === "filled"
+              ? "Details filled automatically"
+              : list === "unreadable"
               ? "Couldn't read"
               : "Waiting for you"}
         </h3>
         <p className="text-sm text-muted-foreground">
-          {list === "copies"
+          {list === "filled"
+            ? "Statements whose only missing details were found with certainty in the same account's saved statements. Saving fills them as System (each change is kept in the file's account-detail history) and the statement is saved only if everything else checks out. To use another value, open the statement and change it before or after saving."
+            : list === "copies"
             ? "Statements that are copies of another statement in this case. Copies the system set aside count nothing; possible copies wait for you to compare them with the original."
             : list === "unreadable"
               ? "Statements or files where nothing usable could be read. Open one to see its pages."
@@ -325,6 +338,11 @@ export function ReviewQueuePanel({
               Back to waiting for you ({query.data.counts.waiting})
             </Button>
           )}
+          {list === "waiting" && query.data.counts.filled > 0 && (
+            <Button variant="outline" size="sm" onClick={() => showList("filled")}>
+              Details filled automatically ({query.data.counts.filled})
+            </Button>
+          )}
           {list === "waiting" && query.data.counts.ready > 0 && (
             <div className="rounded border p-3 text-sm space-y-2" aria-label="Ready to save">
               <p>
@@ -340,6 +358,9 @@ export function ReviewQueuePanel({
                 <Button size="sm" disabled={!!saving} onClick={() => void saveReady()}>
                   Save {query.data.counts.ready} ready{" "}
                   {query.data.counts.ready === 1 ? "statement" : "statements"}
+                  {query.data.counts.filled
+                    ? ` (and ${query.data.counts.filled} with details filled automatically)`
+                    : ""}
                 </Button>
               )}
             </div>
@@ -355,6 +376,8 @@ export function ReviewQueuePanel({
                 ? "Nothing is waiting for you."
                 : list === "copies"
                   ? "No copies."
+                : list === "filled"
+                  ? "No statement waits only for details found automatically."
                   : "Every statement could be read."}
             </p>
           ) : (
@@ -372,6 +395,17 @@ export function ReviewQueuePanel({
                         {entry.other_problems > 0 &&
                           ` (and ${entry.other_problems} more ${entry.other_problems === 1 ? "check" : "checks"})`}
                       </p>
+                    )}
+                    {entry.proposals && (list === "filled" || list === "waiting") && (
+                      <ul className="mt-1 text-xs" aria-label="Details found automatically">
+                        {Object.entries(entry.proposals).map(([field, proposal]) => (
+                          <li key={field}>
+                            {proposal.confirmed ? "Fills" : "Proposed"}{" "}
+                            {FIELD_NAMES[field] ?? field}: <strong>{proposal.value}</strong>{" "}
+                            ({proposal.label})
+                          </li>
+                        ))}
+                      </ul>
                     )}
                     {list === "copies" && (
                       <p className="mt-1">
@@ -391,7 +425,7 @@ export function ReviewQueuePanel({
                         open(entry)
                       }}
                     >
-                      {list === "copies" ? "Open copy" : "Open"}
+                      {list === "copies" ? "Open copy" : list === "filled" ? "Open to change" : "Open"}
                     </Button>
                   )}
                 </li>
