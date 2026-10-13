@@ -49,11 +49,23 @@ export const queueCounts = z.object({
 })
 export type QueueCounts = z.infer<typeof queueCounts>
 
+/** Statement files being read or prepared now, and files never read. */
+export const readingProgress = z.object({
+  files_total: z.number().default(0),
+  files_done: z.number().default(0),
+  files_reading: z.number().default(0),
+  files_waiting_to_start: z.number().default(0),
+  paused: z.boolean().default(false),
+  unread_statement_files: z.number().default(0),
+})
+export type ReadingProgress = z.infer<typeof readingProgress>
+
 export const reviewQueue = z.object({
   case_id: z.string(),
   file_ids: z.array(z.string()).default([]),
   counts: queueCounts,
   status_line: z.string(),
+  reading: readingProgress.optional(),
   items: z.array(entry),
   copies: z.array(entry).default([]),
   unreadable: z.array(entry).default([]),
@@ -87,12 +99,16 @@ export function useReviewQueue(
   fileIds: string[] = [],
   enabled = true
 ) {
-  return useQuery({
+  return useQuery<ReviewQueue>({
     queryKey: reviewQueueKey(caseId, fileIds),
     enabled,
     // The queue is a read of stored preparations; keep the last answer on
     // screen while a refresh runs, so Next never waits for it.
     placeholderData: keepPreviousData,
+    // While statement files are being read, statements join the queue as
+    // each file finishes.
+    refetchInterval: (query): number | false =>
+      isReading(query.state.data?.reading) ? READING_POLL_MS : false,
     queryFn: async ({ signal }) => {
       const search = new URLSearchParams({ case_id: caseId })
       for (const id of fileIds) search.append("file_id", id)
@@ -109,10 +125,45 @@ export function useReviewQueue(
   })
 }
 
+export const READING_POLL_MS = 15000
+
+export function isReading(reading?: ReadingProgress) {
+  return !!reading && (reading.files_reading > 0 || reading.files_waiting_to_start > 0)
+}
+
+/** "Reading 12 of 40 files…", or "" when nothing is being read. */
+export function readingSentence(reading?: ReadingProgress) {
+  if (!reading || !isReading(reading)) return ""
+  const total = reading.files_total + reading.files_waiting_to_start
+  if (reading.paused)
+    return `Reading paused at ${reading.files_done} of ${total} files`
+  return `Reading ${Math.min(reading.files_done + 1, total)} of ${total} files…`
+}
+
+/** Read the case's statement files that were never read or prepared. */
+export async function readUnreadStatements(caseId: string) {
+  const result = z
+    .object({
+      case_id: z.string(),
+      added: z.number(),
+      copies: z.number().default(0),
+      batch_id: z.string().nullable(),
+    })
+    .parse(
+      await fetchAPI(
+        `/api/financial/statement-import/review/read-unread?case_id=${caseId}`,
+        { method: "POST" }
+      )
+    )
+  if (result.case_id !== caseId) throw Error("The answer belongs to another case.")
+  return result
+}
+
 const status = z.object({
   case_id: z.string(),
   counts: queueCounts,
   status_line: z.string(),
+  reading: readingProgress.optional(),
 })
 
 export function useReviewStatus(caseId: string, enabled = true) {

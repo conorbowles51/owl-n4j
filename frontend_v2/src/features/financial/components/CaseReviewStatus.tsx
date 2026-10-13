@@ -2,6 +2,7 @@ import { useState } from "react"
 import { Link } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { ReviewStatusLine } from "./ReviewQueuePanel"
+import { ReadingProgress } from "./ReadingProgress"
 import { useReviewCases, useReviewQueue, useReviewStatus } from "../lib/review-queue"
 
 /** This case's status line, with the way into its review queue, and the same line for the other cases. */
@@ -41,6 +42,7 @@ export function CaseReviewStatus({
           </Button>
         </div>
       )}
+      {queue.data && <ReadingProgress caseId={caseId} reading={queue.data.reading} />}
       <details onToggle={(event) => setShowCases((event.target as HTMLDetailsElement).open)}>
         <summary className="cursor-pointer text-sm">All financial cases</summary>
         {showCases && <OtherCases currentCaseId={caseId} />}
