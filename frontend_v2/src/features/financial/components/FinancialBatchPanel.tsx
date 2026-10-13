@@ -1672,6 +1672,7 @@ export type QueueNavigation = {
   /** The plain sentence naming the problem, shown before anything else. */
   issue?: string
   field?: "holder" | "account_number" | "period" | "currency" | "institution"
+  proposals?: Record<string, { value: string; label: string; confirmed?: boolean }>
   position: number
   total: number
   onNext: () => void
@@ -2036,6 +2037,7 @@ export function BatchStatementReview({
                     )
                 )?.field as "holder" | "account_number" | "period" | undefined)
               : undefined),
+            proposals: queue?.proposals,
             draftRevision: item.review_revision,
             save,
             confirm: (request) =>

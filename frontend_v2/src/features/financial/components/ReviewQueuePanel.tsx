@@ -236,6 +236,7 @@ export function ReviewQueuePanel({
           queue={{
             issue: active.issue,
             field: active.field ?? undefined,
+            proposals: active.proposals,
             position: Math.max(index, 0) + 1,
             total: entries.length || 1,
             onNext: () => step(1),

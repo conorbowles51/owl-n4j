@@ -4,6 +4,8 @@ export const BatchReviewContext = createContext<{
   batchId?: string
   rowId?: string
   field?: "holder" | "account_number" | "period" | "currency" | "institution"
+  /** From the queue: proposed values for missing details (value, source, certainty). */
+  proposals?: Record<string, { value: string; label: string; confirmed?: boolean }>
   draftRevision?: string
   draft?: import("./statement-review-draft").StatementDraft
   save: (request: unknown) => Promise<unknown>
