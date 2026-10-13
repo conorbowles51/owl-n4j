@@ -13,36 +13,28 @@ sets it itself only when it is genuinely blocked on Neil; see "Halt rules".)
 
 ## ▶ NEXT
 
-**(2026-10-11 15:30) REAL-DOCUMENT wave 4 integrated into fin/release-1 and LIVE (a15230a0 deployed by Neil's
-interactive session on 2026-10-10). Squash merges t-visual-v08 3512460d, r4-any-layout 435a6514, r4-cards 8f9258c8;
-r4-any-layout REVERTED 2a9ba3ab; fin/alex-1009 02c1e7cb and fin/r5-alex-feedback 6e9bc80a merged per Neil's 2026-10-09
-instruction, tsc fix 14423877; the interactive session's fin/alex-release merges 00bce7c1, a15230a0 on top. NOT pushed
-by this session. The real-document driver owns the next waves; running state, counts and history in
-/mnt/owl-data/fin-wt/headless/real/STATE.md (counts only).**
-Why the revert: the whole-set run on the merged code (bench/wave4, full fresh engine read, reading revision v16) admitted
-1 period matching no truth period: a Santander scan whose money equals truth but whose holder is a movement description
-line (the general engine's address-block holder fallback accepts movement lines ending in a five-digit reference as a
-postal line) and whose account is the 18-digit interbank number. Replayed: before the merge held, with it admitted,
-reverted held. Integration rule: a unit that admits a wrong period on real data is not merged. Never deployed.
-Real headline on the deployed code (bench/wave4-a152, frozen copy of a15230a0, wave-4 readings, exit 0): **1,034/1,237
-ready without edits (83.6%)**, recoverable 1,034/1,233; on wave 3's 529 documents 1,028/1,191 (was 977); **0 wrong
-admissions**, 0 critical-field errors (13,804 rows), must-hold 4/4, 0 previously ready periods lost, 57 gained (Credit
-One 18 -> 51/53, Merrick 0 -> 16/42, Monex +6 engine-served). Engine-served 46, library-served 988. With r4-any-layout it
-was 1,050 and 1 wrong. Truth: inventory 729 -> 832 statement documents (M&T, Synchrony, Navy Federal, Wells Fargo
-arrivals), final 587/832, compared 567/827; Monex holder truth defect fixed. Actions per 100 statements 994 / 961
-grouped (791 / 769 on wave 3's 529, was 920 / 897). Live (read-only, post-deploy): 811 admitted periods on truth
-documents, 4 disagree (current code reads all 4 equal; they need a re-read), 0 printed periods admitted twice (was 102).
-Census (measured before the revert): 1,118/2,466 (45.3%). Synthetic 105/125, 0 wrong. Suites on a15230a0: financial
-5,985 (2 known failures + 3 load/frozen-copy artefacts that pass in the worktree); tsc 0; vitest unit 2,093/2,094 (1
-pre-existing failure: the route-check limit test vs upstream 4309cb5f, open decision).
-**Wave 5 (headless/real/wave5.units, prompts headless/real/units/):** `r5-any-layout` (re-apply r4-any-layout, fix the
-holder rule and the interbank-number account first, prove 0 wrong on the whole set, then Santander/BBVA/Intercam/Kapital/
-Scotiabank/Monex residue, census currency, generic-only figure), `r5-andrews-cards` (Neil's rulings of 2026-10-09:
-Andrews direction from the printed sign when both printed balances agree, not built yet; late-posted card charges, built
-for saved statements by ec6fca0b, to extend to fresh reads and measure; Andrews residue 66, Merrick 26), `t-visual-v17`
-(16 Synchrony card statements, all read empty live: truth plus the blind on-arrival figure; Synchrony reader in wave 6).
+**(2026-10-13 19:50) REAL-DOCUMENT wave 5 integrated into fin/release-1 (headless integrate-5). Regular merges
+t-visual-v17 65c13e2c, r5-any-layout 780b31a1, r5-andrews-cards ef0877d6 (WIP-NOTES.md dropped); test-placement fix
+e3649edb. NOT pushed, NOT deployed (live is still a15230a0). The real-document driver owns the next waves; running
+state, counts and history in /mnt/owl-data/fin-wt/headless/real/STATE.md (counts only).**
+Real headline (bench/wave5, frozen copy of ef0877d6, fresh engine read at reading revision v17, 583 documents, exit 0):
+**1,118/1,253 ready without edits (89.2%)**, recoverable 1,118/1,249; on wave 4's 567 documents 1,118/1,237 (was
+1,034); **0 wrong admissions**, 0 critical-field errors (17,085 rows), must-hold 4/4, copies 148/151, 0 previously
+ready periods lost, 84 gained (BBVA 22, Andrews 31, Monex 7, Merrick 7, Intercam 5, Scotiabank 5, Kapital 4, Santander
+3). Engine-served 92, library-served 1,026. Synchrony (new truth) 0/16, 0 wrong. Both of Neil's 2026-10-09 rulings are
+built (Andrews printed-sign direction: 4 periods unlocked, 7 rows, all equal to truth; late-posted card charges
+extended to fresh reads, no truth period changed, saved-statement path accepts the new basis). r4-any-layout's engine
+work is back with its holder/account fix (0 wrong). Actions per 100 statements 649 / 624 grouped (634 / 619 on wave 4's
+567, was 994 / 961). Truth final 603/832, compared 583/827. Live (read-only): 5 periods disagree (3 earlier ones the
+current code reads correctly; the investigator's 2 hand-entered Synchrony periods with every direction inverted).
+Synthetic 105/125, 0 wrong. Suites: financial 6,089 (2 known failures after e3649edb); tsc 0; vitest unit 2,093/2,094
+(route-check limit test, open decision).
+**Wave 6 (headless/real/wave6.units, prompts headless/real/units/):** `r6-synchrony` (general engine first: one-cell
+transaction tables split by printed line, closing-date + days-in-cycle periods, card summary vocabulary; target 16/16),
+`r6-vector-text` (OCR routing for vector-outline pages; target the 4 long BBVA cash-management statements carrying
+1,624 of 2,866 per-period person-actions), `t-visual-v15` (40 M&T documents: truth + on-arrival figure).
 Acceptance for every unit: 0 wrong admissions real and synthetic (including 0 admitted items that match no truth
-period), synthetic >= 105/125, no ready period lost against bench/wave4-a152.
+period), synthetic >= 105/125, no ready period lost against bench/wave5.
 **Everything below in this section is the synthetic track (wave 5 state), parked behind the real waves.**
 Release-1 now (corpus v4, 124 distinct periods, bench-runs/release-1-w5, exit 0): **102/124 ready without edits (82.3%)**,
 102/107 recoverable (95.3%), 0 wrong admissions, 0 critical-field errors (347 saved), 0 valid-looking wrong values
@@ -68,11 +60,13 @@ Correctly held and not in a unit: 10 must-hold (omitted rows, missing pages, dep
 
 **Open Neil decisions (nothing above waits on them; all have a recorded default):**
 - **Deployed: a15230a0 is live** (Neil's interactive session, 2026-10-10): real waves 1-4 without r4-any-layout, plus the
-  investigator-feedback work. Never deploy a head containing 435a6514 without its r5-any-layout fix.
+  investigator-feedback work. Never deploy a head containing 435a6514 without its r5-any-layout fix (fin/release-1 carries both since
+  780b31a1; wave 5 is measured 0 wrong and not deployed).
 - **Live double admission: resolved.** The read-only audit on 2026-10-11 finds 0 printed periods admitted twice (was 102);
   the set-aside was applied live (not by the headless runner).
-- **4 live periods disagree with verified truth** (opaque ids in headless/real/STATE.md). The deployed code reads all 4
-  equal to truth; recommend re-reading their sources now (a live write: interactive session).
+- **5 live periods disagree with verified truth** (opaque ids in headless/real/STATE.md, audit 2026-10-13): 3 that the
+  current code reads equal to truth (re-read them), and the investigator's 2 hand-entered Synchrony periods with every
+  row's direction inverted (set the card account's type, or re-read after r6-synchrony; live writes, interactive).
 - **Route-check: deployed.** a15230a0 (live) carries the route-check fix 41a306a8 (no more 500 from the missing
   `MAX_BATCH_SIZE`) and upstream 4309cb5f, which removed the route-check file limit itself; our frontend unit test still
   asserts that limit (the one vitest failure). Recommend aligning that test with the server.
@@ -664,3 +658,26 @@ brief (briefs = Queue entries above + the 2026-10-02 log lines). Automation is t
   code reads all 4 equal), 0 printed periods admitted twice.
 - Wave 5 third slot changed to t-visual-v17 (Synchrony, all 16 read empty live) from v15 (M&T; prompt kept). Wave 5:
   r5-any-layout, r5-andrews-cards, t-visual-v17. STATUS-FOR-NEIL.md rewritten.
+
+### 2026-10-13 19:50 — REAL-DOCUMENT wave 5 merged into fin/release-1 (headless integrate-5)
+- All three notes say complete with 0 wrong on real and synthetic; none refused. Private scan of the net diffs, every
+  intermediate commit and every message against truth holders, words, accounts, inventory file names and non-round
+  amounts: clean (only the round synthetic figure 100,000.00). Regular merges, WIP-NOTES.md dropped, notes archived
+  /mnt/owl-data/fin-wt/notes/{t-visual-v17,r5-any-layout,r5-andrews-cards}.md: `fin/t-visual-v17` (65c13e2c),
+  `fin/r5-any-layout` (780b31a1), `fin/r5-andrews-cards` (ef0877d6). Disjoint files, no conflicts.
+- Merge breakage fixed (e3649edb): t-visual-v17 inserted its tests between the pdfplumber skip decorator and
+  SyntheticCorpusTruthTests, so that class failed without pdfplumber (the service venv) and the Synchrony tests were
+  skipped. Decorator moved back; module 43 OK with and without pdfplumber.
+- **Real benchmark, full fresh read** (bench/wave5, frozen ef0877d6; read 3 h 23 min, 0 reading errors; import 11 h;
+  REAL_EXIT=0): **1,118/1,253**, recoverable 1,118/1,249, 0 wrong, 0 critical (17,085 rows), holds 4/4, copies
+  148/151, 0 lost, 84 gained; 68 valid-looking wrong values, none in a ready period; 18 unmatched items, 0 offered.
+  Compare 583/827 statements (1,263 of 1,442 without disagreement; in ready periods only BBVA holder punctuation 24).
+- Live ledger audit (read-only, audit-wave5): 813 admitted periods on truth documents, 5 disagree (3 earlier + 2
+  hand-entered Synchrony periods with inverted directions), 0 printed periods admitted twice.
+- Census not re-run (census-r5 on this wave's engine: 1,165 ready of 3,154 raw periods).
+- Synthetic (bench-runs/real-wave5, BENCH_EXIT=0): 105/125, 105/108, 0 wrong.
+- Suites (live .venv, CHROMADB_PORT=1 CHROMA_PORT=1): financial **Ran 6,089, failures=3** (2 known unassigned_statement
+  + the test-placement failure fixed in e3649edb), skipped 21; tsc -b 0; vitest unit 300 files 2,093/2,094
+  (route-check limit test, pre-existing). Logs bench-runs/real-wave5{,-suite,-tsc,-vitest}.log.
+- Wave 6 planned: r6-synchrony, r6-vector-text, t-visual-v15 (prompt updated: the M&T institution profile is back).
+  STATE.md and STATUS-FOR-NEIL.md rewritten.
