@@ -455,7 +455,6 @@ class InventoryTests(unittest.TestCase):
             self.assertNotIn('a.pdf', json.dumps(real_inventory.counts(inventory)))
 
 
-@unittest.skipUnless(READERS, 'pdfplumber and PyMuPDF are needed for the end-to-end reading check')
 def placed(number, lines):
     """A page from lines of ``(text, x0)`` words (layouts where columns share a printed line)."""
     built = [rt.Line(10.0 * i, [word(text, x0, 10.0 * i) for text, x0 in line]) for i, line in enumerate(lines)]
@@ -543,6 +542,7 @@ class SynchronyTruthTests(unittest.TestCase):
                          'synchrony-card')
 
 
+@unittest.skipUnless(READERS, 'pdfplumber and PyMuPDF are needed for the end-to-end reading check')
 class SyntheticCorpusTruthTests(unittest.TestCase):
     """Whatever the independent reader verifies on the synthetic corpus equals the known truth."""
 
