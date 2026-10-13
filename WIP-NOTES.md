@@ -94,9 +94,15 @@ counts only. Private detail (detector features per file, CLI dry-run): /mnt/owl-
    `python3 scripts/financial_read_unread_statements.py --case <d5b330d1> --evidence --apply` when the queue can take
    them (they read at 2 at a time; statements then appear in the queue). Dry run first.
 3. 267842f3: 10 read, never prepared statement files -> the queue button, or the CLI `--case ... --apply`.
-4. A statement read automatically gets status `processed` (pdf_review); the Evidence "Process" AI pipeline skips
-   processed files, which matches the route-check intent that bank files belong in the ledger, not the document
-   pipeline.
+4. Detected-only files stay ordinary Evidence (coordinator, before release): a file that reached the automatic batch
+   only through Evidence-upload detection (or the CLI `--evidence` backfill) is read from an internal statement
+   version (same bytes, hidden from Evidence listings; `auto_read.prepare_detected`), so the original stays
+   `unprocessed` and the Evidence AI pipeline (search, entities) processes it as normal. An original the Evidence
+   pipeline already processed is used as it is. Only files a person put in Financial (upload in Financial, Read
+   button, unread-files action) are read themselves and then count as processed, as before.
+   Tests: `EvidenceProcessingTests` (detected -> copy read, original unprocessed, `process_db_files` full mode still
+   accepts it; chosen in Financial -> original read). Re-run: auto_read 11, import_batches, review_queue,
+   batch_read_stored, admission_gate, file_scope: 206 pass.
 
 ## Coordination
 UI touched only: ReadingProgress (new), one line each in CaseReviewStatus and ReviewQueuePanel (after
