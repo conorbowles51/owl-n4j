@@ -53,7 +53,10 @@ def status_fingerprint(session, case_id):
     """Fingerprint of every row the register reads, or None when not supported."""
     if session.get_bind().dialect.name != 'postgresql':
         return None
-    return tuple(tuple(row) for row in session.execute(_FINGERPRINT_SQL, dict(case_id=str(case_id))))
+    # UNION ALL has no row order: PostgreSQL returns its branches in any order
+    # (parallel plans do), and an unordered tuple made two reads of unchanged
+    # data look different, so the cache missed at random. Order by the label.
+    return tuple(sorted(tuple(row) for row in session.execute(_FINGERPRINT_SQL, dict(case_id=str(case_id)))))
 
 
 def statement_file_status(session, *, case_id, use_cache=True):
@@ -233,6 +236,7 @@ def _statement_file_status(session, *, case_id):
             saved_scopes.add((source.sha256_at_ingestion, source.statement_id))
             if source.parent_id:
                 ancestors.add(source.parent_id)
+    saved_ids = {str(source.id) for source in saved_sources if not source.removed}
     prepared_files = {p.file_id: item_files[p.file_id] for p in prepared}
     file_hashes = {key: file.sha256 for key, file in prepared_files.items()}
     # Decisions can be recorded directly from a statement, without updating its
@@ -325,7 +329,11 @@ def _statement_file_status(session, *, case_id):
             # not an automatic duplicate hold against itself. Ignored copies
             # and actual conflicting comparisons still require their decision.
             duplicate_review = False
-        already_saved = (file_hashes.get(prepared_item.file_id), prepared_item.statement_key or None) in saved_scopes
+        # Saved under its own scope, or recorded as saved by this very item
+        # (an import through another upload of the same bytes whose saved
+        # statement key differs from this older preparation's key).
+        already_saved = ((file_hashes.get(prepared_item.file_id), prepared_item.statement_key or None) in saved_scopes
+            or str(summary.get('source_document_id') or '') in saved_ids)
         available = not already_saved and not ignored and not duplicate_review and prepared_item.status in ('ready', 'attention') and summary.get('can_import', False)
         held = False
         if available:

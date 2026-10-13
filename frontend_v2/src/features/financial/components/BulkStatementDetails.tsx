@@ -39,8 +39,36 @@ const statement = z.object({
   filename: z.string(),
   status: z.string(),
   values: z.record(z.string(), z.string()),
+  // Values the case establishes for this statement's missing details, with their source.
+  proposals: z
+    .record(
+      z.string(),
+      z.object({
+        value: z.string(),
+        basis: z.string(),
+        label: z.string(),
+        confirmed: z.boolean(),
+      })
+    )
+    .optional(),
 })
 type Statement = z.infer<typeof statement>
+
+/** The one value proposed for a field to every listed statement that lacks it, or null. */
+export function commonProposal(items: Statement[], field: string) {
+  const lacking = items.filter((item) => !item.values[field]?.trim())
+  if (!lacking.length) return null
+  const proposals = lacking.map((item) => item.proposals?.[field])
+  if (proposals.some((proposal) => !proposal)) return null
+  const values = new Set(proposals.map((proposal) => proposal!.value))
+  if (values.size !== 1) return null
+  const labels = new Set(proposals.map((proposal) => proposal!.label))
+  return {
+    value: proposals[0]!.value,
+    label: labels.size === 1 ? proposals[0]!.label : "the case's saved statements",
+    statements: lacking.length,
+  }
+}
 const listing = z.object({
   case_id: z.string(),
   items: z.array(statement),
@@ -308,6 +336,12 @@ function Editor({
       `${item.values.period_start || "Start missing"} – ${item.values.period_end || "End missing"}`,
       item.status,
     ].join(" · ")
+  // A proposal is offered for the selected statements (or every listed one
+  // before a selection) only when they all lack the field and share it.
+  const proposalFor = (field: Field) =>
+    datesOnly || field.startsWith("period_")
+      ? null
+      : commonProposal(selected.length ? selected : matching, field)
   const labels = {
     ...Object.fromEntries(fields),
     period_start_unprinted: "Statement start",
@@ -665,13 +699,45 @@ function Editor({
                               checked={draft.values[field] !== undefined}
                               onChange={(event) => {
                                 const values = { ...draft.values }
-                                if (event.target.checked) values[field] = ""
+                                if (event.target.checked)
+                                  values[field] = proposalFor(field)?.value ?? ""
                                 else delete values[field]
                                 changeDraft({ values })
                               }}
                             />
                             {label}
                           </label>
+                          {draft.values[field] !== undefined &&
+                            proposalFor(field) && (
+                              <p className="text-sm">
+                                {draft.values[field] ===
+                                proposalFor(field)!.value ? (
+                                  <>
+                                    {proposalFor(field)!.value} —{" "}
+                                    {proposalFor(field)!.label}
+                                  </>
+                                ) : (
+                                  <>
+                                    Proposed: {proposalFor(field)!.value} —{" "}
+                                    {proposalFor(field)!.label}{" "}
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() =>
+                                        changeDraft({
+                                          values: {
+                                            ...draft.values,
+                                            [field]: proposalFor(field)!.value,
+                                          },
+                                        })
+                                      }
+                                    >
+                                      Use {proposalFor(field)!.value}
+                                    </Button>
+                                  </>
+                                )}
+                              </p>
+                            )}
                           {draft.values[field] !== undefined &&
                             (field === "currency" ? (
                               <select

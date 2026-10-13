@@ -148,7 +148,7 @@ function FinancialPageContent() {
   const [statementSection, setStatementSection] = useState<{
     caseId: string | undefined
     section: StatementSection
-  }>({ caseId, section: "files" })
+  }>({ caseId, section: "queue" }) // The review queue opens first: statement work is done there.
   const section =
     params.get("queue") === "1"
       ? "queue"
@@ -160,7 +160,7 @@ function FinancialPageContent() {
         ? "batches"
         : statementSection.caseId === caseId
           ? statementSection.section
-          : "files"
+          : "queue"
   const reviewingAccounts = section === "accounts"
   const statementScroll = useRef<HTMLDivElement>(null)
   const accountsDestination = useRef<HTMLDivElement>(null)

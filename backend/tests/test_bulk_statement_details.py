@@ -289,3 +289,44 @@ class BulkStatementDetailsTests(TestCase):
         self.assertEqual(preview['updated'], 1)
         self.assertTrue(reads.call_count)
         self.assertEqual({call.kwargs['evidence_file_id'] for call in reads.call_args_list}, {UUID(rows[0]['file_id'])})
+
+
+class ConfirmedProposalSaveTests(TestCase):
+    """Field proposals are saved only through this details save: System actor, source recorded, fill-missing."""
+    setUp, tearDown = BulkStatementDetailsTests.setUp, BulkStatementDetailsTests.tearDown
+    listing, request, save = BulkStatementDetailsTests.listing, BulkStatementDetailsTests.request, BulkStatementDetailsTests.save
+
+    def test_confirmed_proposals_save_through_the_details_save_and_dry_run_writes_nothing(self):
+        from services.financial.field_proposals import apply_confirmed_proposals
+        batch_id = uuid4()
+        with self.f.SessionLocal() as db:
+            batch = Batch(id=batch_id, case_id=self.f.case.id, created_by=self.f.user.id, status='ready', actor={}, files=[])
+            db.add(batch); db.commit()
+            for file in (self.f.file, self.second):
+                import_batches.prepare_reviews(db, batch, dict(file_id=str(file.id), source_id=str(file.id), filename=file.original_filename))
+        self.save(self.request(dict(holder='')))  # both drafts lose their holder
+        row = next(r for r in self.listing()['items'] if r['file_id'] == str(self.second.id))
+        self.assertEqual(row['values']['holder'], '')
+        label = "same account's 2 saved statements (account number and bank match)"
+        entries = [dict(batch_id=str(batch_id), file_id=str(self.second.id), statement_id=row['statement_id'],
+                        proposals=dict(holder=dict(value='Second Company', confirmed=True, label=label),
+                                       currency=dict(value='EUR', confirmed=False, label='case default')))]
+        with self.f.SessionLocal() as db:
+            dry = apply_confirmed_proposals(db, case_id=self.f.case.id, entries=entries)
+        self.assertEqual((dry['statements'], dry['saved'], dry['groups'][0]['would_update']), (1, 0, 1))
+        self.assertEqual(dry['groups'][0]['changes'], dict(holder='Second Company'))  # unconfirmed currency never applied
+        self.assertEqual(next(r for r in self.listing()['items'] if r['file_id'] == str(self.second.id))['values']['holder'], '')
+        with self.f.SessionLocal() as db:
+            applied = apply_confirmed_proposals(db, case_id=self.f.case.id, entries=entries, apply=True)
+        self.assertEqual(applied['saved'], 1)
+        rows = {r['file_id']: r for r in self.listing()['items']}
+        self.assertEqual(rows[str(self.second.id)]['values']['holder'], 'Second Company')
+        self.assertEqual(rows[str(self.f.file.id)]['values']['holder'], '')
+        with self.f.SessionLocal() as db:
+            history = db.get(EvidenceFile, self.second.id).metadata_['financial_account_detail_history'][-1]
+        self.assertEqual(history['actor']['name'], 'System')
+        self.assertIn(label, history['basis'])
+        # A second run changes nothing.
+        with self.f.SessionLocal() as db:
+            again = apply_confirmed_proposals(db, case_id=self.f.case.id, entries=entries, apply=True)
+        self.assertEqual(again['saved'], 0)

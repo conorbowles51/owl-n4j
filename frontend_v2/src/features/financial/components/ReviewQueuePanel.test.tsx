@@ -111,7 +111,11 @@ const queue = {
   unreadable: [],
   unreadable_files: [],
   rechecking: [],
-  ready_batches: [{ batch_id: "b1", statements: 3 }],
+  ready_batches: [{ batch_id: "b1", statements: 2 }, { batch_id: "b2", statements: 1 }],
+  ready: ["r1", "r2", "r3"].map((id, index) => ({
+    ...base, id, batch_id: index < 2 ? "b1" : "b2", filename: `Ready ${id}.pdf`, bucket: "ready",
+    status: "ready", can_import: true, period_start: "2021-01-01", period_end: "2021-01-31",
+  })),
 }
 const batchItem = (id: string) => ({
   id,
@@ -211,10 +215,34 @@ it("filters to selected files from their saved readings and never starts a batch
   expect(vi.mocked(fetchAPI).mock.calls.some(([, options]) => (options as { method?: string } | undefined)?.method === "POST")).toBe(false)
 })
 
-it("offers the ready statements' save in their batch", async () => {
-  const onOpenBatch = mount("/cases/case/financial?view=statements&queue=1")
+it("saves ready statements across batches from the queue and says the result in one line", async () => {
+  const posts: unknown[] = []
+  vi.mocked(fetchAPI).mockImplementation(async (url: string, options?: unknown) => {
+    if (url.includes("/review/queue")) return queue as never
+    if (url.includes("/review/save?")) {
+      posts.push((options as { body: unknown }).body)
+      return {
+        request_id: "q", queued: 2,
+        held: [{ item_id: "r3", filename: "Ready r3.pdf", period_start: "2021-01-01", period_end: "2021-01-31",
+                 reason: "Currency not printed: choose one" }],
+        operations: [{ batch_id: "b1", operation_id: "o1", queued: 2 }],
+      } as never
+    }
+    if (url.includes("/review/save-result"))
+      return { case_id: "case", found: 1, pending: 0, imported: 2, already_present: 0, duplicate_ignored: 0,
+               failed: [], transaction_count: 20 } as never
+    throw Error(`unexpected ${url}`)
+  })
+  mount("/cases/case/financial?view=statements&queue=1")
   fireEvent.click(await screen.findByRole("button", { name: "Save 3 ready statements" }))
-  expect(onOpenBatch).toHaveBeenCalledWith("b1", "ready_to_save")
+  expect(await screen.findByLabelText("Result of saving ready statements")).toHaveTextContent(
+    "2 imported, 1 held: 1 currency not printed: choose one"
+  )
+  // One request covers statements of both batches; no batch is opened.
+  expect(posts).toHaveLength(1)
+  expect((posts[0] as { item_ids: string[] }).item_ids).toEqual(["r1", "r2", "r3"])
+  // The same action sits in the status line.
+  expect(screen.getByRole("button", { name: "Save all 3 ready statements" })).toBeVisible()
 })
 
 it("words outcomes and record statuses plainly", () => {
@@ -236,4 +264,64 @@ it("words outcomes and record statuses plainly", () => {
   )
   for (const text of [held.message, status({}), status({ can_enter_now: true })])
     expect(text).not.toContain("—")
+})
+
+it("lists statements whose details were filled automatically, with each value and its source", async () => {
+  const filledQueue = {
+    ...queue,
+    counts: { ...queue.counts, filled: 1 },
+    filled: [{
+      ...base, id: "f9", batch_id: "b1", filename: "Filled.pdf", bucket: "filled", period_start: "2021-02-01",
+      period_end: "2021-02-28", issue: "Currency filled: USD (same account's 3 saved statements, all USD)",
+      proposals: { currency: { value: "USD", label: "same account's 3 saved statements, all USD", confirmed: true } },
+    }],
+  }
+  vi.mocked(fetchAPI).mockImplementation(async (url: string) => {
+    if (url.includes("/review/queue")) return filledQueue as never
+    throw Error(`unexpected ${url}`)
+  })
+  mount("/cases/case/financial?view=statements&queue=1")
+  fireEvent.click(await screen.findByRole("button", { name: "Details filled automatically 1" }))
+  expect(await screen.findByText("Filled.pdf")).toBeVisible()
+  expect(screen.getByLabelText("Details found automatically")).toHaveTextContent(
+    "Fills currency: USD (same account's 3 saved statements, all USD)"
+  )
+  expect(screen.getByRole("button", { name: "Open to change" })).toBeVisible()
+  expect(screen.getByRole("button", { name: "Save all 4 ready statements" })).toBeVisible()
+})
+
+it("shows every blocker after the summary sentence", async () => {
+  const withAlso = {
+    ...queue,
+    items: [{ ...entries[0], also: ["Account number not found: enter it", "Account holder not found: enter it"] }, entries[1]],
+  }
+  vi.mocked(fetchAPI).mockImplementation(async (url: string) => {
+    if (url.includes("/review/queue")) return withAlso as never
+    throw Error(`unexpected ${url}`)
+  })
+  mount("/cases/case/financial?view=statements&queue=1")
+  expect((await screen.findAllByLabelText("Also to fix"))[0]).toHaveTextContent(
+    "also: Account number not found: enter it; Account holder not found: enter it"
+  )
+})
+
+it("collapses a file the reader cannot handle yet into one line outside the waiting list", async () => {
+  const reader = {
+    ...queue,
+    counts: { ...queue.counts, reader_fix: 2 },
+    reader_fix: [0, 1].map((n) => ({ ...base, id: `x${n}`, batch_id: "b1", filename: "Subpoena.pdf", bucket: "reader_fix",
+      period_start: "", period_end: "", issue: "Currency not printed: choose one", also: ["Account number not found: enter it"] })),
+    reader_files: [{ file_id: "f9", filename: "Subpoena.pdf", batch_id: "b1", statements: 2, file_statements: 3,
+      item_ids: ["x0", "x1"], message: "Loupe can't read this file reliably yet (2 statements). No need to review it by hand; it will be re-read when the reader is fixed." }],
+  }
+  vi.mocked(fetchAPI).mockImplementation(async (url: string) => {
+    if (url.includes("/review/queue")) return reader as never
+    throw Error(`unexpected ${url}`)
+  })
+  mount("/cases/case/financial?view=statements&queue=1")
+  expect(await screen.findByLabelText("Statement status")).toHaveTextContent("Waiting for a reader fix 2")
+  expect(screen.queryByText("Subpoena.pdf")).toBeNull()
+  fireEvent.click(screen.getByRole("button", { name: "Waiting for a reader fix (2 in 1 file)" }))
+  expect(await screen.findByText(/Loupe can't read this file reliably yet \(2 statements\)/)).toBeVisible()
+  expect(screen.getByText("Show their 2 statements")).toBeVisible()
 })

@@ -44,7 +44,18 @@ export function statementFileCard(
     removed = false,
     statusLoaded,
     queued = false,
-  }: { removed?: boolean; statusLoaded: boolean; queued?: boolean }
+    queue,
+  }: {
+    removed?: boolean
+    statusLoaded: boolean
+    queued?: boolean
+    /**
+     * This file's work in the case review queue. When given, statement work
+     * (checks, ready statements, empty readings) is the queue's own count, so
+     * "Needs action" and the queue never disagree about a prepared file.
+     */
+    queue?: { waiting: number; unreadable: number; ready: number }
+  }
 ): StatementFileCard {
   const allPreparedIgnored =
     !!saved?.ignored_periods &&
@@ -59,10 +70,17 @@ export function statementFileCard(
           saved?.wire_review_count
         ? "info"
         : "review"
+  const prepared = !!saved?.prepared_periods || !!saved?.periods.length
+  const queueWork = queue
+    ? !!(queue.waiting || queue.unreadable || queue.ready)
+    : false
   const checks =
-    !!saved?.incomplete_count ||
-    !!saved?.periods_with_checks ||
-    !!saved?.available_periods
+    queue && prepared
+      ? queueWork
+      : queueWork ||
+        !!saved?.incomplete_count ||
+        !!saved?.periods_with_checks ||
+        !!saved?.available_periods
   // Statements the system set aside as copies are named on the card, so the
   // investigator knows before opening the file.
   const copies = saved ? fileCopyLine(saved) : ""
@@ -72,7 +90,7 @@ export function statementFileCard(
     notImported,
     needsAction:
       !removed &&
-      (notImported ||
+      ((queue && prepared ? false : notImported) ||
         checks ||
         ["failed", "unprocessed"].includes(file.status)),
   })
@@ -99,7 +117,11 @@ export function statementFileCard(
     )
   if (saved?.same_pdf_saved_file_ids.length)
     // This copy asks to be reviewed against the saved one.
-    return { ...card("Same PDF has saved records · review this copy"), needsAction: true }
+    return {
+      ...card("Same PDF has saved records · review this copy"),
+      // Copies are reviewed from the queue's copies list, not as queue work.
+      needsAction: queue && prepared ? queueWork : true,
+    }
   if (saved && (saved.current_transactions || saved.periods.length))
     return card(
       `${count(saved.current_transactions, "imported payment", "imported payments")} · ${saved.periods.length} recorded ${saved.periods.length === 1 ? "period" : "periods"}`
