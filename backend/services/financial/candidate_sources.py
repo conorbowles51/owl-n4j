@@ -25,6 +25,27 @@ def reading_rotation(locations, page_number):
     return 0
 
 
+def original_layer_holder(locations, page_number):
+    """The holder a page's embedded text layer printed on its labelled line, when the image reading replaced it.
+
+    The engine stores its assessment of the original layer when it prefers the
+    page image (``statement_page_reading`` / ``image_selected``). For a Merrick
+    page that assessment names the holder its ``Send Payments to:`` line printed
+    (``labelled_holder``) and the account it read. ``{}`` otherwise, and for
+    every reading made before the assessment carried it.
+    """
+    for location in locations if isinstance(locations, list) else []:
+        if isinstance(location, dict) and location.get('kind') == 'page' and location.get('page_number') == page_number:
+            for refinement in location.get('ocr_refinements') or []:
+                quality = refinement.get('original_quality') if isinstance(refinement, dict) else None
+                if (refinement.get('field') == 'statement_page_reading' and refinement.get('decision') == 'image_selected'
+                        and isinstance(quality, dict) and isinstance(quality.get('labelled_holder'), str)
+                        and quality['labelled_holder'].strip() and isinstance(quality.get('identity'), list)
+                        and len(quality['identity']) >= 2 and quality['identity'][0] == 'merrick-card'):
+                    return dict(holder=quality['labelled_holder'].strip(), account=str(quality['identity'][1] or ''))
+    return {}
+
+
 def list_candidate_sources(session, *, case_id, limit=25, offset=0):
     if type(limit) is not int or not 1 <= limit <= 100 or type(offset) is not int or offset < 0:
         raise PdfMappingError("Invalid source page limits.", 422)
@@ -60,8 +81,10 @@ def read_candidate_source(session, *, case_id, evidence_file_id, page_number, ta
     from services.financial.statement_layout_context import statement_layout_context
     source_rows = [dict(row_index=row, cells=values) for row, values in rows.items()]
     rotation = reading_rotation(locations, page_number)
+    carried = original_layer_holder(locations, page_number)
     return dict(case_id=str(case_id), evidence_file_id=str(evidence_file_id), page_number=page_number,
         **(dict(reading_rotation=rotation) if rotation else {}),
+        **(dict(original_layer_holder=carried) if carried else {}),
         table_index=table_index, table_count=len(payload), source_revision=revision,
         table_source=source.value, geometry_source=geometry.value, locator=locator.to_json(),
         text_origin=_page_origin(content, locations, page_number).value,

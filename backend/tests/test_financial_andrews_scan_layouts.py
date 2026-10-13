@@ -287,6 +287,43 @@ class SpacedHeadingTests(unittest.TestCase):
         balances = (whole - held) | {(0, 11, 2, 'balance')}
         self.assertEqual(pinned_andrews_values(tables(data), candidates, balances), {})
 
+    def test_a_pinned_cell_pins_its_disputed_neighbour_in_the_next_round(self):
+        from services.financial import statement_reading_quality as quality
+        data = source([
+            [(15, '06/01 ID 0040 FREE CHECKING Previous Balance'), (350, '100.00')],
+            [(15, '06/03'), (75, 'Withdrawal Debit Card'), (310, '-10.00'), (350, '9?.00')],
+            [(15, '06/04'), (75, 'Withdrawal Debit Card'), (310, '-?.00'), (350, '85.00')],
+            [(15, '06/30'), (75, 'Ending Balance'), (350, '85.00')]])
+        held = {(0, 10, 3), (0, 11, 2)}
+        confirmed = money_cells(data) - held
+        candidates = {(0, 10, 3): ['90.00', '96.00'], (0, 11, 2): ['-5.00', '-6.00']}
+        result = quality.pinned_andrews_values(tables(data), candidates, confirmed)
+        self.assertEqual(result['values'], {(0, 10, 3): dict(text='90.00', pinned_by=[[0, 9, 1], [0, 10, 2]]),
+                                            (0, 11, 2): dict(text='-5.00', pinned_by=[[0, 10, 3], [0, 11, 3]])})
+        try:
+            quality.PROPAGATE_PINNED = False
+            self.assertEqual(quality.pinned_andrews_values(tables(data), candidates, confirmed), {})
+        finally:
+            quality.PROPAGATE_PINNED = True
+        # A neighbour that is itself only fixed by a disputed cell is never used.
+        self.assertEqual(quality.pinned_andrews_values(tables(data), {(0, 10, 3): [], (0, 11, 2): ['-5.00']},
+                                                       confirmed), {})
+
+    def test_a_continuation_notice_read_with_spaces_or_stray_points_links_the_next_page(self):
+        first = source([
+            [(15, '06/01 ID 0040 FREE CHECKING Previous Balance'), (350, '100.00')],
+            [(15, '06/03'), (75, 'Withdrawal Debit Card'), (310, '-10.00'), (350, '90.00')],
+            [(15, '- - - Continued\u00b7on fol low.ing page - - -')]])
+        second = source([
+            [(15, '06/05'), (75, 'Withdrawal Debit Card'), (310, '-5.00'), (350, '85.00')],
+            [(15, '06/30'), (75, 'Ending Balance'), (350, '85.00')]], page=2, printed_page=2, names=False)
+        groups, _, _ = andrews_catalog([first, second])
+        self.assertEqual([g['page_numbers'] for g in groups], [[1, 2]])
+        # A letter misread inside the notice is not a notice.
+        first['rows'][-1]['cells'][0]['expected_text'] = '--- Continued on fo1lowing page ---'
+        groups, _, _ = andrews_catalog([first, second])
+        self.assertEqual([g['page_numbers'] for g in groups], [[1]])
+
     def test_a_confirmed_part_of_a_held_neighbour_opens_the_next_equation(self):
         from services.financial.statement_reading_quality import pinned_andrews_values
         data = source([
@@ -298,8 +335,19 @@ class SpacedHeadingTests(unittest.TestCase):
         held = {(0, 10, 2), (0, 11, 2)}
         confirmed = (money_cells(data) | {(0, 12, 2)}) - held | {(0, 10, 2, 'balance')}
         candidates = {(0, 10, 2): ['-1.00 99.00'], (0, 11, 2): ['-26.11 72.89']}
-        # Without the neighbour's page reading its confirmed balance cannot be read: nothing is pinned.
-        self.assertEqual(pinned_andrews_values(tables(data), candidates, confirmed), {})
+        # Without the neighbour's page reading its confirmed balance cannot be read in one round:
+        # nothing is pinned when pinned cells do not propagate.
+        from services.financial import statement_reading_quality as quality
+        try:
+            quality.PROPAGATE_PINNED = False
+            self.assertEqual(pinned_andrews_values(tables(data), candidates, confirmed), {})
+        finally:
+            quality.PROPAGATE_PINNED = True
+        # With propagation the neighbour is pinned first by its own payment (its balance confirmed),
+        # and then fixes the next cell: the same readings as with its page reading given.
+        propagated = pinned_andrews_values(tables(data), candidates, confirmed)
+        self.assertEqual({k: v['text'] for k, v in propagated['values'].items()},
+                         {(0, 10, 2): '-1.00 99.00', (0, 11, 2): '-26.11 72.89'})
         result = pinned_andrews_values(tables(data), candidates, confirmed, {(0, 10, 2): '-1.00 99.00'})
         self.assertEqual(result['values'][(0, 11, 2)]['pinned_by'], [[0, 10, 2], [0, 12, 2]])
         self.assertEqual(result['values'][(0, 10, 2)]['pinned_by'], [[0, 9, 1]])
@@ -308,3 +356,157 @@ class SpacedHeadingTests(unittest.TestCase):
         result = pinned_andrews_values(tables(data), {(0, 10, 2): ['-2.00 99.00'], (0, 11, 2): ['-26.11 72.89']},
                                        confirmed, {(0, 10, 2): '-2.00 99.00'})
         self.assertEqual(result, {})
+
+
+class ContinuationOnlyPageTests(unittest.TestCase):
+    """A page whose cycle reads a letter for a digit, or whose title reads a lower-case s, only continues."""
+
+    def pages(self, period='06/0l/20 06/30/20', title=None, mark=True):
+        first = source([
+            [(15, '06/01 ID 0040 FREE CHECKING Previous Balance'), (350, '100.00')],
+            [(15, '06/03'), (75, 'Withdrawal Debit Card'), (310, '-10.00'), (350, '90.00')],
+            [(15, '--- Continued on following page ---')]])
+        second = source([
+            [(15, '06/05'), (75, 'Withdrawal Debit Card'), (310, '-5.00'), (350, '85.00')],
+            [(15, '06/30'), (75, 'Ending Balance'), (350, '85.00')]], page=2, printed_page=2, names=False, period=period)
+        if title:
+            second['rows'][0]['cells'][0]['expected_text'] = title
+        if not mark:
+            second['rows'][1]['cells'][0]['expected_text'] = 'unreadable logo'
+        return first, second
+
+    def test_it_continues_the_previous_page_when_the_dates_then_agree_exactly(self):
+        for period, title, mark in (('06/0l/20 06/30/20', None, True), ('06/01/20 O6/30/20', None, True),
+                                    ('06/01/20 06/30/20', 'Ac count statement', False)):
+            with self.subTest(period=period, title=title):
+                first, second = self.pages(period, title, mark)
+                self.assertTrue(andrews_page(second, allow_unbranded=True)['continuation_only'])
+                groups, _, _ = andrews_catalog([first, second])
+                self.assertEqual([g['page_numbers'] for g in groups], [[1, 2]])
+                rows = propose_andrews_statement([first, second], 'USD', groups[0])['rows']
+                self.assertEqual([r['fields']['balance'] for r in rows if r['kind'] == 'balance'], ['10000', '8500'])
+
+    def test_it_never_opens_a_period_or_continues_other_dates(self):
+        # Other dates once the letter is read as a digit.
+        first, second = self.pages('06/0l/20 06/29/20')
+        self.assertEqual([g['page_numbers'] for g in andrews_catalog([first, second])[0]], [[1]])
+        # Alone, it opens nothing, not even an unassigned group.
+        from services.financial.statement_import_andrews import unassigned_andrews_groups
+        _, second = self.pages()
+        self.assertEqual(andrews_catalog([second])[0], [])
+        self.assertEqual(unassigned_andrews_groups([second], set()), [])
+        # A branded page's lower-case title is still not a title; other letters are not digits.
+        _, second = self.pages('06/01/20 06/30/20', 'Ac count statement', True)
+        self.assertIsNone(andrews_page(second, allow_unbranded=True))
+        _, second = self.pages('06/0B/20 06/30/20')
+        self.assertIsNone(andrews_page(second, allow_unbranded=True))
+
+
+class OrderedDamagedDateTests(unittest.TestCase):
+    """A row date damaged only by OCR marks is read when the payment order fixes it."""
+
+    def read(self, damaged, before='06/03', after='06/05', second=None):
+        data = source([
+            [(15, '06/01 ID 0040 FREE CHECKING Previous Balance'), (350, '100.00')],
+            [(15, before), (75, 'Withdrawal Debit Card'), (310, '-1.00'), (350, '99.00')],
+            [(15, damaged), (75, (second + ' ' if second else '') + 'Withdrawal Debit Card'), (310, '-2.00'), (350, '97.00')],
+            [(15, after), (75, 'Withdrawal Debit Card'), (310, '-3.00'), (350, '94.00')],
+            [(15, '06/30'), (75, 'Ending Balance'), (350, '94.00')]])
+        groups, _, _ = andrews_catalog([data])
+        rows = propose_andrews_statement([data], 'USD', groups[0])['rows']
+        return [r for r in rows if not r['excluded'] and r['kind'] in ('transaction', 'unresolved')][1]
+
+    def test_marks_and_measured_lookalikes_are_set_aside_between_ordered_neighbours(self):
+        from services.financial.statement_import_andrews import DATE_READ_IN_ORDER
+        for damaged in ('06/04·', '_06/04', '06/04.', '-06/04', '06/O4', 'O6/O4', '06/:04', '06/0.4', '06i04'):
+            with self.subTest(damaged=damaged):
+                row = self.read(damaged)
+                self.assertEqual((row['fields'].get('date'), row['fields'].get('date_reading'), row['issues']),
+                                 ('2020-06-04', DATE_READ_IN_ORDER, []))
+                self.assertEqual(row['source_cells'][0]['expected_text'], damaged)
+        self.assertEqual(self.read('06/l4', before='06/13', after='06/15')['fields'].get('date'), '2020-06-14')
+
+    def test_it_stays_held_out_of_order_without_clean_neighbours_or_with_other_damage(self):
+        cases = (dict(damaged='06/0l', before='06/12', after='06/14'),    # reads 06/01: before the payment above
+                 dict(damaged='06/04·', before='06/0?'),            # neighbour not read cleanly
+                 dict(damaged='06/0B'), dict(damaged='06/04 x'), dict(damaged='0604'), dict(damaged='06/41'),
+                 dict(damaged='07/04·', after='07/05'))            # outside the printed period
+        for case in cases:
+            with self.subTest(**case):
+                row = self.read(**case)
+                self.assertIsNone(row['fields'].get('date'))
+                self.assertTrue(row['issues'])
+
+    def test_the_opening_and_ending_lines_bound_the_first_and_last_payment(self):
+        data = source([
+            [(15, '06/01 ID 0040 FREE CHECKING Previous Balance'), (350, '100.00')],
+            [(15, 'O6/02'), (75, 'Withdrawal Debit Card'), (310, '-1.00'), (350, '99.00')],
+            [(15, '06/30'), (75, 'Ending Balance'), (350, '99.00')]])
+        groups, _, _ = andrews_catalog([data])
+        rows = propose_andrews_statement([data], 'USD', groups[0])['rows']
+        self.assertEqual(next(r for r in rows if r['kind'] == 'transaction')['fields'].get('date'), '2020-06-02')
+
+    def test_switch_turns_the_rule_off(self):
+        from services.financial import statement_import_andrews as reader
+        try:
+            reader.ORDERED_DAMAGED_DATES = False
+            self.assertIsNone(self.read('06/04·')['fields'].get('date'))
+        finally:
+            reader.ORDERED_DAMAGED_DATES = True
+
+
+class VoucherLayoutTests(unittest.TestCase):
+    """Long credit-voucher payments printed in three more ways."""
+
+    def read(self, voucher_rows, after=('06/05', '-3.00', '97.36')):
+        data = source([
+            [(15, '06/01 ID 0040 FREE CHECKING Previous Balance'), (350, '100.00')],
+            *voucher_rows,
+            [(75, 'EXAMPLE REFUND')],
+            [(15, after[0]), (75, 'Withdrawal Debit Card'), (310, after[1]), (350, after[2])],
+            [(15, '06/30'), (75, 'Ending Balance'), (350, after[2])]])
+        return data, data['rows'][10]
+
+    def payments(self, data):
+        groups, _, _ = andrews_catalog([data])
+        result = propose_andrews_statement([data], 'USD', groups[0])
+        return [r for r in result['rows'] if not r['excluded'] and r['kind'] in ('transaction', 'unresolved')]
+
+    def test_amount_and_balance_inside_the_label_cell_are_read_and_checked_by_both_balances(self):
+        data, label_row = self.read([[(15, '06/03'), (75, 'Recurring Withdrawal Adjustment Debit Card Credit Voucher 0.36 100.36')]])
+        label_row['cells'][1]['locator']['rect'][2] = 375000   # the label cell reaches the balance column
+        voucher, after = self.payments(data)
+        self.assertEqual((voucher['fields']['amount_minor'], voucher['fields']['direction'], voucher['fields']['balance'],
+                          voucher['issues']), ('36', 'credit', '10036', []))
+        self.assertEqual(set(voucher['value_sources']), {'amount', 'balance'})
+        self.assertEqual(after['issues'], [])
+        # A misread balance in the label cell breaks the next payment's check: held.
+        label_row['cells'][1]['expected_text'] = 'Recurring Withdrawal Adjustment Debit Card Credit Voucher 0.36 100.63'
+        voucher, after = self.payments(data)
+        self.assertTrue(voucher['issues'] or after['issues'])
+        # A label cell that stops short of the money columns is not this layout.
+        label_row['cells'][1]['expected_text'] = 'Recurring Withdrawal Adjustment Debit Card Credit Voucher 0.36 100.36'
+        label_row['cells'][1]['locator']['rect'][2] = 250000
+        self.assertNotIn('amount_minor', self.payments(data)[0]['fields'])
+
+    def test_a_lower_case_or_spaced_credit_and_a_joined_wrapped_money_line(self):
+        for label in ('Recurring Withdrawal Adjustment Debit Card credit Voucher',
+                      'Recurring Withdrawal Adjustment Debit Card Cr edit Voucher'):
+            with self.subTest(label=label):
+                data, label_row = self.read([[(15, '06/03'), (75, label)], [(310, '0.36 100.36')]])
+                data['rows'][11]['cells'][0]['locator']['rect'][2] = 375000
+                voucher = self.payments(data)[0]
+                self.assertEqual((voucher['fields']['amount_minor'], voucher['fields']['balance'], voucher['issues']),
+                                 ('36', '10036', []))
+        # Other letters read wrongly are not the label.
+        data, _ = self.read([[(15, '06/03'), (75, 'Recurring Withdrawal Adjustment Debit Card Credlt Voucher')],
+                             [(310, '0.36'), (350, '100.36')]])
+        self.assertNotIn('amount_minor', self.payments(data)[0]['fields'])
+
+    def test_date_additional_date_and_label_read_as_one_cell(self):
+        data, _ = self.read([[(15, '06/03 06/02 Recurring Withdrawal Adjustment Debit Card Credit Voucher')],
+                             [(310, '0.36'), (350, '100.36')]])
+        data['rows'][10]['cells'][0]['locator']['rect'][2] = 300000
+        voucher = self.payments(data)[0]
+        self.assertEqual((voucher['fields']['date'], voucher['fields']['additional_printed_date'],
+                          voucher['fields']['amount_minor'], voucher['issues']), ('2020-06-03', '06/02', '36', []))

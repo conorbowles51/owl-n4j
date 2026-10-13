@@ -8,6 +8,7 @@ Original cells are retained, including joined or damaged OCR money fields.
 """
 import re
 from datetime import date
+from difflib import SequenceMatcher
 
 from services.financial.pdf_candidates import _digest
 from services.financial.statement_import_proposal import exact_amount
@@ -37,6 +38,16 @@ _SHARE = re.compile(r'^(' + _HEADING_DATE + r') ID (' + _SHARE_ID + r') (' + _LA
 _SHARE_LABEL = re.compile(r'^' + _HEADING_DATE + r' ID \S+(?: \S+)? (' + _LABELS + ')(?: |$)')
 
 _CLOSED = re.compile(r'^(' + _HEADING_DATE + r') ID (' + _SHARE_ID + r') (' + _LABELS + ') Closed$')
+# The printed continuation notice. OCR can put spaces or a stray point or
+# middle dot between its letters (``Continued·on fol low.ing page``); every
+# letter must still be read exactly and in order.
+_CONTINUED = re.compile(r'[\s.·]*'.join('Continuedonfollowingpage'))
+
+
+def _continued(text):
+    return bool(_CONTINUED.search(text))
+
+
 _WITHDRAWAL = r'\s*'.join('Withdrawal')
 _DEPOSIT = r'\s*'.join('Deposit')
 _RECURRING = r'\s*'.join('Recurring')
@@ -44,6 +55,43 @@ _PAYMENT = re.compile(r'^(' + _DATE + r'|\S+)(?: (' + _DATE + r'))? ((?:' + _REC
                       r'\s+)?(' + _WITHDRAWAL + '|' + _DEPOSIT + r')\b.*)$')
 _DAMAGED_DATE_PAYMENT = re.compile(r'^(.{1,12}?) ((?:' + _RECURRING +
                                  r'\s+)?(' + _WITHDRAWAL + '|' + _DEPOSIT + r')\b.*)$')
+
+# Neil's ruling of 2026-10-09: a payment whose Withdrawal/Deposit word OCR
+# misread takes its direction from its printed amount (minus or no sign) only
+# when the previous and the new printed balances agree with it exactly: three
+# printed facts agree. Anything unread or disagreeing stays held. Reverse: False.
+MISREAD_VERB_DIRECTION = True
+DIRECTION_FROM_SIGN_AND_BALANCES = 'printed_sign_and_balances'
+_VERBS = ('Withdrawal', 'Deposit')
+_DIRECTION_UNREAD = ('Check the amount and whether money entered or left the account. '
+                     'The number or its minus sign may have been read incorrectly.')
+
+
+def _resemblance(letters, word):
+    """How closely the start of ``letters`` reads as ``word`` (best of three lengths)."""
+    return max(SequenceMatcher(None, letters[:size], word.lower()).ratio()
+               for size in (len(word) - 1, len(word), len(word) + 1))
+
+
+def _misread_verb(description):
+    """The printed payment word a damaged first word stands for, or None.
+
+    Only its letters are compared: OCR spaces and stray marks inside the word
+    are dropped (``Wi thdraw;al``, ``IHthdrawal``, ``WithQrawal``), and a
+    damaged ``Recurring`` before it is passed over. The word must read at least
+    three quarters like exactly one of the two printed words and clearly not
+    like the other. It only keeps the sign/word conflict hold; the direction
+    itself is never taken from this resemblance.
+    """
+    letters = re.sub(r'[^A-Za-z]', '', description).lower()
+    if _resemblance(letters, 'Recurring') >= .75:
+        letters = letters[len('Recurring'):]
+    scores = {verb: _resemblance(letters, verb) for verb in _VERBS}
+    found = [verb for verb, score in scores.items() if score >= .75]
+    if len(found) != 1 or min(scores.values()) >= .5:
+        return None
+    return found[0]
+
 
 def _text(row):
     return ' '.join(c['expected_text'].strip() for c in row['cells']).strip()
@@ -104,6 +152,11 @@ def _full_date(value):
         return None
 
 
+# Letters an OCR layer was measured to put for digits in the heading's cycle
+# line; used only to compare a continuation page with the page before it.
+_CYCLE_LOOKALIKES = str.maketrans({'O': '0', 'o': '0', 'l': '1', 'I': '1'})
+
+
 def andrews_page(source, *, allow_unbranded=False):
     """Identify the heading, never a number from the body or an application."""
     rows = source['rows']
@@ -111,6 +164,13 @@ def andrews_page(source, *, allow_unbranded=False):
     marks = [c for c in cells if re.fullmatch(r'\.?Andrews', c['expected_text'].strip()) and _box(c)]
     # OCR can put a stray mark between the two printed words; their letters must be exact.
     titles = [c for c in cells if re.fullmatch(r'Account[-·.,]?Statement', re.sub(r'\s+', '', c['expected_text'])) and _box(c)]
+    # A title read with a lower-case ``s`` is accepted only on a page without
+    # the brand mark, which opens nothing unless it continues the previous
+    # page's statement (``andrews_catalog``).
+    lowercase_title = False
+    if not titles and not marks:
+        titles = [c for c in cells if re.fullmatch(r'Account[-·.,]?statement', re.sub(r'\s+', '', c['expected_text'])) and _box(c)]
+        lowercase_title = bool(titles)
     if len(titles) != 1 or len(marks) > 1 or (not marks and not allow_unbranded):
         return None
     size = titles[0]['locator'].get('page_size', [])
@@ -133,6 +193,21 @@ def andrews_page(source, *, allow_unbranded=False):
             a, b = _full_date(m[1]), _full_date(m[2])
             if a and b and 0 <= (b-a).days <= 62:
                 cycles.append((row, a, b))
+    cycle_lookalike = False
+    if not cycles:
+        # A cycle read with a letter for a digit (``09/0l/23``) can only
+        # continue the previous page's statement: the catalog accepts such a
+        # page only when the dates then equal that page's exactly.
+        for row in top:
+            text = _text(row)
+            if not re.search(r'[OolI]', text):
+                continue
+            m = re.fullmatch(r'(' + _FULL_DATE + r')\s+(' + _FULL_DATE + r')', text.translate(_CYCLE_LOOKALIKES))
+            if m and re.fullmatch(r'[\dOolI/\s]+', text):
+                a, b = _full_date(m[1]), _full_date(m[2])
+                if a and b and 0 <= (b-a).days <= 62:
+                    cycles.append((row, a, b))
+        cycle_lookalike = bool(cycles)
     if len(accounts) != 1 or len(cycles) != 1:
         return None
     account_row, account = accounts[0]
@@ -147,7 +222,8 @@ def andrews_page(source, *, allow_unbranded=False):
     return dict(account=re.sub(r'\s+', '', account['expected_text']), start=start.isoformat(), end=end.isoformat(),
                 branded=bool(marks), account_spaced=bool(re.search(r'\s', account['expected_text'].strip())),
                 printed_page=page_number, body_start=body, width=width,
-                heading_rows=[r['row_index'] for r in rows if r['row_index'] < body])
+                heading_rows=[r['row_index'] for r in rows if r['row_index'] < body],
+                **(dict(continuation_only=True) if cycle_lookalike or lowercase_title else {}))
 
 
 _NAME_LINE = re.compile(r'[A-Z][A-Z .\'-]{3,95}')
@@ -277,7 +353,7 @@ def _opening_corroborated_by_next_page(source, page, following):
             or following['page_number'] != source['page_number'] + 1
             or following['table_index'] != source['table_index']
             or not any(_SHARE.match(_text(r)) for r in source['rows'] if r['row_index'] >= page['body_start'])
-            or not any('Continued on following page' in _text(r) for r in source['rows'])):
+            or not any(_continued(_text(r)) for r in source['rows'])):
         return False
     next_page = andrews_page(following)
     return (next_page is not None and next_page['printed_page'] == 2
@@ -330,6 +406,10 @@ def andrews_catalog(sources):
                           or page['printed_page'] == previous['printed_page'] + 1)
                      and page['printed_page'] != 1)
         following = ordered[index + 1][0] if index + 1 < len(ordered) else None
+        if page.get('continuation_only') and not continues:
+            active = None
+            previous = None
+            continue
         if page['account_spaced'] and not continues and not _account_corroborated(page, ordered, index):
             active = None
             previous = None
@@ -348,7 +428,7 @@ def andrews_catalog(sources):
             if row['row_index'] < page['body_start']:
                 continue
             text = _text(row)
-            if 'Continued on following page' in text:
+            if _continued(text):
                 break
             match = _SHARE.match(text)
             if _PREVIOUS.search(text) or (_SHARE_LABEL.match(text) and not _CLOSED.fullmatch(text)):
@@ -396,7 +476,7 @@ def andrews_catalog(sources):
         if unknown:
             incomplete.add(key)
         previous = dict(**page, pdf_page=key[0], table_index=key[1], order_group=order_group,
-                        continues=any('Continued on following page' in _text(r) for r in source['rows']))
+                        continues=any(_continued(_text(r)) for r in source['rows']))
     return list(groups.values()), handled, incomplete
 
 
@@ -416,7 +496,7 @@ def leading_continuation_rows(source, page):
         if row['row_index'] < page['body_start']:
             continue
         text = _text(row)
-        if _PREVIOUS.search(text) or _SHARE_LABEL.match(text) or 'Continued on following page' in text:
+        if _PREVIOUS.search(text) or _SHARE_LABEL.match(text) or _continued(text):
             break
         rows.append(row)
         if re.match(r'^\d{2}/\d{2} Ending Balance(?: |$)', text) or _ending_balance(row, page['width']):
@@ -440,7 +520,8 @@ def unassigned_andrews_groups(sources, handled):
         if key in handled:
             continue
         page = andrews_page(source)
-        if not page:
+        if not page or page.get('continuation_only'):
+            # Its dates were read with a letter: they name no period of their own.
             continue
         body = [r for r in source['rows'] if r['row_index'] >= page['body_start']]
         if any(_SHARE_LABEL.match(_text(r)) or _PREVIOUS.search(_text(r)) for r in body):
@@ -454,7 +535,7 @@ def unassigned_andrews_groups(sources, handled):
         for row in body:
             if row['row_index'] < first['row_index']:
                 continue
-            if 'Continued on following page' in _text(row):
+            if _continued(_text(row)):
                 break
             indices.append(row['row_index'])
             if _ending_balance(row, page['width']):
@@ -562,32 +643,73 @@ def _money_cells(row, width):
     return [c for c in row['cells'] if _box(c) and _box(c)[0] >= width * .46]
 
 
-def _voucher_money(row, following, width, currency):
-    """Read two specific long credit-voucher layouts, retaining their cells.
+# The long credit-voucher payment label. OCR may put spaces inside its
+# words or read the C of "Credit" in lower case; every other letter must be
+# read exactly.
+_VOUCHER_LABEL = (r'((?:Recurring\s+)?Withdrawal\s+Adjustment\s+Debit\s+Card\s+'
+                  r'[Cc]\s*r\s*e\s*d\s*i\s*t\s+Voucher)')
 
-    A numeric suffix is accepted only after the exact printed payment label.
-    A following line must contain only two measured money cells immediately
+
+def _voucher_money(row, following, width, currency):
+    """Read the long credit-voucher layouts, retaining their cells.
+
+    A numeric suffix is accepted only after the printed payment label. A
+    following line must contain only two measured money cells immediately
     beneath that label. No digit, sign, account or balance is inferred.
+
+    The label cell can also hold both the amount and the running balance
+    (``... Credit Voucher 0.25 1234.56``) when it reaches the money columns.
+    Those two values are then read from that cell's page text only, never
+    crop-checked as money: the payment's own running balance check and the
+    next line's (whose cells are) must both hold, or the period stays held.
+    The date cell may also hold the printed date, an additional date and the
+    label together, when the money is printed on the following line.
     """
     cells = row['cells']
-    if len(cells) not in (2, 3) or not all(_box(c) for c in cells):
+    if not cells or len(cells) > 3 or not all(_box(c) for c in cells):
         return None
-    date_cell, description_cell = cells[:2]
-    if not (_box(date_cell)[0] < width * .08 and
-            _box(date_cell)[2] <= _box(description_cell)[0] < width * .46):
-        return None
-    match = re.fullmatch(r'((?:Recurring )?Withdrawal Adjustment Debit Card Credit Voucher)'
-                         r'(?:\s+(' + _SPACED_MONEY + r'))?', description_cell['expected_text'].strip())
+    joined = None
+    if len(cells) == 1:
+        joined = re.fullmatch(r'(' + _DATE + r'(?:\s+' + _DATE + r')?)\s+' + _VOUCHER_LABEL, cells[0]['expected_text'].strip())
+        if not joined or _box(cells[0])[0] >= width * .08:
+            return None
+        date_cell = description_cell = cells[0]
+        match = re.fullmatch(_VOUCHER_LABEL + r'()()', joined[2])
+        date_text = joined[1]
+    else:
+        date_cell, description_cell = cells[:2]
+        if not (_box(date_cell)[0] < width * .08 and
+                _box(date_cell)[2] <= _box(description_cell)[0] < width * .46):
+            return None
+        match = re.fullmatch(_VOUCHER_LABEL + r'(?:\s+(' + _SPACED_MONEY + r'))?(?:\s+(' + _SPACED_MONEY + r'))?',
+                             description_cell['expected_text'].strip())
+        date_text = date_cell['expected_text'].strip()
     if not match:
         return None
-    wrapped = match[2] is None
+    inline_pair = bool(match[2] and match[3])
+    wrapped = not match[2]
     if wrapped:
-        if len(cells) != 2 or following is None or len(following['cells']) != 2:
+        if len(cells) != (1 if joined else 2) or following is None or len(following['cells']) not in (1, 2):
             return None
         money_cells = _money_cells(following, width)
-        if len(money_cells) != 2:
+        if len(money_cells) != len(following['cells']):
             return None
-        amount_text, balance_text = [c['expected_text'].strip() for c in money_cells]
+        if len(money_cells) == 1:
+            # The following line read as one joined amount and balance cell
+            # (crop-checked as such): exactly one space separates two amounts.
+            pair = re.fullmatch(r'(' + _SPACED_MONEY + r')\s+(' + _SPACED_MONEY + r')', money_cells[0]['expected_text'].strip())
+            if not pair or len(re.findall(r'\.', money_cells[0]['expected_text'])) != 2:
+                return None
+            inline_pair = True
+            money_cells = money_cells * 2
+            amount_text, balance_text = pair[1], pair[2]
+        else:
+            amount_text, balance_text = [c['expected_text'].strip() for c in money_cells]
+    elif inline_pair:
+        if len(cells) != 2 or _box(description_cell)[2] < width * .46:
+            return None
+        money_cells = [description_cell, description_cell]
+        amount_text, balance_text = match[2], match[3]
     else:
         if len(cells) != 3 or _box(cells[2])[0] < width * .46:
             return None
@@ -599,7 +721,7 @@ def _voucher_money(row, following, width, currency):
            for c in measured):
         return None
     left, right = [_box(c) for c in money_cells]
-    if left[2] > right[0] or max(left[1], right[1]) >= min(left[3], right[3]):
+    if not inline_pair and (left[2] > right[0] or max(left[1], right[1]) >= min(left[3], right[3])):
         return None
     description_box = _box(description_cell)
     if wrapped:
@@ -610,17 +732,86 @@ def _voucher_money(row, following, width, currency):
     elif max(description_box[1], _box(date_cell)[1]) >= min(description_box[3], _box(date_cell)[3]):
         return None
     try:
-        _amount(amount_text, currency, separate_cell=wrapped)
-        _amount(balance_text, currency, separate_cell=True)
+        _amount(amount_text, currency, separate_cell=wrapped and not inline_pair)
+        _amount(balance_text, currency, separate_cell=not inline_pair)
     except ValueError:
         return None
-    return dict(body=date_cell['expected_text'].strip() + ' ' + match[1],
+    return dict(body=date_text + ' ' + match[1],
                 money_cells=money_cells, amount_text=amount_text, balance_text=balance_text,
-                source_row=following if wrapped else row, wrapped=wrapped)
+                source_row=following if wrapped else row, wrapped=wrapped, inline_pair=inline_pair)
+
+
+_DATE_UNREAD = 'Check the full date in the PDF. It could not be read within this statement period.'
+_ADDITIONAL_UNREAD = ('Check the additional date printed beside this payment. It is unreadable, later than '
+                      'the row date or more than 31 days earlier.')
+# A payment's printed row date whose only damage is OCR marks (a speck before
+# or after it, a point or colon inside it, a letter measured to stand for a
+# digit or for the slash) is read only when it lies within the period and
+# between the cleanly read dates of the payments before and after it: this
+# statement prints its payments in date order (0 of 6,465 verified rows out of
+# order). Reverse in one place: False.
+ORDERED_DAMAGED_DATES = True
+DATE_READ_IN_ORDER = 'printed_date_marks_ignored_in_payment_order'
+ENDING_DATE_IS_PERIOD_END = 'printed_date_marks_ignored_period_end'
+_DATE_DIGIT_LOOKALIKES = str.maketrans({'O': '0', 'o': '0', 'l': '1', 'I': '1'})
+# The Ending Balance date must equal the printed period end, so the wider set
+# measured in Andrews money cells may stand for its digits.
+_ENDING_DATE_LOOKALIKES = str.maketrans({'O': '0', 'o': '0', 'D': '0', 'l': '1', 'I': '1', 'B': '8', 'S': '5', 'Z': '2'})
+
+
+def _damaged_date(text, statement, lookalikes=_DATE_DIGIT_LOOKALIKES):
+    """``(row date, additional printed date or None)`` once OCR marks are set aside, else ``None``."""
+    tokens = text.split()
+    if not 1 <= len(tokens) <= 2:
+        return None
+    cleaned = []
+    for token in tokens:
+        letters = ''.join(sorted(k for k in map(chr, lookalikes)))
+        keep = '\\d' + re.escape(letters)
+        token = re.sub(r'^[^' + keep + r']+|[^' + keep + r']+$', '', token)
+        token = re.sub(r'(?<=[' + keep + r'/])[.:](?=[' + keep + r'/])', '', token)
+        if len(token) == 5 and token[2] in 'ilI|' and re.fullmatch(r'[' + keep + r']{4}', token[:2] + token[3:]):
+            token = token[:2] + '/' + token[3:]
+        token = token.translate(lookalikes)
+        if not re.fullmatch(r'\d{2}/\d{2}', token):
+            return None
+        cleaned.append(token)
+    value = _period_date(cleaned[0], statement)
+    if not value:
+        return None
+    if len(cleaned) == 2 and not _ordinary_additional_date(cleaned[1], value):
+        return None
+    return value, cleaned[1] if len(cleaned) == 2 else None
+
+
+def _date_damaged_rows_in_order(rows, damaged, statement):
+    """Read the damaged row dates that the period's payment order fixes (``ORDERED_DAMAGED_DATES``)."""
+    # The section's printed opening and ending balance lines carry the
+    # period's first and last dates: they bound its first and last payment.
+    chain = [r for r in rows if r['kind'] == 'balance' or not r['excluded'] and r['kind'] in ('transaction', 'unresolved')]
+    clean = [None if r['id'] in damaged else r['fields'].get('date') for r in chain]
+    for index, row in enumerate(chain):
+        if row['id'] not in damaged:
+            continue
+        found = _damaged_date(damaged[row['id']], statement)
+        before = clean[index - 1] if index else None
+        after = clean[index + 1] if index + 1 < len(chain) else None
+        if not found or not before or not after or not before <= found[0] <= after:
+            continue
+        fields = row['fields']
+        fields['date'] = found[0]
+        fields['date_reading'] = DATE_READ_IN_ORDER
+        row['issues'] = [issue for issue in row['issues'] if issue != _DATE_UNREAD]
+        if found[1] is not None:
+            fields['additional_printed_date'] = found[1]
+            row['issues'] = [issue for issue in row['issues'] if issue != _ADDITIONAL_UNREAD]
+        elif fields.get('additional_printed_date') and _ordinary_additional_date(fields['additional_printed_date'], found[0]):
+            row['issues'] = [issue for issue in row['issues'] if issue != _ADDITIONAL_UNREAD]
 
 
 def propose_andrews_statement(sources, currency, statement):
     result = []
+    damaged_dates = {}
     previous_balance = None
     previous_payment = None
     scopes = {(s['page_number'], s['table_index']):s for s in statement['sources']}
@@ -655,7 +846,7 @@ def propose_andrews_statement(sources, currency, statement):
             if (cells and cells[0]['expected_text'].strip() in
                     ('Total Returned Item Fees', 'Total Overdraft Fees') and len(cells) == 3):
                 continue
-            if 'Continued on following page' in text:
+            if _continued(text):
                 continue
             closure = statement.get('account_closure')
             if (closure and source['page_number'] == closure['page_number']
@@ -673,6 +864,12 @@ def propose_andrews_statement(sources, currency, statement):
                 fields = item['fields']
                 fields['description'] = 'Opening Balance' if opening else 'Closing Balance'
                 fields['date'] = (_period_date((opening or closing)[1], statement) or '') if opening or closing else ''
+                if damaged_closing and ORDERED_DAMAGED_DATES:
+                    # A speck or a measured look-alike in the Ending Balance
+                    # date: read only when it is then the printed period end.
+                    found = _damaged_date(damaged_closing[0], statement, _ENDING_DATE_LOOKALIKES)
+                    if found and found[1] is None and found[0] == statement.get('period_end'):
+                        fields.update(date=found[0], date_reading=ENDING_DATE_IS_PERIOD_END)
                 if money_cells:
                     fields['balance_column'] = str(money_cells[-1]['column_index'])
                 try:
@@ -713,7 +910,8 @@ def propose_andrews_statement(sources, currency, statement):
                 if value:
                     fields['date'] = value
                 else:
-                    item['issues'].append('Check the full date in the PDF. It could not be read within this statement period.')
+                    item['issues'].append(_DATE_UNREAD)
+                    damaged_dates[item['id']] = date_text
                 fields['date_column'] = str(cells[0]['column_index'])
                 fields['description'] = parsed[3] if parsed else damaged_date_payment[2] if damaged_date_payment else body.partition(' ')[2]
                 fields['counterparty'] = ''
@@ -724,7 +922,7 @@ def propose_andrews_statement(sources, currency, statement):
                     # line. Retain the other text without calling it a posting,
                     # value or transaction date. Unusual dates still need review.
                     if not _ordinary_additional_date(parsed[2], value):
-                        item['issues'].append('Check the additional date printed beside this payment. It is unreadable, later than the row date or more than 31 days earlier.')
+                        item['issues'].append(_ADDITIONAL_UNREAD)
                 pair = re.fullmatch(r'(' + _SPACED_MONEY + r')\s+(.+)', money)
                 amount_text, balance_text = (pair[1], pair[2]) if pair else ('', '')
                 if pair is None:
@@ -742,6 +940,7 @@ def propose_andrews_statement(sources, currency, statement):
                     # fail parsing. Wrapped/merged cells are not crop targets.
                     fields['amount_column'] = str(money_cells[0]['column_index'])
                     fields['balance_column'] = str(money_cells[1]['column_index'])
+                misread_sign = None
                 try:
                     amount = _amount(amount_text, currency, separate_cell=separate_cells)
                     fields['amount_minor'] = str(abs(amount))
@@ -749,10 +948,14 @@ def propose_andrews_statement(sources, currency, statement):
                         fields['amount_column'] = str(money_cells[0]['column_index'])
                     description = fields['description']
                     verb = re.sub(r'\s+', '', parsed[4] if parsed else damaged_date_payment[3]) if parsed or damaged_date_payment else None
-                    conflict = (amount > 0 and verb == 'Withdrawal' and 'Adjustment' not in description
-                                or amount < 0 and verb == 'Deposit')
-                    if conflict or verb is None:
-                        item['issues'].append('Check the amount and whether money entered or left the account. The number or its minus sign may have been read incorrectly.')
+                    misread = None if verb or not MISREAD_VERB_DIRECTION else _misread_verb(description)
+                    conflict = (amount > 0 and (verb or misread) == 'Withdrawal' and 'Adjustment' not in description
+                                or amount < 0 and (verb or misread) == 'Deposit')
+                    if not conflict and verb is None and misread and amount:
+                        # Decided below, once both printed balances are known.
+                        misread_sign = amount
+                    elif conflict or verb is None:
+                        item['issues'].append(_DIRECTION_UNREAD)
                     else:
                         fields['direction'] = 'credit' if amount >= 0 else 'debit'
                 except ValueError:
@@ -763,6 +966,14 @@ def propose_andrews_statement(sources, currency, statement):
                         fields['balance_column'] = str(money_cells[-1]['column_index'])
                 except ValueError:
                     item['issues'].append('Check the running balance in the PDF. It could not be read separately from the transaction amount.')
+                if misread_sign is not None:
+                    if (previous_balance is not None and 'balance' in fields
+                            and int(fields['balance']) - previous_balance == misread_sign):
+                        fields.update(direction='credit' if misread_sign > 0 else 'debit',
+                                      direction_basis=DIRECTION_FROM_SIGN_AND_BALANCES)
+                        item['kind'] = 'transaction'
+                    else:
+                        item['issues'].append(_DIRECTION_UNREAD)
                 if previous_balance is not None and all(k in fields for k in ('balance', 'amount_minor', 'direction')):
                     movement = int(fields['amount_minor']) * (1 if fields['direction'] == 'credit' else -1)
                     delta = int(fields['balance']) - previous_balance - movement
@@ -779,6 +990,8 @@ def propose_andrews_statement(sources, currency, statement):
             else:
                 item.update(excluded=False, kind='unresolved')
                 item['issues'].append('Check this line in the account section. It could not be linked to a transaction.')
+    if ORDERED_DAMAGED_DATES and damaged_dates:
+        _date_damaged_rows_in_order(result, damaged_dates, statement)
     issues = []
     for name in ('Opening Balance', 'Closing Balance'):
         controls = [r for r in result if r['kind'] == 'balance' and r['fields'].get('description') == name]
@@ -843,7 +1056,9 @@ def andrews_no_activity_evidence(sources, statement, rows):
     close_money, close_text = label(source_rows[closing['row_index']]) if page else ([], '')
     if (not page or len(open_money) != 1 or len(close_money) != 1
             or not _QUIET_OPENING.fullmatch(re.sub(r'\s+', '', open_text))
-            or not _QUIET_CLOSING.fullmatch(re.sub(r'\s+', '', close_text))):
+            or not (_QUIET_CLOSING.fullmatch(re.sub(r'\s+', '', close_text))
+                    or closing['fields'].get('date_reading') == ENDING_DATE_IS_PERIOD_END
+                    and re.fullmatch(r'\S+ Ending Balance', close_text))):
         return held('endpoint_label', 'The opening or ending balance line was not read exactly as printed. Check the page before confirming that it contains no transactions.', page_number=key[0])
     if 'balance' not in opening['fields'] or 'balance' not in closing['fields']:
         return held('endpoint_unreadable', 'An opening or ending balance could not be read. Check the page before confirming that it contains no transactions.', page_number=key[0])
@@ -868,8 +1083,10 @@ def andrews_no_activity_evidence(sources, statement, rows):
             return None
         return [min(b[0] for b in boxes), min(b[1] for b in boxes), max(b[2] for b in boxes), max(b[3] for b in boxes)]
 
-    first = extent(source_rows[opening['row_index']]['cells'])
-    second = extent(source_rows[closing['row_index']]['cells'])
+    # Positions of the printed labels: a money cell's box can be read taller
+    # than its line, which would hide or invent room for an unread line.
+    first = extent([c for c in source_rows[opening['row_index']]['cells'] if c not in open_money])
+    second = extent([c for c in source_rows[closing['row_index']]['cells'] if c not in close_money])
     space = (source_rows[opening['row_index']]['cells'][0].get('locator') or {})
     # Measure spacing only among account-section lines, never the address block.
     body = [r for r in (source_rows[i] for i in ordered) if r['row_index'] >= page['body_start'] and r['cells']]

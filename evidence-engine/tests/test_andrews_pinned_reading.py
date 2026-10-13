@@ -172,3 +172,47 @@ def test_corpus_compensating_andrews_misreads_are_left_to_the_second_reader():
     assert [(r['decision'], r['reason']) for r in _records(result, verification.PINNED_READING_METHOD)] == [
         ('declined', 'not_every_held_cell_is_pinned_by_agreed_controls')]
     assert [r['decision'] for r in _records(result, verification.SECOND_READER_METHOD)] == ['repaired']
+
+
+@pytest.mark.parametrize('texts, expected', [
+    # Real scans: crops read the printed minus as 2 or +. That supports the page reading
+    # as a candidate only; the agreed controls must still pin it.
+    (['223.45'] * 6, [('-23.45', 'page_reading'), ('223.45', 'crop_reading')]),
+    (['+23.45'] * 3 + ['223.45'] * 3, [('-23.45', 'page_reading')]),
+    # Other digits after the 2 are not this amount.
+    (['224.45'] * 6, [('224.45', 'crop_reading')]),
+])
+def test_a_minus_the_crops_read_as_2_or_plus_supports_the_page_reading(texts, expected):
+    observations = [dict(dpi=300 if i < 3 else 450, threshold=0, text=t) for i, t in enumerate(texts)]
+    assert verification._printed_readings(dict(original_text='-23.45', rect=[1, 2, 3, 4],
+                                               observations=observations)) == expected
+
+
+def test_a_plus_amount_is_never_supported_by_a_leading_2():
+    observations = [dict(dpi=300 if i < 3 else 450, threshold=0, text='223.45') for i in range(6)]
+    assert verification._printed_readings(dict(original_text='23.45', rect=[1, 2, 3, 4],
+                                               observations=observations)) == [('223.45', 'crop_reading')]
+
+
+@pytest.mark.parametrize('text, kind, value', [
+    ('·-7.25', 'single', (True, '725')),
+    ('41 .. 26', 'single', (False, '4126')),
+    ('-302_. 18 1234.56', 'pair', ((True, '30218'), (False, '123456'))),
+    ('-3.4°0 2345.67', 'pair', ((True, '340'), (False, '234567'))),
+    ('·ll . 30 1234.56', 'pair', ((False, '1130'), (False, '123456'))),
+    # No stray mark, or still not an amount once it is dropped: not this kind of cell.
+    ('13.57', 'single', None), ('O. 00', 'single', None), ('4-!321. 76', 'single', None), ('..', 'single', None),
+])
+def test_stray_marks_dropped_read_as_amounts_only_as_an_interpretation(text, kind, value):
+    assert verification.stray_marked_money(text, kind) == value
+
+
+def test_a_stray_marked_cell_is_reread_and_offers_its_readings_to_the_agreed_controls():
+    observations = [dict(dpi=300 if i < 3 else 450, threshold=0, text='-7.25') for i in range(6)]
+    # The page reading is never confirmed; the crops' reading and the page's interpretation are candidates.
+    assert verification.classify('·-7.25', observations)[0] != 'confirmed'
+    assert verification._printed_readings(dict(original_text='·-7.25', rect=[1, 2, 3, 4],
+                                               observations=observations)) == [('-7.25', 'page_reading_normalised')]
+    pair = [dict(dpi=300 if i < 3 else 450, threshold=0, text='-302.181234.56') for i in range(6)]
+    assert verification._printed_readings(dict(original_text='-302_. 18 1234.56', rect=[1, 2, 3, 4], kind='pair',
+                                               observations=pair)) == [('-302.18 1234.56', 'page_reading_normalised')]

@@ -312,3 +312,41 @@ class EndpointBalanceProvenanceTests(unittest.TestCase):
         closing = self.endpoints(rows)['Closing Balance']
         self.assertEqual((closing['status'], closing['method']), ('unreadable', 'unknown'))
         self.assertNotIn('balance', next(r for r in rows if r['fields'].get('description') == 'Closing Balance')['fields'])
+
+
+class DamagedEndingDateTests(unittest.TestCase):
+    """The Ending Balance date read with a speck or a measured look-alike, and money boxes read taller than their line."""
+
+    def test_an_ending_date_that_is_then_the_printed_period_end_still_proves_the_quiet_section(self):
+        for ending in ('06./30', '06/3O', '_06/30', 'O6/3O'):
+            with self.subTest(ending=ending):
+                data = page([QUIET[0], [(15, ending), (75, 'Ending Balance'), (350, '200.00')]])
+                proposal, evidence = proposal_for(data)
+                self.assertTrue(evidence['verified'], evidence)
+                closing = next(r for r in proposal['rows'] if r['fields'].get('description') == 'Closing Balance'
+                               and r['fields'].get('balance') == '20000')
+                self.assertEqual(closing['fields']['date'], '2020-06-30')
+
+    def test_any_other_ending_date_stays_unproven(self):
+        for ending in ('06/29.', '06/3X', '06/3', '0630'):
+            with self.subTest(ending=ending):
+                data = page([QUIET[0], [(15, ending), (75, 'Ending Balance'), (350, '200.00')]])
+                _, evidence = proposal_for(data)
+                self.assertFalse(evidence['verified'])
+
+    def test_a_money_box_read_taller_than_its_line_does_not_open_a_band(self):
+        data = page()
+        opening = next(r for r in data['rows'] if r['cells'][0]['expected_text'].startswith('06/01 ID 0040'))
+        rect = opening['cells'][1]['locator']['rect']
+        rect[1] -= 6000                      # the balance box starts higher than the label
+        _, evidence = proposal_for(data)
+        self.assertTrue(evidence['verified'], evidence)
+        # A real gap between the printed labels still holds it.
+        data = page()
+        closing = next(r for r in data['rows'] if r['row_index'] == max(x['row_index'] for x in data['rows']))
+        for cell in closing['cells']:
+            cell['locator']['rect'][1] += 12000
+            cell['locator']['rect'][3] += 12000
+        _, evidence = proposal_for(data)
+        self.assertFalse(evidence['verified'])
+        self.assertEqual(evidence['reason'], 'unread_band')

@@ -213,6 +213,14 @@ def _assess(tables):
     result = dict(identity=identity, payments=len(payments), payment_rows=len(payments) + zero_charges,
         zero_charge_rows=zero_charges, balances=len(balances), missing_fields=missing, unreadable=sum(missing.values()),
         identity_complete=complete)
+    if identity[0] == 'merrick-card':
+        # Kept with the assessment the engine stores when it prefers the page
+        # image, so the reader can still use this labelled fact of the page
+        # if the image reading loses it (``merrick_statement``).
+        from services.financial.statement_import_merrick import merrick_statement
+        merrick = merrick_statement(sources[0]) if len(sources) == 1 else None
+        if merrick and merrick['holder'] and not merrick.get('holder_sources'):
+            result['labelled_holder'] = merrick['holder']
     # Preserve readable facts across every supported family, not just counts.
     # One repaired cell must not silently alter another payment or control.
     known = [r for r in rows if r in payments or r['kind'] in ('zero_charge', 'balance', 'statement_total')]
@@ -540,6 +548,12 @@ def _andrews_reading(text):
     return found.pop()
 
 
+# A cell the agreed controls pinned may itself pin a neighbouring disputed
+# cell in a later round (adjacent disputed cells no longer block each other).
+# Reverse in one place: False restores one round over confirmed cells only.
+PROPAGATE_PINNED = True
+
+
 def pinned_andrews_values(tables, candidates, confirmed=None, context=None):
     """The one reading of each disputed Andrews money cell that the page's agreed controls fix.
 
@@ -582,13 +596,19 @@ def pinned_andrews_values(tables, candidates, confirmed=None, context=None):
     disputed = set(candidates)
     confirmed_parts = {cell[:3] + (cell[3],) for cell in confirmed or () if len(cell) == 4}
 
+    pinned = {}
+
     def agreed(cell, role):
         """Whether a cell's value in this role (``amount`` or ``balance``) is one the page and crops agree on.
 
         A joined amount and balance cell can have one part confirmed while the
-        other is disputed; only the confirmed part may fix a neighbour.
+        other is disputed; only the confirmed part may fix a neighbour. A cell
+        already pinned by agreed cells counts as agreed for its neighbours
+        (``PROPAGATE_PINNED``): its value follows from confirmed cells alone.
         """
         if (cell + (role,)) in confirmed_parts:
+            return True
+        if PROPAGATE_PINNED and cell in pinned:
             return True
         return cell not in disputed and (confirmed is None or cell in confirmed)
 
@@ -605,7 +625,8 @@ def pinned_andrews_values(tables, candidates, confirmed=None, context=None):
         balance its own payment's or one that uses it (the next payment or the
         ending balance). With neither part confirmed, both kinds are needed.
         """
-        sections = _andrews_page_sections(_with_texts(tables, {**(context or {}), key: text}))
+        sections = _andrews_page_sections(_with_texts(tables, {**(context or {}),
+            **{cell: value['text'] for cell, value in pinned.items()}, key: text}))
         found = [cells for rows in sections or () for cells, holds in _andrews_equations(rows)
                  if holds and key in cells
                  and all(agreed(other, role) for other, role in zip(cells, roles(cells)) if other != key)]
@@ -627,7 +648,7 @@ def pinned_andrews_values(tables, candidates, confirmed=None, context=None):
             return None
         return sorted({tuple(other) for other in found[0] if other != key})
 
-    pinned = {}
+    readings = {}
     for key, texts in candidates.items():
         by_value = {}
         for text in texts:
@@ -636,9 +657,20 @@ def pinned_andrews_values(tables, candidates, confirmed=None, context=None):
             except Exception:
                 by_value = {}
                 break
-        fixed = [(text, cells) for text in by_value.values() if (cells := pinning(key, text)) is not None]
-        if len(fixed) == 1:
-            pinned[key] = dict(text=fixed[0][0], pinned_by=[list(cell) for cell in fixed[0][1]])
+        readings[key] = by_value
+    # Rounds: a cell pinned in one round can pin a neighbour in the next
+    # (two adjacent disputed cells). Nothing pinned is ever revised.
+    while True:
+        found_now = {}
+        for key, by_value in readings.items():
+            if key in pinned:
+                continue
+            fixed = [(text, cells) for text in by_value.values() if (cells := pinning(key, text)) is not None]
+            if len(fixed) == 1:
+                found_now[key] = dict(text=fixed[0][0], pinned_by=[list(cell) for cell in fixed[0][1]])
+        pinned.update(found_now)
+        if not found_now or not PROPAGATE_PINNED:
+            break
     if not pinned:
         return {}
     sections = _andrews_page_sections(_with_texts(tables, {key: value['text'] for key, value in pinned.items()}))

@@ -79,6 +79,13 @@ def _coupon_holder(source):
     return candidates[0] if len(candidates) == 1 else ('', [])
 
 
+# When the engine replaced a damaged Merrick text layer by the page image and
+# the image reading lost the holder, use the holder the layer printed on its
+# labelled ``Send Payments to:`` line, only for the same account number.
+# Reverse in one place: False.
+CARRY_LAYER_HOLDER = True
+
+
 def merrick_statement(source):
     texts = [c['expected_text'].strip() for r in source['rows'] for c in r['cells']]
     if 'MERRICK BANK' not in texts or 'Transactions, Payments and Credits' not in texts:
@@ -156,6 +163,13 @@ def merrick_statement(source):
         coupon_holder, holder_sources = _coupon_holder(source)
         if coupon_holder:
             identity.update(holder=coupon_holder, holder_sources=holder_sources)
+    carried = source.get('original_layer_holder') or {}
+    if (not identity['holder'] and CARRY_LAYER_HOLDER and carried.get('holder') and identity['account_reference']
+            and re.sub(r'\s+', '', carried.get('account') or '') == re.sub(r'\s+', '', identity['account_reference'])
+            and re.fullmatch(r'[A-Z][A-Z .\'-]{2,127}', carried['holder'])):
+        # The image reading lost the holder; the page's own embedded text
+        # layer printed it on its labelled line, for the same account number.
+        identity.update(holder=carried['holder'], holder_basis='original_text_layer_labelled_line')
     return dict(**identity, date_conflict=date_conflict,
                 sources=[dict(page_number=source['page_number'],table_index=source['table_index'],source_revision=source['source_revision'])],page_numbers=[source['page_number']])
 

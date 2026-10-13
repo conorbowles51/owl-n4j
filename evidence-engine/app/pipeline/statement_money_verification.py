@@ -201,6 +201,33 @@ def lookalike_money(text, kind='single'):
     return crop_money_pair(mapped) if kind == 'pair' else crop_money_value(mapped)
 
 
+# Marks an embedded OCR layer was measured to put before or inside Andrews
+# money cells, where the print has none (``·-7.64``, ``-403_. 95``,
+# ``-2.5°0``), and a point it read twice (``56 .. 35``).
+_STRAY_MARKS = '·•_°`^!~"\''
+
+
+def stray_marked_money(text, kind='single'):
+    """The amount(s) a page reading states once measured stray marks are dropped, else ``None``.
+
+    ``None`` unless the text holds such a mark (or a doubled point) and then
+    reads as an amount (``kind='pair'``: two), letters measured to stand for
+    digits read as digits. Like ``lookalike_money`` this is an interpretation
+    of the page's glyphs, never confirmed on its own: the cell is reread from
+    the image and only the agreed controls may pin a reading of it.
+    """
+    compact = re.sub(r'\s+', '', text or '')
+    if not any(ch in _STRAY_MARKS for ch in compact) and '..' not in compact:
+        return None
+    cleaned = re.sub(r'\.{2,}', '.', ''.join(ch for ch in compact if ch not in _STRAY_MARKS))
+    if not cleaned:
+        return None
+    value = crop_money_pair(cleaned) if kind == 'pair' else crop_money_value(cleaned)
+    if value is None:
+        value = lookalike_money(cleaned, kind)
+    return value
+
+
 def _split_pair(text, parse):
     """The two amounts of a cell printing an amount and a running balance side by side, else ``None``.
 
@@ -668,6 +695,10 @@ def _target_kind(cell, page, andrews):
         return 'single'
     if lookalike_money(cell.text, 'pair') is not None:
         return 'pair'
+    if stray_marked_money(cell.text) is not None:
+        return 'single'
+    if stray_marked_money(cell.text, 'pair') is not None:
+        return 'pair'
     return None
 
 
@@ -785,6 +816,13 @@ def verify_money_cells(page, tables, *, rotation=0, deadline, language, chunk=No
             entry['marked_text'] = replacements[key] = _dispute_marked(cell.text, contradiction)
             entry['reason'] = ('crop_readings_contradict_page_reading' if status == 'contradicted'
                 else 'cell_not_measured' if rect is None else 'crop_readings_do_not_confirm_page_reading')
+            if rect:
+                # Stored so that the statement's controls on other pages can
+                # pin one of them later (the backend's whole-period pass); a
+                # value is still only ever one of these printed readings.
+                entry['printed_readings'] = [list(item) for item in _printed_readings(entry)]
+                if entry.get('confirmed_parts') and _page_pair(cell.text) is not None:
+                    entry['confirmed_parts_text'] = money_text(_page_pair(cell.text))
         cells_record.append(entry)
     record = dict(method=METHOD, page=page.number + 1,
         decision='held' if replacements else 'all_confirmed',
@@ -886,6 +924,26 @@ def _both_resolutions(observations):
     return {o['dpi'] for o in observations} == {dpi for dpi, _ in PROFILES}
 
 
+def _minus_misread(text, value, pair=False):
+    """Whether a crop reading states ``value`` (a negative amount) with its printed minus read as ``2`` or ``+``.
+
+    Measured on real Andrews scans: at some profiles the crops read the
+    leading minus of a payment as ``2`` (``223.45`` for ``-23.45``) or ``+``.
+    Such a reading supports the page reading as a candidate only; it is never
+    a value, and the page reading is accepted only when agreed controls pin it.
+    """
+    compact = re.sub(r'\s+', '', text or '')
+    if not compact or compact[0] not in '2+':
+        return False
+    amount = value[0] if pair else value
+    if not amount or not amount[0]:
+        return False
+    if pair:
+        parsed = crop_money_pair('-' + compact[1:])
+        return parsed is not None and parsed == value
+    return crop_money_value('-' + compact[1:]) == value
+
+
 def _printed_readings(cell):
     """``[(text, source)]``: the readings of one held cell that came from the print.
 
@@ -930,8 +988,11 @@ def _printed_readings(cell):
             normalised = dollar = dollar_garbled_money(original)
         if normalised is None:
             normalised = lookalike_money(original, 'pair' if pair else 'single')
+        if normalised is None:
+            normalised = stray_marked_money(original, 'pair' if pair else 'single')
     for value, source in ((page_value, 'page_reading'), (normalised, 'page_reading_normalised')):
-        if value is not None and any(image(o['text']) == value for o in observations):
+        if value is not None and any(image(o['text']) == value or _minus_misread(o['text'], value, pair)
+                                     for o in observations):
             found.append((original.strip() if source == 'page_reading'
                           else original.strip().replace('S', '$', 1) if dollar is not None else money_text(value), source))
     known = page_value if page_value is not None else normalised

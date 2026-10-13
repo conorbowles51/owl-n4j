@@ -95,3 +95,20 @@ class LatePostedCardDateTests(TestCase):
         with patch.object(late, 'LATE_POSTED_CARD_DATES', False):
             record = self._record(source)
             self.assertIsNone(late.proposed_date(record, '2024-01-01', '2024-01-31'))
+
+
+class LatePostedPostingBeforeCycleTests(TestCase):
+    """A saved row whose purchase and posting dates both print just before the cycle."""
+
+    def record(self, text, posting):
+        return dict(missing_fields=['date'], original=dict(kind='transaction', issues=[late.DATE_ISSUE],
+            layout_context=dict(date_source=dict(expected_text=text), posting_date_source=dict(expected_text=posting))))
+
+    def test_the_printed_posting_date_anchors_the_purchase_date(self):
+        from datetime import date
+        start, end = date(2020, 5, 12), date(2020, 6, 11)
+        self.assertEqual(late.proposed_date(self.record('May 9', 'May 11'), start, end),
+                         ('2020-05-09', 'printed_posting_before_cycle', 'May 9'))
+        for text, posting in (('May 11', 'May 9'), ('May 9', 'Apr 10'), ('Apr 1', 'May 9')):
+            with self.subTest(text=text, posting=posting):
+                self.assertIsNone(late.proposed_date(self.record(text, posting), start, end))
