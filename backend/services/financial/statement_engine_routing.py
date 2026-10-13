@@ -93,6 +93,14 @@ def closing_reconciles(rows, liability):
 
 
 IDENTITY = ('institution', 'account_reference', 'holder', 'currency')
+# When the engine and a library reader prove the same reading of a period, the library period keeps
+# serving and takes from the engine section the identity facts it left unread (r6-vector-text: a cleaner
+# reading of a page made the Intercam library agree with the engine on a section whose holder only the
+# engine reads, and the period lost its holder). Only facts every section of one statement shares: the
+# currency and the account tell sections apart, and two quiet sections agree on any reading (measured: a
+# Monex zero section took another section's currency). Switch off to keep the library period as read.
+AGREEMENT_FILLS_IDENTITY = True
+AGREEMENT_FILLS = ('institution', 'holder')
 
 
 def proved_rows(rows, liability):
@@ -323,6 +331,16 @@ def route_catalog(sources, library_catalog):
             if reading_key(library_rows) == reading_key(engine_rows):
                 group['engine_agrees'] = True
                 routing['agreements'] += 1
+                if AGREEMENT_FILLS_IDENTITY and not any(
+                        public.get(field) and group.get(field) and not _same_identity(field, public[field], group[field])
+                        for field in IDENTITY):
+                    # Both readers read every movement and balance alike from the same pages: a fact the
+                    # library left unread is the engine's printed reading, never over a conflicting one.
+                    filled = [field for field in AGREEMENT_FILLS if not group.get(field) and public.get(field)]
+                    for field in filled:
+                        group[field] = public[field]
+                    if filled:
+                        group['identity_from_engine'] = filled
                 if not exact:
                     routing['scoped_agreements'] = routing.get('scoped_agreements', 0) + 1
             else:

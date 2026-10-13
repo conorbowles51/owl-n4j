@@ -144,6 +144,20 @@ class PairingTests(unittest.TestCase):
         self.assertIs(harness.pair_truth(proposal, [mxn, usd], item), mxn)
         self.assertEqual(harness.proposal_field_errors(proposal, mxn).get('currency_wrong'), 1)
 
+    def test_a_files_items_pair_the_same_whatever_order_the_batch_lists_them_in(self):
+        import itertools
+        mxn = self.truth('m.pdf#1', 'MXN', amounts=[1000, 2500])
+        usd = self.truth('m.pdf#2', 'USD')
+        eur = self.truth('m.pdf#3', 'EUR', amounts=[7, 8, 9])
+        entries = [(self.proposal('MXN'), dict(period_end='2024-03-31', currency='MXN', statement_id='a')),
+                   (self.proposal('USD'), dict(period_end='2024-03-31', currency='USD', statement_id='b')),
+                   (self.proposal(''), dict(period_end='2024-03-31', currency='', statement_id='c'))]
+        for order in itertools.permutations(range(3)):
+            listed = [entries[i] for i in order]
+            pairs = harness.pair_file(listed, [mxn, usd, eur])
+            by_statement = {listed[k][1]['statement_id']: truth['id'] for k, truth in pairs.items()}
+            self.assertEqual(by_statement, {'a': 'm.pdf#1', 'b': 'm.pdf#2', 'c': 'm.pdf#3'}, order)
+
     def test_no_evidence_at_all_leaves_a_multi_period_item_unmatched(self):
         first, second = self.truth('m.pdf#1', 'MXN'), self.truth('m.pdf#2', 'USD')
         item = dict(period_end='2024-04-30', currency='')

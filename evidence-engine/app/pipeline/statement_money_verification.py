@@ -720,12 +720,35 @@ def _figures_cell(cell, row_cells, page):
     return ordered[-1] is cell and len(ordered) >= 3 and bool(_ROW_DATE.fullmatch((ordered[0].text or '').strip()))
 
 
-def verify_money_cells(page, tables, *, rotation=0, deadline, language, chunk=None, measure=True):
+def _outline_status(cell, rect, kind, outline_reading):
+    """``(status, outline text)`` from the page's character outlines, or ``(None, None)`` without one.
+
+    On a page printed as vector outlines (``vector_glyph_reading``) a cell is
+    read from the outlines themselves. The same amount as the page reading
+    confirms it; a complete outline reading of another amount contradicts it.
+    A figures-only cell (``kind == 'figures'``) is left to the crop readings.
+    """
+    if outline_reading is None or rect is None or kind == 'figures':
+        return None, None
+    text = outline_reading([v / 1000 for v in rect])
+    if text is None:
+        return None, None
+    page, _ = _readers(kind)
+    expected, read = page(cell.text), page(text)
+    if read is None:
+        return None, None
+    return ('confirmed' if expected is not None and read == expected else 'contradicted'), text
+
+
+def verify_money_cells(page, tables, *, rotation=0, deadline, language, chunk=None, measure=True,
+                       outline_reading=None):
     """Return ``(tables, records)`` with every unconfirmed money cell marked.
 
     ``chunk`` rebuilds a table's text from its grid (default: the financial
     reader's own chunk format). Tables without measured cells are left as they
-    are: they carry no money cell to reread.
+    are: they carry no money cell to reread. ``outline_reading`` (a page printed
+    as vector outlines) reads a cell rectangle in points from the outlines; a
+    cell it settles is not cropped (``_outline_status``).
     """
     if chunk is None:
         from services.financial.pdf_tables import _chunk as chunk
@@ -747,7 +770,13 @@ def verify_money_cells(page, tables, *, rotation=0, deadline, language, chunk=No
                 targets.append((table_index, cell, _cell_rect(cell, page) if rects_available else None, kind))
     if not targets:
         return tables, []
-    measured = [t for t in targets if t[2] is not None]
+    outlines = {}
+    if rotation == 0:
+        for table_index, cell, rect, kind in targets:
+            status, text = _outline_status(cell, rect, kind, outline_reading)
+            if status is not None:
+                outlines[(table_index, cell.row, cell.column)] = (status, text)
+    measured = [t for t in targets if t[2] is not None and (t[0], t[1].row, t[1].column) not in outlines]
     readings = {}
     error = None
     if measured:
@@ -781,6 +810,18 @@ def verify_money_cells(page, tables, *, rotation=0, deadline, language, chunk=No
                     original_text=cell.text, status='confirmed', rect=rect, observations=observations,
                     kind='figures', page_decimal_point_missing=True, normalised_text=normalisations[key],
                     reason='page_figures_confirmed_by_crops_with_their_point'))
+            continue
+        if key in outlines:
+            status, outline_text = outlines[key]
+            entry = dict(table_index=table_index, row_index=cell.row, column_index=cell.column,
+                original_text=cell.text, status=status, rect=rect, observations=[], outline_text=outline_text,
+                reason='vector_outlines_confirm_page_reading' if status == 'confirmed'
+                else 'vector_outlines_contradict_page_reading')
+            if kind != 'single':
+                entry['kind'] = kind
+            if status != 'confirmed':
+                entry['marked_text'] = replacements[key] = _dispute_marked(cell.text, outline_text)
+            cells_record.append(entry)
             continue
         status, contradiction = classify(cell.text, observations, kind) if rect else ('unconfirmed', None)
         entry = dict(table_index=table_index, row_index=cell.row, column_index=cell.column,

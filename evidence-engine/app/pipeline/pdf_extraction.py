@@ -41,7 +41,11 @@ MAX_OSD_TIMEOUT_SECONDS = 30.0
 # read for the dollar sign is confirmed when the crops read the sign; card row
 # dates are reread from their cells; an image reading replaces a recognised
 # layer that cannot read the statement identity or the card summary balances.
-PDF_READING_REVISION = 'bank-payment-rows-v17'
+# v17 (r5-andrews-cards): period-wide pinned readings, stored printed readings for held cells.
+# v18 (r6-vector-text): a page with no text layer that prints its text as vector outlines is
+# classed vector_text; its OCR words are re-read from the character outlines and its money
+# cells confirmed from them (vector_glyph_reading); words over blank paper are dropped.
+PDF_READING_REVISION = 'bank-payment-rows-v18'
 OSD_INSUFFICIENT_TEXT_MARKERS = ("too few characters", "skipping this page")
 
 
@@ -144,10 +148,29 @@ def _image_coverage(page: fitz.Page) -> float:
     return min(1.0, covered_area / page_area)
 
 
+def _vector_text_page(page: fitz.Page) -> bool:
+    """The page prints its text as filled vector outlines: mostly drawings, not an image.
+
+    Measured on the real statements: weak-text pages that are not image-covered
+    carry either fewer than 300 path segments or at least 4,066; outline-text
+    pages group a whole printed line into one path (84 paths, 33,000 segments),
+    so the path count alone (``MIN_VECTOR_DRAWINGS``) missed them.
+    """
+    if _image_coverage(page) >= MIN_IMAGE_COVERAGE:
+        return False
+    try:
+        drawings = page.get_drawings()
+    except Exception:
+        logger.debug("Unable to inspect page vector drawings", exc_info=True)
+        return False
+    from app.pipeline.vector_glyph_reading import MIN_VECTOR_SEGMENTS, vector_segments
+    return len(drawings) >= MIN_VECTOR_DRAWINGS or vector_segments(drawings) >= MIN_VECTOR_SEGMENTS
+
+
 def _ocr_detection_reason(page: fitz.Page, native_text: str) -> str | None:
     alnum_count, tokens = _native_text_stats(native_text)
     if alnum_count == 0:
-        return "no_native_text"
+        return "vector_text" if _vector_text_page(page) else "no_native_text"
 
     # A broken font encoding can yield thousands of alphanumeric characters
     # alongside control/replacement glyphs. Text quantity is not evidence that
@@ -166,12 +189,8 @@ def _ocr_detection_reason(page: fitz.Page, native_text: str) -> str | None:
     if weak_native_text and _native_text_is_suspicious(native_text, tokens):
         return "suspicious_text_layer"
 
-    if weak_native_text:
-        try:
-            if len(page.get_drawings()) >= MIN_VECTOR_DRAWINGS:
-                return "vector_text"
-        except Exception:
-            logger.debug("Unable to inspect page vector drawings", exc_info=True)
+    if weak_native_text and _vector_text_page(page):
+        return "vector_text"
 
     return None
 
@@ -380,7 +399,19 @@ def _recovered_unread_lines(original, image_tables):
                                  original['unread_lines'])
 
 
-def _verify_recognised_money(page, tables, chunks, *, text_origin, extraction_method, rotation=0):
+def _outline_reader(page, refinements):
+    """A cell reader from the page's character outlines, when the page was read from them; else ``None``."""
+    record = next((r for r in refinements or () if r.get('field') == 'vector_glyph_reading'), None)
+    if record is None or not record.get('labels') or page.rotation:
+        return None
+    from app.pipeline.vector_glyph_reading import page_glyphs, read_rect
+    glyphs = page_glyphs(page)
+    labels = {shape: (label, votes, total) for shape, label, votes, total in record['labels']}
+    return lambda rect: read_rect(glyphs, labels, rect)
+
+
+def _verify_recognised_money(page, tables, chunks, *, text_origin, extraction_method, rotation=0,
+                             refinements=None):
     """Hold recognised money cells that the page image does not confirm.
 
     Digital text layers return unchanged at no cost. A valid-looking misread
@@ -398,8 +429,13 @@ def _verify_recognised_money(page, tables, chunks, *, text_origin, extraction_me
     if not tables or not page_needs_verification(text_origin, extraction_method):
         return chunks, tables, []
     try:
+        try:
+            outline_reading = _outline_reader(page, refinements)
+        except Exception:
+            logger.warning('Vector outline cell reading unavailable; money cells are cropped', exc_info=True)
+            outline_reading = None
         refined, records = verify_money_cells(page, tables, rotation=rotation,
-            deadline=time.monotonic() + 30, language=settings.tesseract_lang)
+            deadline=time.monotonic() + 30, language=settings.tesseract_lang, outline_reading=outline_reading)
         repairs = []
         try:
             refined, repairs = repair_pinned_cells(page, refined, records[0] if records else None)
@@ -738,7 +774,48 @@ def _drop_inkless_words(data: dict, image: Image.Image) -> tuple[dict, list[dict
     return filtered, dropped
 
 
-def _ocr_page(page: fitz.Page, *, drop_inkless_words: bool = False) -> tuple[str, float | None, int, list | None, list[dict]]:
+def _read_vector_outlines(page: fitz.Page, data: dict, dpi: int) -> tuple[dict, dict | None]:
+    """``data`` with each recognised word re-read from the page's character outlines (``vector_glyph_reading``).
+
+    Returns the record of what was read: the shape labels the page's OCR
+    decided (kept so the money check can read a cell from its outlines) and
+    every word whose reading changed or that was dropped as printed nowhere.
+    """
+    from app.pipeline.vector_glyph_reading import METHOD, inkless, other_ink, page_glyphs, read_words, shape_labels
+    texts = data.get("text") or []
+    fields = ("left", "top", "width", "height")
+    if any(not isinstance(data.get(name), list) or len(data[name]) != len(texts) for name in fields):
+        return data, None
+    scale = 72.0 / dpi
+    words = [(str(texts[i] or ''), (data["left"][i] * scale, data["top"][i] * scale,
+              (data["left"][i] + data["width"][i]) * scale, (data["top"][i] + data["height"][i]) * scale))
+             for i in range(len(texts))]
+    drawings = page.get_drawings()
+    glyphs = page_glyphs(page, drawings)
+    ink = other_ink(page, drawings)
+    labels = shape_labels(glyphs, words)
+    readings = read_words(glyphs, labels, words)
+    changed, dropped = [], []
+    new_texts = list(texts)
+    for index, ((text, box), reading) in enumerate(zip(words, readings)):
+        if text.strip() and glyphs and inkless(glyphs, ink, box):
+            # Nothing is printed under this word: OCR reported it over blank paper.
+            dropped.append(dict(original_text=text.strip(), rect=[round(v * 1000) for v in box]))
+            new_texts[index] = ''
+        elif reading is not None and reading != text.strip():
+            changed.append(dict(original_text=text.strip(), text=reading,
+                                rect=[round(v * 1000) for v in box]))
+            new_texts[index] = reading
+    record = dict(field='vector_glyph_reading', method=METHOD, decision='read' if changed or dropped else 'unchanged',
+                  characters=len(glyphs), shapes=len({g.shape for g in glyphs}), labelled_shapes=len(labels),
+                  characters_labelled=sum(g.shape in labels for g in glyphs),
+                  words_read=sum(r is not None for r in readings), words_changed=changed, words_dropped=dropped,
+                  labels=[[shape, label, votes, total] for shape, (label, votes, total) in sorted(labels.items())])
+    return (dict(data, text=new_texts) if changed or dropped else data), record
+
+
+def _ocr_page(page: fitz.Page, *, drop_inkless_words: bool = False,
+              vector_text: bool = False) -> tuple[str, float | None, int, list | None, list[dict]]:
     deadline = time.monotonic() + max(
         1,
         int(settings.pdf_ocr_page_timeout_seconds),
@@ -838,16 +915,27 @@ def _ocr_page(page: fitz.Page, *, drop_inkless_words: bool = False) -> tuple[str
             if alternative_confidence is not None and alternative_confidence >= 80.0:
                 break
         inkless = []
-        if drop_inkless_words and best_rotation == 0:
+        outlines = None
+        # A vector-text page renders its print solid black, like a prepared scan.
+        if (drop_inkless_words or vector_text) and best_rotation == 0:
             best_data, inkless = _drop_inkless_words(best_data, image)
             if inkless:
                 text, confidence = _text_and_confidence_from_tesseract(best_data)
+        if vector_text and best_rotation == 0 and not page.rotation:
+            try:
+                best_data, outlines = _read_vector_outlines(page, best_data, dpi)
+                if outlines and (outlines['words_changed'] or outlines['words_dropped']):
+                    text, confidence = _text_and_confidence_from_tesseract(best_data)
+            except Exception:
+                logger.warning('Vector outline reading unavailable; retaining the OCR reading', exc_info=True)
     finally:
         image.close()
     refinements = []
     if inkless:
         refinements.append(dict(field='ocr_inkless_words', decision='dropped', threshold=INKLESS_WORD_THRESHOLD,
                                 words=inkless))
+    if outlines:
+        refinements.append(outlines)
     try:
         from app.pipeline.financial_bbva_ocr import reread_bbva_fields
         refined_data, comparisons = reread_bbva_fields(page, best_data,
@@ -1010,7 +1098,8 @@ def _read_ocr_page(document, page_index, page_result, prepared, page_cache, nati
             text, confidence, dpi, words, refinements = json.loads(checkpoint.read_text())
         else:
             text, confidence, dpi, words, refinements = (_ocr_page(reading_page, drop_inkless_words=True)
-                if prepared is not None else _ocr_page(reading_page))
+                if prepared is not None else _ocr_page(reading_page, vector_text=True)
+                if page_result.detection_reason == 'vector_text' else _ocr_page(reading_page))
             if prepared is not None:
                 refinements = [prepared.record, *refinements]
             if checkpoint:
@@ -1106,7 +1195,7 @@ def _read_ocr_page(document, page_index, page_result, prepared, page_cache, nati
         ocr_chunks = reader.chunks_of(ocr_tables) if reader is not None else []
         ocr_chunks, ocr_tables, verification = _verify_recognised_money(reading_page,
             ocr_tables, ocr_chunks, text_origin='recognised_glyphs', extraction_method='tesseract_ocr',
-            rotation=_page_rotation(page_result.ocr_refinements))
+            rotation=_page_rotation(page_result.ocr_refinements), refinements=page_result.ocr_refinements)
         page_result.ocr_refinements.extend(verification)
         table_chunks.extend(ocr_chunks)
         extracted_tables.extend(ocr_tables)
