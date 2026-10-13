@@ -18,6 +18,7 @@ import {
 import { FinancialFileAction } from "./FinancialFileAction"
 import { EvidenceFinancialPicker } from "./EvidenceFinancialPicker"
 import { BatchStartChoice } from "./BatchStartChoice"
+import { useReviewQueue } from "../lib/review-queue"
 import {
   needsBatchStartChoice,
   previewBatchStart,
@@ -363,6 +364,33 @@ export function StatementFilesPanel({
             item.incomplete_count)
       )
   )
+  // The case review queue (stored readings only) says which files hold
+  // statements with something to fix, so a file opens at those statements.
+  const reviewQueue = useReviewQueue(caseId, [], register && active && !removalMode)
+  const queueByFile = new Map<string, number>()
+  for (const entry of reviewQueue.data?.items ?? [])
+    for (const id of entry.file_ids)
+      queueByFile.set(id, (queueByFile.get(id) ?? 0) + 1)
+  const openQueue = (ids: string[]) =>
+    navigate(
+      `/cases/${caseId}/financial?view=statements&queue=1&queueFiles=${encodeURIComponent([...new Set(ids)].join(","))}`
+    )
+  const isPrepared = (id: string) =>
+    !!imports.data?.files.some(
+      (item) =>
+        item.evidence_file_id === id &&
+        (item.prepared_periods || item.periods.length)
+    )
+  // Selecting files to review never reads or prepares them again: files that
+  // already have prepared statements open in the review queue, filtered to
+  // them; only files never prepared start a batch.
+  const reviewSelected = (ids = selectedIds) => {
+    const unprepared = ids.filter((id) => !isPrepared(id))
+    if (!unprepared.length) return openQueue(ids)
+    return prepareSelected(unprepared)
+  }
+  const selectedAllPrepared =
+    selectedIds.length > 0 && selectedIds.every(isPrepared)
   const prepareSelected = async (
     ids = selectedIds,
     choice?: BatchStartChoiceValue
@@ -877,11 +905,13 @@ export function StatementFilesPanel({
                   !selectedIds.length ||
                   files.isError
                 }
-                onClick={() => void prepareSelected()}
+                onClick={() => void reviewSelected()}
               >
                 {preparing
                   ? "Preparing statements…"
-                  : `Review and save selected files together (${selectedIds.length})`}
+                  : selectedAllPrepared
+                    ? `Review the selected files (${selectedIds.length})`
+                    : `Review and save selected files together (${selectedIds.length})`}
               </Button>
             )}
             {!removalMode && (
@@ -1210,6 +1240,31 @@ export function StatementFilesPanel({
                   </ul>
                 </details>
               )}
+            {!removed &&
+              !removalMode &&
+              (() => {
+                const waiting = Math.max(
+                  0,
+                  ...file.readingVersions.map(
+                    (version) => queueByFile.get(version.id) ?? 0
+                  ),
+                  queueByFile.get(file.id) ?? 0
+                )
+                return waiting > 0 ? (
+                  <Button
+                    size="sm"
+                    onClick={() =>
+                      openQueue([
+                        file.id,
+                        ...file.readingVersions.map((version) => version.id),
+                      ])
+                    }
+                  >
+                    Review {count(waiting, "statement", "statements")} with
+                    issues in this file
+                  </Button>
+                ) : null
+              })()}
             {(status === "ready" || !saved?.periods.length) &&
               !removed &&
               !removalMode &&
