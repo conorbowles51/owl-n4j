@@ -1563,7 +1563,8 @@ def _segments(pages, facts):
     """[(period or None, [page numbers])]: a new printed period, or numbering restarting at 1, starts a segment."""
     _drop_contradicted_derived(pages, facts)
     segments = []
-    for page in sorted(pages):
+    ordered = sorted(pages)
+    for page in ordered:
         f = facts[page]
         period = None
         candidates = f['labelled_periods'] or f['periods']
@@ -1574,9 +1575,12 @@ def _segments(pages, facts):
         # (A2, A3) A printed run that reached its last page ('Page 5 of 5') is complete: a following page
         # printing neither a period nor a page number (a record or image the production appended) does not
         # continue that statement.
+        # A page whose next numbered page continues a run (number above 1) is that run's unnumbered first
+        # page, not an appendix.
+        following = next((facts[q]['numbering'] for q in ordered[ordered.index(page) + 1:] if facts[q]['numbering']), set())
         finished = (current is not None and not period and not f['numbering'] and current['pages']
                     and any(n == m for n, m in facts[current['pages'][-1]]['numbering'])
-                    and not current.get('appendix'))
+                    and not current.get('appendix') and not any(n > 1 for n, _ in following))
         if finished:
             current = dict(period=None, pages=[], conflict=False, appendix=True)
             segments.append(current)
@@ -1845,7 +1849,9 @@ def _sections(segment, pages, style):
                 # The movement table's heading is the one its movements are printed under; a summary printed
                 # (and closed) before the movement table has no movements of its own.
                 main_roles, other_table = header_roles, False
-            elif closed and header_roles != main_roles:
+            elif closed and after_close is not None and header_roles != main_roles:
+                # Only after a closing balance that ended the movements (none printed since it): a summary's
+                # closing printed above the movement table does not end that table.
                 other_table = True
                 continue
             else:
