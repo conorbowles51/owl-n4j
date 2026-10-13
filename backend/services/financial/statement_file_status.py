@@ -53,7 +53,10 @@ def status_fingerprint(session, case_id):
     """Fingerprint of every row the register reads, or None when not supported."""
     if session.get_bind().dialect.name != 'postgresql':
         return None
-    return tuple(tuple(row) for row in session.execute(_FINGERPRINT_SQL, dict(case_id=str(case_id))))
+    # UNION ALL has no row order: PostgreSQL returns its branches in any order
+    # (parallel plans do), and an unordered tuple made two reads of unchanged
+    # data look different, so the cache missed at random. Order by the label.
+    return tuple(sorted(tuple(row) for row in session.execute(_FINGERPRINT_SQL, dict(case_id=str(case_id)))))
 
 
 def statement_file_status(session, *, case_id, use_cache=True):

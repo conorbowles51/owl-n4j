@@ -372,10 +372,53 @@ _cache = OrderedDict()
 _lock = threading.Lock()
 
 
-def _entries(session, case_id, use_cache=True):
+# Precompute on write: cases whose queue was read recently are rebuilt in the
+# background (batch loop sweep) after their fingerprint changes, so the next
+# open is a cache hit. One switch.
+PREWARM = True
+PREWARM_MAX_AGE = 15 * 60
+_recent_reads = OrderedDict()
+
+
+def prewarm(factory, *, budget_seconds=20.0, now=None):
+    """Rebuild the cached queue of recently read cases whose inputs changed. Returns the cases rebuilt."""
+    from services.financial.statement_file_status import status_fingerprint
+    if not PREWARM:
+        return []
+    now = time.monotonic() if now is None else now
+    started, rebuilt = time.monotonic(), []
+    with _lock:
+        for key, seen in list(_recent_reads.items()):
+            if now - seen > PREWARM_MAX_AGE:
+                _recent_reads.pop(key, None)
+        cases = sorted(_recent_reads, key=lambda key: -_recent_reads[key])
+    for key in cases:
+        if time.monotonic() - started >= budget_seconds:
+            break
+        with factory() as session:
+            try:
+                fingerprint = status_fingerprint(session, UUID(key))
+                with _lock:
+                    hit = _cache.get(key)
+                if fingerprint is None or (hit and hit[0] == fingerprint):
+                    continue
+                _entries(session, UUID(key), note=False)
+                rebuilt.append(key)
+            finally:
+                session.rollback()
+    return rebuilt
+
+
+def _entries(session, case_id, use_cache=True, note=True):
     from services.financial.statement_file_status import status_fingerprint
     fingerprint = status_fingerprint(session, case_id) if use_cache else None
     key = str(case_id)
+    if fingerprint is not None and note:
+        with _lock:
+            _recent_reads[key] = time.monotonic()
+            _recent_reads.move_to_end(key)
+            while len(_recent_reads) > _CACHE_SIZE:
+                _recent_reads.popitem(last=False)
     if fingerprint is not None:
         with _lock:
             hit = _cache.get(key)

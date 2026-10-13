@@ -2073,6 +2073,13 @@ async def run_batches_forever():
                 refreshed = await _finish_atomic(refresh_stale_readiness, factory)
                 if refreshed:
                     log.info('Stored batch readiness refreshed: %s', refreshed)
+                # Precompute the review queue of recently opened cases whose
+                # inputs changed, so the next open reads it from the cache.
+                try:
+                    from services.financial.review_queue import prewarm
+                    await _finish_atomic(prewarm, factory)
+                except Exception:
+                    log.exception('Review queue precompute failed; queues are built on open instead')
         except asyncio.CancelledError:
             raise
         except Exception:

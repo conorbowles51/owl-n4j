@@ -350,3 +350,38 @@ class FilledDetailsTests(Base):
             with self.f.SessionLocal() as db:
                 result = queue_save.fill_from_queue(db, case_id=self.f.case.id)
         self.assertEqual((result['filled'], result['ready_item_ids']), (1, [str(item_id)]))
+
+
+class QueueCacheTests(Base):
+    test_a_statement_in_two_batches_is_one_entry_and_leaves_once_saved = None
+    test_a_statement_with_a_problem_is_queued_with_its_sentence_and_file_filter_applies = None
+
+    def test_prewarm_rebuilds_only_recently_read_cases_whose_inputs_changed(self):
+        from services.financial import review_queue as rq
+        import sys
+        import services.financial.statement_file_status  # noqa: F401
+        register = sys.modules['services.financial.statement_file_status']
+        rq._cache.clear(); rq._recent_reads.clear()
+        fingerprint = [('a',)]
+        builds = []
+        real = rq._build
+
+        def build(session, case_id):
+            builds.append(case_id)
+            return real(session, case_id)
+        with patch.object(register, 'status_fingerprint', side_effect=lambda *_: tuple(fingerprint)), \
+                patch.object(rq, '_build', side_effect=build):
+            with self.f.SessionLocal() as db:
+                case_review_queue(db, case_id=self.f.case.id)          # an open: built and noted
+            self.assertEqual(len(builds), 1)
+            self.assertEqual(rq.prewarm(self.f.SessionLocal), [])      # unchanged: nothing rebuilt
+            fingerprint.append(('b',))                                  # a write changed the inputs
+            self.assertEqual(rq.prewarm(self.f.SessionLocal), [str(self.f.case.id)])
+            with self.f.SessionLocal() as db:
+                case_review_queue(db, case_id=self.f.case.id)          # the next open is a cache hit
+            self.assertEqual(len(builds), 2)
+            with patch.object(rq, 'PREWARM', False):
+                fingerprint.append(('c',))
+                self.assertEqual(rq.prewarm(self.f.SessionLocal), [])
+            # Reads older than the window are forgotten.
+            self.assertEqual(rq.prewarm(self.f.SessionLocal, now=10 ** 9), [])
