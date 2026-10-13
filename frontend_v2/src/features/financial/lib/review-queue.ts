@@ -69,6 +69,7 @@ export const reviewQueue = z.object({
     )
     .default([]),
   rechecking: z.array(entry).default([]),
+  ready: z.array(entry).default([]),
   ready_batches: z
     .array(z.object({ batch_id: z.string(), statements: z.number() }))
     .default([]),
@@ -151,6 +152,35 @@ export function useReviewCases(enabled = true) {
         .parse(await fetchAPI("/api/financial/statement-import/review/cases"))
         .cases,
   })
+}
+
+/** Per evidence file: the queue's own counts, so file lists never count work differently. */
+export type QueueFileWork = { waiting: number; unreadable: number; ready: number }
+
+export function queueFileWork(data: ReviewQueue | undefined) {
+  const byFile = new Map<string, QueueFileWork>()
+  if (!data) return byFile
+  const add = (ids: (string | null | undefined)[], key: keyof QueueFileWork) => {
+    for (const id of new Set(ids.filter(Boolean) as string[])) {
+      const work = byFile.get(id) ?? { waiting: 0, unreadable: 0, ready: 0 }
+      work[key] += 1
+      byFile.set(id, work)
+    }
+  }
+  for (const entry of data.items) add(entry.file_ids, "waiting")
+  for (const entry of data.unreadable) add(entry.file_ids, "unreadable")
+  for (const file of data.unreadable_files) add([file.file_id, file.source_id], "unreadable")
+  for (const entry of data.ready) add(entry.file_ids, "ready")
+  return byFile
+}
+
+/** The queue route for some files (all of a batch's files, or one file), optionally at one entry. */
+export function queueHref(caseId: string, fileIds: string[] = [], itemId?: string) {
+  const search = new URLSearchParams({ view: "statements", queue: "1" })
+  const ids = [...new Set(fileIds)].filter(Boolean)
+  if (ids.length) search.set("queueFiles", ids.join(","))
+  if (itemId) search.set("queueItem", itemId)
+  return `/cases/${caseId}/financial?${search}`
 }
 
 const plural = (n: number, one: string, many: string) =>

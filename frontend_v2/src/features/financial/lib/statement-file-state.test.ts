@@ -47,6 +47,36 @@ describe("statement file card", () => {
     expect(card.needsAction).toBe(true)
   })
 
+  it("counts a prepared file's work from the review queue, never from its own checks", () => {
+    const none = { waiting: 0, unreadable: 0, ready: 0 }
+    // The register still says one period has checks (a saved statement's
+    // check history), but the queue lists nothing: no phantom work.
+    const quiet = statementFileCard(
+      processed,
+      saved({ periods_with_checks: 1, periods: [{ id: "p" }], current_transactions: 3 }),
+      { statusLoaded: true, queue: none }
+    )
+    expect(quiet.needsAction).toBe(false)
+    const work = statementFileCard(
+      processed,
+      saved({ periods: [{ id: "p" }], current_transactions: 3 }),
+      { statusLoaded: true, queue: { ...none, waiting: 1 } }
+    )
+    expect(work.needsAction).toBe(true)
+    const ready = statementFileCard(
+      processed,
+      saved({ available_periods: 2 }),
+      { statusLoaded: true, queue: { ...none, ready: 2 } }
+    )
+    expect(ready.needsAction).toBe(true)
+    // A read file never prepared is still work (it has no queue entry yet).
+    const unprepared = statementFileCard(processed, undefined, {
+      statusLoaded: true,
+      queue: none,
+    })
+    expect(unprepared.needsAction).toBe(true)
+  })
+
   it("labels a read file with nothing saved as not imported", () => {
     const card = statementFileCard(processed, undefined, { statusLoaded: true })
     expect(card.label).toBe(

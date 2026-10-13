@@ -171,6 +171,8 @@ class QueueReadTests(TestCase):
         self.assertEqual(queue['counts']['ready'], 1)
         self.assertEqual(queue['items'], [])
         self.assertEqual(queue['ready_batches'][0]['batch_id'], str(second))
+        # Ready statements are listed too, so they can be saved from the queue.
+        self.assertEqual([e['bucket'] for e in queue['ready']], ['ready'])
         # The status line counts the same buckets.
         self.assertIn('Ready to save 1', queue['status_line'])
         state = None

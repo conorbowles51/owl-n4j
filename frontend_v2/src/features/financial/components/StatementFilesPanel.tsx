@@ -18,7 +18,7 @@ import {
 import { FinancialFileAction } from "./FinancialFileAction"
 import { EvidenceFinancialPicker } from "./EvidenceFinancialPicker"
 import { BatchStartChoice } from "./BatchStartChoice"
-import { useReviewQueue } from "../lib/review-queue"
+import { queueFileWork, queueHref, useReviewQueue } from "../lib/review-queue"
 import {
   needsBatchStartChoice,
   previewBatchStart,
@@ -212,6 +212,18 @@ export function StatementFilesPanel({
     }
   }
   const statusLoaded = !!imports.data && !imports.data.truncated
+  // The case review queue (stored readings only) is the one source of
+  // statement work: which files hold statements to fix, couldn't read or
+  // ready to save. Needs action, the ready count and the per-file links all
+  // count from it, so a file is never sent to work the queue does not list.
+  const reviewQueue = useReviewQueue(caseId, [], register && active && !removalMode)
+  const fileWork = queueFileWork(reviewQueue.data)
+  const queueKnown = !!reviewQueue.data && !reviewQueue.data.file_ids.length
+  const workFor = (id: string) =>
+    fileWork.get(id) ?? { waiting: 0, unreadable: 0, ready: 0 }
+  const queueByFile = new Map(
+    [...fileWork].map(([id, work]) => [id, work.waiting] as const)
+  )
   // Non-PDF sources open their own review; they are listed under Needs action
   // until something has been saved from them, but never counted as a PDF
   // statement that is not imported.
@@ -236,6 +248,7 @@ export function StatementFilesPanel({
       removed: file.financial_removed,
       statusLoaded,
       queued: queuedReadings.has(file.id),
+      queue: queueKnown ? workFor(file.id) : undefined,
     })
   }
   const activeFiles =
@@ -289,11 +302,14 @@ export function StatementFilesPanel({
           (status === "action" && card.needsAction) ||
           (status === "not_imported" && card.notImported) ||
           (status === "work" && !onlyDuplicates) ||
-          (status === "ready" && !!saved?.available_periods) ||
+          (status === "ready" &&
+            (queueKnown ? !!workFor(file.id).ready : !!saved?.available_periods)) ||
           (status === "duplicates" &&
             (!!saved?.ignored_periods || duplicatePeriods > 0)) ||
           (status === "checks" &&
-            (!!saved?.periods_with_checks || !!saved?.incomplete_count)) ||
+            (queueKnown
+              ? !!(workFor(file.id).waiting || workFor(file.id).unreadable)
+              : !!saved?.periods_with_checks || !!saved?.incomplete_count)) ||
           (status === "pending" &&
             (!!saved?.pending_periods ||
               ["processing", "queued"].includes(file.status))) ||
@@ -315,18 +331,22 @@ export function StatementFilesPanel({
         (file) => file.id === item.evidence_file_id && !file.financial_removed
       )
   )
-  const readyCount = (imports.data?.files ?? [])
-    .filter((item) =>
-      files.data?.some(
-        (file) => file.id === item.evidence_file_id && !file.financial_removed
-      )
-    )
-    .reduce((total, file) => total + (file.available_periods || 0), 0)
+  const readyCount = queueKnown
+    ? reviewQueue.data!.counts.ready
+    : (imports.data?.files ?? [])
+        .filter((item) =>
+          files.data?.some(
+            (file) => file.id === item.evidence_file_id && !file.financial_removed
+          )
+        )
+        .reduce((total, file) => total + (file.available_periods || 0), 0)
   const visibleReadyCount = visibleFiles.reduce(
     (total, file) =>
       total +
-      (imports.data?.files.find((item) => item.evidence_file_id === file.id)
-        ?.available_periods || 0),
+      (queueKnown
+        ? workFor(file.id).ready
+        : imports.data?.files.find((item) => item.evidence_file_id === file.id)
+            ?.available_periods || 0),
     0
   )
   const selectedIds = (selection.scope === scope ? selection.ids : []).filter(
@@ -364,17 +384,7 @@ export function StatementFilesPanel({
             item.incomplete_count)
       )
   )
-  // The case review queue (stored readings only) says which files hold
-  // statements with something to fix, so a file opens at those statements.
-  const reviewQueue = useReviewQueue(caseId, [], register && active && !removalMode)
-  const queueByFile = new Map<string, number>()
-  for (const entry of reviewQueue.data?.items ?? [])
-    for (const id of entry.file_ids)
-      queueByFile.set(id, (queueByFile.get(id) ?? 0) + 1)
-  const openQueue = (ids: string[]) =>
-    navigate(
-      `/cases/${caseId}/financial?view=statements&queue=1&queueFiles=${encodeURIComponent([...new Set(ids)].join(","))}`
-    )
+  const openQueue = (ids: string[]) => navigate(queueHref(caseId, ids))
   const isPrepared = (id: string) =>
     !!imports.data?.files.some(
       (item) =>
@@ -747,6 +757,11 @@ export function StatementFilesPanel({
               >
                 Needs action ({needsActionCount})
               </Button>
+              {queueKnown && reviewQueue.data!.counts.waiting > 0 && (
+                <Button onClick={() => openQueue([])}>
+                  Review {reviewQueue.data!.counts.waiting} waiting in the queue
+                </Button>
+              )}
               <Button
                 variant="outline"
                 aria-pressed={status === "not_imported"}
@@ -768,11 +783,13 @@ export function StatementFilesPanel({
                 onClick={() => showResults("checks", true)}
               >
                 Show{" "}
-                {
-                  imports.data.files.filter(
-                    (f) => f.periods_with_checks || f.incomplete_count
-                  ).length
-                }{" "}
+                {queueKnown
+                  ? activeFiles.filter(
+                      (f) => workFor(f.id).waiting || workFor(f.id).unreadable
+                    ).length
+                  : imports.data.files.filter(
+                      (f) => f.periods_with_checks || f.incomplete_count
+                    ).length}{" "}
                 files with checks to review
               </Button>
               <Button
@@ -808,9 +825,10 @@ export function StatementFilesPanel({
             </div>
             <p className="text-sm text-muted-foreground">
               These buttons only filter the list. They do not read, check or
-              save anything. Needs action lists files not imported, readings
-              that found nothing or failed, and files with records or checks to
-              review.
+              save anything. Needs action lists the files that hold statements
+              in the review queue (to fix, couldn't read or ready to save), and
+              files whose reading failed or has not been checked yet. The
+              review queue is where each statement is opened and saved.
             </p>
           </div>
           {!!unpreparedFiles.length && canEdit && canUpload && (

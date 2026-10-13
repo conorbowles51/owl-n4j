@@ -420,7 +420,7 @@ def case_review_queue(session, *, case_id, file_ids=None, use_cache=True):
     return dict(case_id=str(case_id), file_ids=sorted(file_filter), counts=counts,
         status_line=status_line(counts), items=pick('waiting'), copies=pick('copies'),
         unreadable=pick('unreadable'), unreadable_files=failed, rechecking=pick('rechecking'),
-        unexplained=pick('unexplained'),
+        unexplained=pick('unexplained'), ready=pick('ready'),
         ready_batches=[dict(batch_id=key, statements=value) for key, value in
                        sorted(ready_batches.items(), key=lambda pair: -pair[1])],
         elapsed_ms=round((time.perf_counter() - started) * 1000))
