@@ -334,6 +334,13 @@ class _ReviewLock:
         return held
 
 
+# A refreshed preparation retires the untouched items of periods the current reader no longer finds in the file
+# (switch: False keeps them listed beside the new periods, as before).
+RETIRE_VANISHED_PERIODS = True
+VANISHED_PERIOD_MESSAGE = ('This file was read again and the statement periods were found differently. This earlier '
+                           'preparation is retained in history; review the periods listed now.')
+
+
 def prepare_reviews(session, batch, file, *, lock_slice=None):
     cache = {}
     fid = UUID(file['file_id'])
@@ -346,10 +353,12 @@ def prepare_reviews(session, batch, file, *, lock_slice=None):
     choices = first.get('statement_choices',[])
     identifiers = [c['id'] for c in choices]
     if not identifiers: identifiers=[None]
+    produced = set()
     for statement_id in identifiers:
         review_lock.yield_case()
         proposal = read_statement_import(session,case_id=batch.case_id,evidence_file_id=fid,currency=file.get('currency') or None,statement_id=statement_id,_cache=cache)
         key = statement_id or proposal.get('statement_id') or ''
+        produced.add(key)
         if file.get('standalone_import') and key != (file.get('statement_id') or ''):
             continue
         identifier = uuid5(batch.id, str(fid)+':'+key)
@@ -389,6 +398,16 @@ def prepare_reviews(session, batch, file, *, lock_slice=None):
         stale = session.get(Item,uuid5(batch.id,str(fid)+':'))
         if stale and stale.status=='attention' and not stale.review_request:
             session.delete(stale)
+    if RETIRE_VANISHED_PERIODS and not file.get('standalone_import'):
+        # The file was read again (refresh from its saved reading) and the current reader no longer finds a
+        # period an earlier preparation listed: that untouched item is retired to history, never deleted, so
+        # the queue does not list both readings. Items with saved review work or decisions are kept.
+        for item in session.scalars(select(Item).where(Item.batch_id == batch.id, Item.file_id == fid,
+                                                       Item.status.in_(('ready', 'attention')))):
+            if item.statement_key not in produced and not item.review_request:
+                item.status = 'superseded_reading'
+                item.summary = {**item.summary, 'can_import': False, 'superseded_by_reading': str(fid),
+                                'recovery_message': VANISHED_PERIOD_MESSAGE}
     session.flush()
     from services.financial.pending_statement_duplicates import prepare_batch_dispositions
     prepare_batch_dispositions(session, batch, fid, cache=cache, review_lock=review_lock)
