@@ -250,3 +250,22 @@ it("says when loading the statement periods ran past the time limit and offers t
   ).toBeInTheDocument()
   expect(calls).toBe(2)
 })
+
+it("offers one shared proposal for a missing detail, with its source", async () => {
+  const { commonProposal } = await import("./BulkStatementDetails")
+  const usd = { value: "USD", basis: "case_default", label: "the case's usual currency (9 of 9 saved statements)", confirmed: false }
+  const statement = (currency: string, proposal?: typeof usd) => ({
+    ...items[1],
+    values: { ...items[1].values, currency },
+    proposals: proposal ? { currency: proposal } : undefined,
+  })
+  expect(commonProposal([statement("", usd), statement("", usd), statement("MXN")], "currency")).toEqual({
+    value: "USD",
+    label: usd.label,
+    statements: 2,
+  })
+  // A statement without a proposal, or two different values: nothing is proposed.
+  expect(commonProposal([statement("", usd), statement("")], "currency")).toBeNull()
+  expect(commonProposal([statement("", usd), statement("", { ...usd, value: "EUR" })], "currency")).toBeNull()
+  expect(commonProposal([statement("MXN")], "currency")).toBeNull()
+})

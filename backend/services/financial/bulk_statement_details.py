@@ -83,6 +83,9 @@ class BulkEdit(BaseModel):
     mode: Literal['fill_missing', 'replace'] = 'fill_missing'
     request_id: UUID
     preview_revision: str | None = Field(default=None, pattern=r'^[a-f0-9]{64}$')
+    # Why the values were chosen, kept with each statement's detail history
+    # (e.g. a proposal's source when the System applies it).
+    basis: str | None = Field(default=None, max_length=1000)
 
 
 def _key(target):
@@ -465,7 +468,21 @@ def list_statements(session, *, case_id, selection):
         except PdfMappingError as exc:
             notices.append(dict(filename=_file(session, case_id, target.file_id).original_filename, message=str(exc)))
     rows.sort(key=lambda row: (row['filename'], row['values'].get('account_number', ''), row['values'].get('period_start', ''), row['key']))
+    _attach_proposals(session, case_id, rows)
     return dict(case_id=str(case_id), items=rows, notices=notices)
+
+
+def _attach_proposals(session, case_id, rows):
+    """Each unimported statement's proposals for its missing details, with their source (read only)."""
+    from services.financial import field_proposals
+    drafts = [row for row in rows if not row['source_id']]
+    if not drafts or not field_proposals.enabled_fields():
+        return
+    knowledge = field_proposals.case_knowledge(session, case_id)
+    for row in drafts:
+        proposals = field_proposals.propose(row['values'], knowledge)
+        if proposals:
+            row['proposals'] = proposals
 
 
 def _no_activity_plan(target, state, after):
@@ -640,6 +657,7 @@ def save(session, *, case_id, request, actor):
                     request_id=str(request.request_id), before=row['values'], after=after,
                     period_start_unprinted=bool(raw.get('period_start_unprinted')),
                     **(dict(no_activity_confirmed=True) if request.changes.no_activity_confirmed else {}),
+                    **(dict(basis=request.basis) if request.basis else {}),
                     statement_id=target.statement_id, at=record['saved_at'], actor=record['saved_by']))
                 file.metadata_ = metadata
                 for item in state['items']:
