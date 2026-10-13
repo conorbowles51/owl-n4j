@@ -310,7 +310,7 @@ def _build(session, case_id):
     known = {(sha, identity[1]) for identity, values in shas.items() for sha in values}
     outside = {scope: file_id for scope, file_id in current_saved.items() if scope not in known}
     names = dict(session.execute(select(EvidenceFile.id, EvidenceFile.original_filename).where(
-        EvidenceFile.case_id == case_id, EvidenceFile.id.in_(set(outside.values()))))) if outside else {}
+        EvidenceFile.case_id == case_id, EvidenceFile.id.in_(set(outside.values())))).all()) if outside else {}
     for (sha, key), file_id in outside.items():
         result.append(dict(id=f'saved:{file_id}:{key}', batch_id=None, file_id=str(file_id), source_id=str(file_id),
             statement_id=key or None, filename=names.get(file_id) or 'Source unavailable', holder='', account='',

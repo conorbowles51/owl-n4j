@@ -534,6 +534,12 @@ class _ProjectionInputs:
                         ids.add(UUID(str(retained)))
                     except ValueError:
                         pass
+            shared = getattr(self, 'shared_duplicates', None)
+            if shared is not None and all(str(identifier) in shared.get('files', {}) for identifier in ids):
+                # The batch comparison already fingerprinted these files (each
+                # file's guard is independent, so a superset answers the same).
+                self._duplicates = shared
+                return self._duplicates
             files = list(self.session.scalars(select(EvidenceFile).where(
                 EvidenceFile.case_id == self.case_id, EvidenceFile.id.in_(ids)))) if ids else []
             self._duplicates = load_projection_context(self.session, self.case_id, files)
@@ -772,6 +778,7 @@ def _checked_batch_items(session, case_id, items, *, validate_reviews=False, rea
         sources, prepared = comparison_sources(session, case_id, pending, read_pending=read_pending)
     with stage('batch_inputs'):
         inputs = _ProjectionInputs(session, case_id, items)
+        inputs.shared_duplicates = getattr(sources, 'duplicate_context', None)
     use_stored = reading != 'all' and not validate_reviews
     unhydrated = set(getattr(sources, 'unhydrated', ()) or ())
     projected = []
