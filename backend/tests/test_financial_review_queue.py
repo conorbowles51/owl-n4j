@@ -14,6 +14,8 @@ from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 from postgres.base import Base
+from postgres.models.financial_candidates import FinancialCandidateMapping, FinancialStatementReviewDraft
+from postgres.models.workspace_entry import WorkspaceEntry, WorkspaceEntryLink
 from postgres.models.evidence import IngestionLog
 from postgres.models.financial_import_batches import FinancialImportBatch as Batch, FinancialImportBatchItem as Item
 from services.financial import import_batches as service
@@ -22,6 +24,9 @@ from services.financial.review_queue import (actionable_problems, case_review_qu
                                              issue_sentence, status_line)
 from tests.test_financial_statement_import import StatementImportTests as Fixture
 
+# The Financial file library (unread statement files) reads these.
+FINANCIAL_SCOPE_TABLES = [FinancialCandidateMapping.__table__, FinancialStatementReviewDraft.__table__,
+                          WorkspaceEntry.__table__, WorkspaceEntryLink.__table__]
 NO_READING = AssertionError('The queue must not re-read a statement.')
 
 
@@ -121,7 +126,8 @@ class QueueReadTests(TestCase):
         self.f = Fixture('test_existing_import_and_same_request_keep_the_saved_account_for_navigation')
         self.f.setUp()
         self.f.file.status = 'processed'
-        Base.metadata.create_all(self.f.db.connection(), tables=[Batch.__table__, Item.__table__, IngestionLog.__table__])
+        Base.metadata.create_all(self.f.db.connection(), tables=[Batch.__table__, Item.__table__, IngestionLog.__table__,
+            *FINANCIAL_SCOPE_TABLES])
         self.f.db.commit()
 
     def tearDown(self):
