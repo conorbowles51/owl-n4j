@@ -2063,3 +2063,25 @@ class MultiAccountStatementTests(unittest.TestCase):
         rows.insert(index + 1, dict(row_index=901, cells=[cell('01-Feb', 14000, 50000, y, 0)]))
         checking = self.sections(sources)[0]
         self.assertTrue(checking['engine']['proved'], checking['engine'])
+
+    def test_a_heading_repeated_with_fewer_columns_after_a_summary_closing_continues_the_table(self):
+        sources = mx_statement(MOVES, closing='1,250.00')
+        rows = sources[0]['rows']
+        index = next(i for i, r in enumerate(rows) if r['cells'][0]['expected_text'] == '10/MAR')
+        y = rows[index]['cells'][0]['locator']['rect'][1] - 4000
+        # The summary's closing is printed above the table: a heading reprinted inside the table with only
+        # some of its column words read is not another table.
+        rows.insert(index, dict(row_index=902, cells=[cell('FECHA', 20000, 60000, y, 0), cell('ABONOS', 330000, 380000, y, 1)]))
+        st = read_statements(sources)[0]
+        self.assertTrue(st['engine']['proved'], st['engine'])
+        self.assertEqual(len(self.moves(st)), 3)
+
+    def test_an_unnumbered_first_page_of_the_next_run_is_not_an_appendix(self):
+        facts = {1: dict(numbering={(1, 2)}, periods=set(), labelled_periods=set()),
+                 2: dict(numbering={(2, 2)}, periods=set(), labelled_periods=set()),
+                 3: dict(numbering=set(), periods=set(), labelled_periods=set()),
+                 4: dict(numbering={(2, 2)}, periods=set(), labelled_periods=set()),
+                 5: dict(numbering=set(), periods=set(), labelled_periods=set())}
+        segments = E._segments({p: [] for p in facts}, facts)
+        self.assertEqual([s['pages'] for s in segments], [[1, 2, 3, 4], [5]])
+        self.assertTrue(segments[1].get('appendix'))
