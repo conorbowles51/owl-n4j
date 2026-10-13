@@ -350,7 +350,7 @@ export function saveResultLine(result: Omit<QueueSaveResult, "message">) {
     parts.push(`${result.held.length} held: ${heldReasons(result.held)}`)
   if (result.stillSaving)
     parts.push(
-      `${result.stillSaving} still saving in the background (refresh the queue later)`
+      `${result.stillSaving} still importing in the background (refresh the queue later)`
     )
   return parts.join(", ")
 }
@@ -410,7 +410,7 @@ export async function saveReadyStatements(
     )
     if (!progress.pending || Date.now() - started > maxWaitMs) break
     onProgress?.(
-      `Saving: ${progress.imported + progress.already_present} imported, ${progress.pending} still saving…`
+      `Importing: ${progress.imported + progress.already_present} imported, ${progress.pending} still importing…`
     )
     await sleep(pollMs)
   }

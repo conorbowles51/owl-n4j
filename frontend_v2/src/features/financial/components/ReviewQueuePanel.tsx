@@ -15,7 +15,7 @@ import {
 } from "../lib/review-queue"
 import { ReadingProgress } from "./ReadingProgress"
 
-type ListName = "waiting" | "filled" | "reader" | "copies" | "unreadable"
+type ListName = "waiting" | "ready" | "filled" | "reader" | "copies" | "unreadable"
 const QUEUE_KEYS = ["queueItem", "queueList", "queueFiles"]
 const FIELD_NAMES: Record<string, string> = {
   currency: "currency",
@@ -34,6 +34,8 @@ function listOf(data: ReviewQueue | undefined, name: ListName): QueueEntry[] {
         ? data.reader_fix
       : name === "unreadable"
       ? data.unreadable
+      : name === "ready"
+        ? data.ready
       : data.items
 }
 
@@ -65,34 +67,47 @@ export function ReviewStatusLine({
         {label} {value}
       </span>
     )
+  const ready = c.ready + c.filled
+  const total =
+    c.imported + c.waiting + (c.reader_fix ?? 0) + c.filled + c.ready + c.copies +
+    c.unreadable + c.unreadable_files + c.saving + c.rechecking + c.left_unimported
   const parts = [
+    <span key="total">Total {total}:</span>,
     part("Imported", c.imported),
     part("Waiting for you", c.waiting, "waiting"),
     ...(c.reader_fix ? [part("Waiting for a reader fix", c.reader_fix, "reader")] : []),
     ...(c.filled ? [part("Details filled automatically", c.filled, "filled")] : []),
-    ...(c.ready ? [part("Ready to save", c.ready)] : []),
+    ...(c.ready ? [part("Ready to import", c.ready, "ready")] : []),
     part("Copies set aside", c.copies, "copies"),
     part("Couldn't read", c.unreadable + c.unreadable_files, "unreadable"),
-    ...(c.saving ? [part("Saving", c.saving)] : []),
+    ...(c.saving ? [part("Importing now", c.saving)] : []),
     ...(c.rechecking ? [part("Being rechecked", c.rechecking)] : []),
-    ...(c.left_unimported ? [part("Left unimported", c.left_unimported)] : []),
+    ...(c.left_unimported ? [part("Left out by you", c.left_unimported)] : []),
   ]
   return (
     <div className="flex flex-wrap items-center gap-2">
       <p className="text-sm" aria-label="Statement status">
         {parts.map((value, index) => (
           <span key={index}>
-            {index > 0 && " · "}
+            {index > 1 && " · "}{index === 1 && " "}
             {value}
           </span>
         ))}
       </p>
-      {onSaveReady && c.ready + c.filled > 0 && (
-        <Button size="sm" disabled={saving} onClick={onSaveReady}>
-          {saving
-            ? "Saving ready statements…"
-            : `Save all ${c.ready + c.filled} ready ${c.ready + c.filled === 1 ? "statement" : "statements"}`}
-        </Button>
+      {onSaveReady && ready > 0 && (
+        <div className="flex basis-full flex-wrap items-center gap-2 rounded border p-2 text-sm">
+          <Button size="sm" disabled={saving} onClick={onSaveReady}>
+            {saving
+              ? "Importing…"
+              : `Import ${ready} ready ${ready === 1 ? "statement" : "statements"}`}
+          </Button>
+          <span>
+            Ready means {ready === 1 ? "it passed" : "they passed"} every check (balances add up, account, holder,
+            currency and dates are known) and {ready === 1 ? "needs" : "need"} nothing from you. Importing adds{" "}
+            {ready === 1 ? "it" : "them"} to the ledger and {ready === 1 ? "it moves" : "they move"} to Imported.
+            Each is checked once more first; anything that no longer passes stays here with its reason.
+          </span>
+        </div>
       )}
     </div>
   )
@@ -271,6 +286,8 @@ export function ReviewQueuePanel({
                 ? "Waiting for a reader fix"
               : list === "unreadable"
               ? "Couldn't read"
+              : list === "ready"
+                ? "Ready to import"
               : "Waiting for you"}
         </h3>
         <p className="text-sm text-muted-foreground">
@@ -282,7 +299,9 @@ export function ReviewQueuePanel({
             ? "Statements that are copies of another statement in this case. Copies the system set aside count nothing; possible copies wait for you to compare them with the original."
             : list === "unreadable"
               ? "Statements or files where nothing usable could be read. Open one to see its pages."
-              : "Only statements that need a decision from you. Each says what to fix before you open it. Imported statements, copies and statements that check out are not listed here."}
+              : list === "ready"
+                ? "Statements that passed every check and need nothing from you. Use Import above to add them to the ledger; open one to look at it first."
+              : "Only statements that need a decision from you. Each says what to fix before you open it. Imported statements, copies and statements ready to import are not listed here."}
         </p>
       </header>
       {fileIds.length > 0 && (
@@ -322,7 +341,7 @@ export function ReviewQueuePanel({
           {saveResult && (
             <div
               role="status"
-              aria-label="Result of saving ready statements"
+              aria-label="Result of importing ready statements"
               className={`space-y-1 rounded border p-3 text-sm ${saveResult.held.length ? "border-amber-500/60" : "border-teal-500/60"}`}
             >
               <p className="font-medium">{saveResult.message}</p>
@@ -354,28 +373,6 @@ export function ReviewQueuePanel({
             <Button variant="outline" size="sm" onClick={() => showList("filled")}>
               Details filled automatically ({query.data.counts.filled})
             </Button>
-          )}
-          {list === "waiting" && query.data.counts.ready > 0 && (
-            <div className="rounded border p-3 text-sm space-y-2" aria-label="Ready to save">
-              <p>
-                {query.data.counts.ready}{" "}
-                {query.data.counts.ready === 1
-                  ? "statement checks out"
-                  : "statements check out"}{" "}
-                and can be saved. Nothing needs fixing in{" "}
-                {query.data.counts.ready === 1 ? "it" : "them"}. Each is checked
-                again with the same rules as a batch save before it is imported.
-              </p>
-              {canEdit && (
-                <Button size="sm" disabled={!!saving} onClick={() => void saveReady()}>
-                  Save {query.data.counts.ready} ready{" "}
-                  {query.data.counts.ready === 1 ? "statement" : "statements"}
-                  {query.data.counts.filled
-                    ? ` (and ${query.data.counts.filled} with details filled automatically)`
-                    : ""}
-                </Button>
-              )}
-            </div>
           )}
           {list === "waiting" && query.data.copies.length > 0 && (
             <Button variant="outline" size="sm" onClick={() => showList("copies")}>

@@ -117,7 +117,7 @@ class QueueRulesTests(TestCase):
     def test_status_line_counts_its_own_buckets(self):
         counts = dict(imported=5, saving=0, waiting=2, ready=1, copies=3, unreadable=1, rechecking=0,
                       left_unimported=0, assigned=0, unexplained=0, unreadable_files=1)
-        self.assertEqual(status_line(counts), 'Imported 5 statements · Waiting for you 2 · Ready to save 1 · '
+        self.assertEqual(status_line(counts), 'Imported 5 statements · Waiting for you 2 · Ready to import 1 · '
                                               'Copies set aside 3 · Couldn\'t read 2')
 
 
@@ -182,7 +182,7 @@ class QueueReadTests(TestCase):
         # Ready statements are listed too, so they can be saved from the queue.
         self.assertEqual([e['bucket'] for e in queue['ready']], ['ready'])
         # The status line counts the same buckets.
-        self.assertIn('Ready to save 1', queue['status_line'])
+        self.assertIn('Ready to import 1', queue['status_line'])
         state = None
         with self.f.SessionLocal() as db:
             state = service.batch_status(db, case_id=self.f.case.id, batch_id=second)

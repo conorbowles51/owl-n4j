@@ -168,8 +168,9 @@ it("lists only statements with something to fix, each saying what before it is o
   expect(issues[1]).toHaveTextContent("Currency not printed: choose one (and 1 more check)")
   expect(screen.getByText(/statement 7 of 54 in this file/)).toBeVisible()
   expect(screen.getByLabelText("Statement status")).toHaveTextContent(
-    "Imported 49 · Waiting for you 2 · Ready to save 3 · Copies set aside 1 · Couldn't read 1"
+    "Imported 49 · Waiting for you 2 · Ready to import 3 · Copies set aside 1 · Couldn't read 1"
   )
+  expect(screen.getByLabelText("Statement status")).toHaveTextContent(/^Total \d+: Imported 49/)
   // Copies are behind their own entry, not in the queue.
   expect(screen.queryByText("Copy.pdf")).toBeNull()
   fireEvent.click(screen.getByRole("button", { name: "Review copies (1)" }))
@@ -234,15 +235,16 @@ it("saves ready statements across batches from the queue and says the result in 
     throw Error(`unexpected ${url}`)
   })
   mount("/cases/case/financial?view=statements&queue=1")
-  fireEvent.click(await screen.findByRole("button", { name: "Save 3 ready statements" }))
-  expect(await screen.findByLabelText("Result of saving ready statements")).toHaveTextContent(
+  fireEvent.click(await screen.findByRole("button", { name: "Import 3 ready statements" }))
+  expect(await screen.findByLabelText("Result of importing ready statements")).toHaveTextContent(
     "2 imported, 1 held: 1 currency not printed: choose one"
   )
   // One request covers statements of both batches; no batch is opened.
   expect(posts).toHaveLength(1)
   expect((posts[0] as { item_ids: string[] }).item_ids).toEqual(["r1", "r2", "r3"])
-  // The same action sits in the status line.
-  expect(screen.getByRole("button", { name: "Save all 3 ready statements" })).toBeVisible()
+  // One import action only, with "ready" explained next to it.
+  expect(screen.getAllByRole("button", { name: /ready statements?$/ })).toHaveLength(1)
+  expect(screen.getByText(/Ready means they passed every check/)).toBeVisible()
 })
 
 it("words outcomes and record statuses plainly", () => {
@@ -287,7 +289,7 @@ it("lists statements whose details were filled automatically, with each value an
     "Fills currency: USD (same account's 3 saved statements, all USD)"
   )
   expect(screen.getByRole("button", { name: "Open to change" })).toBeVisible()
-  expect(screen.getByRole("button", { name: "Save all 4 ready statements" })).toBeVisible()
+  expect(screen.getByRole("button", { name: "Import 4 ready statements" })).toBeVisible()
 })
 
 it("shows every blocker after the summary sentence", async () => {
