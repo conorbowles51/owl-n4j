@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react"
 import { CurrencyOptions } from "./CurrencyOptions"
 import { Button } from "@/components/ui/button"
 
@@ -6,12 +7,25 @@ export function StatementCurrencyControl({
   detectedCurrency,
   disabled,
   onChange,
+  focus = false,
 }: {
   currency: string
   detectedCurrency?: string
   disabled: boolean
   onChange: (currency: string) => void
+  /** Opened from the queue for a currency issue: open the choice and focus it once. */
+  focus?: boolean
 }) {
+  const details = useRef<HTMLDetailsElement>(null)
+  const select = useRef<HTMLSelectElement>(null)
+  const focused = useRef(false)
+  useEffect(() => {
+    if (!focus || disabled || focused.current || !details.current) return
+    focused.current = true
+    details.current.open = true
+    select.current?.focus({ preventScroll: true })
+    select.current?.scrollIntoView?.({ block: "center", behavior: "smooth" })
+  }, [focus, disabled])
   const conflict = !!detectedCurrency && currency !== detectedCurrency
   return (
     <section aria-label="Statement currency" className="space-y-2 text-sm">
@@ -41,11 +55,12 @@ export function StatementCurrencyControl({
           </Button>
         </div>
       )}
-      {!disabled && <details>
+      {!disabled && <details ref={details}>
         <summary className="cursor-pointer">Change currency</summary>
         <label className="block mt-2">
           Currency for this statement
           <select
+            ref={select}
             aria-label="Currency for this statement"
             className="ml-2 rounded border bg-background p-2"
             disabled={disabled}

@@ -27,7 +27,9 @@ const entry = z.object({
   issue: z.string().optional(),
   issue_reason: z.string().optional(),
   row_id: z.string().nullish(),
-  field: z.enum(["holder", "account_number", "period"]).nullish(),
+  field: z
+    .enum(["holder", "account_number", "period", "currency", "institution"])
+    .nullish(),
   other_problems: z.number().default(0),
   problem_total: z.number().default(0),
   copy_of: z.string().nullish(),

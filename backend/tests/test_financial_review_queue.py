@@ -65,6 +65,8 @@ class QueueRulesTests(TestCase):
         detail = describe(item(READING, CURRENCY, dict(kind='statement_detail', field='holder',
             message='The account holder has not been identified.')).summary)
         self.assertEqual(detail['reason'], 'currency')
+        # A single-field issue names the control to focus on open.
+        self.assertEqual(detail['field'], 'currency')
         self.assertEqual(detail['other_problems'], 2)
         detail = describe(item(READING).summary)
         self.assertEqual((detail['row_id'], detail['page']), ('7:0:3', 7))

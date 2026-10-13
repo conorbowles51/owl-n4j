@@ -1671,7 +1671,7 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
 export type QueueNavigation = {
   /** The plain sentence naming the problem, shown before anything else. */
   issue?: string
-  field?: "holder" | "account_number" | "period"
+  field?: "holder" | "account_number" | "period" | "currency" | "institution"
   position: number
   total: number
   onNext: () => void

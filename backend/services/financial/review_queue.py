@@ -40,7 +40,9 @@ SYSTEM_KINDS = frozenset({'readiness_pending', 'coverage_load'})
 # Most important first: the reason a statement is opened for.
 REASON_ORDER = ('import_failed', 'saved_review', 'reprint', 'assignment', 'currency', 'institution', 'holder',
                 'account', 'dates', 'balance', 'incomplete', 'count', 'no_activity', 'reading')
-DETAIL_FIELDS = {'holder': 'holder', 'account': 'account_number', 'dates': 'period'}
+# The one control a single-field issue opens on (the field its sentence names).
+DETAIL_FIELDS = {'holder': 'holder', 'account': 'account_number', 'dates': 'period', 'currency': 'currency',
+                 'institution': 'institution'}
 BUCKETS = ('imported', 'saving', 'waiting', 'ready', 'copies', 'unreadable', 'rechecking', 'left_unimported',
            'assigned', 'unexplained')
 
