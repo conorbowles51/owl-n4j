@@ -44,6 +44,23 @@ class StatementImportAuthorizationTests(unittest.TestCase):
                 self.assertEqual(handler.call_args.kwargs['case_id'], self.db.case.id)
                 self.assertEqual(self.client.post(url, json={**body, 'changes': {}}).status_code, 422)
 
+    def test_review_queue_requires_case_view_and_passes_the_file_filter(self):
+        file_ids = [str(uuid4()), str(uuid4())]
+        url = (f'/api/financial/statement-import/review/queue?case_id={self.db.case.id}'
+               + ''.join(f'&file_id={i}' for i in file_ids))
+        with patch('services.financial.review_queue.case_review_queue', return_value={'items': []}) as queue:
+            self.assertEqual(self.client.get(url).status_code, 401)
+            self.user(None)
+            self.assertEqual(self.client.get(url).status_code, 403)
+            queue.assert_not_called()
+            self.user({'case': {'view': True, 'edit': False}})
+            self.assertEqual(self.client.get(url).status_code, 200)
+            self.assertEqual(queue.call_args.kwargs['case_id'], self.db.case.id)
+            self.assertEqual([str(i) for i in queue.call_args.kwargs['file_ids']], file_ids)
+        with patch('services.financial.review_queue.case_status', return_value={'counts': {}}) as status:
+            self.assertEqual(self.client.get(f'/api/financial/statement-import/review/status?case_id={self.db.case.id}').status_code, 200)
+            self.assertEqual(status.call_args.kwargs['case_id'], self.db.case.id)
+
     def setUp(self):
         self.app=FastAPI()
         self.app.include_router(module.router)

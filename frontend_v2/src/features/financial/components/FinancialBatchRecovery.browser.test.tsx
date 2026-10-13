@@ -313,24 +313,24 @@ it.each([1280, 390])("keeps imported status explicit, saves before skipping comp
       return { status: "ready", review_revision: "c".repeat(64) } as never
     }
     if (url.includes("/next-statement")) {
-      expect(url).toContain("review_group=unfinished")
+      expect(url).toContain("review_group=needs_decision")
       calls.push(`next:${current}`)
       return { case_id: "case", batch_id: "batch", item_id: current === "first" ? "second" : null, position: current === "first" ? 2 : 0, total: 2 } as never
     }
     if (url.includes("/items/")) return { ...item, id: current, filename: current === "first" ? "Already saved.pdf" : "Still unfinished.pdf", status: current === "first" ? "imported" : "attention", can_import: true } as never
     const group = new URLSearchParams(url.split("?")[1]).get("review_group")
-    return { ...batch, statement_summary: summary, review_group: group, review_group_label: group === "unfinished" ? "Unfinished statements" : undefined } as never
+    return { ...batch, statement_summary: summary, review_group: group, review_group_label: group === "unfinished" ? "Unfinished statements" : group === "needs_decision" ? "Statements with something to fix" : undefined } as never
   })
   mount("/cases/case/financial?view=statements&batch=batch&batchItem=first")
   expect(await screen.findByLabelText("Current batch statement status")).toHaveTextContent("Already saved to Financial")
-  await page.getByRole("button", { name: "Next unfinished statement", exact: true }).click()
+  await page.getByRole("button", { name: "Next statement with something to fix", exact: true }).click()
   await waitFor(() => expect(screen.getByLabelText("Current batch statement status")).toHaveTextContent("Still unfinished.pdf"))
   expect(calls).toEqual(["save:first", "next:first"])
-  await page.getByRole("button", { name: "Next unfinished statement", exact: true }).click()
+  await page.getByRole("button", { name: "Next statement with something to fix", exact: true }).click()
   expect(await screen.findByText(/No further statements match this filter/)).toBeVisible()
   expect(screen.getByLabelText("Current batch statement status")).toHaveTextContent("Still unfinished.pdf")
   await page.getByRole("button", { name: "Back to bulk import", exact: true }).click()
-  expect(await screen.findByText("Statements: Unfinished statements")).toBeVisible()
+  expect(await screen.findByText("Statements: Statements with something to fix")).toBeVisible()
   expect(screen.getByLabelText("Your batch progress")).toHaveTextContent("1 saved to Financial · 2 prepared reviews still to finish")
   await page.getByRole("button", { name: "Show already saved", exact: true }).click()
   await waitFor(() => expect(vi.mocked(fetchAPI).mock.calls.some(([url]) => url.includes("review_group=saved"))).toBe(true))

@@ -319,5 +319,5 @@ def complete_record(*, session_factory, case_id, source_id, request, actor):
             if not promoted and admission is not None:
                 admission = {**admission, 'blockers': admission.get('blockers', []) + held_blockers(record)}
             return dict(transaction_id=promoted, created=bool(promoted), pending_reconciliation=not bool(promoted),
-                version=record['version'], message=((record.get('hold_reason') or 'Correction saved. This statement still needs reconciliation before its repaired payments enter Transactions.') if not promoted else ''),
+                version=record['version'], admitted=max(0, admitted), message=((record.get('hold_reason') or 'Correction saved. This statement still needs reconciliation before its repaired payments enter Transactions.') if not promoted else ''),
                 blockers=(admission or {}).get('blockers', []))

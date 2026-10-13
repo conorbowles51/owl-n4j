@@ -534,6 +534,12 @@ class _ProjectionInputs:
                         ids.add(UUID(str(retained)))
                     except ValueError:
                         pass
+            shared = getattr(self, 'shared_duplicates', None)
+            if shared is not None and all(str(identifier) in shared.get('files', {}) for identifier in ids):
+                # The batch comparison already fingerprinted these files (each
+                # file's guard is independent, so a superset answers the same).
+                self._duplicates = shared
+                return self._duplicates
             files = list(self.session.scalars(select(EvidenceFile).where(
                 EvidenceFile.case_id == self.case_id, EvidenceFile.id.in_(ids)))) if ids else []
             self._duplicates = load_projection_context(self.session, self.case_id, files)
@@ -720,6 +726,25 @@ def _statement_reader(session, case_id, target_ids, allowed):
     return read_pending
 
 
+def _pending_with_files(session, case_id):
+    """(item, evidence file) for every prepared, unsaved period of the case.
+
+    One evidence row per PDF, not one per prepared period: joining the file to
+    every item transferred and decoded its metadata once per period (about
+    100 MB and 16 s on a case with 3,000 prepared periods). Same rows, same
+    order of filters as the join it replaces.
+    """
+    items = session.scalars(select(Item).join(Batch, Batch.id == Item.batch_id)
+        .join(EvidenceFile, EvidenceFile.id == Item.file_id).where(Batch.case_id == case_id,
+        EvidenceFile.case_id == case_id, Batch.status != 'removed',
+        Item.status.in_(('ready', 'attention', 'pending_import')))).all()
+    if not items:
+        return []
+    owners = {file.id: file for file in session.scalars(select(EvidenceFile).where(
+        EvidenceFile.case_id == case_id, EvidenceFile.id.in_({item.file_id for item in items})))}
+    return [(item, owners[item.file_id]) for item in items]
+
+
 def checked_batch_items(session, case_id, items, *, validate_reviews=False, reading='stored'):
     """Project batch items for display, navigation and admission.
 
@@ -745,9 +770,7 @@ def _checked_batch_items(session, case_id, items, *, validate_reviews=False, rea
     from services.financial.statement_import_overlap import (coverage_review, summary_request, requires_decision,
         comparison_sources, duplicate_hold, ReadingDeferred)
     with stage('batch_pending'):
-        pending = session.execute(select(Item, EvidenceFile).join(Batch, Batch.id == Item.batch_id)
-            .join(EvidenceFile, EvidenceFile.id == Item.file_id).where(Batch.case_id == case_id,
-            EvidenceFile.case_id == case_id, Batch.status != 'removed', Item.status.in_(('ready','attention','pending_import')))).all()
+        pending = _pending_with_files(session, case_id)
     target_ids = {item.id for item in items}
     read_pending = _statement_reader(session, case_id, target_ids,
         lambda item: reading == 'all' or (reading == 'targets' and item.id in target_ids))
@@ -755,6 +778,7 @@ def _checked_batch_items(session, case_id, items, *, validate_reviews=False, rea
         sources, prepared = comparison_sources(session, case_id, pending, read_pending=read_pending)
     with stage('batch_inputs'):
         inputs = _ProjectionInputs(session, case_id, items)
+        inputs.shared_duplicates = getattr(sources, 'duplicate_context', None)
     use_stored = reading != 'all' and not validate_reviews
     unhydrated = set(getattr(sources, 'unhydrated', ()) or ())
     projected = []
@@ -1221,11 +1245,17 @@ def next_problem(session, *, case_id, batch_id, item_id, direction="next", revie
     ordered = items[index+1:] + items[:index]
     if direction == 'previous':
         ordered.reverse()
-    remaining = [i for i in ordered if i.summary.get('problem_count', 0) and i.status != 'skipped' and matches_group(i, review_group)]
+    # Only statements with something to act on: never a saved statement's check
+    # history, a copy, or a note that asks nothing (the "next problem" that
+    # opened with nothing to fix).
+    from services.financial.batch_review_summary import needs_decision
+    remaining = [i for i in ordered if needs_decision(i) and matches_group(i, review_group)]
     following = remaining[0] if remaining else None
-    problems = following.summary.get('problems', []) if following else []
-    if review_group and review_group != 'blocked':
-        problems = [p for p in problems if p.get('review_reason') == review_group]
+    from services.financial.review_queue import actionable_problems
+    from services.financial.batch_review_summary import REASONS
+    problems = actionable_problems(following.summary) if following else []
+    if review_group in REASONS:
+        problems = [p for p in problems if p.get('review_reason') == review_group] or problems
     return dict(case_id=str(case_id), batch_id=str(batch_id), remaining=len(remaining),
         item_id=str(following.id) if following else None,
         row_id=next((p.get('row_id') for p in problems if p.get('row_id')), None))
@@ -1299,7 +1329,8 @@ def batch_status(session, *, case_id, batch_id, offset=0, limit=100, only_proble
 
 def _batch_view(session, case_id, batch_id, batch, items, *, offset, limit, only_problems, review_group):
     from services.financial.import_operations import operations_for
-    from services.financial.batch_review_summary import matches_group, review_summary, statement_summary, group_label
+    from services.financial.batch_review_summary import matches_group, review_summary, statement_summary, group_label, needs_decision
+    from services.financial.review_queue import actionable_problems
     _sort_statements(session, case_id, items)
     shown=[i for i in items if matches_group(i, review_group) and (not only_problems or i.summary.get('problem_count', 0))]
     counts={state:sum(i.status==state for i in items) for state in ('ready','attention','pending_import','imported','skipped','assigned','duplicate_ignored')}
@@ -1311,12 +1342,13 @@ def _batch_view(session, case_id, batch_id, batch, items, *, offset, limit, only
         statement_summary=statement_summary(items), file_overview=file_overview(items),
         review_summary=review_summary(items), review_group=review_group, review_group_label=group_label(review_group),
         operations=operations_for(session, case_id, batch_id),
-        statements_with_issues=sum(bool(i.summary.get('problem_count', 0)) for i in items if i.status != 'skipped'),
+        statements_with_issues=sum(needs_decision(i) for i in items),
         available_statements=sum(import_available(i) for i in items),
         available_records=sum(i.summary.get('record_count', i.summary.get('transaction_count', 0)) for i in items if import_available(i)),
         available_transactions=sum(i.summary.get('transaction_count', 0) for i in items if import_available(i)),
         available_incomplete=sum(i.summary.get('incomplete_count', 0) for i in items if import_available(i)),
-        issues_count=sum(i.summary.get('problem_count', 0) for i in items if i.status != 'skipped'),
+        issues_count=sum(len(actionable_problems(i.summary)) for i in items if needs_decision(i)),
+        needs_decision=sum(needs_decision(i) for i in items),
         ready_transactions=sum(i.summary.get('transaction_count',0) for i in items if i.status=='ready'),
         ready_revision=ready_revision(items),total=len(shown),offset=offset,
         readiness_pending=sum(bool(i.summary.get('readiness_pending')) for i in items),
