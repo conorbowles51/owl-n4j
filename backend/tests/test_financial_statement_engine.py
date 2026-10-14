@@ -1955,12 +1955,26 @@ class MultiAccountStatementTests(unittest.TestCase):
         _, _, unprinted = self.sections(credit_union_statement(quiet_line=None))
         self.assertFalse(unprinted['engine']['proved'])
 
-    def test_a_credit_line_sharing_the_deposit_accounts_number_is_held(self):
-        _, line, _ = self.sections(credit_union_statement())
+    def test_a_credit_line_sharing_the_deposit_accounts_number_is_its_own_account(self):
+        checking, line, _ = self.sections(credit_union_statement())
         self.assertEqual((line['account_reference'], line['balance_convention']), ('Checking Line of Credit 1111', 'liability_owed'))
+        self.assertTrue(line['engine']['proved'], line['engine'])
+        self.assertEqual(line['account_reference_kind'], 'credit_line')
+        self.assertNotIn('account_reference_kind', checking)
+        from services.financial.accounts import AccountDraft
+        key = lambda st: AccountDraft.observed(institution_name='Example Federal Credit Union',
+            identifier_as_printed=st['account_reference'], metadata=dict(account_reference_kind=st.get('account_reference_kind'))).identity()
+        self.assertNotEqual(key(line).key, key(checking).key)
+
+    def test_switched_off_a_credit_line_sharing_the_deposit_accounts_number_is_held(self):
+        # The switch is process-wide; the reading caches are keyed on the sources only.
+        with mock.patch.object(E, 'SHARED_NUMBER_CREDIT_LINES_SEPARATE', False), \
+                mock.patch.object(E, '_READINGS', E.OrderedDict()), mock.patch.object(E, '_LIVE_READINGS', E.OrderedDict()):
+            _, line, _ = self.sections(credit_union_statement())
         self.assertFalse(line['engine']['proved'])
         self.assertEqual(line['engine']['reason'], 'account_shared')
         self.assertTrue(any(r.get('engine_hold') == 'account_shared' for r in line['_rows']))
+        self.assertNotIn('account_reference_kind', line)
 
     def test_redacted_rows_never_prove(self):
         checking = self.sections(credit_union_statement(redacted=True))[0]
@@ -2044,7 +2058,7 @@ class MultiAccountStatementTests(unittest.TestCase):
         self.assertEqual(catalog['engine_routing']['profile'], 'invented-credit-union')
         served = {(st['account_reference'][-4:], st['balance_convention']): st['engine'] for st in catalog['statements']}
         self.assertTrue(served[('1111', 'asset_balance')]['proved'])
-        self.assertEqual(served[('1111', 'liability_owed')]['reason'], 'account_shared')
+        self.assertTrue(served[('1111', 'liability_owed')]['proved'])
 
     def test_a_summary_closed_before_the_movement_table_does_not_make_it_another_table(self):
         sources = mx_statement(MOVES, closing='1,250.00')

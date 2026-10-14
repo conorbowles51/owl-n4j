@@ -220,6 +220,8 @@ def assess(proposal, request=None):
     # readiness depends on (_relevant_admitted).
     summary['source_pages'] = sorted({source['page_number'] for source in proposal.get('sources') or []
                                       if type(source.get('page_number')) is int})
+    if proposal['metadata'].get('account_reference_kind'):
+        summary['account_reference_kind'] = proposal['metadata']['account_reference_kind']
     summary['unclassified_count'] = sum(row['kind'] == 'unclassified' and reviewed.get(row['id'], {}).get('excluded', row['excluded']) for row in rows)
     if admission is not None:
         from services.financial.import_issues import incomplete_records
