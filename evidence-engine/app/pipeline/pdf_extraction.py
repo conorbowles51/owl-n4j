@@ -44,7 +44,8 @@ MAX_OSD_TIMEOUT_SECONDS = 30.0
 # v17 (r5-andrews-cards): period-wide pinned readings, stored printed readings for held cells.
 # v18 (r6-vector-text): a page with no text layer that prints its text as vector outlines is
 # classed vector_text; its OCR words are re-read from the character outlines and its money
-# cells confirmed from them (vector_glyph_reading); words over blank paper are dropped.
+# cells confirmed from them (vector_glyph_reading); words over blank paper are dropped and
+# printed amounts OCR skipped are added from their outlines.
 PDF_READING_REVISION = 'bank-payment-rows-v18'
 OSD_INSUFFICIENT_TEXT_MARKERS = ("too few characters", "skipping this page")
 
@@ -779,9 +780,11 @@ def _read_vector_outlines(page: fitz.Page, data: dict, dpi: int) -> tuple[dict, 
 
     Returns the record of what was read: the shape labels the page's OCR
     decided (kept so the money check can read a cell from its outlines) and
-    every word whose reading changed or that was dropped as printed nowhere.
+    every word whose reading changed, that was dropped as printed nowhere, or that
+    was added as a printed amount OCR skipped.
     """
-    from app.pipeline.vector_glyph_reading import METHOD, inkless, other_ink, page_glyphs, read_words, shape_labels
+    from app.pipeline.vector_glyph_reading import (METHOD, inkless, other_ink, page_glyphs, read_words, shape_labels,
+        unread_words)
     texts = data.get("text") or []
     fields = ("left", "top", "width", "height")
     if any(not isinstance(data.get(name), list) or len(data[name]) != len(texts) for name in fields):
@@ -806,12 +809,35 @@ def _read_vector_outlines(page: fitz.Page, data: dict, dpi: int) -> tuple[dict, 
             changed.append(dict(original_text=text.strip(), text=reading,
                                 rect=[round(v * 1000) for v in box]))
             new_texts[index] = reading
-    record = dict(field='vector_glyph_reading', method=METHOD, decision='read' if changed or dropped else 'unchanged',
+    added = []
+    image_width, image_height = math.floor(page.rect.width / scale), math.floor(page.rect.height / scale)
+    for text, (x0, y0, x1, y1) in unread_words(glyphs, labels, [(t, box) for t, (_, box) in zip(new_texts, words)]):
+        # Inside the rendered image, which the OCR geometry projection requires of every word.
+        left, top = max(0, math.floor(x0 / scale)), max(0, math.floor(y0 / scale))
+        right, bottom = min(image_width, math.ceil(x1 / scale)), min(image_height, math.ceil(y1 / scale))
+        if right > left and bottom > top:
+            added.append((text, (x0, y0, x1, y1), (left, top, right - left, bottom - top)))
+    if added:
+        # Amounts OCR skipped, as words of their own: no OCR confidence, each its own block and line.
+        data = {name: list(values) if isinstance(values, list) and len(values) == len(texts) else values
+                for name, values in data.items()}
+        data['text'] = new_texts
+        block = max((b for b in data.get('block_num') or [0] if isinstance(b, int)), default=0)
+        for number, (text, _, (left, top, width, height)) in enumerate(added, start=1):
+            row = dict(level=5, page_num=1, block_num=block + number, par_num=1, line_num=1, word_num=1,
+                       left=left, top=top, width=width, height=height, conf=-1, text=text)
+            for name, values in data.items():
+                if isinstance(values, list) and name != 'text':
+                    values.append(row.get(name, 0))
+            new_texts.append(text)
+    record = dict(field='vector_glyph_reading', method=METHOD,
+                  decision='read' if changed or dropped or added else 'unchanged',
                   characters=len(glyphs), shapes=len({g.shape for g in glyphs}), labelled_shapes=len(labels),
                   characters_labelled=sum(g.shape in labels for g in glyphs),
                   words_read=sum(r is not None for r in readings), words_changed=changed, words_dropped=dropped,
+                  words_added=[dict(text=t, rect=[round(v * 1000) for v in box]) for t, box, _ in added],
                   labels=[[shape, label, votes, total] for shape, (label, votes, total) in sorted(labels.items())])
-    return (dict(data, text=new_texts) if changed or dropped else data), record
+    return (dict(data, text=new_texts) if changed or dropped or added else data), record
 
 
 def _ocr_page(page: fitz.Page, *, drop_inkless_words: bool = False,
@@ -924,7 +950,7 @@ def _ocr_page(page: fitz.Page, *, drop_inkless_words: bool = False,
         if vector_text and best_rotation == 0 and not page.rotation:
             try:
                 best_data, outlines = _read_vector_outlines(page, best_data, dpi)
-                if outlines and (outlines['words_changed'] or outlines['words_dropped']):
+                if outlines and (outlines['words_changed'] or outlines['words_dropped'] or outlines['words_added']):
                     text, confidence = _text_and_confidence_from_tesseract(best_data)
             except Exception:
                 logger.warning('Vector outline reading unavailable; retaining the OCR reading', exc_info=True)

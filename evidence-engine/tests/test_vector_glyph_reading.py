@@ -284,3 +284,51 @@ def test_shapes_snapped_to_a_device_grid_are_one_shape():
         assert len({g.shape for g in G.page_glyphs(jittered)}) > len(exact)  # the jitter is real
     finally:
         G.SHAPE_TOLERANCE = G_tolerance
+
+
+def test_an_amount_ocr_skipped_is_added_from_its_outlines_and_nothing_else_is():
+    doc, page, _ = _page(LINES)
+    glyphs = G.page_glyphs(page)
+    words = _word_boxes(page, LINES)
+    labels = G.shape_labels(glyphs, words)
+    skipped = {'25,355.00', 'SPEI', '04/ENE'}
+    kept = [(t, b) for t, b in words if not (t in skipped and b[1] < 145 and b[1] > 135)]
+    assert len(kept) == len(words) - 3
+    added = G.unread_words(glyphs, labels, kept)
+    assert [t for t, _ in added] == ['25,355.00']  # never a date or a word
+    box = next(b for t, b in words if t == '25,355.00')
+    assert all(abs(a - b) < .5 for a, b in zip(added[0][1], box))
+
+
+def test_an_unread_part_of_a_word_ocr_read_in_part_is_not_added():
+    doc, page, _ = _page(LINES)
+    glyphs = G.page_glyphs(page)
+    words = _word_boxes(page, LINES)
+    labels = G.shape_labels(glyphs, words)
+    index = next(i for i, (t, b) in enumerate(words) if t == '25,355.00')
+    x0, y0, x1, y1 = words[index][1]
+    partial = list(words)
+    partial[index] = ('25,3', (x0, y0, x0 + (x1 - x0) * .4, y1))  # OCR read only the left of the amount
+    assert G.unread_words(glyphs, labels, partial) == []
+
+
+def _split_amount_page(gap_share):
+    """LINES plus, at y=320, '7,355' and '.40' drawn ``gap_share`` of the digit height apart."""
+    doc, page, _ = _page(LINES)
+    draw_outlined(page, [(300, 320, '7,355')])
+    left = max(g.x1 for g in G.page_glyphs(page) if g.y1 > 310)
+    height = max(g.y1 - g.y0 for g in G.page_glyphs(page) if g.y1 > 310)
+    probe = fitz.open().new_page()
+    draw_outlined(probe, [(0, 320, '.40')])
+    bearing = min(g.x0 for g in G.page_glyphs(probe))
+    draw_outlined(page, [(left + gap_share * height - bearing, 320, '.40')])
+    return page
+
+
+def test_two_pieces_of_one_amount_split_by_a_wide_side_bearing_are_rejoined():
+    # Measured: a narrow figure's side bearing leaves up to 0.49 of the height before a decimal point.
+    for gap_share, expected in ((0.45, ['7,355.40']), (0.6, [])):
+        page = _split_amount_page(gap_share)
+        glyphs = G.page_glyphs(page)
+        labels = G.shape_labels(glyphs, _word_boxes(page, LINES))
+        assert [t for t, _ in G.unread_words(glyphs, labels, _word_boxes(page, LINES))] == expected, gap_share

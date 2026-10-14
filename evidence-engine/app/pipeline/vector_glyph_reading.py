@@ -51,6 +51,7 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 import hashlib
+import re
 
 METHOD = 'vector_outline_glyph_reading'
 QUANTUM = 0.05
@@ -343,6 +344,71 @@ def inkless(glyphs, ink, box):
     x0, y0, x1, y1 = box
     padded = (x0 - INKLESS_PADDING, y0 - INKLESS_PADDING, x1 + INKLESS_PADDING, y1 + INKLESS_PADDING)
     return not _touches(padded, [(g.x0, g.y0, g.x1, g.y1) for g in glyphs]) and not _touches(padded, ink)
+
+
+_AMOUNT = re.compile(r'-?\d{1,3}(?:,\d{3})*\.\d{2}-?')
+# Measured on real outline pages: gaps inside a word reach 0.49 of its height ("1" before "."), gaps
+# between words go down to 0.31; two pieces of one amount are rejoined across at most this much.
+AMOUNT_JOIN_GAP = 0.5
+
+
+def unread_words(glyphs, labels, words):
+    """``[(text, box)]``: printed amounts no OCR word covers, read from their outlines.
+
+    OCR can skip a printed amount altogether. Characters whose centre lies in
+    no OCR word's box are joined into words along their printed line, split at
+    space-wide gaps (``SPACE_GAP_SHARE``). A narrow figure's side bearing can
+    be as wide as a space, so two neighbouring pieces are rejoined (gap at most
+    ``AMOUNT_JOIN_GAP`` of the height) only when neither is an amount alone and
+    together they are one (``9,981`` and ``.80``). A word is returned only when
+    no character of it is under an OCR word, every character has a label, and
+    it is a grouped amount with two decimals (``_AMOUNT``). Nothing else is
+    added: not letters, dates or references.
+    """
+    covered = set()
+    index = _Index(glyphs)
+    for text, box in words:
+        if (text or '').strip():
+            covered.update(id(g) for g in index.within(*box))
+    lines = []
+    for glyph in sorted(glyphs, key=lambda g: (g.y1, g.x0)):
+        for line in lines:
+            # Any overlap: in bottom-edge order a line's digits come before its commas, which hang below them.
+            if min(line['y1'], glyph.y1) - max(line['y0'], glyph.y0) > 0:
+                line['glyphs'].append(glyph)
+                line['y0'], line['y1'] = min(line['y0'], glyph.y0), max(line['y1'], glyph.y1)
+                break
+        else:
+            lines.append(dict(y0=glyph.y0, y1=glyph.y1, glyphs=[glyph]))
+    found = []
+    for line in lines:
+        ordered = sorted(line['glyphs'], key=lambda g: g.x0)
+        height = max(g.y1 - g.y0 for g in ordered)
+        runs, current = [], [ordered[0]]
+        for previous, glyph in zip(ordered, ordered[1:]):
+            if glyph.x0 - previous.x1 > SPACE_GAP_SHARE * height:
+                runs.append(current)
+                current = []
+            current.append(glyph)
+        runs.append(current)
+        texts = [read_glyphs(run, labels) for run in runs]
+        joined, k = [], 0
+        while k < len(runs):
+            run, text = runs[k], texts[k]
+            if (k + 1 < len(runs) and text is not None and texts[k + 1] is not None
+                    and runs[k + 1][0].x0 - run[-1].x1 <= AMOUNT_JOIN_GAP * height
+                    and not _AMOUNT.fullmatch(text) and not _AMOUNT.fullmatch(texts[k + 1])
+                    and _AMOUNT.fullmatch(text + texts[k + 1])):
+                run, text = run + runs[k + 1], text + texts[k + 1]
+                k += 1
+            joined.append((run, text))
+            k += 1
+        for run, text in joined:
+            if text is None or any(id(g) in covered for g in run) or not _AMOUNT.fullmatch(text):
+                continue
+            found.append((text, (min(g.x0 for g in run), min(g.y0 for g in run),
+                                 max(g.x1 for g in run), max(g.y1 for g in run))))
+    return found
 
 
 def read_words(glyphs, labels, words):
