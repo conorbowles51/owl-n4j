@@ -2077,11 +2077,12 @@ class MultiAccountStatementTests(unittest.TestCase):
         self.assertEqual(len(self.moves(st)), 3)
 
     def test_an_unnumbered_first_page_of_the_next_run_is_not_an_appendix(self):
-        facts = {1: dict(numbering={(1, 2)}, periods=set(), labelled_periods=set()),
-                 2: dict(numbering={(2, 2)}, periods=set(), labelled_periods=set()),
-                 3: dict(numbering=set(), periods=set(), labelled_periods=set()),
-                 4: dict(numbering={(2, 2)}, periods=set(), labelled_periods=set()),
-                 5: dict(numbering=set(), periods=set(), labelled_periods=set())}
+        stamped = lambda numbering: dict(numbering=numbering, periods=set(), labelled_periods=set(), file_numbered=True)
+        facts = {1: stamped({(1, 2)}), 2: stamped({(2, 2)}), 3: stamped(set()), 4: stamped({(2, 2)}), 5: stamped(set())}
         segments = E._segments({p: [] for p in facts}, facts)
         self.assertEqual([s['pages'] for s in segments], [[1, 2, 3, 4], [5]])
         self.assertTrue(segments[1].get('appendix'))
+        # Without the production's stamp an unnumbered page after a complete run continues it, as before.
+        for page in facts.values():
+            page.pop('file_numbered')
+        self.assertEqual([s['pages'] for s in E._segments({p: [] for p in facts}, facts)], [[1, 2, 3, 4, 5]])
