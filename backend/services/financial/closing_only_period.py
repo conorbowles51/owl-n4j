@@ -18,6 +18,14 @@ Anything less leaves the start empty with a specific reason, so the period
 stays held for a person. Nothing here is inferred from transaction dates or
 from arithmetic on the rows; the derived start is recorded as derived, with
 the cells it rests on, and never as a printed date.
+
+Card statements the general engine reads can print, beside the closing date,
+the number of days in the billing cycle (``period_start_basis`` =
+``printed_day_count``): the start is then the closing date less those days
+plus one, two printed facts. It is recorded as derived as well, and only when
+it agrees with the previous statement for the same card where that statement
+is in the case (closing the day before this start); a previous statement
+closing on another day holds the start for a person.
 """
 from datetime import date, timedelta
 
@@ -46,6 +54,11 @@ HOLD_MESSAGES = {
         'found, but its New Balance or this statement\'s Previous Balance could not be read, so '
         'it is not shown to be the immediately preceding statement. Check both balances, then '
         'enter the start date or confirm that no start date is printed.'),
+    'previous_statement_disagrees': (
+        'This statement prints only its closing date and the number of days in its billing period. The previous '
+        'statement for this card in this case closed on a different day than those days imply, so the start date '
+        'was not taken from them. Compare both statements, then enter the start date or confirm that no start '
+        'date is printed.'),
     'balance_mismatch': (
         'This statement prints only its closing date. The previous statement for this card has a '
         'New Balance that differs from this statement\'s Previous Balance, so a statement may be '
@@ -152,13 +165,98 @@ def _case_facts(session, case_id, currency, cache):
     return facts
 
 
+DAY_COUNT = 'printed_day_count'
+
+
+def _day_count_neighbours(session, case_id, file, account, cache):
+    """Closing dates of the engine's day-count statements for this card in the case's other files."""
+    from sqlalchemy import or_
+    from services.financial.file_visibility import financial_file_visibility
+    from services.financial.statement_engine_vocabulary import CYCLE_DAYS_LABELS
+    files = session.scalars(select(EvidenceFile).join(
+        EvidenceDocumentText, EvidenceDocumentText.evidence_file_id == EvidenceFile.id).where(
+        EvidenceFile.case_id == case_id, EvidenceFile.id != file.id,
+        EvidenceDocumentText.content.contains(account[-4:]),
+        or_(*[EvidenceDocumentText.content.ilike('%' + label + '%') for label in CYCLE_DAYS_LABELS]))
+        .order_by(EvidenceFile.id))
+    found = []
+    for other in files:
+        if financial_file_visibility(other)['financial_removed']:
+            continue
+        try:
+            statements = _file_statements(session, case_id, other, cache)
+        except Exception:  # An unreadable neighbour establishes nothing.
+            continue
+        found.extend(dict(file_id=str(other.id), filename=other.original_filename, statement_id=st['id'],
+                          closing_date=st['period_end'])
+                     for st in statements if st.get('period_start_basis') == DAY_COUNT and _iso(st.get('period_end'))
+                     and _digits(st.get('account_reference')) == account)
+    return found
+
+
+def _file_statements(session, case_id, file, cache):
+    text = session.get(EvidenceDocumentText, file.id)
+    if text is None:
+        return []
+    key = ('day_count', str(file.id), text.content_sha256, str(text.engine_job_id))
+    if key in _memo:
+        return _memo[key]
+    from services.financial.candidate_sources import read_candidate_source
+    from services.financial.statement_import_catalog import statement_catalog
+    from postgres.models.evidence import EvidenceTableGeometry
+    source_key = (str(case_id), str(file.id), text.content_sha256)
+    if source_key not in cache:
+        pages = list(session.scalars(select(EvidenceTableGeometry).where(
+            EvidenceTableGeometry.evidence_file_id == file.id).order_by(EvidenceTableGeometry.page_number)))
+        cache[source_key] = [read_candidate_source(session, case_id=case_id, evidence_file_id=file.id,
+                                                   page_number=page.page_number, table_index=index)
+                             for page in pages for index in range(len(page.payload or []))]
+    catalog_key = ('catalog', source_key)
+    if catalog_key not in cache:
+        cache[catalog_key] = statement_catalog(cache[source_key])
+    statements = [st for st in cache[catalog_key]['statements'] if st.get('layout_id') == 'generic']
+    if len(_memo) >= _MEMO_LIMIT:
+        _memo.pop(next(iter(_memo)))
+    _memo[key] = statements
+    return statements
+
+
+def _day_count_dates(session, *, case_id, file, selected, cache):
+    """A general-engine card statement printing its closing date and the days in its billing cycle."""
+    start, end = _iso(selected.get('period_start')), _iso(selected.get('period_end'))
+    if start is None or end is None or start > end:
+        return None
+    result = dict(period_end=end.isoformat(), period_end_basis='printed_closing_date',
+                  period_start='', period_start_basis='', period_start_evidence=None, period_start_hold=None)
+    account = _digits(selected.get('account_reference'))
+    previous = [fact for fact in (_day_count_neighbours(session, case_id, file, account, cache) if account else [])
+                if CYCLE_DAYS[0] <= (end - _iso(fact['closing_date'])).days <= CYCLE_DAYS[1]
+                or _iso(fact['closing_date']) == start - timedelta(days=1)]
+    dates = {fact['closing_date'] for fact in previous}
+    if dates and dates != {(start - timedelta(days=1)).isoformat()}:
+        code = 'several_previous_statements' if len(dates) > 1 else 'previous_statement_disagrees'
+        result['period_start_hold'] = dict(code=code, message=HOLD_MESSAGES[code], candidates=sorted(dates))
+        return result
+    evidence = dict(printed_closing_date=end.isoformat(), printed_days_in_cycle=(end - start).days + 1)
+    if previous:
+        first = sorted(previous, key=lambda fact: (fact['file_id'], fact['statement_id']))[0]
+        evidence.update(previous_closing_date=first['closing_date'], previous_evidence_file_id=first['file_id'],
+                        previous_filename=first['filename'], previous_statement_id=first['statement_id'],
+                        copies=len(previous))
+    result.update(period_start=start.isoformat(), period_start_basis=DAY_COUNT, period_start_evidence=evidence)
+    return result
+
+
 def closing_only_period_dates(session, *, case_id, file, selected, sources, currency, cache):
     """Return the period dates this statement's source establishes, with provenance.
 
     ``period_end`` is the printed closing date. ``period_start`` is filled
-    only when the previous statement establishes it; otherwise
-    ``period_start_hold`` says why not.
+    only when the previous statement (or the printed days in the billing
+    cycle, agreeing with it where it is in the case) establishes it;
+    otherwise ``period_start_hold`` says why not.
     """
+    if selected and selected.get('layout_id') == 'generic' and selected.get('period_start_basis') == DAY_COUNT:
+        return _day_count_dates(session, case_id=case_id, file=file, selected=selected, cache=cache)
     if not selected or selected.get('layout_id') != MERRICK or selected.get('date_conflict'):
         return None
     closing = _iso(selected.get('statement_date'))

@@ -88,6 +88,12 @@ PROFILES = (
     # every Kapital statement and by no other document.
     dict(name='scotiabank-mexico', match=dict(any=['scotiabank inverlat, s.a.']), institution='Scotiabank'),
     dict(name='kapital-mexico', match=dict(any=['aclaraciones@kapital.com']), institution='Kapital'),
+    # Synchrony card (r6): the summary-box furniture is printed by every Synchrony statement in the real
+    # collection and by no other document (a bank statement paying the card names the bank, not this line).
+    # A US card: amounts owed, a bare '$' is US dollars, numeric dates month first (its closing date is
+    # printed with a day of 12 or less in every cycle, so the date alone cannot fix the order).
+    dict(name='synchrony-card', match=dict(any=['for synchrony bank customer service']), institution='Synchrony Bank',
+         currency='USD', convention='liability_owed', date_order='mdy'),
 )
 
 _KEYS = {'name', 'match', 'institution', 'currency', 'convention', 'date_order', 'labels', 'columns', 'account_heading',

@@ -40,8 +40,9 @@ from itertools import product
 
 from services.financial.pdf_candidates import _digest
 from services.financial.statement_engine_vocabulary import (
-    ACCOUNT_LABELS, CURRENCY_LABELS, CURRENCY_NAMES, COLUMN_INDEX, HOLDER_LABELS, INDEX, INSTITUTION_WORDS,
-    LIABILITY_EVIDENCE, MONTHS, NOT_A_NAME, PAGE_NUMBERING, PERIOD_WORDS, UNDATED_CHARGES, FUZZY_INDEX, fold, label)
+    ACCOUNT_LABELS, CLOSING_DATE_LABELS, CONTINUATION_NOTICES, CURRENCY_LABELS, CURRENCY_NAMES, COLUMN_INDEX,
+    CYCLE_DAYS_LABELS, HOLDER_LABELS, INDEX, INSTITUTION_WORDS, LIABILITY_EVIDENCE, MONTHS, NOT_A_NAME, PAGE_NUMBERING,
+    PAYMENT_BOX_HEADINGS, PERIOD_WORDS, SECTION_HEADINGS, SECTION_SCOPE, UNDATED_CHARGES, YEAR_TO_DATE, FUZZY_INDEX, fold, label)
 
 LAYOUT = 'generic'
 # The library profile applied to the current reading (None for the plain engine).
@@ -71,6 +72,8 @@ HOLD_MESSAGES = {
     'printed_total_differs': 'A printed total or count differs from the movement lines read.',
     'two_readings': 'Two different readings of the amount columns both reconcile.',
     'pages_missing': 'The printed page numbering shows missing pages.',
+    'period_start_contradicted': ('The start date worked out from the printed days in the billing period does not '
+                                  'follow the previous statement for this card in the same file.'),
     'route_library_first': 'This layout is routed to the bank-specific reader library first.',
     'library_disagrees': 'The general reader and the bank-specific reader both reconcile this period but read it differently.',
 }
@@ -330,6 +333,8 @@ def _pages(sources):
     """Rows of every page in reading order, each with its located tokens."""
     pages = {}
     for source in sources:
+        heading = False
+        payment_boxes = []
         for raw in source['rows']:
             tokens, width, located = [], None, True
             for cell in raw['cells']:
@@ -347,16 +352,126 @@ def _pages(sources):
                         located=False, text=' '.join(c['expected_text'] for c in raw['cells'])))
                 continue
             tokens.sort(key=lambda t: (t['line'], t['x0']))
-            tokens = _attach_detached_minus(_rejoin_split_cells(tokens))
-            pages.setdefault(source['page_number'], []).append(dict(
-                page=source['page_number'], source=source, raw=raw, tokens=tokens,
-                y0=min(t['y0'] for t in tokens), width=width, located=located,
-                text=' '.join(t['t'] for t in tokens)))
+            row = dict(page=source['page_number'], source=source, raw=raw, tokens=tokens,
+                       y0=min(t['y0'] for t in tokens), width=width, located=located)
+            parts = _split_row(row, heading, payment_boxes) if located else None
+            for part in parts or [row]:
+                part['tokens'] = _attach_detached_minus(_rejoin_split_cells(part['tokens']))
+                part['text'] = ' '.join(t['t'] for t in part['tokens'])
+                pages.setdefault(source['page_number'], []).append(part)
+            heading = heading or (_is_header(row) and any(column_role(label(t['t'])) == 'description'
+                                                          for t in row['tokens']))
+            payment_boxes.extend(_payment_box_headings(raw, source.get('reading_rotation') or 0))
     for rows in pages.values():
         rows.sort(key=lambda r: (r['y0'] if r['y0'] is not None else float('inf'), r['source']['table_index'],
-                                 r['raw']['row_index']))
+                                 r['raw']['row_index'], r.get('x0', 0)))
         _mark_chart_scale(rows)
     return pages
+
+
+# ---------------------------------------------------------------------------
+# One stored row holding several printed lines
+# ---------------------------------------------------------------------------
+#
+# A drawn table without row rules is stored as one cell per box: the cell's
+# text holds every printed line of the box, one per text line. Two forms are
+# read as what they are, printed lines:
+#
+# * a movement table's body cell (under a heading naming date, description and
+#   amount columns) whose dated lines each carry their own amount: every printed
+#   line becomes a row of its own (wrapped description lines, section headings
+#   and totals included; the reading decides what each is);
+# * side-by-side boxes on one stored row (an account summary beside a payment
+#   box) where a box prints label + amount lines: each box is read on its own,
+#   so one box's label never runs into the other box's line.
+#
+# A line's horizontal positions inside its box are estimates (the stored cell
+# has one rectangle); its vertical band is the line's share of the cell.
+
+
+def _cell_lines(tokens):
+    """[(line index in the cell's text, the line's tokens left to right)] of one cell's printed lines."""
+    lines = {}
+    for token in tokens:
+        lines.setdefault(token['line'], []).append(token)
+    return [(index, sorted(lines[index], key=lambda t: t['x0'])) for index in sorted(lines)]
+
+
+def _dated_money_line(line):
+    words = merged_dates(line)
+    return bool(words) and _leading_date(words[0]['t'].rstrip('.,')) and any(_money_like(t['t']) for t in words[1:])
+
+
+def _money_like(text):
+    return money(text, 'dot') is not None or money(text, 'comma') is not None
+
+
+def _label_amount_line(line):
+    """A line printing words and then one amount at its end ('Previous Balance $1,234.56')."""
+    return (len(line) >= 2 and _money_like(line[-1]['t'])
+            and not any(_money_like(t['t']) for t in line[:-1]) and any(label(t['t']) for t in line[:-1])
+            and not is_date_token(line[0]['t']))
+
+
+def _split_row(row, under_heading, payment_boxes):
+    """The printed lines (or boxes) of one stored row as rows of their own, or None to keep the row whole."""
+    cells = [cell for cell in row['raw']['cells'] if cell['expected_text'].strip()]
+    rotation = row['source'].get('reading_rotation') or 0
+    by_cell = {}
+    for token in row['tokens']:
+        by_cell.setdefault(id(token['cell']), []).append(token)
+    if under_heading and not rotation and len(cells) == 1 and '\n' in cells[0]['expected_text'].strip():
+        lines = _cell_lines(by_cell.get(id(cells[0]), []))
+        dated = [line for _, line in lines if _leading_date(merged_dates(line)[0]['t'].rstrip('.,'))]
+        if (len(lines) >= 2 and any(_dated_money_line(line) for _, line in lines)
+                and all(_dated_money_line(line) for line in dated)):
+            count = len(cells[0]['expected_text'].split('\n'))
+            return [_line_row(row, cells[0], line, index, count) for index, line in lines]
+    if len(cells) >= 2 and any(sum(_label_amount_line(line) for _, line in _cell_lines(by_cell.get(id(cell), []))) >= 2
+                               for cell in cells):
+        parts = []
+        for cell in cells:
+            own = by_cell.get(id(cell))
+            if not own:
+                continue
+            part = dict(row, raw=dict(row['raw'], cells=[cell], box=cell['column_index']), tokens=own,
+                        y0=min(t['y0'] for t in own), x0=min(t['x0'] for t in own))
+            rect, _ = _rect(cell, rotation)
+            if rect is not None and any(_beneath(rect, box) for box in payment_boxes):
+                part['payment_box'] = True
+            parts.append(part)
+        return parts
+    return None
+
+
+def _line_row(row, cell, tokens, index, count):
+    """One printed line of a multi-line cell as a row: its own cell (the line's text, the line's band of the
+    cell's rectangle) and its tokens renumbered as the only line."""
+    locator = dict(cell['locator'])
+    x0, y0, x1, y1 = locator['rect']
+    top, bottom = y0 + (y1 - y0) * index // count, y0 + (y1 - y0) * (index + 1) // count
+    locator['rect'] = [x0, top, x1, max(bottom, top + 1)]
+    line_cell = dict(cell, expected_text=' '.join(cell['expected_text'].split('\n')[index].split()),
+                     locator=locator, cell_line=dict(line=index, lines=count))
+    own = [dict(t, cell=line_cell, line=0) for t in tokens]
+    raw = dict(row['raw'], cells=[line_cell], line=index)
+    return dict(row, raw=raw, tokens=own, y0=min(t['y0'] for t in own), x0=min(t['x0'] for t in own),
+                split=(id(row['raw']), index))
+
+
+def _payment_box_headings(raw, rotation):
+    boxes = []
+    for cell in raw['cells']:
+        if label(cell['expected_text']) in {label(h) for h in PAYMENT_BOX_HEADINGS}:
+            rect, _ = _rect(cell, rotation)
+            if rect is not None:
+                boxes.append(rect)
+    return boxes
+
+
+def _beneath(rect, box):
+    """A cell's rectangle printed under a box heading's: below it, inside its horizontal extent."""
+    return rect[1] >= box[3] - 1 and rect[0] >= box[0] - 1 and rect[2] <= box[2] + 1
 
 
 _SCALE_VALUE = re.compile(r'^[-−]?\$?(\d{1,3}(?:,\d{3})*|\d+)[.,]00$')
@@ -704,6 +819,9 @@ def label_pairs(row, style, exponent):
     pairs, words, values = [], [], []
     previous = None
     width = row.get('width') or 1
+    if row.get('payment_box'):
+        # The remittance box beside a card summary repeats its new balance: never a control (D7).
+        return []
     for token in merged_dates(row['tokens']):
         kind = _value_kind(token, style, exponent)
         if kind == 'date' or ' ' in token['t'] and is_date_token(token['t']):
@@ -712,8 +830,8 @@ def label_pairs(row, style, exponent):
             values.append((kind, token))
             previous = token
             continue
-        if not label(token['t']):
-            # Printed signs between a label and its value ("=", "+") are neither.
+        if not label(token['t']) or token['t'] in ('+/-', '+/−', '±'):
+            # Printed signs between a label and its value ("=", "+", "+/-") are neither.
             continue
         if values:
             pairs.append((label(' '.join(words)), values))
@@ -761,11 +879,15 @@ def _role_of(text, liability):
     if extra:
         return extra
     if liability:
-        # Card summaries print components per direction, not one total (D7).
+        # Card summaries print components per direction, not one total (D7), or a net of both.
         if text in INDEX['credit_component']:
             return 'credit_component'
         if text in INDEX['debit_component']:
             return 'debit_component'
+        if text in INDEX['net_component']:
+            return 'net_component'
+        if text in INDEX['section_total']:
+            return 'section_total'
     for role in ('opening', 'closing', 'subtotal', 'column_total', 'credit_total', 'debit_total'):
         if text in INDEX[role]:
             return role
@@ -878,6 +1000,7 @@ def _derived_period(rows, style, exponent, facts):
         cuts.update(m[1] for m in _CUT_DATE.finditer(folded))
         days.update(int(m[1]) for m in _PERIOD_DAYS.finditer(folded))
     if len(cuts) != 1 or len(days) != 1:
+        _closing_only_period(rows, style, exponent, facts)
         return
     end, count = _full_date(next(iter(cuts)), 'dmy'), next(iter(days))
     if end is None or not 1 <= count <= MAX_PERIOD_DAYS:
@@ -886,6 +1009,36 @@ def _derived_period(rows, style, exponent, facts):
     facts['periods'].add(period)
     facts['labelled_periods'].add(period)
     facts['derived_periods'] = {period}
+
+
+_CLOSING_DATE = re.compile(r'\b(?:' + '|'.join(re.escape(fold(w)) for w in sorted(CLOSING_DATE_LABELS, key=len, reverse=True))
+                           + r')\s+(\d{1,2}/\d{1,2}/\d{4})\b')
+_CYCLE_DAYS = re.compile(r'\b(?:' + '|'.join(re.escape(fold(w)) for w in CYCLE_DAYS_LABELS) + r')\s+(\d{1,2})\b')
+
+
+def _closing_only_period(rows, style, exponent, facts):
+    """(B1) A card statement printing only its closing date ('Statement Closing Date') and the days in its
+    billing cycle, exactly one of each on the page. The closing date is printed; the start is not: it is
+    the closing date less the printed days plus one, recorded as derived (``closing_only``), never as a
+    printed date. The closing date is read in the statement's one date order: the library profile's, or
+    a date that reads the same way in both orders."""
+    closings, days = set(), set()
+    for row in rows:
+        if not row['tokens'] or _row_is_movement(row, style, exponent):
+            continue
+        folded = fold(row['text'])
+        closings.update(m[1] for m in _CLOSING_DATE.finditer(folded))
+        days.update(int(m[1]) for m in _CYCLE_DAYS.finditer(folded))
+    if len(closings) != 1 or len(days) != 1:
+        return
+    end, count = _full_date(next(iter(closings)), (_PROFILE.get() or {}).get('date_order')), next(iter(days))
+    if end is None or not 1 <= count <= MAX_PERIOD_DAYS:
+        return
+    period = (end - timedelta(days=count - 1), end)
+    facts['periods'].add(period)
+    facts['labelled_periods'].add(period)
+    facts['derived_periods'] = {period}
+    facts['closing_only'] = {period}
 
 
 _ACCOUNT_VALUE = re.compile(r'^(?:\*{2,}|X{2,}|#)?[\d][\d -]{3,30}\d$|^(?:\*{2,}|X{2,})\d{3,6}$')
@@ -1121,7 +1274,25 @@ def _section_holder(section_pages, pages, facts, style=None):
         if addressed and fold(addressed) not in fold(name) and fold(name) not in fold(addressed):
             return ''
         return name
-    return addressed or _receipt_holder(section_pages, pages, heading)
+    return addressed or _receipt_holder(section_pages, pages, heading) or _stub_holder(heading, pages, style)
+
+
+def _stub_holder(heading, pages, style):
+    """(A8) The holder printed in a payment stub below the first page's movement table: the top line of a
+    postal-anchored address block there, accepted only when the same name is printed as a whole cell above
+    the movements (two printed facts agree; a counterparty in a movement line is never in an address block
+    and never repeated as a heading cell)."""
+    if not heading:
+        return ''
+    page, above = heading[0]
+    cut = {id(row) for row in above}
+    below = [row for row in pages[page] if id(row) not in cut and row['tokens'] and row['y0'] is not None
+             and above and row['y0'] > max(r['y0'] for r in above if r['y0'] is not None)]
+    if not below or len(below) == len([r for r in pages[page] if r['tokens']]):
+        return ''
+    names = {fold(' '.join(cell['expected_text'].split())) for row in above for cell in row['raw']['cells']}
+    found = {name for _, name, accepted in _address_tops(below, style) if accepted and fold(name) in names}
+    return found.pop() if len(found) == 1 else ''
 
 
 # Mexican statements are fiscal receipts (CFDI): the receipt names its recipient, the account holder,
@@ -1267,12 +1438,22 @@ def _address_tops(rows, style=None):
         return []
     found, anchored = [], []
     for index, row in enumerate(located):
-        if not _postal(fold(row['text'])):
-            continue
         x = min(t['x0'] for t in row['tokens'])
+        # The postal line can be the block's own cell only: another box shares its stored row ('<city> <ZIP>'
+        # beside the remittance address). Such a block must read as an address block itself: three or four
+        # lines (name, street, postal line), or the lines below a paragraph gap that are (_spaced_block).
+        own_cell = not _postal(fold(row['text']))
+        if own_cell and not _postal(_aligned_text(row, x)):
+            continue
         if _not_address(row, x, style):
             continue
         block = _grow_block(located, index, x, style)
+        if own_cell:
+            block = block if 3 <= len(block) <= 4 else _spaced_block(block)
+            top = _block_top(block, x) if block and 3 <= len(block) <= 4 and _street_lines(block, x) else None
+            if top and top[2] and not re.search(r'\d', top[1]) and not _damaged_above(located, block, x):
+                found.append(top)
+            continue
         if 3 <= len(block) <= 7:
             anchored.append((block, x))
             top = _block_top(block, x)
@@ -1319,6 +1500,30 @@ def _grow_block(located, index, x, style):
         if len(block) >= 7:
             break
     return block
+
+
+_STREET = re.compile(r'^(?:\d+[A-Z]?|P\.?\s?O\.?\s?BOX|PO BOX)\b')
+
+
+def _street_lines(block, x):
+    """Every line between a block's top (the name) and its postal line opens with a house number or a
+    post-office box (A8)."""
+    return all(_STREET.match(_aligned_text(row, x)) for row in block[1:-1])
+
+
+def _spaced_block(block):
+    """(A8) The lines of a grown block (bottom first) below its first gap wider than one and a half times its
+    own line pitch (postal line to the line above it), when they are at least three, or None. A paragraph
+    printed above an address (a change-of-address prompt, help text) is not part of it."""
+    if len(block) < 4:
+        return None
+    pitch = block[0]['y0'] - block[1]['y0']
+    if pitch <= 0:
+        return None
+    for size in range(3, len(block)):
+        if block[size - 1]['y0'] - block[size]['y0'] > 1.5 * pitch:
+            return block[:size]
+    return None
 
 
 def _lead_noise(row, x):
@@ -1574,13 +1779,15 @@ def _drop_contradicted_derived(pages, facts):
                 facts[page]['derived_periods'] = set()
 
 
-def _numbering_complete(pages, facts):
+def _numbering_complete(pages, facts, after=None):
     """Printed page numbers (A3) must leave no gap.
 
     Unnumbered pages (covers, notices, reverse sides) are extra pages; they may
     stand in for a number only where they physically sit in the gap.
+    ``after``: a page (physical number) on which the movement table printed its
+    own end; printed pages missing only after it are allowed.
     """
-    expected, loose, total = 1, 0, None
+    expected, loose, total, previous = 1, 0, None, None
     for page in pages:
         numbers = facts[page]['numbering']
         if len(numbers) > 1:
@@ -1592,10 +1799,13 @@ def _numbering_complete(pages, facts):
         if total is not None and count != total:
             return False
         total = count
-        if number < expected or number - expected > loose or number > count:
+        if number < expected or number > count:
             return False
-        expected, loose = number + 1, 0
-    return total is None or total - (expected - 1) <= loose
+        if number - expected > loose and (after is None or previous is None or previous < after):
+            return False
+        expected, loose, previous = number + 1, 0, page
+    return total is None or total - (expected - 1) <= loose or (after is not None and previous is not None
+                                                                and previous >= after)
 
 
 _READINGS = {}
@@ -1732,7 +1942,27 @@ def _read_statements_in(pages, sources, profile):
             # period anyone could act on (annex and reference pages print zero lines too).
             read = [st for st in read if not _empty_section(st)] or read[:1]
         statements.extend(read)
+    _check_derived_starts(statements)
     return statements
+
+
+def _check_derived_starts(statements):
+    """(B1) A start derived from the printed days in the billing cycle must follow the previous cycle of the
+    same account where this file prints it (closing 27 to 35 days earlier): its closing date plus one. A
+    start that does not is not used: the period is held."""
+    for statement in statements:
+        if statement.get('period_start_basis') != 'printed_day_count' or not statement['engine']['proved']:
+            continue
+        digits = re.sub(r'\D', '', statement['account_reference'])
+        start, end = date.fromisoformat(statement['period_start']), date.fromisoformat(statement['period_end'])
+        previous = [date.fromisoformat(other['period_end']) for other in statements if other is not statement
+                    and digits and re.sub(r'\D', '', other['account_reference']) == digits and other['period_end']
+                    and 27 <= (end - date.fromisoformat(other['period_end'])).days <= 35]
+        if previous and start - timedelta(days=1) not in previous:
+            statement['engine'].update(proved=False, reason='period_start_contradicted')
+            rows = statement['_rows']
+            if rows and not any(r.get('engine_hold') for r in rows):
+                rows.append(_hold_row(rows, 'period_start_contradicted'))
 
 
 def _empty_section(statement):
@@ -2007,8 +2237,18 @@ def _read_section(rows, segment, pages, facts, style, sources, profile, shared=F
                      layout_fingerprint=reading['fingerprint'], layout_key=reading['layout_key'], engine=reading['proof'])
     if profile:
         statement['engine_profile'] = profile['name']
+    if period and any(period in facts[p].get('closing_only', set()) for p in segment['pages']):
+        # Only the closing date is printed: the start is the closing date less the printed days in the
+        # billing cycle (B1), derived, never printed. The import records it as derived.
+        statement.update(period_start_basis='printed_day_count', printed_closing_date=period[1].isoformat())
     if not _numbering_complete(segment['pages'], facts) and reading['proof']['proved']:
-        reading['proof'].update(proved=False, reason='pages_missing')
+        if reading['table_end'] and _numbering_complete(segment['pages'], facts, after=reading['table_end']):
+            # (A3) Printed pages unread only after the page on which the movement table printed its own end
+            # (year-to-date heading, column total or closing line, after its last movement): such a page cannot
+            # hold one of this period's movements. The proof records it.
+            reading['proof']['pages_unread_after_table'] = True
+        else:
+            reading['proof'].update(proved=False, reason='pages_missing')
     if segment.get('conflict') and reading['proof']['proved']:
         reading['proof'].update(proved=False, reason='no_period')
     if not period and reading['proof']['proved']:
@@ -2036,8 +2276,8 @@ def _read_section(rows, segment, pages, facts, style, sources, profile, shared=F
         # named inside the section above its opening balance; otherwise it stays unread (C2, A7).
         opening = next((r for r in reading['rows'] if r['kind'] == 'balance'
                         and r['fields'].get('description') == 'Opening Balance'), None)
-        rows_by_id = {(r['page'], r['source']['table_index'], r['raw']['row_index']): r for r in rows}
-        anchor = rows_by_id.get((opening['page_number'], opening['table_index'], opening['row_index'])) if opening else None
+        rows_by_id = {_item(r)['id']: r for r in rows}
+        anchor = rows_by_id.get(opening['id'].split(':opening')[0]) if opening else None
         start, stop = rows[0]['_seg'], (anchor['_seg'] if anchor else rows[-1]['_seg'])
         own = [code for position, code in segment['currency_mentions'] if start <= position <= stop]
         attributed = own[-1] if own and len(set(own[-1:])) == 1 else ''
@@ -2242,13 +2482,18 @@ def _money_roles(header):
 def _reading(rows, statement, style, exponent, liability, period):
     width = next((r['width'] for r in rows if r['width']), None)
     proof = dict(engine=ENGINE_VERSION, proved=False, reason='', convention='liability_owed' if liability else 'asset_balance')
-    result = dict(rows=[], proof=proof, fingerprint='', layout_key='', first_row='')
+    result = dict(rows=[], proof=proof, fingerprint='', layout_key='', first_row='', table_end=None)
     if style is None:
         proof['reason'] = 'separators_mixed'
-    if any(not r['located'] for r in rows):
+    if any(not r['located'] and _unlocated_matters(r, style or 'dot', exponent) for r in rows):
         proof['reason'] = proof['reason'] or 'no_geometry'
-    controls = dict(opening=[], closing=[], credit_total=[], debit_total=[], credit_component=[], debit_component=[])
+    controls = dict(opening=[], closing=[], credit_total=[], debit_total=[], credit_component=[], debit_component=[],
+                    net_component=[], section_total=[])
     movements, headers, labels_seen, unplaced, continuation_of, column_totals = [], [], set(), [], {}, []
+    # The movement table's printed section (its heading's folded label) the lines below belong to (D4).
+    section = None
+    # Rows printing the end of the movement table: the year-to-date heading, a column total, a closing line.
+    ends = []
     region = False
     # Printed totals count only inside a summary block: after an opening balance, up to the closing one (D4, D7).
     in_summary = False
@@ -2274,7 +2519,7 @@ def _reading(rows, statement, style, exponent, liability, period):
     # its lines are not this period's movements, up to a heading of the movement table again or a balance.
     main_roles, totalled, other_table = None, False, False
     for index, row in enumerate(rows):
-        if not row['tokens']:
+        if not row['tokens'] or row.get('payment_box'):
             continue
         if other_table:
             if _is_header(row) and _money_roles(row) == main_roles:
@@ -2305,6 +2550,18 @@ def _reading(rows, statement, style, exponent, liability, period):
             labels_seen.update(w for w in words if column_role(w))
             region = True
             continue
+        if region and YEAR_TO_DATE.fullmatch(label(row['text'])):
+            # A card's year-to-date block after its section totals: neither movements nor controls, up to the
+            # movement table's heading again or a balance (read as another table, E9).
+            other_table = True
+            last_move = None
+            ends.append(index)
+            continue
+        if region and liability and _section_heading(row, style or 'dot', exponent):
+            section = label(row['text'])
+            labels_seen.add(section)
+            last_move = None
+            continue
         if _row_is_movement(row, style or 'dot', exponent):
             tokens = merged_dates(row['tokens'])
             date_tokens = []
@@ -2321,12 +2578,13 @@ def _reading(rows, statement, style, exponent, liability, period):
                 controls[role].append(dict(row=row, value_token=money_tokens[-1], count=None))
                 labels_seen.add(text)
                 continue
-            if role in ('subtotal', 'column_total', 'credit_total', 'debit_total', 'credit_component', 'debit_component'):
+            if role in ('subtotal', 'column_total', 'credit_total', 'debit_total', 'credit_component', 'debit_component',
+                        'net_component', 'section_total'):
                 continue
             first_money = min(money_tokens, key=lambda t: t['x0'])
             description = [t for t in words_only if t['x0'] < first_money['x0'] or t['line'] > 0]
             move = dict(row=row, date_tokens=date_tokens, money=money_tokens, description=description,
-                        stray=[t for t in words_only if t not in description], continuation=[])
+                        stray=[t for t in words_only if t not in description], continuation=[], section=section)
             movements.append(move)
             last_move = move
             region = True
@@ -2339,17 +2597,29 @@ def _reading(rows, statement, style, exponent, liability, period):
             counts = [t for kind, t in values if kind == 'count']
             if role == 'opening' and money_values:
                 in_summary = not region
-            if role in ('credit_total', 'debit_total', 'credit_component', 'debit_component') and not in_summary:
+            if role in ('credit_total', 'debit_total', 'credit_component', 'debit_component', 'net_component') and not in_summary:
                 handled = handled or bool(money_values)
                 continue
-            if role in ('opening', 'closing', 'credit_total', 'debit_total', 'credit_component', 'debit_component') and money_values:
+            if role == 'section_total' and money_values:
+                # A section's own printed total (D4): a control on the lines under the section's heading.
+                controls['section_total'].append(dict(row=row, value_token=_control_value(money_values), count=None,
+                                                      headings=SECTION_HEADINGS[text], scope=SECTION_SCOPE[text]))
+                labels_seen.add(text)
+                handled = True
+                if section in SECTION_HEADINGS[text]:
+                    section = None
+                continue
+            if role in ('opening', 'closing', 'credit_total', 'debit_total', 'credit_component', 'debit_component',
+                        'net_component') and money_values:
                 count = counts[0]['t'] if role.endswith('_total') and len(counts) == 1 and values[0][0] == 'count' else None
                 controls[role].append(dict(row=row, value_token=_control_value(money_values), count=count))
                 labels_seen.add(text)
                 handled = True
                 if role == 'closing':
                     in_summary = False
+                    ends.append(index)
             elif role == 'column_total' and money_values:
+                ends.append(index)
                 column_totals.append(dict(row=row, tokens=money_values))
                 labels_seen.add(text)
                 handled = True
@@ -2369,7 +2639,7 @@ def _reading(rows, statement, style, exponent, liability, period):
             has_money = False
         if liability and has_money and movements and _undated_charge(row, style or 'dot', exponent):
             # A card interest/fee line without a date (B6), ordered at the period end only.
-            undated_rows.append(row)
+            undated_rows.append((row, section))
             continue
         if not has_money:
             if last_move is not None and region and _continues(row, last_move):
@@ -2391,6 +2661,9 @@ def _reading(rows, statement, style, exponent, liability, period):
                 continue
             unplaced.append(row)
     result['first_row'] = (rows[0]['page'], rows[0]['source']['table_index'], rows[0]['raw']['row_index']) if rows else ''
+    # The page on which the movement table printed its end after its last movement (or None).
+    last = max((m['row']['_index'] for m in movements), default=None)
+    result['table_end'] = next((rows[end]['page'] for end in ends if last is not None and end > last), None)
     # Unplaced money lines only count inside a page's movement region: between its first and last movement.
     spans = {}
     for move in movements:
@@ -2399,12 +2672,12 @@ def _reading(rows, statement, style, exponent, liability, period):
                 and min(spans[row['page']]) < row['_index'] < max(spans[row['page']])]
     # Undated card charges (B6) inside the region are movements ordered at the period end.
     undated = []
-    for row in undated_rows:
+    for row, undated_section in undated_rows:
         money_tokens = [t for t in row['tokens'] if _value_kind(t, style or 'dot', exponent) == 'money']
         first_money = min(money_tokens, key=lambda t: t['x0'])
         undated.append(dict(row=row, date_tokens=[], money=money_tokens,
                             description=[t for t in row['tokens'] if t not in money_tokens and t['x0'] < first_money['x0']],
-                            stray=[], continuation=[], undated=True))
+                            stray=[], continuation=[], undated=True, section=undated_section))
     all_moves = sorted(movements + undated, key=lambda m: m['row']['_index'])
     money_tokens = [t for move in all_moves for t in move['money']]
     columns = _columns(money_tokens, width or 1) if money_tokens else []
@@ -2463,6 +2736,49 @@ def _reading(rows, statement, style, exponent, liability, period):
     return result
 
 
+_SECTION_WORDS = INDEX['credit_component'] | INDEX['debit_component']
+_PLACED_ROLES = ('opening', 'closing', 'credit_total', 'debit_total', 'column_total', 'section_total')
+
+
+def _unlocated_matters(row, style, exponent):
+    """A stored row without positions holds the reading (no_geometry) when one of its printed lines could be
+    read as a movement or a balance control: a line starting with a date and carrying an amount, an undated
+    card charge, or an amount after an opening, closing, total or section-total label. Lines are taken per
+    cell and across cells (the cells' lines side by side). Any other unlocated row is not part of what the
+    proof reads."""
+    cells = [c['expected_text'].split('\n') for c in sorted(row['raw']['cells'], key=lambda c: c['column_index'])]
+    lines = [line for lines in cells for line in lines]
+    lines += [' '.join(lines[i] for lines in cells if i < len(lines)) for i in range(max(map(len, cells), default=0))]
+    for line in lines:
+        words = line.split()
+        amounts = [i for i, word in enumerate(words) if money(word, style, exponent) is not None and re.search(r'\d', word)]
+        if not amounts:
+            continue
+        if is_date_token(words[0].rstrip('.,')):
+            return True
+        text = label(' '.join(words[:amounts[0]]))
+        if (any(text == label(p) or text.startswith(label(p) + ' ') for p in UNDATED_CHARGES)
+                or _role_of(text, True) in _PLACED_ROLES):
+            return True
+    return False
+
+
+def _section_heading(row, style, exponent):
+    """A card movement table's section heading ('FEES', 'INTEREST CHARGED'): a line printing only a summary
+    component's words, no amount and no date (D4, D7)."""
+    return (label(row['text']) in _SECTION_WORDS
+            and not any(_value_kind(t, style, exponent) in ('money', 'date') for t in row['tokens']))
+
+
+def _not_description(row):
+    """A line that never continues a movement's description: a table heading, a section heading or total,
+    a continuation notice, the year-to-date heading, or a labelled control."""
+    text = label(row['text'])
+    return (_is_header(row) or text in _SECTION_WORDS or text in {label(n) for n in CONTINUATION_NOTICES}
+            or bool(YEAR_TO_DATE.fullmatch(text)) or text in INDEX['section_total']
+            or any(_role_of(name, True) for name, _ in label_pairs(row, 'dot', 2)))
+
+
 def _undated_charge(row, style, exponent):
     tokens = [t for t in row['tokens'] if _value_kind(t, style, exponent) != 'money']
     money_tokens = [t for t in row['tokens'] if _value_kind(t, style, exponent) == 'money']
@@ -2519,6 +2835,10 @@ def _below(row, move):
 def _continues(row, move):
     """A line without date or money directly below a movement, starting in its description band (E3)."""
     last = move['continuation'][-1] if move['continuation'] else move['row']
+    if row.get('split') and last.get('split') and row['split'][0] == last['split'][0]:
+        # The next printed line of the same stored cell (_split_row), whose horizontal positions are only
+        # estimates: a wrapped description line unless it is printed as something else.
+        return row['split'][1] == last['split'][1] + 1 and len(move['continuation']) < 8 and not _not_description(row)
     if row['page'] != last['page'] or row['y0'] is None or last['y0'] is None or len(move['continuation']) >= 8:
         return False
     height = max(t['y1'] - t['y0'] for t in last['tokens'])
@@ -2639,10 +2959,20 @@ def _search(moves, columns, hints, controls, column_totals, style, exponent, lia
         totals_ok, totals_found, totals_failed = True, 0, False
         for role, expected in (('credit_component', credits), ('debit_component', debits)):
             parts = [money(item['value_token']['t'], style, exponent) for item in controls[role]]
-            if parts:
+            # Net summary lines (charges less credits, signed as printed) are part of the charges' side.
+            nets = ([money(item['value_token']['t'], style, exponent) for item in controls['net_component']]
+                    if role == 'debit_component' else [])
+            if parts or nets:
                 totals_found += 1
-                if None in parts or sum(abs(p) for p in parts) != expected:
+                if None in parts or None in nets or sum(abs(p) for p in parts) + sum(nets) != expected:
                     totals_ok, totals_failed = False, True
+        for item in controls['section_total']:
+            # A section's printed total equals the net of the lines under its heading (D4).
+            printed = money(item['value_token']['t'], style, exponent)
+            net = sum(v['effect'] for m, v in zip(moves, values) if not v['zero'] and m.get('section') in item['headings'])
+            totals_found += 1
+            if printed is None or printed != net:
+                totals_ok, totals_failed = False, True
         for role, expected in (('credit_total', credits), ('debit_total', debits)):
             for item in controls[role]:
                 printed = money(item['value_token']['t'], style, exponent)
@@ -2707,7 +3037,9 @@ def _best_effort(candidates, hints):
 
 def _item(row, suffix=''):
     source, raw = row['source'], row['raw']
-    return dict(id=f"{source['page_number']}:{source['table_index']}:{raw['row_index']}{suffix}",
+    # A printed line or box of a stored row read as a row of its own (_split_row) keeps the stored row's index.
+    part = ':line%d' % raw['line'] if 'line' in raw else ':box%s' % raw['box'] if 'box' in raw else ''
+    return dict(id=f"{source['page_number']}:{source['table_index']}:{raw['row_index']}{part}{suffix}",
                 page_number=source['page_number'], table_index=source['table_index'], row_index=raw['row_index'],
                 source_revision=source['source_revision'], source_cells=raw['cells'], fields={}, issues=[],
                 excluded=True, kind='header')
@@ -2805,6 +3137,15 @@ def _rows(rows, moves, resolved, chosen, controls, column_totals, statement, sty
                 extra['printed_transaction_count'] = entry['count']
             item = control(entry, 'Total ' + direction, role, **extra)
             item['fields']['balance'] = str(abs(int(item['fields']['balance'])))
+    if chosen and chosen.get('values') is not None:
+        for entry in controls['section_total']:
+            # A section's printed total (D4) as the review's scoped control, with the lines it totals.
+            scope = entry['scope']
+            control(entry, 'Printed %s total' % scope, 'section_' + scope, kind='statement_total', total_scope=scope)
+            for move in moves:
+                item = items[move['row']['_index']]
+                if move.get('section') in entry['headings'] and item['kind'] == 'transaction':
+                    item['fields']['charge_group'] = scope
     for row in unplaced:
         item = items[row['_index']]
         item.update(kind='unresolved', excluded=False)

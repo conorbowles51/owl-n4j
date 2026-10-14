@@ -1614,3 +1614,210 @@ class ServedScopeTests(unittest.TestCase):
         other = self.scoped([(1, [0, 1, 2, 6, 7])])
         engine = self.scoped([(1, [4, 5])])
         self.assertIsNone(_own_scope(engine, [other], self.sources()))
+
+
+def box(text, x0, x1, y0, y1, column):
+    """One drawn cell holding every printed line of a box (no row rules), as the drawn geometry stores it."""
+    return dict(column_index=column, expected_text=text,
+                locator=dict(kind='page_rectangle', page=1, rect=[x0, y0, x1, y1], page_size=[WIDTH, HEIGHT],
+                             units='millipoints', space='pdf_displayed'))
+
+
+SUMMARY = ('Previous Balance $1,000.00\n+ New Purchases $240.00\n- Payments $300.00\n'
+           '+/- Credits, Fees & Adjustments (net) $35.00\n+/- Interest Charge (net) $12.50')
+LINES = ['04/03/2024 04/03/2024 REF0001 PAYMENT - THANK YOU ($300.00)',
+         '04/10/2024 04/11/2024 REF0002 HARDWARE STORE $240.00',
+         'SAMPLE CITY ST',
+         'FEES',
+         '04/15/2024 04/15/2024 LATE FEE $35.00',
+         'TOTAL FEES FOR THIS PERIOD $35.00',
+         'INTEREST CHARGED',
+         '04/30/2024 04/30/2024 INTEREST CHARGE ON PURCHASES $12.50',
+         'TOTAL INTEREST FOR THIS PERIOD $12.50',
+         '2024 Totals Year-to-Date',
+         'Total Fees Charged in 2024 $70.00',
+         'Total Interest Charged in 2024 $25.00']
+
+
+def boxed_card(*, summary=SUMMARY, lines=LINES, closing='04/30/2024', days='30', new_balance='$987.50',
+               payment_box_balance='$987.50', page_number='PAGE 1 of 1', number=1, account='1234 5678 9012 3456',
+               stub_below=False, heading_name=True):
+    """An invented US card layout: a summary box beside a payment box (one stored row, a multi-line cell
+    each) and a transaction table whose body is ONE cell of printed lines, in sections with their totals."""
+    drawn = dict(case_id='c', evidence_file_id='f', page_number=number, table_index=0, source_revision='d%d' % number,
+                 table_source='drawn_geometry', rows=[
+                     dict(row_index=0, cells=[box('Summary of Account Activity', 36000, 255000, 300000, 312000, 0),
+                                              box('Payment Information', 260000, 490000, 300000, 312000, 2)]),
+                     dict(row_index=1, cells=[box(summary, 36000, 255000, 312000, 372000, 0),
+                                              box('New Balance %s\nTotal Minimum Payment Due $40.00\n'
+                                                  'Payment Due Date 05/25/2024' % payment_box_balance,
+                                                  260000, 490000, 312000, 372000, 2)]),
+                     dict(row_index=2, cells=[box('New Balance %s\nCredit Limit $2,000.00\nAvailable Credit $1,012.50\n'
+                                                  'Days in Billing Period %s' % (new_balance, days),
+                                                  36000, 255000, 372000, 420000, 0)])])
+    body_top = 452000
+    table = dict(case_id='c', evidence_file_id='f', page_number=number, table_index=1, source_revision='t%d' % number,
+                 table_source='drawn_geometry', rows=[
+                     dict(row_index=0, cells=[box('Transaction Summary', 36000, 490000, 430000, 440000, 0)]),
+                     dict(row_index=1, cells=[box('Tran Date', 36000, 89000, 440000, 452000, 0),
+                                              box('Post Date', 89000, 142000, 440000, 452000, 1),
+                                              box('Reference Number', 142000, 245000, 440000, 452000, 2),
+                                              box('Description', 245000, 413000, 440000, 452000, 3),
+                                              box('Amount', 413000, 490000, 440000, 452000, 4)]),
+                     dict(row_index=2, cells=[box('\n'.join(lines), 36000, 490000, body_top,
+                                                  body_top + 9000 * len(lines), 0)])])
+    heading = [[('EXAMPLE CARD BANK', 40000, 200000)] + ([('JANE Q SAMPLE', 264000, 323000)] if heading_name else []),
+               [('Account Number : %s' % account, 264000, 408000)],
+               [('Statement Closing Date: %s' % closing, 264000, 392000)],
+               [(page_number, 400000, 460000)]]
+    text = page(number, heading, table=2)
+    for row in text['rows']:  # above the summary box
+        for c in row['cells']:
+            c['locator']['rect'][1] -= 20000
+            c['locator']['rect'][3] -= 20000
+    stub = [[('JANE Q SAMPLE', 49000, 108000)], [('100 MAIN ST', 49000, 143000)],
+            [('SPRINGFIELD IL 62701', 49000, 160000), ('Make Payment to: EXAMPLE CARD BANK', 244000, 382000)]]
+    stub_page = page(number, stub, table=3)
+    top = 800000 if stub_below else 200000
+    for index, row in enumerate(stub_page['rows']):
+        for c in row['cells']:
+            c['locator']['rect'][1] = top + index * 8400
+            c['locator']['rect'][3] = top + index * 8400 + 8000
+    return [drawn, table, text, stub_page]
+
+
+def rows_of(statement):
+    return sorted((r['fields'].get('date'), r['fields']['direction'], r['fields']['amount_minor'])
+                  for r in statement['_rows'] if r['kind'] == 'transaction' and not r['excluded'])
+
+
+class BoxedCardTests(unittest.TestCase):
+    """r6: a card table stored as one multi-line cell, a closing date with the days in the billing period,
+    net summary lines, section totals and a year-to-date block (any issuer; synthetic fixtures)."""
+
+    def read(self, **kwargs):
+        statements = read_statements(boxed_card(**kwargs))
+        self.assertEqual(len(statements), 1)
+        return statements[0]
+
+    def test_each_printed_line_of_the_body_cell_is_read_and_the_period_proves(self):
+        st = self.read()
+        self.assertTrue(st['engine']['proved'], st['engine'])
+        self.assertEqual(rows_of(st), [('2024-04-03', 'credit', '30000'), ('2024-04-10', 'debit', '24000'),
+                                       ('2024-04-15', 'debit', '3500'), ('2024-04-30', 'debit', '1250')])
+        self.assertEqual(st['balance_convention'], 'liability_owed')
+        balances = {r['fields']['description']: r['fields']['balance'] for r in st['_rows'] if r['kind'] == 'balance'}
+        self.assertEqual(balances, {'Opening Balance': '100000', 'Closing Balance': '98750'})
+        purchase = next(r for r in st['_rows'] if r['fields'].get('amount_minor') == '24000')
+        # The wrapped line joins its movement; the section heading below it does not.
+        self.assertEqual(purchase['fields']['description'], 'REF0002 HARDWARE STORE SAMPLE CITY ST')
+        self.assertEqual(purchase['fields']['booking_date'], '2024-04-11')
+        # One row per printed line, each citing its own line of the stored cell.
+        self.assertEqual(purchase['id'], '1:1:2:line1')
+        self.assertEqual(purchase['source_cells'][0]['expected_text'], LINES[1])
+        self.assertEqual(purchase['source_cells'][0]['cell_line'], dict(line=1, lines=len(LINES)))
+        # The section totals are the review's scoped controls over the lines under their headings.
+        totals = {r['fields']['total_scope']: r['fields']['balance'] for r in st['_rows'] if r['kind'] == 'statement_total'}
+        self.assertEqual(totals, {'fee': '3500', 'interest': '1250'})
+        groups = {r['fields']['amount_minor']: r['fields'].get('charge_group') for r in st['_rows'] if r['kind'] == 'transaction'}
+        self.assertEqual(groups, {'30000': None, '24000': None, '3500': 'fee', '1250': 'interest'})
+        from services.financial.statement_review_checks import check_statement_rows
+        checks = {c['kind']: c['status'] for c in check_statement_rows(st['_rows'], liability=True)['checks']}
+        self.assertEqual((checks['fee_total'], checks['interest_total'], checks['closing_balance']),
+                         ('matches', 'matches', 'matches'))
+
+    def test_the_start_is_derived_from_the_printed_days_never_printed(self):
+        st = self.read()
+        self.assertEqual((st['period_start'], st['period_end']), ('2024-04-01', '2024-04-30'))
+        self.assertEqual(st['period_start_basis'], 'printed_day_count')
+        self.assertEqual(st['printed_closing_date'], '2024-04-30')
+
+    def test_year_to_date_lines_are_neither_rows_nor_controls(self):
+        st = self.read()
+        texts = ' '.join(r['fields'].get('description', '') for r in st['_rows'] if not r['excluded'])
+        self.assertNotIn('2024', texts)
+        self.assertEqual(len([r for r in st['_rows'] if r['kind'] == 'transaction']), 4)
+
+    def test_a_section_total_that_differs_from_its_lines_holds(self):
+        lines = list(LINES)
+        lines[5] = 'TOTAL FEES FOR THIS PERIOD $36.00'
+        st = self.read(lines=lines)
+        self.assertFalse(st['engine']['proved'])
+        self.assertEqual(st['engine']['reason'], 'printed_total_differs')
+
+    def test_a_net_summary_line_that_differs_holds(self):
+        st = self.read(summary=SUMMARY.replace('(net) $12.50', '(net) $12.60'))
+        self.assertFalse(st['engine']['proved'])
+        self.assertEqual(st['engine']['reason'], 'printed_total_differs')
+
+    def test_a_credit_the_payments_line_does_not_cover_holds(self):
+        # A return credited in the main section: payments printed 300.00, credits read 300.00 + 20.00.
+        lines = list(LINES)
+        lines.insert(2, '04/12/2024 04/12/2024 REF0003 RETURN ($20.00)')
+        st = self.read(lines=lines, summary=SUMMARY.replace('(net) $35.00', '(net) $15.00'), new_balance='$967.50')
+        self.assertFalse(st['engine']['proved'])
+
+    def test_the_payment_box_beside_the_summary_is_never_a_control(self):
+        st = self.read(payment_box_balance='$5.00')
+        self.assertTrue(st['engine']['proved'], st['engine'])
+        closing = next(r for r in st['_rows'] if r['fields'].get('description') == 'Closing Balance')
+        self.assertEqual((closing['fields']['balance'], closing['row_index']), ('98750', 2))
+
+    def test_an_ambiguous_closing_date_needs_the_profiles_date_order(self):
+        lines = [line.replace('04/30/2024', '04/11/2024').replace('04/15/2024', '04/05/2024') for line in LINES]
+        self.assertFalse(read_statements(boxed_card(lines=lines, closing='04/11/2024', days='31'))[0]['engine']['proved'])
+        profile = dict(name='test-card', match=dict(any=['example card bank']), date_order='mdy')
+        st = read_statements(boxed_card(lines=lines, closing='04/11/2024', days='31'), profile=profile)[0]
+        self.assertTrue(st['engine']['proved'], st['engine'])
+        self.assertEqual((st['period_start'], st['period_end']), ('2024-03-12', '2024-04-11'))
+
+    def test_pages_unread_after_the_tables_printed_end_do_not_hold(self):
+        st = self.read(page_number='PAGE 1 of 2')
+        self.assertTrue(st['engine']['proved'], st['engine'])
+        self.assertTrue(st['engine']['pages_unread_after_table'])
+        # Without the year-to-date block the table's end is not printed: the missing page may hold movements.
+        st = self.read(page_number='PAGE 1 of 2', lines=LINES[:9])
+        self.assertFalse(st['engine']['proved'])
+        self.assertEqual(st['engine']['reason'], 'pages_missing')
+
+    def test_a_previous_cycle_in_the_same_file_must_end_the_day_before(self):
+        first = boxed_card()
+        second = boxed_card(number=2, closing='05/30/2024', days='29', lines=[line.replace('04/', '05/') for line in LINES])
+        for source in second:
+            for row in source['rows']:
+                for c in row['cells']:
+                    c['locator']['page'] = 2
+        statements = read_statements(first + second)
+        later = next(st for st in statements if st['period_end'] == '2024-05-30')
+        # 30 May less 29 days is 2 May: the previous cycle closed on 30 April, so 1 May would follow it.
+        self.assertFalse(later['engine']['proved'])
+        self.assertEqual(later['engine']['reason'], 'period_start_contradicted')
+        second = boxed_card(number=2, closing='05/30/2024', days='30', lines=[line.replace('04/', '05/') for line in LINES])
+        for source in second:
+            for row in source['rows']:
+                for c in row['cells']:
+                    c['locator']['page'] = 2
+        later = next(st for st in read_statements(first + second) if st['period_end'] == '2024-05-30')
+        self.assertTrue(later['engine']['proved'], later['engine'])
+        self.assertEqual(later['period_start'], '2024-05-01')
+
+    def test_a_dated_line_without_its_amount_keeps_the_cell_whole(self):
+        lines = ['04/10/2024 04/11/2024 REF0002 HARDWARE STORE', 'SAMPLE CITY ST $240.00']
+        rows = E._pages(boxed_card(lines=lines))[1]
+        self.assertFalse(any('line' in r['raw'] for r in rows))
+
+    def test_holder_from_the_stub_below_the_movements_when_printed_above_them(self):
+        self.assertEqual(self.read(stub_below=True)['holder'], 'JANE Q SAMPLE')
+        self.assertEqual(self.read(stub_below=True, heading_name=False)['holder'], '')
+
+    def test_unlocated_rows_hold_only_when_they_could_be_a_movement_or_a_control(self):
+        sources = boxed_card()
+        sources.append(dict(case_id='c', evidence_file_id='f', page_number=1, table_index=4, source_revision='u',
+                            table_source='drawn_geometry', rows=[dict(row_index=0, cells=[
+                                dict(column_index=0, expected_text='Purchases\nPromotional', locator=dict(kind='unlocated')),
+                                dict(column_index=1, expected_text='$100.00\n$0.00', locator=dict(kind='unlocated'))])]))
+        self.assertTrue(read_statements(sources)[0]['engine']['proved'])
+        sources[-1]['rows'][0]['cells'][0]['expected_text'] = '04/20/2024 SHOP\nPromotional'
+        st = read_statements(sources)[0]
+        self.assertFalse(st['engine']['proved'])
+        self.assertEqual(st['engine']['reason'], 'no_geometry')

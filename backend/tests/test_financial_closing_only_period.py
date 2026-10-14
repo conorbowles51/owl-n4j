@@ -268,3 +268,49 @@ class ClosingOnlyBatchOrderTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+def day_count(neighbours, *, start='2024-04-01', end='2024-04-30', account='1234 5678 9012 3456'):
+    selected = dict(layout_id='generic', period_start_basis='printed_day_count', period_start=start, period_end=end,
+                    account_reference=account, id='this')
+    with patch.object(module, '_day_count_neighbours', return_value=neighbours):
+        return closing_only_period_dates(None, case_id='case', file=THIS_FILE, selected=selected,
+                                         sources=[], currency='USD', cache={})
+
+
+def previous(closing_date, statement_id='previous'):
+    return dict(file_id='other-file', filename='other.pdf', statement_id=statement_id, closing_date=closing_date)
+
+
+class DayCountPeriodTests(unittest.TestCase):
+    """r6: a general-engine card statement printing its closing date and the days in its billing cycle."""
+
+    def test_the_start_is_derived_and_agrees_with_the_previous_statement(self):
+        result = day_count([previous('2024-03-31')])
+        self.assertEqual((result['period_start'], result['period_end']), ('2024-04-01', '2024-04-30'))
+        self.assertEqual((result['period_start_basis'], result['period_end_basis']),
+                         ('printed_day_count', 'printed_closing_date'))
+        self.assertIsNone(result['period_start_hold'])
+        self.assertEqual(result['period_start_evidence']['printed_days_in_cycle'], 30)
+        self.assertEqual(result['period_start_evidence']['previous_closing_date'], '2024-03-31')
+
+    def test_without_a_previous_statement_the_printed_days_establish_the_start(self):
+        result = day_count([])
+        self.assertEqual(result['period_start'], '2024-04-01')
+        self.assertNotIn('previous_closing_date', result['period_start_evidence'])
+
+    def test_a_previous_statement_closing_on_another_day_holds_the_start(self):
+        result = day_count([previous('2024-03-29')])
+        self.assertEqual(result['period_start'], '')
+        self.assertEqual(result['period_start_hold']['code'], 'previous_statement_disagrees')
+        result = day_count([previous('2024-03-31'), previous('2024-03-29', 'other')])
+        self.assertEqual(result['period_start_hold']['code'], 'several_previous_statements')
+
+    def test_statements_outside_one_cycle_are_not_the_previous_one(self):
+        for closing in ('2024-02-29', '2024-04-15', '2024-05-31'):
+            self.assertEqual(day_count([previous(closing)])['period_start'], '2024-04-01')
+
+    def test_other_layouts_keep_their_own_rule(self):
+        selected = dict(layout_id='generic', period_start='2024-04-01', period_end='2024-04-30', id='x')
+        self.assertIsNone(closing_only_period_dates(None, case_id='case', file=THIS_FILE, selected=selected,
+                                                    sources=[], currency='USD', cache={}))
