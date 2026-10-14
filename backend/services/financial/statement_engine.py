@@ -1937,12 +1937,15 @@ _SUFFIX_HEADING = re.compile(r'^([A-Z][A-Z .]{2,60}?)\s*-\s*(\d{3,6})(?:\s+\(CON
 
 
 def _suffix_heading_account(row):
-    """'<product name> - 1234' as a whole heading line (a section's account, printed as its last digits
-    after the product name), or ''."""
+    """'<product name> 1234' from a whole heading line '<product name> - 1234' (a section's account, printed
+    as its last digits after the product name), or ''."""
     m = _SUFFIX_HEADING.match(' '.join(_dnorm(row['text']).split()))
     if not m or any(w.strip('.:') in _HEADING_ACCOUNT_NOT for w in m[1].split()):
         return ''
-    return m[2]
+    # The product name stays with the digits, as printed: two accounts of one statement can print the same
+    # last digits (a checking account and its line of credit), and the name is what tells them apart.
+    printed = re.match(r'^(.*?)\s*-\s*\d', ' '.join(row['text'].split()))
+    return (printed[1].strip() + ' ' + m[2]) if printed and printed[1].strip() else m[2]
 
 
 def _titled_holder(segment_pages, pages, rule):

@@ -1694,7 +1694,7 @@ class MultiAccountStatementTests(unittest.TestCase):
                                                 ('2024-01-25', 'debit', '2500', '12500'),
                                                 ('2024-02-01', 'debit', '500', '12000')])
         self.assertEqual([(s['account_reference'], s['holder'], s['currency']) for s in (checking, savings)],
-                         [('1111', 'JANE Q SAMPLE', 'USD'), ('2222', 'JANE Q SAMPLE', 'USD')])
+                         [('Everyday Checking 1111', 'JANE Q SAMPLE', 'USD'), ('Membership Savings 2222', 'JANE Q SAMPLE', 'USD')])
         # The appended record page after the statement's last numbered page is not part of it.
         self.assertNotIn(3, savings['page_numbers'])
 
@@ -1707,7 +1707,7 @@ class MultiAccountStatementTests(unittest.TestCase):
 
     def test_a_credit_line_sharing_the_deposit_accounts_number_is_held(self):
         _, line, _ = self.sections(credit_union_statement())
-        self.assertEqual((line['account_reference'], line['balance_convention']), ('1111', 'liability_owed'))
+        self.assertEqual((line['account_reference'], line['balance_convention']), ('Checking Line of Credit 1111', 'liability_owed'))
         self.assertFalse(line['engine']['proved'])
         self.assertEqual(line['engine']['reason'], 'account_shared')
         self.assertTrue(any(r.get('engine_hold') == 'account_shared' for r in line['_rows']))
@@ -1792,7 +1792,7 @@ class MultiAccountStatementTests(unittest.TestCase):
             catalog = R.route_catalog(sources, lambda s: dict(statements=[], unclassified_sources=[],
                                                                information_sources=[], complete_coverage=True))
         self.assertEqual(catalog['engine_routing']['profile'], 'invented-credit-union')
-        served = {(st['account_reference'], st['balance_convention']): st['engine'] for st in catalog['statements']}
+        served = {(st['account_reference'][-4:], st['balance_convention']): st['engine'] for st in catalog['statements']}
         self.assertTrue(served[('1111', 'asset_balance')]['proved'])
         self.assertEqual(served[('1111', 'liability_owed')]['reason'], 'account_shared')
 
