@@ -222,6 +222,41 @@ def _score(proposal, truth, summary):
     return score, shared, int(bool(currency) and currency == (truth.get('currency') or '').upper())
 
 
+def pair_file(entries, candidates):
+    """``{entry index: truth}`` for one file's batch items, independent of the order the batch lists them in.
+
+    ``entries`` are ``(proposal, summary)``. Every item is scored against every
+    truth period of the file and the best-scoring pairs are taken first; equal
+    scores fall back to the items' printed period and statement id, never to
+    their random item ids. Items without a positive pair are left to
+    ``pair_truth`` with what remains, as before. (Greedy pairing in the batch's
+    item order gave three equal-dated Monex sections whichever truth period was
+    left, depending on random item ids: an admitted period equal to its truth
+    in every field was reported as wrong in one run and right in the next.)
+    """
+    scored = []
+    for index, (proposal, summary) in enumerate(entries):
+        if proposal is None:
+            continue
+        for truth in candidates:
+            score = _score(proposal, truth, summary)
+            if any(score):
+                scored.append((score, summary.get('statement_id') or '', truth['id'], index, truth))
+    scored.sort(key=lambda s: (tuple(-v for v in s[0]), s[1], s[2]))
+    pairs, used = {}, set()
+    for _, _, truth_id, index, truth in scored:
+        if index not in pairs and truth_id not in used:
+            pairs[index] = truth
+            used.add(truth_id)
+    for index, (proposal, summary) in enumerate(entries):
+        if index not in pairs:
+            truth = pair_truth(proposal, [t for t in candidates if t['id'] not in used], summary)
+            if truth:
+                pairs[index] = truth
+                used.add(truth['id'])
+    return pairs
+
+
 def pair_truth(proposal, candidates, summary):
     """The unused ground-truth period a batch item describes, or None."""
     if proposal is None or not candidates:
@@ -483,16 +518,24 @@ def run(out, python, concurrency, corpus=CORPUS, readings=None, compare=None):
     used = set()
     views = {}  # item id -> what its proposal offers, for the per-statement comparison
     with factory() as db:
+        read = []
         for item in status['items']:
             filename = file_names.get(uuid.UUID(item['file_id'])) or item.get('filename')
+            proposal_error = None
             try:
                 proposal = read_statement_import(db, case_id=case_id, evidence_file_id=uuid.UUID(item['file_id']),
                     currency=item.get('currency') or None, statement_id=item.get('statement_id'))
             except Exception as error:
                 proposal = None
                 proposal_error = f'{type(error).__name__}: {error}'
-            candidates = [t for t in by_file.get(filename, []) if t['id'] not in used]
-            truth = pair_truth(proposal, candidates, item)
+            read.append((item, filename, proposal, proposal_error))
+        paired = {}
+        for filename in dict.fromkeys(name for _, name, _, _ in read):
+            members = [index for index, entry in enumerate(read) if entry[1] == filename]
+            pairs = pair_file([(read[i][2], read[i][0]) for i in members], by_file.get(filename, []))
+            paired.update({members[k]: truth for k, truth in pairs.items()})
+        for index, (item, filename, proposal, proposal_error) in enumerate(read):
+            truth = paired.get(index)
             if truth:
                 used.add(truth['id'])
             reasons = Counter(review_reason(p) for p in item.get('problems', []))

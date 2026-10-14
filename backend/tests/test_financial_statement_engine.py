@@ -438,6 +438,43 @@ class EngineRoutingTests(unittest.TestCase):
         self.assertTrue(group.get('engine_agrees'))
         self.assertEqual(catalog['engine_routing']['agreements'], 1)
 
+    def test_an_agreeing_library_period_takes_the_identity_facts_it_left_unread_from_the_engine(self):
+        from services.financial import statement_engine_routing as R
+        sources = mx_statement(MOVES, closing='1,250.00')
+        engine = read_statements(sources)[0]
+        self.assertTrue(engine['institution'] and engine['holder'])
+        catalog, group = self._route(sources, engine['_rows'])
+        self.assertEqual(catalog['statements'], [group])
+        self.assertEqual((group['institution'], group['holder'], group['identity_from_engine']),
+                         (engine['institution'], engine['holder'], ['institution', 'holder']))
+        self.assertEqual(group['account_reference'], '0012345678')  # its own reading stays
+        with mock.patch.object(R, 'AGREEMENT_FILLS_IDENTITY', False):
+            catalog, group = self._route(sources, engine['_rows'])
+        self.assertEqual((group['institution'], group.get('holder'), group.get('identity_from_engine')), ('', None, None))
+
+    def test_an_agreeing_library_period_never_takes_a_currency_or_an_account(self):
+        sources = mx_statement(MOVES, closing='1,250.00')
+        engine = read_statements(sources)[0]
+        self.assertTrue(engine['currency'])
+        group, library = self._library(sources, engine['_rows'])
+        group.update(currency='', account_reference='')
+        from services.financial import statement_engine_routing as R
+        with mock.patch.dict(os.environ, {'LOUPE_FINANCIAL_GENERIC_READER': '1'}), \
+                mock.patch('services.financial.statement_review_checks.statement_rows', return_value=engine['_rows']):
+            R.route_catalog(sources, library)
+        self.assertEqual((group['currency'], group['account_reference']), ('', ''))
+
+    def test_an_agreeing_library_period_with_a_conflicting_identity_fact_takes_nothing(self):
+        from services.financial import statement_engine_routing as R
+        sources = mx_statement(MOVES, closing='1,250.00')
+        rows = read_statements(sources)[0]['_rows']
+        group, library = self._library(sources, rows)
+        group['account_reference'] = '9999999999'
+        with mock.patch.dict(os.environ, {'LOUPE_FINANCIAL_GENERIC_READER': '1'}), \
+                mock.patch('services.financial.statement_review_checks.statement_rows', return_value=rows):
+            catalog = R.route_catalog(sources, library)
+        self.assertEqual((group['institution'], group.get('identity_from_engine')), ('', None))
+
     def test_disagreeing_proved_readings_hold_the_period(self):
         sources = mx_statement(MOVES, closing='1,250.00')
         rows = [dict(r, fields=dict(r['fields'])) for r in read_statements(sources)[0]['_rows']]

@@ -104,6 +104,7 @@ AFFECTED_EXTRACTION_SHA256 = (
     '5eca9825fe4fdd4c06783eb7820fb91d8bc359cd8d77bb45487e307161d6942e',  # 7b00e2f3 r1-reproduced (v14)
     '3e2343916ad66c94b85230947d48841235f8c4ff22963adb1f7c3a58c6591149',  # bffe7375 r3-andrews (v15)
     'b9248b807d535565e21969c81fcc59adb148cf1d6f185232958afb181bc129a1',  # r4-cards (v16)
+    '015bd1d2a28867ae8771cb7a69b67fca4e30302468e394b93d572fcef6e8800a',  # r5-andrews-cards (v17)
 )
 READER_RECOVERY = RecoveryCampaign(READER_RECOVERY_RELEASE, {'pdf_extraction.py': AFFECTED_EXTRACTION_SHA256},
     batch_reread=True)
