@@ -414,5 +414,59 @@ class CardSectionAndPatchTests(unittest.TestCase):
                 rv.Transcription(text)
 
 
+MAILING = """doc dmail
+done 1-2
+issuer acme-bank Acme Bank
+currency USD
+page 1 stmt 2024-01-01 2024-01-31 no 1 member 1111 holder A PERSON
+share - open 500.00
+group deposits
+r 2024-01-05 100.00 600.00 | deposit
+subtotal deposits 100.00
+subcount deposits 1
+group checks
+r 2024-01-10 -50.00 - | check 101
+r 2024-01-10 -25.00 525.00 | check 102
+subtotal checks -75.00
+subcount checks 2
+group interest
+r 2024-01-31 0.05 525.05 | interest
+subtotal interest 0.05
+close 525.05
+page 2 stmt 2024-01-02 2024-01-30 no 1 member 2222 holder A PERSON
+share - open 100.00
+kind card
+group fees
+r 2024-01-03 -10.00 - | late charge
+subtotal fees -10.00
+subcount fees 1
+close 110.00
+"""
+
+
+class MailingKindAndSectionCountTests(unittest.TestCase):
+    def test_section_counts_are_checked_and_a_period_may_carry_its_own_kind(self):
+        deposit, credit = rv.compile_document(MAILING, page_count=2)['periods']
+        self.assertEqual((deposit['truth_status'], credit['truth_status']), ('verified', 'verified'))
+        self.assertEqual([c['ok'] for c in deposit['controls']['other_checks']], [True, True, True, True, True])
+        self.assertEqual((deposit['kind'], credit['kind']), ('deposit', 'card'))
+        # The line of credit only reconciles as an amount owed: as a deposit it would not.
+        as_deposit = rv.compile_document(MAILING.replace('kind card\n', ''), page_count=2)['periods'][1]
+        self.assertIn('opening + transactions != closing', as_deposit['truth_reasons'])
+        # A check missed from the count is caught even when its amount was folded into another row.
+        folded = MAILING.replace('r 2024-01-10 -50.00 - | check 101\nr 2024-01-10 -25.00 525.00 | check 102',
+                                 'r 2024-01-10 -75.00 525.00 | check 101')
+        self.assertEqual(rv.compile_document(folded, page_count=2)['periods'][0]['truth_reasons'],
+                         ['checks rows differ from the printed checks count'])
+
+    def test_malformed_kind_and_count_lines_are_refused(self):
+        for text in (MAILING.replace('subcount checks 2', 'subcount checks'),
+                     MAILING.replace('subcount checks 2', 'subcount checks 2.00'),
+                     MAILING.replace('kind card', 'kind loan'),
+                     MAILING.replace('share - open 100.00\nkind card', 'kind card\nshare - open 100.00')):
+            with self.assertRaises(ValueError):
+                rv.Transcription(text)
+
+
 if __name__ == '__main__':
     unittest.main()
