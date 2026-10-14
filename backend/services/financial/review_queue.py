@@ -598,17 +598,17 @@ def status_line(counts, reading=None):
     parts = [f"Imported {counts['imported']} statements", f"Waiting for you {counts['waiting']}",
              f"Copies set aside {counts['copies']}", f"Couldn't read {counts['unreadable'] + counts['unreadable_files']}"]
     if counts['ready']:
-        parts.insert(2, f"Ready to save {counts['ready']}")
+        parts.insert(2, f"Ready to import {counts['ready']}")
     if counts.get('reader_fix'):
         parts.insert(2, f"Waiting for a reader fix {counts['reader_fix']}")
     if counts.get('filled'):
         parts.insert(2, f"Details filled automatically {counts['filled']}")
     if counts['saving']:
-        parts.append(f"Saving {counts['saving']}")
+        parts.append(f"Importing now {counts['saving']}")
     if counts['rechecking']:
         parts.append(f"Being rechecked {counts['rechecking']}")
     if counts['left_unimported']:
-        parts.append(f"Left unimported {counts['left_unimported']}")
+        parts.append(f"Left out by you {counts['left_unimported']}")
     sentence = reading_sentence(reading)
     if sentence:
         parts.insert(0, sentence)
