@@ -1572,17 +1572,21 @@ def _segments(pages, facts):
             period = next(iter(candidates))
         restart = any(n == 1 for n, _ in f['numbering'])
         current = segments[-1] if segments else None
-        # (A2, A3) A printed run that reached its last page ('Page 5 of 5') is complete: a following page
-        # printing neither a period nor a page number (a record or image the production appended) does not
-        # continue that statement.
+        # (A2, A3) A printed run that reached its last page ('Page 5 of 5') is complete: a following page that
+        # carries only the production's own page stamp (no period, no statement page number: a record or
+        # image the production appended) does not continue that statement.
         # A page whose next numbered page continues a run (number above 1) is that run's unnumbered first
         # page, not an appendix.
         following = next((facts[q]['numbering'] for q in ordered[ordered.index(page) + 1:] if facts[q]['numbering']), set())
-        finished = (current is not None and not period and not f['numbering'] and current['pages']
-                    and any(n == m for n, m in facts[current['pages'][-1]]['numbering'])
+        finished = (current is not None and not period and not f['numbering'] and f.get('file_numbered')
+                    and current['pages'] and any(n == m for n, m in facts[current['pages'][-1]]['numbering'])
                     and not current.get('appendix') and not any(n > 1 for n, _ in following))
         if finished:
             current = dict(period=None, pages=[], conflict=False, appendix=True)
+            segments.append(current)
+        elif current is not None and current.get('appendix') and (period or f['numbering']):
+            # A page printing a period or a statement page number never belongs to appended records.
+            current = dict(period=period, pages=[], conflict=len(candidates) > 1)
             segments.append(current)
         elif (current is None or (period and current['period'] and period != current['period'])
                 or (restart and current['pages'] and any(facts[p]['numbering'] for p in current['pages']))):
@@ -1637,6 +1641,7 @@ def _drop_file_numbering(facts):
             continue
         for page, number in printed:
             facts[page]['numbering'].discard((number, count))
+            facts[page]['file_numbered'] = True
 
 
 def _numbering_complete(pages, facts):
