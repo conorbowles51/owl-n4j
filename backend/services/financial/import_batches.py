@@ -190,6 +190,8 @@ def assess(proposal, request=None):
     if proposal.get('period_dates'):
         summary['closing_only_period'] = True
     summary['account_type'] = proposal['metadata'].get('account_type') or ''
+    if proposal['metadata'].get('account_reference_kind'):
+        summary['account_reference_kind'] = proposal['metadata']['account_reference_kind']
     summary['unclassified_count'] = sum(row['kind'] == 'unclassified' and reviewed.get(row['id'], {}).get('excluded', row['excluded']) for row in rows)
     if admission is not None:
         from services.financial.import_issues import incomplete_records

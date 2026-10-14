@@ -1808,17 +1808,25 @@ def _read_statements_in(pages, sources, profile):
     return statements
 
 
+#: (A6, A7) A credit line sharing its deposit account's number is its own ledger account
+#: (accounts.TIER_CREDIT_LINE). Off: such a section is held, as before the ledger could keep them apart.
+SHARED_NUMBER_CREDIT_LINES_SEPARATE = True
+
+
 def _hold_shared_account_credit_lines(read):
     """(A6, A7) Two sections of one statement printing the same account number in the same currency under
-    different balance conventions (a deposit account and the credit line attached to it) cannot be kept
-    apart by the ledger, which knows an account by its institution and number: the amounts-owed section is
-    held, with a named reason; the deposit account it shares the number with is read as usual."""
+    different balance conventions: a deposit account and the credit line attached to it. The ledger knows an
+    account by its institution and number, so the amounts-owed section is marked a credit line and kept as
+    an account of its own (its key carries the product); the deposit account is read as usual. With the
+    switch off the credit line is held, with a named reason."""
     deposits = {(re.sub(r'\D', '', st['account_reference']), st['currency']) for st in read
                 if st['account_reference'] and st['balance_convention'] == 'asset_balance'}
     for st in read:
         key = (re.sub(r'\D', '', st['account_reference'] or ''), st['currency'])
         if st['balance_convention'] == 'liability_owed' and key[0] and key in deposits:
-            if st['engine']['proved']:
+            if SHARED_NUMBER_CREDIT_LINES_SEPARATE:
+                st['account_reference_kind'] = 'credit_line'
+            elif st['engine']['proved']:
                 st['engine'] = dict(st['engine'], proved=False, reason='account_shared')
                 st['_rows'] = [r for r in st['_rows'] if r['kind'] != 'unresolved'] + [_hold_row(st['_rows'], 'account_shared')]
             else:

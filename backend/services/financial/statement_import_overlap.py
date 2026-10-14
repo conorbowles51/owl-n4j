@@ -47,8 +47,11 @@ def scope(raw):
         start, end = date.fromisoformat(raw.get('period_start', '')), date.fromisoformat(raw.get('period_end', ''))
         if start > end:
             return None
+        # The same reference kind as the ledger key (a credit line sharing its deposit account's number).
+        kind = raw.get('account_reference_kind')
         identity = AccountDraft.observed(institution_name=raw.get('institution') or None,
-            identifier_as_printed=raw.get('account_number'), currency=raw.get('currency')).identity()
+            identifier_as_printed=raw.get('account_number'), currency=raw.get('currency'),
+            metadata=dict(account_reference_kind=kind) if kind else None).identity()
     except (ValueError, TypeError, AccountError):
         return None
     holder = _fold(raw.get('holder'))
@@ -97,7 +100,8 @@ def summary_request(summary):
     return dict(expected_revision=summary.get('revision'), statement_id=summary.get('statement_id'),
         currency=summary.get('currency'), institution=summary.get('institution', ''),
         account_number=summary.get('account', ''), holder=summary.get('holder', ''), account_type=summary.get('account_type', ''),
-        period_start=summary.get('period_start', ''), period_end=summary.get('period_end', ''))
+        period_start=summary.get('period_start', ''), period_end=summary.get('period_end', ''),
+        account_reference_kind=summary.get('account_reference_kind', ''))
 
 
 def comparison_sources(session, case_id, pending=None, *, read_pending=None, duplicate_context=None):
@@ -111,7 +115,8 @@ def comparison_sources(session, case_id, pending=None, *, read_pending=None, dup
         EvidenceFile.id, EvidenceFile.original_filename,
         EvidenceFile.metadata_['statement_root_evidence_id'].as_string(),
         FinancialAccount.institution_name, FinancialAccount.identifier_as_printed,
-        FinancialAccount.holder_name, FinancialAccount.account_type)
+        FinancialAccount.holder_name, FinancialAccount.account_type,
+        FinancialAccount.metadata_['account_reference_kind'].as_string())
         .select_from(FinancialStatementPeriod)
         .join(FinancialSourceDocument, FinancialSourceDocument.id == FinancialStatementPeriod.source_document_id)
         .join(FinancialAccount, FinancialAccount.id == FinancialStatementPeriod.account_id)
@@ -166,11 +171,11 @@ def comparison_sources(session, case_id, pending=None, *, read_pending=None, dup
             _include_duplicate_disposition=include_duplicate_disposition)
     def add(identity, currency, value):
         entries.setdefault((identity, currency), []).append(value)
-    for identity, currency, start, end, document_id, statement_id, page_number, file_id, filename, root, bank, account, holder, account_type in imported:
+    for identity, currency, start, end, document_id, statement_id, page_number, file_id, filename, root, bank, account, holder, account_type, kind in imported:
         if start is None or end is None:
             continue
         descriptor = scope(dict(institution=bank, account_number=account, holder=holder, account_type=account_type,
-            currency=currency, period_start=start.isoformat(), period_end=end.isoformat()))
+            currency=currency, period_start=start.isoformat(), period_end=end.isoformat(), account_reference_kind=kind))
         add(identity, currency, dict(key=(families.get(str(file_id), str(file_id)), statement_id or ''), scope=descriptor,
             file_id=str(file_id), statement_id=statement_id, source_document_id=str(document_id),
             filename=filename, status='imported', page_number=page_number or 1, period_start=start.isoformat(), period_end=end.isoformat()))
@@ -181,7 +186,8 @@ def comparison_sources(session, case_id, pending=None, *, read_pending=None, dup
         raw = effective or summary_request(item.summary)
         if conflict:
             raw = {**raw, '_coverage_error': 'The individual statement and batch have different saved edits. Compare both reviews before importing.'}
-        raw = {**raw, 'account_type': item.summary.get('account_type', '')}
+        raw = {**raw, 'account_type': item.summary.get('account_type', ''),
+               'account_reference_kind': item.summary.get('account_reference_kind', '')}
         # Older summaries did not save bank/product identity. Recover only
         # absent fields from that reading, preserving every saved correction.
         # Source geometry/catalogue is cached per PDF.
