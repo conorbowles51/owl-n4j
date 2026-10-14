@@ -1,6 +1,9 @@
 """Case-scoped automatic statement review assembled from stored source tables."""
+import pickle
 import re
-from sqlalchemy import select
+import threading
+from collections import OrderedDict
+from sqlalchemy import Text, cast, func, select
 from postgres.models.evidence import EvidenceFile, EvidenceDocumentText, EvidenceTableGeometry
 from services.financial.candidate_sources import read_candidate_source
 from services.financial.pdf_candidates import PdfMappingError, _digest
@@ -157,6 +160,51 @@ def _printed_header(content):
     return header, metadata
 
 
+# One file's reading (printed header, table sources, statement catalog,
+# currencies and period checks) depends only on its stored extraction. A
+# multi-statement file used to be read whole again for every statement it
+# prints: each batch import of one period re-read every period of the file,
+# once to check and once more inside the strict writer under the case lock
+# (minutes per period for a 345-page production, and the long-held case lock
+# deadlocked concurrent saves). These parts are now shared across requests,
+# keyed on the stored extraction, and every request gets its own copy.
+SHARED_READING_FILES = 4
+_shared_readings = OrderedDict()
+_shared_readings_lock = threading.Lock()
+
+
+def _shared_reading(session, file, text):
+    """The shared parts for this file's current extraction (a dict of pickled values)."""
+    # Every stored input is in the key, the page tables by content (hashed in
+    # the database: about 0.1 s for 345 pages), so no edit can be served stale.
+    postgres = session.get_bind().dialect.name == 'postgresql'
+    content = func.md5(cast(EvidenceTableGeometry.payload, Text)) if postgres else EvidenceTableGeometry.payload
+    pages = tuple((number, str(job), fingerprint if postgres else _digest(fingerprint)) for number, job, fingerprint
+        in session.execute(select(EvidenceTableGeometry.page_number, EvidenceTableGeometry.engine_job_id, content)
+            .where(EvidenceTableGeometry.evidence_file_id == file.id).order_by(EvidenceTableGeometry.page_number)))
+    stamp = (str(file.id), file.sha256, str(text.engine_job_id), text.content_sha256, pages,
+        _digest(dict(manifest=text.processing_manifest, locations=text.source_locations)))
+    with _shared_readings_lock:
+        for key in [key for key in _shared_readings if key[0] == stamp[0] and key != stamp]:
+            del _shared_readings[key]
+        entry = _shared_readings.setdefault(stamp, {})
+        _shared_readings.move_to_end(stamp)
+        while len(_shared_readings) > SHARED_READING_FILES:
+            _shared_readings.popitem(last=False)
+    return entry
+
+
+def _shared_value(cache, shared, key, compute):
+    if key not in cache:
+        stored = shared.get(key)
+        if stored is not None:
+            cache[key] = pickle.loads(stored)
+        else:
+            cache[key] = compute()
+            shared[key] = pickle.dumps(cache[key], pickle.HIGHEST_PROTOCOL)
+    return cache[key]
+
+
 def read_statement_import(session, *, case_id, evidence_file_id, currency=None, statement_id=None, _cache=None, _include_period_checks=True, _apply_assignments=True, _include_duplicate_disposition=True, _compare_printings=True):
     # The identity map already holds the row after the first read in a request;
     # re-querying decoded its whole metadata again for every statement.
@@ -169,12 +217,11 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
     if text is None:
         raise PdfMappingError('Prepare this PDF before opening its statement review.', 409)
     cache = _cache if _cache is not None else {}
+    shared = _shared_reading(session, file, text)
     # The printed header depends only on the extracted text; parse it once per
     # request (one cache) rather than once per statement the file prints.
     header_key = ('printed_header', str(evidence_file_id), text.content_sha256)
-    if header_key not in cache:
-        cache[header_key] = _printed_header(text.content)
-    header, printed = cache[header_key]
+    header, printed = _shared_value(cache, shared, header_key, lambda: _printed_header(text.content))
     metadata = dict(printed)
     issues = []
     if not metadata['holder']:
@@ -185,21 +232,18 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
     # Page numbers and table counts only. Within one request (one cache) a
     # file's geometry is loaded once, not once per statement it prints.
     pages_key = ('geometry_pages', *source_key)
-    if pages_key not in cache:
-        cache[pages_key] = [(page.page_number, len(page.payload or [])) for page in session.scalars(
+    _shared_value(cache, shared, pages_key, lambda: [(page.page_number, len(page.payload or [])) for page in session.scalars(
             select(EvidenceTableGeometry).where(EvidenceTableGeometry.evidence_file_id == evidence_file_id)
-            .order_by(EvidenceTableGeometry.page_number))]
+            .order_by(EvidenceTableGeometry.page_number))])
     pages = [SimpleNamespace(page_number=number, tables=tables) for number, tables in cache[pages_key]]
     if not pages:
         raise PdfMappingError('No readable tables were prepared. Reprocess this PDF or inspect its extraction errors.', 409)
     if len(pages) > 500:
         raise PdfMappingError('This statement exceeds the 500-page review limit. No pages were omitted.', 422)
     from services.financial.statement_import_catalog import statement_catalog
-    if source_key not in cache:
-        cache[source_key] = [read_candidate_source(session, case_id=case_id, evidence_file_id=evidence_file_id,
-                        page_number=page.page_number, table_index=index)
-                       for page in pages for index in range(page.tables)]
-    all_sources = cache[source_key]
+    all_sources = _shared_value(cache, shared, source_key, lambda: [read_candidate_source(session, case_id=case_id,
+        evidence_file_id=evidence_file_id, page_number=page.page_number, table_index=index)
+        for page in pages for index in range(page.tables)])
     from services.financial.payment_document_review import payment_document_response
     payment_document = payment_document_response(file, all_sources, case_id=case_id)
     if payment_document is not None:
@@ -208,16 +252,12 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
             needs_attention=0, revision=payment_document['revision'], applied=False,
             document_review=payment_document, page_numbers=payment_document['page_numbers'])
     catalog_key = ('catalog', source_key)
-    if catalog_key not in cache:
-        cache[catalog_key] = statement_catalog(all_sources)
-    catalog = cache[catalog_key]
+    catalog = _shared_value(cache, shared, catalog_key, lambda: statement_catalog(all_sources))
     from services.financial.deposit_receipt_proposal import deposit_receipt_choices
     from services.financial.statement_currency import currencies_by_statement, detect_statement_currency
     currencies_key = ('currencies', source_key)
-    if currencies_key not in cache:
-        cache[currencies_key] = currencies_by_statement(
-            catalog['statements'] + deposit_receipt_choices(all_sources), all_sources)
-    choices = cache[currencies_key]
+    choices = _shared_value(cache, shared, currencies_key, lambda: currencies_by_statement(
+        catalog['statements'] + deposit_receipt_choices(all_sources), all_sources))
     detected = {choice.get('currency', '') for choice in choices if not choice.get('document_kind')}
     detected_currency = (next(iter(detected)) if len(detected) == 1 else '') if choices else detect_statement_currency(all_sources, header_text=header)
     saved_currency = ((file.metadata_ or {}).get('financial_review_progress', {}).get(statement_id or '', {}).get('request') or {}).get('currency')
@@ -226,9 +266,8 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
     from services.financial.statement_review_checks import add_period_checks
     checks_key = ('checks', source_key, chosen_currency)
     if _include_period_checks:
-        if checks_key not in cache:
-            cache[checks_key] = add_period_checks(choices, all_sources, currency, text.source_locations)
-        choices = cache[checks_key]
+        choices = _shared_value(cache, shared, checks_key,
+            lambda: add_period_checks(choices, all_sources, currency, text.source_locations))
         if _apply_assignments:
             from services.financial.statement_row_assignment import assignment_choices
             choices = assignment_choices(session, file, choices, chosen_currency, cache)

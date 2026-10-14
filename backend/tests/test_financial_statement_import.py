@@ -73,6 +73,31 @@ class StatementImportTests(TransactionPersistenceTestCase):
         with patch('services.financial.statement_admission.require_admission', side_effect=assess_admission):
             return self.confirm(request)
 
+    def test_file_reading_is_shared_across_requests_and_follows_stored_edits(self):
+        import services.financial.statement_import_catalog as catalog_module
+        real, calls = catalog_module.statement_catalog, []
+        def spy(sources):
+            calls.append(len(sources))
+            return real(sources)
+        with patch.object(catalog_module, 'statement_catalog', spy):
+            first = self.preview()
+            again = self.preview()
+            self.assertEqual(len(calls), 1)  # the second request reuses the reading
+            self.assertEqual(again, first)
+            again['rows'].clear()  # each request gets its own copy
+            self.assertEqual(self.preview(), first)
+            self.assertEqual(len(calls), 1)
+            # A stored table edited in place (same extraction job) is read again.
+            geometry = self.db.get(EvidenceTableGeometry, (self.file.id, 1))
+            from copy import deepcopy
+            payload = deepcopy(geometry.payload)
+            payload[0]['table']['values'] = [v for v in payload[0]['table']['values'] if v['text'] != 'Closing Balance']
+            geometry.payload = payload
+            self.db.commit()
+            changed = self.preview()
+            self.assertEqual(len(calls), 2)
+            self.assertNotEqual(changed['revision'], first['revision'])
+
     def test_existing_import_and_same_request_keep_the_saved_account_for_navigation(self):
         request = self.request()
         saved = self.confirm(request)

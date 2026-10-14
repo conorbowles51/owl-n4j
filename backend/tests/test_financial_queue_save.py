@@ -144,6 +144,38 @@ class QueueSaveTests(Base):
         with self.f.SessionLocal() as db:
             self.assertEqual(db.get(Item, UUID(str(item_id))).status, 'imported')
 
+    def test_automatic_save_tries_again_after_a_lock_conflict(self):
+        from sqlalchemy.exc import OperationalError
+
+        class Deadlock(Exception):
+            sqlstate = '40P01'
+        outcomes = [OperationalError('INSERT', {}, Deadlock()), dict(queued=2)]
+
+        def once(*args, **kwargs):
+            outcome = outcomes.pop(0)
+            if isinstance(outcome, Exception):
+                raise outcome
+            return outcome
+        with patch.object(queue_save, 'AUTO_SAVE_READY', True), patch.object(queue_save, '_auto_save_once', once), \
+                patch.object(queue_save.time, 'sleep') as sleep:
+            with self.f.SessionLocal() as db:
+                result = queue_save.auto_save_prepared(db, case_id=self.f.case.id, batch_id=uuid4(),
+                                                       file_id=self.f.file.id)
+        self.assertEqual(result, dict(queued=2))
+        self.assertEqual(sleep.call_count, 1)
+
+    def test_automatic_save_gives_up_after_repeated_lock_conflicts(self):
+        from sqlalchemy.exc import OperationalError
+
+        class Deadlock(Exception):
+            sqlstate = '40P01'
+        with patch.object(queue_save, 'AUTO_SAVE_READY', True), patch.object(queue_save.time, 'sleep'), \
+                patch.object(queue_save, '_auto_save_once', side_effect=OperationalError('INSERT', {}, Deadlock())) as once:
+            with self.f.SessionLocal() as db:
+                self.assertIsNone(queue_save.auto_save_prepared(db, case_id=self.f.case.id, batch_id=uuid4(),
+                                                                file_id=self.f.file.id))
+        self.assertEqual(once.call_count, queue_save.AUTO_SAVE_ATTEMPTS)
+
     def test_automatic_save_never_raises(self):
         with patch.object(queue_save, 'AUTO_SAVE_READY', True), \
                 patch.object(queue_save, 'save_statements', side_effect=RuntimeError('boom')):
