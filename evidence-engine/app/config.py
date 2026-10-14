@@ -70,7 +70,6 @@ class Settings(BaseSettings):
     storage_path: str = "/data/files"
     cellebrite_data_root: str = "evidence-data"
     max_upload_file_bytes: int = 1_073_741_824
-    max_upload_batch_files: int = 50
     max_upload_batch_bytes: int = 5_368_709_120
     upload_read_chunk_bytes: int = 1_048_576
     batch_file_max_concurrency: int = 4
@@ -85,6 +84,14 @@ class Settings(BaseSettings):
     # Image processing
     image_provider: str = "tesseract"  # "tesseract" or "openai"
     tesseract_lang: str = "eng"
+    # Second, non-Tesseract reader for recognised statement money cells the
+    # crop check disputes (app.pipeline.statement_glyph_reader). Off = those
+    # cells stay held for a person, exactly as before it existed.
+    statement_glyph_second_reader: bool = True
+    # Straighten, resample and contrast-stretch full-page scans that measure
+    # tilted, coarse or pale before they are read
+    # (app.pipeline.scan_preprocessing). Off = every page is read as scanned.
+    pdf_scan_preprocessing: bool = True
     pdf_ocr_dpi: int = 300
     pdf_ocr_max_pixels: int = 25_000_000
     pdf_ocr_page_timeout_seconds: int = 300

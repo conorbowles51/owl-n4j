@@ -21,6 +21,14 @@ import {
   intakeSelection,
   type IntakeSelection,
 } from "../lib/evidence-selection"
+import { BatchStartChoice } from "./BatchStartChoice"
+import {
+  needsBatchStartChoice,
+  previewBatchStart,
+  startStatementBatch,
+  type BatchStartChoiceValue,
+  type BatchStartPreview,
+} from "../lib/batch-start"
 
 export function EvidenceFinancialPicker({
   caseId,
@@ -89,6 +97,21 @@ function EvidenceBrowser({
   const [page, setPage] = useState(0)
   const [search, setSearch] = useState("")
   const [review, setReview] = useState<IntakeSelection | null>(null)
+  // Open batches holding these PDFs, and copies, known before sending.
+  const [startPreview, setStartPreview] = useState<BatchStartPreview | null>(
+    null
+  )
+  const checkStart = async (selection: IntakeSelection) => {
+    const pdfs = selection.files.filter(usesPdfStatementReader)
+    setStartPreview(
+      pdfs.length
+        ? await previewBatchStart(
+            caseId,
+            pdfs.map((file) => file.id)
+          ).catch(() => null)
+        : null
+    )
+  }
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
   const listing = useQuery({
@@ -135,6 +158,7 @@ function EvidenceBrowser({
       )
       if (result.case_id !== caseId)
         throw Error("The selection belongs to another case.")
+      await checkStart(result)
       setReview(result)
     } catch (error) {
       setError(
@@ -159,6 +183,78 @@ function EvidenceBrowser({
     void client.invalidateQueries({
       queryKey: ["evidence-folder-contents", caseId],
     })
+  }
+  const send = async (choice?: BatchStartChoiceValue) => {
+    if (!review) return
+    setError("")
+    setBusy(true)
+    try {
+      const otherSources = review.files.filter(
+        (file) => !usesPdfStatementReader(file)
+      )
+      if (otherSources.length) {
+        const included = z
+          .object({
+            case_id: z.string(),
+            file_ids: z.array(z.string()),
+          })
+          .parse(
+            await fetchAPI(
+              `/api/financial/statement-import/selection/include?case_id=${caseId}`,
+              {
+                method: "POST",
+                body: {
+                  files: otherSources.map((file) => ({
+                    evidence_file_id: file.id,
+                    expected_revision: file.financial_visibility_revision,
+                  })),
+                },
+              }
+            )
+          )
+        if (
+          included.case_id !== caseId ||
+          included.file_ids.length !== otherSources.length ||
+          otherSources.some((file) => !included.file_ids.includes(file.id))
+        )
+          throw Error(
+            "The returned sources do not match this selection. Refresh Financial to check the result."
+          )
+        changed()
+      }
+      const pdfs = review.files.filter(usesPdfStatementReader)
+      let batchId: string | undefined
+      if (pdfs.length) {
+        batchId = await startStatementBatch({
+          caseId,
+          fileIds: pdfs.map((file) => file.id),
+          requestId,
+          preview: startPreview,
+          choice,
+        })
+      }
+      changed()
+      const user = useAuthStore.getState().user
+      useStatementWorkspace
+        .getState()
+        .setOpen(
+          `${user?.id || user?.username || "anonymous"}:${caseId}`,
+          false
+        )
+      onStarted()
+      go(
+        `/cases/${caseId}/financial?view=statements${batchId && !otherSources.length ? `&batch=${encodeURIComponent(batchId)}` : "&files=1"}`
+      )
+    } catch (error) {
+      setError(
+        (error instanceof Error
+          ? error.message
+          : "The selection could not be confirmed.") +
+          " Some sources may already be saved in Financial. Retry checks the same selection without creating copies."
+      )
+    } finally {
+      setBusy(false)
+    }
   }
   return (
     <div className="min-h-0 overflow-auto space-y-4">
@@ -332,10 +428,12 @@ function EvidenceBrowser({
                   aria-label={`Remove ${file.original_filename} from selection`}
                   onClick={() => {
                     setRequestId(newReviewId())
-                    setReview({
+                    const next = {
                       ...review,
                       files: review.files.filter((item) => item.id !== file.id),
-                    })
+                    }
+                    setReview(next)
+                    void checkStart(next)
                   }}
                 >
                   Remove from selection
@@ -351,96 +449,38 @@ function EvidenceBrowser({
             imported at this step.
           </p>
           <div className="flex flex-wrap gap-2">
-            <Button
-              disabled={!canEdit || !canUpload || busy || !review.files.length}
-              onClick={async () => {
-                setError("")
-                setBusy(true)
-                try {
-                  const otherSources = review.files.filter(
-                    (file) => !usesPdfStatementReader(file)
-                  )
-                  if (otherSources.length) {
-                    const included = z
-                      .object({
-                        case_id: z.string(),
-                        file_ids: z.array(z.string()),
-                      })
-                      .parse(
-                        await fetchAPI(
-                          `/api/financial/statement-import/selection/include?case_id=${caseId}`,
-                          {
-                            method: "POST",
-                            body: {
-                              files: otherSources.map((file) => ({
-                                evidence_file_id: file.id,
-                                expected_revision:
-                                  file.financial_visibility_revision,
-                              })),
-                            },
-                          }
-                        )
-                      )
-                    if (
-                      included.case_id !== caseId ||
-                      included.file_ids.length !== otherSources.length ||
-                      otherSources.some(
-                        (file) => !included.file_ids.includes(file.id)
-                      )
-                    )
-                      throw Error(
-                        "The returned sources do not match this selection. Refresh Financial to check the result."
-                      )
-                    changed()
-                  }
-                  const pdfs = review.files.filter(usesPdfStatementReader)
-                  let batchId: string | undefined
-                  if (pdfs.length) {
-                    const batch = z
-                      .object({ id: z.string(), case_id: z.string() })
-                      .parse(
-                        await fetchAPI(
-                          `/api/financial/statement-import/batches?case_id=${caseId}`,
-                          {
-                            method: "POST",
-                            body: {
-                              request_id: requestId,
-                              file_ids: pdfs.map((file) => file.id),
-                              folder_ids: [],
-                            },
-                          }
-                        )
-                      )
-                    if (batch.case_id !== caseId)
-                      throw Error("The batch belongs to another case.")
-                    batchId = batch.id
-                  }
-                  changed()
-                  const user = useAuthStore.getState().user
-                  useStatementWorkspace
-                    .getState()
-                    .setOpen(
-                      `${user?.id || user?.username || "anonymous"}:${caseId}`,
-                      false
-                    )
-                  onStarted()
-                  go(
-                    `/cases/${caseId}/financial?view=statements${batchId && !otherSources.length ? `&batch=${encodeURIComponent(batchId)}` : "&files=1"}`
-                  )
-                } catch (error) {
-                  setError(
-                    (error instanceof Error
-                      ? error.message
-                      : "The selection could not be confirmed.") +
-                      " Some sources may already be saved in Financial. Retry checks the same selection without creating copies."
-                  )
-                } finally {
-                  setBusy(false)
+            {review && needsBatchStartChoice(startPreview) && (
+              <BatchStartChoice
+                preview={startPreview!}
+                selectedCount={
+                  review.files.filter(usesPdfStatementReader).length
                 }
-              }}
-            >
-              Send {review.files.length} files to Financial
-            </Button>
+                busy={busy}
+                showPrepare={false}
+                onChoose={(choice) => void send(choice)}
+                onLeaveOut={(fileIds) => {
+                  const next = {
+                    ...review,
+                    files: review.files.filter(
+                      (file) => !fileIds.includes(file.id)
+                    ),
+                  }
+                  setRequestId(newReviewId())
+                  setReview(next)
+                  void checkStart(next)
+                }}
+              />
+            )}
+            {!startPreview?.suggested_batch_id && (
+              <Button
+                disabled={
+                  !canEdit || !canUpload || busy || !review.files.length
+                }
+                onClick={() => void send()}
+              >
+                Send {review.files.length} files to Financial
+              </Button>
+            )}
             <Button
               variant="outline"
               disabled={busy}

@@ -148,3 +148,44 @@ class StatementCatalogTests(unittest.TestCase):
                 unknown = [row for row in propose_card_table(bad, 'USD', choice)['rows'] if not row['excluded']]
                 self.assertTrue(unknown[0]['issues'])
                 self.assertNotIn('amount_minor', unknown[0]['fields'])
+
+
+class StatementReprintTests(unittest.TestCase):
+    """A production can print the same card statement twice in one PDF."""
+
+    def printed(self, number, label):
+        result = page(number)
+        if label:
+            result['rows'].append(source([[label]])['rows'][0])
+            result['rows'][-1]['row_index'] = len(result['rows']) - 1
+        return result
+
+    def test_a_restarted_printed_page_count_starts_a_linked_second_printing(self):
+        once = statement_catalog([self.printed(1, 'Page 1 of 2'), self.printed(2, 'Page 2 of 2')])
+        result = statement_catalog([self.printed(1, 'Page 1 of 2'), self.printed(2, 'Page 2 of 2'),
+                                    self.printed(5, 'Page 1 of 2'), self.printed(6, 'Page 2 of 2')])
+        first, second = result['statements']
+        # The first printing keeps the identifier a single printing always had.
+        self.assertEqual(first['id'], once['statements'][0]['id'])
+        self.assertNotIn('printings', once['statements'][0])
+        self.assertNotIn('printing', once['statements'][0])
+        self.assertEqual((first['page_numbers'], second['page_numbers']), ([1, 2], [5, 6]))
+        self.assertEqual((first['printing'], second['printing']), (1, 2))
+        self.assertEqual(first['printings'], [first['id'], second['id']])
+        self.assertEqual(second['printings'], first['printings'])
+        self.assertEqual({(s['account_reference'], s['period_start'], s['period_end']) for s in result['statements']},
+                         {('****3539', '2020-05-12', '2020-06-11')})
+
+    def test_unread_page_counts_never_split_a_statement(self):
+        for labels in ([None, None, None], ['Page 1 of 2', None, 'Page 2 of 2'], [None, 'Page 2 of 2', 'Page 1 of 2']):
+            with self.subTest(labels=labels):
+                result = statement_catalog([self.printed(n + 1, label) for n, label in enumerate(labels)])
+                self.assertEqual(len(result['statements']), 1)
+                self.assertEqual(result['statements'][0]['page_numbers'], [1, 2, 3])
+
+    def test_another_period_restarting_its_count_is_not_a_reprint(self):
+        later = self.printed(3, 'Page 1 of 1')
+        later['rows'][1]['cells'][0]['expected_text'] = 'Jun. 12, 2020 - Jul. 11, 2020 | 30 days in Billing Cycle'
+        result = statement_catalog([self.printed(1, 'Page 1 of 1'), later])
+        self.assertEqual(len(result['statements']), 2)
+        self.assertTrue(all('printings' not in statement for statement in result['statements']))

@@ -12,6 +12,24 @@ from services.financial.pdf_candidates import PdfMappingError, _digest
 from services.financial.currency_correction import CurrencyCode, rescale_minor
 
 DETAIL_KEYS = ('holder', 'account_number', 'institution')
+# An investigator's later decision on how this statement's printed balances
+# read (account type changed after import). The sealed reading is untouched;
+# this reviewed value, when present, is the one every saved-statement path uses.
+CONVENTION_REVIEW = 'statement_convention_review'
+
+
+def effective_convention(metadata, account_type=None):
+    """How a saved statement's printed balances read: 'liability_owed' (a card
+    prints the amount owed) or 'asset_balance'. A reviewed account type wins
+    over the sealed reading; an account recorded as a card is the fallback."""
+    metadata = metadata or {}
+    review = metadata.get(CONVENTION_REVIEW)
+    if review:
+        if _digest(review) != metadata.get(CONVENTION_REVIEW + '_sha256'):
+            raise PdfMappingError('The saved account type decision cannot be verified. Open the statement history.', 409)
+        return review['balance_convention']
+    convention = ((metadata.get('statement_import_original') or {}).get('metadata') or {}).get('balance_convention')
+    return convention or ('liability_owed' if account_type == 'credit_card' else 'asset_balance' if account_type else None)
 
 
 class BalanceEdit(BaseModel):
@@ -79,8 +97,7 @@ def _load(session, case_id, source_id, lock=False):
 def _view(document, period, account):
     metadata = document.metadata_ or {}
     original = metadata['statement_import_original']
-    convention = original['metadata'].get('balance_convention') or (
-        'liability_owed' if account.account_type == 'credit_card' else 'asset_balance')
+    convention = effective_convention(metadata, account.account_type) or 'asset_balance'
     sign = -1 if convention == 'liability_owed' else 1
     pages = list(original.get('statement_page_numbers') or
                  sorted({s['page_number'] for s in original.get('sources', [])}) or original.get('page_numbers', []))

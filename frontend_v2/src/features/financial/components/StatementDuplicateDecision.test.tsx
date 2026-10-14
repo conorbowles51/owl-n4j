@@ -364,3 +364,25 @@ it("does not apply a late response after the investigator opens another statemen
     screen.queryByRole("heading", { name: "Duplicate - Ignored by system" })
   ).not.toBeInTheDocument()
 })
+
+it("names the details a re-produced card statement copy shares", () => {
+  mount({
+    decision: {
+      ...ignored,
+      matched_fields: [
+        "bank",
+        "account_reference",
+        "period_start",
+        "period_end",
+        "currency",
+        "account_type",
+        "payments_and_balances",
+      ],
+    },
+  })
+  expect(
+    screen.getByText(
+      /Matching details: Bank, Account reference as printed, Start date, End date, Currency, Account type, Payments and balances\./
+    )
+  ).toBeTruthy()
+})

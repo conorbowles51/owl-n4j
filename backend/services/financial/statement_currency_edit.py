@@ -112,10 +112,24 @@ def complete_currency_records(session, *, document, period, metadata, currency, 
     from services.financial.statement_details import saved_details
     request = StatementImportRequest.model_validate({**raw, **saved_details(document), 'currency': currency})
     positions = {row['id']: index for index, row in enumerate(row for row in raw['rows'] if not row['excluded'])}
-    sign = -1 if metadata['statement_import_original']['metadata'].get('balance_convention') == 'liability_owed' else 1
+    from services.financial.statement_details import effective_convention
+    sign = -1 if effective_convention(metadata) == 'liability_owed' else 1
     pending, drafts = [], []
-    for item in metadata.get('statement_incomplete_records', []):
+    # Saved late-posted card charges get their printed date as a candidate
+    # (late_posted_card_dates); it is kept only if the statement then proves.
+    from services.financial import late_posted_card_dates as late
+    items = metadata.get('statement_incomplete_records', [])
+    proposals = late.propose([item for item in items
+        if (item.get('correction_currency') or raw.get('currency')) == currency], period)
+    for item in items:
         if item.get('resolved_transaction_id'):
+            continue
+        if item.get('withdrawn'):
+            # Withdrawn by the investigator: outside totals, never drafted. A
+            # withdrawn correction leaves the printed row's own reading open.
+            item.pop('hold_reason', None); item.pop('hold_blockers', None); item.pop('hold_repeat_of', None)
+            if item['original'].get('kind') != 'manual_entry':
+                item['missing_fields'] = incomplete_fields(DraftImportRow.model_validate(item['fields']), request)
             continue
         fields = deepcopy(item.get('correction') or item['fields'])
         previous_currency = item.get('correction_currency') or raw.get('currency')
@@ -136,24 +150,56 @@ def complete_currency_records(session, *, document, period, metadata, currency, 
             item.update(correction=fields, correction_currency=currency)
         row = DraftImportRow.model_validate(fields)
         item['missing_fields'] = incomplete_fields(row, request)
+        item.pop('hold_reason', None); item.pop('hold_blockers', None); item.pop('hold_repeat_of', None)
         if item['missing_fields'] or row.excluded:
             continue
-        drafts.append(transaction_draft(row, item['original'], session=session, case_id=period.case_id, account_id=period.account_id, period_id=period.id,
-            currency=currency, position=positions.get(row.id, len(raw['rows']) + len(drafts)), actor=actor, balance_sign=sign, period_end=request.period_end))
-        pending.append((item, row))
-    from services.financial.saved_statement_admission import assess_saved_additions
-    admission = assess_saved_additions(session, document, period, metadata, currency) if drafts else None
+        # Drafting validates every completed row (for example its counterparty
+        # link) whether or not it is admitted in this pass.
+        draft = transaction_draft(row, item['original'], session=session, case_id=period.case_id, account_id=period.account_id, period_id=period.id,
+            currency=currency, position=positions.get(row.id, len(raw['rows']) + len(pending)), actor=actor, balance_sign=sign, period_end=request.period_end)
+        pending.append((item, row, draft))
+    # Each completed record enters Transactions once the statement is proven
+    # to reconcile with it (see held_record_admission); the rest stay held
+    # with their specific reason.
+    from services.financial.held_record_admission import plan
+    planned = {}
+
+    def run_plan():
+        planned.clear()
+        return plan(session, document, period, metadata, currency,
+            {item['id']: (item.get('correction') or item['fields']) for item, _, _ in pending}, details=planned) if pending else (set(), {}, None, {})
+    admit, held, admission, held_checks = run_plan()
+    if proposals and not set(proposals) <= admit:
+        # A proposed date that does not prove leaves its record untouched, and
+        # the other records are decided without it.
+        late.withdraw_proposals(items, proposals)
+        pending = [entry for entry in pending if entry[0]['id'] not in proposals]
+        proposals = {}
+        admit, held, admission, held_checks = run_plan()
+    for item, _, _ in pending:
+        if item['id'] in held:
+            item['hold_reason'] = held[item['id']]
+            if held_checks.get(item['id']):
+                item['hold_blockers'] = held_checks[item['id']]
+            if planned.get('repeats', {}).get(item['id']):
+                item['hold_repeat_of'] = planned['repeats'][item['id']]
+    drafts = [draft for item, _, draft in pending if item['id'] in admit]
+    pending = [(item, row) for item, row, _ in pending if item['id'] in admit]
     if admission:
         metadata['statement_import_issues'] = admission['blockers'] + [
             issue for issue in metadata.get('statement_import_issues', []) if issue.get('kind') == 'coverage']
         metadata['statement_admission'] = admission
-        if not admission['can_import']:
+        # ``rows_proven``: the admitted rows prove exactly although other
+        # printed rows still miss a date or name (see held_record_admission).
+        if not (admission['can_import'] or planned.get('rows_proven')) or not drafts:
             return admission
     transactions = record_transactions(session, review_run(document), document, drafts, retain_prior_versions=True) if drafts else []
     for (item, row), transaction in zip(pending, transactions, strict=True):
         item.update(resolved_transaction_id=str(transaction.id), correction=row.model_dump(mode='json'),
             correction_currency=currency, version=item.get('version', 0) + 1,
             corrected_by=str(actor.user_id), corrected_at=datetime.now(timezone.utc).isoformat())
+        if item['id'] in proposals:
+            item['completed_by_rule'] = late.provenance(proposals[item['id']])
     resolved = {item['id'] for item, _ in pending}
     metadata['statement_import_issues'] = [issue for issue in metadata.get('statement_import_issues', [])
         if not (issue.get('kind') == 'missing_field' and issue.get('row_id') in resolved)]

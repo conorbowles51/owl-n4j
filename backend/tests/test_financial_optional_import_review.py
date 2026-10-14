@@ -66,7 +66,18 @@ class OptionalImportReviewTests(TestCase):
             self.assertEqual(result['total'], 1)
             record = result['records'][0]
             self.assertEqual(record['fields']['amount_minor'], '')
+            self.assertEqual((record['awaiting_reconciliation'], record['statement_blockers']), (False, []))
+            # Each record names its statement period (the saved period's dates).
+            from postgres.models.financial import FinancialStatementPeriod
+            period = db.scalar(select(FinancialStatementPeriod).where(
+                FinancialStatementPeriod.source_document_id == UUID(record['source_document_id'])))
+            self.assertEqual((record['period_start'], record['period_end']),
+                (period.period_start.isoformat(), period.period_end.isoformat()))
             self.assertEqual(imported_records(db, case_id=uuid4())['total'], 0)
+            # A file card lists only its own records.
+            self.assertEqual(imported_records(db, case_id=self.f.case.id,
+                evidence_file_ids=[UUID(record['evidence_file_id']), uuid4()])['total'], 1)
+            self.assertEqual(imported_records(db, case_id=self.f.case.id, evidence_file_ids=[uuid4()])['total'], 0)
             self.assertTrue(all(t.amount_minor > 0 for t in db.scalars(select(FinancialTransaction))))
         corrected = {**record['fields'], 'amount_minor':'12500000', 'reason':''}
         request = CompleteImportedRecord(row=corrected, currency='EUR', version=0)
@@ -198,6 +209,11 @@ class OptionalImportReviewTests(TestCase):
             item.review_request = initial_request(proposal)
             item.summary = {key:value for key,value in item.summary.items() if key != 'can_import'}
             db.commit()
+            # A legacy summary is held by list reads until the write side
+            # (worker sweep or backfill) reassesses it from its reading.
+            held = service.batch_status(db, case_id=f.case.id, batch_id=batch)
+            self.assertEqual((held['readiness_pending'], held['available_statements']), (1, 0))
+            service.refresh_batch_readiness(db, case_id=f.case.id, batch_id=batch)
             status = service.batch_status(db, case_id=f.case.id, batch_id=batch)
             self.assertEqual(status['available_statements'], 0)
             with self.assertRaisesRegex(PdfMappingError, 'no new statement records'):

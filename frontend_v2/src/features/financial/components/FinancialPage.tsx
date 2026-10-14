@@ -38,10 +38,13 @@ import { LedgerPostingGraph } from "./LedgerPostingGraph"
 import { LedgerTransfersWorkbench } from "./LedgerTransfersWorkbench"
 import { LedgerTracingWorkbench } from "./LedgerTracingWorkbench"
 import { InvestigatorPeople } from "./InvestigatorPeople"
+import { AccountTypeReview } from "./AccountTypeReview"
 import { InvestigatorOverview } from "./InvestigatorOverview"
 import { InvestigatorFollowMoney } from "./InvestigatorFollowMoney"
 import { InvestigatorTrends } from "./InvestigatorTrends"
 import { StatementRegister } from "./StatementRegister"
+import { ReviewQueuePanel } from "./ReviewQueuePanel"
+import { CaseReviewStatus } from "./CaseReviewStatus"
 import {
   useCallback,
   useEffect,
@@ -141,13 +144,15 @@ function FinancialPageContent() {
     store.setMainView(view)
   }
   const [params, setParams] = useSearchParams()
-  type StatementSection = "files" | "accounts" | "batches" | "remove"
+  type StatementSection = "queue" | "files" | "accounts" | "batches" | "remove"
   const [statementSection, setStatementSection] = useState<{
     caseId: string | undefined
     section: StatementSection
-  }>({ caseId, section: "files" })
+  }>({ caseId, section: "queue" }) // The review queue opens first: statement work is done there.
   const section =
-    params.get("files") === "1"
+    params.get("queue") === "1"
+      ? "queue"
+      : params.get("files") === "1"
       ? "files"
       : params.get("accounts") === "1"
         ? "accounts"
@@ -155,7 +160,7 @@ function FinancialPageContent() {
         ? "batches"
         : statementSection.caseId === caseId
           ? statementSection.section
-          : "files"
+          : "queue"
   const reviewingAccounts = section === "accounts"
   const statementScroll = useRef<HTMLDivElement>(null)
   const accountsDestination = useRef<HTMLDivElement>(null)
@@ -210,9 +215,24 @@ function FinancialPageContent() {
       const updated = new URLSearchParams(current)
       for (const key of [
         "batch", "batchItem", "batchRow", "batchCheck", "files", "accounts", "savedBatch", "savedOperation",
-        "reviewFile", "returnBatch", "returnBatchCheck",
+        "reviewFile", "returnBatch", "returnBatchCheck", "queue", "queueItem", "queueList", "queueFiles",
       ])
         updated.delete(key)
+      if (next === "queue") updated.set("queue", "1")
+      return updated
+    })
+  }
+  const openBatchFromQueue = (batchId: string, check?: string) => {
+    changingStatementRoute.current = true
+    setStatementSection({ caseId, section: "batches" })
+    setParams((current) => {
+      const updated = new URLSearchParams(current)
+      for (const key of ["queue", "queueItem", "queueList", "queueFiles", "files", "batchItem", "batchRow"])
+        updated.delete(key)
+      updated.set("view", "statements")
+      updated.set("batch", batchId)
+      if (check) updated.set("batchCheck", check)
+      else updated.delete("batchCheck")
       return updated
     })
   }
@@ -812,11 +832,27 @@ function FinancialPageContent() {
                   : "Open the original statements and review their accounts and extracted payments."}
               </p>
             </header>
+            {caseId && section !== "queue" && (
+              <ErrorBoundary level="section">
+                <CaseReviewStatus
+                  caseId={caseId}
+                  active={store.mainView === "statements"}
+                  onOpen={() => showStatementSection("queue")}
+                />
+              </ErrorBoundary>
+            )}
             <div
               className="sticky top-0 z-10 flex flex-wrap items-center gap-2 border-b bg-background py-2"
               role="group"
               aria-label="Statement workspace"
             >
+              <Button
+                variant={section === "queue" ? "primary" : "outline"}
+                aria-pressed={section === "queue"}
+                onClick={() => showStatementSection("queue")}
+              >
+                Review queue
+              </Button>
               <Button
                 variant={section === "files" ? "primary" : "outline"}
                 aria-pressed={section === "files"}
@@ -877,6 +913,14 @@ function FinancialPageContent() {
                     were added.
                   </p>
                 )}
+              {caseId && reviewingAccounts && !savedBatchAccounts && (
+                <ErrorBoundary level="section">
+                  <AccountTypeReview
+                    caseId={caseId}
+                    active={store.mainView === "statements"}
+                  />
+                </ErrorBoundary>
+              )}
               {caseId && (
                 <StatementRegisterChecks
                   caseId={caseId}
@@ -912,7 +956,12 @@ function FinancialPageContent() {
                 </ErrorBoundary>
               </details>
             </div>
-            <div hidden={reviewingAccounts}>
+            {section === "queue" && caseId && (
+              <ErrorBoundary level="section">
+                <ReviewQueuePanel caseId={caseId} onOpenBatch={openBatchFromQueue} />
+              </ErrorBoundary>
+            )}
+            <div hidden={reviewingAccounts || section === "queue"}>
               {section === "files" && returnBatch && workspaceReview?.open && (
                 <Button variant="outline" onClick={returnToBatch}>
                   Back to processing batch
@@ -920,7 +969,7 @@ function FinancialPageContent() {
               )}
               {caseId && (
                 <StatementRegister
-                  active={store.mainView === "statements" && !reviewingAccounts}
+                  active={store.mainView === "statements" && !reviewingAccounts && section !== "queue"}
                   mode={
                     section === "batches"
                       ? "batches"

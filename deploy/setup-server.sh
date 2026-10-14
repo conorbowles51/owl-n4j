@@ -70,10 +70,12 @@ Group=${DEPLOY_GROUP}
 WorkingDirectory=${PROJECT_DIR}/backend
 Environment="PATH=${VENV_DIR}/bin:/usr/local/bin:/usr/bin:/bin"
 EnvironmentFile=${ENV_FILE}
-ExecStart=/bin/bash -lc 'exec ${VENV_DIR}/bin/uvicorn main:app --host 0.0.0.0 --port \${API_PORT:-8002} --workers 2'
+ExecStart=/bin/bash -lc 'exec ${VENV_DIR}/bin/uvicorn main:app --host 0.0.0.0 --port \${API_PORT:-8002} --workers 2 --timeout-graceful-shutdown 20'
 Restart=on-failure
 RestartSec=5
-TimeoutStopSec=14500
+# The app ends itself within 45s of SIGTERM (see backend/services/process_shutdown.py);
+# systemd's SIGKILL is the backstop. Durable work resumes on the next start.
+TimeoutStopSec=90
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=owl-backend-v2

@@ -6,6 +6,7 @@ Summary amounts are controls, never additional payments. All source rows survive
 import re
 import unicodedata
 from datetime import date
+from functools import lru_cache
 
 from services.financial.pdf_candidates import _digest
 from services.financial.statement_import_proposal import exact_amount
@@ -15,20 +16,35 @@ MONTHS = {name: i for i, name in enumerate(
     ('ENE', 'FEB', 'MAR', 'ABR', 'MAY', 'JUN', 'JUL', 'AGO', 'SEP', 'OCT', 'NOV', 'DIC'), 1)}
 
 
+@lru_cache(maxsize=65536)
 def norm(text):
-    return ' '.join(''.join(c for c in unicodedata.normalize('NFKD', text.upper())
+    # Pure function of the text, called for every cell by every Mexican
+    # layout detector on each reading. ASCII text has no compatibility forms
+    # or combining marks, so its result is the upper-cased, space-collapsed
+    # text; other text takes the full decomposition path.
+    upper = text.upper()
+    if upper.isascii():
+        return ' '.join(upper.split())
+    return ' '.join(''.join(c for c in unicodedata.normalize('NFKD', upper)
                            if not unicodedata.combining(c)).split())
+
+
+# Tesseract's English model has no accented ó. On scanned pages it reads the
+# ó of Operación, Liquidación and Depósitos as one or two other glyphs (é,
+# d, 6, do). Only that position is tolerated: every other letter, the
+# words Saldo de, Inicial and Final, and the Abonos (+) suffix must be read
+# exactly, so one balance label can never be taken for another.
+_ACCENTED_CONTROLS = (
+    (re.compile(r'SALDO DE OPERACI[^\sN]{1,2}N INICIAL'), 'SALDO DE OPERACION INICIAL'),
+    (re.compile(r'SALDO DE OPERACI[^\sN]{1,2}N FINAL'), 'SALDO DE OPERACION FINAL'),
+    (re.compile(r'SALDO DE LIQUIDACI[^\sN]{1,2}N INICIAL'), 'SALDO DE LIQUIDACION INICIAL'),
+    (re.compile(r'DEP[^\sS]{1,2}SITOS / ABONOS \(\+\)'), 'DEPOSITOS / ABONOS (+)'))
 
 
 def control_norm(value):
     # These are label readings, never edits to a printed date or amount.
-    # Tesseract's English model can read the accented ó as é or d.
     value = norm(value).strip(" '_~|\"")
-    return {'SALDO DE OPERACIEN INICIAL': 'SALDO DE OPERACION INICIAL',
-            'SALDO DE OPERACIEN FINAL': 'SALDO DE OPERACION FINAL',
-            'SALDO DE LIQUIDACIEN INICIAL': 'SALDO DE LIQUIDACION INICIAL',
-            'DEPDSITOS / ABONOS (+)': 'DEPOSITOS / ABONOS (+)',
-            'DEPESITOS / ABONOS (+)': 'DEPOSITOS / ABONOS (+)'}.get(value, value)
+    return next((label for pattern, label in _ACCENTED_CONTROLS if pattern.fullmatch(value)), value)
 
 
 def text(row):
@@ -120,24 +136,34 @@ def bbva_catalog(sources):
         items = [s for s in sources if s['page_number'] in matched]
         names = {m[1].strip() for s in items for r in s['rows']
                  if (m := re.fullmatch(r'Nombre del Receptor\s*:\s*(.+)', text(r), re.I))}
+        addressed = set()
+        # A company name in the address block above Información Financiera
+        # is explicit holder evidence (older statements lack the fiscal
+        # recipient footer); address lines and bank legal footers must not
+        # be used as names.
+        for page in matched:
+            cells = [cell for source in items if source['page_number'] == page
+                for row in source['rows'] for cell in row['cells']]
+            cutoffs = [box(cell)[1] for cell in cells if norm(cell['expected_text']) == 'INFORMACION FINANCIERA' and box(cell)]
+            if not cutoffs:
+                continue
+            for cell in cells:
+                rect = box(cell)
+                size = (cell.get('locator') or {}).get('page_size')
+                name = cell['expected_text'].strip()
+                if (rect and size and rect[0] < size[0] / 2 and rect[1] < min(cutoffs)
+                        and re.fullmatch(r'.{3,180}\s(?:S\.?\s*A\.?\s*(?:P\.?\s*I\.?)?|S\.?\s*DE\s*R\.?\s*L\.?)\s*DE\s*C\.?\s*V\.?', norm(name))):
+                    addressed.add(name)
         if not names:
-            # Older statements lack the fiscal recipient footer. A company
-            # name in the address block above Información Financiera is still
-            # explicit holder evidence; address lines and bank legal footers
-            # must not be used as names.
-            for page in matched:
-                cells = [cell for source in items if source['page_number'] == page
-                    for row in source['rows'] for cell in row['cells']]
-                cutoffs = [box(cell)[1] for cell in cells if norm(cell['expected_text']) == 'INFORMACION FINANCIERA' and box(cell)]
-                if not cutoffs:
-                    continue
-                for cell in cells:
-                    rect = box(cell)
-                    size = (cell.get('locator') or {}).get('page_size')
-                    name = cell['expected_text'].strip()
-                    if (rect and size and rect[0] < size[0] / 2 and rect[1] < min(cutoffs)
-                            and re.fullmatch(r'.{3,180}\s(?:S\.?\s*A\.?\s*(?:P\.?\s*I\.?)?|S\.?\s*DE\s*R\.?\s*L\.?)\s*DE\s*C\.?\s*V\.?', norm(name))):
-                        names.add(name)
+            names = addressed
+        elif len(names) == 1 and len(addressed) == 1:
+            # The fiscal footer prints the company without its legal form (the tax
+            # receipt's recipient name); the address block prints the same name
+            # with it. The holder is the name as printed with its legal form.
+            receptor, full = norm(next(iter(names))), next(iter(addressed))
+            rest = norm(full)[len(receptor):] if norm(full).startswith(receptor + ' ') else ''
+            if rest and re.fullmatch(r'\s*,?\s*(?:S\.?\s*A\.?\s*(?:P\.?\s*I\.?)?|S\.?\s*DE\s*R\.?\s*L\.?)\s*DE\s*C\.?\s*V\.?', rest):
+                names = {full}
         identity = dict(layout_id=LAYOUT, institution='BBVA Mexico', account_reference=anchor['account'],
                         period_start=start, period_end=end)
         identifier = _digest(identity)

@@ -61,7 +61,8 @@ def account_history(session, *, case_id, account_id=None, account_ids=None, acco
         quiet = verified and admission.get('no_activity_confirmed') and not admitted
         # Different currencies and liability conventions are separate series,
         # even when the bank prints them on one account or inside one PDF.
-        convention = (metadata.get('statement_import_original') or {}).get('metadata', {}).get('balance_convention')
+        from services.financial.statement_details import effective_convention
+        convention = effective_convention(metadata)
         liability = convention == 'liability_owed' or account.account_type == 'credit_card'
         root = canonical[account.id]
         retained = accounts[root]

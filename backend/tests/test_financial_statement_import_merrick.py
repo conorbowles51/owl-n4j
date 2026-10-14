@@ -489,6 +489,28 @@ class MerrickCouponHolderTests(unittest.TestCase):
                 self.assertNotIn('holder_sources', result)
 
 
+    def test_an_initial_set_above_the_name_with_touching_boxes_is_part_of_the_name(self):
+        data = self.example(True)
+        extra = {r['row_index']: r for r in data['rows'] if r['row_index'] >= 100}
+        # Image OCR: 'EXAMPLE' and 'HOLDER' on the name line, the initial raised and its box
+        # overlapping the surname's by one point.
+        extra[104]['cells'][0].update(expected_text='EXAMPLE', locator=rectangle(117, x=370, width=33, height=3))
+        data['rows'].append(dict(row_index=106, cells=[dict(column_index=0, expected_text='A',
+                                                            locator=rectangle(113, x=406, width=5, height=3))]))
+        result = merrick_statement(data)
+        self.assertEqual(result['holder'], 'EXAMPLE A HOLDER')
+        self.assertEqual(len(result['holder_sources']), 3)
+        for text in ('HOLDER.', 'HOLDER'):
+            with self.subTest(surname=text):
+                variant = deepcopy(data)
+                surname = next(r for r in variant['rows'] if r['row_index'] == 105)['cells'][0]
+                surname['expected_text'] = text
+                if text == 'HOLDER':
+                    # Boxes overlapping by more than an eighth of the usual gap are two readings of one place.
+                    surname['locator'] = rectangle(117, x=407, width=31, height=3)
+                self.assertEqual(merrick_statement(variant)['holder'], '')
+
+
 class MerrickChargeControlTests(unittest.TestCase):
     def example(self):
         data = measured_statement()
@@ -563,3 +585,63 @@ class MerrickChargeControlTests(unittest.TestCase):
         self.assertEqual(checks['fee_total']['status'], 'matches')
         self.assertEqual(checks['fee_total']['expected_minor'], '-200')
         self.assertEqual(checks['debit_total']['status'], 'unavailable')
+
+
+class OriginalLayerHolderTests(unittest.TestCase):
+    """The image reading lost the coupon holder; the replaced text layer printed it on its labelled line."""
+
+    def without_holder(self):
+        data = statement()
+        data['rows'][3]['cells'] = data['rows'][3]['cells'][:1]
+        self.assertEqual(merrick_statement(data)['holder'], '')
+        return data
+
+    def test_the_layers_labelled_holder_is_used_for_the_same_account(self):
+        data = self.without_holder()
+        data['original_layer_holder'] = dict(holder='EXAMPLE HOLDER', account='1111222233334444')
+        found = merrick_statement(data)
+        self.assertEqual((found['holder'], found['holder_basis']), ('EXAMPLE HOLDER', 'original_text_layer_labelled_line'))
+        # The statement's identity is unchanged by the carried fact.
+        self.assertEqual(found['id'], merrick_statement(self.without_holder())['id'])
+
+    def test_another_account_an_unread_account_or_a_damaged_name_is_never_used(self):
+        for carried in (dict(holder='EXAMPLE HOLDER', account='1111222233335555'),
+                        dict(holder='EXAMPLE HOLDER', account=''),
+                        dict(holder='example holder', account='1111222233334444'),
+                        dict(holder='', account='1111222233334444')):
+            with self.subTest(carried=carried):
+                data = self.without_holder()
+                data['original_layer_holder'] = carried
+                self.assertEqual(merrick_statement(data)['holder'], '')
+        data = self.without_holder()
+        data['rows'][1]['cells'][0]['expected_text'] = 'Account Number: unreadable'
+        data['original_layer_holder'] = dict(holder='EXAMPLE HOLDER', account='1111222233334444')
+        self.assertEqual(merrick_statement(data)['holder'], '')
+
+    def test_a_holder_the_image_reading_has_is_kept_and_the_switch_turns_the_carry_off(self):
+        from services.financial import statement_import_merrick as reader
+        data = statement()
+        data['original_layer_holder'] = dict(holder='OTHER NAME', account='1111222233334444')
+        self.assertEqual(merrick_statement(data)['holder'], 'EXAMPLE HOLDER')
+        data = self.without_holder()
+        data['original_layer_holder'] = dict(holder='EXAMPLE HOLDER', account='1111222233334444')
+        try:
+            reader.CARRY_LAYER_HOLDER = False
+            self.assertEqual(merrick_statement(data)['holder'], '')
+        finally:
+            reader.CARRY_LAYER_HOLDER = True
+
+    def test_the_stored_assessment_names_the_labelled_holder_and_the_source_exposes_it(self):
+        from services.financial.candidate_sources import original_layer_holder
+        from services.financial.statement_reading_quality import _assess
+        tables = [dict(table_source='text_alignment', geometry_source='cell_rectangles', table=dict(
+            page=1, values=[dict(row=r['row_index'], column=c['column_index'], text=c['expected_text'], locator=c['locator'])
+                            for r in statement()['rows'] for c in r['cells']]))]
+        quality = _assess(tables)[0]
+        self.assertEqual(quality['labelled_holder'], 'EXAMPLE HOLDER')
+        locations = [dict(kind='page', page_number=1, ocr_refinements=[dict(field='statement_page_reading',
+            decision='image_selected', original_quality=quality)])]
+        self.assertEqual(original_layer_holder(locations, 1), dict(holder='EXAMPLE HOLDER', account=quality['identity'][1]))
+        self.assertEqual(original_layer_holder(locations, 2), {})
+        locations[0]['ocr_refinements'][0]['decision'] = 'native_retained'
+        self.assertEqual(original_layer_holder(locations, 1), {})

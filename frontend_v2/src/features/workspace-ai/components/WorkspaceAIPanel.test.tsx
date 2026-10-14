@@ -24,8 +24,8 @@ vi.mock("@/lib/protected-file", () => ({
   useProtectedObjectUrl: () => ({ objectUrl: "/mock-source.pdf", loading: false, error: null }),
   openProtectedFile: vi.fn(),
 }))
-vi.mock("@/components/ui/evidence-pdf-page", () => ({
-  EvidencePdfPage: ({ evidenceId, page }: { evidenceId: string; page: number }) =>
+vi.mock("@/components/ui/evidence-pdf-document", () => ({
+  EvidencePdfDocument: ({ evidenceId, page }: { evidenceId: string; page: number }) =>
     <div data-testid="citation-pdf-page">{evidenceId}:page={page}</div>,
 }))
 

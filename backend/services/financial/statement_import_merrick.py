@@ -60,9 +60,15 @@ def _coupon_holder(source):
                  if city_box.x0 - tolerance <= box.x0 and box.x1 <= city_box.x1 + tolerance
                  and 0 <= street.y0 - box.y1 <= city_box.page_height // 60]
         names.sort(key=lambda item: item[2].x0)
+        # Image OCR can set a middle initial a little above the name and
+        # report neighbouring words with boxes that touch or overlap slightly
+        # (by up to an eighth of the usual gap). A word ending in a point
+        # after three or more letters is a speck read as part of the name,
+        # not a printed initial or suffix: the name stays unread.
         if (not names or len(names) > 4 or abs(names[0][2].x0 - street.x0) > tolerance
-                or any(not re.fullmatch(r"[A-Z][A-Z .'-]*", cell['expected_text'].strip()) for _, cell, _ in names)
-                or any(not 0 <= right[2].x0 - left[2].x1 <= tolerance
+                or any(not re.fullmatch(r"[A-Z][A-Z .'-]*", cell['expected_text'].strip())
+                       or re.search(r"[A-Z]{3,}\.$", cell['expected_text'].strip()) for _, cell, _ in names)
+                or any(not -(tolerance // 8) <= right[2].x0 - left[2].x1 <= tolerance
                        for left, right in zip(names, names[1:]))):
             continue
         name = ' '.join(cell['expected_text'].strip() for _, cell, _ in names)
@@ -71,6 +77,13 @@ def _coupon_holder(source):
         candidates.append((name, [dict(page_number=source['page_number'], table_index=source['table_index'],
                                       row_index=row['row_index'], source_cell=cell) for row, cell, _ in names]))
     return candidates[0] if len(candidates) == 1 else ('', [])
+
+
+# When the engine replaced a damaged Merrick text layer by the page image and
+# the image reading lost the holder, use the holder the layer printed on its
+# labelled ``Send Payments to:`` line, only for the same account number.
+# Reverse in one place: False.
+CARRY_LAYER_HOLDER = True
 
 
 def merrick_statement(source):
@@ -150,6 +163,13 @@ def merrick_statement(source):
         coupon_holder, holder_sources = _coupon_holder(source)
         if coupon_holder:
             identity.update(holder=coupon_holder, holder_sources=holder_sources)
+    carried = source.get('original_layer_holder') or {}
+    if (not identity['holder'] and CARRY_LAYER_HOLDER and carried.get('holder') and identity['account_reference']
+            and re.sub(r'\s+', '', carried.get('account') or '') == re.sub(r'\s+', '', identity['account_reference'])
+            and re.fullmatch(r'[A-Z][A-Z .\'-]{2,127}', carried['holder'])):
+        # The image reading lost the holder; the page's own embedded text
+        # layer printed it on its labelled line, for the same account number.
+        identity.update(holder=carried['holder'], holder_basis='original_text_layer_labelled_line')
     return dict(**identity, date_conflict=date_conflict,
                 sources=[dict(page_number=source['page_number'],table_index=source['table_index'],source_revision=source['source_revision'])],page_numbers=[source['page_number']])
 
@@ -365,6 +385,8 @@ def propose_merrick_table(source, currency, statement):
                 fields.update(amount_minor=str(abs(value)), amount_column=str(cells[amount_index]['column_index']))
                 if value > 0 and re.search(r'\b(?:MOBILE\s+)?PAYMENT\s*-\s*THANK\s+YOU\b', fields['description'], re.IGNORECASE):
                     item['issues'].append('This row describes a card payment, but no minus sign was read. Check its date and original amount in the PDF, then enter the amount under Credit or Debit.')
+                    # The period's printed controls may fix it (card_summary).
+                    fields['payment_sign_unread'] = True
                 else:
                     fields['direction'] = 'credit' if value < 0 else 'debit'
                 # A clearly labelled, positioned zero-interest line records

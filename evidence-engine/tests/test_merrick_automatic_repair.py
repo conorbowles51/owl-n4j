@@ -57,7 +57,7 @@ def test_extraction_automatically_tries_crop_when_page_reread_loses_payment(tmp_
     reader = pdf._load_table_reader()
     monkeypatch.setattr(pdf, '_ocr_detection_reason', lambda *args: None)
     monkeypatch.setattr(pdf, '_extract_native_tables', lambda *args: (reader.chunks_of(native), native))
-    monkeypatch.setattr(pdf, '_ocr_page', lambda *args: ('Synthetic image reading',90,300,[],[]))
+    monkeypatch.setattr(pdf, '_ocr_page', lambda *args, **kwargs: ('Synthetic image reading',90,300,[],[]))
     monkeypatch.setattr(reader, 'read_positioned_ocr_words', lambda *args, **kwargs: missing)
     result = pdf._extract_pdf_sync(str(path))
     records = result.metadata['page_spans'][0]['ocr_refinements']

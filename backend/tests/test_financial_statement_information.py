@@ -160,7 +160,10 @@ class StatementInformationTests(TestCase):
         self.assertEqual(sum(not r['excluded'] for r in proposal['rows']),1)
         closing=next(r for r in proposal['rows'] if r['fields'].get('description')=='Closing Balance')
         self.assertEqual(closing['fields']['balance'],'9000')
-        self.assertEqual(closing['fields']['date'],'')
+        # A measured look-alike in the Ending Balance date is read only because it is then
+        # exactly the printed period end; the printed characters stay in the source.
+        self.assertEqual(closing['fields']['date'],'2020-06-30')
+        self.assertEqual(closing['fields']['date_reading'],'printed_date_marks_ignored_period_end')
         self.assertEqual(closing['source_cells'][0]['expected_text'],'O6/30')
         self.assertEqual(closing['issues'],[])
         self.assertFalse(any(r.get('continuation_sources') for r in proposal['rows']))

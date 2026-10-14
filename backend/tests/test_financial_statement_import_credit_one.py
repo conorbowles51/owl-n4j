@@ -1,6 +1,8 @@
 """Generated card fixtures only; no client documents or extracted client data."""
+import os
 import unittest
 from copy import deepcopy
+from unittest.mock import patch
 
 from services.financial.statement_import_catalog import statement_catalog
 from services.financial.statement_import_credit_one import propose_credit_one_table
@@ -141,6 +143,8 @@ class CreditOneReaderTests(unittest.TestCase):
         self.assertNotIn('balance', result['rows'][4]['fields'])
         self.assertTrue(result['rows'][4]['issues'])
 
+    # Library reader behaviour: the general engine is switched off for this test (it would read these pages).
+    @patch.dict(os.environ, {'LOUPE_FINANCIAL_GENERIC_READER': '0'})
     def test_conflicting_or_unreadable_headings_do_not_borrow_a_neighbours_identity(self):
         for field, text in [(1, 'Account Number 4111 1111 1111 11O1'),
                             (2, 'December 16, 2023 to January 99, 2024')]:

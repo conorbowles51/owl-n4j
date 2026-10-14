@@ -15,7 +15,8 @@ def capture_pdf_processing_manifest(*, settings, ocr_used, reading_mode='automat
         except PackageNotFoundError: packages[name] = None
     sources = {}
     for name in ('pdf_extraction.py', 'ocr_geometry.py', 'financial_date_ocr.py',
-                 'financial_transaction_date_ocr.py', 'financial_amount_ocr.py', 'financial_bbva_ocr.py', 'pdf_processing_manifest.py'):
+                 'financial_transaction_date_ocr.py', 'financial_amount_ocr.py', 'financial_bbva_ocr.py', 'pdf_processing_manifest.py',
+                 'scan_preprocessing.py'):
         try: sources[name] = hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest()
         except OSError: sources[name] = None
     tesseract = dict(status='not_used', version=None)
@@ -32,7 +33,7 @@ def capture_pdf_processing_manifest(*, settings, ocr_used, reading_mode='automat
     content = dict(schema_version='loupe.pdf_processing_manifest/1',
         recorded_at=datetime.now(timezone.utc).isoformat(), python_version=platform.python_version(),
         packages=packages, source_files_sha256=sources, tesseract=tesseract,
-        settings={**{name:getattr(settings,name) for name in ('pdf_ocr_dpi','pdf_ocr_max_pixels','pdf_ocr_page_timeout_seconds','pdf_ocr_max_concurrency','tesseract_lang','max_pdf_pages')}, 'pdf_reading_mode':reading_mode},
+        settings={**{name:getattr(settings,name) for name in ('pdf_ocr_dpi','pdf_ocr_max_pixels','pdf_ocr_page_timeout_seconds','pdf_ocr_max_concurrency','tesseract_lang','max_pdf_pages')}, 'pdf_scan_preprocessing':getattr(settings,'pdf_scan_preprocessing',False), 'pdf_reading_mode':reading_mode},
         limitation='Observed local runtime/package versions and on-disk source fingerprints at preparation completion. Not proof of loaded-code identity or immutable executables. Tesseract language-data and dependency binary hashes are not captured. No credentials, environment dump or source file paths are included.')
     raw=json.dumps(content,sort_keys=True,separators=(',',':'),ensure_ascii=False,allow_nan=False).encode()
     return dict(content=content,sha256=hashlib.sha256(raw).hexdigest())

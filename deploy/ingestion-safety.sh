@@ -14,15 +14,21 @@ configure_ingestion_shutdown() {
     if [ "$(id -u)" -ne 0 ]; then
         elevate=(sudo)
     fi
-    # Uvicorn awaits requests and the application's shielded financial units.
-    # Match the engine worker grace window rather than letting systemd's host
-    # default terminate them first. This changes no running service or job.
+    # Bounded stop. Uvicorn cancels request tasks still running 20s after
+    # SIGTERM (it otherwise waits forever), the lifespan abandons background
+    # units after 10s more, and the app's watchdog ends the process 45s after
+    # the first signal. Abandoned financial units are durable (leased batches,
+    # pending recovery items, revisioned graph sweeps) and resume on the next
+    # start; deploys only restart after the ingestion gate reports idle.
+    # systemd's SIGKILL at 90s is the backstop. Reloading this changes no
+    # running service or job; it applies to the next stop and start.
     # Service runners need not provide /dev/stdin. A regular temporary source
     # also survives privilege elevation without reopening a process fd.
     source_file="$(mktemp)" || return 1
     if ! cat > "${source_file}" <<'UNIT'
 [Service]
-TimeoutStopSec=14500
+TimeoutStopSec=90
+Environment=UVICORN_TIMEOUT_GRACEFUL_SHUTDOWN=20
 UNIT
     then
         rm -f -- "${source_file}"

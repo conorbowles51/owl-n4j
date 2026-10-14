@@ -110,7 +110,7 @@ def cached_disposition(context, file, statement_id, *, reading_revision=None):
         valid = valid and bool(target) and not target_metadata.get('financial_file_visibility', {}).get('removed')
         valid = valid and not target_metadata.get('financial_import_removal')
         target_decision = target_metadata.get('financial_duplicate_dispositions', {}).get(retained.get('statement_id') or '')
-        if target_decision and target_decision.get('status') == 'ignored':
+        if target_decision and target_decision.get('status') == 'ignored' and not previous.get('printed_copy'):
             valid = False
         if retained.get('source_document_id'):
             source = context['sources'].get(retained['source_document_id'])

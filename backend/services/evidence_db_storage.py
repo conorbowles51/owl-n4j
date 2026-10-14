@@ -560,6 +560,9 @@ class EvidenceDBStorage:
                 tags=_clean_string_list(fd.get("tags")),
                 metadata_=fd.get("metadata") or {},
             )
+            # A PDF waits for the statement check (financial auto-read); a marker only.
+            from services.financial.auto_read import mark_registered
+            mark_registered(ef)
             db.add(ef)
             created.append(ef)
 

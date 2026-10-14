@@ -20,18 +20,22 @@ class CompleteImportedRecord(BaseModel):
     currency: str = Field(pattern=r'^[A-Z]{3}$')
 
 
-def imported_records(session, *, case_id, account_id=None, start_date=None, end_date=None, offset=0, limit=50, account_ids=None, account_holders=None, source_document_id=None):
+def imported_records(session, *, case_id, account_id=None, start_date=None, end_date=None, offset=0, limit=50, account_ids=None, account_holders=None, source_document_id=None, evidence_file_ids=None):
     # Select only the small retained-record arrays, never each full PDF proposal.
     query = select(FinancialSourceDocument.id, FinancialSourceDocument.evidence_file_id,
         FinancialSourceDocument.metadata_['statement_account_id'].as_string(),
         FinancialSourceDocument.metadata_['statement_incomplete_records'],
         func.coalesce(FinancialSourceDocument.metadata_['statement_details_review']['currency'].as_string(),
             FinancialSourceDocument.metadata_['statement_import_request']['currency'].as_string()),
-        EvidenceFile.original_filename).join(EvidenceFile, EvidenceFile.id == FinancialSourceDocument.evidence_file_id).where(
+        EvidenceFile.original_filename, FinancialSourceDocument.metadata_['statement_admission']['blockers'],
+        FinancialSourceDocument.metadata_['statement_import_request']['period_start'].as_string(),
+        FinancialSourceDocument.metadata_['statement_import_request']['period_end'].as_string()).join(EvidenceFile, EvidenceFile.id == FinancialSourceDocument.evidence_file_id).where(
             FinancialSourceDocument.case_id == case_id, EvidenceFile.case_id == case_id,
             FinancialSourceDocument.status == 'admitted').order_by(FinancialSourceDocument.id)
     if source_document_id:
         query = query.where(FinancialSourceDocument.id == source_document_id)
+    if evidence_file_ids:
+        query = query.where(FinancialSourceDocument.evidence_file_id.in_(evidence_file_ids))
     if account_id:
         query = query.where(FinancialSourceDocument.metadata_['statement_account_id'].as_string().in_([str(id) for id in expand_account_ids(session, case_id, [account_id])]))
     if account_ids:
@@ -41,30 +45,159 @@ def imported_records(session, *, case_id, account_id=None, start_date=None, end_
         from services.financial.account_selection import holder_account_ids
         ids = [str(id) for id in holder_account_ids(session, case_id, account_holders)]
         query = query.where(FinancialSourceDocument.metadata_['statement_account_id'].as_string().in_(ids))
-    records = []
-    for source_id, file_id, account, items, currency, filename in session.execute(query):
+    records, withdrawn, effects = [], [], {}
+    rows = session.execute(query).all()
+    # Each record names its statement period: the saved period's dates, else
+    # the dates on the saved review, else none ("period dates not read").
+    from postgres.models.financial import FinancialStatementPeriod
+    saved_periods = {source: (start, end) for source, start, end in session.execute(select(
+        FinancialStatementPeriod.source_document_id, FinancialStatementPeriod.period_start,
+        FinancialStatementPeriod.period_end).where(FinancialStatementPeriod.case_id == case_id,
+        FinancialStatementPeriod.source_document_id.in_([row[0] for row in rows])))} if rows else {}
+    for source_id, file_id, account, items, currency, filename, blockers, request_start, request_end in rows:
+        saved_start, saved_end = saved_periods.get(source_id, (None, None))
+        period_start = saved_start.isoformat() if saved_start else (request_start or None)
+        period_end = saved_end.isoformat() if saved_end else (request_end or None)
+        blockers = [issue.get('message') for issue in blockers or [] if isinstance(issue, dict) and issue.get('message')][:3]
+        plan = held_record_plan(session, source_id, items)
+        admit, held = plan['admit'], plan['held']
+        if plan['effects']:
+            effects[str(source_id)] = dict(source_document_id=str(source_id), evidence_file_id=str(file_id),
+                filename=filename, currency=currency or '', period_start=period_start, period_end=period_end,
+                **{key: value for key, value in plan['effects'].items() if key != 'without_each'})
         for item in items or []:
             if item.get('resolved_transaction_id'):
                 continue
-            fields = item.get('correction') or item['fields']
+            from services.financial.record_withdrawal import entered_by_investigator, is_open
+            manual = item['original'].get('kind') == 'manual_entry'
+            # A withdrawn correction leaves the printed row on its own reading.
+            fields = item['fields'] if item.get('withdrawn') else item.get('correction') or item['fields']
             from services.financial.import_issues import calendar_date
             day = calendar_date(fields.get('date'))
             # Keep undated records visible and identify them, even with a range.
             if day and ((start_date and day < start_date) or (end_date and day > end_date)):
                 continue
             original = item.get('original', {})
-            records.append(dict(id=item['id'], source_document_id=str(source_id), evidence_file_id=str(file_id),
+            target = records if is_open(item) else withdrawn
+            target.append(dict(id=item['id'], source_document_id=str(source_id), evidence_file_id=str(file_id),
                 account_id=account, filename=filename, currency=item.get('correction_currency') or currency or '', fields=fields,
+                period_start=period_start, period_end=period_end,
                 page_number=original.get('page_number'), locator=(original.get('source_cells') or [{}])[0].get('locator'),
                 original_text=' '.join(c.get('expected_text', '') for c in original.get('source_cells', [])),
-                missing_fields=item['missing_fields'], version=item.get('version', 0)))
+                missing_fields=item['missing_fields'], version=item.get('version', 0),
+                # Complete values are held until the whole statement reconciles
+                # (corrections and manual additions enter Transactions together).
+                awaiting_reconciliation=not item['missing_fields'],
+                statement_blockers=blockers if not item['missing_fields'] else [],
+                # The specific reason a completed record is held, and whether
+                # it already checks out and can enter Transactions now.
+                hold_reason=held.get(item['id']) or item.get('hold_reason'),
+                can_enter_now=item['id'] in admit,
+                # Rows the investigator entered can be withdrawn (and restored).
+                kind='added' if manual else 'printed',
+                can_withdraw=entered_by_investigator(item) and not item.get('withdrawn'),
+                withdrawn=item.get('withdrawn'),
+                has_withdrawn_correction=bool(item.get('withdrawn')) and not manual,
+                repeat_of=plan['repeats'].get(item['id']) or (None if item['id'] in held else item.get('hold_repeat_of')),
+                without_this=(plan['effects'] or {}).get('without_each', {}).get(item['id']),
+                # A late-posted card charge's printed date, proposed by the
+                # reader rule; it enters only with the statement reconciling.
+                proposed_date=plan['proposals'].get(item['id'])))
     statements = {}
     for record in records:
         summary = statements.setdefault(record['evidence_file_id'], dict(
             evidence_file_id=record['evidence_file_id'], filename=record['filename'], count=0))
         summary['count'] += 1
     return dict(records=records[offset:offset+limit], total=len(records), offset=offset,
+        # Withdrawn added rows: outside the statement, kept and restorable.
+        withdrawn=withdrawn[:100], withdrawn_total=len(withdrawn),
+        # Per statement with added rows: the closing balance with and without
+        # them, and whether they are the only reason it does not add up.
+        addition_effects=list(effects.values()),
         statements=sorted(statements.values(), key=lambda item: (item['filename'], item['evidence_file_id'])))
+
+
+def held_record_plan(session, source_id, items):
+    """Dry run of the held-record rule for one saved statement. Writes nothing.
+
+    Returns ``admit`` (ids that would enter), ``held`` (id -> reason),
+    ``repeats`` (id -> the row a likely repeat matches) and ``effects`` (the
+    statement's balance with and without each added row, or None).
+    """
+    empty = dict(admit=set(), held={}, repeats={}, effects=None, proposals={})
+    if not any(not item.get('resolved_transaction_id') and item.get('missing_fields') in ([], ['date']) and not item.get('withdrawn')
+               for item in items or []):
+        return empty
+    from services.financial.held_record_admission import plan, addition_effects
+    from services.financial.statement_details import _load
+    try:
+        document, period, _account = _load(session, document_case(session, source_id), source_id)
+        if period is None:
+            return empty
+        metadata = deepcopy(document.metadata_)
+        from services.financial import late_posted_card_dates as late
+        records = metadata.get('statement_incomplete_records', [])
+        currency = metadata['statement_import_request'].get('currency')
+        proposals = late.propose([item for item in records
+            if (item.get('correction_currency') or currency) == period.currency], period)
+
+        def ready_now():
+            return {item['id']: item.get('correction') or item['fields'] for item in records
+                if not item.get('resolved_transaction_id') and item.get('missing_fields') == [] and not item.get('withdrawn')}
+        details = {}
+        ready = ready_now()
+        admit, held, admission, _checks = plan(session, document, period, metadata, period.currency, ready, details=details)
+        if proposals and not set(proposals) <= admit:
+            late.withdraw_proposals(records, proposals)
+            proposals = {}
+            details, ready = {}, ready_now()
+            admit, held, admission, _checks = plan(session, document, period, metadata, period.currency, ready, details=details) if ready else (set(), {}, None, {})
+        effects = addition_effects(session, document, period, metadata, period.currency, ready)
+    except (PdfMappingError, KeyError, TypeError, ValueError):  # ValidationError is a ValueError
+        return empty
+    proven = admission and (admission['can_import'] or details.get('rows_proven'))
+    return dict(admit=admit if proven else set(), held=held, repeats=details.get('repeats', {}), effects=effects,
+                proposals={key: late.provenance(value) for key, value in proposals.items()} if proven else {})
+
+
+def document_case(session, source_id):
+    return session.scalar(select(FinancialSourceDocument.case_id).where(FinancialSourceDocument.id == source_id))
+
+
+def admit_ready_records(*, session_factory, case_id, source_id, actor):
+    """Enter every completed record that now checks out on its own."""
+    from services.financial.runs import ingestion_run
+    from services.financial.reconcile import reconcile_period
+    with session_factory() as session:
+        exists = session.scalar(select(FinancialSourceDocument.id).where(FinancialSourceDocument.id == source_id,
+            FinancialSourceDocument.case_id == case_id, FinancialSourceDocument.status == 'admitted'))
+        if exists is None:
+            raise PdfMappingError('This imported statement is no longer available.', 404)
+    with ingestion_run(case_id=case_id, actor=SimpleNamespace(id=actor.user_id, email=actor.email),
+            session_factory=session_factory, config=dict(operation='admit_ready_records', source_document_id=str(source_id))) as run:
+        with session_factory() as session:
+            from postgres.models.case import Case
+            session.execute(select(Case.id).where(Case.id == case_id).with_for_update()).all()
+            from services.financial.statement_details import _load
+            document, period, _account = _load(session, case_id, source_id, lock=True)
+            if period is None:
+                raise PdfMappingError('Set this statement’s currency and period before adding its records.', 409)
+            metadata = deepcopy(document.metadata_)
+            pending_before = sum(not item.get('resolved_transaction_id') for item in metadata.get('statement_incomplete_records', []))
+            from services.financial.statement_currency_edit import complete_currency_records
+            admission = complete_currency_records(session, document=document, period=period,
+                metadata=metadata, currency=period.currency, actor=actor)
+            document.metadata_ = metadata
+            reconcile_period(session, period)
+            if admission and admission['can_import']:
+                from services.financial.account_history import record_admission_snapshot
+                record_admission_snapshot(session, document, period)
+            session.commit()
+            records = metadata.get('statement_incomplete_records', [])
+            admitted = pending_before - sum(not item.get('resolved_transaction_id') for item in records)
+            if admitted: run.transaction_admitted(admitted)
+            return dict(admitted=admitted, held=[dict(id=item['id'], reason=item['hold_reason'])
+                for item in records if not item.get('resolved_transaction_id') and item.get('hold_reason')])
 
 
 def transaction_draft(row, original, *, account_id, period_id, currency, position, actor, balance_sign=1, period_end='', session=None, case_id=None):
@@ -136,11 +269,12 @@ def complete_record(*, session_factory, case_id, source_id, request, actor):
                     # still needs work. Replay that receipt after a lost response
                     # without writing the same pending correction a second time.
                     from services.financial.saved_statement_admission import current_saved_assessment
+                    from services.financial.held_record_admission import held_blockers
                     admission = current_saved_assessment(session, document, period)
                     return dict(transaction_id=None, created=False, pending_reconciliation=True,
                         version=record['version'],
-                        message='Correction saved. This statement still needs reconciliation before its repaired payments enter Transactions.',
-                        blockers=admission.get('blockers', []))
+                        message=record.get('hold_reason') or 'Correction saved. This statement still needs reconciliation before its repaired payments enter Transactions.',
+                        blockers=admission.get('blockers', []) + held_blockers(record))
                 raise PdfMappingError('Another investigator changed this record. Reload it before saving.', 409)
             original = record['original']
             fields = original.get('fields', {})
@@ -157,6 +291,11 @@ def complete_record(*, session_factory, case_id, source_id, request, actor):
                 raise PdfMappingError('The record still has incomplete values.', 422)
             if period and period.currency != currency:
                 raise PdfMappingError('Use the currency recorded for this statement.', 422)
+            if record.get('withdrawn'):
+                # A new correction replaces the withdrawn one; the history stays.
+                record.pop('withdrawn')
+                record.setdefault('withdrawal_history', []).append(dict(action='replaced_by_correction',
+                    by=str(actor.user_id), name=actor.name, email=actor.email, at=datetime.now(timezone.utc).isoformat(), reason=''))
             record.update(correction=request.row.model_dump(mode='json'), correction_currency=currency,
                 version=request.version + 1, corrected_by=str(actor.user_id),
                 corrected_at=datetime.now(timezone.utc).isoformat(), missing_fields=[])
@@ -176,6 +315,9 @@ def complete_record(*, session_factory, case_id, source_id, request, actor):
             promoted = record.get('resolved_transaction_id')
             admitted = pending_before - sum(not item.get('resolved_transaction_id') for item in metadata.get('statement_incomplete_records', []))
             if admitted: run.transaction_admitted(admitted)
+            from services.financial.held_record_admission import held_blockers
+            if not promoted and admission is not None:
+                admission = {**admission, 'blockers': admission.get('blockers', []) + held_blockers(record)}
             return dict(transaction_id=promoted, created=bool(promoted), pending_reconciliation=not bool(promoted),
-                version=record['version'], message=('Correction saved. This statement still needs reconciliation before its repaired payments enter Transactions.' if not promoted else ''),
+                version=record['version'], admitted=max(0, admitted), message=((record.get('hold_reason') or 'Correction saved. This statement still needs reconciliation before its repaired payments enter Transactions.') if not promoted else ''),
                 blockers=(admission or {}).get('blockers', []))

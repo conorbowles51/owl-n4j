@@ -2,16 +2,19 @@ import asyncio
 from copy import deepcopy
 from pathlib import Path
 from unittest import TestCase
+from unittest import mock
 from unittest.mock import AsyncMock
 from uuid import uuid4, UUID
 from sqlalchemy import select
 from postgres.base import Base
 from postgres.models.financial import FinancialTransaction
 from postgres.models.financial_import_batches import FinancialImportBatch as Batch, FinancialImportBatchItem as Item
-from postgres.models.evidence import EvidenceFolder, IngestionLog
+from postgres.models.evidence import EvidenceFile, EvidenceFolder, IngestionLog
 from services.financial import import_batches as service
 from services.financial.statement_import import StatementImportRequest, StatementReviewDraft
 from services.financial.pdf_candidates import PdfMappingError
+from services.financial.effective_statement_review import batch_review_revision
+from services.financial.statement_progress import review_progress
 from tests.test_financial_statement_import import StatementImportTests as Fixture
 
 
@@ -513,6 +516,63 @@ class BatchImportTests(TestCase):
         with self.f.SessionLocal() as db:
             self.assertEqual(len(list(db.scalars(select(FinancialTransaction)))), 12)
 
+    def test_refresh_retires_untouched_items_of_periods_the_reader_no_longer_finds(self):
+        batch = self.create(); self.advance(batch)
+        item = self.status(batch)['items'][0]
+        with self.f.SessionLocal() as db:
+            current = db.get(Item, UUID(item['id']))
+            summary = dict(current.summary, can_import=False)
+            gone = Item(id=uuid4(), batch_id=current.batch_id, file_id=current.file_id, statement_key='an-earlier-period',
+                        status='attention', summary=summary)
+            kept = Item(id=uuid4(), batch_id=current.batch_id, file_id=current.file_id, statement_key='an-edited-period',
+                        status='attention', summary=summary, review_request={'holder': 'Saved reviewer wording'})
+            db.add_all([gone, kept]); db.commit()
+            gone_id, kept_id = gone.id, kept.id
+            service.refresh_statement_list(db, case_id=self.f.case.id, batch_id=batch)
+        self.advance(batch)
+        with self.f.SessionLocal() as db:
+            self.assertEqual(db.get(Item, gone_id).status, 'superseded_reading')
+            self.assertEqual(db.get(Item, gone_id).summary['recovery_message'], service.VANISHED_PERIOD_MESSAGE)
+            self.assertEqual(db.get(Item, kept_id).status, 'attention')
+            self.assertEqual(db.get(Item, UUID(item['id'])).status, item['status'])
+        with mock.patch.object(service, 'RETIRE_VANISHED_PERIODS', False), self.f.SessionLocal() as db:
+            again = Item(id=uuid4(), batch_id=db.get(Item, kept_id).batch_id, file_id=db.get(Item, kept_id).file_id,
+                         statement_key='another-earlier-period', status='attention', summary=summary)
+            db.add(again); db.commit()
+            again_id = again.id
+            service.refresh_statement_list(db, case_id=self.f.case.id, batch_id=batch)
+            self.advance(batch)
+            self.assertEqual(db.get(Item, again_id).status, 'attention')
+
+    def test_reread_file_command_dry_run_writes_nothing_and_apply_refreshes_every_batch(self):
+        from scripts import financial_reread_file as command
+        first = self.create(); self.advance(first)
+        report = command.dry_run(self.f.SessionLocal, self.f.case.id, self.f.file.id)
+        self.assertEqual([b['file_status'] for b in report['batches']], ['checked'])
+        self.assertEqual(sum(report['items'].values()), 1)
+        self.assertIn('general_reader', report['current_reader'])
+        with self.f.SessionLocal() as db:
+            self.assertEqual(db.get(Batch, first).files[0]['status'], 'checked')
+            held_status = db.get(Batch, first).status
+            db.get(Batch, first).status = 'paused'
+            db.commit()
+        with self.assertRaises(SystemExit):
+            command.apply(self.f.SessionLocal, self.f.case.id, self.f.file.id)
+        with self.f.SessionLocal() as db:
+            self.assertEqual(db.get(Batch, first).files[0]['status'], 'checked')
+            db.get(Batch, first).status = held_status
+            db.commit()
+        self.assertEqual(command.apply(self.f.SessionLocal, self.f.case.id, self.f.file.id), [str(first)[:8]])
+        with self.f.SessionLocal() as db:
+            entry = db.get(Batch, first).files[0]
+            self.assertEqual((entry['status'], entry['reread_requests'][0]['actor']), ('processing', command.ACTOR))
+        with self.assertRaises(SystemExit):  # already being read: refused, nothing written
+            command.apply(self.f.SessionLocal, self.f.case.id, self.f.file.id)
+        self.advance(first)
+        with self.f.SessionLocal() as db:
+            self.assertEqual(db.get(Batch, first).files[0]['status'], 'checked')
+        self.assertEqual(self.status(first)['total'], 1)
+
     def test_legacy_saved_review_upgrades_and_imports_without_losing_edits(self):
         from unittest.mock import patch
         from services.financial.statement_progress import save_progress
@@ -534,6 +594,10 @@ class BatchImportTests(TestCase):
         self.assertNotEqual(current['revision'], old['revision'])
         self.assertEqual(current['saved_review']['request']['expected_revision'], current['revision'])
         self.assertEqual(current['saved_review']['request']['holder'], raw['holder'])
+        # The legacy summary is held until the write side reassesses it.
+        self.assertEqual(self.status(batch)['readiness_pending'], 1)
+        with self.f.SessionLocal() as db:
+            service.refresh_batch_readiness(db, case_id=self.f.case.id, batch_id=batch)
         status = self.status(batch)
         self.assertTrue(status['items'][0]['can_import'])
         with self.f.SessionLocal() as db:
@@ -573,6 +637,9 @@ class BatchImportTests(TestCase):
             item = db.scalar(select(Item).where(Item.batch_id == batch))
             item.summary = {**item.summary, 'revision': 'f'*64, 'review_model': 'older'}
             db.commit()
+            # Held for the write side, which stores the refreshed reading.
+            self.assertTrue(service.batch_status(db, case_id=self.f.case.id, batch_id=batch)['items'][0]['readiness_pending'])
+            service.refresh_batch_readiness(db, case_id=self.f.case.id, batch_id=batch)
             current = service.batch_status(db, case_id=self.f.case.id, batch_id=batch)['items'][0]
             self.assertNotEqual(current['revision'], 'f'*64)
             service.set_selected_currency(db, case_id=self.f.case.id, batch_id=batch,
@@ -735,6 +802,25 @@ class BatchImportTests(TestCase):
             with self.assertRaises(asyncio.CancelledError): await task
             self.assertTrue(finished.is_set())
         asyncio.run(scenario())
+
+    def test_process_shutdown_ends_the_turn_and_releases_the_lease_for_the_next_start(self):
+        from services import process_shutdown
+        batch = self.create()
+        process_shutdown._reset_for_tests()
+        process_shutdown.requested.set()
+        try:
+            self.advance(batch)
+        finally:
+            process_shutdown._reset_for_tests()
+        with self.f.SessionLocal() as db:
+            record = db.get(Batch, batch)
+            self.assertEqual(record.status, 'preparing')
+            self.assertIsNone(record.worker_token)
+            self.assertIsNone(record.lease_until)
+        self.assertEqual(self.status(batch)['files'][0]['status'], 'waiting')
+        # The next process resumes immediately, without waiting out a lease.
+        self.advance(batch)
+        self.assertEqual(self.status(batch)['files'][0]['status'], 'checked')
 
     def setUp(self):
         self.f = Fixture('test_existing_import_and_same_request_keep_the_saved_account_for_navigation')
@@ -941,12 +1027,9 @@ class BatchImportTests(TestCase):
             self.assertEqual(result['status'], 'attention')
             saved=db.get(Item, UUID(item['id']))
             self.assertEqual(saved.review_request['holder'], '')
-            # The first batch save also creates shared progress, so the token covers both.
-            from services.financial.effective_statement_review import batch_review_revision
-            from services.financial.statement_progress import review_progress
-            from postgres.models.evidence import EvidenceFile
-            shared = review_progress(db.get(EvidenceFile, saved.file_id), saved.statement_key)
-            self.assertIsNotNone(shared)
+            # Every batch save is also a shared save (a48958e0), so the token
+            # binds the batch request to the shared review revision.
+            shared=review_progress(db.get(EvidenceFile, saved.file_id), saved.statement_key)
             self.assertEqual(result['review_revision'], batch_review_revision(saved.review_request, shared))
             self.assertFalse(saved.summary['can_import'])
             with self.assertRaisesRegex(PdfMappingError, 'no new statement records'):
@@ -990,6 +1073,46 @@ class BatchImportTests(TestCase):
         self.assertEqual(self.status(batch)['counts']['imported'],1)
         with f.SessionLocal() as db:
             self.assertEqual(len(list(db.scalars(select(FinancialTransaction)))),12)
+
+    def test_sliced_worker_review_commits_between_statements_with_the_same_items(self):
+        # The worker's file review gives the case back between statements (an
+        # import of the same case must not wait minutes behind a large PDF). The
+        # items it writes are those of the single-transaction review.
+        from unittest.mock import patch
+        from sqlalchemy import event
+        f=self.f;batch=self.create();base=f.preview()
+        choices=[dict(id='a'*64),dict(id='b'*64),dict(id='c'*64)]
+        def reading(*args,**kwargs):
+            result=deepcopy(base);result['statement_choices']=choices
+            result['statement_id']=kwargs.get('statement_id')
+            if result['statement_id']=='b'*64:
+                next(row for row in result['rows'] if not row['excluded'])['issues']=['Check the date.']
+            return result
+        def items():
+            with f.SessionLocal() as db:
+                return {str(i.id):(i.statement_key,i.status,deepcopy(i.summary),deepcopy(i.review_request))
+                        for i in db.scalars(select(Item).where(Item.batch_id==batch))}
+        outcomes={}
+        for lock_slice in (None,0):
+            commits=[]
+            with f.SessionLocal() as db, patch.object(service,'read_statement_import',side_effect=reading):
+                event.listen(db,'after_commit',lambda session:commits.append(1))
+                owner=db.get(Batch,batch)
+                service.prepare_reviews(db,owner,owner.files[0],lock_slice=lock_slice)
+            outcomes[lock_slice]=(len(commits),items())
+        self.assertEqual(outcomes[None][0],1)
+        self.assertGreaterEqual(outcomes[0][0],len(choices)+1)
+        self.assertEqual(outcomes[0][1],outcomes[None][1])
+        self.assertEqual(sorted(v[1] for v in outcomes[0][1].values()),['attention','ready','ready'])
+
+    def test_sliced_review_keeps_only_reading_cache_entries_across_a_release(self):
+        case=str(self.f.case.id);source=(case,str(self.f.file.id),'sha')
+        cache={('printed_header',str(self.f.file.id),'sha'):1,('geometry_pages',*source):2,source:3,
+               ('catalog',source):4,('currencies',source):5,('checks',source,'USD'):6,
+               ('previous-reviews',str(self.f.file.id)):7,('layout_memory',case):8,
+               ('assignment-base',str(self.f.file.id),'USD',None):9,('bulk_listed_reading',str(self.f.file.id),'x'):10,uuid4():11}
+        kept={key for key in cache if service._reading_entry(key,self.f.case.id)}
+        self.assertEqual(sorted(cache[key] for key in kept),[1,2,3,4,5,6])
 
     def test_each_recognised_period_is_checked_separately_and_unknown_currency_stays_out(self):
         from unittest.mock import patch

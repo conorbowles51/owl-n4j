@@ -232,3 +232,40 @@ it("sets an explicit month, retains custom dates and previews dates only", async
   })
   expect(sent.some((c) => c.url.includes("/save?"))).toBe(false)
 })
+it("says when loading the statement periods ran past the time limit and offers to try again", async () => {
+  let calls = 0
+  vi.mocked(fetchAPI).mockImplementation(async (url) => {
+    if (url.includes("/statements?") && calls++ === 0)
+      throw new DOMException("signal is aborted without reason", "AbortError")
+    return { case_id: "case", items, notices: [] } as never
+  })
+  mount()
+  fireEvent.click(screen.getByRole("button", { name: "Edit account details" }))
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "took longer than the 5-minute limit and was stopped. Nothing was changed."
+  )
+  fireEvent.click(screen.getByRole("button", { name: "Try again" }))
+  expect(
+    await screen.findByRole("button", { name: "Select all 52 matching statements" })
+  ).toBeInTheDocument()
+  expect(calls).toBe(2)
+})
+
+it("offers one shared proposal for a missing detail, with its source", async () => {
+  const { commonProposal } = await import("./BulkStatementDetails")
+  const usd = { value: "USD", basis: "case_default", label: "the case's usual currency (9 of 9 saved statements)", confirmed: false }
+  const statement = (currency: string, proposal?: typeof usd) => ({
+    ...items[1],
+    values: { ...items[1].values, currency },
+    proposals: proposal ? { currency: proposal } : undefined,
+  })
+  expect(commonProposal([statement("", usd), statement("", usd), statement("MXN")], "currency")).toEqual({
+    value: "USD",
+    label: usd.label,
+    statements: 2,
+  })
+  // A statement without a proposal, or two different values: nothing is proposed.
+  expect(commonProposal([statement("", usd), statement("")], "currency")).toBeNull()
+  expect(commonProposal([statement("", usd), statement("", { ...usd, value: "EUR" })], "currency")).toBeNull()
+  expect(commonProposal([statement("MXN")], "currency")).toBeNull()
+})

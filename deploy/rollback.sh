@@ -90,6 +90,8 @@ fi
 
 # shellcheck source=deploy/ingestion-safety.sh
 source "${PROJECT_DIR}/deploy/ingestion-safety.sh"
+# shellcheck source=deploy/backend-stop.sh
+source "${PROJECT_DIR}/deploy/backend-stop.sh"
 
 cd "${PROJECT_DIR}"
 
@@ -116,7 +118,9 @@ success "Docker stack refreshed"
 step "Restarting services"
 configure_ingestion_shutdown
 check_ingestion_idle
-$SYSTEMCTL restart owl-backend-v2
+if ! restart_backend_bounded; then
+    fail "owl-backend-v2 did not restart; the health check below will report it"
+fi
 $SYSTEMCTL restart owl-frontend-v2
 success "V2 services restarted"
 

@@ -5,6 +5,7 @@ period. Page numbers remain the original PDF numbers. Unclassified pages are
 retained separately so detection cannot silently turn a whole file into a
 complete statement.
 """
+import re
 from services.financial.pdf_candidates import _digest
 from services.financial.statement_layout_context import _cycle, CAPITAL_ONE_CARD_HEADING
 from services.financial.statement_information_pages import capital_information_kind, andrews_information_kind, merrick_information_kind, bbva_information_kind
@@ -47,7 +48,44 @@ def _capital_page_contexts(sources):
     return {page: key for page, key in candidates.items() if key in established}, information
 
 
+_PRINTED_PAGE = re.compile(r'\bPage (\d{1,3}) of (\d{1,3})\b')
+
+
+def _capital_printings(sources, capital_pages):
+    """Number each printing of one card statement inside a PDF.
+
+    A production can print the same statement twice in one file, and each
+    printing restarts its printed page count at "Page 1 of N". A page keeps the
+    printing it follows. Only a read "Page 1" starts a new printing, so an
+    unreadable count leaves the printings together; their payments then appear
+    twice and the printed balances refuse the period, as before.
+    """
+    labels = {}
+    for source in sources:
+        for row in source['rows']:
+            for cell in row['cells']:
+                for match in _PRINTED_PAGE.finditer(' '.join(cell['expected_text'].split())):
+                    labels.setdefault(source['page_number'], set()).add(int(match[1]))
+    printing, starts = {}, {}
+    for page in sorted(capital_pages):
+        key = capital_pages[page]
+        if labels.get(page) == {1}:
+            starts[key] = starts.get(key, 0) + 1
+        printing[page] = max(starts.get(key, 1), 1)
+    return printing
+
+
 def statement_catalog(sources):
+    """Statements in these sources: the general engine first, the family readers as the fallback library.
+
+    Routing lives in statement_engine_routing; with the engine switched off
+    this is exactly the library catalog.
+    """
+    from services.financial.statement_engine_routing import route_catalog
+    return route_catalog(sources, library_catalog)
+
+
+def library_catalog(sources):
     from services.financial.statement_import_andrews import andrews_catalog, is_andrews_fee_summary, unassigned_andrews_groups
     andrews, handled, incomplete = andrews_catalog(sources)
     groups = {statement['id']: statement for statement in andrews}
@@ -60,6 +98,9 @@ def statement_catalog(sources):
     from services.financial.statement_import_scotiabank import scotiabank_catalog
     scotiabank, scotiabank_handled = scotiabank_catalog(sources)
     groups.update({statement['id']: statement for statement in scotiabank})
+    from services.financial.statement_import_citi import citi_catalog
+    citi, citi_handled = citi_catalog(sources)
+    groups.update({statement['id']: statement for statement in citi})
     from services.financial.statement_import_monex import monex_catalog
     monex, monex_handled = monex_catalog(sources)
     groups.update({statement['id']: statement for statement in monex})
@@ -76,9 +117,10 @@ def statement_catalog(sources):
     information = []
     from services.financial.statement_import_merrick import merrick_statement
     capital_pages, information_pages = _capital_page_contexts(sources)
+    capital_printings = _capital_printings(sources, capital_pages)
     for source in sources:
         address = (source['page_number'], source['table_index'])
-        if address in credit_one_handled or address in bbva_handled or address in scotiabank_handled or address in monex_handled or address in kapital_handled or address in intercam_handled or address in santander_handled:
+        if address in citi_handled or address in credit_one_handled or address in bbva_handled or address in scotiabank_handled or address in monex_handled or address in kapital_handled or address in intercam_handled or address in santander_handled:
             continue
         if address in handled:
             if address in incomplete:
@@ -110,10 +152,24 @@ def statement_catalog(sources):
         card, start, end = identity
         identity = dict(layout_id='capital-one-card', institution='Capital One', account_reference='****' + card,
                         period_start=start, period_end=end)
-        identifier = _digest(identity)
-        group = groups.setdefault(identifier, dict(id=identifier, **identity, sources=[], page_numbers=[]))
+        # The first printing keeps the identifier it always had; a reprint of
+        # the same statement in this file becomes its own period, linked below.
+        printing = capital_printings.get(key[0], 1)
+        identifier = _digest(identity if printing == 1 else dict(identity, printing=printing))
+        group = groups.setdefault(identifier, dict(id=identifier, **identity, printing=printing, sources=[], page_numbers=[]))
         group['sources'].append(dict(page_number=key[0], table_index=key[1], source_revision=source['source_revision']))
         if key[0] not in group['page_numbers']:
             group['page_numbers'].append(key[0])
+    printings = {}
+    for group in groups.values():
+        if group.get('layout_id') == 'capital-one-card':
+            printings.setdefault((group['account_reference'], group['period_start'], group['period_end']), []).append(group)
+    for copies in printings.values():
+        copies.sort(key=lambda group: group['printing'])
+        for group in copies:
+            if len(copies) > 1:
+                group['printings'] = [copy['id'] for copy in copies]
+            else:
+                group.pop('printing')
     return dict(statements=list(groups.values()), unclassified_sources=unclassified, information_sources=information,
                 complete_coverage=not unclassified)

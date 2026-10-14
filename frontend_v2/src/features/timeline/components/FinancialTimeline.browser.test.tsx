@@ -243,6 +243,43 @@ function renderJourney(mode = "transactions") {
     </QueryClientProvider>
   )
 }
+it("opens Timeline and filters dated events with invalid clock times without crashing", async () => {
+  await page.viewport(1440, 1000)
+  saved = [
+    {
+      ...fixtureEvent({ source_kind: "transaction", source_ids: ["payment"] }),
+      time: "25:00",
+    },
+  ]
+  render(
+    <QueryClientProvider
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
+    >
+      <MemoryRouter initialEntries={["/cases/case/timeline"]}>
+        <div className="h-screen bg-background text-foreground">
+          <Routes>
+            <Route path="/cases/:id/timeline" element={<TimelinePage />} />
+          </Routes>
+        </div>
+      </MemoryRouter>
+    </QueryClientProvider>
+  )
+  expect(await screen.findByText("Supplier transfer")).toBeVisible()
+  expect(screen.getByText("No time")).toBeVisible()
+  const search = screen.getByPlaceholderText(/search/i)
+  fireEvent.change(search, { target: { value: "Supplier" } })
+  expect(
+    await screen.findByText(
+      (_, element) =>
+        element?.textContent === "Supplier transfer" &&
+        element.children.length > 0
+    )
+  ).toBeVisible()
+  fireEvent.change(search, { target: { value: "" } })
+  expect(await screen.findByText("Supplier transfer")).toBeVisible()
+})
 it("adds payments, explains skipped dates, opens Timeline and original, returns with filters and selection and prevents duplicates", async () => {
   await page.viewport(1440, 1000)
   renderJourney()

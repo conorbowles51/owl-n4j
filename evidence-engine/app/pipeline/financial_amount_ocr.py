@@ -4,6 +4,7 @@ Amounts come from the source image, never from balancing arithmetic. Complete
 matching visual readings are required; conflicting signs or digits stay flagged.
 """
 from copy import deepcopy
+from datetime import date, timedelta
 from decimal import Decimal
 import re
 import time
@@ -42,6 +43,10 @@ def _candidates(tables, words, width, height):
             rows.setdefault(cell['row'], []).append(cell)
         for row in rows.values():
             row.sort(key=lambda c: c['column'])
+            endpoint = _endpoint_balance_candidate(row, box, width, height, words, used)
+            if endpoint:
+                candidates.append(endpoint)
+                continue
             if not 4 <= len(row) <= 8:
                 continue
             descriptions = [c for c in row if re.match(r'^(?:Recurring\s+)?(?:Withdrawal|Deposit)\b', c['text'].strip())
@@ -96,7 +101,48 @@ def _candidates(tables, words, width, height):
     return candidates[:40]
 
 
-def _cleaned_line_readings(page, rect, rotation, deadline, language):
+_ENDPOINT_LABEL = re.compile(r'(?:\S{4,7} ID \d{4} (?:BASE SHARE SAVINGS|FREE CHECKING|VISA PAYMENT|[A-Z]+(?: [A-Z]+)? CLUB) Previous Balance'
+                             r'|\S{4,7} Ending Balance)')
+
+
+def _endpoint_balance_candidate(row, box, width, height, words, used):
+    """Target an unreadable printed opening or ending balance cell.
+
+    The exact printed label (Previous Balance on the share heading, or Ending
+    Balance) must occupy the left of the line, and the line's only money cell
+    must sit in the measured running-balance column. Nothing is computed from
+    other balances; the crop reading must still agree with itself.
+    """
+    label = [c for c in row if box(c)[0] < width*.46]
+    money = [c for c in row if box(c)[0] >= width*.46]
+    if (not label or len(money) != 1 or len(row) > 10 or box(label[0])[0] >= width*.08
+            or box(label[0])[1] <= height*.2
+            or not _ENDPOINT_LABEL.fullmatch(' '.join(' '.join(c['text'].split()) for c in label))
+            or max(box(c)[1] for c in row) >= min(box(c)[3] for c in row)):
+        return None
+    cell = money[0]
+    b = list(box(cell))
+    text = cell['text'].strip()
+    if (_money(re.sub(r'\s+', '', text)) and re.fullmatch(r'[+-]?\s*(?:\d{1,3}(?:,\d{3})+|\d+)\s*\.\s*\d{2}', text)
+            or not (width*.56 <= b[0] < b[2] <= width*.68) or len(text) > 24 or b[2]-b[0] > width*.13):
+        return None
+    indices = sorted((i for i, w in enumerate(words)
+        if w[0]*1000 >= b[0]-1000 and w[1]*1000 >= b[1]-1000
+        and w[2]*1000 <= b[2]+1000 and w[3]*1000 <= b[3]+1000), key=lambda i: words[i][0])
+    if (not indices or len(indices) > 5 or used.intersection(indices)
+            or ' '.join(words[i][4] for i in indices) != ' '.join(text.split())):
+        return None
+    used.update(indices)
+    return dict(indices=indices, text=text, rect=b, field='balance', verb=None, adjustment=False,
+                reason='unreadable_endpoint_balance')
+
+
+def _dollar_money(text):
+    """A complete dollar amount as a card issuer prints it, e.g. ``- $40.00``."""
+    return bool(re.fullmatch(r'(?:-\s?)?\$(?:\d{1,3}(?:,\d{3})+|\d+)\.\d{2}', text))
+
+
+def _cleaned_line_readings(page, rect, rotation, deadline, language, whitelist='0123456789.,-+'):
     """Read a measured money line at two sizes and three ink thresholds.
 
     Raw-line mode misreads signs on these small scanned cells. Use ordinary
@@ -121,7 +167,7 @@ def _cleaned_line_readings(page, rect, rotation, deadline, language):
                             oriented = bordered.rotate(-rotation, expand=True, fillcolor=255) if rotation else bordered
                             try:
                                 value = pytesseract.image_to_string(oriented, lang=language,
-                                    config=f'--oem 1 --psm 7 --dpi {dpi} -c tessedit_char_whitelist=0123456789.,-+',
+                                    config=f'--oem 1 --psm 7 --dpi {dpi} -c tessedit_char_whitelist={whitelist}',
                                     timeout=min(5, remaining)).strip()
                             finally:
                                 if oriented is not bordered:
@@ -129,6 +175,56 @@ def _cleaned_line_readings(page, rect, rotation, deadline, language):
                     observations.append(dict(dpi=dpi, segmentation_mode=7, text=value,
                         threshold=threshold, profile='cleaned_single_line'))
     return observations
+
+
+# Glyphs an embedded OCR layer was measured to put for a printed digit in an
+# Andrews row date (``O3/l5`` for ``03/15``), by the digit they stand for, and
+# for the printed slash in a card row date (``07112`` for ``07/12`` on a real
+# card statement's recognised text layer).
+_DATE_LOOKALIKES = {'0': 'OoDQ', '1': 'lIi|!L', '2': 'Z', '5': 'S', '8': 'B', '/': '1lI|'}
+
+
+def _row_date_in_period(text, period):
+    match = re.fullmatch(r'(\d{2})/(\d{2})', text or '')
+    if not match:
+        return False
+    for year in range(period[0].year, period[1].year + 1):
+        try:
+            if period[0] <= date(year, int(match[1]), int(match[2])) <= period[1]:
+                return True
+        except ValueError:
+            pass
+    return False
+
+
+def _reread_row_date(page, rect, original, period, deadline, language):
+    """``(MM/DD, observations)`` for an unreadable row date its own cell shows, else ``(None, ...)``.
+
+    Used for Andrews row dates and card transaction and posting dates.
+    The measured date cell is read at two sizes and three ink thresholds with
+    only digits and ``/`` allowed. Accepted only when all six readings were
+    made, the first and at least four (at both sizes) are one identical date
+    inside ``period`` (the printed statement period; for a card transaction
+    date, also the 31 days before it, as the card reader allows), and that date accounts for every
+    character the page reading shows: each is the same digit or ``/``, or a
+    glyph measured to stand in for it (``O`` for 0, ``l`` for 1, ``1`` for ``/``).
+    Spaces in the page reading are ignored. Anything else keeps the cell
+    unreadable for a person.
+    """
+    try:
+        observations = _cleaned_line_readings(page, rect, 0, deadline, language, '0123456789/')
+    except (RuntimeError, pytesseract.TesseractError):
+        return None, []
+    valid = [o for o in observations if _row_date_in_period(o['text'], period)]
+    if (len(observations) != 6 or not _row_date_in_period(observations[0]['text'], period) or len(valid) < 4
+            or len({o['dpi'] for o in valid}) != 2 or len({o['text'] for o in valid}) != 1):
+        return None, observations
+    value = valid[0]['text']
+    printed = re.sub(r'\s+', '', original or '')
+    if len(printed) != len(value) or not all(a == b or a in _DATE_LOOKALIKES.get(b, '')
+                                             for a, b in zip(printed, value)):
+        return None, observations
+    return value, observations
 
 
 def refine_statement_native_cells(page, tables, *, deadline, language):
@@ -143,16 +239,50 @@ def refine_statement_native_cells(page, tables, *, deadline, language):
     from services.financial.statement_import_credit_one import credit_one_catalog, propose_credit_one_table
     from services.financial.statement_import_merrick import merrick_statement, propose_merrick_table
     from services.financial.statement_import_andrews import andrews_page, propose_andrews_statement
-    from services.financial.statement_reading_quality import sources_from_tables, assess_statement_reading, prefer_image_reading
+    from services.financial.statement_reading_quality import (sources_from_tables, assess_statement_reading,
+        prefer_image_reading, labelled_statement, propose_labelled_rows, bbva_page_statement, capital_one_page_statement)
     if page.rotation or deadline - time.monotonic() < 2:
         return tables, []
     sources = sources_from_tables([table.to_json() for table in tables])
+    if not sources:
+        return tables, []
     cards, _ = credit_one_catalog(sources)
     merrick = merrick_statement(sources[0]) if len(sources) == 1 else None
+    labelled = None
+    # Row date fields reread from their own cell, each with the dates its
+    # reading may take: the printed statement period (Andrews, card posting
+    # dates), and for a card transaction date also the 31 days before it.
+    dates = {}
+    # Layouts whose rows name their money column per row rather than one
+    # amount column: (field, column key) pairs to try for a payment row.
+    payment_columns = None
+    # How a complete reading of the cell must look, and the characters the
+    # reread may produce. Card amounts print their dollar sign inside the
+    # cell, so it must be readable there rather than taken for a digit.
+    valid_money, whitelist = _money, '0123456789.,-+'
     if len(cards) == 1:
         propose = lambda source: propose_credit_one_table(source, 'USD', cards[0])
+        start, end = date.fromisoformat(cards[0]['period_start']), date.fromisoformat(cards[0]['period_end'])
+        dates = dict(date=(start - timedelta(days=31), end), booking_date=(start, end))
+    elif (bbva := bbva_page_statement(sources)) is not None:
+        # The Cargos or Abonos column holding the payment's only amount.
+        rows = bbva[1]
+        propose = lambda source: dict(rows=[r for r in rows if r['table_index'] == source['table_index']])
+        payment_columns = [('amount_minor', 'debit_column'), ('amount_minor', 'credit_column'), ('balance', 'balance_column')]
+    elif (capital := capital_one_page_statement(sources)) is not None:
+        # The printed Amount column cited by the card layout for that row.
+        rows = [{**r, 'fields': {**r['fields'], 'amount_column': str(r['layout_context']['amount_source']['column_index'])}}
+                if (r.get('layout_context') or {}).get('amount_source') else r for r in capital[1]]
+        propose = lambda source: dict(rows=[r for r in rows if r['table_index'] == source['table_index']])
+        valid_money, whitelist = _dollar_money, '0123456789.,-+$'
     elif merrick:
         propose = lambda source: propose_merrick_table(source, 'USD', merrick)
+    elif (labelled := None if any(andrews_page(s, allow_unbranded=True) for s in sources)
+            else labelled_statement(sources)):
+        # Labelled columns name the money they hold; an unreadable credit or
+        # debit stays in that column, so the target is that printed cell.
+        rows = propose_labelled_rows(sources, labelled)
+        propose = lambda source: dict(rows=[r for r in rows if r['table_index'] == source['table_index']])
     else:
         andrews = andrews_page(sources[0], allow_unbranded=True) if len(sources) == 1 else None
         if not andrews:
@@ -162,18 +292,33 @@ def refine_statement_native_cells(page, tables, *, deadline, language):
                 if r['row_index'] >= andrews['body_start']])
         statement = dict(period_start=andrews['start'], period_end=andrews['end'], sources=[scope])
         propose = lambda source: propose_andrews_statement([source], 'USD', statement)
+        dates = dict(date=(date.fromisoformat(andrews['start']), date.fromisoformat(andrews['end'])))
     before = assess_statement_reading([table.to_json() for table in tables])
     if not before or not before['unreadable']:
         return tables, []
     replacements, records = {}, []
-    deadline = min(deadline, time.monotonic() + 30)
+    # Each cell costs six crop readings (about 3 s on a loaded host). A card
+    # page can carry a dozen dates whose slash the layer read as 1, so the
+    # page budget is 60 s; the caller's deadline still bounds it.
+    deadline = min(deadline, time.monotonic() + 60)
     targets = []
     for source in sources:
         for row in propose(source)['rows']:
             fields = row['fields']
+            payment = row['kind'] in ('transaction', 'unresolved') and not row['excluded']
             candidates = [('balance', 'balance_column')] if row['kind'] == 'balance' else (
-                [('amount_minor', 'amount_column'), ('balance', 'balance_column')]
-                if row['kind'] in ('transaction', 'unresolved') and not row['excluded'] else [])
+                [('credit', 'credit_column'), ('debit', 'debit_column'), ('amount', 'amount_column'),
+                 ('balance', 'balance_column')] if labelled and payment else
+                payment_columns if payment and payment_columns else
+                [('amount_minor', 'amount_column'), ('balance', 'balance_column')] if payment else [])
+            if (row['kind'] == 'balance' and fields.get('statement_layout') == 'andrews-share-statement'
+                    and sum(1 for c in row['source_cells'] if (c.get('locator') or {}).get('rect')
+                            and c['locator']['rect'][0] >= page.rect.width * 1000 * .46) != 1):
+                # A balance split across several money cells is not one
+                # measured target; a fragment could read as a complete value.
+                candidates = []
+            if dates and payment and row['kind'] == 'transaction':
+                candidates = [*candidates, *[(field, field + '_column') for field in dates]]
             for field, column_key in candidates:
                 column = fields.get(column_key)
                 if field not in fields and column is not None:
@@ -194,15 +339,28 @@ def refine_statement_native_cells(page, tables, *, deadline, language):
                 or abs(size[0] - page.rect.width * 1000) > 2 or abs(size[1] - page.rect.height * 1000) > 2
                 or rect[2] - rect[0] > size[0] * .13 or len(cell['expected_text']) > 24):
             continue
+        if field in dates:
+            value, observations = _reread_row_date(page, rect, cell['expected_text'], dates[field], deadline, language)
+            if value:
+                replacements[(source['table_index'], row['row_index'], int(column))] = value
+                records.append(dict(method='tesseract_native_statement_cell_consensus', page=page.number + 1,
+                    table_index=source['table_index'], row_index=row['row_index'], column_index=int(column),
+                    field=field, original_text=cell['expected_text'], text=value, source_locator=locator,
+                    observations=observations, reason='unreadable_native_statement_date'))
+            continue
         try:
-            observations = _cleaned_line_readings(page, rect, 0, deadline, language)
+            observations = _cleaned_line_readings(page, rect, 0, deadline, language, whitelist)
         except (RuntimeError, pytesseract.TesseractError):
             continue
-        valid = [o for o in observations if _money(o['text'])]
-        if (len(observations) != 6 or not _money(observations[0]['text']) or len(valid) < 4
+        valid = [o for o in observations if valid_money(o['text'])]
+        if (len(observations) != 6 or not valid_money(observations[0]['text']) or len(valid) < 4
                 or len({o['dpi'] for o in valid}) != 2 or len({o['text'] for o in valid}) != 1):
             continue
         value = valid[0]['text']
+        if valid_money is _dollar_money and value.startswith('-') != cell['expected_text'].strip().startswith('-'):
+            # The printed sign decides payment or purchase; the reread may
+            # only supply the digits the page reading lost, never the sign.
+            continue
         replacements[(source['table_index'], row['row_index'], int(column))] = value
         records.append(dict(method='tesseract_native_statement_cell_consensus', page=page.number + 1,
             table_index=source['table_index'], row_index=row['row_index'], column_index=int(column),

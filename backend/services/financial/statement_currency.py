@@ -16,7 +16,7 @@ _LABEL = re.compile(r'^(?:(?:(?:statement|account)\s+)?currency|moneda)\s*:?\s*(
 _CURRENCY_NAMES = {'EURO': 'EUR', 'EUROS': 'EUR', 'PESOS MEXICANOS': 'MXN',
     'DOLARES AMERICANOS': 'USD', 'DOLARES ESTADOUNIDENSES': 'USD', 'US DOLLARS': 'USD',
     'U.S. DOLLARS': 'USD', 'MEXICAN PESOS': 'MXN'}
-_US_LAYOUTS = {'capital-one-card', 'merrick-card', 'credit-one-card', 'andrews-share-statement'}
+_US_LAYOUTS = {'capital-one-card', 'merrick-card', 'credit-one-card', 'citi-card', 'andrews-share-statement'}
 
 
 def _code(text):
@@ -37,7 +37,7 @@ def detect_statement_currency(sources, *, layout_id=None, header_text=''):
     rows = [[c['expected_text'].strip() for c in row['cells']]
             for source in sources for row in source['rows']]
     rows.extend([[line.strip()] for line in header_text.splitlines()])
-    mexican_issuer = layout_id in ('bbva-mexico-cash-management', 'scotiabank-mexico-zero-activity') or any(
+    mexican_issuer = layout_id in ('bbva-mexico-cash-management', 'scotiabank-mexico-zero-activity', 'scotiabank-mexico-movements') or any(
         re.search(r'BBVA (?:MEXICO|BANCOMER),? S\.?A\.?|\b(?:BANCO KAPITAL|SERVICIO EMPRESARIAL FX KAPITAL)\b', ' '.join(cells), re.I) for cells in rows)
     labelled_rows = rows
     if layout_id == 'bbva-mexico-cash-management' or (mexican_issuer and any(
@@ -94,8 +94,10 @@ def detect_statement_currency(sources, *, layout_id=None, header_text=''):
 
 def currencies_by_statement(choices, sources):
     by_address = {(s['page_number'], s['table_index']): s for s in sources}
-    return [{**choice, 'currency': choice['currency'] if choice.get('currency_source') == 'printed_account_section'
-        and choice.get('layout_id') in ('monex-mexico-currency-summary', 'kapital-mexico-product-statement', 'intercam-mexico-product-statement', 'santander-mexico-movements')
+    return [{**choice, 'currency': choice['currency'] if (choice.get('currency_source') == 'printed_account_section'
+        or choice.get('layout_id') == 'generic' and choice.get('currency_source') in ('dollar_us_address', 'library_profile',
+                                                                                      'printed_statement_currency'))
+        and choice.get('layout_id') in ('monex-mexico-currency-summary', 'kapital-mexico-product-statement', 'intercam-mexico-product-statement', 'santander-mexico-movements', 'generic')
         else detect_statement_currency(
         [by_address[(s['page_number'], s['table_index'])] for s in choice['sources']],
         layout_id=choice.get('layout_id'))} if not choice.get('document_kind') else choice

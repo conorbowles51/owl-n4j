@@ -246,8 +246,10 @@ class AndrewsReaderTests(unittest.TestCase):
                 ('Wi thdrawal Debit Card', '12.50', '112.50', None),
                 ('Re curring De posit Transfer', '-12.50', '87.50', None),
                 ('Withd rawal Adjustment', '12.50', '112.50', 'credit'),
-                ('Withdra walx Debit Card', '-12.50', '87.50', None),
-                ('Withdra\u03c9al Debit Card', '-12.50', '87.50', None)):
+                # A misread payment word: the printed minus and both printed
+                # balances agree (Neil's ruling of 2026-10-09).
+                ('Withdra walx Debit Card', '-12.50', '87.50', 'debit'),
+                ('Withdra\u03c9al Debit Card', '-12.50', '87.50', 'debit')):
             with self.subTest(description=description, amount=amount):
                 original = source([
                     [(15, '06/01 ID 0040 FREE CHECKING Previous Balance'), (350, '100.00')],
@@ -261,6 +263,63 @@ class AndrewsReaderTests(unittest.TestCase):
                 self.assertEqual(payment['fields'].get('direction'), direction)
                 self.assertEqual(bool(payment['issues']), direction is None)
                 self.assertEqual(original, before)
+
+    def test_misread_payment_word_takes_direction_only_when_sign_and_both_balances_agree(self):
+        from services.financial.statement_import_andrews import DIRECTION_FROM_SIGN_AND_BALANCES
+        opening = [(15, '06/01 ID 0040 FREE CHECKING Previous Balance'), (350, '100.00')]
+        for name, rows, expected in (
+                ('withdrawal, minus, balances agree',
+                 [[(15, '06/03'), (75, 'IHthdrawal Debit Card'), (310, '-12.50'), (350, '87.50')]], 'debit'),
+                ('recurring withdrawal with a stray mark',
+                 [[(15, '06/03'), (75, 'Recurring w\u00b7ithdrawal Debit Card'), (310, '-12.50'), (350, '87.50')]], 'debit'),
+                ('deposit, no sign, balances agree',
+                 [[(15, '06/03'), (75, 'Dep0sit Transfer'), (310, '12.50'), (350, '112.50')]], 'credit'),
+                ('adjustment credit with a stray mark before the word',
+                 [[(15, '06/03'), (75, '\u00b7Withdrawal Adjustment POS'), (310, '12.50'), (350, '112.50')]], 'credit'),
+                ('new balance disagrees',
+                 [[(15, '06/03'), (75, 'IHthdrawal Debit Card'), (310, '-12.50'), (350, '86.50')]], None),
+                ('withdrawal word, no minus, balances agree with a deposit',
+                 [[(15, '06/03'), (75, 'IHthdrawal Debit Card'), (310, '12.50'), (350, '112.50')]], None),
+                ('deposit word, minus',
+                 [[(15, '06/03'), (75, 'Dep0sit Transfer'), (310, '-12.50'), (350, '87.50')]], None),
+                ('new balance unreadable',
+                 [[(15, '06/03'), (75, 'IHthdrawal Debit Card'), (310, '-12.50'), (350, '8?.50')]], None),
+                ('previous balance unreadable',
+                 [[(15, '06/02'), (75, 'Withdrawal Debit Card'), (310, '-1.00'), (350, '9?.00')],
+                  [(15, '06/03'), (75, 'IHthdrawal Debit Card'), (310, '-12.50'), (350, '86.50')]], None),
+                ('word that is not a payment word',
+                 [[(15, '06/03'), (75, 'Transfer Debit Card'), (310, '-12.50'), (350, '87.50')]], None)):
+            with self.subTest(name):
+                original = source([opening, *rows, [(15, '06/30'), (75, 'Ending Balance'), (350, rows[-1][-1][1])]])
+                before = deepcopy(original)
+                _, proposal = selected([original])
+                payment = [row for row in proposal['rows'] if not row['excluded']][-1]
+                self.assertEqual(payment['fields'].get('direction'), expected)
+                self.assertEqual(payment['fields']['description'], rows[-1][1][1])
+                if expected:
+                    self.assertEqual(payment['issues'], [])
+                    self.assertEqual(payment['kind'], 'transaction')
+                    self.assertEqual(payment['fields']['balance_difference_minor'], '0')
+                    self.assertEqual(payment['fields']['direction_basis'], DIRECTION_FROM_SIGN_AND_BALANCES)
+                else:
+                    self.assertTrue(payment['issues'])
+                    self.assertNotIn('direction_basis', payment['fields'])
+                self.assertEqual(original, before)
+
+    def test_misread_payment_word_rule_is_reversible_in_one_place(self):
+        from services.financial import statement_import_andrews as reader
+        original = source([
+            [(15, '06/01 ID 0040 FREE CHECKING Previous Balance'), (350, '100.00')],
+            [(15, '06/03'), (75, 'IHthdrawal Debit Card'), (310, '-12.50'), (350, '87.50')],
+            [(15, '06/30'), (75, 'Ending Balance'), (350, '87.50')]])
+        try:
+            reader.MISREAD_VERB_DIRECTION = False
+            _, proposal = selected([deepcopy(original)])
+        finally:
+            reader.MISREAD_VERB_DIRECTION = True
+        payment = next(row for row in proposal['rows'] if not row['excluded'])
+        self.assertIsNone(payment['fields'].get('direction'))
+        self.assertTrue(payment['issues'])
 
     def test_spaces_inside_separate_money_cells_preserve_digits_and_original_text(self):
         original = source([

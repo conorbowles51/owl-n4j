@@ -95,8 +95,11 @@ def read_import_controls(period, document, evidence):
             raise ValueError('The account closure source exceeds the document.')
         closure_citation = dict(date=closure['date'], original_text=' '.join(c['expected_text'] for c in closure['source_cells']), locator=locator.to_json())
     reasons = [f"{c['role'].title()}: {c['reason']}" for c in expected if c['reason']]
+    from services.financial.statement_details import effective_convention
+    # The sealed record keeps the convention read at import; a later account
+    # type decision changes how its printed controls convert to the ledger.
     return reviewed_controls(period, document, dict(import_source_document_id=str(document.id), finalization_id=None,
-                currency=record['currency'], balance_convention=record['balance_convention'],
+                currency=record['currency'], balance_convention=effective_convention(metadata) or record['balance_convention'],
                 reason='; '.join(reasons) or 'Account-summary balances accepted at import.',
                 controls=expected, account_closure=closure_citation,
                 scope='Amounts and PDF locations saved with this import. Corrections preserve the original printed text.'))

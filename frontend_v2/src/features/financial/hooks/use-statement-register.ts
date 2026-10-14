@@ -83,6 +83,20 @@ const importStates = z.object({
       same_pdf_saved_file_ids: z.array(z.string()).default([]),
       current_transactions: z.number().int().nonnegative(),
       incomplete_count: z.number().int().nonnegative().default(0),
+      // Of incomplete_count: values complete, held until the statement reconciles.
+      awaiting_reconciliation_count: z.number().int().nonnegative().default(0),
+      incomplete_sources: z
+        .array(
+          z.object({
+            source_document_id: z.string(),
+            period_start: z.string().nullable(),
+            period_end: z.string().nullable(),
+            missing_count: z.number().int().nonnegative(),
+            awaiting_reconciliation_count: z.number().int().nonnegative(),
+            blockers: z.array(z.string()).default([]),
+          })
+        )
+        .default([]),
       receipt_review_count: z.number().int().nonnegative().default(0),
       wire_review_count: z.number().int().nonnegative().default(0),
       prepared_periods: z.number().int().nonnegative().optional(),
@@ -100,6 +114,16 @@ const importStates = z.object({
       ready_periods: z.array(readyPeriod).default([]),
       pending_periods: z.number().int().nonnegative().default(0),
       periods_with_checks: z.number().int().nonnegative().default(0),
+      overlapping_periods: z.number().int().nonnegative().default(0),
+      repeat_periods: z.number().int().nonnegative().default(0),
+      // Every current reading of the file found nothing (no rows, records,
+      // dates or balances) and nothing was saved; the reason is plain words.
+      empty_reading: z
+        .object({
+          reason: z.enum(["scanned_image", "layout_not_supported", "no_statement"]),
+          message: z.string(),
+        })
+        .nullish(),
       periods: z.array(
         z.object({
           id: z.string(),
@@ -148,6 +172,25 @@ export function useStatementFiles(
   })
 }
 
+export const STATUS_POLL_BUSY_MS = 5000
+export const STATUS_POLL_IDLE_MS = 30000
+export function statusPollInterval({
+  active,
+  uploading,
+  importing,
+  reading,
+}: {
+  active: boolean
+  uploading: boolean
+  importing: boolean
+  reading: boolean
+}) {
+  if (!active) return false
+  return uploading || importing || reading
+    ? STATUS_POLL_BUSY_MS
+    : STATUS_POLL_IDLE_MS
+}
+
 export function useStatementRegister(
   caseId: string,
   uploading = false,
@@ -165,7 +208,19 @@ export function useStatementRegister(
   const imports = useQuery({
     queryKey: ["statement-import-status", caseId],
     enabled: active,
-    refetchInterval: active ? 5000 : false,
+    // Poll quickly only while something is reading or importing. TanStack
+    // Query never starts an interval refetch while one is still in flight.
+    refetchInterval: (query) =>
+      statusPollInterval({
+        active,
+        uploading,
+        importing: !!query.state.data?.files.some(
+          (file) => file.pending_periods > 0
+        ),
+        reading: !!files.data?.some((file) =>
+          ["processing", "queued"].includes(file.status)
+        ),
+      }),
     queryFn: async () => {
       const result = importStates.parse(
         await fetchAPI(
@@ -209,6 +264,13 @@ export function useStatementRegister(
                   (sum, entry) => sum + entry.incomplete_count,
                   0
                 ),
+                awaiting_reconciliation_count: entries.reduce(
+                  (sum, entry) => sum + entry.awaiting_reconciliation_count,
+                  0
+                ),
+                incomplete_sources: entries.flatMap(
+                  (entry) => entry.incomplete_sources
+                ),
                 receipt_review_count: entries.reduce(
                   (sum, entry) => sum + entry.receipt_review_count,
                   0
@@ -231,6 +293,9 @@ export function useStatementRegister(
                 ready_periods: latest?.ready_periods || [],
                 pending_periods: latest?.pending_periods || 0,
                 periods_with_checks: latest?.periods_with_checks || 0,
+                overlapping_periods: latest?.overlapping_periods || 0,
+                repeat_periods: latest?.repeat_periods || 0,
+                empty_reading: latest?.empty_reading ?? null,
               },
             ]
           }),
@@ -241,3 +306,8 @@ export function useStatementRegister(
     imports: { ...imports, data: saved },
   }
 }
+
+/** One file's saved import state as merged across its reading versions. */
+export type SavedStatementFile = NonNullable<
+  ReturnType<typeof useStatementRegister>["imports"]["data"]
+>["files"][number]

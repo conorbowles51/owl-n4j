@@ -197,3 +197,39 @@ it("offers the full supported list without assuming this case's currency", async
   }
   expect(screen.queryByRole("option", { name: /ZZZ/ })).not.toBeInTheDocument()
 })
+
+it("offers the queue's proposed currency for statements without one as one focused click", async () => {
+  const rows = [0, 1, 2].map((i) => ({
+    id: `item-${i}`, file_id: `f${i}`, statement_id: `s${i}`, filename: `${i}.pdf`, currency: i === 2 ? "MXN" : "",
+    status: "attention", currency_revision: "a".repeat(64),
+  }))
+  const entry = (i: number) => ({
+    id: `item-${i}`, batch_id: "batch", file_id: `f${i}`, source_id: `f${i}`, statement_id: `s${i}`,
+    filename: `${i}.pdf`, status: "attention", bucket: "waiting", file_ids: [`f${i}`],
+    proposals: { currency: { value: "USD", label: "the case's usual currency (175 of 175 saved statements)", confirmed: false } },
+  })
+  let sent: unknown
+  vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
+    if (options?.method) {
+      sent = options.body
+      return { case_id: "case", batch_id: "batch", updated: 2, currency: "USD" } as never
+    }
+    if (url.includes("/review/queue"))
+      return {
+        case_id: "case", file_ids: [], status_line: "", items: [entry(0), entry(1)],
+        counts: { imported: 0, waiting: 2, ready: 0, copies: 0, unreadable: 0 },
+      } as never
+    return { case_id: "case", id: "batch", total: rows.length, items: rows } as never
+  })
+  mount()
+  fireEvent.click(screen.getByRole("button", { name: "Set currency for selected statements" }))
+  const use = await screen.findByRole("button", { name: "Use USD for 2 statements" })
+  expect(screen.getByLabelText("Proposed currency")).toHaveTextContent("the case's usual currency")
+  await waitFor(() => expect(use).toHaveFocus())
+  fireEvent.click(use)
+  await screen.findByText(/USD saved for 2/)
+  expect(sent).toMatchObject({
+    currency: "USD",
+    statements: [{ id: "item-0" }, { id: "item-1" }],
+  })
+})

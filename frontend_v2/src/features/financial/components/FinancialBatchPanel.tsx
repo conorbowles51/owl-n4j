@@ -3,6 +3,8 @@ import { statementDuplicateDisposition } from "../lib/statement-duplicate"
 import { StatementReconciliationSummary } from "./StatementReconciliationSummary"
 import { formatLedgerAmount } from "../lib/ledger-format"
 import { BatchProgressSummary } from "./BatchProgressSummary"
+import { BatchFileOverview, batchFileOverview } from "./BatchFileOverview"
+import { copyBadge, isCurrentCopy } from "../lib/statement-copies"
 import { BatchReadyAction } from "./BatchReadyAction"
 import { batchSavedAccountsScope } from "../lib/batch-saved-accounts"
 import { batchStatementSummary } from "../lib/batch-statement-summary"
@@ -10,6 +12,7 @@ import { BatchReadingJobs } from "./BatchReadingJobs"
 import { FinancialRemovalAction } from "./FinancialRemovalAction"
 import { BatchStatementImportChoice } from "./BatchStatementImportChoice"
 import { BatchCurrencyEditor } from "./BatchCurrencyEditor"
+import { BatchLayoutMemory } from "./BatchLayoutMemory"
 import { BatchReviewSummary } from "./BatchReviewSummary"
 import { batchReviewSummarySchema } from "../lib/batch-review-summary"
 import { BulkStatementDetails } from "./BulkStatementDetails"
@@ -24,7 +27,7 @@ import { randomRequestId } from "@/lib/browser-crypto"
 import { useAuthStore } from "@/features/auth/hooks/use-auth"
 import { useStatementWorkspace } from "../stores/statement-workspace"
 import { useFinancialAccess } from "../hooks/use-financial-access"
-import { StatementImportPanel } from "./StatementImportPanel"
+import { StatementImportPanel, type StatementImportReceipt } from "./StatementImportPanel"
 import { serverStatementDraft } from "../lib/statement-review-draft"
 import { BatchReviewContext } from "../lib/batch-review-context"
 import { resetPaymentTableView } from "../lib/payment-table-draft"
@@ -32,6 +35,7 @@ import { useInvestigationScopeStore } from "../stores/investigation-scope"
 import { useFinancialStore } from "../stores/financial.store"
 import { useFinancialDraft } from "../stores/financial-drafts"
 import type { EvidenceJob } from "@/types/evidence.types"
+import { useReviewQueue } from "../lib/review-queue"
 const recoveryReceipt = z.object({
   retained_source_revision: z.string().nullish(),
   attempt_id: z.string().optional(),
@@ -138,6 +142,7 @@ const batchSchema = z.object({
   statements_with_issues: z.number().optional(),
   review_summary: batchReviewSummarySchema.optional(),
   statement_summary: batchStatementSummary.optional(),
+  file_overview: batchFileOverview.default([]),
   review_group: z.string().nullish(),
   review_group_label: z.string().nullish(),
   operations: z.array(operationSchema).default([]),
@@ -159,6 +164,7 @@ const listSchema = z.object({
       checked_files: z.number().optional(),
       failed_files: z.number().optional(),
       completed: z.boolean().default(false),
+      superseded: z.boolean().default(false),
       available_statements: z.number().optional(),
       statements_with_checks: z.number().optional(),
       statement_summary: batchStatementSummary.optional(),
@@ -192,6 +198,7 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
   const [error, setError] = useState("")
   const [visibleBatches, setVisibleBatches] = useState(8)
   const [showCompleted, setShowCompleted] = useState(false)
+  const [showOlder, setShowOlder] = useState(false)
   const [selectedBatches, setSelectedBatches] = useState<string[]>([])
   const [submission, setSubmission, clearSubmission] = useFinancialDraft<{
     request_id: string
@@ -337,6 +344,17 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
       return next
     })
   }
+  const openQueue = (fileIds: string[]) =>
+    setParams((current) => {
+      const next = new URLSearchParams(current)
+      for (const key of ["batch", "batchItem", "batchRow", "batchCheck", "files", "reviewFile", "returnBatch",
+        "returnBatchCheck", "queueItem", "queueList"])
+        next.delete(key)
+      next.set("view", "statements")
+      next.set("queue", "1")
+      next.set("queueFiles", [...new Set(fileIds)].join(","))
+      return next
+    })
   const openStatementFiles = (fileId?: string) => {
     const workspace = useStatementWorkspace.getState()
     const scope = `${user?.id || user?.username || "anonymous"}:${caseId}`
@@ -544,8 +562,15 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
       setParams({ view: "transactions" })
     },
   })
+  // A batch whose statements are all held by a newer batch (or already
+  // saved) is hidden, never deleted: "Show N older batches" lists it again.
+  const olderBatches =
+    batches.data?.filter((batch) => batch.superseded && !batch.completed)
+      .length ?? 0
   const listedBatches = batches.data?.filter(
-    (batch) => showCompleted || !batch.completed
+    (batch) =>
+      (showCompleted || !batch.completed) &&
+      (showOlder || batch.completed || !batch.superseded)
   )
   if (!batchId)
     return (
@@ -555,8 +580,10 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
       >
         <h3 className="font-semibold">Processing batches</h3>
         <p className="text-sm text-muted-foreground">
-          Each batch is a separate preparation run. Open a batch to continue its
-          saved review. The most recent run is first.
+          Each batch is the record of one preparation run, kept as history.
+          Statement work is done in the Review queue, which lists every
+          statement once whichever batch prepared it. The most recent run is
+          first.
         </p>
         {batches.isPending && (
           <p role="status">Loading your batches and saved progress…</p>
@@ -572,6 +599,21 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
           />{" "}
           Show completed batches (history)
         </label>
+        {olderBatches > 0 && (
+          <label className="block text-sm">
+            <input
+              type="checkbox"
+              checked={showOlder}
+              onChange={(e) => {
+                setShowOlder(e.target.checked)
+                setVisibleBatches(8)
+              }}
+            />{" "}
+            Show {olderBatches} older{" "}
+            {olderBatches === 1 ? "batch" : "batches"} (every statement is in a
+            newer batch or already saved)
+          </label>
+        )}
         {listedBatches?.length === 0 && (
           <p>No active batches. Completed work remains in history.</p>
         )}
@@ -740,6 +782,7 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
         batchId={batchId}
         itemId={itemId}
         rowId={params.get("batchRow") ?? undefined}
+        queueFileIds={query.data?.files.map((file) => file.file_id)}
         onBack={() => {
           refresh()
           change(batchId)
@@ -860,6 +903,11 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
           separate pause controls below.
         </p>
       )}
+      <BatchQueueBanner
+        caseId={caseId}
+        fileIds={batch.files.map((file) => file.file_id)}
+        onOpenQueue={() => openQueue(batch.files.map((file) => file.file_id))}
+      />
       <div ref={readingJobs}>
         <BatchReadingJobs
           caseId={caseId}
@@ -914,6 +962,7 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
         assigned={batch.counts.assigned || 0}
         onSelect={selectReviewGroup}
       />
+      <BatchFileOverview files={batch.file_overview} />
       {(confirm.isError || error) && (
         <div role="alert">
           <p>{confirm.error?.message || error}</p>
@@ -1068,7 +1117,7 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
           summary={batch.review_summary}
           selected={reviewGroup}
           onSelect={selectReviewGroup}
-          renderGroupAction={(group, count) => canEdit && ["holder", "account", "institution", "currency", "dates"].includes(group) ? (
+          renderGroupAction={(group, count) => canEdit && ["holder", "account", "institution", "currency", "dates", "no_activity"].includes(group) ? (
             <BulkStatementDetails key={group} caseId={caseId} batchId={batchId}
               reviewGroup={group} buttonLabel={`Resolve ${count} together`} onSaved={refresh} />
           ) : null}
@@ -1299,6 +1348,14 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
             onSaved={refresh}
           />
         )}
+        {canEdit && (
+          <BatchLayoutMemory
+            key={`memory-${batchId}`}
+            caseId={caseId}
+            batchId={batchId}
+            onSaved={refresh}
+          />
+        )}
         {displayItems.map((item) => (
           <article
             key={item.id}
@@ -1307,6 +1364,13 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <h3 className="font-semibold">{item.filename}</h3>
+                {isCurrentCopy(item.duplicate_disposition) &&
+                  item.status === "duplicate_ignored" && (
+                    <span className="inline-block rounded border px-2 py-0.5 text-xs">
+                      {copyBadge(item.duplicate_disposition)} · nothing to
+                      review
+                    </span>
+                  )}
                 <p className="text-sm">
                   {[
                     item.holder,
@@ -1603,21 +1667,42 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
   )
 }
 
-function BatchStatementReview({
+/** Navigation supplied by the case review queue instead of the batch's own lists. */
+export type QueueNavigation = {
+  /** The plain sentence naming the problem, shown before anything else. */
+  issue?: string
+  field?: "holder" | "account_number" | "period" | "currency" | "institution"
+  proposals?: Record<string, { value: string; label: string; confirmed?: boolean }>
+  /** The other blockers, so fixing the stated one is never mistaken for the end. */
+  also?: string[]
+  fixMakesReady?: boolean
+  position: number
+  total: number
+  onNext: () => void
+  onPrevious: () => void
+  onImported: (receipt?: StatementImportReceipt) => void
+}
+
+export function BatchStatementReview({
   caseId,
   batchId,
   itemId,
   rowId,
   onBack,
+  queue,
+  queueFileIds,
 }: {
   caseId: string
   batchId: string
   itemId: string
   rowId?: string
   onBack: () => void
+  queue?: QueueNavigation
+  /** Opened from a batch: "next to fix" continues in the review queue over these files. */
+  queueFileIds?: string[]
 }) {
   const [params, setParams] = useSearchParams()
-  const reviewGroup = params.get("batchCheck") ?? "unfinished"
+  const reviewGroup = queue ? "" : (params.get("batchCheck") ?? "unfinished")
   const reviewGroupQuery = reviewGroup
     ? `&review_group=${encodeURIComponent(reviewGroup)}`
     : ""
@@ -1706,7 +1791,56 @@ function BatchStatementReview({
       setNavigating(false)
     }
   }
+  // The review queue is the one list of statement work: from a batch, the
+  // next statement to fix is the queue's next entry for this batch's files.
+  const continueInQueue = async () => {
+    setNavigating(true)
+    setNavigationError("")
+    try {
+      await beforeNavigate.current?.()
+      const files = queueFileIds?.length ? queueFileIds : item ? [item.file_id] : []
+      setParams((current) => {
+        const next = new URLSearchParams(current)
+        for (const key of ["batch", "batchItem", "batchRow", "batchCheck", "queueItem", "queueList"])
+          next.delete(key)
+        next.set("view", "statements")
+        next.set("queue", "1")
+        next.set("queueFiles", [...new Set(files)].join(","))
+        return next
+      })
+    } catch (error) {
+      setNavigationError(
+        error instanceof Error
+          ? error.message
+          : "Your review could not be saved before moving. Your edits are retained."
+      )
+    } finally {
+      setNavigating(false)
+    }
+  }
+  const queueStep = async (direction: "next" | "previous") => {
+    setNavigating(true)
+    setNavigationError("")
+    try {
+      await beforeNavigate.current?.()
+      if (direction === "next") queue!.onNext()
+      else queue!.onPrevious()
+    } catch (error) {
+      setNavigationError(
+        error instanceof Error
+          ? error.message
+          : "Your review could not be saved before moving. Your edits are retained."
+      )
+    } finally {
+      setNavigating(false)
+    }
+  }
   const nextProblem = async (direction: "next" | "previous" = "next") => {
+    if (queue) {
+      if (direction === "next") queue.onNext()
+      else queue.onPrevious()
+      return
+    }
     setNavigationError("")
     try {
       const result = z
@@ -1763,19 +1897,34 @@ function BatchStatementReview({
   return (
     <div className="space-y-3">
       <Button variant="outline" onClick={onBack}>
-        Back to bulk import
+        {queue ? "Back to review queue" : "Back to bulk import"}
       </Button>
       <div
         className="flex flex-wrap gap-2 items-center sticky top-0 z-10 bg-background p-2 border rounded"
         aria-label="Review batch statements"
       >
+        {queue?.issue && (
+          <p
+            role="note"
+            aria-label="What needs fixing"
+            className="w-full rounded border border-amber-500/60 bg-amber-50/60 p-2 text-sm font-medium dark:bg-amber-950/20"
+          >
+            To fix: {queue.issue}
+            {!!queue.also?.length && (
+              <span className="block font-normal">Also: {queue.also.join("; ")}</span>
+            )}
+          </p>
+        )}
         {item && (
           <div
             className="w-full text-sm"
             aria-label="Current batch statement status"
           >
             <p className="font-semibold">
-              Batch {batchId.slice(0, 8)} · {item.filename}
+              {queue
+                ? `Statement ${queue.position} of ${queue.total} waiting for you`
+                : `Batch ${batchId.slice(0, 8)}`}{" "}
+              · {item.filename}
             </p>
             <p>
               {[
@@ -1803,27 +1952,49 @@ function BatchStatementReview({
             </p>
           </div>
         )}
-        <Button
-          variant="outline"
-          disabled={!item || navigating}
-          onClick={() => void adjacentStatement("previous")}
-        >
-          Previous statement
-        </Button>
-        <Button
-          variant="outline"
-          disabled={!item || navigating}
-          onClick={() => void adjacentStatement("next")}
-        >
-          Next statement
-        </Button>
-        <Button
-          variant="outline"
-          disabled={!item || navigating}
-          onClick={() => void adjacentStatement("next", "unfinished")}
-        >
-          Next unfinished statement
-        </Button>
+        {queue ? (
+          <>
+            <Button
+              variant="outline"
+              disabled={navigating || queue.position <= 1}
+              onClick={() => void queueStep("previous")}
+            >
+              Previous statement with issues
+            </Button>
+            <Button
+              disabled={navigating}
+              onClick={() => void queueStep("next")}
+            >
+              {queue.position < queue.total
+                ? `Next statement with issues (${queue.position + 1} of ${queue.total})`
+                : "Back to the queue"}
+            </Button>
+          </>
+        ) : (
+          <>
+            <Button
+              variant="outline"
+              disabled={!item || navigating}
+              onClick={() => void adjacentStatement("previous")}
+            >
+              Previous statement
+            </Button>
+            <Button
+              variant="outline"
+              disabled={!item || navigating}
+              onClick={() => void adjacentStatement("next")}
+            >
+              Next statement
+            </Button>
+            <Button
+              variant="outline"
+              disabled={!item || navigating}
+              onClick={() => void continueInQueue()}
+            >
+              Next statement with something to fix
+            </Button>
+          </>
+        )}
         <span className="text-sm">
           {navigating
             ? "Saving review and opening statement…"
@@ -1831,7 +2002,7 @@ function BatchStatementReview({
         </span>
         {navigationStatus && <p role="status">{navigationStatus}</p>}
       </div>
-      {reviewGroup && (
+      {reviewGroup && !queue && (
         <p className="text-sm">
           Previous and next stay within the selected filter. Return to the batch
           to change or clear this filter.
@@ -1861,7 +2032,7 @@ function BatchStatementReview({
             batchId,
             beforeNavigate,
             rowId,
-            field: !rowId
+            field: queue?.field ?? (!rowId
               ? (reviewProblems(item, reviewGroup).find(
                   (problem) =>
                     (!reviewGroup ||
@@ -1871,7 +2042,9 @@ function BatchStatementReview({
                       problem.field || ""
                     )
                 )?.field as "holder" | "account_number" | "period" | undefined)
-              : undefined,
+              : undefined),
+            proposals: queue?.proposals,
+            remaining: queue ? (queue.fixMakesReady ? [] : queue.also ?? []) : undefined,
             draftRevision: item.review_revision,
             save,
             confirm: (request) =>
@@ -1897,6 +2070,13 @@ function BatchStatementReview({
           <StatementImportPanel
             caseId={caseId}
             onImported={(receipt) => {
+              if (queue) {
+                // The queue says what happened and moves on; the investigator
+                // stays in the queue instead of being sent to Transactions.
+                void client.invalidateQueries()
+                queue.onImported(receipt)
+                return
+              }
               if ((receipt?.record_count ?? receipt?.transaction_count) === 0) {
                 setSavedBalances(true)
                 void client.invalidateQueries()
@@ -1912,5 +2092,52 @@ function BatchStatementReview({
         </BatchReviewContext.Provider>
       )}
     </div>
+  )
+}
+
+/** What the review queue holds for this batch's files: the batch's work is counted there, once. */
+function BatchQueueBanner({
+  caseId,
+  fileIds,
+  onOpenQueue,
+}: {
+  caseId: string
+  fileIds: string[]
+  onOpenQueue: () => void
+}) {
+  const queue = useReviewQueue(caseId, fileIds, fileIds.length > 0)
+  if (!fileIds.length) return null
+  if (!queue.data)
+    return (
+      <p role="status" className="text-sm text-muted-foreground">
+        {queue.isError
+          ? "The review queue for this batch could not be loaded."
+          : "Counting this batch's statements in the review queue…"}
+      </p>
+    )
+  const c = queue.data.counts
+  return (
+    <section
+      aria-label="This batch in the review queue"
+      className="flex flex-wrap items-center gap-3 rounded border p-3 text-sm"
+    >
+      <p className="min-w-0 flex-1 basis-72">
+        In the review queue, this batch's files hold: waiting for you{" "}
+        {c.waiting} · ready to save {c.ready} · couldn't read{" "}
+        {c.unreadable + c.unreadable_files} · imported {c.imported}. Statements
+        are opened and saved from the queue; this batch is kept as history.
+      </p>
+      <Button
+        size="sm"
+        variant={c.waiting || c.ready ? "primary" : "outline"}
+        onClick={onOpenQueue}
+      >
+        {c.waiting
+          ? `Review ${c.waiting} in the queue`
+          : c.ready
+            ? `Save ${c.ready} ready in the queue`
+            : "Open the review queue"}
+      </Button>
+    </section>
   )
 }

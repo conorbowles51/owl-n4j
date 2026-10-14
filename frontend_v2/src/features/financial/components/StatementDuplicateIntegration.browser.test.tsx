@@ -234,7 +234,7 @@ it("keeps ignored receipts and restored corrections in review without navigating
   const onImported = await mount()
   editDescription()
   fireEvent.click(
-    screen.getByRole("button", { name: "Confirm import of 1 transactions" })
+    screen.getAllByRole("button", { name: "Import 1 transaction" })[0]
   )
   await screen.findByRole("heading", { name: "Duplicate - Ignored by system" })
   expect(onImported).not.toHaveBeenCalled()
@@ -276,7 +276,7 @@ it("keeps ignored receipts and restored corrections in review without navigating
     "Investigator correction retained"
   )
   expect(
-    screen.getByRole("button", { name: "Confirm import of 1 transactions" })
+    screen.getAllByRole("button", { name: "Import 1 transaction" })[0]
   ).toBeEnabled()
 })
 
@@ -404,7 +404,7 @@ it("keeps manual position through checks and import, with an explicit neighbouri
     target: { value: "5.00" },
   })
   fireEvent.click(
-    screen.getByRole("button", { name: "Confirm import of 2 transactions" })
+    screen.getAllByRole("button", { name: "Import 2 transactions" })[0]
   )
   await waitFor(() =>
     expect(fetchAPI).toHaveBeenCalledWith(
@@ -459,7 +459,7 @@ it.each([
     })
     await mount()
     expect(
-      screen.getByRole("button", { name: "Confirm import of 1 transactions" })
+      screen.getAllByRole("button", { name: "Import 1 transaction" })[0]
     ).toBeDisabled()
     fireEvent.click(screen.getByRole("button", { name: "Review row" }))
     await waitFor(() => expect(screen.getByLabelText(label)).toHaveFocus())
@@ -514,9 +514,9 @@ it("replaces an empty earlier import from a batch with one statement decision an
   expect(screen.getByLabelText("Reason for detail corrections")).toHaveValue(
     "Use the re-read statement to recover payments missing from the earlier empty import."
   )
-  const button = screen.getByRole("button", {
-    name: /Import 1 payments and view Transactions/,
-  })
+  const button = screen.getAllByRole("button", {
+    name: /^Import 1 transaction$/,
+  })[0]
   expect(button).toBeEnabled()
   await page.screenshot({ path: "/private/tmp/loupe-reread-choice.png" })
   fireEvent.click(button)

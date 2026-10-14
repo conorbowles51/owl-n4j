@@ -116,7 +116,7 @@ it("shows an ignored file, exposes its retained source and opens its exact perio
   )
   mount(true)
   const choice = await screen.findByLabelText("Show files")
-  expect(choice).toHaveValue("work")
+  expect(choice).toHaveValue("action")
   expect(
     screen.queryByRole("button", { name: "Review duplicate decision" })
   ).not.toBeInTheDocument()
@@ -382,6 +382,7 @@ it("prepares all selected files directly, keeps hidden selections and reuses a f
   }))
   const attempts: unknown[] = []
   vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
+    if (url.includes("/batches/preview")) return noOpenBatch as never
     if (options?.method === "POST") {
       attempts.push(options.body)
       if (attempts.length === 1) throw Error("Connection lost")
@@ -430,6 +431,82 @@ it("prepares all selected files directly, keeps hidden selections and reuses a f
     expect.stringContaining("/confirm"),
     expect.anything()
   )
+})
+
+const noOpenBatch = {
+  case_id: "case",
+  selected_files: 0,
+  suggested_batch_id: null,
+  open_batches: [],
+  copies: [],
+}
+
+it("offers to continue the unfinished batch that already holds the selection, and starts a fresh one only when asked", async () => {
+  const files = Array.from({ length: 3 }, (_, n) => ({
+    ...file,
+    id: `file-${n}`,
+    original_filename: `Statements ${n}.pdf`,
+    status: "processed",
+  }))
+  const created: unknown[] = []
+  vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
+    if (url.includes("/batches/preview"))
+      return {
+        case_id: "case",
+        selected_files: 3,
+        suggested_batch_id: "open-batch",
+        open_batches: [
+          {
+            id: "open-batch",
+            created_at: "2026-10-08T23:53:35Z",
+            status: "review",
+            created_by: "",
+            file_count: 4,
+            shared_files: 2,
+            selected_files: 3,
+            covers_selection: false,
+            other_files: ["file-2"],
+            unfinished_statements: 9,
+            files_reading: 0,
+          },
+        ],
+        copies: [],
+      } as never
+    if (options?.method === "POST") {
+      created.push(options.body)
+      return { id: "small-batch", case_id: "case" } as never
+    }
+    return (
+      url.includes("/statement-import/files") ? status : { files }
+    ) as never
+  })
+  mount(true)
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Select all 3 shown files" })
+  )
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: "Review and save selected files together (3)",
+    })
+  )
+  expect(
+    await screen.findByText(/2 of these 3 files are already in the batch from/)
+  ).toBeInTheDocument()
+  expect(created).toHaveLength(0)
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: "Continue that batch and prepare the other 1 file",
+    })
+  )
+  await waitFor(() =>
+    expect(screen.getByLabelText("Location")).toHaveTextContent(
+      "/cases/case/financial?view=statements&batch=open-batch"
+    )
+  )
+  // Only the file the open batch does not hold gets a batch of its own.
+  expect(created).toEqual([
+    expect.objectContaining({ file_ids: ["file-2"], start_new: true }),
+  ])
 })
 
 it("does not navigate to a batch belonging to a different case", async () => {
@@ -619,9 +696,13 @@ it("keeps a balance-only statement in the imported file filter", async () => {
       </MemoryRouter>
     </QueryClientProvider>
   )
+  // A saved statement needs nothing, so the default Needs action view omits it.
   expect(
-    await screen.findByText("Statement saved · 1 recorded period · no payments")
+    await screen.findByRole("button", { name: "Needs action (0)" })
   ).toBeVisible()
+  expect(
+    screen.queryByText("Statement saved · 1 recorded period · no payments")
+  ).not.toBeInTheDocument()
   fireEvent.change(screen.getByLabelText("Show files"), {
     target: { value: "imported" },
   })
@@ -695,7 +776,7 @@ it("offers a clear review action and batch review for read files without a prepa
   ).toBeVisible()
   expect(screen.getByText(/not included in the ready counts/)).toBeVisible()
   fireEvent.click(
-    screen.getByRole("button", { name: "Review 1 read file together" })
+    screen.getByRole("button", { name: "Start batch check of 1 read file" })
   )
   await waitFor(() =>
     expect(screen.getByLabelText("Location")).toHaveTextContent("batch=batch")
@@ -734,4 +815,238 @@ it("identifies a saved copy without counting its payments a second time", async 
   expect(
     Object.values(useStatementWorkspace.getState().selections)
   ).toContainEqual({ fileId: "file", open: true })
+})
+
+it("names the period of incomplete records and opens them from the card without nesting buttons", async () => {
+  const period = (id: string, start: string, end: string) => ({
+    id,
+    account_id: "account",
+    account_label: "Card account",
+    start,
+    end,
+    source_status: "admitted",
+  })
+  vi.mocked(fetchAPI).mockImplementation(async (url) =>
+    url.includes("/statement-import/files")
+      ? {
+          case_id: "case",
+          truncated: false,
+          files: [
+            {
+              evidence_file_id: "file",
+              current_transactions: 300,
+              incomplete_count: 3,
+              awaiting_reconciliation_count: 2,
+              incomplete_sources: [
+                {
+                  source_document_id: "source",
+                  period_start: "2020-10-08",
+                  period_end: "2020-11-09",
+                  missing_count: 1,
+                  awaiting_reconciliation_count: 2,
+                  blockers: [
+                    "The payments do not add up to the printed closing balance.",
+                  ],
+                },
+              ],
+              prepared_periods: 3,
+              repeat_periods: 1,
+              overlapping_periods: 2,
+              periods_with_checks: 0,
+              periods: [
+                period("one", "2020-10-08", "2020-11-09"),
+                period("two", "2020-11-10", "2020-12-09"),
+              ],
+            },
+          ],
+        }
+      : url.includes("/incomplete-records?")
+        ? { records: [], total: 0, statements: [] }
+        : { files: [{ ...file, status: "processed" }] }
+  )
+  mount()
+  expect(
+    await screen.findByText(
+      "300 usable transactions · 1 incomplete record to check · 2 completed records waiting for the statement to reconcile"
+    )
+  ).toBeInTheDocument()
+  expect(
+    screen.getByText(
+      /2 of 2 statement periods saved · 1 repeat reading of an already saved period, not imported again · 2 periods overlap another supplied statement/
+    )
+  ).toBeInTheDocument()
+  expect(screen.queryByText(/checks to review/)).toBeNull()
+  expect(
+    screen.getByText(/Period 2020-10-08 to 2020-11-09: 1 incomplete record to check/)
+  ).toHaveTextContent(
+    "Still needed before they enter Transactions: The payments do not add up to the printed closing balance."
+  )
+  const show = screen.getByRole("button", {
+    name: "Show 3 records to check in statement.pdf",
+  })
+  expect(show.closest("button")?.parentElement?.closest("button")).toBeNull()
+  fireEvent.click(show)
+  expect(show).toHaveAttribute("aria-expanded", "true")
+  await waitFor(() =>
+    expect(fetchAPI).toHaveBeenCalledWith(
+      expect.stringMatching(/incomplete-records\?.*evidence_file_id=file/)
+    )
+  )
+})
+
+it("opens on Needs action, counts not-imported cards exactly and filters without starting any work", async () => {
+  const empty = (reason: string, message: string) => ({
+    reason,
+    message,
+  })
+  vi.mocked(fetchAPI).mockImplementation(async (url) =>
+    url.includes("/statement-import/files")
+      ? {
+          case_id: "case",
+          truncated: false,
+          files: [
+            {
+              evidence_file_id: "scan",
+              current_transactions: 0,
+              periods: [],
+              prepared_periods: 1,
+              empty_reading: empty(
+                "scanned_image",
+                "Nothing could be read: scanned image, needs visual reading"
+              ),
+            },
+            {
+              evidence_file_id: "layout",
+              current_transactions: 0,
+              periods: [],
+              prepared_periods: 1,
+              empty_reading: empty(
+                "layout_not_supported",
+                "Nothing could be read: layout not supported yet"
+              ),
+            },
+            {
+              evidence_file_id: "saved",
+              current_transactions: 5,
+              periods: [
+                {
+                  id: "p",
+                  account_id: "a",
+                  account_label: "Saved account",
+                  start: "2024-01-01",
+                  end: "2024-01-31",
+                  source_status: "admitted",
+                },
+              ],
+            },
+          ],
+        }
+      : {
+          files: ["scan", "layout", "saved", "unsaved"].map((id) => ({
+            ...file,
+            id,
+            original_filename: `${id}.pdf`,
+            status: "processed",
+          })),
+        }
+  )
+  mount(true)
+  expect(await screen.findByLabelText("Show files")).toHaveValue("action")
+  const filters = await screen.findByRole("group", { name: "Filter the list" })
+  expect(
+    await screen.findByRole("button", { name: "Not imported (3)" })
+  ).toBeVisible()
+  expect(screen.getByText(/Not imported: 3/)).toBeVisible()
+  expect(
+    screen.getByText(
+      "Not imported · Nothing could be read: scanned image, needs visual reading"
+    )
+  ).toBeVisible()
+  expect(
+    screen.getByText(
+      "Not imported · Nothing could be read: layout not supported yet"
+    )
+  ).toBeVisible()
+  expect(screen.queryByText("saved.pdf")).not.toBeInTheDocument()
+  // The batch check starts work, so it is not among the filters.
+  expect(
+    filters.querySelector("button")?.textContent?.includes("batch check")
+  ).toBe(false)
+  expect(
+    screen.getByRole("region", { name: "Batch check" })
+  ).toHaveTextContent("This starts work")
+  expect(filters).toHaveTextContent("Show 0 imports in progress")
+  const before = vi.mocked(fetchAPI).mock.calls.length
+  for (const name of [
+    "Not imported (3)",
+    "Show all files",
+    "Show 0 imports in progress",
+    "Review duplicates",
+    "Needs action (3)",
+  ])
+    fireEvent.click(screen.getByRole("button", { name }))
+  expect(vi.mocked(fetchAPI).mock.calls.length).toBe(before)
+  fireEvent.click(screen.getByRole("button", { name: "Not imported (3)" }))
+  expect(
+    document.querySelectorAll('[data-not-imported="true"]').length
+  ).toBe(3)
+  fireEvent.click(screen.getByRole("button", { name: "Show all files" }))
+  expect(screen.getByText("saved.pdf")).toBeVisible()
+  expect(
+    document.querySelectorAll('[data-not-imported="true"]').length
+  ).toBe(3)
+})
+
+it("offers Edit account details for the shown files without ticking, including empty readings", async () => {
+  vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
+    if (url.includes("/account-details/statements"))
+      return { case_id: "case", items: [], notices: [] } as never
+    if (url.includes("/statement-import/files"))
+      return {
+        case_id: "case",
+        truncated: false,
+        files: [
+          {
+            evidence_file_id: "empty",
+            current_transactions: 0,
+            periods: [],
+            prepared_periods: 1,
+            empty_reading: {
+              reason: "layout_not_supported",
+              message: "Nothing could be read: layout not supported yet",
+            },
+          },
+        ],
+      } as never
+    void options
+    return {
+      files: ["empty", "other"].map((id) => ({
+        ...file,
+        id,
+        original_filename: `${id}.pdf`,
+        status: "processed",
+      })),
+    } as never
+  })
+  mount(true)
+  const edit = await screen.findByRole("button", {
+    name: "Edit account details of 2 shown files",
+  })
+  expect(edit).toBeEnabled()
+  expect(
+    screen.getByText(/With nothing ticked, Edit account details covers the files shown/)
+  ).toBeVisible()
+  fireEvent.click(edit)
+  await waitFor(() =>
+    expect(fetchAPI).toHaveBeenCalledWith(
+      expect.stringContaining("/account-details/statements"),
+      expect.objectContaining({
+        body: { file_ids: ["empty", "other"] },
+      })
+    )
+  )
+  fireEvent.click(screen.getByLabelText("Select empty.pdf"))
+  expect(
+    screen.getByRole("button", { name: "Edit account details" })
+  ).toBeEnabled()
 })

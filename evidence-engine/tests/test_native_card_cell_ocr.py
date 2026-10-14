@@ -10,7 +10,7 @@ from app.pipeline import financial_amount_ocr as cells
 from app.pipeline import pdf_extraction as pdf
 
 
-def tables(amount='2O.00'):
+def tables(amount='2O.00', trans='01/04', post='01/04'):
     reader = pdf._load_table_reader()
     lines = [
         (10, [(200, 'CREDIT ONE BANK CREDIT CARD STATEMENT')]),
@@ -21,7 +21,7 @@ def tables(amount='2O.00'):
         (120, [(140, 'New Balance'), (260, '$115.00')]),
         (245, [(275, 'TRANSACTIONS')]),
         (257, [(140, 'Reference Number'), (218, 'Trans Date Post Date Description of Transaction or Credit'), (445, 'Amount')]),
-        (270, [(140, 'SYNTHETIC1'), (225, '01/04'), (255, '01/04'), (278, 'EXAMPLE SHOP'), (452, amount)]),
+        (270, [(140, 'SYNTHETIC1'), (225, trans), (255, post), (278, 'EXAMPLE SHOP'), (452, amount)]),
         (282, [(140, 'SYNTHETIC2'), (225, '01/05'), (255, '01/05'), (278, 'PAYMENT - MOBILE APP'), (447, '-5.00')]),
         (378, [(270, '2024 Totals Year-to-Date')]),
     ]
@@ -38,8 +38,8 @@ def observations(values):
     return [dict(text=value,dpi=300 if i<3 else 450,threshold=(150,190,220)[i%3]) for i,value in enumerate(values)]
 
 
-def refine(monkeypatch, values, amount='2O.00'):
-    original=tables(amount)
+def refine(monkeypatch, values, amount='2O.00', **dates):
+    original=tables(amount, **dates)
     monkeypatch.setattr(cells,'_cleaned_line_readings',lambda *args:observations(values))
     with fitz.open() as doc:
         page=doc.new_page(width=600,height=800)
@@ -71,6 +71,28 @@ def test_conflicting_incomplete_or_nonliteral_crop_results_are_retained_for_revi
     assert result is original and records==[]
 
 
+def test_card_dates_whose_slash_the_layer_read_as_a_digit_are_reread_from_their_own_cells(monkeypatch):
+    original,result,records=refine(monkeypatch,['01/04']*6,amount='20.00',trans='01104',post='01104')
+    before=original[0].geometry.cells;after=result[0].geometry.cells
+    assert [(a.row,a.column,b.text) for a,b in zip(before,after) if a.text!=b.text]==[(8,1,'01/04'),(8,2,'01/04')]
+    assert [(r['field'],r['original_text'],r['text'],r['reason']) for r in records]==[
+        ('date','01104','01/04','unreadable_native_statement_date'),
+        ('booking_date','01104','01/04','unreadable_native_statement_date')]
+    assert records[0]['refined_quality']['unreadable']==0
+
+
+@pytest.mark.parametrize('values,trans',[
+    (['01/14']*6,'01104'),            # the reread changes a printed digit, not only the slash
+    (['03/04']*6,'03104'),            # outside the cycle and the 31 days before it
+    (['01/04']*3+['01/05']*3,'01104'),  # the crops disagree
+    (['01/04']*6,'O1-04'),            # a glyph never measured for the slash
+])
+def test_card_date_rereads_must_explain_every_printed_character_inside_the_cycle(monkeypatch,values,trans):
+    original,result,records=refine(monkeypatch,values,amount='20.00',trans=trans)
+    assert not any(r.get('field')=='date' for r in records)
+    assert next(c.text for c in result[0].geometry.cells if (c.row,c.column)==(8,1))==trans
+
+
 def test_complete_existing_value_is_never_replaced_to_fit_controls(monkeypatch):
     original,result,records=refine(monkeypatch,['20.00']*6,amount='21.00')
     assert result is original and records==[]
@@ -97,7 +119,7 @@ def test_full_page_ocr_losing_a_row_uses_only_the_safe_native_cell_fallback(tmp_
     reader=pdf._load_table_reader()
     monkeypatch.setattr(pdf,'_ocr_detection_reason',lambda *args:None)
     monkeypatch.setattr(pdf,'_extract_native_tables',lambda *args:(reader.chunks_of(native),native))
-    monkeypatch.setattr(pdf,'_ocr_page',lambda *args:('Synthetic image reading',90,300,[],[]))
+    monkeypatch.setattr(pdf,'_ocr_page',lambda *args,**kwargs:('Synthetic image reading',90,300,[],[]))
     monkeypatch.setattr(reader,'read_positioned_ocr_words',lambda *args,**kwargs:missing)
     monkeypatch.setattr(cells,'_cleaned_line_readings',lambda *args:observations(['20.00']*6))
     result=pdf._extract_pdf_sync(str(path))

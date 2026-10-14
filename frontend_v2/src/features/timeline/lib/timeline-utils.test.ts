@@ -4,6 +4,9 @@ import {
   formatEventTime,
   getEventTimestamp,
   groupEventsByDate,
+  getDateRange,
+  buildDensityHistogram,
+  isValidDate,
 } from "./timeline-utils"
 import type { TimelineEvent } from "../api"
 
@@ -22,6 +25,44 @@ function event(partial: Partial<TimelineEvent>): TimelineEvent {
 }
 
 describe("timeline date/time utilities", () => {
+  it.each(["25:00", "12:99", "12:15:99", "09:00 garbage"])(
+    "keeps a valid event day when its clock time is invalid: %s",
+    (time) => {
+      const item = event({ time })
+      expect(formatEventTime(item)).toBe("No time")
+      expect(getEventTimestamp(item)).toBe(
+        new Date("2024-01-01T00:00:00").getTime()
+      )
+      expect(() => getDateRange([item])).not.toThrow()
+    }
+  )
+
+  it.each(["2024-02-30", "2023-02-29", "2024-13-01", "not a date", ""])(
+    "rejects impossible calendar dates: %s",
+    (date) => expect(isValidDate(date)).toBe(false)
+  )
+
+  it("ignores invalid dates in ranges and histograms without losing valid events", () => {
+    const valid = event({ key: "valid" })
+    const invalid = event({ key: "invalid", date: "not a date" })
+    expect(getDateRange([invalid, valid])).toEqual(getDateRange([valid]))
+    expect(getDateRange([invalid])).toEqual({ min: "", max: "" })
+    expect(buildDensityHistogram([invalid], [invalid])).toEqual([])
+    const histogram = buildDensityHistogram([invalid, valid], [invalid, valid])
+    expect(
+      histogram.reduce((total, bucket) => total + bucket.totalCount, 0)
+    ).toBe(1)
+    expect(
+      histogram.reduce((total, bucket) => total + bucket.filteredCount, 0)
+    ).toBe(1)
+  })
+
+  it("computes ranges for the full supported dataset without spreading function arguments", () => {
+    expect(() =>
+      getDateRange(Array.from({ length: 200000 }, () => event({})))
+    ).not.toThrow()
+  })
+
   it("sorts timed events before unknown-time events on the same day", () => {
     const events = [
       event({ key: "unknown", date: "2024-01-01", time: null }),

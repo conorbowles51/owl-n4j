@@ -70,3 +70,115 @@ class LayoutContextTests(unittest.TestCase):
         self.assertEqual(row['posting_date_source']['expected_text'],'May 30')
         self.assertEqual(row['date_header_source']['expected_text'],'Trans Date')
         self.assertEqual(row['posting_date_header_source']['expected_text'],'Post Date')
+
+    def test_scanned_marker_tolerates_only_its_final_punctuation(self):
+        # A 150 dpi JPEG scan read the closing full stop as a colon. Every
+        # word and the domain must still be exact.
+        for marker in ('Visit capitalone.com to see detailed transactions:',
+                       'Visit capitalone.com to see detailed transactions',
+                       'Visit www.capitalone.com to see detailed transactions,',
+                       'Visit capitalone.com to see detailed transactions ;',
+                       '  Visit capitalone.com to see detailed transactions.  '):
+            source=self.source();source[2]['cells'][0]['expected_text']=marker
+            with self.subTest(marker=marker):
+                result=statement_layout_context(source)
+                self.assertEqual([r['row_index'] for r in result['rows']],[5,8])
+                self.assertEqual(result['institution_source']['expected_text'],marker)
+
+    def test_marker_with_other_words_domain_or_noise_is_unmatched(self):
+        for marker in ('Visit capitalone.com to see detailed transactions..',
+                       'Visit capitalone.com to see detailed transactions:.',
+                       'Visit capitalone.com to see detailed transaction.',
+                       'Visit capitalone.com to see transactions.',
+                       'Visit capitalone.co to see detailed transactions.',
+                       'Visit capitalonee.com to see detailed transactions.',
+                       'Visit capital0ne.com to see detailed transactions.',
+                       'Visit wwwcapitalone.com to see detailed transactions.',
+                       'Visit example.com to see detailed transactions.',
+                       'Visit capitalone.com to see detailed transactions: Payments',
+                       'Please visit capitalone.com to see detailed transactions.',
+                       'visit capitalone.com to see detailed transactions.',
+                       'Visit capitalone.com to see detailed transactions | 4821',
+                       'Visit  capitalone.com to see detailed transactions.',
+                       'Visit capitalone.com to see detailed transactions  .'):
+            source=self.source();source[2]['cells'][0]['expected_text']=marker
+            with self.subTest(marker=marker):self.assertIsNone(statement_layout_context(source))
+
+    def test_tolerant_marker_still_refuses_a_continuation_or_a_second_marker(self):
+        source=self.source();source[2]['cells'][0]['expected_text']='Visit capitalone.com to see detailed transactions:'
+        self.assertIsNone(statement_layout_context(source,continuation_statement={'layout_id':'capital-one-card'}))
+        source.append(dict(row_index=50,cells=[dict(column_index=0,expected_text='Visit capitalone.com to see detailed transactions.',locator={'kind':'page','page':3})]))
+        self.assertIsNone(statement_layout_context(source))
+
+
+class PurchaseBeforeCycleTests(unittest.TestCase):
+    """A one-date card table lists a purchase made just before its cycle."""
+
+    def test_a_single_date_table_resolves_the_month_and_day_just_before_the_cycle(self):
+        source = LayoutContextTests().source()
+        source[8]['cells'][0]['expected_text'] = 'May 11'
+        row = statement_layout_context(source)['rows'][1]
+        self.assertEqual(row['date_proposals'], ['2020-05-11'])
+        self.assertEqual(row['date_basis'], 'printed_before_cycle')
+
+    def test_dates_further_back_or_after_the_cycle_stay_unresolved(self):
+        for text in ('Apr 10', 'Jun 12', 'Feb 30'):
+            with self.subTest(text=text):
+                source = LayoutContextTests().source()
+                source[8]['cells'][0]['expected_text'] = text
+                self.assertEqual(statement_layout_context(source)['rows'][1]['date_proposals'], [])
+
+    def test_a_year_boundary_names_the_previous_year(self):
+        from datetime import date
+        from services.financial.statement_layout_context import card_row_dates
+        _, dates, _, basis = card_row_dates('Dec 31', None, date(2021, 1, 1), date(2021, 1, 31))
+        self.assertEqual((dates, basis), (['2020-12-31'], 'printed_before_cycle'))
+
+    def test_a_table_with_a_posting_column_still_needs_that_posting_date(self):
+        from datetime import date
+        from services.financial.statement_layout_context import card_row_dates
+        start, end = date(2020, 5, 12), date(2020, 6, 11)
+        self.assertEqual(card_row_dates('May 11', '', start, end)[1], [])
+        self.assertEqual(card_row_dates('May 11', 'Jun 30', start, end)[1], [])
+        self.assertEqual(card_row_dates('May 11', 'May 13', start, end)[1:4:2], (['2020-05-11'], 'printed_posting_date'))
+
+
+    def test_a_charge_posted_just_before_the_cycle_keeps_both_printed_dates(self):
+        from datetime import date
+        import importlib
+        # The package exports a function of the module's name.
+        layout = importlib.import_module('services.financial.statement_layout_context')
+        start, end = date(2020, 5, 12), date(2020, 6, 11)
+        self.assertEqual(layout.card_row_dates('May 9', 'May 11', start, end)[1:],
+                         (['2020-05-09'], ['2020-05-11'], 'printed_posting_before_cycle'))
+        self.assertEqual(layout.card_row_dates('05/11', '05/11', start, end)[1:],
+                         (['2020-05-11'], ['2020-05-11'], 'printed_posting_before_cycle'))
+        for text, posting in (('May 11', 'May 9'),      # purchase after its posting
+                              ('Apr 1', 'May 9'),       # purchase more than 31 days before the posting
+                              ('May 9', 'Apr 10'),      # posting more than 31 days before the cycle
+                              ('May 9', 'Feb 30'),      # posting not a date
+                              ('May 9', 'May 1l'),      # posting unreadable
+                              ('Jun 20', 'May 11')):    # purchase inside the cycle, posting before it
+            with self.subTest(text=text, posting=posting):
+                self.assertEqual(layout.card_row_dates(text, posting, start, end)[1], [])
+        try:
+            layout.LATE_POSTED_CHARGES = False
+            self.assertEqual(layout.card_row_dates('May 9', 'May 11', start, end)[1], [])
+            self.assertEqual(layout.card_row_dates('May 11', 'May 13', start, end)[1], [])
+            self.assertEqual(layout.card_row_dates('May 11', None, start, end)[1], [])
+            self.assertEqual(layout.card_row_dates('May 13', 'May 14', start, end)[1], ['2020-05-13'])
+        finally:
+            layout.LATE_POSTED_CHARGES = True
+
+class RepeatedDateCellTests(unittest.TestCase):
+    def test_a_date_printed_twice_in_one_cell_is_read_from_its_readable_copy(self):
+        from datetime import date
+        from services.financial.statement_layout_context import card_row_dates
+        start, end = date(2024, 4, 16), date(2024, 5, 15)
+        for text in ('04/20 04120', '04120 04/20'):
+            with self.subTest(text=text):
+                self.assertEqual(card_row_dates(text, text, start, end)[1:3], (['2024-04-20'], ['2024-04-20']))
+        for text in ('04/20 04121', '04/20 04/21', '04120 04120', '04/20 0412O'):
+            with self.subTest(text=text):
+                self.assertEqual(card_row_dates(text, '04/20', start, end)[1], [])
+

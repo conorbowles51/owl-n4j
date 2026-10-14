@@ -43,7 +43,9 @@ it("browses folders, retains overlapping selections and sends existing PDFs with
       }) as never
   )
   vi.mocked(fetchAPI).mockImplementation(async (url) =>
-    url.includes("/selection/resolve")
+    url.includes("/batches/preview")
+      ? (noOpenBatch as never)
+      : url.includes("/selection/resolve")
       ? ({
           case_id: "case",
           skipped_non_pdf: 1,
@@ -93,16 +95,26 @@ it("browses folders, retains overlapping selections and sends existing PDFs with
     )
   )
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
-  expect(vi.mocked(fetchAPI).mock.calls[1][1]?.body).toEqual({
+  expect(vi.mocked(fetchAPI).mock.calls[2][1]?.body).toEqual({
     request_id: expect.any(String),
     file_ids: ["pdf"],
     folder_ids: [],
+    start_new: false,
   })
   expect(vi.mocked(fetchAPI).mock.calls.map(([url]) => url)).toEqual([
     "/api/financial/statement-import/selection/resolve?case_id=case",
+    "/api/financial/statement-import/batches/preview?case_id=case",
     "/api/financial/statement-import/batches?case_id=case",
   ])
 })
+
+const noOpenBatch = {
+  case_id: "case",
+  selected_files: 1,
+  suggested_batch_id: null,
+  open_batches: [],
+  copies: [],
+}
 
 function Location() {
   const location = useLocation()
@@ -136,6 +148,7 @@ it("saves mixed financial sources and sends only PDFs to statement preparation",
     file_total: files.length,
   } as never)
   vi.mocked(fetchAPI).mockImplementation(async (url) => {
+    if (url.includes("/batches/preview")) return noOpenBatch as never
     if (url.includes("/selection/resolve"))
       return { case_id: "case", skipped_non_pdf: 0, files } as never
     if (url.includes("/selection/include"))
@@ -172,7 +185,7 @@ it("saves mixed financial sources and sends only PDFs to statement preparation",
       "/cases/case/financial?view=statements&files=1"
     )
   )
-  expect(vi.mocked(fetchAPI).mock.calls[1][1]?.body).toEqual({
+  expect(vi.mocked(fetchAPI).mock.calls[2][1]?.body).toEqual({
     files: files
       .slice(1)
       .map((file) => ({
@@ -180,9 +193,113 @@ it("saves mixed financial sources and sends only PDFs to statement preparation",
         expected_revision: "initial",
       })),
   })
-  expect(vi.mocked(fetchAPI).mock.calls[2][1]?.body).toEqual({
+  expect(vi.mocked(fetchAPI).mock.calls[3][1]?.body).toEqual({
     request_id: expect.any(String),
     file_ids: ["0"],
     folder_ids: [],
+    start_new: false,
   })
+})
+
+it("says before sending that the files are already in an open batch and names copies", async () => {
+  const files = ["a.pdf", "a - Copy.pdf"].map((name, n) => ({
+    id: `f${n}`,
+    original_filename: name,
+    status: "processed",
+    financial_removed: false,
+    financial_visibility_revision: "initial",
+  }))
+  vi.mocked(foldersAPI.getContents).mockResolvedValue({
+    breadcrumbs: [],
+    folders: [],
+    files,
+    file_total: files.length,
+  } as never)
+  vi.mocked(fetchAPI).mockImplementation(async (url) => {
+    if (url.includes("/selection/resolve"))
+      return { case_id: "case", skipped_non_pdf: 0, files } as never
+    if (url.includes("/batches/preview"))
+      return {
+        case_id: "case",
+        selected_files: 2,
+        suggested_batch_id: "open-batch",
+        open_batches: [
+          {
+            id: "open-batch",
+            created_at: "2026-10-08T23:53:35Z",
+            status: "review",
+            created_by: "",
+            file_count: 5,
+            shared_files: 2,
+            selected_files: 2,
+            covers_selection: true,
+            other_files: [],
+            unfinished_statements: 7,
+            files_reading: 0,
+          },
+        ],
+        copies: [
+          {
+            file_id: "f1",
+            filename: "a - Copy.pdf",
+            findings: [
+              {
+                kind: "statements_already_copies",
+                statements: 3,
+                copies: 3,
+                retained: [{ evidence_file_id: "f0", filename: "a.pdf" }],
+              },
+            ],
+          },
+        ],
+      } as never
+    throw Error(`unexpected request ${url}`)
+  })
+  render(
+    <QueryClientProvider
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
+    >
+      <MemoryRouter>
+        <EvidenceFinancialPicker
+          caseId="case"
+          initialFileIds={files.map((file) => file.id)}
+        />
+        <Location />
+      </MemoryRouter>
+    </QueryClientProvider>
+  )
+  fireEvent.click(screen.getByRole("button", { name: "Choose from Evidence" }))
+  await screen.findByLabelText("Select file a.pdf")
+  fireEvent.click(screen.getByRole("button", { name: "Review selected files" }))
+  expect(
+    await screen.findByText(/These 2 files are already in the batch from/)
+  ).toBeInTheDocument()
+  expect(
+    screen.getByText(
+      /all 3 of its statements were copies of a\.pdf — nothing to review/
+    )
+  ).toBeInTheDocument()
+  // Continuing is the default; a fresh batch is a separate, explicit button.
+  expect(
+    screen.queryByRole("button", { name: /Send .* to Financial/ })
+  ).not.toBeInTheDocument()
+  expect(
+    screen.getByRole("button", { name: "Start a fresh batch with all 2 files" })
+  ).toBeInTheDocument()
+  expect(
+    screen.getByRole("button", { name: "Leave the 1 file of copies out" })
+  ).toBeInTheDocument()
+  fireEvent.click(screen.getByRole("button", { name: "Continue that batch" }))
+  await waitFor(() =>
+    expect(screen.getByTestId("location")).toHaveTextContent(
+      "/cases/case/financial?view=statements&batch=open-batch"
+    )
+  )
+  expect(
+    vi
+      .mocked(fetchAPI)
+      .mock.calls.some(([url]) => url.endsWith("/batches?case_id=case"))
+  ).toBe(false)
 })

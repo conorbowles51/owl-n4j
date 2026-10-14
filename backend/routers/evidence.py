@@ -64,9 +64,9 @@ _STAGE_CHUNK_SIZE = 1024 * 1024
 _ARCHIVE_SKIP_NAMES = {".DS_Store", "Thumbs.db", "desktop.ini"}
 _CELLEBRITE_NS_MARKER = b"http://pa.cellebrite.com/report/2.0"
 
-
-# Hard limit on file IDs per single processing request.
-# Clients must split larger batches into chunks of this size.
+# Most file ids one ``/route-check`` request may ask about. Only that read
+# endpoint is limited; processing requests are uncapped since 7d04cb24. The
+# frontend splits its pages to ROUTE_CHECK_BATCH_LIMIT, which must match.
 MAX_BATCH_SIZE = 50
 
 
@@ -1321,12 +1321,6 @@ async def process_evidence_background(
     if not request.file_ids:
         raise HTTPException(status_code=400, detail="No file_ids provided")
 
-    if len(request.file_ids) > MAX_BATCH_SIZE:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Too many files ({len(request.file_ids)}). Maximum {MAX_BATCH_SIZE} files per request. Please batch your requests.",
-        )
-
     try:
         if request.case_id:
             from services.case_service import check_case_access, CaseNotFound, CaseAccessDenied
@@ -1345,6 +1339,15 @@ async def process_evidence_background(
 
         messages = []
         job_ids = []
+        copies = []
+
+        if db_backed_ids and request.preparation_mode == "pdf_review" and request.case_id:
+            # Financial reading: exact copies of a file already in Financial are
+            # not read again; the rest join the case's automatic statement batch.
+            from services.financial.auto_read import intake_pdf_review
+            db_backed_ids, copies = intake_pdf_review(db, case_id=UUID(request.case_id), file_ids=db_backed_ids)
+            if copies:
+                messages.append(f"{len(copies)} file(s) already in Financial; not read again")
 
         if db_backed_ids:
             if not request.case_id:
@@ -1365,6 +1368,7 @@ async def process_evidence_background(
             "task_id": None,
             "job_ids": job_ids or None,
             "message": "; ".join(messages) if messages else "No files to process",
+            **({"copies": copies} if copies else {}),
         }
     except UnadmittedFileError as e:
         # 409 and not 403.  The caller has the permission this route asks for
@@ -1414,8 +1418,8 @@ async def check_evidence_financial_route(
     caller can already see, not from the caller, which is a stronger guarantee
     than checking a string for "..".
 
-    ``POST`` rather than ``GET`` despite reading nothing: the batch limit is
-    fifty ids, and fifty UUIDs do not belong in a query string.
+    ``POST`` rather than ``GET`` because selections may contain many file IDs,
+    which do not belong in a query string.
     """
     try:
         from services.case_service import check_case_access, CaseNotFound, CaseAccessDenied
@@ -1437,15 +1441,6 @@ async def check_evidence_financial_route(
 
         if not request.file_ids:
             raise HTTPException(status_code=400, detail="No file_ids provided")
-
-        if len(request.file_ids) > MAX_BATCH_SIZE:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    f"Too many files ({len(request.file_ids)}). Maximum {MAX_BATCH_SIZE} "
-                    "files per request. Please batch your requests."
-                ),
-            )
 
         # An id that is not a UUID is a fault in the caller, not a fact about a
         # file, so it is rejected rather than given a per-file outcome.  Giving

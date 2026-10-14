@@ -470,6 +470,61 @@ class _BrokenPage(_FakePage):
         raise RuntimeError("cannot enumerate images")
 
 
+class _TracedPage(_FakePage):
+    """A page that also reports how each span of its text is drawn."""
+
+    def __init__(self, spans, **kwargs):
+        super().__init__(**kwargs)
+        self._spans = spans
+
+    def get_texttrace(self):
+        return [dict(type=mode, chars=[(0,)] * count) for mode, count in self._spans]
+
+
+class InvisibleTextOriginTests(unittest.TestCase):
+    """Decision (r1-reproduced): text nobody can see was recognised from a
+    picture of the page, whatever share of the page the pictures cover."""
+
+    def test_small_image_tiles_under_invisible_text_are_recognised(self):
+        tiles = [_Rect(10.0, 10.0)] * 10  # a tenth of the page
+        page = _TracedPage([(3, 950), (0, 50)], image_rects=tiles)
+        self.assertIs(page_text_origin(page), TextOrigin.recognised_glyphs)
+
+    def test_invisible_text_without_any_image_is_recognised(self):
+        self.assertIs(page_text_origin(_TracedPage([(3, 10)])), TextOrigin.recognised_glyphs)
+
+    def test_mostly_visible_text_keeps_the_coverage_rule(self):
+        for spans in ([(0, 1000)], [(0, 500), (3, 500)], [(0, 900), (3, 100)], []):
+            with self.subTest(spans=spans):
+                page = _TracedPage(spans, image_rects=[_Rect(10.0, 10.0)])
+                self.assertIs(page_text_origin(page), TextOrigin.digital_text_layer)
+        covered = _TracedPage([(0, 1000)], image_rects=[_Rect(100.0, 100.0)])
+        self.assertIs(page_text_origin(covered), TextOrigin.recognised_glyphs)
+
+    def test_a_trace_that_fails_costs_caution(self):
+        class Broken(_FakePage):
+            def get_texttrace(self):
+                raise RuntimeError('cannot trace')
+        self.assertIs(page_text_origin(Broken()), TextOrigin.unknown)
+
+    def test_a_real_pdf_with_tiles_under_an_invisible_layer(self):
+        try:
+            import fitz
+        except ImportError:
+            self.skipTest('PyMuPDF is not installed')
+        document = fitz.open()
+        page = document.new_page(width=200, height=200)
+        pixmap = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 8, 8), False)
+        pixmap.clear_with(200)
+        for left in (10, 60, 110):
+            page.insert_image(fitz.Rect(left, 10, left + 20, 30), pixmap=pixmap)
+        page.insert_text((20, 100), 'Purchase 12.34', render_mode=3)
+        self.assertIs(page_text_origin(page), TextOrigin.recognised_glyphs)
+        visible = document.new_page(width=200, height=200)
+        visible.insert_text((20, 100), 'Purchase 12.34')
+        self.assertIs(page_text_origin(visible), TextOrigin.digital_text_layer)
+
+
 class PageTextOriginTests(unittest.TestCase):
     def test_a_page_with_no_images_is_digital(self):
         page = _FakePage(image_rects=())

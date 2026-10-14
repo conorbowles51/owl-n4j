@@ -53,7 +53,7 @@ from sqlalchemy import (
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID, ExcludeConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from postgres.base import Base
@@ -62,6 +62,20 @@ from postgres.models.mixins import TimestampMixin
 
 def _jsonb_column():
     return JSONB().with_variant(JSON(), "sqlite")
+
+
+# At most one saved copy of a statement may count at a time: per case, per
+# evidence file and per statement within that file (the empty string stands for
+# a file read as a single statement).  A copy stops counting once it is
+# superseded or carries an import removal.  Migration
+# 20261002_one_active_statement spells out the same constraint, and a test
+# keeps the two identical.
+ONE_ACTIVE_STATEMENT_CONSTRAINT = "ex_financial_source_documents_one_active_statement"
+ONE_ACTIVE_STATEMENT_KEY = "(coalesce(metadata ->> 'statement_import_statement_id', ''))"
+ONE_ACTIVE_STATEMENT_WHERE = (
+    "document_type = 'statement_review' AND status = 'admitted' "
+    "AND NOT (metadata ? 'financial_import_removal')"
+)
 
 
 # Vocabularies are enforced as check constraints rather than native Postgres
@@ -257,6 +271,23 @@ class FinancialSourceDocument(Base, TimestampMixin):
             "duplicate_match_rung IS NULL OR duplicate_group_key IS NOT NULL",
             name="ck_financial_source_documents_rung_needs_group",
         ),
+        # Two workers confirming the same statement are kept apart by the Case
+        # row lock in the statement writer.  This is the database's own
+        # guarantee behind that lock: a second active copy cannot commit.
+        # Deferred to commit, because a reread inserts its replacement before
+        # superseding the copy it replaces, and recovery inserts its sections
+        # before superseding their parent.  PostgreSQL only; SQLite test
+        # schemas omit it.
+        ExcludeConstraint(
+            ("case_id", "="),
+            ("evidence_file_id", "="),
+            (text(ONE_ACTIVE_STATEMENT_KEY), "="),
+            name=ONE_ACTIVE_STATEMENT_CONSTRAINT,
+            using="btree",
+            where=text(ONE_ACTIVE_STATEMENT_WHERE),
+            deferrable=True,
+            initially="DEFERRED",
+        ).ddl_if(dialect="postgresql"),
         Index("ix_financial_source_documents_case", "case_id"),
         Index("ix_financial_source_documents_evidence_file", "evidence_file_id"),
         Index(

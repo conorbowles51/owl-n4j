@@ -385,6 +385,17 @@ describe("FinancialPage", () => {
     graphWithRows()
     renderPage()
     selectTab("Statements & accounts")
+    // The review queue opens first; uploads live under Statement files.
+    expect(
+      within(
+        screen.getByRole("group", { name: "Statement workspace" })
+      ).getByRole("button", { name: "Review queue" })
+    ).toHaveAttribute("aria-pressed", "true")
+    fireEvent.click(
+      within(
+        screen.getByRole("group", { name: "Statement workspace" })
+      ).getByRole("button", { name: "Statement files" })
+    )
     act(() =>
       useStatementWorkspace.getState().setOpen("anonymous:case-1", true)
     )
@@ -439,7 +450,7 @@ describe("FinancialPage", () => {
     )
     expect(screen.getByLabelText("PDF document")).toBe(input)
     expect(input.files?.[0]).toBe(file)
-  }, 20_000)
+  })
 
   it("mounts the ledger panel in the ledger tab", () => {
     graphWithRows()

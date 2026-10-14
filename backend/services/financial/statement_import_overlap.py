@@ -18,6 +18,28 @@ class ComparisonSources(dict):
     duplicate_context = None
     case_id = None
     files = None
+    # Pending items whose older summary lacks the bank/product identity the
+    # comparison needs, when the caller does not allow re-reading their PDF.
+    unhydrated = ()
+
+
+class ReadingDeferred(Exception):
+    """A read path declined to reconstruct a statement from its PDF.
+
+    Batch list reads use stored projections only. The write side (worker,
+    saves and the readiness refresh) re-reads and stores what was missing.
+    """
+
+
+HYDRATION_ERROR_KEY = 'comparison_hydration_error'
+
+
+HYDRATION_ERROR = 'Reopen this older review to check its current bank, account and statement dates.'
+
+
+def needs_hydration(item):
+    """True when an older summary lacks fields the comparison derives from a reading."""
+    return (not item.review_request and 'institution' not in item.summary) or 'account_type' not in item.summary
 
 
 def scope(raw):
@@ -44,6 +66,28 @@ def same_statement(left, right):
         and all(left.get(key) == right.get(key) for key in ('identity', 'account_reference', 'currency', 'start', 'end', 'account_type')))
 
 
+def same_printed_period(left, right):
+    """The same printed account reference, currency, product and exact dates.
+
+    Unlike ``same_statement`` this does not need a full account number or an
+    equal holder: a card statement prints only its last four digits, and two
+    productions of one statement can read the holder or bank name differently.
+    It nominates a copy for comparison and holds an exact-period overlap. It
+    never sets a copy aside by itself; only identical payments and balances do.
+    """
+    reference = _printed_reference(left)
+    return bool(left and right and reference and any(ch.isdigit() for ch in reference)
+        and reference == _printed_reference(right)
+        and all(left.get(key) == right.get(key) for key in ('currency', 'start', 'end', 'account_type')))
+
+
+def _printed_reference(scope):
+    """The printed reference without a leading mask (``****1234``, ``xxxx1234``,
+    ``...1234`` all read ``1234``); letters and every other character are kept."""
+    value = re.sub(r'^(?:[*\u2022.#]+|x{2,})', '', (scope or {}).get('account_reference') or '')
+    return re.sub(r'[^0-9a-z]', '', value)
+
+
 def overlaps(left, right):
     return bool(left and right and left['identity'] == right['identity'] and left['currency'] == right['currency']
                 and left['start'] <= right['end'] and right['start'] <= left['end'])
@@ -56,7 +100,7 @@ def summary_request(summary):
         period_start=summary.get('period_start', ''), period_end=summary.get('period_end', ''))
 
 
-def comparison_sources(session, case_id, pending=None, *, read_pending=None):
+def comparison_sources(session, case_id, pending=None, *, read_pending=None, duplicate_context=None):
     """Load a case once per batch check, without loading imported PDF readings."""
     imported = session.execute(select(
         FinancialAccount.identity_key, FinancialStatementPeriod.currency,
@@ -76,16 +120,23 @@ def comparison_sources(session, case_id, pending=None, *, read_pending=None):
                FinancialAccount.case_id == case_id, EvidenceFile.case_id == case_id,
                FinancialSourceDocument.status == 'admitted')).all()
     if pending is None:
-        pending = session.execute(select(Item, EvidenceFile).join(Batch, Batch.id == Item.batch_id)
+        items = session.scalars(select(Item).join(Batch, Batch.id == Item.batch_id)
             .join(EvidenceFile, EvidenceFile.id == Item.file_id)
             .where(Batch.case_id == case_id, EvidenceFile.case_id == case_id,
                    Batch.status != 'removed', Item.status.in_(('ready', 'attention', 'pending_import')))).all()
+        # One evidence row per PDF, not one per prepared period: joining the file
+        # to every item decoded its metadata thousands of times on a large case.
+        owners = {file.id: file for file in session.scalars(select(EvidenceFile).where(
+            EvidenceFile.case_id == case_id, EvidenceFile.id.in_({item.file_id for item in items})))} if items else {}
+        pending = [(item, owners[item.file_id]) for item in items]
     from services.financial.source_lineage import case_lineage, current_version
     groups = case_lineage(session, case_id)
     families = {str(file.id): root for root, versions in groups.items() for file in versions}
     current_ids = {str(current_version(versions).id) for versions in groups.values()}
     entries, prepared, cache = ComparisonSources(), {}, {}
     entries.families = families
+    entries.unhydrated = set()
+    unhydrated_keys = set()
     from services.financial.pending_duplicate_projection import load_projection_context, cached_disposition
     all_files = [file for versions in groups.values() for file in versions]
     entries.case_id = str(case_id)
@@ -97,8 +148,14 @@ def comparison_sources(session, case_id, pending=None, *, read_pending=None):
                 decision_ids.add(str(file.id))
                 decision_ids.add((decision.get('retained') or {}).get('evidence_file_id'))
     if decision_ids:
-        entries.duplicate_context = load_projection_context(session, case_id,
-            [file for file in all_files if str(file.id) in decision_ids])
+        needed = [file for file in all_files if str(file.id) in decision_ids]
+        # A caller that already fingerprinted a superset of these files (the
+        # file register does) passes its context; each file's guard is computed
+        # independently, so a superset gives the same answers.
+        if duplicate_context is not None and all(str(file.id) in duplicate_context['files'] for file in needed):
+            entries.duplicate_context = duplicate_context
+        else:
+            entries.duplicate_context = load_projection_context(session, case_id, needed)
     def reading(item, *, include_duplicate_disposition=True):
         if read_pending is not None:
             return read_pending(item, include_duplicate_disposition=include_duplicate_disposition)
@@ -129,6 +186,7 @@ def comparison_sources(session, case_id, pending=None, *, read_pending=None):
         # absent fields from that reading, preserving every saved correction.
         # Source geometry/catalogue is cached per PDF.
         missing_bank = not item.review_request and 'institution' not in item.summary
+        deferred = False
         if missing_bank or 'account_type' not in item.summary:
             try:
                 proposal = reading(item)
@@ -137,7 +195,13 @@ def comparison_sources(session, case_id, pending=None, *, read_pending=None):
                 if 'account_type' not in item.summary:
                     raw = {**raw, 'account_type': proposal['metadata'].get('account_type') or ''}
             except PdfMappingError:
-                raw = {**raw, '_coverage_error': 'Reopen this older review to check its current bank, account and statement dates.'}
+                raw = {**raw, '_coverage_error': HYDRATION_ERROR}
+            except ReadingDeferred:
+                if item.summary.get(HYDRATION_ERROR_KEY):
+                    # The write side already found this older reading unusable.
+                    raw = {**raw, '_coverage_error': HYDRATION_ERROR}
+                else:
+                    deferred = True
         prepared[item.id] = raw
         from services.financial.pending_statement_duplicates import METADATA_KEY
         decision = (file.metadata_ or {}).get(METADATA_KEY, {}).get(item.statement_key or '')
@@ -151,6 +215,12 @@ def comparison_sources(session, case_id, pending=None, *, read_pending=None):
         # Old internal readings remain in history, not as fresh competing work.
         if str(file.id) not in current_ids:
             continue
+        if deferred:
+            # Comparing with an incomplete identity could miss or invent an
+            # overlap. Hold comparisons until the write side stores the fields.
+            entries.unhydrated.add(item.id)
+            unhydrated_keys.add((str(file.id), item.statement_key or ''))
+            continue
         own = scope(raw)
         if own is None:
             continue
@@ -162,6 +232,7 @@ def comparison_sources(session, case_id, pending=None, *, read_pending=None):
     # A statement reviewed individually may have no batch item yet. Register
     # only explicit current decisions, never guess candidates from file names.
     registered = {(entry['file_id'], entry.get('statement_id') or '') for values in entries.values() for entry in values}
+    registered |= unhydrated_keys  # Held above; never substituted by its decision scope.
     from services.financial.pending_statement_duplicates import METADATA_KEY
     inactive = {(str(file_id), key or '') for file_id, key in session.execute(select(Item.file_id, Item.statement_key)
         .join(Batch, Batch.id == Item.batch_id).where(Batch.case_id == case_id,
@@ -205,28 +276,45 @@ def coverage_review(session, *, case_id, file_id, request, sources=None):
         families = {str(v.id): root for root, versions in case_lineage(session, case_id).items() for v in versions}
     root = families.get(str(file.id), str(file.id))
     own_key = (root, request.get('statement_id') or '')
+    own_page = request.get('page_number')
     candidates = {}
     for other in sources.get((own['identity'], own['currency']), []):
         identifier = other['key']
         if identifier == own_key or (other['source_document_id'] and other['source_document_id'] == str(request.get('replaces_source_document_id', ''))):
             continue
-        exact = same_statement(own, other.get('scope'))
-        # Reader upgrades can change section keys. A verified internal version
-        # of this exact account/period is still the same source, not another PDF.
-        if identifier[0] == own_key[0] and exact:
+        # Periods that do not share a date are never candidates (both branches
+        # below end in this test); skip the printed-reference comparison.
+        if own['start'] > other['period_end'] or other['period_start'] > own['end']:
             continue
+        # A masked card reference cannot meet ``same_statement``. The same bank,
+        # reference and exact printed period is still another copy of this
+        # statement until its payments show otherwise, so it is held, not warned.
+        exact = same_statement(own, other.get('scope')) or same_printed_period(own, other.get('scope'))
+        same_file = False
+        if identifier[0] == own_key[0] and exact:
+            # Reader upgrades can change section keys. A verified internal version
+            # of this exact account/period is still the same source, not another PDF.
+            # A statement of the file's current reading that starts on another
+            # printed page is not that: the file prints a second statement for
+            # the same account and dates (a reprint, or a copy whose balances
+            # and payments contradict the first), and the two must be compared.
+            if not (other['status'] == 'awaiting_import' and own_page and other.get('page_number')
+                    and int(other['page_number']) != int(own_page)):
+                continue
+            same_file = True
         if own['start'] > other['period_end'] or other['period_start'] > own['end']:
             continue
         # Prefer the imported record if the same source is in another batch.
         if identifier not in candidates or other['status'] == 'imported':
             candidates[identifier] = {**{k: v for k, v in other.items() if k not in ('key', 'scope')},
-                'matching_statement': exact}
+                'matching_statement': exact, 'same_file_statement': same_file}
     ordered = sorted(candidates.items())
     revision = _digest(dict(version='statement-coverage-review-v1', scope=own,
         reading=request.get('expected_revision'), candidates=[dict(key=k, start=v['period_start'], end=v['period_end'],
             matching_statement=v['matching_statement']) for k,v in ordered]))
     return dict(available=True, revision=revision, candidates=[v for _,v in ordered],
-                matching_statement=any(v['matching_statement'] for _, v in ordered))
+                matching_statement=any(v['matching_statement'] for _, v in ordered),
+                same_file_statement=any(v['same_file_statement'] for _, v in ordered))
 
 
 def duplicate_hold(review, request):

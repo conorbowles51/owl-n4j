@@ -45,8 +45,10 @@ def append_payment(*, session_factory, case_id, source_id, request, actor):
                 transaction_id = retained.get('resolved_transaction_id') or prior.get('transaction_id')
                 from services.financial.saved_statement_admission import current_saved_assessment
                 admission = current_saved_assessment(session, document, period) if not transaction_id else None
+                from services.financial.held_record_admission import held_blockers
                 return dict(transaction_id=transaction_id, created=False, pending_reconciliation=not bool(transaction_id),
-                    blockers=(admission or {}).get('blockers', []))
+                    message=retained.get('hold_reason') or '',
+                    blockers=(admission or {}).get('blockers', []) + (held_blockers(retained) if not transaction_id else []))
             view = _view(document, period, account)
             if view['revision'] != request.expected_revision:
                 raise PdfMappingError('The statement details changed. Reload the saved account details before adding this payment; your draft is retained.', 409)
@@ -76,5 +78,7 @@ def append_payment(*, session_factory, case_id, source_id, request, actor):
             session.commit()
             admitted = pending_before - sum(not item.get('resolved_transaction_id') for item in metadata['statement_incomplete_records'])
             if admitted: run.transaction_admitted(admitted)
+            from services.financial.held_record_admission import held_blockers
             return dict(transaction_id=transaction_id, created=bool(transaction_id), pending_reconciliation=not bool(transaction_id),
-                blockers=(admission or {}).get('blockers', []))
+                message=retained.get('hold_reason') or '',
+                blockers=(admission or {}).get('blockers', []) + (held_blockers(retained) if not transaction_id else []))

@@ -1412,6 +1412,13 @@ def get_account_identity_graph_status(case_id: UUID = Query(...), db: Session = 
     return identity_graph_status(db, case_id)
 
 
+@router.get('/ledger-graph/status')
+def get_ledger_graph_status(case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    """Graph follow-up of the ledger, reported separately from ledger completion."""
+    from services.financial.graph_followup import follow_up_status
+    return follow_up_status(db, case_id)
+
+
 @router.get('/account-consolidations')
 def get_account_consolidations(case_id: UUID = Query(...), db: Session = Depends(get_db)):
     from services.financial.account_consolidation import consolidation_state

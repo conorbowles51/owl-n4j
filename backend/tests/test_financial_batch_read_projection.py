@@ -1,4 +1,4 @@
-"""Fresh batch reads share parsing work without caching admission across requests."""
+"""Batch reads use stored projections; the write side re-reads and keeps them current."""
 from collections import Counter
 from copy import deepcopy
 from unittest import TestCase
@@ -15,6 +15,8 @@ from tests import test_financial_import_batches as fixtures
 
 
 class BatchReadProjectionTests(TestCase):
+    """List reads never re-read PDFs; the write side stores what they need."""
+
     def setUp(self):
         self.fixture = fixtures.BatchImportTests()
         self.fixture.setUp()
@@ -76,21 +78,44 @@ class BatchReadProjectionTests(TestCase):
             self.assertFalse(db.new or db.dirty or db.deleted)
         return result, calls
 
-    def test_legacy_targets_parse_once_and_keep_every_duplicate_hold(self):
+    def refresh(self):
+        calls = []
+        original = reader.read_statement_import
+        def reading(*args, **kwargs):
+            calls.append((kwargs['evidence_file_id'], kwargs.get('_include_period_checks', True)))
+            return original(*args, **kwargs)
+        with self.f.SessionLocal() as db, patch.object(service, 'read_statement_import', side_effect=reading), \
+                patch.object(reader, 'read_statement_import', side_effect=reading):
+            outcome = service.refresh_batch_readiness(db, case_id=self.f.case.id, batch_id=self.batch_id)
+        return outcome, calls
+
+    def test_legacy_list_holds_without_reading_until_the_write_side_stores_identity(self):
+        held, calls = self.project()
+        self.assertEqual(calls, [])
+        self.assertEqual(len(held), 8)
+        for item in held:
+            self.assertFalse(item['can_import'])
+            self.assertTrue(item['readiness_pending'] or item['comparison_pending'])
+            self.assertEqual(item['problems'][0]['kind'], 'readiness_pending')
+            self.assertEqual(item['problems'][0]['review_reason'], 'readiness_update')
+        outcome, calls = self.refresh()
+        # One identity reading per statement, then one assessment per statement.
+        self.assertEqual(Counter(identifier for identifier, _ in calls), Counter(self.file_ids * 2))
+        self.assertEqual((outcome['hydrated'], outcome['refreshed'], outcome['remaining']), (8, 8, 0))
         result, calls = self.project()
-        self.assertEqual(Counter(identifier for identifier, _ in calls), Counter(self.file_ids))
-        self.assertTrue(all(full for _, full in calls))
+        self.assertEqual(calls, [])
         self.assertEqual(len(result), 8)
         for item in result:
             self.assertFalse(item['can_import'])
+            self.assertFalse(item.get('readiness_pending') or item.get('comparison_pending'))
             self.assertTrue(item['coverage_review']['matching_statement'])
             self.assertEqual(len(item['coverage_review']['candidates']), 7)
+        self.assertEqual(self.refresh()[0]['refreshed'], 0)
 
-    def test_other_pending_sources_remain_compared_and_next_read_observes_changes(self):
+    def test_other_pending_sources_remain_compared_and_a_new_reading_reaches_the_list_through_the_worker(self):
+        self.refresh()
         result, calls = self.project(subset=True)
-        self.assertEqual(Counter(identifier for identifier, _ in calls), Counter(self.file_ids))
-        self.assertEqual(dict(calls)[self.file_ids[0]], True)
-        self.assertTrue(all(not full for identifier, full in calls if identifier != self.file_ids[0]))
+        self.assertEqual(calls, [])
         self.assertEqual(len(result[0].summary['coverage_review']['candidates']), 7)
         before = result[0].summary['revision']
         with self.f.SessionLocal() as db:
@@ -100,7 +125,16 @@ class BatchReadProjectionTests(TestCase):
             value['text'] = '€47,451'
             geometry.payload = payload
             db.commit()
-        changed, _ = self.project(subset=True)
+        # A list read shows the stored assessment; it never re-reads the PDF.
+        unchanged, calls = self.project(subset=True)
+        self.assertEqual(calls, [])
+        self.assertEqual(unchanged[0].summary['revision'], before)
+        # The write side (worker preparation) re-reads and stores the change.
+        with self.f.SessionLocal() as db:
+            service.refresh_statement_list(db, case_id=self.f.case.id, batch_id=self.batch_id)
+        self.fixture.advance(self.batch_id)
+        changed, calls = self.project(subset=True)
+        self.assertEqual(calls, [])
         self.assertNotEqual(changed[0].summary['revision'], before)
         self.assertFalse(changed[0].summary['can_import'])
         self.assertTrue(any(check.get('status') == 'difference' for check in changed[0].summary['checks']))

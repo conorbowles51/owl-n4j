@@ -351,12 +351,39 @@ async def record_duplicate_decision(
     db: Session = Depends(get_db),
 ):
     try:
-        return decide_duplicate(db, case_id=case_id, document_id=document_id,
-                                actor=actor_from_user(current_user), **payload.model_dump())
+        result = decide_duplicate(db, case_id=case_id, document_id=document_id,
+                                  actor=actor_from_user(current_user), **payload.model_dump())
     except (DuplicateDecisionError, ActorError) as exc:
         raise HTTPException(status_code=getattr(exc, "status_code", 422), detail=str(exc))
     except Exception:
         logger.exception("Duplicate decision failed for case %s", case_id)
+        raise HTTPException(status_code=500, detail="The decision could not be confirmed. Refresh before trying again.")
+    from services.financial.admitted_statement_duplicates import sync_batch_items
+    sync_batch_items(db, case_id=case_id, document_id=document_id)
+    return result
+
+
+class KeepDuplicateCopyRequest(BaseModel):
+    reason: str = Field(min_length=1, max_length=4000)
+
+
+@router.post("/documents/{document_id}/keep-duplicate-copy")
+async def keep_duplicate_copy(
+    document_id: UUID,
+    payload: KeepDuplicateCopyRequest,
+    case_id: UUID = Query(...),
+    current_user=Depends(get_current_db_user),
+    db: Session = Depends(get_db),
+):
+    """Count this set-aside copy instead of the copy retained for it."""
+    from services.financial.admitted_statement_duplicates import AdmittedDuplicateError, keep_copy
+    try:
+        return keep_copy(db, case_id=case_id, document_id=document_id,
+                         actor=actor_from_user(current_user), reason=payload.reason)
+    except (AdmittedDuplicateError, DuplicateDecisionError, ActorError) as exc:
+        raise HTTPException(status_code=getattr(exc, "status_code", 422), detail=str(exc))
+    except Exception:
+        logger.exception("Keeping a duplicate copy failed for case %s", case_id)
         raise HTTPException(status_code=500, detail="The decision could not be confirmed. Refresh before trying again.")
 
 

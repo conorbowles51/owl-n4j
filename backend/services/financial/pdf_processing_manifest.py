@@ -8,12 +8,15 @@ from pydantic import BaseModel, ConfigDict, Field
 Text = Annotated[str, Field(strict=True,min_length=1,max_length=2048)]
 Digest = Annotated[str, Field(strict=True,pattern=r'^[a-f0-9]{64}$')]
 SourceName = Literal['pdf_extraction.py', 'ocr_geometry.py', 'pdf_processing_manifest.py',
-    'financial_date_ocr.py', 'financial_transaction_date_ocr.py', 'financial_amount_ocr.py', 'financial_bbva_ocr.py']
+    'financial_date_ocr.py', 'financial_transaction_date_ocr.py', 'financial_amount_ocr.py', 'financial_bbva_ocr.py',
+    'scan_preprocessing.py']
 _BASE_SOURCES = {'pdf_extraction.py', 'ocr_geometry.py', 'pdf_processing_manifest.py'}
 _SOURCE_INVENTORIES = tuple(_BASE_SOURCES | set(additions) for additions in (
     (), ('financial_date_ocr.py',), ('financial_date_ocr.py', 'financial_amount_ocr.py'),
     ('financial_date_ocr.py', 'financial_transaction_date_ocr.py', 'financial_amount_ocr.py'),
-    ('financial_date_ocr.py', 'financial_transaction_date_ocr.py', 'financial_amount_ocr.py', 'financial_bbva_ocr.py')))
+    ('financial_date_ocr.py', 'financial_transaction_date_ocr.py', 'financial_amount_ocr.py', 'financial_bbva_ocr.py'),
+    ('financial_date_ocr.py', 'financial_transaction_date_ocr.py', 'financial_amount_ocr.py', 'financial_bbva_ocr.py',
+     'scan_preprocessing.py')))
 
 class _Settings(BaseModel):
     model_config=ConfigDict(extra='forbid',strict=True)
@@ -24,6 +27,8 @@ class _Settings(BaseModel):
     tesseract_lang:Text
     max_pdf_pages:int
     pdf_reading_mode:Literal['automatic','page_images']='automatic'
+    # Recorded from engine reading revision bank-payment-rows-v12; absent before.
+    pdf_scan_preprocessing:bool|None=None
 
 class _Tesseract(BaseModel):
     model_config=ConfigDict(extra='forbid',strict=True)

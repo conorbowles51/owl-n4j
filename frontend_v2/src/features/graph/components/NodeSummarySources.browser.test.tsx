@@ -95,6 +95,20 @@ describe("entity summary sources in Chromium", () => {
   beforeEach(async () => {
     await page.viewport(1280, 1000)
     vi.restoreAllMocks()
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        const canvas = document.createElement("canvas")
+        canvas.width = 600
+        canvas.height = 1000
+        const blob = await new Promise<Blob>((resolve) =>
+          canvas.toBlob((blob) => resolve(blob!), "image/png")
+        )
+        return new Response(blob, {
+          headers: { "content-type": "image/png", "X-PDF-Page-Count": "12" },
+        })
+      })
+    )
     mocks.detail = fixture
     useGraphStore.getState().selectNodes(["entity-1"])
     vi.spyOn(evidenceAPI, "findByFilename").mockResolvedValue({
@@ -102,7 +116,10 @@ describe("entity summary sources in Chromium", () => {
       evidence_id: "evidence-1",
     })
   })
-  afterEach(cleanup)
+  afterEach(() => {
+    cleanup()
+    vi.unstubAllGlobals()
+  })
 
   for (const width of [390, 480]) {
     it(`replaces metadata sources with matching citations and wrapped filenames at ${width}px`, async () => {
@@ -153,9 +170,9 @@ describe("entity summary sources in Chromium", () => {
       await waitFor(() =>
         expect(screen.getByRole("dialog", { name: filename })).toBeVisible()
       )
-      expect(document.querySelector("iframe")?.getAttribute("src")).toContain(
-        "#page=9"
-      )
+      expect(
+        await screen.findByRole("img", { name: "Page 9 of the original PDF" })
+      ).toBeVisible()
       expect(
         screen.getByRole("link", { name: "Open file location" })
       ).toBeVisible()
@@ -166,11 +183,9 @@ describe("entity summary sources in Chromium", () => {
       fireEvent.click(
         within(list).getByRole("button", { name: "Open source S1, page 4" })
       )
-      await waitFor(() =>
-        expect(document.querySelector("iframe")?.getAttribute("src")).toContain(
-          "#page=4"
-        )
-      )
+      expect(
+        await screen.findByRole("img", { name: "Page 4 of the original PDF" })
+      ).toBeVisible()
       expect(evidenceAPI.findByFilename).toHaveBeenLastCalledWith(
         filename,
         "case-1"

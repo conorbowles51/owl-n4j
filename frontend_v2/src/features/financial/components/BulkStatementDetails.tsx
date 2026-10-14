@@ -16,6 +16,8 @@ import { useInvestigationScope } from "../stores/investigation-scope"
 import { newReviewId } from "../lib/statement-review-id"
 import { useAuthStore } from "@/features/auth/hooks/use-auth"
 import { statementMonth } from "../lib/statement-month"
+import { AccountTypeEditor } from "./AccountTypeEditor"
+import { requestFailure, useElapsedSeconds } from "../lib/request-wait"
 
 const fields = [
   ["holder", "Account holder"],
@@ -30,13 +32,43 @@ const statement = z.object({
   key: z.string(),
   file_id: z.string(),
   source_id: z.string().nullable(),
+  // The saved account of an imported statement (its type can be set here).
+  account_id: z.string().nullish(),
   statement_id: z.string().nullable(),
   revision: z.string(),
   filename: z.string(),
   status: z.string(),
   values: z.record(z.string(), z.string()),
+  // Values the case establishes for this statement's missing details, with their source.
+  proposals: z
+    .record(
+      z.string(),
+      z.object({
+        value: z.string(),
+        basis: z.string(),
+        label: z.string(),
+        confirmed: z.boolean(),
+      })
+    )
+    .optional(),
 })
 type Statement = z.infer<typeof statement>
+
+/** The one value proposed for a field to every listed statement that lacks it, or null. */
+export function commonProposal(items: Statement[], field: string) {
+  const lacking = items.filter((item) => !item.values[field]?.trim())
+  if (!lacking.length) return null
+  const proposals = lacking.map((item) => item.proposals?.[field])
+  if (proposals.some((proposal) => !proposal)) return null
+  const values = new Set(proposals.map((proposal) => proposal!.value))
+  if (values.size !== 1) return null
+  const labels = new Set(proposals.map((proposal) => proposal!.label))
+  return {
+    value: proposals[0]!.value,
+    label: labels.size === 1 ? proposals[0]!.label : "the case's saved statements",
+    statements: lacking.length,
+  }
+}
 const listing = z.object({
   case_id: z.string(),
   items: z.array(statement),
@@ -51,7 +83,12 @@ const previewSchema = z.object({
   preview_revision: z.string(),
   updated: z.number(),
   items: z.array(
-    statement.extend({ after: z.record(z.string(), z.string()), changes, excluded_reason: z.string().nullable().optional() })
+    statement.extend({
+      after: z.record(z.string(), z.string()),
+      changes,
+      excluded_reason: z.string().nullable().optional(),
+      source_check: z.string().nullable().optional(),
+    })
   ),
 })
 const receiptSchema = z.object({
@@ -77,6 +114,7 @@ type Draft = {
   requestId: string
   open: boolean
   confirmUnprintedStart?: boolean
+  confirmNoActivity?: boolean
 }
 type Props = {
   caseId: string
@@ -178,7 +216,11 @@ function Editor({
         revision,
       })
     ),
-    changes: draft.confirmUnprintedStart ? { period_start_unprinted: true } : draft.values,
+    changes: draft.confirmNoActivity
+      ? { no_activity_confirmed: true }
+      : draft.confirmUnprintedStart
+        ? { period_start_unprinted: true }
+        : draft.values,
     mode: draft.mode,
     request_id: draft.requestId,
   })
@@ -235,6 +277,14 @@ function Editor({
     },
   })
   const busy = review.isPending || save.isPending
+  // Show how long a request has been running; a stopped one says why.
+  const loadingFor = useElapsedSeconds(query.isFetching)
+  const workingFor = useElapsedSeconds(busy)
+  const actionError = save.error
+    ? requestFailure(save.error, "Saving the account details", { writes: true })
+    : review.error
+      ? requestFailure(review.error, "Preparing the preview")
+      : null
   const changeDraft = (value: Partial<Draft>) => {
     setDraft({ ...draft, ...value, requestId: newReviewId() })
     setPreview(null)
@@ -275,7 +325,7 @@ function Editor({
   ).length
   const valid =
     selected.length > 0 &&
-    (draft.confirmUnprintedStart || (Object.keys(draft.values).length > 0 &&
+    (draft.confirmNoActivity || draft.confirmUnprintedStart || (Object.keys(draft.values).length > 0 &&
     (draft.values.currency === undefined || !!draft.values.currency)))
   const summary = (item: Statement) =>
     [
@@ -286,7 +336,17 @@ function Editor({
       `${item.values.period_start || "Start missing"} – ${item.values.period_end || "End missing"}`,
       item.status,
     ].join(" · ")
-  const labels = { ...Object.fromEntries(fields), period_start_unprinted: "Statement start" } as Record<string, string>
+  // A proposal is offered for the selected statements (or every listed one
+  // before a selection) only when they all lack the field and share it.
+  const proposalFor = (field: Field) =>
+    datesOnly || field.startsWith("period_")
+      ? null
+      : commonProposal(selected.length ? selected : matching, field)
+  const labels = {
+    ...Object.fromEntries(fields),
+    period_start_unprinted: "Statement start",
+    no_activity_confirmed: "Activity",
+  } as Record<string, string>
   return (
     <>
       <Button
@@ -362,7 +422,7 @@ function Editor({
                   correction history are retained. Saving does not import
                   additional transactions.
                 </p>
-                {draft.mode === "fill_missing" && !preview.updated && !draft.confirmUnprintedStart && (
+                {draft.mode === "fill_missing" && !preview.updated && !draft.confirmUnprintedStart && !draft.confirmNoActivity && (
                   <div
                     className="rounded border p-3 space-y-2 text-sm"
                     role="status"
@@ -388,6 +448,9 @@ function Editor({
                   >
                     <strong>{item.filename}</strong>
                     <p>{summary(item)}</p>
+                    {item.source_check && (
+                      <p>Why its pages did not settle this automatically: {item.source_check}</p>
+                    )}
                     {!Object.keys(item.changes).length ? (
                       <p>{item.excluded_reason || "No changes — existing details kept."}</p>
                     ) : (
@@ -406,10 +469,21 @@ function Editor({
             ) : (
               <>
                 <h3 className="font-semibold">1. Choose statement periods</h3>
-                {query.isPending ? (
-                  <p role="status">Loading statement periods…</p>
-                ) : query.isError ? (
-                  <p role="alert">{query.error.message}</p>
+                {query.isError && !query.isFetching ? (
+                  <div className="space-y-2" role="alert">
+                    <p>
+                      {requestFailure(query.error, "Loading the statement periods").message}
+                    </p>
+                    <Button variant="outline" onClick={() => void query.refetch()}>
+                      Try again
+                    </Button>
+                  </div>
+                ) : query.isPending || (query.isError && query.isFetching) ? (
+                  <p role="status">
+                    Loading statement periods… {loadingFor} s
+                    {loadingFor >= 15 &&
+                      ". Large PDFs take longer; if this stops, it will say so and offer to try again."}
+                  </p>
                 ) : (
                   <>
                     {accountOptions.length > 1 && <label className="block text-sm">
@@ -541,8 +615,22 @@ function Editor({
                 <h3 className="font-semibold">2. Choose fields to change</h3>
                 <label className="block rounded border p-3 text-sm space-y-2">
                   <span className="flex items-start gap-2">
+                    <input type="checkbox" checked={!!draft.confirmNoActivity} disabled={busy}
+                      onChange={(event) => changeDraft({ confirmNoActivity: event.target.checked, confirmUnprintedStart: false })} />
+                    I checked every page of these statements and confirm they contain no transactions
+                  </span>
+                  <span className="block text-muted-foreground">
+                    Apply one confirmation to the selected unimported statements that have no payments.
+                    Each keeps its own dates and printed balances. Statements with payments, with printed
+                    opening and ending balances that differ, or that are already imported are excluded in
+                    the preview. A missing or unreadable page is not a period without activity: only confirm
+                    after checking the original pages.
+                  </span>
+                </label>
+                <label className="block rounded border p-3 text-sm space-y-2">
+                  <span className="flex items-start gap-2">
                     <input type="checkbox" checked={!!draft.confirmUnprintedStart} disabled={busy}
-                      onChange={(event) => changeDraft({ confirmUnprintedStart: event.target.checked })} />
+                      onChange={(event) => changeDraft({ confirmUnprintedStart: event.target.checked, confirmNoActivity: false })} />
                     I confirm these statements do not print a start date
                   </span>
                   <span className="block text-muted-foreground">
@@ -552,7 +640,7 @@ function Editor({
                     Only confirm after checking that the source layout omits the start date, rather than an unreadable date.
                   </span>
                 </label>
-                {!draft.confirmUnprintedStart && (
+                {!draft.confirmUnprintedStart && !draft.confirmNoActivity && (
                 <fieldset disabled={busy} className="space-y-3">
                   <label className="block text-sm">
                     Whole-month shortcut (optional)
@@ -611,13 +699,45 @@ function Editor({
                               checked={draft.values[field] !== undefined}
                               onChange={(event) => {
                                 const values = { ...draft.values }
-                                if (event.target.checked) values[field] = ""
+                                if (event.target.checked)
+                                  values[field] = proposalFor(field)?.value ?? ""
                                 else delete values[field]
                                 changeDraft({ values })
                               }}
                             />
                             {label}
                           </label>
+                          {draft.values[field] !== undefined &&
+                            proposalFor(field) && (
+                              <p className="text-sm">
+                                {draft.values[field] ===
+                                proposalFor(field)!.value ? (
+                                  <>
+                                    {proposalFor(field)!.value} —{" "}
+                                    {proposalFor(field)!.label}
+                                  </>
+                                ) : (
+                                  <>
+                                    Proposed: {proposalFor(field)!.value} —{" "}
+                                    {proposalFor(field)!.label}{" "}
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() =>
+                                        changeDraft({
+                                          values: {
+                                            ...draft.values,
+                                            [field]: proposalFor(field)!.value,
+                                          },
+                                        })
+                                      }
+                                    >
+                                      Use {proposalFor(field)!.value}
+                                    </Button>
+                                  </>
+                                )}
+                              </p>
+                            )}
                           {draft.values[field] !== undefined &&
                             (field === "currency" ? (
                               <select
@@ -680,14 +800,39 @@ function Editor({
                   )}
                 </fieldset>
                 )}
+                {!datesOnly && (
+                  <div className="space-y-1">
+                    <AccountTypeEditor
+                      caseId={caseId}
+                      accountIds={selected.flatMap((item) =>
+                        item.account_id ? [item.account_id] : []
+                      )}
+                    />
+                    {selected.some((item) => !item.account_id) && (
+                      <p className="text-xs text-muted-foreground">
+                        Account type is set on imported statements. Statements
+                        not imported yet take their type from the reading; set
+                        it after import if it is wrong.
+                      </p>
+                    )}
+                  </div>
+                )}
               </>
             )}
-            {(review.error || save.error) && (
+            {actionError && (
               <div className="space-y-2">
                 <p role="alert">
-                  {(review.error || save.error)?.message} Your selection and
-                  edits are kept.
+                  {actionError.message} Your selection and edits are kept.
                 </p>
+                {actionError.retry && (
+                  <Button
+                    variant="outline"
+                    disabled={busy}
+                    onClick={() => (save.error ? save.mutate() : review.mutate())}
+                  >
+                    Try again
+                  </Button>
+                )}
                 <Button
                   variant="outline"
                   disabled={busy || query.isFetching}
@@ -711,7 +856,7 @@ function Editor({
                   onClick={() => save.mutate()}
                 >
                   {save.isPending
-                    ? "Saving account details…"
+                    ? `Saving account details… ${workingFor} s`
                     : `Save changes to ${preview.updated} statements`}
                 </Button>
                 <Button
@@ -732,7 +877,7 @@ function Editor({
                   onClick={() => review.mutate()}
                 >
                   {review.isPending
-                    ? "Preparing preview…"
+                    ? `Preparing preview… ${workingFor} s`
                     : `Review changes for ${selected.length} statements`}
                 </Button>
                 <Button

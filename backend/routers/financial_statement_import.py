@@ -14,6 +14,7 @@ from services.financial.statement_import import read_statement_import
 from services.financial.currency_correction import CurrencyCode
 from services.financial.imported_records import CompleteImportedRecord
 from services.financial.manual_statement_payment import ManualStatementPayment
+from services.financial.record_withdrawal import RecordWithdrawal
 from services.financial.statement_check_request import StatementCheckRequest, check_statement_request
 from services.financial.statement_file_status import statement_file_status
 from services.financial.payment_document_review import (
@@ -106,16 +107,74 @@ def save_statement_details(source_id: UUID, body: StatementDetailsRequest, case_
         raise HTTPException(status_code=500, detail='The changes could not be saved. Your previous values are unchanged.')
 
 
+from pydantic import BaseModel, ConfigDict
+from services.financial import account_type_change
+
+
+class _AccountTypePreview(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    account_type: Literal['credit_card', 'checking', 'savings']
+
+
+@router.get('/account-types')
+def account_types(case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    try:
+        return account_type_change.account_type_review(db, case_id=case_id)
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+@router.get('/accounts/{account_id}/type')
+def account_type(account_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    try:
+        return account_type_change.account_type_state(db, case_id=case_id, account_id=account_id)
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+@router.post('/accounts/{account_id}/type/preview')
+def preview_account_type(account_id: UUID, body: _AccountTypePreview, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    try:
+        return account_type_change.preview_account_type(db, case_id=case_id, account_id=account_id, account_type=body.account_type)
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+@router.post('/accounts/{account_id}/type', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
+def save_account_type(account_id: UUID, body: account_type_change.AccountTypeRequest, case_id: UUID = Query(...),
+        user=Depends(get_current_db_user), db: Session = Depends(get_db)):
+    try:
+        return account_type_change.save_account_type(db, case_id=case_id, account_id=account_id, request=body, actor=actor_from_user(user))
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception:
+        logger.exception('Account type could not be saved')
+        raise HTTPException(status_code=500, detail='The account type could not be saved. Nothing was changed.')
+
+
+@router.post('/accounts/{account_id}/type/flip-rows', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
+def flip_account_rows(account_id: UUID, body: account_type_change.FlipRowsRequest, case_id: UUID = Query(...),
+        user=Depends(get_current_db_user), db: Session = Depends(get_db)):
+    try:
+        return account_type_change.flip_flagged_rows(db, case_id=case_id, account_id=account_id, request=body, actor=actor_from_user(user))
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception:
+        logger.exception('Flagged rows could not be flipped')
+        raise HTTPException(status_code=500, detail='The rows could not be flipped. Nothing was changed.')
+
+
 @router.get('/incomplete-records')
 def incomplete_records(account_ids: Annotated[list[UUID] | None, Query()] = None, account_holders: Annotated[list[str] | None, Query()] = None, case_id: UUID = Query(...), account_id: UUID | None = Query(None),
-        source_document_id: UUID | None = None,
+        source_document_id: UUID | None = None, evidence_file_id: Annotated[list[UUID] | None, Query()] = None,
         start_date: date | None = Query(None), end_date: date | None = Query(None),
         offset: int = Query(0, ge=0), limit: int = Query(50, ge=1, le=100), db: Session = Depends(get_db)):
     from services.financial.imported_records import imported_records
     if start_date and end_date and start_date > end_date:
         raise HTTPException(status_code=422, detail='The end date must be on or after the start date.')
     return imported_records(db, case_id=case_id, account_id=account_id, account_ids=account_ids, account_holders=account_holders,
-        start_date=start_date, end_date=end_date, offset=offset, limit=limit, source_document_id=source_document_id)
+        start_date=start_date, end_date=end_date, offset=offset, limit=limit, source_document_id=source_document_id,
+        evidence_file_ids=evidence_file_id)
 
 
 @router.get('/deployment-recovery')
@@ -325,6 +384,46 @@ def add_manual_statement_payment(source_id: UUID, body: ManualStatementPayment, 
             source_id=source_id, request=body, actor=actor_from_user(user))
     except PdfMappingError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+@router.post('/sources/{source_id}/admit-ready-records', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
+def admit_ready_imported_records(source_id: UUID, case_id: UUID = Query(...),
+        user=Depends(get_current_db_user), db: Session = Depends(get_db)):
+    from services.financial.imported_records import admit_ready_records
+    try:
+        return admit_ready_records(session_factory=sessionmaker(bind=db.get_bind()), case_id=case_id,
+            source_id=source_id, actor=actor_from_user(user))
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception:
+        logger.exception('Ready imported records could not be added')
+        raise HTTPException(status_code=500, detail='The records could not be added. They remain retained; retry to check again.')
+
+
+def _change_record(source_id, body, case_id, user, db, restore):
+    from services.financial.record_withdrawal import change
+    try:
+        return change(session_factory=sessionmaker(bind=db.get_bind()), case_id=case_id, source_id=source_id,
+            request=body, actor=actor_from_user(user), restore=restore)
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception:
+        logger.exception('Statement record withdrawal failed')
+        raise HTTPException(status_code=500, detail='The row could not be changed. Nothing was changed; retry to check again.')
+
+
+@router.post('/sources/{source_id}/withdraw-record', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
+def withdraw_statement_record(source_id: UUID, body: RecordWithdrawal, case_id: UUID = Query(...),
+        user=Depends(get_current_db_user), db: Session = Depends(get_db)):
+    """Withdraw a row the investigator added or corrected (kept, reversible)."""
+    return _change_record(source_id, body, case_id, user, db, restore=False)
+
+
+@router.post('/sources/{source_id}/restore-record', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
+def restore_statement_record(source_id: UUID, body: RecordWithdrawal, case_id: UUID = Query(...),
+        user=Depends(get_current_db_user), db: Session = Depends(get_db)):
+    """Restore a withdrawn row."""
+    return _change_record(source_id, body, case_id, user, db, restore=True)
 
 
 @router.post('/sources/{source_id}/complete-record', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
@@ -545,6 +644,13 @@ from services.financial import import_batches
 
 class CreateFinancialBatch(EvidenceSelectionRequest):
     request_id: UUID
+    # Files already in an unfinished batch continue it unless this is set.
+    start_new: bool = False
+
+
+class FinancialBatchPreview(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    file_ids: list[UUID] = Field(min_length=1, max_length=10000)
 
 
 class ConfirmFinancialBatch(BaseModel):
@@ -581,11 +687,63 @@ def set_batch_statement_currency(batch_id: UUID, body: SelectedStatementCurrency
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
 
+from services.financial import layout_memory
+
+
+class LayoutMemoryConfirmation(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    file_id: UUID
+    statement_id: str = Field(pattern=r'^[a-f0-9]{64}$')
+    field: Literal['holder', 'institution', 'currency']
+    value: str = Field(min_length=1, max_length=128)
+    key: str = Field(pattern=r'^[a-f0-9]{64}$')
+    request_id: UUID | None = None
+
+
+class LayoutMemoryWithdrawal(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    reason: str = Field(min_length=1, max_length=500)
+
+
+@router.get('/batches/{batch_id}/layout-memory')
+def batch_layout_memory_groups(batch_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    """Held general-reader periods grouped by layout, account and missing identity fact."""
+    try:
+        return layout_memory.memory_groups(db, case_id=case_id, batch_id=batch_id)
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+@router.get('/layout-memory/confirmations')
+def case_layout_memory(case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    return layout_memory.case_confirmations(db, case_id=case_id)
+
+
+@router.post('/layout-memory/confirm', dependencies=[Depends(case_access_dependency(lambda request,payload: ('case','edit')))])
+def confirm_layout_memory(body: LayoutMemoryConfirmation, case_id: UUID = Query(...),
+        user=Depends(get_current_db_user), db: Session = Depends(get_db)):
+    try:
+        return layout_memory.confirm(db, case_id=case_id, file_id=body.file_id, statement_id=body.statement_id,
+            field=body.field, value=body.value, expected_key=body.key, actor=actor_from_user(user), request_id=body.request_id)
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+@router.post('/layout-memory/{confirmation_id}/withdraw', dependencies=[Depends(case_access_dependency(lambda request,payload: ('case','edit')))])
+def withdraw_layout_memory(confirmation_id: UUID, body: LayoutMemoryWithdrawal, case_id: UUID = Query(...),
+        user=Depends(get_current_db_user), db: Session = Depends(get_db)):
+    try:
+        return layout_memory.withdraw(db, case_id=case_id, confirmation_id=confirmation_id, reason=body.reason,
+            actor=actor_from_user(user))
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
 @router.post('/batches', dependencies=[Depends(case_access_dependency(lambda request,payload: ('case','edit'))), Depends(case_access_dependency(lambda request,payload: ('evidence','upload')))])
 def create_financial_batch(body: CreateFinancialBatch, case_id: UUID = Query(...), user=Depends(get_current_db_user), db: Session = Depends(get_db)):
     try:
-        identifier=import_batches.create_batch(db,case_id=case_id,request_id=body.request_id,file_ids=body.file_ids,folder_ids=body.folder_ids,actor=actor_from_user(user))
-        return dict(id=str(identifier),case_id=str(case_id))
+        identifier=import_batches.create_batch(db,case_id=case_id,request_id=body.request_id,file_ids=body.file_ids,folder_ids=body.folder_ids,actor=actor_from_user(user),start_new=body.start_new)
+        return dict(id=str(identifier),case_id=str(case_id),continued=identifier!=body.request_id)
     except PdfMappingError as exc:
         db.rollback();raise HTTPException(status_code=exc.status_code,detail=str(exc)) from exc
 
@@ -620,6 +778,108 @@ def confirm_financial_removal(body: ConfirmFinancialRemoval, case_id: UUID = Que
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
 
+@router.post('/batches/preview')
+def preview_financial_batch(body: FinancialBatchPreview, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    """Before a batch starts: open batches holding these files, and files that are copies. Read only."""
+    from services.financial.batch_selection_preview import selection_preview
+    try:
+        return selection_preview(db, case_id=case_id, file_ids=body.file_ids)
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+@router.get('/review/queue')
+def financial_review_queue(case_id: UUID = Query(...), file_id: list[UUID] = Query([]),
+        db: Session = Depends(get_db)):
+    """The case's statements that need a decision now, from stored readings. Read only; nothing is re-read."""
+    from services.financial.review_queue import case_review_queue
+    from services.financial.request_timing import stage
+    with stage('review_queue'):
+        return case_review_queue(db, case_id=case_id, file_ids=file_id)
+
+
+@router.get('/review/status')
+def financial_review_status(case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    """The per-case status line (counts of the same queue)."""
+    from services.financial.review_queue import case_status
+    return case_status(db, case_id=case_id)
+
+
+@router.post('/review/read-unread', dependencies=[Depends(case_access_dependency(lambda request,payload: ('case','edit'))), Depends(case_access_dependency(lambda request,payload: ('evidence','upload')))])
+def financial_read_unread(case_id: UUID = Query(...), user=Depends(get_current_db_user), db: Session = Depends(get_db)):
+    """Read the case's statement files that were never read or prepared (one explicit action)."""
+    from services.financial.auto_read import read_unread
+    try:
+        return read_unread(db, case_id=case_id, actor=actor_from_user(user))
+    except PdfMappingError as exc:
+        db.rollback()
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+class QueueSave(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    item_ids: list[UUID] = Field(min_length=1, max_length=500)
+    request_id: UUID
+
+
+@router.post('/review/save', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
+def save_from_review_queue(body: QueueSave, case_id: UUID = Query(...), user=Depends(get_current_db_user),
+        db: Session = Depends(get_db)):
+    """Save ready statements from the queue, across batches, with the batch save's admission checks."""
+    from services.financial.queue_save import save_statements
+    from services.financial.request_timing import stage
+    try:
+        with stage('review_queue_save'):
+            return save_statements(db, case_id=case_id, item_ids=body.item_ids, actor=actor_from_user(user),
+                                   request_id=body.request_id)
+    except PdfMappingError as exc:
+        db.rollback()
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+class QueueFill(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    file_ids: list[UUID] = Field(default_factory=list, max_length=10000)
+
+
+@router.post('/review/fill', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
+def fill_from_review_queue(body: QueueFill, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    """Before a queue save: save the details the system filled with certainty (confirmed proposals) as System."""
+    from services.financial.queue_save import fill_from_queue
+    from services.financial.request_timing import stage
+    with stage('review_queue_fill'):
+        return fill_from_queue(db, case_id=case_id, file_ids=body.file_ids)
+
+
+@router.get('/review/save-result')
+def review_queue_save_result(case_id: UUID = Query(...), operation_id: list[UUID] = Query([]),
+        db: Session = Depends(get_db)):
+    """Progress of a queue save: its import receipts added together."""
+    from services.financial.queue_save import save_result
+    return save_result(db, case_id=case_id, operation_ids=operation_id[:200])
+
+
+@router.get('/review/cases')
+def financial_review_cases(user=Depends(get_current_db_user), db: Session = Depends(get_db)):
+    """Cases this user can view that hold statement batches. Counts load per case from /review/status."""
+    from sqlalchemy import select, func
+    from postgres.models.case import Case
+    from postgres.models.financial_import_batches import FinancialImportBatch
+    from services.case_service import check_case_access, CaseAccessDenied, CaseNotFound
+    rows = db.execute(select(Case.id, Case.title, func.max(FinancialImportBatch.updated_at))
+        .join(FinancialImportBatch, FinancialImportBatch.case_id == Case.id)
+        .where(FinancialImportBatch.status != 'removed', Case.archived.is_not(True))
+        .group_by(Case.id, Case.title).order_by(func.max(FinancialImportBatch.updated_at).desc()).limit(200)).all()
+    cases = []
+    for case_id, title, updated in rows:
+        try:
+            check_case_access(db, case_id, user, required_permission=('case', 'view'))
+        except (CaseAccessDenied, CaseNotFound):
+            continue
+        cases.append(dict(case_id=str(case_id), title=title, last_batch_activity=updated.isoformat() if updated else None))
+    return dict(cases=cases)
+
+
 @router.get('/batches/list')
 def list_financial_batches(case_id: UUID = Query(...), db: Session = Depends(get_db)):
     from services.financial.batch_review_summary import statement_summary
@@ -629,10 +889,13 @@ def list_financial_batches(case_id: UUID = Query(...), db: Session = Depends(get
     references = import_batches.available_batch_references(db, case_id, [f for b in batches for f in b.files])
     files_by_batch = {b.id: import_batches.project_batch_files(b.files, references) for b in batches}
     by_batch = {b.id: [] for b in batches}
+    superseded = {}
     if by_batch:
         from services.financial.batch_import_history import project_individual_receipts
+        from services.financial.batch_supersession import superseded_batches
         items = list(db.scalars(select(FinancialImportBatchItem).where(FinancialImportBatchItem.batch_id.in_(by_batch), FinancialImportBatchItem.status != 'removed')))
-        for item in project_individual_receipts(db, case_id, items):
+        superseded = superseded_batches(db, case_id, batches, items)
+        for item in import_batches.project_list_items(db, case_id, project_individual_receipts(db, case_id, items)):
             by_batch[item.batch_id].append(item)
     def counts(batch):
         items = by_batch[batch.id]
@@ -643,6 +906,7 @@ def list_financial_batches(case_id: UUID = Query(...), db: Session = Depends(get
                     statement_summary=statement_summary(items))
     return dict(case_id=str(case_id),batches=[dict(id=str(b.id),status=b.status,created_at=b.created_at.isoformat(),file_count=len(b.files), **counts(b),
         created_by=(b.actor or {}).get('name', ''), filenames=[f['filename'] for f in b.files[:3]],
+        superseded=bool(superseded.get(b.id)),
         checked_files=sum(f['status'] == 'checked' for f in files_by_batch[b.id]),
         failed_files=sum(f['status'] == 'error' for f in files_by_batch[b.id])) for b in batches])
 
@@ -743,7 +1007,8 @@ def get_financial_batch_item(batch_id: UUID,item_id: UUID,case_id: UUID=Query(..
         if item is None: raise PdfMappingError('Statement not found in this batch.',404)
         if item.status == 'superseded_reading':
             raise PdfMappingError('This reading was replaced by a newer one. Return to the batch to open its current statements. Your earlier review remains in history.',409)
-        item=import_batches.checked_batch_items(db,case_id,[item])[0]
+        # Opening one review may re-read that statement; other sources stay stored.
+        item=import_batches.checked_batch_items(db,case_id,[item],reading='targets')[0]
         return dict(id=str(item.id),file_id=str(item.file_id),statement_id=item.statement_key or None,status=item.status,review_request=item.review_request,review_revision=item.review_revision,**item.summary)
     except PdfMappingError as exc:
         raise HTTPException(status_code=exc.status_code,detail=str(exc)) from exc

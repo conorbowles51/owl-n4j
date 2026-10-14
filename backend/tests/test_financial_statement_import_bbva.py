@@ -1,6 +1,8 @@
 """Synthetic BBVA layout regressions; no customer document or account data."""
+import os
 from copy import deepcopy
 from unittest import TestCase
+from unittest.mock import patch as patch_env
 from uuid import UUID
 from sqlalchemy import select
 
@@ -406,6 +408,8 @@ class BbvaImportTests(TestCase):
             self.assertEqual(next(c for c in controls['controls'] if c['role'] == 'opening')['original_text'], original['controls'][0]['original_text'])
             self.assertEqual(next(c for c in controls['controls'] if c['role'] == 'closing')['reviewed_value'], '2500')
 
+    # Simulates a document no family reader claims (legacy recovery): the general engine is switched off.
+    @patch_env.dict(os.environ, {'LOUPE_FINANCIAL_GENERIC_READER': '0'})
     def test_reprocessed_import_replaces_incomplete_rows_and_preserves_the_old_reading(self):
         from pathlib import Path
         from uuid import uuid4
@@ -455,6 +459,8 @@ class BbvaImportTests(TestCase):
             self.assertEqual(len(retained.metadata_['statement_incomplete_records']), old['incomplete_count'])
             self.assertEqual(imported_records(db, case_id=f.case.id, account_id=None, start_date=None, end_date=None)['total'], 0)
 
+    # Simulates a document no family reader claims (legacy recovery): the general engine is switched off.
+    @patch_env.dict(os.environ, {'LOUPE_FINANCIAL_GENERIC_READER': '0'})
     def test_legacy_empty_import_can_be_refreshed_in_place_without_reupload(self):
         from pathlib import Path
         from unittest.mock import patch
@@ -568,3 +574,63 @@ class MaestraProposalTests(TestCase):
             self.assertEqual(checks['transaction_count'],0 if empty else 2)
             self.assertEqual(checks['balance_status'],'matches')
             self.assertEqual(checks['flagged_rows'],0)
+
+
+class BbvaNormTests(TestCase):
+    """The cached ASCII fast path must equal the full decomposition."""
+
+    def test_norm_matches_full_unicode_decomposition(self):
+        import unicodedata
+        from services.financial.statement_import_bbva import norm
+        def reference(text):
+            return ' '.join(''.join(c for c in unicodedata.normalize('NFKD', text.upper())
+                                   if not unicodedata.combining(c)).split())
+        samples = ['', '   ', 'saldo de operación inicial', 'DEPÓSITOS / ABONOS (+)', 'No. de cuenta:  0123',
+                   'straße', 'ﬁnal ½ Ⅻ', 'tab\tand\nnewline', 'ÁÉÍÓÚ ñ ü', 'plain ascii text', '\u00a0nbsp\u2003em']
+        for sample in samples:
+            self.assertEqual(norm(sample), reference(sample), sample)
+            self.assertEqual(norm(sample), reference(sample), sample)  # cached result
+
+
+class BbvaScannedLabelTests(TestCase):
+    """OCR without an accented ó may misread only that one position."""
+
+    def test_accented_o_misreadings_name_only_their_own_label(self):
+        from services.financial.statement_import_bbva import control_norm
+        for value, label in (('Saldo de Operacidn Inicial', 'SALDO DE OPERACION INICIAL'),
+                             ('Saldo de Operacidon Inicial', 'SALDO DE OPERACION INICIAL'),
+                             ('Saldo de Operacién Final', 'SALDO DE OPERACION FINAL'),
+                             ('SALDO DE OPERACIEN FINAL', 'SALDO DE OPERACION FINAL'),
+                             ('Saldo de Liquidaci6n Inicial', 'SALDO DE LIQUIDACION INICIAL'),
+                             ("Saldo de Liquidacién Inicial'", 'SALDO DE LIQUIDACION INICIAL'),
+                             ('Depdsitos / Abonos (+)', 'DEPOSITOS / ABONOS (+)'),
+                             ('Saldo de Operación Inicial', 'SALDO DE OPERACION INICIAL'),
+                             ('Saldo Final (+)', 'SALDO FINAL (+)')):
+            with self.subTest(value=value):
+                self.assertEqual(control_norm(value), label)
+
+    def test_other_damage_is_never_normalised_into_a_balance_label(self):
+        from services.financial.statement_import_bbva import control_norm
+        labels = {'SALDO DE OPERACION INICIAL', 'SALDO DE OPERACION FINAL', 'SALDO DE LIQUIDACION INICIAL',
+                  'DEPOSITOS / ABONOS (+)'}
+        for value in ('Saldo de Operacin Inicial', 'Saldo de Operacixyzn Inicial', 'Saldo de Operaci n Inicial',
+                      'Saldo de Operacidn Inicia1', 'Saldo de Operacidn lnicial', 'Saldo de 0peracidn Inicial',
+                      'Saldo de Operacidn Final (+)', 'Saldo de Liquidacidn Final', 'Saldo Operacidn Inicial',
+                      'Saldo de Operacidnn Inicial', 'Depdsitos / Abonos (-)', 'Depdsitos / Cargos (+)',
+                      'Retiros / Abonos (+)', 'Saldo de Operacidn Inicial 2'):
+            with self.subTest(value=value):
+                self.assertNotIn(control_norm(value), labels)
+
+    def test_scanned_balance_labels_supply_the_operational_opening_balance(self):
+        sources = statement()
+        for row in sources[1]['rows']:
+            text = row['cells'][0]['expected_text']
+            row['cells'][0]['expected_text'] = {'Saldo de Operación Inicial': 'Saldo de Operacidon Inicial',
+                'Saldo de Liquidación Inicial': 'Saldo de Liquidaci6n Inicial',
+                'Saldo de Operación Final': 'Saldo de Operacidn Final'}.get(text, text)
+        choices, _ = bbva_catalog(sources)
+        proposal = propose_bbva_statement(sources, 'EUR', choices[0])
+        self.assertEqual(proposal['balance_basis'], 'operation')
+        self.assertEqual([(r['fields']['description'], r['fields']['balance']) for r in proposal['rows'] if r['kind'] == 'balance'],
+                         [('Opening Balance', '6000'), ('Closing Balance', '2520')])
+        self.assertEqual(check_statement_rows(proposal['rows'])['balance_status'], 'matches')

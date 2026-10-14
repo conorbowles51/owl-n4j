@@ -218,3 +218,40 @@ def propose_santander_statement(sources,currency,choice):
                 try:fields['balance']=exact_amount(c['expected_text'],currency)
                 except ValueError as exc:item['issues'].append(str(exc))
     return dict(rows=result,issues=[])
+
+
+def santander_no_activity_evidence(sources, choice, rows, currency):
+    """Printed zero TOTAL line and equal SALDO FINAL lines prove a quiet section.
+
+    Beyond the shared printed-control checks, the section's own lines must
+    read, in printed order: the previous-period balance, the movement column
+    heading, immediately the TOTAL line, then the period's final balance. Any
+    dated line inside the section, or any line between the column heading and
+    the TOTAL line, could be an unread payment and keeps the period held.
+    """
+    from services.financial.statement_printed_no_activity import zero_totals_evidence
+    scopes = {(s['page_number'], s['table_index']): set(s['row_indices']) for s in choice.get('section_sources') or []}
+
+    def guard():
+        ordered = [(page, s, raw) for page in sorted({s['page_number'] for s in sources})
+                   for s, raw in located_rows([s for s in sources if s['page_number'] == page])
+                   if raw['row_index'] in scopes.get((page, s['table_index']), set())]
+        roles = []
+        for page, s, raw in ordered:
+            joined = norm(text(raw))
+            if re.search(DATE, joined):
+                return ('dated_line', 'A dated line was read inside this account section. Check it before confirming that the section contains no transactions.')
+            if 'SALDO FINAL DEL PERIODO' in joined:
+                roles.append(('opening' if 'ANTERIOR' in joined else 'closing', page))
+            elif 'FECHA' in joined and all(label in joined for label in ('DEPOSITO', 'RETIRO', 'SALDO')):
+                roles.append(('columns', page))
+            elif joined.startswith('TOTAL'):
+                roles.append(('total', page))
+            elif roles and roles[-1][0] == 'columns':
+                return ('rows_between_heading_and_total', 'Text was read between the movement column heading and the TOTAL line. Check it before confirming that the section contains no transactions.')
+        sequence = [role for role, _ in roles]
+        if sequence != ['opening', 'columns', 'total', 'closing'] or roles[1][1] != roles[2][1]:
+            return ('section_lines', 'The balance, column heading and TOTAL lines of this account section were not read in their printed order on one page. Check the page before confirming that it contains no transactions.')
+        return None
+
+    return zero_totals_evidence(rows, choice, currency, family='santander-mexico', guard=guard)

@@ -1,0 +1,165 @@
+"""Declarative library profiles for the general statement engine.
+
+A profile is DATA, not code: it lets the engine read an issuer whose printed
+conventions are institution specific, without adding a branch to the engine.
+Profiles belong to the fallback library (with the family readers): the engine
+serves a period from its own rules first, and a profile is applied only to
+pages no family reader claims, when the plain engine did not prove them.
+
+Profile format (every key optional except ``name`` and ``match``):
+
+    name         unique id, recorded on every period the profile served
+    match        {'any': [...], 'all': [...]}: case-insensitive phrases printed on
+                 the statement's pages; ``all`` must all occur, one of ``any`` must
+    institution  the issuer's name, used when the pages print no legal-name line
+    currency     ISO code for amounts printed with a bare symbol ('$'), used only
+                 when the statement prints no currency of its own
+    convention   'asset_balance' or 'liability_owed'
+    date_order   'dmy' or 'mdy' for numeric dates without a month name
+    labels       {role: [printed labels]} added to the vocabulary; roles are
+                 opening, closing, subtotal, credit_total, debit_total,
+                 credit_component, debit_component, column_total
+    columns      {role: [printed column words]} added to the movement headings;
+                 roles are date, description, credit, debit, balance, amount
+    account_heading  True: with no labelled account, a section heading of the
+                 product name followed by a hyphenated account number (one
+                 distinct number in the section's heading area) is the account
+    statement_account  True: a section sharing pages with another section and
+                 printing no account of its own takes the statement's single
+                 top-ranked heading account (one contract, several currencies)
+    account_suffix_heading  True: each section's account is the number printed after
+                 its product name in the section's own heading ('<product> - 1234'),
+                 never a number from the statement's other pages; one or none
+    holder_heading  {'title': [...], 'prefix': 'FOR'}: the holder is the name printed
+                 on the line under a title line ('Statement of Account' / 'For <name>'),
+                 the same on every page printing it
+    prior_period_block  {'start': [...], 'end': [...]}: a line starting with a
+                 ``start`` phrase opens a block of earlier periods' operations
+                 repeated to explain a balance (E7); its lines are not this
+                 period's movements, up to a line starting with an ``end`` phrase
+
+Capital One and BBVA are expressed below to prove the format (their code
+readers stay in the library unchanged); Monex, Santander, Intercam, Citi,
+M&T, Scotiabank and Kapital supply only their institution. Facts a person confirms per layout and account
+are not profiles: they are case data (``layout_memory``).
+"""
+
+PROFILES = (
+    dict(
+        name='capital-one-card',
+        match=dict(any=['capitalone.com', 'capital one']),
+        institution='Capital One',
+        currency='USD',
+        convention='liability_owed',
+        date_order='mdy',
+        labels=dict(debit_component=['TRANSACTIONS'], credit_component=['OTHER CREDITS']),
+        columns=dict(amount=['AMOUNT']),
+    ),
+    dict(
+        name='bbva-mexico-cash-management',
+        match=dict(any=['bbva mexico, s.a.', 'bbva bancomer, s.a.', 'bbva mexico s.a.'], all=['estado de cuenta']),
+        institution='BBVA Mexico',
+        convention='asset_balance',
+        date_order='dmy',
+        labels=dict(opening=['SALDO DE OPERACION INICIAL', 'SALDO DE LIQUIDACION INICIAL'],
+                    closing=['SALDO DE OPERACION FINAL', 'SALDO FINAL'],
+                    credit_total=['DEPOSITOS / ABONOS'], debit_total=['RETIROS / CARGOS'],
+                    column_total=['TOTAL DE MOVIMIENTOS']),
+        columns=dict(date=['OPER', 'LIQ'], debit=['CARGOS'], credit=['ABONOS'], balance=['OPERACION', 'LIQUIDACION']),
+        # The BBVA reader's rule: operations booked in an earlier period, repeated to explain the settlement
+        # balance, outside this period's printed counts and totals.
+        prior_period_block=dict(start=['MOVIMIENTOS DE PERIODOS ANTERIORES'], end=['TOTAL DE MOVIMIENTOS']),
+    ),
+    # Institution-only profiles (r3): these layouts do not always print their legal name on the pages
+    # the engine reads it from. Each match phrase is printed by every statement of its family in the
+    # real collection and by no statement of another family (group names, not bank names that
+    # counterparty transfer lines also print). The engine's printed legal name always wins.
+    # Monex prints one contract number for all currency sections of a statement (its reader keys
+    # every section by it); sections sharing pages take it from the statement's heading pages.
+    dict(name='monex-mexico', match=dict(any=['monex grupo financiero']), institution='Monex', statement_account=True),
+    # Santander prints some accounts only after the product name ("<PRODUCT NAME> 12-34567890-1"):
+    # on the verified truth 45 such heading lines, every one the truth account.
+    dict(name='santander-mexico', match=dict(any=['grupo financiero santander']), institution='Santander',
+         account_heading=True),
+    dict(name='intercam-mexico', match=dict(any=['intercam grupo financiero']), institution='Intercam'),
+    dict(name='citi-card', match=dict(any=['citibank, n.a']), institution='Citibank'),
+    # M&T Bank (r4): its scanned logo reads as other letters beside the printed name, so the printed
+    # name is not unique on the page; the phrase is its balancing-instructions page furniture, printed by
+    # every M&T statement in the real collection (83 documents) and by no other document.
+    # A US bank: a bare '$' is US dollars (used only when the statement prints no currency of its own).
+    dict(name='mt-bank', match=dict(any=['m&t telephone banking center']), institution='M&T Bank', currency='USD'),
+    # Scotiabank Mexico and Kapital (r5): institution only. The Scotiabank legal name is printed by every
+    # Scotiabank statement in the real collection and by no other document; Kapital's own bank name also
+    # appears in other banks' transfer lines, so its phrase is the complaints-contact furniture printed by
+    # every Kapital statement and by no other document.
+    dict(name='scotiabank-mexico', match=dict(any=['scotiabank inverlat, s.a.']), institution='Scotiabank'),
+    dict(name='kapital-mexico', match=dict(any=['aclaraciones@kapital.com']), institution='Kapital'),
+    # Navy Federal Credit Union statements of account: one statement prints several accounts (checking,
+    # its line of credit, savings), each in a section headed '<product name> - <last four digits>'; the
+    # holder is printed under the title on every continuation page ('Statement of Account' / 'For <name>');
+    # amounts carry a bare '$' (a US credit union) and no page names a currency.
+    dict(name='navy-federal', match=dict(all=['navy federal credit union', 'statement of account', 'access no.']),
+         institution='Navy Federal Credit Union', currency='USD', account_suffix_heading=True,
+         holder_heading=dict(title=['STATEMENT OF ACCOUNT'], prefix='FOR')),
+)
+
+_KEYS = {'name', 'match', 'institution', 'currency', 'convention', 'date_order', 'labels', 'columns', 'account_heading',
+         'statement_account', 'prior_period_block', 'account_suffix_heading', 'holder_heading'}
+_LABEL_ROLES = {'opening', 'closing', 'subtotal', 'credit_total', 'debit_total', 'credit_component',
+                'debit_component', 'column_total'}
+_COLUMN_ROLES = {'date', 'description', 'credit', 'debit', 'balance', 'amount'}
+
+
+def validate(profile):
+    """Refuse a malformed profile before it can change any reading."""
+    unknown = set(profile) - _KEYS
+    if unknown or not profile.get('name') or not isinstance(profile.get('match'), dict):
+        raise ValueError('Invalid statement profile: ' + str(profile.get('name')))
+    if profile.get('convention') not in (None, 'asset_balance', 'liability_owed'):
+        raise ValueError('Invalid profile convention.')
+    if profile.get('date_order') not in (None, 'dmy', 'mdy'):
+        raise ValueError('Invalid profile date order.')
+    if set(profile.get('labels') or {}) - _LABEL_ROLES or set(profile.get('columns') or {}) - _COLUMN_ROLES:
+        raise ValueError('Invalid profile label or column role.')
+    if (profile.get('account_heading') not in (None, True) or profile.get('statement_account') not in (None, True)
+            or profile.get('account_suffix_heading') not in (None, True)):
+        raise ValueError('Invalid profile account heading flag.')
+    titled = profile.get('holder_heading')
+    if titled is not None and (not isinstance(titled, dict) or set(titled) != {'title', 'prefix'}
+                               or not (isinstance(titled['title'], list) and titled['title'])
+                               or not (isinstance(titled['prefix'], str) and titled['prefix'].strip())):
+        raise ValueError('Invalid profile holder heading.')
+    block = profile.get('prior_period_block')
+    if block is not None and (not isinstance(block, dict) or set(block) != {'start', 'end'}
+                              or not all(isinstance(v, list) and v for v in block.values())):
+        raise ValueError('Invalid profile prior-period block.')
+    if profile.get('currency'):
+        from services.financial.money import get_currency
+        get_currency(profile['currency'])
+    return profile
+
+
+for _profile in PROFILES:
+    validate(_profile)
+
+
+def matching_profile(text):
+    """The one profile whose printed phrases occur in ``text``; None if none or several match."""
+    lowered = ' '.join(text.lower().split())
+    found = []
+    for profile in PROFILES:
+        rule = profile['match']
+        if all(p in lowered for p in rule.get('all', [])) and (not rule.get('any') or any(p in lowered for p in rule['any'])):
+            found.append(profile)
+    if len(found) > 1:
+        # A profile matched only by phrases that must all occur (no 'any' list) is specific to one layout:
+        # it outranks profiles matched by a single phrase, which a transaction line can print (a payment
+        # to a card issuer names that issuer).
+        specific = [p for p in found if not p['match'].get('any')]
+        found = specific if len(specific) == 1 else found
+    return found[0] if len(found) == 1 else None
+
+
+def profile_text(sources):
+    return '\n'.join(c['expected_text'] for s in sources for r in s['rows'] for c in r['cells'])
+

@@ -13,6 +13,8 @@ from postgres.models.financial_import_batches import FinancialImportBatchItem as
 from services.financial import import_batches as batches, statement_import
 from services.financial.pdf_candidates import PdfMappingError
 from services.financial.statement_import import StatementReviewDraft
+from services.financial.effective_statement_review import batch_review_revision
+from services.financial.statement_progress import review_progress
 from tests import test_financial_statement_overlap as fixtures
 
 
@@ -79,17 +81,18 @@ class BatchReviewSaveScopeTests(TestCase):
         finally:
             event.remove(f.engine, 'before_cursor_execute', sql)
         self.assertEqual(reads, [f.file.id])
-        self.assertLessEqual(len(queries), 20, 'Save must not query every other statement.')
+        # 99 other statements: a per-statement query would exceed this many
+        # times over. The budget includes storing this item's refreshed
+        # readiness (one locked read and one update) for the batch list.
+        self.assertLessEqual(len(queries), 24, 'Save must not query every other statement.')
         # This is the saved draft assessment, not permission to import.
         self.assertEqual(result['status'], 'ready')
         with f.SessionLocal() as db:
             saved = db.get(Item, item_id)
             self.assertEqual(saved.review_request, saved_request)
-            # The first batch save also creates shared progress, so the token covers both.
-            from services.financial.effective_statement_review import batch_review_revision
-            from services.financial.statement_progress import review_progress
+            # Every batch save is also a shared save (a48958e0), so the token
+            # binds the batch request to the shared review revision.
             shared = review_progress(db.get(EvidenceFile, saved.file_id), saved.statement_key)
-            self.assertIsNotNone(shared)
             self.assertEqual(result['review_revision'], batch_review_revision(saved_request, shared))
             self.assertEqual(list(db.scalars(select(FinancialTransaction))), [])
 

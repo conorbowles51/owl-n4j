@@ -310,9 +310,9 @@ it.each([1280, 390])(
     mount()
     await screen.findByText("Printed credit total: needs checking")
     expect(
-      screen.getByRole("button", {
-        name: "Import 2 payments and view Transactions",
-      })
+      screen.getAllByRole("button", {
+        name: "Import 2 transactions",
+      })[0]
     ).toBeDisabled()
     await page
       .getByRole("button", {
@@ -389,9 +389,9 @@ it.each([1280, 390])(
       .fill("427.00")
     await screen.findByText("Printed credit total: matches")
     expect(
-      screen.getByRole("button", {
-        name: "Import 2 payments and view Transactions",
-      })
+      screen.getAllByRole("button", {
+        name: "Import 2 transactions",
+      })[0]
     ).toBeDisabled()
     expect(screen.getByText(/Original reading: 0.00 EUR/)).toBeVisible()
     await page
@@ -424,9 +424,9 @@ it.each([1280, 390])(
     await screen.findByText("Printed debit total: matches")
     await waitFor(() =>
       expect(
-        screen.getByRole("button", {
-          name: "Import 2 payments and view Transactions",
-        })
+        screen.getAllByRole("button", {
+          name: "Import 2 transactions",
+        })[0]
       ).toBeEnabled()
     )
     expect(
@@ -474,9 +474,9 @@ it.each([1280, 390])(
     mount()
     await screen.findByText("Printed debit total: matches")
     expect(
-      screen.getByRole("button", {
-        name: "Import 2 payments and view Transactions",
-      })
+      screen.getAllByRole("button", {
+        name: "Import 2 transactions",
+      })[0]
     ).toBeEnabled()
     await page
       .getByRole("button", { name: "Review printed credit total", exact: true })

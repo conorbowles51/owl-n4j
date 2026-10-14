@@ -63,6 +63,28 @@ def explain_blockers(blockers, proposal=None, raw=None):
     return result
 
 
+def source_proves_no_activity(evidence, raw):
+    """A reader's source proof applies only to the exact printed values it checked.
+
+    The proof names its opening and closing balance rows. Any edit to those
+    balances or to the printed period dates means the investigator, not the
+    page, is now the basis, so their own confirmation is required instead.
+    """
+    if not isinstance(evidence, dict) or evidence.get('verified') is not True:
+        return False
+    rows = {row.get('id'): row for row in raw.get('rows', [])}
+    ends = [rows.get(evidence.get('opening_row_id')), rows.get(evidence.get('closing_row_id'))]
+    # A printed-totals proof also names its zero deposit/withdrawal totals
+    # and the currency they were read in; those must be unchanged as well.
+    totals = [rows.get(row_id) for row_id in evidence.get('zero_total_row_ids') or []]
+    return bool(evidence.get('balance_minor') is not None
+        and all(row is not None and row.get('excluded') and row.get('balance_minor') == evidence['balance_minor'] for row in ends)
+        and all(row is not None and row.get('excluded') and row.get('balance_minor') == '0' for row in totals)
+        and ('currency' not in evidence or raw.get('currency') == evidence['currency'])
+        and raw.get('period_start') == evidence.get('period_start') and raw.get('period_end') == evidence.get('period_end')
+        and not raw.get('period_start_unprinted'))
+
+
 def assess_admission(proposal, request, arithmetic=None):
     raw = request.model_dump(mode='json')
     arithmetic = arithmetic or check_proposed_rows(proposal, raw['rows'])
@@ -81,7 +103,13 @@ def assess_admission(proposal, request, arithmetic=None):
         if field == 'period_start' and start_unprinted:
             continue
         if not raw.get(field) or (field.startswith('period_') and not calendar_date(raw[field])):
-            blockers.append(dict(kind='statement_detail', field=field, row_id=None, message=f'Enter the {label} printed on this statement.'))
+            message = f'Enter the {label} printed on this statement.'
+            held = ((proposal.get('period_dates') or {}).get('period_start_hold') or {}) if field == 'period_start' else {}
+            if held and not raw.get(field):
+                # A closing-only statement: say why its source did not establish the start.
+                message = held['message']
+            blockers.append(dict(kind='statement_detail', field=field, row_id=None, message=message,
+                                 **(dict(source_check=held['code']) if held and not raw.get(field) else {})))
     closing = next(c for c in arithmetic['checks'] if c['kind'] == 'closing_balance')
     # A reader-identified closure is account information, not a payment or a
     # printed zero balance. Only waive the absent closing control for a quiet
@@ -130,9 +158,17 @@ def assess_admission(proposal, request, arithmetic=None):
         r['fields'].get('printed_transaction_count') == '0'}
     printed_no_activity = zero_directions >= {'credit', 'debit'}
     reviewed_no_activity = bool(raw.get('no_activity_confirmed') and raw.get('no_activity_revision') == revision)
-    if no_payments and not printed_no_activity and not reviewed_no_activity:
-        blockers.append(dict(kind='no_activity', row_id=None,
-            message='Check every page of this period and confirm that it contains no transactions. Equal balances alone do not establish no activity.'))
+    evidence = proposal.get('no_activity_evidence') or {}
+    source_no_activity = no_payments and source_proves_no_activity(evidence, raw)
+    if no_payments and not printed_no_activity and not reviewed_no_activity and not source_no_activity:
+        blocker = dict(kind='no_activity', row_id=None,
+            message='Check every page of this period and confirm that it contains no transactions. Equal balances alone do not establish no activity.')
+        if evidence.get('verified') is False:
+            # Why the page alone could not establish it; the decision stays the investigator's.
+            blocker.update(source_check=evidence.get('reason'), source_check_message=evidence.get('message'))
+            if evidence.get('page_number'):
+                blocker['page'] = evidence['page_number']
+        blockers.append(blocker)
     if proposal.get('reading_failure') or proposal.get('assignment_only'):
         blockers.append(dict(kind='reading', row_id=None, message=proposal.get('reading_failure') or 'Assign the unallocated statement pages before importing.'))
     unique = []
@@ -146,6 +182,10 @@ def assess_admission(proposal, request, arithmetic=None):
     return dict(policy=POLICY, revision=revision, can_import=not unique,
         status=('needs_review' if unique else 'confirmed_no_activity' if no_payments else 'reconciled'),
         no_activity_confirmed=no_payments and not unique, blockers=explain_blockers(unique, proposal, raw),
+        no_activity_basis=(None if unique or not no_payments else 'printed_zero_counts' if printed_no_activity
+            else (evidence.get('basis') or 'source_verified') if source_no_activity and not reviewed_no_activity
+            else 'investigator_confirmed'),
+        **(dict(no_activity_evidence=evidence) if no_payments and not unique and source_no_activity and not reviewed_no_activity else {}),
         checks=arithmetic['checks'], calculation=calculation, assessment_current=True)
 
 
