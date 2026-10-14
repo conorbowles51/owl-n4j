@@ -952,8 +952,13 @@ def confirm_statement_import(*, session_factory, case_id, evidence_file_id, requ
     projection itself runs later in the worker loop, so a graph failure can
     never fail or roll back the ledger write.
 
-    Afterwards, pending batch periods of the same file are brought current:
-    batch list reads reuse stored readiness and an admitted period changes it.
+    Afterwards, the batch periods of this statement are brought current (they
+    now read as saved), as every other per-statement write does. The file's
+    other periods are left to the readiness sweep: each admission changes all
+    their fingerprints, and re-checking every period of a many-period file
+    inside every import made a 217-period production take ~7 min per import.
+    Stale readiness never admits anything (the writer re-checks under its
+    locks); until the sweep reaches them those periods show as rechecking.
     """
     receipt = _write_statement_import(session_factory=session_factory, case_id=case_id,
         evidence_file_id=evidence_file_id, request=request, actor=actor, resolve_path=resolve_path)
@@ -962,7 +967,9 @@ def confirm_statement_import(*, session_factory, case_id, evidence_file_id, requ
         request_follow_up(case_id)
     from services.financial.import_batches import refresh_file_readiness
     with session_factory() as session:
-        refresh_file_readiness(session, case_id=case_id, file_id=UUID(str(evidence_file_id)))
+        statement_id = request.get('statement_id') if isinstance(request, dict) else request.statement_id
+        refresh_file_readiness(session, case_id=case_id, file_id=UUID(str(evidence_file_id)),
+                               statement_key=statement_id or '')
     return receipt
 
 
@@ -1117,7 +1124,8 @@ def _write_statement_import_once(*, session_factory, case_id, evidence_file_id, 
                 if printed_copies and not printed_copies['identical'] and not request.coverage_review_reason.strip():
                     raise PdfMappingError('This statement period is printed more than once in this PDF and the printed copies read differently. Compare the copies, then record why this printing should be imported.', 409)
                 from services.financial.statement_import_overlap import coverage_review, requires_decision, duplicate_hold
-                coverage_request = {**request.model_dump(mode='json'), 'account_type': proposal['metadata'].get('account_type') or ''}
+                coverage_request = {**request.model_dump(mode='json'), 'account_type': proposal['metadata'].get('account_type') or '',
+                                    'account_reference_kind': proposal['metadata'].get('account_reference_kind') or ''}
                 coverage = coverage_review(session, case_id=case_id, file_id=evidence_file_id,
                                            request=coverage_request)
                 if duplicate_hold(coverage, coverage_request):
