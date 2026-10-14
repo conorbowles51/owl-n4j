@@ -83,7 +83,7 @@ CITI citi, CR1 credit_one, KAP kapital/intercam, MER merrick, MON monex, SAN san
 | E1 | Header recognition | A header line holds a date word and at least one money word (Spanish and English vocabulary); it fixes column bands | all 10 | covered (labels table; header is a hint, proof decides) |
 | E2 | Column bands from geometry | Money tokens are assigned to columns by right-edge alignment (amounts are right aligned) | BBVA, SAN, KAP, MON, CITI, MER, AND (7) | covered |
 | E3 | Multi-line descriptions | Lines with no date and no money below a movement continue its description | BBVA, SAN, KAP, MON, CITI, CR1, AND, C1 (8) | covered |
-| E4 | Two-line entries (amount on the next line) | A dated line without money followed by an undated line with money is one movement | CITI (1) | library |
+| E4 | Two-line entries (amount on the next line) | A dated line without money followed by an undated line with money is one movement | CITI, NFCU (2) | covered (r-subpoena): the next line on the page, directly below, starting in the dated line's description band, printing no date and only amounts inside the movement columns |
 | E5 | Descriptions wrapping above the dated line | Wrapped lines are owned by the nearest dated line | MON (1) | library |
 | E6 | Table furniture inside the table region | Page headers/footers, "page n of m" and legal lines inside a movement region are ignored | BBVA, MON, SAN, C1 (4) | covered (furniture = text repeated on most pages) |
 | E7 | Prior-period settlement blocks | Movements of earlier periods repeated to explain a settlement balance are not this period's payments | BBVA (1) | library |
@@ -102,8 +102,8 @@ CITI citi, CR1 credit_one, KAP kapital/intercam, MER merrick, MON monex, SAN san
 ## Counts
 
 - Rules: **48** (A 12, B 7, C 12, D 8, E 9, F 4).
-- Engine covers fully: **42** (F4 added by r3); partially: **2** (A4 reprints left to the duplicate set-aside, E8 rewards
-  column handled only by band exclusion); library only: **4** (C11 split digits, E4 two-line entries, E5
+- Engine covers fully: **43** (E4 added by r-subpoena; was 42) (F4 added by r3); partially: **2** (A4 reprints left to the duplicate set-aside, E8 rewards
+  column handled only by band exclusion); library only: **3** (C11 split digits, E5
   descriptions wrapping above the dated line, E7 prior-period settlement blocks), plus institution vocabularies
   that live in library profiles.
 - One-family rules covered by the engine only as consequences of a format convention: A5 (page numbering),
@@ -158,6 +158,40 @@ money still proved per period; withdrawal re-reads and holds again.
 - Drawn-table rows that fuse the last movement with the printed TOTAL line below it (multi-line cells
   'description\nTOTAL', 'amount\ntotal'): SAN only (3 truth documents). Needs the image path's line
   segmentation, not an engine rule.
+
+## Rules added by r-subpoena (2026-10-13, Navy Federal statements of account in a records production)
+
+Family abbreviation: NFCU navy-federal (credit union statement of account: several account sections per
+statement, a summary page, a check list after each table; a subpoena production stamps its own page numbers).
+
+- B1: a range printed for a dividend or interest accrual ('for the dividend period from ... through ...') is
+  not a statement period. A period label alone in a cell ('Statement Period') with the range in the cell
+  directly below it (overlapping horizontally) is a labelled period.
+- A3: a running page stamp whose count spans the file, in step with the physical pages and printed beside
+  another numbering on at least two pages, numbers the file (a production), not a statement: set aside on
+  every page. A numbering never printed beside another is kept.
+- A2/A3: after a printed run reaches its last page (n of n), a following page with neither a period nor a
+  page number (records appended by the production) does not continue that statement.
+- E9 (extended): after a section's closing balance, a heading with other amount columns opens another table
+  ('Items Paid' check lists) whose dated amount lines belong to no section (section split and reading). A
+  total printed after the closing balance with no movement between them (a payment slip) totals another
+  table and does not extend the section.
+- C5/A7: in a statement of several sections, card vocabulary counts only in the section's own lines up to
+  its closing balance (a deposit account beside a credit line, or before credit-line disclosures, keeps the
+  asset convention). One-section statements read exactly as before.
+- B7 (extended): a section printing a no-activity line ('No Transactions This Period') between equal opening
+  and closing balances, with nothing else between them that carries an amount or opens with a date, is
+  proved quiet (basis printed_no_transactions); the import cites the line as source proof
+  (statement_printed_no_activity.printed_line_evidence), bound at admission to both balances.
+- A dated movement line printing nothing else (a redaction) holds the period: line_without_content.
+- A6/A7: two sections of one statement printing the same account number in the same currency under
+  different conventions (a deposit account and its attached credit line) are held on the amounts-owed side:
+  account_shared (the ledger keys an account by institution and number and would merge them). Routing keeps
+  a profile whose only loss against the plain engine is such an identity hold.
+- Profiles (data): account_suffix_heading (each section's account is the number after its product name in
+  its own heading, never a number from other pages), holder_heading (the name under a title line on the
+  statement's pages, the same on every page). A profile matched only by phrases that must all occur outranks
+  single-phrase matches.
 
 ## Vector text
 

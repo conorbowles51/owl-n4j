@@ -542,6 +542,93 @@ class SynchronyTruthTests(unittest.TestCase):
                          'synchrony-card')
 
 
+
+def right(x1, text):
+    """One word whose right edge is at ``x1`` (amounts are right aligned)."""
+    return [(text, x1 - 4.0 * len(text))]
+
+
+class NavyFederalTruthTests(unittest.TestCase):
+    """Navy Federal 'Statement of Account': one period per account section, controls from the summary page."""
+    HEADER = at(10, 'Date') + at(40, 'Transaction Detail') + right(466, 'Amount($)') + right(600, 'Balance($)')
+    LOC_HEADER = at(10, 'Date') + at(40, 'Transaction Detail') + right(250, 'Amount($)') + right(330, 'Fee(s)') \
+        + right(345, '($)') + right(400, 'Interest($)') + right(470, 'Principal') + right(490, '($)') \
+        + right(585, 'Balance') + right(600, '($)')
+
+    def furniture(self, number, total=2):
+        return [right(560, f'Page {number} of {total}'), at(10, 'Statement of Account'),
+                at(400, 'Statement Period'), at(400, '01/17/24 - 02/16/24')]
+
+    def pages(self, redacted=False, loc_rows=False, deposits='$50.00'):
+        first = placed(1, self.furniture(1) + [
+            at(10, 'Summary of your deposit accounts'),
+            right(176, 'Previous') + right(284, 'Deposits/') + right(392, 'Withdrawals/') + right(496, 'Ending'),
+            right(176, 'Balance') + right(284, 'Credits') + right(392, 'Debits') + right(496, 'Balance'),
+            at(30, 'Day Checking'),
+            at(40, '1111') + right(176, '$100.00') + right(284, deposits) + right(392, '$30.00') + right(496, '$120.00'),
+            at(10, 'Totals') + right(176, '$100.00') + right(284, deposits) + right(392, '$30.00') + right(496, '$120.00'),
+            at(10, 'Navy Federal Credit Union Page 1 of 9')])
+        rows = [at(10, '01-20') + at(40, 'Deposit') + right(466, '50.00') + right(600, '150.00'),
+                at(10, '01-25') + at(40, 'POS Debit - Debit Card 9999 Transaction 01-24-24 EXAMPLE STORE'),
+                at(40, 'Somewhere MD') + right(466, '25.00-') + right(600, '125.00'),
+                at(10, '02-01') + at(40, 'Check 101') + right(462, '5.00') + [('-', 463.0)] + right(600, '120.00')]
+        if redacted:
+            rows = [at(10, '01-20'), at(10, '01-25')] + rows[3:]
+        loc = [at(10, 'Checking Line of Credit - 1111'),
+               at(10, 'Total Outstanding Balance') + right(172, '$40.00' if loc_rows else '$0.00'), self.LOC_HEADER,
+               at(10, '01-17') + at(40, 'Beginning Balance') + right(600, '0.00')]
+        if loc_rows:
+            loc += [at(10, '01-30') + at(40, 'Advance') + right(250, '40.00') + right(470, '40.00') + right(600, '40.00'),
+                    at(10, '02-16') + at(40, 'Ending Balance') + right(600, '40.00')]
+        else:
+            loc += [at(200, 'No Transactions This Period'), at(10, '02-16') + at(40, 'Ending Balance') + right(600, '0.00')]
+        second = placed(2, self.furniture(2) + [at(10, 'For JANE Q SAMPLE'), at(10, 'Checking'),
+                                                 at(10, 'EveryDay Checking - 1111'),
+                                                 at(10, 'Joint Owner(s): JOHN Q SAMPLE'), self.HEADER,
+                                                 at(10, '01-17') + at(40, 'Beginning Balance') + right(600, '100.00')]
+                        + rows + [at(10, '02-16') + at(40, 'Ending Balance') + right(600, '120.00'),
+                                  at(10, 'Your account earned $0.00 for the dividend period from 01-01-2024 through '
+                                         '01-31-2024')] + loc + [at(10, 'Navy Federal Credit Union Page 2 of 9')])
+        # page 2's statement-of-account heading and holder sit on two lines
+        lines = second.lines
+        index = next(i for i, l in enumerate(lines) if l.text == 'Statement of Account')
+        lines.insert(index + 1, lines.pop(next(i for i, l in enumerate(lines) if l.text.startswith('For '))))
+        return [placed(1, [at(10, 'Navy Federal Credit Union cover letter')]), first, second]
+
+    def test_each_account_section_is_its_own_verified_period(self):
+        checking, loc = rt.parse_navy_federal(self.pages())
+        self.assertEqual((checking.family, checking.currency, checking.account, checking.share, checking.holder),
+                         ('navy-federal', 'USD', '1111', 'EveryDay Checking', 'JANE Q SAMPLE'))
+        self.assertEqual((checking.period_start, checking.period_end, checking.opening_minor, checking.closing_minor),
+                         ('2024-01-17', '2024-02-16', 10000, 12000))
+        self.assertEqual([(r['date'], r['amount_minor'], r['direction'], r['balance_after']) for r in checking.rows], [
+            ('2024-01-20', 5000, 'credit', 15000), ('2024-01-25', 2500, 'debit', 12500),
+            ('2024-02-01', 500, 'debit', 12000)])
+        self.assertTrue(checking.rows[1]['description'].endswith('Somewhere MD'))  # a two-line entry
+        self.assertEqual(rt.reconcile(checking), ('verified', []))
+        self.assertEqual((loc.kind, loc.share, loc.rows, rt.reconcile(loc)),
+                         ('card', 'Checking Line of Credit', [], ('verified', [])))
+
+    def test_a_summary_total_that_disagrees_is_not_verified(self):
+        checking, _ = rt.parse_navy_federal(self.pages(deposits='$51.00'))
+        self.assertIn('credit total differs from printed total', rt.reconcile(checking)[1])
+
+    def test_redacted_rows_are_never_verified(self):
+        checking, _ = rt.parse_navy_federal(self.pages(redacted=True))
+        status, reasons = rt.reconcile(checking)
+        self.assertEqual(status, 'unverified')
+        self.assertIn('row redacted in the production', reasons)
+
+    def test_a_line_of_credit_with_movements_is_not_verified(self):
+        _, loc = rt.parse_navy_federal(self.pages(loc_rows=True))
+        self.assertEqual(rt.reconcile(loc)[0], 'unverified')
+        self.assertIn(rt.NFCU_LOC_OPENING, rt.reconcile(loc)[1])
+
+    def test_the_issuer_comes_from_the_page_footer(self):
+        self.assertEqual(rt.detect_issuer(self.pages()), 'navy-federal')
+        self.assertIsNone(rt.detect_issuer([page(n, ['01-05 Transfer to Navy Federal Credit Union', 'x'])
+                                            for n in (1, 2, 3)]))
+
 @unittest.skipUnless(READERS, 'pdfplumber and PyMuPDF are needed for the end-to-end reading check')
 class SyntheticCorpusTruthTests(unittest.TestCase):
     """Whatever the independent reader verifies on the synthetic corpus equals the known truth."""

@@ -229,9 +229,16 @@ def _profiled(sources, engine):
     profiled = read_statements(sources, profile=profile)
     plain_keys = {(st['period_start'], st['period_end'], reading_key(st['_rows'])) for st in engine if st['engine']['proved']}
     profiled_keys = {(st['period_start'], st['period_end'], reading_key(st['_rows'])) for st in profiled if st['engine']['proved']}
-    if plain_keys <= profiled_keys and profiled_keys:
+    # A period the profile reads with the same money but holds for an identity reason it alone can see
+    # (two sections printing one account number) is not lost: it is held, never served differently.
+    identity_held = {(st['period_start'], st['period_end'], reading_key([r for r in st['_rows'] if r['kind'] != 'unresolved']))
+                     for st in profiled if not st['engine']['proved'] and st['engine'].get('reason') in IDENTITY_HOLDS}
+    if plain_keys <= profiled_keys | identity_held and profiled_keys:
         return profiled, profile['name']
     return engine, None
+
+
+IDENTITY_HOLDS = ('account_shared',)
 
 
 def _engine_only(sources):
