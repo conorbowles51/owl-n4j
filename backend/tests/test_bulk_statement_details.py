@@ -175,7 +175,7 @@ class BulkStatementDetailsTests(TestCase):
 
     def test_case_boundaries_and_preview_required(self):
         request = self.request()
-        with self.assertRaisesRegex(PdfMappingError, 'not in this case'):
+        with self.assertRaisesRegex(PdfMappingError, 'no longer in this case'):
             self.save(request, uuid4())
         with self.assertRaisesRegex(PdfMappingError, 'preview'):
             self.save(request.model_copy(update={'preview_revision': None}))

@@ -151,6 +151,14 @@ function StatementDuplicateDecisionView({
     })
   }
 
+  // Nothing else in the case matches this statement: there is no decision to
+  // make, so say so plainly instead of showing a warning panel.
+  if (current?.status === "retained" && !current.basis && !stale && !mutation.isError)
+    return (
+      <p aria-label="Statement duplicate decision" className="text-sm text-muted-foreground">
+        Not a copy of any other statement in this case. Nothing to do here.
+      </p>
+    )
   return (
     <section
       aria-label="Statement duplicate decision"
