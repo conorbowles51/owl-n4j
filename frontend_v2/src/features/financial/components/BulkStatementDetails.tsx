@@ -125,6 +125,8 @@ type Props = {
   statementId?: string | null
   reviewGroup?: string
   buttonLabel?: string
+  /** Only these statements of the files (the review queue's selection across batches). */
+  statements?: { file_id: string; statement_id?: string | null }[]
 }
 
 export function BulkStatementDetails(props: Props) {
@@ -136,6 +138,9 @@ export function BulkStatementDetails(props: Props) {
     props.datesOnly ? "dates" : "details",
     props.statementId === undefined ? "all" : props.statementId || "single",
     props.reviewGroup || "all-reasons",
+    props.statements
+      ? props.statements.map((s) => `${s.file_id}/${s.statement_id || ""}`).sort().join(",")
+      : "",
   ].join(":")
   return (
     <Editor
@@ -156,6 +161,7 @@ function Editor({
   statementId,
   reviewGroup,
   buttonLabel,
+  statements,
 }: Props & { scopeKey: string }) {
   const client = useQueryClient()
   const [scope, applyScope] = useInvestigationScope(caseId)
@@ -197,6 +203,13 @@ function Editor({
       )
       if (result.case_id !== caseId)
         throw Error("These statements belong to another case.")
+      if (statements) {
+        const wanted = new Set(statements.map((s) => `${s.file_id}/${s.statement_id || ""}`))
+        return {
+          ...result,
+          items: result.items.filter((item) => wanted.has(`${item.file_id}/${item.statement_id || ""}`)),
+        }
+      }
       return statementId === undefined
         ? result
         : {

@@ -14,9 +14,29 @@ import {
   type ReviewQueue,
 } from "../lib/review-queue"
 import { ReadingProgress } from "./ReadingProgress"
+import { BulkStatementDetails } from "./BulkStatementDetails"
 
 type ListName = "waiting" | "ready" | "filled" | "reader" | "copies" | "unreadable"
-const QUEUE_KEYS = ["queueItem", "queueList", "queueFiles"]
+const QUEUE_KEYS = ["queueItem", "queueList", "queueFiles", "queueIssue"]
+// The issue each queue entry is listed for, in plain words, most important first.
+export const ISSUE_LABELS: Record<string, string> = {
+  import_failed: "Saving did not finish",
+  saved_review: "Earlier corrections to compare",
+  reprint: "Printed twice",
+  assignment: "Payments need an account",
+  currency: "Currency",
+  institution: "Bank name",
+  holder: "Account holder",
+  account: "Account number",
+  dates: "Statement dates",
+  balance: "Balances",
+  incomplete: "Missing values",
+  count: "Number of payments",
+  no_activity: "No payments read",
+  reading: "Unreadable rows",
+}
+// Issues one shared answer can fix for many statements at once.
+const BULK_ISSUES = new Set(["currency", "institution", "holder", "account", "dates", "no_activity"])
 const FIELD_NAMES: Record<string, string> = {
   currency: "currency",
   institution: "bank",
@@ -150,6 +170,7 @@ export function ReviewQueuePanel({
   )
   const itemId = params.get("queueItem")
   const list = (params.get("queueList") as ListName | null) || "waiting"
+  const issue = params.get("queueIssue") || ""
   const query = useReviewQueue(caseId, fileIds)
   const client = useQueryClient()
   const { canEdit } = useFinancialAccess()
@@ -184,16 +205,38 @@ export function ReviewQueuePanel({
   // The order the investigator is working through. Next is computed from it
   // on the client, so moving on never waits for the queue to reload.
   const [order, setOrder] = useState<QueueEntry[]>([])
-  const current = listOf(query.data, list)
-  const orderKey = `${list}:${fileIds.join(",")}`
+  const listed = listOf(query.data, list)
+  const issueCounts = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const entry of listed)
+      if (entry.issue_reason) counts.set(entry.issue_reason, (counts.get(entry.issue_reason) ?? 0) + 1)
+    const rank = (reason: string) => {
+      const position = Object.keys(ISSUE_LABELS).indexOf(reason)
+      return position < 0 ? 99 : position
+    }
+    return [...counts.entries()].sort((a, b) => rank(a[0]) - rank(b[0]) || b[1] - a[1])
+  }, [listed])
+  const current = useMemo(
+    () => (issue && list === "waiting" ? listed.filter((entry) => entry.issue_reason === issue) : listed),
+    [issue, list, listed]
+  )
+  const chooseIssue = (value: string) =>
+    setParams((previous) => {
+      const next = new URLSearchParams(previous)
+      if (value) next.set("queueIssue", value)
+      else next.delete("queueIssue")
+      next.delete("queueItem")
+      return next
+    })
+  const orderKey = `${list}:${fileIds.join(",")}:${issue}`
   const appliedOrder = useRef("")
   useEffect(() => {
     if (!query.data || query.isPlaceholderData) return
     if (!itemId || appliedOrder.current !== orderKey) {
       appliedOrder.current = orderKey
-      setOrder(listOf(query.data, list))
+      setOrder(current)
     }
-  }, [query.data, query.isPlaceholderData, itemId, orderKey, list])
+  }, [query.data, query.isPlaceholderData, itemId, orderKey, current])
   const open = (entry: QueueEntry | undefined, name: ListName = list) => {
     setParams((previous) => {
       const next = new URLSearchParams(previous)
@@ -211,7 +254,7 @@ export function ReviewQueuePanel({
   }
   const showList = (name: ListName) => {
     setOrder(listOf(query.data, name))
-    appliedOrder.current = `${name}:${fileIds.join(",")}`
+    appliedOrder.current = `${name}:${fileIds.join(",")}:${issue}`
     open(undefined, name)
   }
   const clearFilter = () =>
@@ -385,6 +428,51 @@ export function ReviewQueuePanel({
               {query.data.reader_files.length}{" "}
               {query.data.reader_files.length === 1 ? "file" : "files"})
             </Button>
+          )}
+          {list === "waiting" && issueCounts.length > 1 && (
+            <div className="flex flex-wrap items-center gap-2 text-sm" role="group" aria-label="Filter by issue">
+              <span>Show:</span>
+              <Button size="sm" variant={issue ? "outline" : "primary"} onClick={() => chooseIssue("")}>
+                All issues ({listed.length})
+              </Button>
+              {issueCounts.map(([reason, count]) => (
+                <Button
+                  key={reason}
+                  size="sm"
+                  variant={issue === reason ? "primary" : "outline"}
+                  aria-pressed={issue === reason}
+                  onClick={() => chooseIssue(issue === reason ? "" : reason)}
+                >
+                  {ISSUE_LABELS[reason] ?? reason} ({count})
+                </Button>
+              ))}
+            </div>
+          )}
+          {list === "waiting" && issue && canEdit && BULK_ISSUES.has(issue) && current.length > 0 && (
+            <div className="flex flex-wrap items-center gap-3 rounded border p-3 text-sm">
+              <BulkStatementDetails
+                key={`${issue}:${current.length}`}
+                caseId={caseId}
+                fileIds={[...new Set(current.flatMap((entry) => [entry.file_id, ...entry.file_ids]))]}
+                statements={current.flatMap((entry) =>
+                  [...new Set([entry.file_id, ...entry.file_ids])].map((file_id) => ({
+                    file_id,
+                    statement_id: entry.statement_id,
+                  }))
+                )}
+                reviewGroup={issue}
+                datesOnly={issue === "dates"}
+                buttonLabel={`Fix all ${current.length} together`}
+                onSaved={() => {
+                  void client.invalidateQueries({ queryKey: ["financial-review-queue", caseId] })
+                  void client.invalidateQueries({ queryKey: ["financial-review-status", caseId] })
+                }}
+              />
+              <span>
+                Every statement listed below waits for the same detail. Choose them, enter the value once and check the
+                preview before saving. Nothing is imported until each statement checks out.
+              </span>
+            </div>
           )}
           {list === "reader" && (
             <ul className="space-y-2" aria-label="Files waiting for a reader fix">
