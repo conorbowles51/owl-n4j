@@ -190,6 +190,10 @@ def assess(proposal, request=None):
     if proposal.get('period_dates'):
         summary['closing_only_period'] = True
     summary['account_type'] = proposal['metadata'].get('account_type') or ''
+    # The pages this period is read from: which saved periods of its file its
+    # readiness depends on (_relevant_admitted).
+    summary['source_pages'] = sorted({source['page_number'] for source in proposal.get('sources') or []
+                                      if type(source.get('page_number')) is int})
     summary['unclassified_count'] = sum(row['kind'] == 'unclassified' and reviewed.get(row['id'], {}).get('excluded', row['excluded']) for row in rows)
     if admission is not None:
         from services.financial.import_issues import incomplete_records
@@ -452,15 +456,53 @@ def _json_copy(value, without=None):
     return json.loads(json.dumps(value))
 
 
+class _AdmittedSource(SimpleNamespace):
+    """An admitted saved period of a file: id, statement id, source pages (None if unknown), recovery section."""
+
+
 def _admitted_sources(session, case_id, file_ids):
+    """{file id: [admitted saved periods, by id]}, with only the keys a period's readiness can depend on."""
     from postgres.models.financial import FinancialSourceDocument
+    metadata = FinancialSourceDocument.metadata_
     result = {}
     if file_ids:
-        for file_id, source_id in session.execute(select(FinancialSourceDocument.evidence_file_id, FinancialSourceDocument.id)
+        for file_id, source_id, statement_id, sources, recovery in session.execute(select(
+                FinancialSourceDocument.evidence_file_id, FinancialSourceDocument.id,
+                metadata['statement_import_statement_id'].as_string(),
+                metadata['statement_import_original']['sources'],
+                metadata['statement_recovery_parent_id'].as_string())
                 .where(FinancialSourceDocument.case_id == case_id, FinancialSourceDocument.status == 'admitted',
                     FinancialSourceDocument.evidence_file_id.in_(list(file_ids)))):
-            result.setdefault(file_id, []).append(str(source_id))
-    return {key: sorted(value) for key, value in result.items()}
+            pages = None
+            if isinstance(sources, list) and sources and all(isinstance(source, dict) and type(source.get('page_number')) is int
+                                                             for source in sources):
+                pages = frozenset(source['page_number'] for source in sources)
+            result.setdefault(file_id, []).append(_AdmittedSource(id=str(source_id), statement_id=statement_id or '',
+                pages=pages, recovery=bool(recovery)))
+    return {key: sorted(value, key=lambda source: source.id) for key, value in result.items()}
+
+
+# Readiness of one period depends on the file's other saved periods only where
+# a reading consults them: the same statement (or a whole-file import), a
+# saved period sharing one of its pages (the overlap check of
+# statement_import._existing_statement), a recovered section (it changes the
+# file's catalogue) and a copy decision's retained source. Every admission
+# used to make every other period of its file stale, so the readiness sweep
+# re-read the whole file after each import (a 217-period production: every
+# period, after every import). Items prepared before their source pages were
+# recorded keep the whole-file dependency. Switch off to restore it everywhere.
+RELEVANT_ADMISSIONS_ONLY = True
+
+
+def _relevant_admitted(entries, item, summary, decision):
+    pages = summary.get('source_pages')
+    if not RELEVANT_ADMISSIONS_ONLY or not isinstance(pages, list):
+        return [entry.id for entry in entries]
+    pages = set(pages)
+    key = item.statement_key or ''
+    retained = str(((decision or {}).get('retained') or {}).get('source_document_id') or '')
+    return [entry.id for entry in entries if entry.recovery or entry.statement_id in ('', key) or entry.pages is None
+            or entry.pages & pages or entry.id == retained]
 
 
 def _reading_guards(session, files):
@@ -563,7 +605,9 @@ class _ProjectionInputs:
             summary={name: value for name, value in summary.items() if name != 'readiness'},
             progress=review_progress(file, item.statement_key) if file else None,
             visibility=metadata.get('financial_file_visibility'), decision=metadata.get(METADATA_KEY, {}).get(key),
-            duplicate=projection, admitted=self.admitted.get(item.file_id, []), reading=self.guards.get(item.file_id)))
+            duplicate=projection, admitted=_relevant_admitted(self.admitted.get(item.file_id, []), item, summary,
+                metadata.get(METADATA_KEY, {}).get(key)),
+            reading=self.guards.get(item.file_id)))
 
     def stored_readiness(self, item):
         """(state, summary, request) from a still-current readiness record, or None."""

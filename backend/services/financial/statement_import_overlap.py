@@ -269,7 +269,8 @@ def coverage_review(session, *, case_id, file_id, request, sources=None):
     if own is None:
         return dict(available=False, candidates=[], revision=None,
                     reason='A bank, account reference and complete statement dates are needed to compare coverage.')
-    sources = sources if sources is not None else comparison_sources(session, case_id)[0]
+    # `sources` may be a callable giving the case snapshot, built only when needed.
+    sources = sources() if callable(sources) else sources if sources is not None else comparison_sources(session, case_id)[0]
     families = getattr(sources, 'families', None)
     if families is None:
         from services.financial.source_lineage import case_lineage

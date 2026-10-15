@@ -451,6 +451,41 @@ class BatchImportTests(TestCase):
             self.advance(newer); self.advance(older)
         self.assertEqual(prepared, [newer, older])
 
+    def test_an_import_leaves_the_readiness_of_its_files_unrelated_periods_current(self):
+        from unittest.mock import patch
+        choices = self.f.install_two_card_periods()
+        batch = self.create(); self.advance(batch)
+        with self.f.SessionLocal() as db:
+            items = {i.statement_key: i for i in db.scalars(select(Item).where(Item.batch_id == batch))}
+        self.assertEqual(set(items), {c['id'] for c in choices})
+        first, second = choices
+        self.assertEqual(items[second['id']].summary['source_pages'], [2])
+        self.f.confirm_legacy(self.f.card_period_request(first)[1])
+        def current(switch=True):
+            with self.f.SessionLocal() as db, patch.object(service, 'RELEVANT_ADMISSIONS_ONLY', switch):
+                item = db.get(Item, items[second['id']].id)
+                return service._ProjectionInputs(db, self.f.case.id, [item]).stored_readiness(item) is not None
+        # The other period is read from another page: its readiness is still current.
+        self.assertTrue(current())
+        # Switched off, every admission in the file makes it stale (the earlier rule).
+        self.assertFalse(current(False))
+        # An item prepared before its pages were recorded keeps the whole-file dependency.
+        with self.f.SessionLocal() as db:
+            item = db.get(Item, items[second['id']].id)
+            item.summary = {k: v for k, v in item.summary.items() if k != 'source_pages'}
+            db.commit()
+        self.assertFalse(current())
+
+    def test_relevant_admissions_are_the_same_statement_a_shared_page_a_recovery_or_a_retained_copy(self):
+        from types import SimpleNamespace as S
+        entry = lambda identity, statement='other', pages=frozenset({9}), recovery=False: S(id=identity, statement_id=statement, pages=pages, recovery=recovery)
+        entries = [entry('a', statement='mine'), entry('b', statement=''), entry('c', pages=frozenset({2, 3})),
+                   entry('d'), entry('e', recovery=True), entry('f', pages=None), entry('g')]
+        item = S(statement_key='mine')
+        decision = dict(retained=dict(source_document_id='g'))
+        self.assertEqual(service._relevant_admitted(entries, item, dict(source_pages=[3]), decision), ['a', 'b', 'c', 'e', 'f', 'g'])
+        self.assertEqual(service._relevant_admitted(entries, item, dict(), None), list('abcdefg'))
+
     def test_import_receipt_survives_response_loss_and_reopening_without_duplicates(self):
         from services.financial.batch_transaction_scope import imported_batch_scope
         from postgres.models.financial_import_batches import FinancialImportOperation

@@ -1080,11 +1080,22 @@ def _write_statement_import_once(*, session_factory, case_id, evidence_file_id, 
                         raise PdfMappingError('The current statement changed. Reload the review.', 409)
                 replacing = None
                 from services.financial.pending_statement_duplicates import apply_duplicate_disposition, ignored_receipt
+                # One snapshot of the case's statements for this write (it costs
+                # seconds on a large case and was built twice per import). Under
+                # the case lock the only input that changes between its uses is
+                # this statement's own copy decision, and the coverage check
+                # skips this statement's own entries.
+                comparison = {}
+                def case_comparison():
+                    if 'sources' not in comparison:
+                        from services.financial.statement_import_overlap import comparison_sources
+                        comparison['sources'] = comparison_sources(session, case_id)[0]
+                    return comparison['sources']
                 if existing is not None and existing.evidence_file_id != file.id and not request.replaces_source_document_id:
                     if request.expected_revision != proposal['revision'] or request.statement_id != proposal.get('statement_id'):
                         raise PdfMappingError('The statement reading changed. Reopen it before comparing copies.', 409)
                     disposition = apply_duplicate_disposition(session, case_id=case_id, file=file,
-                        proposal=proposal, request=request.model_dump(mode='json'), actor=actor)
+                        proposal=proposal, request=request.model_dump(mode='json'), actor=actor, sources=case_comparison)
                     if request.period_start_unprinted and disposition['status'] == 'needs_comparison':
                         raise PdfMappingError(disposition['reason'], 409)
                     if disposition['status'] == 'ignored':
@@ -1125,7 +1136,7 @@ def _write_statement_import_once(*, session_factory, case_id, evidence_file_id, 
                 originals = check_import_request(proposal, request)
                 if replacing is None:
                     disposition = apply_duplicate_disposition(session, case_id=case_id, file=file,
-                        proposal=proposal, request=request.model_dump(mode='json'), actor=actor)
+                        proposal=proposal, request=request.model_dump(mode='json'), actor=actor, sources=case_comparison)
                     if request.period_start_unprinted and disposition['status'] == 'needs_comparison':
                         raise PdfMappingError(disposition['reason'], 409)
                     if disposition['status'] == 'ignored':
@@ -1138,7 +1149,7 @@ def _write_statement_import_once(*, session_factory, case_id, evidence_file_id, 
                 coverage_request = {**request.model_dump(mode='json'), 'account_type': proposal['metadata'].get('account_type') or '',
                                     'account_reference_kind': proposal['metadata'].get('account_reference_kind') or ''}
                 coverage = coverage_review(session, case_id=case_id, file_id=evidence_file_id,
-                                           request=coverage_request)
+                                           request=coverage_request, sources=case_comparison)
                 if duplicate_hold(coverage, coverage_request):
                     raise PdfMappingError('A separate file matches this bank, full account, holder, currency and statement period. Compare the existing statement, then leave this copy unimported or record why both are needed.', 409)
                 coverage['requires_review'] = requires_decision(coverage, request.model_dump(mode='json'))
