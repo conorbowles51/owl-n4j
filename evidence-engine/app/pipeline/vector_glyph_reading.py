@@ -271,6 +271,21 @@ def _has_space(glyphs):
     return any(b.x0 - a.x1 > SPACE_GAP_SHARE * height for a, b in zip(glyphs, glyphs[1:]))
 
 
+def _amount_gaps(glyphs):
+    """Every gap between the characters is narrow enough to lie inside one amount (``AMOUNT_JOIN_GAP``)."""
+    height = max(g.y1 - g.y0 for g in glyphs)
+    return all(b.x0 - a.x1 <= AMOUNT_JOIN_GAP * height for a, b in zip(glyphs, glyphs[1:]))
+
+
+def _without_added_marks(text, under):
+    """``text`` without the marks at its ends OCR read where no character is printed (a column rule
+    read as ``)`` or ``|``), when that leaves exactly one character per outline; else ``text``."""
+    if len(text) <= len(under):
+        return text
+    trimmed = re.sub(r'^[^0-9A-Za-z$]+|[^0-9A-Za-z.]+$', '', text)
+    return trimmed if len(trimmed) == len(under) else text
+
+
 def shape_labels(glyphs, words):
     """``{shape: (label, votes, total)}`` for every shape the page's OCR reads consistently.
 
@@ -283,7 +298,10 @@ def shape_labels(glyphs, words):
         if not text or any(c.isspace() for c in text):
             continue
         under = index.within(*box)
-        if len(under) != len(text) or _has_space(under):
+        if not under:
+            continue
+        text = _without_added_marks(text, under)
+        if len(under) != len(text) or (_has_space(under) and not (_AMOUNT.fullmatch(text) and _amount_gaps(under))):
             continue
         for glyph, character in zip(under, text):
             votes[glyph.shape][character] += 1
@@ -344,7 +362,10 @@ def _reconciled(text, reading):
 
 def _word_reading(text, under, labels):
     if _has_space(under):
-        return None
+        # A narrow figure's side bearing can be as wide as a space: one amount
+        # stays one word when every gap is within the amount limit.
+        reading = read_glyphs(under, labels) if _amount_gaps(under) else None
+        return reading if reading is not None and _AMOUNT.fullmatch(reading) and _reconciled(text, reading) else None
     if len(under) == len(text):
         characters = []
         for glyph, character in zip(under, text):

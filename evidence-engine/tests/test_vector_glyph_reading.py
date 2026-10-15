@@ -360,3 +360,20 @@ def test_outlines_drawn_left_to_right_read_upright_and_turned_ones_do_not():
     # Too little text to judge: orientation detection decides as before.
     small, small_page, _ = _page([(72, 100, 'TOTAL 5.00')])
     assert not G.drawn_upright(small_page.get_drawings())
+
+
+def test_a_column_rule_read_after_every_amount_still_labels_and_is_dropped():
+    """Live (Kapital): amounts set against a column rule were all read '1,234.56)', so no figure was labelled."""
+    doc, page, _ = _page(LINES)
+    glyphs = G.page_glyphs(page)
+    words = [(text + ')' if G._AMOUNT.fullmatch(text) else text, box) for text, box in _word_boxes(page, LINES)]
+    amounts = [i for i, (text, _) in enumerate(words) if text.endswith(')')]
+    assert len(amounts) >= 10
+    labels = G.shape_labels(glyphs, words)
+    assert {labels[g.shape][0] for g in glyphs if g.shape in labels} >= set('0123456789,.')
+    readings = G.read_words(glyphs, labels, words)
+    assert [readings[i] for i in amounts] == [words[i][0][:-1] for i in amounts]
+    # A word with as many characters as outlines is never trimmed.
+    assert G._without_added_marks('(1.00)', [None] * 6) == '(1.00)'
+    assert G._without_added_marks('1.00)', [None] * 4) == '1.00'
+    assert G._without_added_marks('1.00))', [None] * 5) == '1.00))'
