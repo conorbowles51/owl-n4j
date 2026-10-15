@@ -67,7 +67,21 @@ READ_ONLY_LISTING = 'read_only_listing'
 
 def _existing_statement(session, case_id, file, statement_id, addresses=(), row_addresses=None, source_regions=None, *, excluded_duplicates=False, memo=None):
     from postgres.models.financial import FinancialSourceDocument
-    query = select(FinancialSourceDocument).where(
+    # Only the keys compared below are loaded. Every saved period of a
+    # multi-statement file carries the file's whole statement catalogue
+    # (~0.6 MB each for a 217-period production), so loading whole rows made
+    # each import and each preparation read the catalogue once per saved
+    # period: 120 MB of JSON per check, growing with every import.
+    metadata = FinancialSourceDocument.metadata_
+    original = metadata['statement_import_original']
+    query = select(FinancialSourceDocument.id, FinancialSourceDocument.evidence_file_id,
+                   FinancialSourceDocument.superseded_by_id,
+                   metadata['financial_import_removal'].label('removal'),
+                   metadata['statement_import_statement_id'].label('statement_id'),
+                   original['assigned_period_ids'].label('assigned_period_ids'),
+                   original['sources'].label('sources'),
+                   original['statement_row_addresses'].label('statement_row_addresses'),
+                   original['statement_source_regions'].label('statement_source_regions')).where(
         FinancialSourceDocument.case_id == case_id,
         FinancialSourceDocument.sha256_at_ingestion == file.sha256)
     if excluded_duplicates:
@@ -91,15 +105,15 @@ def _existing_statement(session, case_id, file, statement_id, addresses=(), row_
     if memo is not None:
         memo_key = ('existing_sources', str(case_id), file.sha256, excluded_duplicates, str(file.id) if excluded_duplicates else '')
         if memo_key not in memo:
-            memo[memo_key] = list(session.scalars(query.order_by(FinancialSourceDocument.id)))
+            memo[memo_key] = list(session.execute(query.order_by(FinancialSourceDocument.id)))
         candidates = memo[memo_key]
     else:
-        candidates = session.scalars(query.order_by(FinancialSourceDocument.id))
+        candidates = session.execute(query.order_by(FinancialSourceDocument.id))
     addresses = set(addresses)
     row_addresses = {tuple(value) for value in row_addresses} if row_addresses is not None else None
     matches = []
     for item in candidates:
-        if (item.metadata_ or {}).get('financial_import_removal'):
+        if item.removal:
             continue
         if excluded_duplicates:
             retained = session.get(FinancialSourceDocument, item.superseded_by_id)
@@ -109,22 +123,19 @@ def _existing_statement(session, case_id, file, statement_id, addresses=(), row_
                 # A confirmed reread replaces this reading within the same PDF
                 # history. That is not an investigator's duplicate exclusion.
                 continue
-        metadata = item.metadata_ or {}
-        if metadata.get('statement_import_statement_id') in (None, statement_id):
+        if item.statement_id in (None, statement_id):
             matches.append(item)
             continue
-        if (item.evidence_file_id == file.id and statement_id in
-                metadata.get('statement_import_original', {}).get('assigned_period_ids', [])):
+        if item.evidence_file_id == file.id and statement_id in (item.assigned_period_ids or []):
             # Explicitly assigned periods in this same reading may share a PDF
             # table. A neighbouring period is not a duplicate of this one.
             continue
-        previous = metadata.get('statement_import_original', {}).get('sources', [])
+        previous = item.sources or []
         previous_addresses = {(source['page_number'], source['table_index']) for source in previous}
-        previous_rows = metadata.get('statement_import_original', {}).get('statement_row_addresses')
+        previous_rows = item.statement_row_addresses
         if row_addresses is not None and previous_rows is not None:
             from services.financial.statement_import_andrews import source_regions_overlap
-            overlap = source_regions_overlap(source_regions,
-                metadata.get('statement_import_original', {}).get('statement_source_regions'))
+            overlap = source_regions_overlap(source_regions, item.statement_source_regions)
             if overlap is not None:
                 if overlap:
                     matches.append(item)
@@ -142,7 +153,7 @@ def _existing_statement(session, case_id, file, statement_id, addresses=(), row_
         raise PdfMappingError(
             'This reading overlaps more than one imported statement. No imports were changed. '
             'Review the statement periods and existing imports before replacing them.', 409)
-    return matches[0] if matches else None
+    return session.get(FinancialSourceDocument, matches[0].id) if matches else None
 
 
 def _printed_header(content):
