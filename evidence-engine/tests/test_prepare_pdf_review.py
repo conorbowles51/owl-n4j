@@ -55,3 +55,54 @@ async def test_cancelled_review_batch_marks_unfinished_jobs_and_reraises():
     with patch('app.pipeline.prepare_pdf_review.prepare_pdf_review',AsyncMock(side_effect=asyncio.CancelledError)), patch.object(batch,'_force_fail_unfinished_batch_rows',AsyncMock()) as failed:
         with pytest.raises(asyncio.CancelledError):await batch.run_batch_pipeline('batch','case',db)
         failed.assert_awaited_once_with('batch','PDF preparation was interrupted before completion')
+
+
+class DeadlockDetectedError(Exception):
+    sqlstate = '40P01'
+
+
+class WrappedDBError(Exception):
+    """The shape SQLAlchemy raises: the driver's error on ``orig``."""
+    def __init__(self, orig):
+        super().__init__(str(orig))
+        self.orig = orig
+
+
+@pytest.mark.asyncio
+async def test_a_deadlocked_write_is_retried_and_other_errors_are_not():
+    from app.services.db_retry import retry_transient, is_transient_db_error
+    assert is_transient_db_error(WrappedDBError(DeadlockDetectedError('deadlock detected')))
+    assert not is_transient_db_error(ValueError('Some PDF source locations could not be stored'))
+    calls = []
+    async def flaky():
+        calls.append(1)
+        if len(calls) < 3:
+            raise WrappedDBError(DeadlockDetectedError('deadlock detected'))
+        return 'stored'
+    assert await retry_transient(flaky, base_delay=0) == 'stored'
+    assert len(calls) == 3
+    async def broken():
+        raise ValueError('not transient')
+    with pytest.raises(ValueError):
+        await retry_transient(broken, base_delay=0)
+    async def always():
+        raise WrappedDBError(DeadlockDetectedError('deadlock detected'))
+    with pytest.raises(WrappedDBError):
+        await retry_transient(always, attempts=2, base_delay=0)
+
+
+@pytest.mark.asyncio
+async def test_a_progress_message_lost_to_a_deadlock_never_fails_the_file():
+    """Live: 30 files in 72 h failed whole on a deadlocked progress update."""
+    job=SimpleNamespace(id='job',source_evidence_file_id='file',file_name='bank.pdf',file_path='/tmp/bank.pdf',pipeline_state={})
+    async def update(job_id, status, *args, **kwargs):
+        if status == JobStatus.EXTRACTING_TEXT and args and args[0] > 0:
+            raise WrappedDBError(DeadlockDetectedError('deadlock detected'))
+    recorder = AsyncMock(side_effect=update)
+    async def extract(*args, progress_callback=None, **kwargs):
+        await progress_callback(SimpleNamespace(completed=1, total=2, message='Page 1 of 2'))
+        return SimpleNamespace(metadata={})
+    with patch('app.pipeline.prepare_pdf_review.extract_text', side_effect=extract), patch('app.pipeline.prepare_pdf_review.async_session') as session, patch('app.pipeline.prepare_pdf_review.upsert_evidence_document_text',AsyncMock()), patch('app.pipeline.prepare_pdf_review.replace_evidence_table_geometry',AsyncMock(return_value=SimpleNamespace(entries_invalid=0))):
+        session.return_value.__aenter__.return_value.begin = MagicMock(return_value=AsyncMock())
+        await prepare_pdf_review(job, recorder)
+    assert recorder.call_args.args[1] == JobStatus.COMPLETED

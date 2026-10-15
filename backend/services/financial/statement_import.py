@@ -7,6 +7,7 @@ from services.financial.pdf_candidates import PdfMappingError, _digest
 from services.financial.runs import RunAborted
 from services.financial.statement_import_proposal import propose_table, VERSION
 from services.financial.statement_import_proposal import printed_label as _label, printed_period as _period
+from services.financial.unread_pages import unread_pages_message, unread_pages_of_statement
 
 MAX_STATEMENT_TRANSACTIONS = 25000
 MAX_STATEMENT_REVIEW_ROWS = 100000
@@ -567,8 +568,13 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
                 'as separate reviews. Summary and information pages should not be corrected as payments. '
                 'The original file, saved reviews and existing imports are kept.'
             )
+    unread = unread_pages_of_statement(text.source_locations, selected, choices) if not reading_failure else []
+    if unread:
+        reading_failure = unread_pages_message(unread)
     snapshot = dict(version=VERSION, source_sha256=file.sha256, sources=sources,
                     metadata=metadata, currency=chosen_currency, statement_id=statement_id)
+    if unread:
+        snapshot['unread_pages_v1'] = unread
     if selected and selected.get('layout_id') == 'bbva-mexico-cash-management':
         snapshot['bbva_statement_v1'] = rows
     if selected and selected.get('layout_id') == 'scotiabank-mexico-zero-activity':
@@ -588,7 +594,7 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
     undated_charges = [row['id'] for row in rows if row['fields'].get('date_basis') == 'statement_end_ordering_only']
     if undated_charges:
         snapshot['undated_statement_charges_v1'] = undated_charges
-    if reading_failure:
+    if reading_failure and not unread:
         snapshot['reading_failure'] = 'unseparated-statement-periods-v1'
     if row_addresses is not None:
         snapshot['statement_row_addresses'] = row_addresses

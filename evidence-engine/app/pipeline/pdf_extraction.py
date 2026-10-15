@@ -54,6 +54,10 @@ class PdfOcrError(RuntimeError):
     """Raised when a PDF page selected for OCR cannot be processed."""
 
 
+# ``ocr_status`` of a page whose OCR ran out of time: kept unread, file not failed.
+OCR_TIMEOUT_STATUS = 'timeout'
+
+
 @dataclass(frozen=True)
 class PdfExtractionProgress:
     message: str
@@ -1145,6 +1149,18 @@ def _read_ocr_page(document, page_index, page_result, prepared, page_cache, nati
             _retain_native_statement(page_result, original, table_chunks, extracted_tables,
                 'Image reread unavailable; unresolved embedded readings remain for review.')
             return True
+        if isinstance(exc, RuntimeError) and _is_tesseract_timeout_error(exc):
+            # One slow page must not discard every other page of the file.
+            # The page is kept unread and marked; the financial reader holds
+            # any statement that could include it until the file is read again.
+            logger.warning("PDF OCR timed out page=%d; page kept unread", page_result.page_number)
+            page_result.text = ''
+            page_result.text_origin = 'unread'
+            page_result.ocr_status = OCR_TIMEOUT_STATUS
+            page_result.ocr_confidence = None
+            page_result.ocr_language = settings.tesseract_lang
+            page_result.ocr_geometry_status = 'unavailable'
+            return False
         logger.error(
             "PDF OCR failed page=%d reason=%s",
             page_result.page_number,
@@ -1416,6 +1432,7 @@ def _extract_pdf_sync(
             "ocr_attempted_page_count": ocr_count,
             "native_page_count": len(pages) - used_ocr_count,
             "low_confidence_page_count": low_confidence_count,
+            "ocr_timed_out_pages": [page.page_number for page in pages if page.ocr_status == OCR_TIMEOUT_STATUS],
             "page_spans": page_spans,
             "table_geometry": _table_geometry_metadata(
                 len(table_chunks), extracted_tables

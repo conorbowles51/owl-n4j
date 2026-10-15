@@ -450,16 +450,45 @@ async def test_tesseract_error_names_the_pdf_page(
     monkeypatch,
     mock_osd,
 ) -> None:
-    pdf_path = tmp_path / "timeout.pdf"
+    pdf_path = tmp_path / "failure.pdf"
     _write_scanned_pdf(pdf_path, ["Raster page one", "Raster page two"])
 
     def fail_ocr(*_args, **_kwargs):
-        raise RuntimeError("Tesseract process timeout")
+        raise pytesseract.TesseractError(1, "Tesseract crashed")
 
     monkeypatch.setattr(pytesseract, "image_to_data", fail_ocr)
 
-    with pytest.raises(PdfOcrError, match="PDF page 1: Tesseract process timeout"):
+    with pytest.raises(PdfOcrError, match="PDF page 1: "):
         await extract_text(str(pdf_path), pdf_path.name)
+
+
+async def test_a_page_that_times_out_is_kept_unread_and_the_other_pages_are_read(
+    tmp_path,
+    monkeypatch,
+    mock_osd,
+) -> None:
+    """Live: one slow page failed the whole file and discarded every page read before it."""
+    pdf_path = tmp_path / "timeout.pdf"
+    _write_scanned_pdf(pdf_path, ["Raster page one", "Raster page two"])
+    calls = []
+
+    def first_page_times_out(*_args, **_kwargs):
+        calls.append(1)
+        if len(calls) == 1:
+            raise RuntimeError("Tesseract process timeout")
+        return {"text": ["Second"], "conf": ["95"], "block_num": [1], "par_num": [1], "line_num": [1],
+                "word_num": [1], "left": [10], "top": [10], "width": [50], "height": [12]}
+
+    monkeypatch.setattr(pytesseract, "image_to_data", first_page_times_out)
+
+    result = await extract_text(str(pdf_path), pdf_path.name)
+
+    spans = result.metadata["page_spans"]
+    assert spans[0]["ocr_status"] == "timeout"
+    assert spans[0]["text_origin"] == "unread"
+    assert spans[1]["ocr_status"] == "success"
+    assert "Second" in result.text
+    assert result.metadata["ocr_timed_out_pages"] == [1]
 
 
 async def test_optional_orientation_timeout_keeps_successful_primary_ocr(
