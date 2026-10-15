@@ -1681,6 +1681,8 @@ export type QueueNavigation = {
   onNext: () => void
   onPrevious: () => void
   onImported: (receipt?: StatementImportReceipt) => void
+  /** A review save landed: the queue refreshes and says where the statement stands. */
+  onChanged?: () => void
 }
 
 export function BatchStatementReview({
@@ -1890,6 +1892,7 @@ export function BatchStatementReview({
       )
     reviewRevision.current = result.review_revision
     void client.invalidateQueries({ queryKey: ["financial-batch", caseId] })
+    queue?.onChanged?.()
     return result
   }
   const raw = item?.review_request
