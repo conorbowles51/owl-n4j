@@ -118,6 +118,30 @@ class StatementImportTests(TransactionPersistenceTestCase):
                 read_statement_import(db, case_id=self.case.id, evidence_file_id=self.file.id, currency='USD')
         self.assertEqual(calls, [None, 'USD'])
 
+    def test_case_comparison_reads_each_saved_record_once(self):
+        from sqlalchemy import event
+        from services.financial import statement_import_overlap as overlap
+        receipt = self.confirm()
+        overlap._SAVED_KEYS.clear()
+        statements = []
+        listener = lambda conn, cursor, statement, parameters, context, many: statements.append(statement + str(parameters))
+        engine = self.db.get_bind()
+        event.listen(engine, 'before_cursor_execute', listener)
+        try:
+            with self.SessionLocal() as db:
+                first = overlap.comparison_sources(db, self.case.id)[0]
+            reads_first = sum('statement_import_original' in sql for sql in statements)
+            statements.clear()
+            with self.SessionLocal() as db:
+                again = overlap.comparison_sources(db, self.case.id)[0]
+            reads_again = sum('statement_import_original' in sql for sql in statements)
+        finally:
+            event.remove(engine, 'before_cursor_execute', listener)
+        self.assertEqual((reads_first, reads_again), (1, 0))
+        self.assertEqual(dict(again), dict(first))
+        entry = next(e for values in first.values() for e in values if e['source_document_id'] == receipt['source_document_id'])
+        self.assertEqual((entry['statement_id'], entry['page_number']), (None, 1))
+
     def test_existing_import_and_same_request_keep_the_saved_account_for_navigation(self):
         request = self.request()
         saved = self.confirm(request)
