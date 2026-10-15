@@ -134,12 +134,20 @@ class DrainTests(TestCase):
         sequence = iter(states)
         turns = Counter()
         return harness.drain_batch(lambda: turns.update(['turn']), lambda: next(sequence), 'import',
-                                   clock=lambda: next(clock), **kwargs), turns['turn']
+                                   clock=lambda: next(clock), pause=lambda: turns.update(['pause']), **kwargs), turns['turn']
 
     def test_drains_until_the_batch_leaves_preparing_however_many_turns_it_takes(self):
         states = [('preparing', n) for n in range(5000)] + [('review', 'done')]
         result, turns = self.run_drain(states)
         self.assertEqual((result['final_status'], result['stalled'], turns), ('review', False, 5000))
+        self.assertEqual(result['quiet_turns'], 0)
+
+    def test_a_turn_that_moves_nothing_pauses_and_a_lease_length_quiet_spell_is_not_a_stall(self):
+        # 31 quiet turns at 10 s each (310 s, longer than a 5-minute lease), then progress.
+        states = [('preparing', 'a')] * 32 + [('preparing', 'b'), ('review', 'done')]
+        result, turns = self.run_drain(states)
+        self.assertEqual((result['final_status'], result['stalled'], result['quiet_turns']), ('review', False, 31))
+        self.assertGreater(harness.STALL_SECONDS, 300)
 
     def test_stops_when_nothing_moves_for_enough_turns_and_time(self):
         states = [('preparing', 'same')] * 1000

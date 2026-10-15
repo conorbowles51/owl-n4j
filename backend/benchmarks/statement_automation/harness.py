@@ -65,8 +65,15 @@ CORPUS = HERE / 'corpus'
 # worker turns, lasting at least STALL_SECONDS together, changed nothing (no item
 # or file moved). Bounded by progress rather than a turn count: a real corpus
 # needs thousands of turns, and a stuck one is reported, not waited on forever.
+# STALL_SECONDS outlasts the worker's 5-minute batch lease: on SQLite (no row
+# locks) a lease renewal still in flight when a turn releases the batch can
+# commit after the release, and every turn until it expires does nothing
+# (bench/wave6: ~1,660 of its 2,711 import turns). PostgreSQL serialises the
+# two on the batch row, so the product is not affected. A quiet turn pauses
+# for QUIET_PAUSE_SECONDS instead of spinning.
 STALL_TURNS = 40
-STALL_SECONDS = 120.0
+STALL_SECONDS = 420.0
+QUIET_PAUSE_SECONDS = 1.0
 
 
 def _load_models():
@@ -139,7 +146,8 @@ def read_corpus(python, files, out, concurrency, readings=None):
     return data['readings'], wall, data.get('child_cpu_seconds', 0.0)
 
 
-def drain_batch(turn, progress, label, *, stall_turns=None, stall_seconds=None, clock=time.monotonic):
+def drain_batch(turn, progress, label, *, stall_turns=None, stall_seconds=None, clock=time.monotonic,
+                pause=lambda: time.sleep(QUIET_PAUSE_SECONDS)):
     """Run worker turns until the batch leaves 'preparing' or stops making progress.
 
     ``progress()`` returns ``(batch status, signature)``; the signature changes
@@ -150,7 +158,7 @@ def drain_batch(turn, progress, label, *, stall_turns=None, stall_seconds=None, 
     stall_turns = STALL_TURNS if stall_turns is None else stall_turns
     stall_seconds = STALL_SECONDS if stall_seconds is None else stall_seconds
     started = clock()
-    turns, quiet, quiet_since, stalled = 0, 0, clock(), False
+    turns, quiet, quiet_since, stalled, quiet_turns = 0, 0, clock(), False, 0
     state, signature = progress()
     while True:
         turn()
@@ -162,10 +170,13 @@ def drain_batch(turn, progress, label, *, stall_turns=None, stall_seconds=None, 
             signature, quiet, quiet_since = now, 0, clock()
             continue
         quiet += 1
+        quiet_turns += 1
         if quiet >= stall_turns and clock() - quiet_since >= stall_seconds:
             stalled = True
             break
-    return dict(stage=label, turns=turns, seconds=clock() - started, final_status=state, stalled=stalled)
+        pause()
+    return dict(stage=label, turns=turns, seconds=clock() - started, final_status=state, stalled=stalled,
+                quiet_turns=quiet_turns)
 
 
 def saved_by_system(db, batch_id, Item, actor):
