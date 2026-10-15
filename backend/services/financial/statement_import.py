@@ -1179,6 +1179,7 @@ def _write_statement_import_once(*, session_factory, case_id, evidence_file_id, 
                     account_draft = AccountDraft.unidentified(distinguisher='statement:' + str(evidence_file_id) + ':' + request.currency
                         + (':' + request.statement_id if request.statement_id else ''), **account_fields)
                 account = record_account(session, run, account_draft)
+                from services.financial.statement_catalogue import stored_reading
                 shares_source_references = session.scalar(select(FinancialSourceDocument.id).where(
                     FinancialSourceDocument.case_id == case_id, FinancialSourceDocument.sha256_at_ingestion == file.sha256).limit(1)) is not None
                 document = record_source_document(session, run, SourceDocumentDraft(
@@ -1188,7 +1189,8 @@ def _write_statement_import_once(*, session_factory, case_id, evidence_file_id, 
                     parser_name=VERSION, parser_version='1', metadata=dict(
                         statement_import_statement_id=request.statement_id,
                         statement_import_request_sha256=request_hash, statement_import_request=request.model_dump(mode='json'),
-                        statement_import_original=proposal, statement_import_original_sha256=_digest(proposal), coverage='all_prepared_rows_imported',
+                        **stored_reading(session, case_id=case_id, evidence_file_id=evidence_file_id,
+                            proposal=proposal, statement_id=request.statement_id), coverage='all_prepared_rows_imported',
                         statement_account_id=str(account.id), statement_import_issues=issues,
                         statement_incomplete_records=incomplete, statement_import_checks=arithmetic, statement_admission=admission,
                         whole_document_extraction_verified=False)))

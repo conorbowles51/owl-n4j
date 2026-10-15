@@ -749,10 +749,10 @@ class StatementImportTests(TransactionPersistenceTestCase):
                 request_id=uuid4(), actor=self.actor, resolve_path=Path, reading_mode='guess')
         self.assertEqual(set(self.path.parent.iterdir()), before)
 
-    def test_two_printed_periods_in_one_pdf_import_separately_without_duplicates(self):
+    def install_two_card_periods(self):
+        """Two printed card periods on two pages of this file; returns the file's statement choices."""
         from tests.test_financial_statement_import_card import card_source
         from copy import deepcopy
-        from postgres.models.financial import FinancialStatementPeriod
         first=self.db.scalar(select(EvidenceTableGeometry).where(EvidenceTableGeometry.evidence_file_id==self.file.id))
         def payload(grid, page_number=1):
             return [dict(table_source='drawn_geometry',geometry_source='cell_rectangles',
@@ -785,19 +785,28 @@ class StatementImportTests(TransactionPersistenceTestCase):
         self.db.commit()
         choices=self.preview()['statement_choices']
         self.assertEqual(len(choices),2)
+        return choices
+
+    def card_period_request(self, choice):
+        with self.SessionLocal() as db:
+            proposal=read_statement_import(db,case_id=self.case.id,evidence_file_id=self.file.id,currency='USD',statement_id=choice['id'])
+        request=dict(expected_revision=proposal['revision'],statement_id=choice['id'],currency='USD',
+            holder=proposal['metadata']['holder'],account_number=proposal['metadata']['account_number'],institution=proposal['metadata']['institution'],
+            period_start=choice['period_start'],period_end=choice['period_end'],rows=[])
+        for row in proposal['rows']:
+            fields=row['fields']
+            request['rows'].append(dict(id=row['id'],excluded=row['excluded'],date=fields.get('date',''),
+                date_unprinted=fields.get('date_basis') == 'statement_end_ordering_only',
+                description=fields.get('description',''),amount_minor=fields.get('amount_minor','0'),direction=fields.get('direction','credit'),
+                reason='Local test: flagged fields checked against the PDF.' if row['issues'] else ''))
+        return proposal, request
+
+    def test_two_printed_periods_in_one_pdf_import_separately_without_duplicates(self):
+        from postgres.models.financial import FinancialStatementPeriod
+        choices=self.install_two_card_periods()
         receipts=[]
         for choice in choices:
-            with self.SessionLocal() as db:
-                proposal=read_statement_import(db,case_id=self.case.id,evidence_file_id=self.file.id,currency='USD',statement_id=choice['id'])
-            request=dict(expected_revision=proposal['revision'],statement_id=choice['id'],currency='USD',
-                holder=proposal['metadata']['holder'],account_number=proposal['metadata']['account_number'],institution=proposal['metadata']['institution'],
-                period_start=choice['period_start'],period_end=choice['period_end'],rows=[])
-            for row in proposal['rows']:
-                fields=row['fields']
-                request['rows'].append(dict(id=row['id'],excluded=row['excluded'],date=fields.get('date',''),
-                    date_unprinted=fields.get('date_basis') == 'statement_end_ordering_only',
-                    description=fields.get('description',''),amount_minor=fields.get('amount_minor','0'),direction=fields.get('direction','credit'),
-                    reason='Local test: flagged fields checked against the PDF.' if row['issues'] else ''))
+            _, request=self.card_period_request(choice)
             receipt=self.confirm_legacy(request)
             self.assertEqual(receipt['transaction_count'],3)
             self.assertFalse(self.confirm_legacy(request)['created'])
@@ -809,6 +818,102 @@ class StatementImportTests(TransactionPersistenceTestCase):
         undated=[row for row in imported if row.transaction_date is None]
         self.assertEqual(len(undated),2)
         self.assertEqual({row.ordering_date.isoformat() for row in undated}, {choice['period_end'] for choice in choices})
+
+    def test_saved_periods_store_the_file_catalogue_once(self):
+        from services.financial.pdf_candidates import _digest
+        from services.financial.statement_catalogue import saved_catalogue, full_original, CATALOGUE
+        choices=self.install_two_card_periods()
+        documents=[]
+        for choice in choices:
+            proposal, request=self.card_period_request(choice)
+            receipt=self.confirm_legacy(request)
+            self.db.expire_all()
+            document=self.db.get(FinancialSourceDocument, UUID(receipt['source_document_id']))
+            documents.append(document)
+            metadata=document.metadata_
+            original=metadata['statement_import_original']
+            # Only the period's own choice is kept with its reading ...
+            self.assertEqual([c['id'] for c in original['statement_choices']], [choice['id']])
+            self.assertEqual(_digest(original), metadata['statement_import_original_sha256'])
+            # ... and the reading as read is proved by its full digest.
+            self.assertEqual(metadata['statement_import_original_full_sha256'], _digest(proposal))
+            self.assertEqual(full_original(self.db, document), proposal)
+            self.assertEqual(saved_catalogue(self.db, document), proposal['statement_choices'])
+        # The catalogue itself lives on exactly one saved record of the file.
+        self.assertEqual([CATALOGUE in d.metadata_ for d in documents], [True, False])
+        self.assertEqual(len({d.metadata_['statement_import_catalogue_sha256'] for d in documents}), 1)
+        # A record saved before this change keeps its own whole catalogue and reads the same.
+        legacy=documents[1]
+        metadata=dict(legacy.metadata_)
+        full=full_original(self.db, legacy)
+        for key in ('statement_import_catalogue_sha256', 'statement_import_original_full_sha256'):
+            metadata.pop(key)
+        metadata.update(statement_import_original=full, statement_import_original_sha256=_digest(full))
+        legacy.metadata_=metadata
+        self.db.commit()
+        self.assertEqual(full_original(self.db, legacy), full)
+        self.assertEqual(saved_catalogue(self.db, legacy), full['statement_choices'])
+        # A tampered catalogue is refused, never silently rejoined.
+        holder=documents[0]
+        metadata=dict(holder.metadata_)
+        metadata[CATALOGUE]=dict(metadata[CATALOGUE], choices=metadata[CATALOGUE]['choices'][:1])
+        holder.metadata_=metadata
+        self.db.commit()
+        with self.assertRaises(ValueError):
+            saved_catalogue(self.db, holder)
+
+    def test_catalogue_backfill_is_a_dry_run_that_proves_every_record_it_would_change(self):
+        import importlib.util
+        from services.financial.pdf_candidates import _digest
+        from services.financial.statement_catalogue import full_original, CATALOGUE
+        spec=importlib.util.spec_from_file_location('catalogue_backfill', Path(__file__).resolve().parents[1]/'scripts'/'financial_statement_catalogue_backfill.py')
+        backfill=importlib.util.module_from_spec(spec); spec.loader.exec_module(backfill)
+        ids=[]
+        for choice in self.install_two_card_periods():
+            ids.append(UUID(self.confirm_legacy(self.card_period_request(choice)[1])['source_document_id']))
+        self.db.expire_all()
+        # Rewrite both records to the form saved before the catalogue was stored once.
+        legacy={}
+        for identity in ids:
+            document=self.db.get(FinancialSourceDocument, identity)
+            full=full_original(self.db, document)
+            metadata={k: v for k, v in document.metadata_.items() if not k.startswith('statement_import_catalogue')
+                      and k != 'statement_import_original_full_sha256'}
+            metadata.update(statement_import_original=full, statement_import_original_sha256=_digest(full))
+            document.metadata_=metadata
+            legacy[identity]=metadata
+        self.db.commit()
+        changes, report=backfill.plan(self.db, self.case.id)
+        self.db.rollback()
+        self.assertEqual(report['records_compacted'], 2)
+        self.assertEqual(report['catalogues_kept_once'], 1)
+        # Every period but the catalogue's holder stops carrying it.
+        planned=dict(changes)
+        other=next(i for i in ids if CATALOGUE not in planned[i])
+        self.assertLess(backfill._size(planned[other]), backfill._size(legacy[other]))
+        # Planning wrote nothing.
+        self.db.expire_all()
+        self.assertEqual({i: self.db.get(FinancialSourceDocument, i).metadata_ for i in ids}, legacy)
+        for identity, metadata in changes:
+            self.db.get(FinancialSourceDocument, identity).metadata_=metadata
+        self.db.commit()
+        self.db.expire_all()
+        documents=sorted((self.db.get(FinancialSourceDocument, i) for i in ids), key=lambda d: CATALOGUE not in d.metadata_)
+        self.assertEqual([CATALOGUE in d.metadata_ for d in documents], [True, False])
+        for document in documents:
+            self.assertEqual(full_original(self.db, document), legacy[document.id]['statement_import_original'])
+            self.assertEqual(document.metadata_['statement_import_original_full_sha256'], legacy[document.id]['statement_import_original_sha256'])
+        # Running it again changes nothing.
+        self.assertEqual(backfill.plan(self.db, self.case.id)[0], [])
+        self.db.rollback()
+        # A record whose stored reading does not match its digest is left unchanged.
+        document=documents[1]
+        metadata=dict(legacy[document.id]); metadata['statement_import_original_sha256']='0'*64
+        document.metadata_=metadata
+        self.db.commit()
+        changes, report=backfill.plan(self.db, self.case.id)
+        self.db.rollback()
+        self.assertEqual((changes, report['records_unverified_left_unchanged']), ([], 1))
 
     def andrews_request(self, share, *, install=False, no_payments=False):
         from tests.test_financial_statement_import_andrews import two_shares

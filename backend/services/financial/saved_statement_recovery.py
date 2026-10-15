@@ -161,6 +161,10 @@ def _section_metadata(document, section, view, rows):
     original_ids = {(by_id[identity].provenance or {}).get('statement_import_original', {}).get('id')
         for identity in section.transaction_ids} | set(section.incomplete_ids)
     proposal = deepcopy(metadata['statement_import_original'])
+    # A section keeps the parent's own statement choice, not the file's whole
+    # catalogue (stored once per file; the parent record references it).
+    from services.financial.statement_catalogue import compact_original
+    proposal = compact_original(proposal, metadata.get('statement_import_statement_id'))[0]
     proposal['rows'] = [r for r in proposal['rows'] if r['id'] in original_ids]
     proposal['statement_id'] = _digest(dict(recovery_source=str(document.id), key=section.key))
     proposal['current_import'] = None
