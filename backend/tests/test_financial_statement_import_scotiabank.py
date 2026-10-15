@@ -170,12 +170,16 @@ class ScotiabankImportTests(TestCase):
         from postgres.models.financial import FinancialSourceDocument
         # A legacy import made before any reader existed: neither the Scotiabank reader nor the general
         # engine (which reads this layout's period) prepared it.
+        from services.financial.statement_import import forget_shared_readings
+        # The older reader runs only inside this block: no file reading is shared across it.
+        forget_shared_readings()
         with patch('services.financial.statement_import_scotiabank.scotiabank_catalog',return_value=([],set())), \
                 patch.dict(os.environ, {'LOUPE_FINANCIAL_GENERIC_READER': '0'}):
             raw=initial_request(self.preview())
             raw.update(holder='Investigator corrected holder',account_number='00001234567')
             for row in raw['rows']: row['excluded']=False
             old=self.f.confirm_legacy(raw)
+        forget_shared_readings()
         self.assertGreater(old['incomplete_count'],20)
         p=self.preview()
         self.assertTrue(p['current_import']['refresh_available'])

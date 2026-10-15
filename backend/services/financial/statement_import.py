@@ -205,6 +205,17 @@ def _shared_reading(session, file, text):
     return entry
 
 
+def forget_shared_readings():
+    """Drop every shared file reading.
+
+    Every stored input is in the key, so production never needs this: reader
+    code changes only with a restart. A test that swaps a reader function
+    inside one process (to seed an import made by an older reader) does.
+    """
+    with _shared_readings_lock:
+        _shared_readings.clear()
+
+
 def _shared_value(cache, shared, key, compute):
     if key not in cache:
         stored = shared.get(key)
@@ -275,7 +286,11 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
     chosen_currency = currency or saved_currency or detected_currency
     from services.financial.review_recovery import recovery_state
     from services.financial.statement_review_checks import add_period_checks
-    checks_key = ('checks', source_key, chosen_currency)
+    # Keyed on the currency the checks are computed with (the request's own
+    # choice; each statement's printed currency when none). Keyed on the
+    # resolved currency, a request naming a currency and one relying on a saved
+    # one shared an entry computed for the other, once the reading was shared.
+    checks_key = ('checks', source_key, currency or '')
     if _include_period_checks:
         choices = _shared_value(cache, shared, checks_key,
             lambda: add_period_checks(choices, all_sources, currency, text.source_locations))

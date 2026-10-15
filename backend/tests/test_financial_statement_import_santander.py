@@ -205,6 +205,9 @@ class SantanderSavedReviewTests(TestCase):
                 choice['section_sources']=[s for s in choice['section_sources'] if s['page_number']==1]
                 choice['page_numbers']=[1]
                 return choices,handled
+            from services.financial.statement_import import forget_shared_readings
+            # The older reader runs only inside this block: no file reading is shared across it.
+            forget_shared_readings()
             with patch('services.financial.statement_import_santander.santander_catalog',side_effect=legacy):
                 catalog=read_statement_import(f.db,case_id=f.case.id,evidence_file_id=f.file.id)
                 selected=next(c for c in catalog['statement_choices'] if c['account_type']=='checking')['id']
@@ -216,6 +219,7 @@ class SantanderSavedReviewTests(TestCase):
                     direction='debit',balance_minor='7500',reason='Checked against source'))
                 saved=save_progress(f.db,case_id=f.case.id,evidence_file_id=f.file.id,
                     request=StatementReviewDraft.model_validate(raw),expected_review_revision='initial',actor=f.actor)
+            forget_shared_readings()
             fresh=read_statement_import(f.db,case_id=f.case.id,evidence_file_id=f.file.id,statement_id=selected)
             self.assertEqual(fresh['transaction_count'],2)
             self.assertNotEqual(fresh['revision'],old['revision'])

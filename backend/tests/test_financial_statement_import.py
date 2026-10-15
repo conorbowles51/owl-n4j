@@ -98,6 +98,26 @@ class StatementImportTests(TransactionPersistenceTestCase):
             self.assertEqual(len(calls), 2)
             self.assertNotEqual(changed['revision'], first['revision'])
 
+    def test_shared_period_checks_are_keyed_on_the_currency_they_are_computed_with(self):
+        import services.financial.statement_review_checks as checks_module
+        from services.financial.statement_import import forget_shared_readings
+        choices = self.install_two_card_periods()
+        self.assertEqual({c['currency'] for c in choices}, {'USD'})
+        forget_shared_readings()
+        real, calls = checks_module.add_period_checks, []
+        def spy(choices, sources, currency, locations=None):
+            calls.append(currency)
+            return real(choices, sources, currency, locations)
+        with patch.object(checks_module, 'add_period_checks', spy):
+            with self.SessionLocal() as db:
+                read_statement_import(db, case_id=self.case.id, evidence_file_id=self.file.id)
+            with self.SessionLocal() as db:
+                # Resolves to the same currency, but asks for the checks in USD explicitly.
+                read_statement_import(db, case_id=self.case.id, evidence_file_id=self.file.id, currency='USD')
+            with self.SessionLocal() as db:
+                read_statement_import(db, case_id=self.case.id, evidence_file_id=self.file.id, currency='USD')
+        self.assertEqual(calls, [None, 'USD'])
+
     def test_existing_import_and_same_request_keep_the_saved_account_for_navigation(self):
         request = self.request()
         saved = self.confirm(request)
