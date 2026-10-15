@@ -13,28 +13,30 @@ sets it itself only when it is genuinely blocked on Neil; see "Halt rules".)
 
 ## ▶ NEXT
 
-**(2026-10-13 19:50) REAL-DOCUMENT wave 5 integrated into fin/release-1 (headless integrate-5). Regular merges
-t-visual-v17 65c13e2c, r5-any-layout 780b31a1, r5-andrews-cards ef0877d6 (WIP-NOTES.md dropped); test-placement fix
-e3649edb. NOT pushed, NOT deployed (live is still a15230a0). The real-document driver owns the next waves; running
-state, counts and history in /mnt/owl-data/fin-wt/headless/real/STATE.md (counts only).**
-Real headline (bench/wave5, frozen copy of ef0877d6, fresh engine read at reading revision v17, 583 documents, exit 0):
-**1,118/1,253 ready without edits (89.2%)**, recoverable 1,118/1,249; on wave 4's 567 documents 1,118/1,237 (was
-1,034); **0 wrong admissions**, 0 critical-field errors (17,085 rows), must-hold 4/4, copies 148/151, 0 previously
-ready periods lost, 84 gained (BBVA 22, Andrews 31, Monex 7, Merrick 7, Intercam 5, Scotiabank 5, Kapital 4, Santander
-3). Engine-served 92, library-served 1,026. Synchrony (new truth) 0/16, 0 wrong. Both of Neil's 2026-10-09 rulings are
-built (Andrews printed-sign direction: 4 periods unlocked, 7 rows, all equal to truth; late-posted card charges
-extended to fresh reads, no truth period changed, saved-statement path accepts the new basis). r4-any-layout's engine
-work is back with its holder/account fix (0 wrong). Actions per 100 statements 649 / 624 grouped (634 / 619 on wave 4's
-567, was 994 / 961). Truth final 603/832, compared 583/827. Live (read-only): 5 periods disagree (3 earlier ones the
-current code reads correctly; the investigator's 2 hand-entered Synchrony periods with every direction inverted).
-Synthetic 105/125, 0 wrong. Suites: financial 6,089 (2 known failures after e3649edb); tsc 0; vitest unit 2,093/2,094
-(route-check limit test, open decision).
-**Wave 6 (headless/real/wave6.units, prompts headless/real/units/):** `r6-synchrony` (general engine first: one-cell
-transaction tables split by printed line, closing-date + days-in-cycle periods, card summary vocabulary; target 16/16),
-`r6-vector-text` (OCR routing for vector-outline pages; target the 4 long BBVA cash-management statements carrying
-1,624 of 2,866 per-period person-actions), `t-visual-v15` (40 M&T documents: truth + on-arrival figure).
-Acceptance for every unit: 0 wrong admissions real and synthetic (including 0 admitted items that match no truth
-period), synthetic >= 105/125, no ready period lost against bench/wave5.
+**(2026-10-15 12:00) REAL-DOCUMENT wave 6 integrated into fin/release-1 (headless integrate-6). Regular merges
+t-visual-v15 9a9a9fcb, r6-synchrony b64a75ee, r6-vector-text f234fa56 (WIP-NOTES.md dropped), on top of 9a503652 (which
+carries the interactive alex-1013 / s-inference / s-autostart / s-queue-actions work). NOT pushed or deployed by this
+session. The real-document driver owns the next waves; running state, counts and history in
+/mnt/owl-data/fin-wt/headless/real/STATE.md (counts only).**
+Real headline (bench/wave6, frozen copy of f234fa56, fresh engine read of all 623 truth documents at reading revision v18,
+exit 0, scored with FINANCIAL_AUTO_SAVE_READY=0): **1,146/1,294 ready without edits (88.6%)**; on wave 5's 583 documents
+**1,146/1,253 (91.5%, was 1,118)**; **0 wrong admissions**, 0 critical-field errors (17,940 rows, every ready period
+imported), must-hold 4/4, copies 148/151, 0 lost, 28 gained (Synchrony 16/16, BBVA 7, Intercam 4, Kapital 1). M&T (new
+truth, 41 periods) 0/41, 0 wrong. Engine-served 104, library-served 1,042. Actions per 100 statements 293 / 268 grouped
+(211 / 197 on wave 5's 583, was 649 / 624). Truth final 643/832, compared 623/827. Live (read-only): the same 5 periods
+disagree; the merged code reads all 5 equal to truth (re-reads are live writes). Synthetic 105/125, 0 wrong.
+**Safety finding: automatic save (AUTO_SAVE_READY, default ON, in the live checkout) saved an exact copy on the synthetic
+corpus** (copies 0/1, 5 duplicate rows; off: 1/1, 0). Recommend FINANCIAL_AUTO_SAVE_READY=0 live until r7-autosave lands.
+Suites: financial 6,234 with the CLAUDE.md command 63 failures + 60 errors (unittest never loads tests/conftest.py, so
+auto-save is ON in tests; pre-existing); with FINANCIAL_AUTO_SAVE_READY=0 only 10 (2 known unassigned_statement + 8
+package-export failures for interactive modules); tsc 0; vitest unit 2,117/2,119 (route-check limit test; one load
+timeout that passes alone).
+**Wave 7 (headless/real/wave7.units, prompts headless/real/units/):** `r7-autosave` (fix first: no copy ever saved
+automatically, import refuses a second contribution; harness counts System saves as ready and fails on any copy; remove
+the "Refresh batch" / "Check for additional statement periods" steps by re-preparing after reader releases; test runner
+and exports), `r7-mt-engine` (M&T 0/41 -> 41/41 with the general engine: addressless name-block holder, unread rows),
+`t-visual-v16` (the other 45 M&T documents). Acceptance for every unit: 0 wrong admissions real and synthetic (including
+0 copies saved), synthetic >= 105/125, no ready period lost against bench/wave6.
 **Everything below in this section is the synthetic track (wave 5 state), parked behind the real waves.**
 Release-1 now (corpus v4, 124 distinct periods, bench-runs/release-1-w5, exit 0): **102/124 ready without edits (82.3%)**,
 102/107 recoverable (95.3%), 0 wrong admissions, 0 critical-field errors (347 saved), 0 valid-looking wrong values
@@ -199,6 +201,16 @@ reasoning, proceed. Set `STATUS: HALT — <reason>` only when:
 
 ## Open defects (found, not fixed)
 
+- **AUTO_SAVE_READY saves an exact copy** (2d8bdf20, default ON): synthetic run with the product default saved the byte
+  copy generic-01-copy-of-clean.pdf#1 (copies 0/1, 5 duplicate ledger rows); with FINANCIAL_AUTO_SAVE_READY=0 it is set
+  aside (1/1). Likely: the save fires per file before the batch compares files. Wave 7 r7-autosave. Found integrate-6.
+- **CLAUDE.md suite command runs with auto-save ON**: `unittest discover` never loads tests/conftest.py (its only job is
+  FINANCIAL_AUTO_SAVE_READY=0): 63 failures + 60 errors. Until fixed, prefix the command with
+  FINANCIAL_AUTO_SAVE_READY=0 (then only the 2 known + 8 test_financial_exports failures for the interactive modules
+  auto_read, batch_file_overview, batch_selection_preview, batch_supersession, field_proposals, queue_save, review_queue,
+  statement_detection). Wave 7 r7-autosave. Found integrate-6.
+- **Benchmark import turn budget**: on fin/release-1 the harness group import used all 2,711 turns and left 105 ready
+  items pending (660 turns before the interactive queue/save work). Wave 7 r7-autosave. Found integrate-6.
 - `tests.test_financial_extraction_release` (3 of 4 tests) spawns `scripts/check_financial_extraction_release.py`
   with a 20 s subprocess timeout; each spawn takes ~14 s at load 5–6 and times out at load ~13 (full suite during a
   benchmark, integrate-5). Reruns alone OK. Not a code fault; raise the timeout or run the suite without a concurrent
@@ -681,3 +693,29 @@ brief (briefs = Queue entries above + the 2026-10-02 log lines). Automation is t
   (route-check limit test, pre-existing). Logs bench-runs/real-wave5{,-suite,-tsc,-vitest}.log.
 - Wave 6 planned: r6-synchrony, r6-vector-text, t-visual-v15 (prompt updated: the M&T institution profile is back).
   STATE.md and STATUS-FOR-NEIL.md rewritten.
+
+### 2026-10-15 12:00 — REAL-DOCUMENT wave 6 merged into fin/release-1 (headless integrate-6)
+- All three notes say complete with 0 wrong on real and synthetic; none refused. Private scan of the net diffs, every
+  intermediate commit and every message against truth holders, words, accounts, inventory file names and non-round
+  amounts: clean (0 hits). Regular merges, WIP-NOTES.md dropped, notes archived
+  /mnt/owl-data/fin-wt/notes/{t-visual-v15,r6-synchrony,r6-vector-text}.md: `fin/t-visual-v15` (9a9a9fcb),
+  `fin/r6-synchrony` (b64a75ee), `fin/r6-vector-text` (f234fa56). No conflicts, no merge breakage.
+- **Real benchmark, full fresh read** (bench/wave6, frozen f234fa56; read 4 h 10 min at v18, 0 reading errors; REAL_EXIT=0):
+  **1,146/1,294** (1,146/1,253 on wave 5's documents), recoverable 1,146/1,290, 0 wrong, holds 4/4, copies 148/151,
+  0 lost, 28 gained; 6 valid-looking wrong values, none in a ready period; 16 unmatched items, 0 offered. The group import
+  hit the harness turn limit (2,711 turns, 105 ready items pending); finished on a copy of the run database
+  (bench/wave6-cont, harness advance_batch + verify_ledger): every ready period imported, 0 critical errors in 17,940 rows.
+  Compare 623/827 statements (1,290 of 1,481 without disagreement; in ready periods only BBVA holder punctuation 26).
+- **AUTO_SAVE_READY finding**: the first run (product default, auto-save ON) scored synthetic 0/125 "ready" because System
+  had already saved 106 periods, and it saved the exact copy generic-01-copy-of-clean.pdf#1 (copies 0/1, 5 duplicate
+  rows). All figures are measured with FINANCIAL_AUTO_SAVE_READY=0; r7-autosave fixes the copy and the harness.
+- Live ledger audit (read-only, audit-wave6): 568 admitted periods on truth documents, 5 disagree (same as wave 5), 0
+  printed periods admitted twice, 0 live periods on M&T documents.
+- Census not re-run (census-r5: 1,165 ready of 3,154 raw periods).
+- Synthetic (bench-runs/real-wave6, auto-save off, BENCH_EXIT=0): 105/125, 105/108, 0 wrong, copies 1/1.
+- Suites (live .venv, CHROMADB_PORT=1 CHROMA_PORT=1): financial Ran 6,234: CLAUDE.md command failures=63 errors=60
+  (auto-save ON in unittest: tests/conftest.py is pytest-only); with FINANCIAL_AUTO_SAVE_READY=0 failures=10 (2 known
+  unassigned_statement + 8 test_financial_exports for interactive modules). Evidence engine vector glyph 24 passed.
+  tsc -b 0; vitest unit 303 files 2,117/2,119 (route-check limit; FinancialPage load timeout, 39/39 alone).
+  Logs bench-runs/real-wave6{,-autosave-on}/ and real-wave6{,-suite,-suite-noautosave,-tsc,-vitest}.log.
+- Wave 7 planned: r7-autosave, r7-mt-engine, t-visual-v16. STATE.md and STATUS-FOR-NEIL.md rewritten.
