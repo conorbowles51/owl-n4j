@@ -1799,16 +1799,23 @@ async def advance_batch(factory,batch_id,resolve_path,process_files):
         started = time.monotonic()
         # An investigator's accepted imports do not wait for every PDF in the
         # batch. Bounded turns also allow other cases to make progress.
+        # Imports and preparation share the turn: while files wait, imports
+        # get the first half of it (at least one import), and at least one
+        # file is looked at every turn. A long import queue (each import can
+        # take seconds) used to spend every turn and starve the batch's own
+        # file preparation until the queue was empty.
         pending = await asyncio.to_thread(pending_imports)
-        for item_id in pending:
-            if await should_stop() or time.monotonic() - started >= TURN_SECONDS:
+        preparing = bool(_turn_candidates(await asyncio.to_thread(batch_files)))
+        import_seconds = TURN_SECONDS / 2 if preparing else TURN_SECONDS
+        for position, item_id in enumerate(pending):
+            if await should_stop() or (position and time.monotonic() - started >= import_seconds):
                 break
             await _finish_atomic(_import_item,factory,case_id,batch_id,item_id,resolve_path)
             if not await asyncio.to_thread(extend_lease): return
         files = await asyncio.to_thread(batch_files)
         candidates = _turn_candidates(files)
-        for index,file in candidates:
-            if await should_stop() or time.monotonic() - started >= TURN_SECONDS:
+        for position, (index,file) in enumerate(candidates):
+            if await should_stop() or (position and time.monotonic() - started >= TURN_SECONDS):
                 break
             previous_status = file['status']
             busy = False
@@ -1843,11 +1850,22 @@ async def advance_batch(factory,batch_id,resolve_path,process_files):
                     # Release it before a second session inserts a referencing batch item.
                     db.commit()
                 if processed:
-                    await _finish_atomic(_review_file,factory,batch_id,case_id,deepcopy(file))
-                    file['status']='checked'
-                    file.pop('preparation_retries', None)
-                    file.pop('error', None)
-                    _reading_progress(file, 'complete', 'The reading is complete. Open its statement review to check reconciliation before importing.', review_file_id=file['file_id'])
+                    shared = await asyncio.to_thread(_shared_preparation, factory, case_id, batch_id, deepcopy(file))
+                    if shared[0] == 'wait':
+                        _reading_progress(file, 'checking_statements', SHARED_PREPARATION_WAIT, prepared_in_batch=shared[1])
+                    elif shared[0] == 'adopt':
+                        await _finish_atomic(_adopt_preparation, factory, case_id, batch_id, deepcopy(file), shared[1])
+                        file['status']='checked'
+                        file.pop('preparation_retries', None)
+                        file.pop('error', None)
+                        _reading_progress(file, 'complete', SHARED_PREPARATION_DONE, review_file_id=file['file_id'], prepared_in_batch=shared[1])
+                    else:
+                        await _finish_atomic(_review_file,factory,batch_id,case_id,deepcopy(file))
+                        file['status']='checked'
+                        file.pop('preparation_retries', None)
+                        file.pop('error', None)
+                        file['prepared_reading'] = await asyncio.to_thread(_prepared_reading, factory, case_id, UUID(file['file_id']))
+                        _reading_progress(file, 'complete', 'The reading is complete. Open its statement review to check reconciliation before importing.', review_file_id=file['file_id'])
             except Exception as error:
                 retries = file.get('preparation_retries', 0)
                 if _lock_busy_error(error):
@@ -1882,6 +1900,75 @@ async def advance_batch(factory,batch_id,resolve_path,process_files):
         heartbeat.cancel()
         await asyncio.gather(heartbeat,return_exceptions=True)
         await asyncio.shield(asyncio.to_thread(release, interrupted))
+
+
+# One preparation per file. The same file can be listed in several batches of
+# a case (an investigator's batch and the batches that hold it from earlier
+# selections). The review queue lets the newest batch's preparation stand for
+# each statement, so preparing the file again in every older batch (after a
+# re-read, each one a full pass over every period under the case lock) only
+# repeated work nobody is shown. Only the newest batch prepares it; an older
+# batch waits for that and then retires its own untouched copies of the
+# file's statements. Whenever this cannot be established exactly (a paused or
+# failed newest batch, saved review work in the older batch, a recovery
+# reading, a reading changed since), the older batch prepares the file itself
+# as before. Switch off to restore that everywhere.
+SHARED_PREPARATION = True
+SHARED_PREPARATION_WAIT = ('This file is also listed in a newer batch, which is preparing it now. '
+    'Its statements are prepared once, there; no action is needed.')
+SHARED_PREPARATION_DONE = ('This file was prepared in a newer batch, which stands for its statements in the review queue. '
+    'Saved work in this batch is unchanged.')
+SHARED_PREPARATION_RETIRED = ('This statement is prepared in a newer batch, which stands for it in the review queue. '
+    'This earlier preparation is retained in history.')
+
+
+def _prepared_reading(factory, case_id, file_id):
+    """The reading guard of a file as its preparation left it (None if unavailable)."""
+    with factory() as db:
+        file = db.scalar(select(EvidenceFile).where(EvidenceFile.id == file_id, EvidenceFile.case_id == case_id))
+        return _reading_guards(db, {file.id: file}).get(file.id) if file else None
+
+
+def _shared_preparation(factory, case_id, batch_id, entry):
+    """('prepare', None), ('wait', newest batch id) or ('adopt', newest batch id) for this file entry."""
+    if not SHARED_PREPARATION or entry.get('recovery') or entry.get('standalone_import'):
+        return 'prepare', None
+    file_id = entry['file_id']
+    with factory() as db:
+        batches = list(db.execute(select(Batch.id, Batch.created_at, Batch.status, Batch.files).where(
+            Batch.case_id == case_id, Batch.status != 'removed')))
+        holders = [(created, str(identity), identity, status, other) for identity, created, status, files in batches
+            for other in (files or []) if other.get('file_id') == file_id and not other.get('standalone_import')]
+        if not holders:
+            return 'prepare', None
+        _, _, newest, status, other = max(holders, key=lambda holder: (holder[0], holder[1]))
+        if newest == batch_id or status in PAUSED_STATES or other.get('recovery'):
+            return 'prepare', None
+        if any(item.review_request for item in db.scalars(select(Item).where(Item.batch_id == batch_id,
+                Item.file_id == UUID(file_id), Item.status.in_(('ready', 'attention'))))):
+            return 'prepare', None  # saved review work in this batch is resolved by its own preparation
+        if other.get('status') in ('waiting', 'processing') and status == 'preparing':
+            return 'wait', str(newest)
+        if other.get('status') != 'checked' or not other.get('prepared_reading'):
+            return 'prepare', None
+        file = db.scalar(select(EvidenceFile).where(EvidenceFile.id == UUID(file_id), EvidenceFile.case_id == case_id))
+        if file is None or _reading_guards(db, {file.id: file}).get(file.id) != other['prepared_reading']:
+            return 'prepare', None
+        return 'adopt', str(newest)
+
+
+def _adopt_preparation(factory, case_id, batch_id, entry, newest):
+    """Retire this batch's untouched ready/attention copies of the file's statements."""
+    with factory() as db:
+        batch_for(db, case_id, batch_id)
+        for item in db.scalars(select(Item).where(Item.batch_id == batch_id, Item.file_id == UUID(entry['file_id']),
+                Item.status.in_(('ready', 'attention'))).with_for_update()):
+            if item.review_request:
+                continue
+            item.status = 'superseded_reading'
+            item.summary = {**item.summary, 'can_import': False, 'prepared_in_batch': newest,
+                'recovery_message': SHARED_PREPARATION_RETIRED}
+        db.commit()
 
 
 def _turn_candidates(files):
