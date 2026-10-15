@@ -15,6 +15,8 @@ import pytest
 
 
 DEPLOY = Path(__file__).resolve().parents[2] / 'deploy'
+# The bounded-stop drop-in deploy/ingestion-safety.sh installs.
+SHUTDOWN_UNIT = '[Service]\nTimeoutStopSec=90\nEnvironment=UVICORN_TIMEOUT_GRACEFUL_SHUTDOWN=20\n'
 
 
 @pytest.fixture
@@ -22,7 +24,7 @@ def release_sandbox(tmp_path):
     project = tmp_path / 'release'
     for directory in ('deploy/logs', 'backend/postgres', 'frontend_v2', '.venv/bin', 'commands'):
         (project / directory).mkdir(parents=True)
-    for name in ('deploy.sh', 'rollback.sh', 'ingestion-safety.sh', 'check_ingestion_idle.py'):
+    for name in ('deploy.sh', 'rollback.sh', 'ingestion-safety.sh', 'check_ingestion_idle.py', 'backend-stop.sh', 'git-update.sh'):
         shutil.copy(DEPLOY / name, project / 'deploy' / name)
     # Exercise real install/mv commands, but target a synthetic unit directory.
     helper = project / 'deploy/ingestion-safety.sh'
@@ -32,7 +34,11 @@ def release_sandbox(tmp_path):
     # sink. Capture stdout directly; leave all release control flow intact.
     deploy_script = project / 'deploy/deploy.sh'
     deploy_script.write_text(deploy_script.read_text().replace(
-        'exec > >(tee -a "${LOG_FILE}") 2>&1', '# Output captured by subprocess.run in this isolated test.'))
+        'exec > >(tee -a "${LOG_FILE}") 2>&1', '# Output captured by subprocess.run in this isolated test.').replace(
+        'TEE_PID=$!', 'TEE_PID=2147483646  # no tee process in this isolated test'))
+    # The fast-forward logic has its own test (deploy/tests/test-git-update.sh);
+    # here the update is the inert pull the release stages are ordered around.
+    (project / 'deploy/git-update.sh').write_text('update_deploy_checkout() { $RUN_AS git pull --ff-only origin "$1"; }\n')
     # This service installer is not under test, and must never touch the host.
     (project / 'deploy/install-frontend-service.sh').write_text('#!/bin/bash\nexit 0\n')
     (project / '.env').write_text('API_PORT=8002\nFRONTEND_PORT=5174\n')
@@ -87,10 +93,14 @@ elif name == 'curl':
         print('{}')
     elif ':5174' in args[-1]:
         print('<script src="/assets/app.js"></script>')
+    elif os.environ.get('HEALTH_COMMIT'):
+        print('{"status":"ok","commit":"%s","commit_clean":%s}' % (os.environ['HEALTH_COMMIT'], os.environ.get('HEALTH_COMMIT_CLEAN', 'true')))
     else:
         print('{"status":"ok"}')
 elif name == 'seq':
     print('1')
+elif name == 'systemctl' and args[:1] == ['show']:
+    print('inactive')  # the bounded stop sees the backend stopped at once
 ''')
     stub.chmod(0o755)
     for name in ('git', 'id', 'whoami', 'sudo', 'docker', 'npm', 'systemctl', 'curl', 'sleep', 'seq', 'flock'):
@@ -100,7 +110,7 @@ elif name == 'seq':
     return project
 
 
-def run_release(project, script, *, arrives_after=None, initially_active=False, health_failure=False):
+def run_release(project, script, *, arrives_after=None, initially_active=False, health_failure=False, extra_env=None):
     if initially_active:
         with sqlite3.connect(project / 'jobs.sqlite') as db:
             db.execute("INSERT INTO jobs VALUES ('processing',false)")
@@ -110,6 +120,7 @@ def run_release(project, script, *, arrives_after=None, initially_active=False, 
         env['WORK_ARRIVES_AFTER'] = arrives_after
     if health_failure:
         env['FORCE_HEALTH_FAILURE'] = '1'
+    env.update(extra_env or {})
     result = subprocess.run(['bash', str(project / 'deploy' / script), 'previous-safe-revision'],
                             input='y\n', text=True, capture_output=True, env=env, timeout=30)
     events = [json.loads(line) for line in (project / 'events').read_text().splitlines()]
@@ -121,7 +132,7 @@ def test_existing_work_blocks_checkout_dependency_and_service_changes(release_sa
     result, events = run_release(release_sandbox, script, initially_active=True)
     assert result.returncode == 75, result.stdout + result.stderr
     assert 'Release deferred' in result.stdout + result.stderr
-    assert not any(event.startswith(('git pull', 'git checkout', 'git reset', 'pip ', 'npm ', 'docker compose ', 'systemctl restart')) for event in events)
+    assert not any(event.startswith(('git pull', 'git checkout', 'git reset', 'pip ', 'npm ', 'docker compose ', 'systemctl restart', 'systemctl start owl-backend', 'systemctl stop --no-block owl-backend')) for event in events)
 
 
 @pytest.mark.parametrize('script,checkout', [('deploy.sh', 'git pull'), ('rollback.sh', 'git checkout')])
@@ -129,7 +140,7 @@ def test_current_gate_survives_checkout_to_revision_with_no_checks(release_sandb
     result, events = run_release(release_sandbox, script, arrives_after=checkout)
     assert result.returncode == 75, result.stdout + result.stderr
     assert (release_sandbox / 'deploy/check_ingestion_idle.py').read_text() == 'raise SystemExit(0)\n'
-    assert not any(event.startswith(('pip ', 'docker compose ', 'systemctl restart')) for event in events)
+    assert not any(event.startswith(('pip ', 'docker compose ', 'systemctl restart', 'systemctl start owl-backend')) for event in events)
 
 
 @pytest.mark.parametrize('script', ['deploy.sh', 'rollback.sh'])
@@ -137,7 +148,7 @@ def test_work_arriving_during_image_build_blocks_container_replacement(release_s
     result, events = run_release(release_sandbox, script, arrives_after='docker compose build')
     assert result.returncode == 75, result.stdout + result.stderr
     assert 'docker compose build' in events
-    assert not any(event.startswith(('docker compose up', 'systemctl restart owl-backend')) for event in events)
+    assert not any(event.startswith(('docker compose up', 'systemctl restart owl-backend', 'systemctl start owl-backend')) for event in events)
     if script == 'deploy.sh':
         assert 'serving the bundle currently on disk; the release is not confirmed complete' in result.stdout
         assert 'serving the previous build' not in result.stdout
@@ -148,8 +159,8 @@ def test_work_arriving_during_container_change_blocks_backend_restart(release_sa
     result, events = run_release(release_sandbox, script, arrives_after='docker compose up')
     assert result.returncode == 75, result.stdout + result.stderr
     assert any(event.startswith('docker compose up -d --no-build') for event in events)
-    assert 'systemctl restart owl-backend-v2' not in events
-    assert (release_sandbox / 'units/owl-backend-v2.service.d/ingestion-shutdown.conf').read_text() == '[Service]\nTimeoutStopSec=14500\n'
+    assert 'systemctl start owl-backend-v2' not in events
+    assert (release_sandbox / 'units/owl-backend-v2.service.d/ingestion-shutdown.conf').read_text() == SHUTDOWN_UNIT
     assert 'systemctl daemon-reload' in events
 
 
@@ -158,16 +169,16 @@ def test_automatic_rollback_retains_checks_after_reset(release_sandbox):
     assert result.returncode == 75, result.stdout + result.stderr
     reset = next(index for index, event in enumerate(events) if event.startswith('git reset'))
     assert events[reset + 1] == 'gate'
-    assert not any(event.startswith(('pip ', 'npm ', 'docker compose ', 'systemctl restart')) for event in events[reset + 1:])
+    assert not any(event.startswith(('pip ', 'npm ', 'docker compose ', 'systemctl restart', 'systemctl start owl-backend')) for event in events[reset + 1:])
 
 
 @pytest.mark.parametrize('script', ['deploy.sh', 'rollback.sh'])
 def test_idle_release_still_completes_with_bounded_graceful_shutdown(release_sandbox, script):
     result, events = run_release(release_sandbox, script)
     assert result.returncode == 0, result.stdout + result.stderr
-    assert 'systemctl restart owl-backend-v2' in events
+    assert 'systemctl start owl-backend-v2' in events
     unit = release_sandbox / 'units/owl-backend-v2.service.d/ingestion-shutdown.conf'
-    assert unit.read_text() == '[Service]\nTimeoutStopSec=14500\n'
+    assert unit.read_text() == SHUTDOWN_UNIT
     assert unit.stat().st_mode & 0o777 == 0o644
 
 
@@ -176,3 +187,22 @@ def test_shutdown_dropin_installer_uses_real_files_and_fails_before_reload():
         capture_output=True, text=True, timeout=15)
     assert result.returncode == 0, result.stdout + result.stderr
     assert 'real install checks passed' in result.stdout
+
+
+RUNNING = 'a' * 40
+
+
+@pytest.mark.parametrize('clean,health_failure,recorded', [
+    ('true', False, True),     # healthy, started from a clean commit: known good
+    ('false', False, False),   # local changes to tracked files: not that commit
+    ('true', True, False),     # not healthy now: nothing is recorded
+])
+def test_a_healthy_backend_started_outside_a_deploy_is_recorded_as_last_good(release_sandbox, clean, health_failure, recorded):
+    # The gate defers this release before the checkout changes; the record is made before that.
+    result, events = run_release(release_sandbox, 'deploy.sh', initially_active=True, health_failure=health_failure,
+                                 extra_env={'HEALTH_COMMIT': RUNNING, 'HEALTH_COMMIT_CLEAN': clean})
+    assert result.returncode == 75, result.stdout + result.stderr
+    last_good = (release_sandbox / 'deploy/logs/.last-good-commit').read_text().strip()
+    assert last_good == (RUNNING if recorded else 'previous-safe-revision')
+    assert ('recorded as last known-good' in result.stdout) is recorded
+    assert not any(event.startswith(('git pull', 'systemctl start owl-backend')) for event in events)

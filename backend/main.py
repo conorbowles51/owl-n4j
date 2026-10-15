@@ -83,6 +83,9 @@ async def lifespan(app: FastAPI):
     # hard-deadline watchdog, so no task, thread or blocked loop can hold a
     # stop open for systemd's whole stop window.
     process_shutdown.install_signal_handlers()
+    # What this process runs, for /health (deploy records it as last good).
+    from services.runtime_version import record_started_commit
+    record_started_commit()
     try:
         # Reload snapshots from disk (non-blocking)
         snapshot_storage.reload()
@@ -293,7 +296,13 @@ async def health():
         "neo4j": neo4j_status,
         "nodes": node_count,
         "evidence_engine": evidence_engine_status,
+        **_started_commit(),
     }
+
+
+def _started_commit():
+    from services.runtime_version import started_commit
+    return started_commit()
 
 
 if __name__ == "__main__":
