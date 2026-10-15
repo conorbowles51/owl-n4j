@@ -38,8 +38,22 @@ def current_version(versions):
         f.created_at.isoformat() if f.created_at else '', depth(f), str(f.id)))
 
 
+# Columns no lineage, comparison or review reads, deferred on case-wide loads:
+# the processing snapshot alone was 12 MB of 19 MB per load on a 5,482-file
+# case. A deferred column still loads on first access, so results are unchanged.
+CASE_WIDE_DEFERRED = (EvidenceFile.last_processed_profile_snapshot, EvidenceFile.summary, EvidenceFile.transcription,
+                      EvidenceFile.transcription_segments, EvidenceFile.transcription_speakers,
+                      EvidenceFile.transcription_speaker_merges, EvidenceFile.tags, EvidenceFile.linked_entity_ids)
+
+
+def case_wide_files():
+    """select(EvidenceFile) for loading many of a case's files at once."""
+    from sqlalchemy.orm import defer
+    return select(EvidenceFile).options(*(defer(column) for column in CASE_WIDE_DEFERRED))
+
+
 def case_lineage(session, case_id):
-    return lineage_groups(list(session.scalars(select(EvidenceFile).where(EvidenceFile.case_id == case_id))))
+    return lineage_groups(list(session.scalars(case_wide_files().where(EvidenceFile.case_id == case_id))))
 
 
 def select_current_files(session, case_id, selected):

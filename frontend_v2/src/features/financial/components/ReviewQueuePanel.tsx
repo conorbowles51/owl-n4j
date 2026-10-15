@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { useSearchParams } from "react-router-dom"
 import { useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
-import { BatchStatementReview } from "./FinancialBatchPanel"
+import { BatchStatementReview, batchItemQuery } from "./FinancialBatchPanel"
 import { useFinancialAccess } from "../hooks/use-financial-access"
 import {
   entryPeriod,
@@ -250,11 +250,24 @@ export function ReviewQueuePanel({
     })
   }
   const [bulkOutcome, setBulkOutcome] = useState("")
+  // The statement Next will open, loaded in the background while the current
+  // one is reviewed, so moving on does not wait for it to be checked.
+  const prefetchNext = (from: QueueEntry | undefined, list: QueueEntry[]) => {
+    if (!from) return
+    const position = list.findIndex((entry) => entry.id === from.id)
+    const following = list.slice(position + 1).find((entry) => entry.batch_id)
+    if (position < 0 || !following) return
+    void client.prefetchQuery(batchItemQuery(caseId, following.batch_id!, following.id))
+  }
   // Every save, fix and bulk save brings the queue and its totals up to date,
   // so the screen never needs reloading; with an entry, it says where that
   // statement now stands.
   const refresh = async (entry?: QueueEntry, keepOutcome = false) => {
     void client.invalidateQueries({ queryKey: ["financial-review-status", caseId] })
+    // A save can change other statements' checks: copies loaded earlier are
+    // reloaded when opened, and the next one is loaded again now.
+    void client.invalidateQueries({ queryKey: ["financial-batch-item", caseId], refetchType: "none" })
+    if (entry) prefetchNext(entry, entries)
     const result = await query.refetch()
     if (entry && result.data && !keepOutcome) setOutcome({ entry, ...savedOutcome(result.data, entry) })
     return result.data
@@ -295,6 +308,8 @@ export function ReviewQueuePanel({
 
   if (itemId && active?.batch_id)
     return (
+      <>
+      <PrefetchNext entry={active} list={entries} prefetch={prefetchNext} />
       <div className="space-y-3">
         {outcome && (
           <OutcomeNote outcome={outcome} onDismiss={() => setOutcome(null)} />
@@ -325,6 +340,7 @@ export function ReviewQueuePanel({
           }}
         />
       </div>
+      </>
     )
 
   return (
@@ -625,6 +641,24 @@ export function ReviewQueuePanel({
       )}
     </section>
   )
+}
+
+/** Loads the statement after the open one once per opened statement. */
+function PrefetchNext({
+  entry,
+  list,
+  prefetch,
+}: {
+  entry: QueueEntry
+  list: QueueEntry[]
+  prefetch: (from: QueueEntry, list: QueueEntry[]) => void
+}) {
+  useEffect(() => {
+    prefetch(entry, list)
+    // Once per opened statement; a save prefetches again through refresh.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entry.id])
+  return null
 }
 
 function OutcomeNote({
