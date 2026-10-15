@@ -181,6 +181,42 @@ def vector_segments(drawings):
     return sum(len(path.get('items') or ()) for path in drawings)
 
 
+# A page whose characters are drawn left to right reads upright. Its
+# character outlines are drawn in reading order, so consecutive outlines
+# step to the right along each printed line. Characters made of several
+# outlines (i, j, colons) add as many up as down steps; text drawn
+# sideways or upside down steps mostly up, down or left instead.
+UPRIGHT_MIN_STEPS = 50
+UPRIGHT_VERTICAL_RATIO = 2
+UPRIGHT_REVERSE_RATIO = 10
+
+
+def drawing_directions(drawings):
+    """{0: right, 90: down, 180: left, 270: up}: steps between consecutive character outlines."""
+    boxes = [b for b in map(_bounds, _contours(drawings))
+             if b[2] - b[0] <= MAX_GLYPH_SIZE and b[3] - b[1] <= MAX_GLYPH_SIZE]
+    votes = {0: 0, 90: 0, 180: 0, 270: 0}
+    for a, b in zip(boxes, boxes[1:]):
+        size = max(a[2] - a[0], a[3] - a[1], b[2] - b[0], b[3] - b[1], 0.5)
+        dx = (b[0] + b[2] - a[0] - a[2]) / 2
+        dy = (b[1] + b[3] - a[1] - a[3]) / 2
+        if abs(dx) + abs(dy) > 3 * size or abs(dx) + abs(dy) < 0.05 * size:
+            continue  # a new line or a repeated outline, not the next character
+        if abs(dx) > 3 * abs(dy):
+            votes[0 if dx > 0 else 180] += 1
+        elif abs(dy) > 3 * abs(dx):
+            votes[90 if dy > 0 else 270] += 1
+    return votes
+
+
+def drawn_upright(drawings):
+    """True when the page's character outlines clearly run left to right (no rotation needed)."""
+    votes = drawing_directions(drawings)
+    return (votes[0] >= UPRIGHT_MIN_STEPS
+            and votes[0] >= UPRIGHT_VERTICAL_RATIO * max(votes[90], votes[270])
+            and votes[0] >= UPRIGHT_REVERSE_RATIO * votes[180])
+
+
 def page_glyphs(page, drawings=None):
     """The page's printed characters drawn as filled outlines, left to right."""
     if drawings is None:

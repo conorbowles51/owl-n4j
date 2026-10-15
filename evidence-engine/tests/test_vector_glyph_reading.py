@@ -332,3 +332,31 @@ def test_two_pieces_of_one_amount_split_by_a_wide_side_bearing_are_rejoined():
         glyphs = G.page_glyphs(page)
         labels = G.shape_labels(glyphs, _word_boxes(page, LINES))
         assert [t for t, _ in G.unread_words(glyphs, labels, _word_boxes(page, LINES))] == expected, gap_share
+
+
+SUMMARY_LINES = [(72, 100 + 14 * n, text) for n, text in enumerate([
+    'SALDO FINAL DEL PERIODO ANTERIOR 1,234,567.89', 'TOTAL 2,345.67 345,678.90',
+    'SALDO FINAL DEL PERIODO 891,234.66', 'Pagina 4 de 7 estado de cuenta',
+    'Comisiones cobradas 500.00 Abonos 2,345.67', 'Fecha Folio Descripcion Deposito Retiro Saldo'])]
+
+
+def _turned(source_page, rotate):
+    """The same outlines placed on a new page turned by ``rotate`` degrees (sideways or upside down)."""
+    target = fitz.open()
+    page = target.new_page(width=792 if rotate in (90, 270) else 612, height=612 if rotate in (90, 270) else 792)
+    page.show_pdf_page(page.rect, source_page.parent, source_page.number, rotate=rotate)
+    return target, page
+
+
+def test_outlines_drawn_left_to_right_read_upright_and_turned_ones_do_not():
+    """Live: orientation detection turned upright vector pages 90 or 180 degrees and lost their closing balance."""
+    doc, page, _ = _page(SUMMARY_LINES)
+    votes = G.drawing_directions(page.get_drawings())
+    assert votes[0] >= G.UPRIGHT_MIN_STEPS and votes[180] == 0
+    assert G.drawn_upright(page.get_drawings())
+    for rotate in (90, 180, 270):
+        turned_doc, turned = _turned(page, rotate)
+        assert not G.drawn_upright(turned.get_drawings()), rotate
+    # Too little text to judge: orientation detection decides as before.
+    small, small_page, _ = _page([(72, 100, 'TOTAL 5.00')])
+    assert not G.drawn_upright(small_page.get_drawings())

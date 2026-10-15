@@ -46,7 +46,9 @@ MAX_OSD_TIMEOUT_SECONDS = 30.0
 # classed vector_text; its OCR words are re-read from the character outlines and its money
 # cells confirmed from them (vector_glyph_reading); words over blank paper are dropped and
 # printed amounts OCR skipped are added from their outlines.
-PDF_READING_REVISION = 'bank-payment-rows-v18'
+# v19 (r7-alex-queue): a vector-text page whose character outlines run left to right is read
+# upright without asking orientation detection (vector_glyph_reading.drawn_upright).
+PDF_READING_REVISION = 'bank-payment-rows-v19'
 OSD_INSUFFICIENT_TEXT_MARKERS = ("too few characters", "skipping this page")
 
 
@@ -858,37 +860,52 @@ def _ocr_page(page: fitz.Page, *, drop_inkless_words: bool = False,
         annots=True,
     )
     image = Image.frombytes("RGB", (pixmap.width, pixmap.height), pixmap.samples)
-    try:
+    # A vector-text page carries its own orientation: its character outlines
+    # are drawn in reading order. When they clearly run left to right the page
+    # is read upright; orientation detection is not asked (live: it turned
+    # upright glossary, QR-code and closing pages 90 or 180 degrees, which
+    # skipped the outline reading and lost printed closing balances).
+    upright = False
+    if vector_text and not page.rotation:
         try:
-            osd = pytesseract.image_to_osd(
-                image,
-                config=f"--dpi {dpi}",
-                output_type=pytesseract.Output.DICT,
-                timeout=min(
-                    MAX_OSD_TIMEOUT_SECONDS,
-                    _remaining_ocr_timeout(deadline),
-                ),
-            )
-            rotation = int(osd.get("rotate") or 0) % 360
+            from app.pipeline.vector_glyph_reading import drawn_upright
+            upright = drawn_upright(page.get_drawings())
+        except Exception:
+            logger.warning('Vector outline orientation unavailable; detecting it from the image', exc_info=True)
+    try:
+        if upright:
+            rotation, osd_confidence = 0, None
+        else:
             try:
-                osd_confidence = float(osd.get("orientation_conf") or 0.0)
-            except (TypeError, ValueError):
-                osd_confidence = 0.0
-        except pytesseract.TesseractError as exc:
-            if not _is_insufficient_text_osd_error(exc):
-                raise
-            rotation = 0
-            osd_confidence = None
-        except RuntimeError as exc:
-            if not _is_tesseract_timeout_error(exc):
-                raise
-            logger.warning(
-                "PDF OCR orientation detection timed out; continuing with "
-                "the unrotated page (dpi=%d)",
-                dpi,
-            )
-            rotation = 0
-            osd_confidence = None
+                osd = pytesseract.image_to_osd(
+                    image,
+                    config=f"--dpi {dpi}",
+                    output_type=pytesseract.Output.DICT,
+                    timeout=min(
+                        MAX_OSD_TIMEOUT_SECONDS,
+                        _remaining_ocr_timeout(deadline),
+                    ),
+                )
+                rotation = int(osd.get("rotate") or 0) % 360
+                try:
+                    osd_confidence = float(osd.get("orientation_conf") or 0.0)
+                except (TypeError, ValueError):
+                    osd_confidence = 0.0
+            except pytesseract.TesseractError as exc:
+                if not _is_insufficient_text_osd_error(exc):
+                    raise
+                rotation = 0
+                osd_confidence = None
+            except RuntimeError as exc:
+                if not _is_tesseract_timeout_error(exc):
+                    raise
+                logger.warning(
+                    "PDF OCR orientation detection timed out; continuing with "
+                    "the unrotated page (dpi=%d)",
+                    dpi,
+                )
+                rotation = 0
+                osd_confidence = None
 
         text, confidence, best_data = _ocr_at_rotation(
             image,
@@ -905,7 +922,9 @@ def _ocr_page(page: fitz.Page, *, drop_inkless_words: bool = False,
         low_text_confidence = (
             confidence is not None and confidence < LOW_CONFIDENCE_THRESHOLD
         )
-        if uncertain_orientation or low_text_confidence:
+        if upright and low_text_confidence:
+            alternative_rotations = [0]
+        elif uncertain_orientation or low_text_confidence:
             alternative_rotations = [
                 (rotation + offset) % 360 for offset in (0, 180, 90, 270)
             ]
