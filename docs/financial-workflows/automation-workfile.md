@@ -34,9 +34,14 @@ timeout that passes alone).
 **Wave 7 (headless/real/wave7.units, prompts headless/real/units/):** `r7-autosave` (fix first: no copy ever saved
 automatically, import refuses a second contribution; harness counts System saves as ready and fails on any copy; remove
 the "Refresh batch" / "Check for additional statement periods" steps by re-preparing after reader releases; test runner
-and exports), `r7-mt-engine` (M&T 0/41 -> 41/41 with the general engine: addressless name-block holder, unread rows),
-`t-visual-v16` (the other 45 M&T documents). Acceptance for every unit: 0 wrong admissions real and synthetic (including
-0 copies saved), synthetic >= 105/125, no ready period lost against bench/wave6.
+and exports), `t-visual-v16` (the other 45 M&T documents), and Neil's directive units `r7-import-ops` and
+`r7-alex-queue` (his prompts, unchanged). `r7-mt-engine` (M&T 0/41 -> 41/41, general engine) is ready for wave 8.
+Acceptance for every unit: 0 wrong admissions real and synthetic (including 0 copies saved), synthetic >= 105/125, no
+ready period lost against bench/wave6.
+**fin/release-1 lacks the live branch** (`integration/evidence-main-reunion` e47c25c5: r-subpoena engine rules, the
+import-speed fixes, the queue filter; 19 commits). Merging it conflicts in statement_engine.py,
+statement_engine_profiles.py and test_financial_statement_engine.py (r-subpoena vs r6-synchrony); integrate-6 was not
+permitted to resolve it and aborted. Neil's decision (STATE.md open decision 0).
 **Everything below in this section is the synthetic track (wave 5 state), parked behind the real waves.**
 Release-1 now (corpus v4, 124 distinct periods, bench-runs/release-1-w5, exit 0): **102/124 ready without edits (82.3%)**,
 102/107 recoverable (95.3%), 0 wrong admissions, 0 critical-field errors (347 saved), 0 valid-looking wrong values
@@ -718,4 +723,6 @@ brief (briefs = Queue entries above + the 2026-10-02 log lines). Automation is t
   unassigned_statement + 8 test_financial_exports for interactive modules). Evidence engine vector glyph 24 passed.
   tsc -b 0; vitest unit 303 files 2,117/2,119 (route-check limit; FinancialPage load timeout, 39/39 alone).
   Logs bench-runs/real-wave6{,-autosave-on}/ and real-wave6{,-suite,-suite-noautosave,-tsc,-vitest}.log.
-- Wave 7 planned: r7-autosave, r7-mt-engine, t-visual-v16. STATE.md and STATUS-FOR-NEIL.md rewritten.
+- Wave 7 planned: r7-autosave, t-visual-v16, plus Neil's directive units r7-import-ops and r7-alex-queue (prompts his);
+  r7-mt-engine ready for wave 8. A merge of the live branch into fin/release-1 conflicted in three engine files and was
+  aborted (not permitted to resolve here). STATE.md and STATUS-FOR-NEIL.md rewritten.
