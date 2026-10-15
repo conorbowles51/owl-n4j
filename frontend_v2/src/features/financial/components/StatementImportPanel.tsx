@@ -1422,11 +1422,18 @@ function EditableStatement({
             ? recovered
             : null))
   )
+  // Corrections saved on an earlier reading of this statement: a batch draft
+  // or the individual saved review. They are shown for comparison and never
+  // applied to the new reading's rows.
+  const earlierDraft = batchReview
+    ? batchReview.draft && batchReview.draft.revision !== data.revision
+      ? batchReview.draft
+      : null
+    : recovered
   const savedReadingChanged =
-    !batchReview &&
-    !!recovered &&
-    recovered.revision !== data.revision &&
-    (!data.review_recovery || !!data.saved_review)
+    !!earlierDraft &&
+    earlierDraft.revision !== data.revision &&
+    (!!batchReview || !data.review_recovery || !!data.saved_review)
   const [previousReviewChecked, setPreviousReviewChecked] = useState(false)
   const [draftSaved, setDraftSaved] = useState(!!saved)
   const [correctionsOpen, setCorrectionsOpen] = useState(false)
@@ -3104,7 +3111,7 @@ function EditableStatement({
         {savedReadingChanged &&
           !data.current_import?.refresh_review_required && (
             <SavedReviewConflict
-              draft={recovered!}
+              draft={earlierDraft!}
               formatAmount={(value) =>
                 `${displayAmount(value, digits)} ${data.currency}`
               }

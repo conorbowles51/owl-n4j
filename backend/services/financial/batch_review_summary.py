@@ -35,7 +35,7 @@ def reason(problem):
             'currency': 'currency', 'period': 'dates', 'period_start': 'dates', 'period_end': 'dates'}.get(field, 'reading')
     if kind == 'no_activity':
         return 'no_activity'
-    if kind == 'review_conflict':
+    if kind in ('review_conflict', 'earlier_reading_review'):
         return 'saved_review'
     if kind == 'coverage_load':
         return 'reading'

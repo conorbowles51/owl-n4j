@@ -874,6 +874,44 @@ class BatchImportTests(TestCase):
         changed['rows'].append(dict(id='end',kind='balance',excluded=True,issues=[],page_number=1,fields=dict(description='Closing balance',balance='1')))
         self.assertEqual(service.assess(changed)[0],'attention')
 
+    def test_corrections_from_an_earlier_reading_hold_the_new_reading_with_a_plain_reason(self):
+        """Live: 16 statements said 'A manually added transaction needs a page' for stale excluded rows."""
+        from services.financial.batch_review_summary import reason
+        proposal = self.f.preview()
+        earlier = service.initial_request(proposal)
+        earlier.update(expected_revision='an-earlier-reading', holder='Holder from the review')
+        for row in earlier['rows']:
+            row['id'] = 'old-' + row['id']
+            row['excluded'] = True
+        status, summary = service.assess(proposal, earlier)
+        self.assertEqual(status, 'attention')
+        self.assertFalse(summary['can_import'])
+        first = summary['problems'][0]
+        self.assertEqual(first['kind'], 'earlier_reading_review')
+        self.assertEqual(reason(first), 'saved_review')
+        self.assertNotIn('manually added', ' '.join(p['message'] for p in summary['problems']))
+        # The statement details entered on the earlier reading are kept; rows come from the new reading.
+        self.assertEqual(summary['holder'], 'Holder from the review')
+        self.assertEqual(summary['transaction_count'], service.assess(proposal)[1]['transaction_count'])
+        # A request on the current reading is unaffected.
+        self.assertEqual(service.assess(proposal, service.initial_request(proposal))[0], 'ready')
+
+    def test_a_page_kept_unread_after_an_ocr_timeout_holds_the_statement(self):
+        from postgres.models.evidence import EvidenceDocumentText
+        self.assertEqual(service.assess(self.f.preview())[0], 'ready')
+        with self.f.SessionLocal() as db:
+            text = db.get(EvidenceDocumentText, self.f.file.id)
+            end = text.source_locations[-1]['end_char']
+            text.source_locations = [*deepcopy(text.source_locations), dict(kind='page', page_number=2,
+                start_char=end, end_char=end, text_origin='unread', ocr_status='timeout')]
+            db.commit()
+        proposal = self.f.preview()
+        status, summary = service.assess(proposal)
+        self.assertEqual(status, 'attention')
+        self.assertFalse(summary['can_import'])
+        self.assertTrue(any(p['message'].startswith('Page 2 of this PDF could not be read in time')
+                            for p in summary['problems']), summary['problems'])
+
     def test_bulk_worker_imports_undated_interest_with_its_period_and_no_printed_date(self):
         self.f.card_balance_request()
         import hashlib
