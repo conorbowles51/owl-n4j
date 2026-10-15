@@ -165,6 +165,22 @@ class ReaderReleaseTests(TestCase):
         self.assertEqual((outcome['rechecked'], outcome['left']), (0, {'saved_review': 1}))
         self.assertEqual(self.files(batch)[0]['status'], 'checked')
 
+    def test_every_changed_file_of_a_batch_is_prepared_again_in_the_same_run(self):
+        other = self.fixture.copy_file(revised=True)
+        with self.f.SessionLocal() as db:
+            batch = batches.create_batch(db, case_id=self.f.case.id, request_id=uuid4(),
+                file_ids=[self.f.file.id, other.id], folder_ids=[], actor=self.f.actor)
+        with patch.object(batches, 'read_statement_import', old_reader), \
+                patch.object(reader_release, 'reader_stamp', return_value=OLD):
+            self.drain(batch)
+        outcome = reader_release.sweep(self.f.SessionLocal)
+        self.assertEqual((outcome['compared'], outcome['rechecked']), (2, 2))
+        self.assertEqual([f['status'] for f in self.files(batch)], ['processing', 'processing'])
+        self.drain(batch)
+        with self.f.SessionLocal() as db:
+            statuses = [i.status for i in db.scalars(select(Item).where(Item.batch_id == batch))]
+        self.assertNotIn('attention', statuses, statuses)
+
     def test_switch_off_and_bounded_and_resumable(self):
         batch = self.prepare_with_old_reader()
         with patch.object(reader_release, 'RECHECK_AFTER_RELEASE', False):

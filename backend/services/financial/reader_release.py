@@ -144,68 +144,94 @@ def reading_changed(session, *, case_id, batch_file, items):
 
 
 def _candidates(session, stamp):
-    """(batch, file index, batch file) of checked files of unfinished batches prepared by other code."""
-    batches = session.scalars(select(Batch).where(Batch.status == 'review').order_by(Batch.updated_at, Batch.id))
-    for batch in batches:
-        open_files = set(session.scalars(select(Item.file_id).where(Item.batch_id == batch.id,
-                                                                  Item.status.in_(('ready', 'attention')))))
-        for index, entry in enumerate(batch.files or []):
-            if entry.get('status') != 'checked' or entry.get('reader_stamp') == stamp or not entry.get('file_id'):
-                continue
-            yield batch, index, entry, UUID(entry['file_id']) in open_files
+    """{batch: [(file index, batch file, has an open statement)]} of checked files prepared by other code.
+
+    Only batches in 'review' (prepared, not running): a running batch's files
+    belong to its worker.
+    """
+    result = {}
+    for batch in session.scalars(select(Batch).where(Batch.status == 'review').order_by(Batch.updated_at, Batch.id)):
+        stale = [(index, entry) for index, entry in enumerate(batch.files or []) if entry.get('status') == 'checked'
+                 and entry.get('reader_stamp') != stamp and entry.get('file_id')]
+        if not stale:
+            continue
+        open_files = {str(i) for i in session.scalars(select(Item.file_id).where(
+            Item.batch_id == batch.id, Item.status.in_(('ready', 'attention'))))}
+        result[(batch.id, batch.case_id)] = [(index, deepcopy(entry), entry['file_id'] in open_files)
+                                             for index, entry in stale]
+    return result
 
 
-def _store(session, batch_id, case_id, index, entry, stamp, *, recheck):
-    """Record the stamp (and queue the re-preparation) if the file is still as it was compared."""
+def _store(session, batch_id, case_id, verdicts, stamp):
+    """Record the stamps and queue the re-preparations of one batch, if it is still as compared. Returns files rechecked."""
     from services.financial.import_batches import batch_for, _reading_progress
     batch = batch_for(session, case_id, batch_id, True)
     files = deepcopy(batch.files or [])
-    if (batch.status != 'review' or index >= len(files) or files[index].get('file_id') != entry['file_id']
-            or files[index].get('status') != 'checked' or files[index].get('reader_stamp') != entry.get('reader_stamp')):
+    if batch.status != 'review':
         session.rollback()
-        return False
-    files[index]['reader_stamp'] = stamp
-    if recheck:
-        # The worker prepares it again from its saved reading (no OCR).
-        files[index]['status'] = 'processing'
-        files[index]['recheck'] = dict(reason=RECHECK_STAGE, stamp=stamp)
-        _reading_progress(files[index], 'checking_statements',
-                          'Loupe was updated; checking this file again with the new version. No action is needed.')
+        return None
+    rechecked = 0
+    for index, entry, verdict in verdicts:
+        if (index >= len(files) or files[index].get('file_id') != entry['file_id']
+                or files[index].get('status') != 'checked' or files[index].get('reader_stamp') != entry.get('reader_stamp')):
+            continue
+        files[index]['reader_stamp'] = stamp
+        if verdict == 'changed':
+            # The worker prepares it again from its saved reading (no OCR).
+            files[index]['status'] = 'processing'
+            files[index]['recheck'] = dict(reason=RECHECK_STAGE, stamp=stamp)
+            _reading_progress(files[index], 'checking_statements',
+                              'Loupe was updated; checking this file again with the new version. No action is needed.')
+            rechecked += 1
+    if rechecked:
         batch.status = 'preparing'
     batch.files = files
     session.commit()
-    return True
+    return rechecked
 
 
 def sweep(factory, *, max_files=None, budget_seconds=None):
-    """Re-prepare files whose statements the current reader reads differently. Never raises."""
+    """Re-prepare files whose statements the current reader reads differently. Never raises.
+
+    Batch by batch: its stale files are compared (read only), then every
+    verdict of that batch is recorded in one write, so all of its changed
+    files are prepared again in the same run of the batch.
+    """
     outcome = dict(compared=0, rechecked=0, files=0, left=Counter())
     if not RECHECK_AFTER_RELEASE:
+        outcome['left'] = {}
         return outcome
     max_files = FILES_PER_SWEEP if max_files is None else max_files
     budget_seconds = SWEEP_BUDGET_SECONDS if budget_seconds is None else budget_seconds
     started, stamp = time.monotonic(), reader_stamp()
     with factory() as db:
-        work = [(batch.id, batch.case_id, index, deepcopy(entry), has_open)
-                for batch, index, entry, has_open in _candidates(db, stamp)]
-    for batch_id, case_id, index, entry, has_open in work:
-        if outcome['compared'] >= max_files or time.monotonic() - started >= budget_seconds:
-            break
+        work = _candidates(db, stamp)
+    for (batch_id, case_id), entries in work.items():
+        verdicts = []
         try:
-            with factory() as db:
+            for index, entry, has_open in entries:
+                if has_open and (outcome['compared'] >= max_files or time.monotonic() - started >= budget_seconds):
+                    break
                 if has_open:
-                    items = _open_items(db, batch_id, UUID(entry['file_id']))
-                    verdict = reading_changed(db, case_id=case_id, batch_file=entry, items=items)
+                    with factory() as db:
+                        items = _open_items(db, batch_id, UUID(entry['file_id']))
+                        verdict = reading_changed(db, case_id=case_id, batch_file=entry, items=items)
                     outcome['compared'] += 1
                 else:
                     verdict = 'nothing_open'
-                stored = _store(db, batch_id, case_id, index, entry, stamp, recheck=verdict == 'changed')
-            outcome['files'] += 1
-            if stored and verdict == 'changed':
-                outcome['rechecked'] += 1
-            elif verdict != 'changed':
-                outcome['left'][verdict] += 1
+                verdicts.append((index, entry, verdict))
+            if not verdicts:
+                break
+            with factory() as db:
+                rechecked = _store(db, batch_id, case_id, verdicts, stamp)
+            if rechecked is None:
+                continue  # The batch started running meanwhile; compared again later.
+            outcome['files'] += len(verdicts)
+            outcome['rechecked'] += rechecked
+            outcome['left'].update(verdict for _, _, verdict in verdicts if verdict != 'changed')
         except Exception:
-            log.exception('Re-checking a prepared statement file after a release failed; it will be tried again')
+            log.exception('Re-checking prepared statement files after a release failed; they will be tried again')
+        if outcome['compared'] >= max_files or time.monotonic() - started >= budget_seconds:
+            break
     outcome['left'] = dict(outcome['left'])
     return outcome
