@@ -217,6 +217,54 @@ class QueueReadTests(TestCase):
         self.assertEqual((state['statements_with_issues'], state['needs_decision']), (1, 1))
 
 
+    def failed_batch(self, message, file_id=None):
+        with self.f.SessionLocal() as db:
+            batch = Batch(id=uuid4(), case_id=self.f.case.id, created_by=self.f.actor.user_id, status='review',
+                actor={}, files=[dict(file_id=str(file_id or self.f.file.id), source_id=str(file_id or self.f.file.id),
+                                      filename='statement.pdf', status='error', error=message)])
+            db.add(batch); db.commit()
+            return batch.id
+
+    def test_a_file_removed_from_financial_is_not_counted_as_unreadable(self):
+        """Live: 207 'restart source unavailable' + 'Statement not found' failures were all removed files."""
+        self.failed_batch('Statement not found in this case.')
+        queue = self.queue()
+        self.assertEqual((queue['counts']['unreadable_files'], queue['counts']['removed_files']), (1, 0))
+        with self.f.SessionLocal() as db:
+            from postgres.models.evidence import EvidenceFile
+            record = db.get(EvidenceFile, self.f.file.id)
+            record.metadata_ = dict(record.metadata_ or {}, financial_file_visibility=dict(removed=True, revision='r1'))
+            db.commit()
+        queue = self.queue()
+        self.assertEqual((queue['counts']['unreadable_files'], queue['counts']['removed_files']), (0, 1))
+        self.assertEqual(queue['unreadable_files'], [])
+        moved = queue['set_aside_files'][0]
+        self.assertEqual(moved['reason'], 'removed')
+        self.assertIn('restore it under Removed files', moved['message'])
+        self.assertEqual(moved['error'], 'Statement not found in this case.')
+        self.assertNotIn("Couldn't read 1", queue['status_line'])
+        self.assertIn('Files removed from Financial 1', queue['status_line'])
+
+    def test_a_file_no_longer_in_the_case_or_read_from_a_copy_is_not_unreadable(self):
+        self.failed_batch('This file could not be prepared.', file_id=uuid4())
+        queue = self.queue()
+        self.assertEqual((queue['counts']['unreadable_files'], queue['counts']['removed_files']), (0, 1))
+        self.assertEqual(queue['set_aside_files'][0]['reason'], 'gone')
+        # The same bytes prepared from another upload: the failed upload is a copy.
+        prepared = self.create(); self.advance(prepared)
+        with self.f.SessionLocal() as db:
+            from postgres.models.evidence import EvidenceFile
+            original = db.get(EvidenceFile, self.f.file.id)
+            copy = EvidenceFile(id=uuid4(), case_id=self.f.case.id, original_filename='copy.pdf',
+                stored_path=original.stored_path, sha256=original.sha256, size=original.size, status='processed')
+            db.add(copy); db.commit()
+            copy_id = copy.id
+        self.failed_batch('PDF source preparation failed; inspect the document and retry.', file_id=copy_id)
+        queue = self.queue()
+        self.assertEqual(queue['counts']['copy_files'], 1)
+        self.assertEqual(queue['counts']['unreadable_files'], 0)
+
+
 class AllBlockersTests(TestCase):
     def test_every_other_blocker_is_named_after_the_summary(self):
         detail = describe(item(CURRENCY, READING, dict(kind='statement_detail', field='holder',

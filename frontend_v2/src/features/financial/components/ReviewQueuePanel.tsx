@@ -103,6 +103,8 @@ export function ReviewStatusLine({
     ...(c.saving ? [part("Importing now", c.saving)] : []),
     ...(c.rechecking ? [part("Being rechecked", c.rechecking)] : []),
     ...(c.left_unimported ? [part("Left out by you", c.left_unimported)] : []),
+    ...(c.removed_files ? [part("Files removed from Financial", c.removed_files, "unreadable")] : []),
+    ...(c.copy_files ? [part("Files already read from a copy", c.copy_files, "unreadable")] : []),
   ]
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -597,6 +599,23 @@ export function ReviewQueuePanel({
                 ))}
               </ul>
             </div>
+          )}
+          {list === "unreadable" && query.data.set_aside_files.length > 0 && (
+            <details className="rounded border p-3 text-sm">
+              <summary className="cursor-pointer">
+                {query.data.set_aside_files.length}{" "}
+                {query.data.set_aside_files.length === 1 ? "file is" : "files are"} not counted as
+                {" "}couldn't read: removed from Financial, no longer in the case, or already read from an
+                identical copy
+              </summary>
+              <ul className="mt-2 divide-y" aria-label="Files not counted as couldn't read">
+                {query.data.set_aside_files.map((file) => (
+                  <li key={`${file.batch_id}:${file.source_id}`} className="py-2">
+                    {file.filename}: {file.message}
+                  </li>
+                ))}
+              </ul>
+            </details>
           )}
         </>
       )}
