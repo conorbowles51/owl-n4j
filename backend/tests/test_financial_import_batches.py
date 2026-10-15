@@ -875,6 +875,39 @@ class BatchImportTests(TestCase):
         self.assertEqual(self.status(batch)['status'], 'paused')
         self.assertEqual(self.status(batch)['total'], 0)
 
+    def test_a_killed_worker_leaves_work_that_resumes_when_its_lease_runs_out(self):
+        from datetime import datetime, timedelta, timezone
+        # A worker killed mid-turn (uvicorn's health check) runs no release:
+        # its token and lease stay, the file it was preparing reads
+        # "processing", and an accepted import is still queued.
+        batch = self.create(); self.advance(batch)
+        with self.f.SessionLocal() as db:
+            service.queue_import(db, case_id=self.f.case.id, batch_id=batch,
+                expected_revision=self.status(batch)['ready_revision'], actor=self.f.actor)
+            record = db.get(Batch, batch)
+            record.files = [{**record.files[0], 'status': 'processing'}]
+            record.status = 'preparing'; record.worker_token = str(uuid4())
+            record.lease_until = datetime.now(timezone.utc) + timedelta(minutes=4)
+            db.commit()
+        # While the dead worker's lease runs, no other worker takes the batch.
+        self.advance(batch)
+        shown = self.status(batch)
+        self.assertEqual((shown['files'][0]['status'], shown['counts'].get('imported', 0)), ('processing', 0))
+        # Once it has run out (5 minutes after the last renewal), the next turn
+        # resumes both: the import is saved once and the file is prepared.
+        with self.f.SessionLocal() as db:
+            db.get(Batch, batch).lease_until = datetime.now(timezone.utc) - timedelta(seconds=1)
+            db.commit()
+        self.advance(batch)
+        shown = self.status(batch)
+        self.assertEqual(shown['files'][0]['status'], 'checked')
+        self.assertEqual(shown['counts']['imported'], 1)
+        self.assertEqual(shown['status'], 'review')
+        with self.f.SessionLocal() as db:
+            record = db.get(Batch, batch)
+            self.assertIsNone(record.worker_token)
+            self.assertEqual(len(list(db.scalars(select(FinancialTransaction)))), 12)
+
     def test_shutdown_waits_for_atomic_statement_thread_before_acknowledgement(self):
         from threading import Event
         entered, release, finished = Event(), Event(), Event()

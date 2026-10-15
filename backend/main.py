@@ -131,6 +131,11 @@ async def lifespan(app: FastAPI):
     from services.financial.deployment_recovery import run_recovery_forever
     recovery_task = asyncio.create_task(run_recovery_forever(), name="financial-deployment-recovery")
 
+    # The application loaded so far lives as long as the process: keep it out
+    # of every later garbage-collector pass (services.process_memory).
+    from services.process_memory import freeze_startup_objects
+    print(f"Startup objects excluded from garbage collection: {freeze_startup_objects()}")
+
     yield
 
     # Cancel the background loops and give in-flight atomic statement/graph

@@ -32,7 +32,10 @@ read matches. Two different readings that both prove are held. A period that
 is not proved is returned with its best reading and a named reason; the reason
 is carried by an unresolved line so the existing review gate holds it.
 """
+import pickle
 import re
+import threading
+from collections import OrderedDict
 from contextvars import ContextVar
 from datetime import date, timedelta
 from functools import lru_cache
@@ -1808,7 +1811,28 @@ def _numbering_complete(pages, facts, after=None):
                                                                 and previous >= after)
 
 
-_READINGS = {}
+# Readings of the last few documents. A live reading of a long production is
+# ~140k dicts and lists (a 345-page Navy Federal file), and every full pass of
+# the cyclic garbage collector walks every live container with the GIL held:
+# eight cached readings made each pass take seconds, long enough for a busy
+# worker to miss uvicorn's health ping and be killed with its saves in flight.
+# So the cache keeps them pickled (bytes are invisible to the collector, and a
+# reading of that file decodes in ~0.15 s) and only the readings of the
+# documents in use (the last LIVE_READINGS asked for) stay live, so proposing
+# each period of a file in turn decodes nothing.
+READINGS_KEPT = 8
+LIVE_READINGS = 2
+_READINGS = OrderedDict()   # key -> pickled reading
+_LIVE_READINGS = OrderedDict()  # key -> reading, at most LIVE_READINGS
+_READINGS_LOCK = threading.Lock()
+
+
+def _keep_live(key, result):
+    with _READINGS_LOCK:
+        _LIVE_READINGS[key] = result
+        _LIVE_READINGS.move_to_end(key)
+        while len(_LIVE_READINGS) > LIVE_READINGS:
+            _LIVE_READINGS.popitem(last=False)
 
 
 def _source_signature(sources):
@@ -1829,17 +1853,32 @@ def read_statements(sources, *, profile=None):
     """
     signature = _source_signature(sources)
     key = (signature, profile and profile.get('name'))
-    if signature is not None and key in _READINGS:
-        return _READINGS[key]
+    if signature is not None:
+        with _READINGS_LOCK:
+            live = _LIVE_READINGS.get(key)
+            if live is not None:
+                _LIVE_READINGS.move_to_end(key)
+                return live
+            stored = _READINGS.get(key)
+            if stored is not None:
+                _READINGS.move_to_end(key)
+        if stored is not None:
+            result = pickle.loads(stored)
+            _keep_live(key, result)
+            return result
     token = _PROFILE.set(profile)
     try:
         result = _read_statements(sources, profile=profile)
     finally:
         _PROFILE.reset(token)
     if signature is not None:
-        if len(_READINGS) >= 8:
-            _READINGS.pop(next(iter(_READINGS)))
-        _READINGS[key] = result
+        stored = pickle.dumps(result, pickle.HIGHEST_PROTOCOL)
+        with _READINGS_LOCK:
+            _READINGS[key] = stored
+            _READINGS.move_to_end(key)
+            while len(_READINGS) > READINGS_KEPT:
+                _READINGS.popitem(last=False)
+        _keep_live(key, result)
     return result
 
 
