@@ -2,7 +2,7 @@
 import hashlib
 import re
 from uuid import UUID
-from sqlalchemy import select
+from sqlalchemy import select, text
 from postgres.models.financial_audit import FinancialAuditEvent
 from services.financial.reference_reviews import parse_review_json
 from services.financial.ledger_summary import LedgerSummaryError
@@ -79,6 +79,21 @@ def verify_financial_audit_chain(entries, *, case_id, expected_head_sha256=None)
         event_count=len(entries), head_sha256=previous,
         status='verified_recorded_chain' if entries else 'no_recorded_events',
         checkpoint_status='matches_supplied_head' if expected_head_sha256 is not None else 'not_supplied')
+
+
+def lock_case_audit_chain(session, case_id):
+    """Take the case's audit-append lock now, before any row lock.
+
+    Every audited write takes this transaction-scoped lock inside its trigger.
+    A writer that locks Case/Evidence rows first and appends audit later waits
+    for it while holding those rows, and anything appending audit for another
+    row of the case (job reconciliation, the engine's job updates) then waits
+    for those rows: a deadlock. Taking it first gives one order, audit then rows.
+    """
+    if session.get_bind().dialect.name != 'postgresql':
+        return
+    session.execute(text("SELECT pg_advisory_xact_lock(hashtextextended('loupe.financial.audit:' || CAST(:case_id AS text), 0))"),
+        dict(case_id=str(case_id)))
 
 
 def capture_financial_audit_chain(session, *, case_id):

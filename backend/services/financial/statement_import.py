@@ -1072,6 +1072,7 @@ def _write_statement_import_once(*, session_factory, case_id, evidence_file_id, 
     from postgres.models.case import Case
     from postgres.models.financial import FinancialSourceDocument, FinancialTransaction
     from services.financial.accounts import AccountDraft, record_account
+    from services.financial.audit_chain import lock_case_audit_chain
     from services.financial.documents import SourceDocumentDraft, record_source_document
     from services.financial.proof_class import SourceShape
     from services.financial.runs import ingestion_run
@@ -1087,6 +1088,7 @@ def _write_statement_import_once(*, session_factory, case_id, evidence_file_id, 
                 evidence_file_id=str(evidence_file_id), request_sha256=request_hash)) as run:
         with session_factory() as session:
             try:
+                lock_case_audit_chain(session, case_id)
                 if session.scalar(select(Case.id).where(Case.id == case_id).with_for_update()) is None:
                     raise PdfMappingError('Case not found.', 404)
                 file = session.scalar(select(EvidenceFile).where(EvidenceFile.id == evidence_file_id,
