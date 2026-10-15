@@ -785,10 +785,10 @@ def _pending_with_files(session, case_id):
         Item.status.in_(('ready', 'attention', 'pending_import')))).all()
     if not items:
         return []
-    from services.financial.source_lineage import case_wide_files
-    owners = {file.id: file for file in session.scalars(case_wide_files().where(
-        EvidenceFile.case_id == case_id, EvidenceFile.id.in_({item.file_id for item in items})))}
-    return [(item, owners[item.file_id]) for item in items]
+    # Read-only copies for the comparison, reused per row while unchanged.
+    from services.financial.source_lineage import case_files
+    owners = case_files(session, case_id)
+    return [(item, owners[item.file_id]) for item in items if item.file_id in owners]
 
 
 def checked_batch_items(session, case_id, items, *, validate_reviews=False, reading='stored'):

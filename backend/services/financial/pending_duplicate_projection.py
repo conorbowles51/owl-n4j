@@ -1,9 +1,10 @@
 """Bounded duplicate-decision freshness checks without reconstructing statements."""
-from collections import defaultdict
+from collections import OrderedDict, defaultdict
 from copy import deepcopy
+from threading import Lock
 from uuid import UUID
 
-from sqlalchemy import String, cast, func, select
+from sqlalchemy import String, cast, func, literal_column, select
 
 from postgres.models.evidence import EvidenceDocumentText, EvidenceFile, EvidenceTableGeometry
 from postgres.models.financial import FinancialSourceDocument
@@ -18,6 +19,53 @@ def _uuid(value):
         return None
 
 
+# Per process: (table, primary key) -> (row version, md5 of its payload). The
+# database hashed every geometry page and source record on each comparison
+# (0.43 s on a large case); a row's hash is reused while its xmin is unchanged.
+_DIGESTS = OrderedDict()
+_DIGESTS_LOCK = Lock()
+DIGESTS_KEPT = 100_000
+
+
+def _row_version(model):
+    return literal_column(f'{model.__tablename__}.xmin::text')
+
+
+def _digested(session, model, keys, columns, digest, *conditions):
+    """[(key tuple, column tuple, digest)] for matching rows, hashing only changed rows."""
+    table = model.__tablename__
+    version = _row_version(model).label('row_version')
+    width = len(keys)
+    rows = session.execute(select(*keys, *columns, version).where(*conditions)).all()
+    result, missing = [], []
+    with _DIGESTS_LOCK:
+        for row in rows:
+            key, values, row_version = tuple(row[:width]), tuple(row[width:-1]), row[-1]
+            known = _DIGESTS.get((table, key))
+            if known is not None and known[0] == row_version:
+                result.append((key, values, known[1]))
+            else:
+                missing.append((key, values))
+    if missing:
+        wanted = {key for key, _ in missing}
+        # Hash the version read with it; a row changed since the first read
+        # is stored under its newer version, as a fresh read would see it.
+        hashed = {}
+        for row in session.execute(select(*keys, *columns, version, digest.label('row_digest')).where(*conditions,
+                keys[0].in_({key[0] for key in wanted}))):
+            key = tuple(row[:width])
+            if key in wanted:
+                hashed[key] = (tuple(row[width:-2]), row[-2], row[-1])
+        with _DIGESTS_LOCK:
+            for key, (values, row_version, value) in hashed.items():
+                _DIGESTS[(table, key)] = (row_version, value)
+                _DIGESTS.move_to_end((table, key))
+            while len(_DIGESTS) > DIGESTS_KEPT:
+                _DIGESTS.popitem(last=False)
+        result.extend((key, values, value) for key, (values, _, value) in hashed.items())
+    return result
+
+
 def load_projection_context(session, case_id, files):
     """Bulk scalar fingerprints; PostgreSQL hashes geometry inside the database."""
     from services.financial.statement_import import VERSION
@@ -30,7 +78,13 @@ def load_projection_context(session, case_id, files):
     geometry = defaultdict(list)
     postgres = session.get_bind().dialect.name == 'postgresql'
     fingerprint = func.md5(cast(EvidenceTableGeometry.payload, String)) if postgres else EvidenceTableGeometry.payload
-    if ids:
+    if ids and postgres:
+        rows = _digested(session, EvidenceTableGeometry, (EvidenceTableGeometry.evidence_file_id, EvidenceTableGeometry.page_number),
+            (EvidenceTableGeometry.engine_job_id, EvidenceTableGeometry.extracted_at), fingerprint,
+            EvidenceTableGeometry.evidence_file_id.in_(ids))
+        for (file_id, page), (job, extracted), value in sorted(rows, key=lambda row: (str(row[0][0]), row[0][1])):
+            geometry[str(file_id)].append([page, str(job), str(extracted), value])
+    elif ids:
         for file_id, page, job, extracted, value in session.execute(select(
                 EvidenceTableGeometry.evidence_file_id, EvidenceTableGeometry.page_number,
                 EvidenceTableGeometry.engine_job_id, EvidenceTableGeometry.extracted_at, fingerprint)
@@ -57,7 +111,12 @@ def load_projection_context(session, case_id, files):
                 if key.startswith('statement_')}))
     sources = {}
     source_fingerprint = func.md5(cast(FinancialSourceDocument.metadata_, String)) if postgres else FinancialSourceDocument.metadata_
-    if ids:
+    if ids and postgres:
+        for (identifier,), (status, removed), value in _digested(session, FinancialSourceDocument, (FinancialSourceDocument.id,),
+                (FinancialSourceDocument.status, FinancialSourceDocument.metadata_['financial_import_removal'].as_string()),
+                source_fingerprint, FinancialSourceDocument.case_id == case_id, FinancialSourceDocument.evidence_file_id.in_(ids)):
+            sources[str(identifier)] = dict(status=status, fingerprint=value, removed=bool(removed))
+    elif ids:
         for identifier, status, value, removed in session.execute(select(FinancialSourceDocument.id,
                 FinancialSourceDocument.status, source_fingerprint,
                 FinancialSourceDocument.metadata_['financial_import_removal'].as_string())

@@ -131,12 +131,12 @@ def comparison_sources(session, case_id, pending=None, *, read_pending=None, dup
                    Batch.status != 'removed', Item.status.in_(('ready', 'attention', 'pending_import')))).all()
         # One evidence row per PDF, not one per prepared period: joining the file
         # to every item decoded its metadata thousands of times on a large case.
-        from services.financial.source_lineage import case_wide_files
-        owners = {file.id: file for file in session.scalars(case_wide_files().where(
-            EvidenceFile.case_id == case_id, EvidenceFile.id.in_({item.file_id for item in items})))} if items else {}
-        pending = [(item, owners[item.file_id]) for item in items]
-    from services.financial.source_lineage import case_lineage, current_version
-    groups = case_lineage(session, case_id)
+        from services.financial.source_lineage import case_files
+        owners = case_files(session, case_id) if items else {}
+        pending = [(item, owners[item.file_id]) for item in items if item.file_id in owners]
+    from services.financial.source_lineage import comparison_lineage, current_version
+    # Read-only copies, reused per row while unchanged: this function never writes.
+    groups = comparison_lineage(session, case_id)
     families = {str(file.id): root for root, versions in groups.items() for file in versions}
     current_ids = {str(current_version(versions).id) for versions in groups.values()}
     entries, prepared, cache = ComparisonSources(), {}, {}
