@@ -65,8 +65,13 @@ READER_MODULES = (
     'pdf_tables.py', 'pdf_geometry_candidates.py', 'table_geometry.py', 'card_*.py', 'andrews_period_pinning.py',
     'late_posted_card_dates.py', 'closing_only_period.py', 'layout_memory.py', 'text_rows.py', 'printed_totals.py',
     'money.py', 'dates.py', 'source_dates.py', 'import_issues.py', 'review_arithmetic.py', 'payment_inference.py',
-    'spei_description.py', 'deposit_receipt_proposal.py', 'payment_document_proposal.py', 'import_batches.py',
+    'spei_description.py', 'deposit_receipt_proposal.py', 'payment_document_proposal.py',
 )
+# Not listed: import_batches.py. Its changes (scheduling, saves) cannot change
+# what the comparison looks at (the reading revision, computed by the reading
+# modules, and REVIEW_MODEL, which is in the stamp itself), so listing it would
+# only make every deploy read all prepared files again for nothing. Live, read
+# only (2026-10-15): one full pass reads 894 files, 2,903 open statements.
 FILES_PER_SWEEP = 25
 SWEEP_BUDGET_SECONDS = 20.0
 RECHECK_STAGE = 'reader_release'
