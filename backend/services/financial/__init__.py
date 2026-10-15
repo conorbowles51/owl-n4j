@@ -2203,3 +2203,5 @@ from services.financial.late_posted_card_dates import LATE_POSTED_CARD_DATES, pr
 __all__ += ["LATE_POSTED_CARD_DATES", "late_posted_card_date"]
 from services.financial.andrews_period_pinning import PERIOD_PINNING, pin_period as pin_andrews_period
 __all__ += ["PERIOD_PINNING", "pin_andrews_period"]
+from services.financial.statement_catalogue import compact_original, full_original, saved_catalogue
+__all__ += ["compact_original", "full_original", "saved_catalogue"]

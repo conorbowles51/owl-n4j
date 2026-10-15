@@ -64,8 +64,11 @@ def record_link(session, *, row, link, actor, reason):
 
 def display_link(row):
     """Resolve the current account representation while preserving the saved ID."""
+    link = effective_link(row)
+    if not link or link['kind'] != 'account':
+        return link
     from sqlalchemy.orm import object_session
-    return resolved_link(object_session(row), row.case_id, effective_link(row))
+    return resolved_link(object_session(row), row.case_id, link)
 
 
 def stored_link(labels, reviewed):
