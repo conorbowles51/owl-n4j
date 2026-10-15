@@ -319,6 +319,19 @@ export function importOutcome(receipt?: StatementImportReceipt) {
   }
 }
 
+/** Where a statement stands after a save, from the refreshed queue: one short line. */
+export function savedOutcome(data: ReviewQueue, entry: QueueEntry) {
+  const same = (candidate: QueueEntry) => candidate.id === entry.id
+  const waiting = data.items.find(same)
+  if (waiting)
+    return { held: true, message: `Saved. Still needs: ${waiting.issue || "a check"}.` }
+  if (data.ready.some(same) || data.filled.some(same))
+    return { held: false, message: "Saved. Ready to import: use Import at the top of the queue." }
+  if (data.unreadable.some(same))
+    return { held: true, message: "Saved. Nothing could be read from it yet: open it to check its pages." }
+  return { held: false, message: "Saved. Nothing more is needed from you here." }
+}
+
 export function entryPeriod(entry: QueueEntry) {
   if (!entry.period_start && !entry.period_end) return "dates not read"
   return `${entry.period_start || "?"} to ${entry.period_end || "?"}`

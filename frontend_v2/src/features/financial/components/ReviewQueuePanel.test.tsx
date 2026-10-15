@@ -28,6 +28,7 @@ vi.mock("./StatementImportPanel", () => ({
       <>
         <p>Focused row: {ctx?.rowId}</p>
         <p>Focused field: {ctx?.field}</p>
+        <button onClick={() => void ctx?.save({})}>Save a field fix</button>
         <button
           onClick={() =>
             onImported({ case_id: "case", evidence_file_id: "f1", transaction_count: 12 })
@@ -350,4 +351,24 @@ it("never counts files removed from Financial as couldn't read, and says what th
   expect(screen.getByText(/2 files are not counted as couldn't read/)).toBeVisible()
   fireEvent.click(screen.getByText(/2 files are not counted as couldn't read/))
   expect(screen.getByText(/Removed f6.pdf: You removed this file from Financial/)).toBeVisible()
+})
+
+it("after a fix inside a statement, refreshes the queue and its totals and says where the statement stands", async () => {
+  vi.mocked(fetchAPI).mockImplementation(async (url: string, options?: unknown) => {
+    if (url.includes("/review/queue")) return queue as never
+    if ((options as { method?: string } | undefined)?.method === "PUT")
+      return { status: "attention", review_revision: "b".repeat(64) } as never
+    const match = url.match(/\/items\/(i\d)/)
+    if (match) return batchItem(match[1]) as never
+    return {} as never
+  })
+  mount("/cases/case/financial?view=statements&queue=1&queueItem=i1&queueList=waiting")
+  const queueCalls = () => vi.mocked(fetchAPI).mock.calls.filter(([url]) => String(url).includes("/review/queue")).length
+  fireEvent.click(await screen.findByRole("button", { name: "Save a field fix" }))
+  const before = queueCalls()
+  expect(await screen.findByLabelText("Result of your last save")).toHaveTextContent(
+    "Card statements.pdf (2020-10-08 to 2020-11-09): Saved. Still needs: 3 rows unreadable on page 7."
+  )
+  expect(queueCalls()).toBeGreaterThanOrEqual(before)
+  expect(vi.mocked(fetchAPI).mock.calls.filter(([url]) => String(url).includes("/review/queue")).length).toBeGreaterThan(1)
 })

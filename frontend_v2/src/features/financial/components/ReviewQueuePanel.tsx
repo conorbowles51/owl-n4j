@@ -7,6 +7,7 @@ import { useFinancialAccess } from "../hooks/use-financial-access"
 import {
   entryPeriod,
   importOutcome,
+  savedOutcome,
   fillAndSaveReady,
   useReviewQueue,
   type QueueEntry,
@@ -250,8 +251,18 @@ export function ReviewQueuePanel({
       return next
     })
   }
+  const [bulkOutcome, setBulkOutcome] = useState("")
+  // Every save, fix and bulk save brings the queue and its totals up to date,
+  // so the screen never needs reloading; with an entry, it says where that
+  // statement now stands.
+  const refresh = async (entry?: QueueEntry, keepOutcome = false) => {
+    void client.invalidateQueries({ queryKey: ["financial-review-status", caseId] })
+    const result = await query.refetch()
+    if (entry && result.data && !keepOutcome) setOutcome({ entry, ...savedOutcome(result.data, entry) })
+    return result.data
+  }
   const back = () => {
-    void client.invalidateQueries({ queryKey: ["financial-review-queue", caseId] })
+    void refresh()
     open(undefined)
   }
   const showList = (name: ListName) => {
@@ -309,11 +320,10 @@ export function ReviewQueuePanel({
             onPrevious: () => step(-1),
             onImported: (receipt) => {
               setOutcome({ entry: active, ...importOutcome(receipt) })
-              void client.invalidateQueries({
-                queryKey: ["financial-review-queue", caseId],
-              })
+              void refresh(active, true)
               step(1)
             },
+            onChanged: () => void refresh(active),
           }}
         />
       </div>
@@ -466,10 +476,23 @@ export function ReviewQueuePanel({
                 datesOnly={issue === "dates"}
                 buttonLabel={`Fix all ${current.length} together`}
                 onSaved={() => {
-                  void client.invalidateQueries({ queryKey: ["financial-review-queue", caseId] })
-                  void client.invalidateQueries({ queryKey: ["financial-review-status", caseId] })
+                  const chosen = new Set(current.map((entry) => entry.id))
+                  void refresh().then((data) => {
+                    if (!data) return
+                    const left = data.items.filter((entry) => chosen.has(entry.id)).length
+                    setBulkOutcome(
+                      left
+                        ? `Saved. ${left} of ${chosen.size} still need something; they stay listed below with what is left.`
+                        : `Saved. None of the ${chosen.size} statements need anything more for this.`
+                    )
+                  })
                 }}
               />
+              {bulkOutcome && (
+                <p role="status" aria-label="Result of the shared fix" className="basis-full font-medium">
+                  {bulkOutcome}
+                </p>
+              )}
               <span>
                 Every statement listed below waits for the same detail. Choose them, enter the value once and check the
                 preview before saving. Nothing is imported until each statement checks out.
