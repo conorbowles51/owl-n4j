@@ -97,6 +97,9 @@ def issue_sentence(reason, problems, summary):
     rows = _rows(problems)
     where = _pages(problems)
     plural = lambda n, one, many: f'{n} {one if n == 1 else many}'
+    carried = next((p for p in problems if p.get('kind') == 'carry_conflict'), None)
+    if carried:
+        return carried['message']
     if reason == 'import_failed':
         return 'Saving did not finish: open it to retry'
     if reason == 'saved_review':
@@ -171,8 +174,10 @@ def describe(summary):
                 ordered.append(key)
                 by_reason[key] = []
     also = [issue_sentence(key, by_reason[key], summary) for key in ordered if key != reason]
+    choice = next(({key: p[key] for key in ('field', 'yours', 'reading')} for p in chosen if p.get('kind') == 'carry_conflict'), None)
     return dict(reason=reason, sentence=issue_sentence(reason, chosen, summary), row_id=row, field=field,
-                page=page, other_problems=others, problem_total=len(problems), reasons=ordered, also=also)
+                page=page, other_problems=others, problem_total=len(problems), reasons=ordered, also=also,
+                **(dict(choice=choice) if choice else {}))
 
 
 def _empty_reading(summary):
@@ -267,6 +272,8 @@ def _entry(item, batch_id, describe_result=None):
             row_id=describe_result['row_id'], field=describe_result['field'], page=describe_result['page'],
             other_problems=describe_result['other_problems'], problem_total=describe_result['problem_total'],
             reasons=describe_result.get('reasons') or [describe_result['reason']], also=describe_result.get('also') or [])
+        if describe_result.get('choice'):
+            entry['choice'] = describe_result['choice']
     return entry
 
 
