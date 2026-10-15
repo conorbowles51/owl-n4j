@@ -491,6 +491,12 @@ def run_due(session_factory=None, graph_session_factory=None, *, stop: Optional[
                 state = _states[case]
                 state.running = False
                 state.next_due = clock() + STALE_RETRY_SECONDS
+                if state.request_generation != generation:
+                    # Imports are still arriving. Retrying in a few seconds
+                    # would redraw the case continuously and never finish,
+                    # slowing the imports themselves; wait for a quiet
+                    # interval or the maximum deferral from now.
+                    state.first_requested = clock()
                 state.last_outcome = "stale"
             results.append(dict(case_id=case, outcome="stale"))
             continue
