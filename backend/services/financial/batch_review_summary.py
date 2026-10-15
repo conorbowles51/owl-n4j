@@ -35,6 +35,9 @@ def reason(problem):
             'currency': 'currency', 'period': 'dates', 'period_start': 'dates', 'period_end': 'dates'}.get(field, 'reading')
     if kind == 'no_activity':
         return 'no_activity'
+    if kind == 'carry_conflict':
+        return {'holder': 'holder', 'account_number': 'account', 'institution': 'institution', 'currency': 'currency',
+                'period_start': 'dates', 'period_end': 'dates'}.get(field, 'reading')
     if kind == 'review_conflict':
         return 'saved_review'
     if kind == 'coverage_load':

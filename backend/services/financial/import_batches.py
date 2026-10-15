@@ -122,6 +122,11 @@ def assess(proposal, request=None):
         problems.append(dict(message='Compare the earlier saved reviews for this file before importing. Saved corrections may belong to different statement periods in the new reading.', row_id=None))
     if not proposal['currency']:
         problems.append(dict(message='Choose the currency printed on these statements.', row_id=None))
+    from services.financial.review_carry import conflict_problems
+    carry_conflicts = conflict_problems(proposal, request)
+    if carry_conflicts:
+        can_import = False
+        problems.extend(carry_conflicts)
     try:
         validated = StatementImportRequest.model_validate(raw)
         check_import_request(proposal, validated)
@@ -343,6 +348,10 @@ VANISHED_PERIOD_MESSAGE = ('This file was read again and the statement periods w
                            'preparation is retained in history; review the periods listed now.')
 
 
+CARRIED_REVIEW_MESSAGE = ('This file was read again and its statement period is now named. Your saved corrections '
+                          'were carried to that statement, which is listed now.')
+
+
 def prepare_reviews(session, batch, file, *, lock_slice=None):
     cache = {}
     fid = UUID(file['file_id'])
@@ -356,6 +365,7 @@ def prepare_reviews(session, batch, file, *, lock_slice=None):
     identifiers = [c['id'] for c in choices]
     if not identifiers: identifiers=[None]
     produced = set()
+    carried_from_file_level = False
     for statement_id in identifiers:
         review_lock.yield_case()
         proposal = read_statement_import(session,case_id=batch.case_id,evidence_file_id=fid,currency=file.get('currency') or None,statement_id=statement_id,_cache=cache)
@@ -367,6 +377,15 @@ def prepare_reviews(session, batch, file, *, lock_slice=None):
         existing = session.get(Item,identifier)
         if existing and existing.status in ('imported','pending_import','skipped','duplicate_ignored'):
             continue
+        if not proposal.get('saved_review') and key:
+            # A review saved on an earlier file-level reading of this file is
+            # carried to the one period this reading names (review_carry).
+            from services.financial.review_carry import carry_file_level_review
+            evidence = session.get(EvidenceFile, fid)
+            record = carry_file_level_review(evidence, proposal, identifiers) if evidence is not None else None
+            if record:
+                proposal = {**proposal, 'saved_review': record}
+                carried_from_file_level = True
         progress = proposal.get('saved_review') or proposal.get('previous_saved_review')
         if existing and existing.review_request and not progress:
             continue  # An independent saved batch draft is never reset by refresh.
@@ -400,6 +419,11 @@ def prepare_reviews(session, batch, file, *, lock_slice=None):
         stale = session.get(Item,uuid5(batch.id,str(fid)+':'))
         if stale and stale.status=='attention' and not stale.review_request:
             session.delete(stale)
+        elif stale and carried_from_file_level and stale.status in ('ready', 'attention'):
+            # Its saved review now lives on the named period; history keeps this one.
+            stale.status = 'superseded_reading'
+            stale.summary = {**stale.summary, 'can_import': False, 'superseded_by_reading': str(fid),
+                             'recovery_message': CARRIED_REVIEW_MESSAGE}
     if RETIRE_VANISHED_PERIODS and not file.get('standalone_import'):
         # The file was read again (refresh from its saved reading) and the current reader no longer finds a
         # period an earlier preparation listed: that untouched item is retired to history, never deleted, so

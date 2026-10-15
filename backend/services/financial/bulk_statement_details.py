@@ -86,6 +86,9 @@ class BulkEdit(BaseModel):
     # Why the values were chosen, kept with each statement's detail history
     # (e.g. a proposal's source when the System applies it).
     basis: str | None = Field(default=None, max_length=1000)
+    # Preview each changed period from its current reading, as the save does
+    # (asked for after a save found a statement read again since listing).
+    read_current: bool = False
 
 
 def _key(target):
@@ -388,14 +391,34 @@ def _row(file, target, values, revision, account_id):
         status='Imported' if target.source_id else 'Not imported', values=values)
 
 
-def _read_draft(session, case_id, target, row, filename, cache):
-    """The full reading of a period listed from its stored batch reading, for a
-    change that depends on it. Its details must still be the listed ones."""
-    full, state = _load(session, case_id, target, cache)
-    if full['values'] != row['values']:
-        raise PdfMappingError(f'{filename}: this statement was read again since its batch check, so the listed details are out of date. '
-            'Open it individually or check its batch again; no details were changed.', 409)
-    return state
+# A queue issue's detail field: choosing a value for it is a confirmation.
+_FLAGGED = {'currency': ('currency',), 'institution': ('institution',), 'holder': ('holder',),
+            'account': ('account_number',), 'dates': ('period_start', 'period_end')}
+
+
+def _flagged_fields(items):
+    """Detail fields this period's current batch reading still asks the investigator for."""
+    from services.financial.review_queue import actionable_problems
+    from services.financial.batch_review_summary import reason
+    flagged = set()
+    for item in items or []:
+        for problem in actionable_problems(item.summary or {}):
+            flagged.update(_FLAGGED.get(problem.get('review_reason') or reason(problem), ()))
+    return flagged
+
+
+def _changes(before, changes, mode, confirm):
+    """Each chosen field's value after this edit, and the fields that change.
+    A chosen value for a flagged field counts even when it equals the shown one."""
+    after = {**before, **{key: value for key, value in changes.items()
+        if mode == 'replace' or not before.get(key, '').strip() or key in confirm}}
+    changed = {}
+    for key in changes:
+        if after[key] != before.get(key, ''):
+            changed[key] = dict(before=before.get(key, ''), after=after[key])
+        elif key in confirm:
+            changed[key] = dict(before=before.get(key, ''), after=after[key], confirmed=True)
+    return after, changed
 
 
 def list_statements(session, *, case_id, selection):
@@ -527,15 +550,32 @@ def _plan(session, case_id, request, *, saving=False):
     for target in targets:
         row, state = _load(session, case_id, target, cache, stored=True)
         if row['revision'] != target.revision:
-            raise PdfMappingError(f'{row["filename"]} changed since selection. Refresh the statements and preview again; no details were changed.', 409)
-        after = {**row['values'], **{key: value for key, value in changes.items()
-            if request.mode == 'replace' or not row['values'].get(key, '').strip()}}
+            raise PdfMappingError(f'{row["filename"]} was read again since you selected it. Review the updated preview, then save.', 409)
+        confirm = set() if target.source_id else _flagged_fields(state.get('items')) & set(changes)
+        after, changed = _changes(row['values'], changes, request.mode, confirm)
+        refreshed = conflicts = None
+        if state.get('stored') and (unprinted or quiet or 'currency' in changed
+                                    or ((saving or request.read_current) and changed)):
+            # A save (and a preview asked for the current version) plans a
+            # change on the period's current reading, saved corrections
+            # applied, not the batch's stored one. A statement read again since
+            # its batch check is shown as it now is, with any edited field that
+            # moved underneath named; the save refuses only a preview that
+            # differs, and that preview is then asked for again with
+            # read_current, never a dead end.
+            current, state = _load(session, case_id, target, cache)
+            if current['values'] != row['values']:
+                refreshed = {key: dict(listed=row['values'].get(key, ''), current=current['values'].get(key, ''))
+                             for key in FIELDS if current['values'].get(key, '') != row['values'].get(key, '')}
+                row = {**current, 'key': row['key']}
+                confirm = _flagged_fields(state.get('items')) & set(changes)
+                after, changed = _changes(row['values'], changes, request.mode, confirm)
+                # The investigator's value would be silently dropped: the
+                # reading now has another value where the listing had none.
+                conflicts = [key for key in changes if key in refreshed and key not in changed
+                             and refreshed[key]['current'] and refreshed[key]['current'] != changes[key]]
         if after.get('period_start') and after.get('period_end') and after['period_start'] > after['period_end']:
             raise PdfMappingError(f'{row["filename"]}: statement start must be on or before statement end.', 422)
-        changed = {key: dict(before=row['values'].get(key, ''), after=after[key]) for key in changes if after[key] != row['values'].get(key, '')}
-        if state.get('stored') and (unprinted or quiet or 'currency' in changed or (saving and changed)):
-            # Only this change depends on the reading: read this period now.
-            state = _read_draft(session, case_id, target, row, row['filename'], cache)
         excluded_reason = None
         if unprinted:
             from services.financial.import_issues import calendar_date
@@ -567,6 +607,7 @@ def _plan(session, case_id, request, *, saving=False):
             state['raw'] = import_batches.rebase_review_currency(state['proposal'], new, state['raw'], after['currency'])
             state['proposal'] = new
         plan.append({**row, 'after': after, 'changes': changed, 'excluded_reason': excluded_reason,
+                     **(dict(refreshed=refreshed, conflicts=conflicts) if refreshed else {}),
                      **(dict(no_activity_revision=no_activity_revision, source_check=source_check) if quiet else {})})
         states.append((target, state))
     revision = _digest(dict(case_id=str(case_id), rows=plan, mode=request.mode, changes=changes, unprinted=unprinted,
@@ -620,7 +661,7 @@ def save(session, *, case_id, request, actor, owned_batch_id=None):
                 .order_by(Source.id).with_for_update().execution_options(populate_existing=True)).all()
         plan, states = _plan(session, case_id, request, saving=True)
         if request.preview_revision != plan['preview_revision']:
-            raise PdfMappingError('Review the current preview before saving these account details.', 409)
+            raise PdfMappingError('A selected statement was read again since this preview. Review the updated preview, then save.', 409)
         account_changes, duplicate_cache = [], {}
         for row, (target, state) in zip(plan['items'], states):
             if not row['changes']:
