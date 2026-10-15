@@ -629,12 +629,11 @@ class StatementImportTests(TransactionPersistenceTestCase):
         from unittest.mock import Mock
         from services.financial.statement_import import _existing_statement
         source = dict(page_number=1, table_index=0)
-        candidates = [SimpleNamespace(evidence_file_id=self.file.id, metadata_={
-            'statement_import_statement_id': str(index),
-            'statement_import_original': {'sources': [source]},
-        }) for index in range(2)]
+        candidates = [SimpleNamespace(id=index, evidence_file_id=self.file.id, superseded_by_id=None, removal=None,
+            statement_id=str(index), assigned_period_ids=None, sources=[source],
+            statement_row_addresses=None, statement_source_regions=None) for index in range(2)]
         session = Mock()
-        session.scalars.return_value = candidates
+        session.execute.return_value = candidates
         with self.assertRaisesRegex(PdfMappingError, 'more than one imported statement'):
             _existing_statement(session, self.case.id, self.file, 'new-period', [(1, 0)])
 
