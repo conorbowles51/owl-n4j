@@ -1845,6 +1845,9 @@ async def advance_batch(factory,batch_id,resolve_path,process_files):
                 if processed:
                     await _finish_atomic(_review_file,factory,batch_id,case_id,deepcopy(file))
                     file['status']='checked'
+                    # The statement-reading code this preparation used (reader_release).
+                    from services.financial.reader_release import reader_stamp
+                    file['reader_stamp']=reader_stamp(); file.pop('recheck', None)
                     file.pop('preparation_retries', None)
                     file.pop('error', None)
                     _reading_progress(file, 'complete', 'The reading is complete. Open its statement review to check reconciliation before importing.', review_file_id=file['file_id'])
@@ -2064,6 +2067,7 @@ def _import_item(factory,case_id,batch_id,item_id,resolve_path):
 
 READINESS_SWEEP_SECONDS = 60
 AUTO_READ_SWEEP_SECONDS = 10
+READER_RELEASE_SWEEP_SECONDS = 120
 READINESS_SWEEP_BUDGET = 20.0
 
 
@@ -2073,6 +2077,7 @@ async def run_batches_forever():
     from services.evidence_processing_service import process_db_files
     next_sweep = time.monotonic() + READINESS_SWEEP_SECONDS
     next_auto_read = time.monotonic()
+    next_reader_release = time.monotonic() + READINESS_SWEEP_SECONDS
     while True:
         try:
             factory=_get_session_local()
@@ -2111,6 +2116,19 @@ async def run_batches_forever():
                     raise
                 except Exception:
                     log.exception('Automatic statement reading round failed; it will retry')
+            if time.monotonic() >= next_reader_release:
+                # After a release that reads statements differently, prepared
+                # files of unfinished batches are prepared again (no click).
+                next_reader_release = time.monotonic() + READER_RELEASE_SWEEP_SECONDS
+                from services.financial.reader_release import sweep as reader_release_sweep
+                try:
+                    released = await _finish_atomic(reader_release_sweep, factory)
+                    if released['rechecked'] or released['compared']:
+                        log.info('Statement files checked again after a release: %s', released)
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    log.exception('Re-checking statement files after a release failed; it will retry')
             if time.monotonic() >= next_sweep:
                 # Batch reads never re-read PDFs. Inputs changed by paths
                 # without their own refresh are brought current here.

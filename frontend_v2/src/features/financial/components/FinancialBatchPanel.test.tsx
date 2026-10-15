@@ -1,11 +1,16 @@
 import {
+  act,
   fireEvent,
   render,
   screen,
   waitFor,
   within,
 } from "@testing-library/react"
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import {
+  focusManager,
+  QueryClient,
+  QueryClientProvider,
+} from "@tanstack/react-query"
 import { MemoryRouter, useLocation } from "react-router-dom"
 import { beforeEach, expect, it, vi } from "vitest"
 import { fetchAPI } from "@/lib/api-client"
@@ -87,6 +92,14 @@ const batch = {
 function Location() {
   const location = useLocation()
   return <output aria-label="Location">{location.search}</output>
+}
+// The batch view has no refresh button: it updates itself while work runs,
+// and like every query it is read again when the investigator returns to it.
+function returnToPage() {
+  act(() => {
+    focusManager.setFocused(false)
+    focusManager.setFocused(true)
+  })
 }
 function mount(entry = "/cases/case/financial?view=statements&batch=batch") {
   return render(
@@ -383,7 +396,7 @@ it("returns to an existing page when corrections remove the last page of matchin
   )
   await screen.findByText("101–101 of 101")
   total = 100
-  fireEvent.click(screen.getByRole("button", { name: "Refresh batch" }))
+  returnToPage()
   await screen.findByText("1–100 of 100")
   expect(
     screen.getByRole("button", { name: "Previous statements" })
@@ -582,21 +595,36 @@ it("confirms the displayed ready list and filters problems across the batch", as
     await screen.findByText(/2 prepared reviews ready.*14 transactions/)
   ).toBeVisible()
 })
-it("checks for additional periods without confirming another import", async () => {
+it("has no refresh steps: it says when files are checked again after an update and reads itself again", async () => {
+  vi.mocked(fetchAPI).mockResolvedValue({
+    ...batch,
+    status: "preparing",
+    files: batch.files.map((file) => ({
+      ...file,
+      status: "processing",
+      recheck: { reason: "reader_release", stamp: "s" },
+    })),
+  } as never)
   mount()
-  fireEvent.click(
-    await screen.findByRole("button", {
+  expect(
+    await screen.findByText(
+      "Loupe was updated, so it is checking 1 file in this batch again. This page updates by itself. No action is needed."
+    )
+  ).toBeVisible()
+  expect(screen.queryByRole("button", { name: "Refresh batch" })).toBeNull()
+  expect(
+    screen.queryByRole("button", {
       name: "Check for additional statement periods",
     })
-  )
-  await waitFor(() =>
-    expect(fetchAPI).toHaveBeenCalledWith(
-      "/api/financial/statement-import/batches/batch/refresh-statements?case_id=case",
-      { method: "POST" }
-    )
-  )
+  ).toBeNull()
+  const reads = () =>
+    vi.mocked(fetchAPI).mock.calls.filter(([url]) => url.includes("/batches/batch?")).length
+  const before = reads()
+  await waitFor(() => expect(reads()).toBeGreaterThan(before), { timeout: 5000 })
   expect(
-    vi.mocked(fetchAPI).mock.calls.some(([url]) => url.includes("/confirm?"))
+    vi.mocked(fetchAPI).mock.calls.some(
+      ([url, options]) => url.includes("refresh-statements") || options?.method
+    )
   ).toBe(false)
 })
 
@@ -1097,14 +1125,13 @@ it("keeps the last confirmed batch visible after a failed refresh and requires f
   })
   mount()
   await screen.findByRole("region", { name: "Financial processing batch" })
-  fireEvent.click(screen.getByRole("button", { name: "Refresh batch" }))
+  returnToPage()
   await screen.findByText(/Progress could not be refreshed/)
   expect(screen.getByRole("region", { name: "Batch progress" })).toBeVisible()
   expect(screen.getByRole("button", { name: "Import 14 transactions" })).toBeDisabled()
-  expect(screen.queryByRole("button", { name: "Check for additional statement periods" })).not.toBeInTheDocument()
   fireEvent.click(screen.getByRole("button", { name: "Retry batch" }))
   await waitFor(() => expect(screen.queryByText(/Progress could not be refreshed/)).not.toBeInTheDocument())
-  expect(screen.getByRole("button", { name: "Check for additional statement periods" })).toBeEnabled()
+  expect(screen.getByRole("button", { name: "Import 14 transactions" })).toBeEnabled()
   expect(vi.mocked(fetchAPI).mock.calls.every(([, options]) => !options?.method)).toBe(true)
 })
 

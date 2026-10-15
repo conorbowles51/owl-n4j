@@ -144,9 +144,12 @@ export function useReviewQueue(
     // screen while a refresh runs, so Next never waits for it.
     placeholderData: keepPreviousData,
     // While statement files are being read, statements join the queue as
-    // each file finishes.
+    // each file finishes; while statements are being checked again or saved,
+    // they move on by themselves. No refresh button is needed for either.
     refetchInterval: (query): number | false =>
-      isReading(query.state.data?.reading) ? READING_POLL_MS : false,
+      isReading(query.state.data?.reading) || isMoving(query.state.data?.counts)
+        ? READING_POLL_MS
+        : false,
     queryFn: async ({ signal }) => {
       const search = new URLSearchParams({ case_id: caseId })
       for (const id of fileIds) search.append("file_id", id)
@@ -164,6 +167,11 @@ export function useReviewQueue(
 }
 
 export const READING_POLL_MS = 15000
+
+/** Statements the server is still checking again or saving. */
+export function isMoving(counts?: { rechecking?: number; saving?: number }) {
+  return Boolean(counts && ((counts.rechecking ?? 0) > 0 || (counts.saving ?? 0) > 0))
+}
 
 export function isReading(reading?: ReadingProgress) {
   return !!reading && (reading.files_reading > 0 || reading.files_waiting_to_start > 0)

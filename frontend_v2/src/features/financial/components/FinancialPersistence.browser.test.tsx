@@ -1,9 +1,10 @@
 import "@/styles/globals.css"
 import "../financial-workspace.css"
 import { page } from "vitest/browser"
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { focusManager, QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { MemoryRouter } from "react-router-dom"
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -50,6 +51,16 @@ vi.mock("./TransactionSourceHighlight", () => ({
   ),
 }))
 vi.mock("./PdfReviewIntake", () => ({ PdfReviewIntake: () => null }))
+
+// No refresh button: the batch view reads itself again while work runs and
+// when the investigator returns to the page (what this simulates).
+function returnToPage() {
+  act(() => {
+    focusManager.setFocused(false)
+    focusManager.setFocused(true)
+  })
+}
+
 const origin = "http://127.0.0.1:58129"
 async function service(
   path: string,
@@ -197,7 +208,7 @@ run(
       .click()
     await screen.findByText(/Importing 1 statements/)
     await service(`/__fixture/advance-batch/${batch.id}`, { method: "POST" })
-    fireEvent.click(screen.getByRole("button", { name: "Refresh batch" }))
+    returnToPage()
     await screen.findByRole("button", { name: "No new statements to import" })
     const saved = (await service("/__fixture/payments")).payments
     expect(saved).toHaveLength(12)
@@ -641,7 +652,7 @@ run(
       })
     ).toEqual(expect.objectContaining({ queued: false, status: "waiting", action: "already_running" }))
     await service(`/__fixture/advance-batch/${batchId}`, { method: "POST" })
-    fireEvent.click(screen.getByRole("button", { name: "Refresh batch" }))
+    returnToPage()
     await waitFor(() =>
       expect(
         screen.queryByText(/The prepared reading is unavailable/)
@@ -653,7 +664,7 @@ run(
       .click()
     await screen.findByText(/Importing 1 statements/)
     await service(`/__fixture/advance-batch/${batchId}`, { method: "POST" })
-    fireEvent.click(screen.getByRole("button", { name: "Refresh batch" }))
+    returnToPage()
     await screen.findByRole("button", { name: "No new statements to import" })
     const saved = (await service("/__fixture/payments")).payments
     expect(saved).toHaveLength(12)
