@@ -177,7 +177,8 @@ def comparison_sources(session, case_id, pending=None, *, read_pending=None, dup
                    Batch.status != 'removed', Item.status.in_(('ready', 'attention', 'pending_import')))).all()
         # One evidence row per PDF, not one per prepared period: joining the file
         # to every item decoded its metadata thousands of times on a large case.
-        owners = {file.id: file for file in session.scalars(select(EvidenceFile).where(
+        from services.financial.source_lineage import case_wide_files
+        owners = {file.id: file for file in session.scalars(case_wide_files().where(
             EvidenceFile.case_id == case_id, EvidenceFile.id.in_({item.file_id for item in items})))} if items else {}
         pending = [(item, owners[item.file_id]) for item in items]
     from services.financial.source_lineage import case_lineage, current_version

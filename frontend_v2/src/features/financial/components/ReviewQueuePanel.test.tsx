@@ -372,3 +372,16 @@ it("after a fix inside a statement, refreshes the queue and its totals and says 
   expect(queueCalls()).toBeGreaterThanOrEqual(before)
   expect(vi.mocked(fetchAPI).mock.calls.filter(([url]) => String(url).includes("/review/queue")).length).toBeGreaterThan(1)
 })
+
+it("loads the next statement in the background so Next shows it without waiting for the server", async () => {
+  mount("/cases/case/financial?view=statements&queue=1&queueItem=i1&queueList=waiting")
+  const itemCalls = (id: string) =>
+    vi.mocked(fetchAPI).mock.calls.filter(([url]) => String(url).includes(`/items/${id}?`)).length
+  expect(await screen.findByLabelText("What needs fixing")).toHaveTextContent("3 rows unreadable on page 7")
+  await waitFor(() => expect(itemCalls("i2")).toBe(1))
+  fireEvent.click(screen.getByRole("button", { name: "Next statement with issues (2 of 2)" }))
+  await waitFor(() =>
+    expect(screen.getByLabelText("What needs fixing")).toHaveTextContent("Currency not printed: choose one")
+  )
+  expect(itemCalls("i2")).toBe(1)
+})

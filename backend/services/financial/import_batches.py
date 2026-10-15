@@ -855,7 +855,8 @@ def _pending_with_files(session, case_id):
         Item.status.in_(('ready', 'attention', 'pending_import')))).all()
     if not items:
         return []
-    owners = {file.id: file for file in session.scalars(select(EvidenceFile).where(
+    from services.financial.source_lineage import case_wide_files
+    owners = {file.id: file for file in session.scalars(case_wide_files().where(
         EvidenceFile.case_id == case_id, EvidenceFile.id.in_({item.file_id for item in items})))}
     return [(item, owners[item.file_id]) for item in items]
 
