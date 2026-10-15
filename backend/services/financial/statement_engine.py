@@ -1353,9 +1353,17 @@ def _heading_currencies(rows, style):
         for name in _HEADING_CURRENCIES:
             if ' ' + name + ' ' in text and (' ' in name or words[-1:] == [name]
                                               or words[:1] == [name] and not _qualified_dollar(words)):
+                if _CODE.fullmatch(name) and not re.search(r'(?<![A-Za-z])' + name + r'(?![A-Za-z])', row['text']):
+                    # A bare code is printed in capitals. OCR noise folds to
+                    # one: 'Ci cad de Mexico' (Ciudad) was read as CAD, 'SA DE
+                    # mn' (SA DE CV) as MN.
+                    continue
                 found.add(CURRENCY_NAMES[name])
                 break
     return found
+
+
+_CODE = re.compile(r'[A-Z]{2,3}')
 
 
 def _qualified_dollar(words):
