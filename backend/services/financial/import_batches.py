@@ -532,25 +532,38 @@ class _AdmittedSource(SimpleNamespace):
     """An admitted saved period of a file: id, statement id, source pages (None if unknown), recovery section."""
 
 
+# The keys a period's readiness reads from each admitted saved period, reused while the row is unchanged
+# (row_versions): reading them detoasted every saved period's whole metadata on each readiness check.
+_ADMITTED_VALUES = None
+
+
+def _admitted_values(values):
+    sources, pages = values['sources'], None
+    if isinstance(sources, list) and sources and all(isinstance(source, dict) and type(source.get('page_number')) is int
+                                                     for source in sources):
+        pages = frozenset(source['page_number'] for source in sources)
+    return dict(statement_id=values['statement_id'] or '', pages=pages, recovery=bool(values['recovery']))
+
+
 def _admitted_sources(session, case_id, file_ids):
     """{file id: [admitted saved periods, by id]}, with only the keys a period's readiness can depend on."""
+    global _ADMITTED_VALUES
     from postgres.models.financial import FinancialSourceDocument
+    from services.financial.row_versions import RowValues
+    if _ADMITTED_VALUES is None:
+        _ADMITTED_VALUES = RowValues(FinancialSourceDocument)
     metadata = FinancialSourceDocument.metadata_
     result = {}
     if file_ids:
-        for file_id, source_id, statement_id, sources, recovery in session.execute(select(
-                FinancialSourceDocument.evidence_file_id, FinancialSourceDocument.id,
-                metadata['statement_import_statement_id'].as_string(),
-                metadata['statement_import_original']['sources'],
-                metadata['statement_recovery_parent_id'].as_string())
-                .where(FinancialSourceDocument.case_id == case_id, FinancialSourceDocument.status == 'admitted',
-                    FinancialSourceDocument.evidence_file_id.in_(list(file_ids)))):
-            pages = None
-            if isinstance(sources, list) and sources and all(isinstance(source, dict) and type(source.get('page_number')) is int
-                                                             for source in sources):
-                pages = frozenset(source['page_number'] for source in sources)
-            result.setdefault(file_id, []).append(_AdmittedSource(id=str(source_id), statement_id=statement_id or '',
-                pages=pages, recovery=bool(recovery)))
+        rows = _ADMITTED_VALUES.rows(session, (FinancialSourceDocument.id, FinancialSourceDocument.evidence_file_id), (
+                metadata['statement_import_statement_id'].as_string().label('statement_id'),
+                metadata['statement_import_original']['sources'].label('sources'),
+                metadata['statement_recovery_parent_id'].as_string().label('recovery')),
+            (FinancialSourceDocument.case_id == case_id, FinancialSourceDocument.status == 'admitted',
+             FinancialSourceDocument.evidence_file_id.in_(list(file_ids))), transform=_admitted_values)
+        for row in rows:
+            result.setdefault(row.evidence_file_id, []).append(_AdmittedSource(id=str(row.id),
+                statement_id=row.statement_id, pages=row.pages, recovery=row.recovery))
     return {key: sorted(value, key=lambda source: source.id) for key, value in result.items()}
 
 

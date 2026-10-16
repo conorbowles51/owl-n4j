@@ -150,6 +150,43 @@ def _saved_keys(session, source_ids):
     return {identity: _SAVED_KEYS.get(identity, (None, None)) for identity in source_ids}
 
 
+# What comparison_sources reads from a prepared period's stored summary (summary_request and the checks
+# below). Only these scalars are kept per item (row_versions): decoding every item's whole summary (14 MB of
+# JSON on a case with 2,400 prepared periods) was the largest part of each import's case comparison.
+COMPARED_SUMMARY_KEYS = ('revision', 'statement_id', 'currency', 'institution', 'account', 'holder', 'account_type',
+                         'period_start', 'period_end', 'account_reference_kind', 'page_number', HYDRATION_ERROR_KEY)
+_PENDING_VALUES = None
+
+
+def _compared_summary(values):
+    summary = values['summary'] if isinstance(values['summary'], dict) else {}
+    return dict(summary={key: summary[key] for key in COMPARED_SUMMARY_KEYS
+                         if key in summary and isinstance(summary[key], (str, int, float, bool, type(None)))},
+                review_request_text=values['review_request_text'])
+
+
+def _pending_copies(session, case_id):
+    """Read-only copies of the case's prepared, unsaved periods: id, file, statement key, status, the
+    compared summary keys and the saved batch review (decoded afresh for every read: callers may change it)."""
+    global _PENDING_VALUES
+    import json
+    from sqlalchemy import Text, cast
+    from services.financial.row_versions import RowValues
+    if _PENDING_VALUES is None:
+        _PENDING_VALUES = RowValues(Item, kept=100_000)
+    rows = _PENDING_VALUES.rows(session, (Item.id, Item.file_id, Item.statement_key, Item.status),
+        (Item.summary.label('summary'), cast(Item.review_request, Text).label('review_request_text')),
+        (Batch.id == Item.batch_id, EvidenceFile.id == Item.file_id, Batch.case_id == case_id,
+         EvidenceFile.case_id == case_id, Batch.status != 'removed',
+         Item.status.in_(('ready', 'attention', 'pending_import'))),
+        order_by=Item.id, transform=_compared_summary)
+    from types import SimpleNamespace
+    return [SimpleNamespace(id=row.id, file_id=row.file_id, statement_key=row.statement_key, status=row.status,
+                            summary=dict(row.summary),
+                            review_request=json.loads(row.review_request_text) if row.review_request_text else None)
+            for row in rows]
+
+
 def comparison_sources(session, case_id, pending=None, *, read_pending=None, duplicate_context=None):
     """Load a case once per batch check, without loading imported PDF readings."""
     periods = session.execute(select(
@@ -171,10 +208,7 @@ def comparison_sources(session, case_id, pending=None, *, read_pending=None, dup
     keys = _saved_keys(session, [row[4] for row in periods])
     imported = [(*row[:5], *keys[row[4]], *row[5:]) for row in periods]
     if pending is None:
-        items = session.scalars(select(Item).join(Batch, Batch.id == Item.batch_id)
-            .join(EvidenceFile, EvidenceFile.id == Item.file_id)
-            .where(Batch.case_id == case_id, EvidenceFile.case_id == case_id,
-                   Batch.status != 'removed', Item.status.in_(('ready', 'attention', 'pending_import')))).all()
+        items = _pending_copies(session, case_id)
         # One evidence row per PDF, not one per prepared period: joining the file
         # to every item decoded its metadata thousands of times on a large case.
         from services.financial.source_lineage import case_files

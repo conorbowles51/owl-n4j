@@ -66,6 +66,23 @@ def _reading_dates(fields, reviewed_date, date_values=None):
 READ_ONLY_LISTING = 'read_only_listing'
 
 
+# The values _existing_statement compares, per saved source document, reused while the row is unchanged:
+# reading them detoasted every saved period's whole metadata three times per import (row_versions). The
+# reused source lists are only read here, never changed.
+_EXISTING_VALUES = None
+
+
+def _existing_values(session, keys, conditions):
+    """[row] of the saved sources matching ``conditions``, ordered by id, with ``keys``' values."""
+    global _EXISTING_VALUES
+    from postgres.models.financial import FinancialSourceDocument
+    from services.financial.row_versions import RowValues
+    if _EXISTING_VALUES is None:
+        _EXISTING_VALUES = RowValues(FinancialSourceDocument)
+    return _EXISTING_VALUES.rows(session, (FinancialSourceDocument.id, FinancialSourceDocument.evidence_file_id,
+        FinancialSourceDocument.superseded_by_id), keys, conditions, order_by=FinancialSourceDocument.id)
+
+
 def _existing_statement(session, case_id, file, statement_id, addresses=(), row_addresses=None, source_regions=None, *, excluded_duplicates=False, memo=None):
     from postgres.models.financial import FinancialSourceDocument
     # Only the keys compared below are loaded. Every saved period of a
@@ -75,16 +92,14 @@ def _existing_statement(session, case_id, file, statement_id, addresses=(), row_
     # period: 120 MB of JSON per check, growing with every import.
     metadata = FinancialSourceDocument.metadata_
     original = metadata['statement_import_original']
-    query = select(FinancialSourceDocument.id, FinancialSourceDocument.evidence_file_id,
-                   FinancialSourceDocument.superseded_by_id,
-                   metadata['financial_import_removal'].label('removal'),
-                   metadata['statement_import_statement_id'].label('statement_id'),
-                   original['assigned_period_ids'].label('assigned_period_ids'),
-                   original['sources'].label('sources'),
-                   original['statement_row_addresses'].label('statement_row_addresses'),
-                   original['statement_source_regions'].label('statement_source_regions')).where(
-        FinancialSourceDocument.case_id == case_id,
-        FinancialSourceDocument.sha256_at_ingestion == file.sha256)
+    keys = (metadata['financial_import_removal'].label('removal'),
+            metadata['statement_import_statement_id'].label('statement_id'),
+            original['assigned_period_ids'].label('assigned_period_ids'),
+            original['sources'].label('sources'),
+            original['statement_row_addresses'].label('statement_row_addresses'),
+            original['statement_source_regions'].label('statement_source_regions'))
+    conditions = [FinancialSourceDocument.case_id == case_id,
+                  FinancialSourceDocument.sha256_at_ingestion == file.sha256]
     if excluded_duplicates:
         # A fresh OCR reading of this same source must not bypass its recorded
         # duplicate exclusion. Unrelated copies with the same bytes are not
@@ -98,18 +113,18 @@ def _existing_statement(session, case_id, file, statement_id, addresses=(), row_
             EvidenceFile.case_id == case_id,
             (EvidenceFile.id == root_id) |
             (EvidenceFile.metadata_['statement_root_evidence_id'].as_string() == str(root_id)))
-        query = query.where(FinancialSourceDocument.status == 'superseded',
+        conditions += [FinancialSourceDocument.status == 'superseded',
             FinancialSourceDocument.duplicate_match_rung.is_not(None),
-            FinancialSourceDocument.evidence_file_id.in_(related_files))
+            FinancialSourceDocument.evidence_file_id.in_(related_files)]
     else:
-        query = query.where(FinancialSourceDocument.status != 'superseded')
+        conditions.append(FinancialSourceDocument.status != 'superseded')
     if memo is not None:
         memo_key = ('existing_sources', str(case_id), file.sha256, excluded_duplicates, str(file.id) if excluded_duplicates else '')
         if memo_key not in memo:
-            memo[memo_key] = list(session.execute(query.order_by(FinancialSourceDocument.id)))
+            memo[memo_key] = _existing_values(session, keys, conditions)
         candidates = memo[memo_key]
     else:
-        candidates = session.execute(query.order_by(FinancialSourceDocument.id))
+        candidates = _existing_values(session, keys, conditions)
     addresses = set(addresses)
     row_addresses = {tuple(value) for value in row_addresses} if row_addresses is not None else None
     matches = []
