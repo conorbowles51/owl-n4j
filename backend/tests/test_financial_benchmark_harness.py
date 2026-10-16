@@ -95,6 +95,24 @@ class VerifyLedgerTests(TestCase):
         result['metrics'] = harness.metrics(result)
         self.assertTrue(any('saved twice' in f for f in harness.safety_failures(result)))
 
+    def test_two_statements_the_truth_tells_apart_are_not_saved_twice_even_with_equal_values(self):
+        # Two quiet sections of one member: same account, dates and balances, no
+        # payments, two printed statements (the real set has 16 such pairs).
+        first_share = _truth('q.pdf#1', 'q.pdf', rows=[])
+        second_share = _truth('q.pdf#2', 'q.pdf', rows=[])
+        self.truths.update({t['id']: t for t in (first_share, second_share)})
+        one, two = str(uuid.uuid4()), str(uuid.uuid4())
+        periods = [_period('i1', first_share), _period('i2', second_share)]
+        final = {'i1': dict(status='imported', source_document_id=one),
+                 'i2': dict(status='imported', source_document_id=two)}
+        ledger = self.verify(periods, final, {})
+        self.assertEqual((ledger['printed_periods_saved_twice'], ledger['duplicate_contributions']), (0, 0))
+
+    def test_a_real_truth_copy_names_its_original_period(self):
+        copy = _truth('r.pdf#1', 'r.pdf', expected='duplicate', duplicate_of='a.pdf#1')
+        self.assertEqual(harness.printed_statement(copy, {**self.truths, copy['id']: copy}), 'a.pdf#1')
+        self.assertEqual(harness.printed_statement(self.copy, self.truths), 'a.pdf#1')
+
     def test_repeated_payments_in_different_periods_are_not_duplicate_contributions(self):
         later = _truth('c.pdf#1', 'c.pdf', period_start='2023-02-01', period_end='2023-02-28')
         self.truths[later['id']] = later

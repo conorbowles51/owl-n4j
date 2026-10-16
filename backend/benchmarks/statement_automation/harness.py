@@ -888,6 +888,28 @@ def proposal_field_errors(proposal, truth):
     return {k: v for k, v in errors.items() if v}
 
 
+def printed_statement(truth, truths):
+    """The truth period a copy repeats, else the period itself: what "the same printed statement" means.
+
+    The truth decides it, not equal values: two quiet sections of one member
+    with the same account, dates and zero balances are two statements (bench
+    r7-autosave: 16 such pairs). Real truth names the original period
+    (``duplicate_of`` = its id); the synthetic corpus names the original file,
+    whose period with the same dates and money is the original.
+    """
+    original = truth.get('duplicate_of')
+    if not original:
+        return truth['id']
+    if original in truths:
+        return original
+    for other in truths.values():
+        if (other.get('filename') == original and not other.get('duplicate_of')
+                and (other['period_start'], other['period_end']) == (truth['period_start'], truth['period_end'])
+                and _same_money(other, truth)):
+            return other['id']
+    return truth['id']
+
+
 def verify_ledger(db, periods, final_items, truths, Transaction, Account, select, incomplete_files=()):
     """Compare every saved transaction with the period it was admitted from.
 
@@ -900,7 +922,7 @@ def verify_ledger(db, periods, final_items, truths, Transaction, Account, select
     original's import) adds no rows; it is counted in ``items_sharing_a_saved_statement``
     and judged by the copy check in :func:`safety_failures`. ``duplicate_contributions``
     are the rows written through a second saved statement of the same printed
-    period (same account digits, dates, currency and printed balances).
+    statement, as the truth judges it (:func:`printed_statement`: a copy is its original).
     ``repeated_amount_date_rows`` is the older, coarse figure (rows sharing family,
     account, amount, direction and date), kept for comparison with earlier runs:
     on real statements it also counts genuine repeated payments.
@@ -923,9 +945,7 @@ def verify_ledger(db, periods, final_items, truths, Transaction, Account, select
         rows = list(db.scalars(select(Transaction).where(
             Transaction.source_document_id == uuid.UUID(item['source_document_id']))))
         identity = truths.get(period['truth_id'])
-        printed = ((_digits(identity['account']), identity['period_start'], identity['period_end'], identity['currency'],
-                    identity.get('opening_minor'), identity.get('closing_minor'))
-                   if identity else ('saved statement', item['source_document_id']))
+        printed = printed_statement(identity, truths) if identity else ('saved statement', item['source_document_id'])
         printed_periods[printed][item['source_document_id']] = len(rows)
         truth = truths.get(period['truth_id'])
         if truth is None and period.get('filename') in incomplete_files:
