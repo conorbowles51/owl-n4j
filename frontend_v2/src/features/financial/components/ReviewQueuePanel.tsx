@@ -554,7 +554,9 @@ export function ReviewQueuePanel({
               {list === "waiting"
                 ? "Nothing is waiting for you."
                 : list === "copies"
-                  ? "No copies."
+                  ? query.data.copy_files.length > 0
+                    ? "No statement is a copy; the files below are."
+                    : "No copies."
                 : list === "filled"
                   ? "No statement waits only for details found automatically."
                   : "Every statement could be read."}
@@ -594,7 +596,9 @@ export function ReviewQueuePanel({
                     )}
                     {list === "copies" && (
                       <p className="mt-1">
-                        {entry.set_aside
+                        {entry.copy_reason === "same_file_read"
+                          ? `Same file as ${entry.copy_of ?? "another upload"}, which was read. This upload's own reading is not used. It counts nothing.`
+                          : entry.set_aside
                           ? `Set aside as a copy${entry.copy_of ? ` of ${entry.copy_of}` : ""}. It counts nothing.`
                           : "Possible copy of another statement: compare it with the original."}
                       </p>
@@ -616,6 +620,27 @@ export function ReviewQueuePanel({
                 </li>
               ))}
             </ol>
+          )}
+          {list === "copies" && query.data.copy_files.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-sm font-medium">Files set aside as copies</p>
+              <ul className="divide-y rounded border">
+                {query.data.copy_files.map((file) => (
+                  <li
+                    key={`${file.batch_id}:${file.source_id}`}
+                    className="flex flex-wrap items-center justify-between gap-2 p-3 text-sm"
+                  >
+                    <span>
+                      {file.filename}: same file as {file.copy_of ?? "another upload"}, which was read. This
+                      upload could not be prepared and counts nothing.
+                    </span>
+                    <Button size="sm" variant="outline" onClick={() => onOpenBatch(file.batch_id)}>
+                      Open its batch
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
           {list === "unreadable" && query.data.unreadable_files.length > 0 && (
             <div className="space-y-2">

@@ -561,6 +561,51 @@ def _failed_files(session, case_id, file_filter):
     return list(failed.values())
 
 
+def _set_aside_read_copies(session, case_id, entries, failed):
+    """Move failed readings of a file that another upload of the same bytes read into copies.
+
+    A second upload of the same bytes reaches the copy review only through its
+    own statements. When its reading failed (an older reader, a removed import's
+    lost source) it would stay under "Couldn't read" for good although the same
+    PDF was read through another upload. Such entries are set aside, linked to
+    the upload that was read. Nothing is written; if that upload also could not
+    read a statement, its own entry still says so.
+    """
+    read = {e['file_id'] for e in entries if e['bucket'] not in ('unreadable', 'unexplained')}
+    failed_ids = {f.get('file_id') or f.get('source_id') for f in failed}
+    wanted = {e['file_id'] for e in entries if e['bucket'] == 'unreadable'} | failed_ids
+    if not read or not wanted:
+        return entries, failed, []
+    ids = {UUID(i) for i in read | wanted if i and _uuid(i)}
+    files = {str(row[0]): (row[1], row[2]) for row in session.execute(select(
+        EvidenceFile.id, EvidenceFile.sha256, EvidenceFile.original_filename).where(
+        EvidenceFile.case_id == case_id, EvidenceFile.id.in_(ids)))}
+    read_by_sha = {}
+    for file_id in sorted(read):
+        sha, name = files.get(file_id, (None, None))
+        if sha:
+            read_by_sha.setdefault(sha, (file_id, name))
+
+    def copy_of(file_id):
+        sha = files.get(file_id, (None, None))[0]
+        match = read_by_sha.get(sha) if sha else None
+        return match if match and match[0] != file_id else None
+
+    for entry in entries:
+        match = copy_of(entry['file_id']) if entry['bucket'] == 'unreadable' else None
+        if match:
+            entry.update(bucket='copies', set_aside=True, copy_of=match[1] or None,
+                         copy_reason='same_file_read', copy_file_id=match[0])
+    kept, copies = [], []
+    for file in failed:
+        match = copy_of(file.get('file_id') or file.get('source_id'))
+        if match:
+            copies.append(dict(file, copy_of=match[1] or None, copy_file_id=match[0]))
+        else:
+            kept.append(file)
+    return entries, kept, copies
+
+
 def _uuid(value):
     try:
         UUID(str(value))
@@ -577,11 +622,16 @@ def case_review_queue(session, *, case_id, file_ids=None, use_cache=True):
     # Live (not cached): files being read or prepared, for "Reading 12 of 40 files".
     reading = dict(reading_progress(session, case_id=case_id), unread_statement_files=unread)
     file_filter = {str(i) for i in file_ids or []}
+    # Decided over the whole case: the upload that was read may be outside the filter.
+    entries, failed, copy_files = _set_aside_read_copies(session, case_id, entries, _failed_files(session, case_id, set()))
     if file_filter:
         entries = [e for e in entries if file_filter & set(e['file_ids'])]
-    failed = _failed_files(session, case_id, file_filter)
+        within = lambda f: bool({f.get('file_id'), f.get('source_id')} & file_filter)
+        failed, copy_files = [f for f in failed if within(f)], [f for f in copy_files if within(f)]
     counts = _counts(entries)
     counts['unreadable_files'] = len(failed)
+    counts['copies'] += len(copy_files)
+    counts['copy_files'] = len(copy_files)
     waiting_for_reader = reader_files(entries)
     for entry in entries:
         entry.pop('root', None)
@@ -591,7 +641,7 @@ def case_review_queue(session, *, case_id, file_ids=None, use_cache=True):
         ready_batches[entry['batch_id']] = ready_batches.get(entry['batch_id'], 0) + 1
     return dict(case_id=str(case_id), file_ids=sorted(file_filter), counts=counts,
         status_line=status_line(counts, reading), reading=reading, items=pick('waiting'), copies=pick('copies'),
-        unreadable=pick('unreadable'), unreadable_files=failed, rechecking=pick('rechecking'),
+        unreadable=pick('unreadable'), unreadable_files=failed, copy_files=copy_files, rechecking=pick('rechecking'),
         unexplained=pick('unexplained'), ready=pick('ready'), filled=pick('filled'),
         reader_fix=pick('reader_fix'), reader_files=waiting_for_reader,
         ready_batches=[dict(batch_id=key, statements=value) for key, value in

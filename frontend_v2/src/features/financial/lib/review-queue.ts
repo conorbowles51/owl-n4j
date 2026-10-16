@@ -40,6 +40,8 @@ const entry = z.object({
   reader_file: z.boolean().optional(),
   copy_of: z.string().nullish(),
   set_aside: z.boolean().optional(),
+  /** "same_file_read": this upload's reading failed; the same bytes were read through another upload. */
+  copy_reason: z.string().nullish(),
   /** Proposed values for missing details (value, its source, whether it is certain). */
   proposals: z
     .record(
@@ -64,6 +66,8 @@ export const queueCounts = z.object({
   copies: z.number(),
   unreadable: z.number(),
   unreadable_files: z.number().default(0),
+  /** Failed files set aside as copies; already included in `copies`. */
+  copy_files: z.number().default(0),
   rechecking: z.number().default(0),
   left_unimported: z.number().default(0),
   assigned: z.number().default(0),
@@ -99,6 +103,19 @@ export const reviewQueue = z.object({
         file_id: z.string().nullish(),
         filename: z.string(),
         message: z.string(),
+      })
+    )
+    .default([]),
+  /** Files that could not be prepared, set aside because the same file was read through another upload. */
+  copy_files: z
+    .array(
+      z.object({
+        batch_id: z.string(),
+        source_id: z.string().nullish(),
+        file_id: z.string().nullish(),
+        filename: z.string(),
+        message: z.string(),
+        copy_of: z.string().nullish(),
       })
     )
     .default([]),
