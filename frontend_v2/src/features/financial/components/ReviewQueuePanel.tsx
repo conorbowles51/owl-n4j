@@ -9,6 +9,7 @@ import {
   importOutcome,
   savedOutcome,
   fillAndSaveReady,
+  readRetainedAfresh,
   useReviewQueue,
   type QueueEntry,
   type QueueSaveResult,
@@ -176,7 +177,23 @@ export function ReviewQueuePanel({
   const issue = params.get("queueIssue") || ""
   const query = useReviewQueue(caseId, fileIds)
   const client = useQueryClient()
-  const { canEdit } = useFinancialAccess()
+  const { canEdit, canUpload } = useFinancialAccess()
+  const [readingAfresh, setReadingAfresh] = useState(false)
+  const [afreshResult, setAfreshResult] = useState("")
+  const readAfresh = async () => {
+    if (!query.data || readingAfresh) return
+    setReadingAfresh(true)
+    setAfreshResult("")
+    try {
+      setAfreshResult(await readRetainedAfresh(caseId, query.data))
+    } catch (error) {
+      setAfreshResult(error instanceof Error ? error.message : "Reading afresh could not start.")
+    } finally {
+      setReadingAfresh(false)
+      void client.invalidateQueries({ queryKey: ["financial-review-queue", caseId] })
+      void client.invalidateQueries({ queryKey: ["financial-review-status", caseId] })
+    }
+  }
   const [saving, setSaving] = useState("")
   const [saveResult, setSaveResult] = useState<QueueSaveResult | null>(null)
   const [saveError, setSaveError] = useState("")
@@ -624,6 +641,25 @@ export function ReviewQueuePanel({
           {list === "unreadable" && query.data.unreadable_files.length > 0 && (
             <div className="space-y-2">
               <p className="text-sm font-medium">Files that could not be prepared</p>
+              {(() => {
+                const afresh = query.data.unreadable_files.filter((file) => file.read_afresh_revision).length
+                if (!afresh) return null
+                return (
+                  <div className="space-y-2 rounded border p-3 text-sm" aria-label="Read removed PDFs afresh">
+                    <p>
+                      {afresh} {afresh === 1 ? "PDF's" : "PDFs'"} earlier imports were removed, and the copy they were to
+                      be read again from is no longer in Evidence. Reading them afresh checks each PDF's bytes first;
+                      the removals and earlier reviews stay in history.
+                    </p>
+                    {canEdit && canUpload && (
+                      <Button size="sm" disabled={readingAfresh} onClick={() => void readAfresh()}>
+                        {readingAfresh ? "Starting…" : `Read ${afresh} ${afresh === 1 ? "PDF" : "PDFs"} afresh`}
+                      </Button>
+                    )}
+                    {afreshResult && <p role="status">{afreshResult}</p>}
+                  </div>
+                )
+              })()}
               <ul className="divide-y rounded border">
                 {query.data.unreadable_files.map((file) => (
                   <li

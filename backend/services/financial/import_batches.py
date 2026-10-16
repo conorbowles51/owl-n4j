@@ -2439,6 +2439,30 @@ def retry_file(session, *, case_id, batch_id, source_id, _commit=True, _prepared
     return result
 
 
+def recover_retained_sources(session, *, case_id, files, actor):
+    """Read several retained PDFs afresh under one explicit request.
+
+    Each file goes through recover_retained_source with the revision the
+    investigator was shown, so every one is checked and byte-verified exactly
+    as a single request; one refused file does not stop the others.
+    """
+    queued = already = 0
+    refused = []
+    for file in files:
+        try:
+            result = recover_retained_source(session, case_id=case_id, batch_id=UUID(str(file['batch_id'])),
+                source_id=UUID(str(file['source_id'])), expected_revision=file['expected_revision'], actor=actor)
+        except PdfMappingError as error:
+            session.rollback()
+            refused.append(dict(batch_id=str(file['batch_id']), source_id=str(file['source_id']), message=str(error)))
+            continue
+        if result.get('queued'):
+            queued += 1
+        else:
+            already += 1
+    return dict(requested=len(files), queued=queued, already=already, refused=refused)
+
+
 def recover_retained_source(session, *, case_id, batch_id, source_id, expected_revision, actor):
     """Explicitly start a new reading from the selected PDF, not a stale pointer."""
     from services.financial.file_visibility import financial_file_visibility
