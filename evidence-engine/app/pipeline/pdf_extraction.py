@@ -27,6 +27,7 @@ MIN_MEANINGFUL_ALNUM = 100
 MIN_MEANINGFUL_WORDS = 15
 MIN_IMAGE_COVERAGE = 0.50
 MIN_VECTOR_DRAWINGS = 1000
+MIN_OUTLINE_CHARACTERS_OVER_IMAGE = 300
 LOW_CONFIDENCE_THRESHOLD = 60.0
 MIN_OCR_DPI = 150
 MIN_RELIABLE_OSD_CONFIDENCE = 15.0
@@ -48,7 +49,11 @@ MAX_OSD_TIMEOUT_SECONDS = 30.0
 # printed amounts OCR skipped are added from their outlines.
 # v19 (r7-alex-queue): a vector-text page whose character outlines run left to right is read
 # upright without asking orientation detection (vector_glyph_reading.drawn_upright).
-PDF_READING_REVISION = 'bank-payment-rows-v19'
+# v20 (r8-mt-engine): on a vector-text page a printed line OCR skipped altogether is read from its
+# own crop (vector_glyph_reading.unread_lines), the printed lines still unread are recorded, and a
+# figure token whose narrow characters stand a space-wide bearing apart is re-read from its outlines;
+# a page drawing its characters as outlines over an image covering most of it is vector text.
+PDF_READING_REVISION = 'bank-payment-rows-v20'
 OSD_INSUFFICIENT_TEXT_MARKERS = ("too few characters", "skipping this page")
 
 
@@ -163,14 +168,24 @@ def _vector_text_page(page: fitz.Page) -> bool:
     pages group a whole printed line into one path (84 paths, 33,000 segments),
     so the path count alone (``MIN_VECTOR_DRAWINGS``) missed them.
     """
-    if _image_coverage(page) >= MIN_IMAGE_COVERAGE:
-        return False
+    covered = _image_coverage(page) >= MIN_IMAGE_COVERAGE
     try:
         drawings = page.get_drawings()
     except Exception:
         logger.debug("Unable to inspect page vector drawings", exc_info=True)
         return False
-    from app.pipeline.vector_glyph_reading import MIN_VECTOR_SEGMENTS, vector_segments
+    from app.pipeline.vector_glyph_reading import MIN_VECTOR_SEGMENTS, page_glyphs, vector_segments
+    if covered:
+        # An image under most of the page is a scan, unless the page also draws its characters as
+        # outlines over it (a shaded background image behind the tables; measured on the real truth
+        # set: 6 such pages, each with more than 1,600 character outlines; the image-covered pages
+        # that also carry vector drawings draw at most 3).
+        try:
+            return (vector_segments(drawings) >= MIN_VECTOR_SEGMENTS
+                    and len(page_glyphs(page, drawings)) >= MIN_OUTLINE_CHARACTERS_OVER_IMAGE)
+        except Exception:
+            logger.debug("Unable to group page outlines", exc_info=True)
+            return False
     return len(drawings) >= MIN_VECTOR_DRAWINGS or vector_segments(drawings) >= MIN_VECTOR_SEGMENTS
 
 
@@ -781,7 +796,96 @@ def _drop_inkless_words(data: dict, image: Image.Image) -> tuple[dict, list[dict
     return filtered, dropped
 
 
-def _read_vector_outlines(page: fitz.Page, data: dict, dpi: int) -> tuple[dict, dict | None]:
+# A printed line page OCR skipped is read from its own crop: at most this many lines per page, each
+# word kept only at this OCR confidence or more (a lone mark or noise reads lower).
+MAX_UNREAD_LINES = 40
+UNREAD_LINE_MIN_CONFIDENCE = 60.0
+
+
+def _read_unread_lines(image: Image.Image, data: dict, words: list, glyphs: list, dpi: int,
+                       deadline: float | None) -> tuple[dict, list[dict]]:
+    """``data`` with the words of printed lines page OCR skipped, each read from the line's own image.
+
+    The character outlines show every printed line (``vector_glyph_reading.unread_lines``):
+    a run of characters no OCR word covers is cropped from the page render, made black on
+    white at the inkless threshold (vector print renders solid black; a shaded band does
+    not), and read as one text line. A word is kept only when its confidence is at least
+    ``UNREAD_LINE_MIN_CONFIDENCE`` and every character under it belongs to that run; a line
+    with any word of letters or figures below that confidence is not read at all (part of a
+    line is not its reading). Marks without a letter or figure are left out. Kept words are
+    re-read from the outlines like every other word. Any failure (including the page's time
+    budget) keeps the lines read so far.
+    """
+    from app.pipeline.vector_glyph_reading import _Index, unread_lines
+    scale = 72.0 / dpi
+    found = []
+    index = _Index(glyphs)
+    try:
+        for box, run in unread_lines(glyphs, words)[:MAX_UNREAD_LINES]:
+            x0, y0, x1, y1 = box
+            pad = max(2.0, 0.5 * (y1 - y0))
+            left, top = max(0, math.floor((x0 - pad) / scale)), max(0, math.floor((y0 - pad) / scale))
+            right = min(image.width, math.ceil((x1 + pad) / scale))
+            bottom = min(image.height, math.ceil((y1 + pad) / scale))
+            if right <= left or bottom <= top:
+                continue
+            crop = image.crop((left, top, right, bottom)).convert('L').point(
+                lambda value: 0 if value < INKLESS_WORD_THRESHOLD else 255)
+            try:
+                read = pytesseract.image_to_data(crop, lang=settings.tesseract_lang,
+                    config=f"--oem 1 --psm 7 --dpi {dpi}", output_type=pytesseract.Output.DICT,
+                    timeout=_remaining_ocr_timeout(deadline) if deadline is not None else 0)
+            finally:
+                crop.close()
+            members = {id(g) for g in run}
+            line = []
+            for i, text in enumerate(read.get('text') or []):
+                text = str(text or '').strip()
+                try:
+                    confidence = float(read['conf'][i])
+                except (TypeError, ValueError):
+                    confidence = -1.0
+                if not text or not re.search(r'[0-9A-Za-z]', text):
+                    continue
+                if confidence < UNREAD_LINE_MIN_CONFIDENCE:
+                    # Part of a line is not a reading of it: the line stays unread.
+                    line = []
+                    break
+                w_left, w_top = left + read['left'][i], top + read['top'][i]
+                w_width, w_height = read['width'][i], read['height'][i]
+                page_box = (w_left * scale, w_top * scale, (w_left + w_width) * scale, (w_top + w_height) * scale)
+                under = index.within(*page_box)
+                if not under or not all(id(g) in members for g in under):
+                    line = []
+                    break
+                line.append((text, confidence, (w_left, w_top, w_width, w_height)))
+            if line:
+                found.append(line)
+    except Exception:
+        logger.warning('Unread outline line reading stopped; keeping the lines read so far', exc_info=True)
+    if not found:
+        return data, []
+    texts = data.get("text") or []
+    data = {name: list(values) if isinstance(values, list) and len(values) == len(texts) else values
+            for name, values in data.items()}
+    block = max((b for b in data.get('block_num') or [0] if isinstance(b, int)), default=0)
+    record = []
+    for number, line in enumerate(found, start=1):
+        for word_number, (text, confidence, (left, top, width, height)) in enumerate(line, start=1):
+            row = dict(level=5, page_num=1, block_num=block + number, par_num=1, line_num=1, word_num=word_number,
+                       left=left, top=top, width=width, height=height, conf=confidence, text=text)
+            for name, values in data.items():
+                if isinstance(values, list):
+                    values.append(row.get(name, 0))
+        boxes = [(l, t, l + w, t + h) for _, _, (l, t, w, h) in line]
+        record.append(dict(text=' '.join(text for text, _, _ in line),
+                           rect=[round(min(b[0] for b in boxes) * scale * 1000), round(min(b[1] for b in boxes) * scale * 1000),
+                                 round(max(b[2] for b in boxes) * scale * 1000), round(max(b[3] for b in boxes) * scale * 1000)]))
+    return data, record
+
+
+def _read_vector_outlines(page: fitz.Page, data: dict, dpi: int, *, image: Image.Image | None = None,
+                          deadline: float | None = None) -> tuple[dict, dict | None]:
     """``data`` with each recognised word re-read from the page's character outlines (``vector_glyph_reading``).
 
     Returns the record of what was read: the shape labels the page's OCR
@@ -790,7 +894,7 @@ def _read_vector_outlines(page: fitz.Page, data: dict, dpi: int) -> tuple[dict, 
     was added as a printed amount OCR skipped.
     """
     from app.pipeline.vector_glyph_reading import (METHOD, inkless, other_ink, page_glyphs, read_words, shape_labels,
-        unread_words)
+        unread_lines, unread_words)
     texts = data.get("text") or []
     fields = ("left", "top", "width", "height")
     if any(not isinstance(data.get(name), list) or len(data[name]) != len(texts) for name in fields):
@@ -801,6 +905,13 @@ def _read_vector_outlines(page: fitz.Page, data: dict, dpi: int) -> tuple[dict, 
              for i in range(len(texts))]
     drawings = page.get_drawings()
     glyphs = page_glyphs(page, drawings)
+    lines_read = []
+    if image is not None and glyphs:
+        data, lines_read = _read_unread_lines(image, data, words, glyphs, dpi, deadline)
+        texts = data["text"]
+        words = [(str(texts[i] or ''), (data["left"][i] * scale, data["top"][i] * scale,
+                  (data["left"][i] + data["width"][i]) * scale, (data["top"][i] + data["height"][i]) * scale))
+                 for i in range(len(texts))]
     ink = other_ink(page, drawings)
     labels = shape_labels(glyphs, words)
     readings = read_words(glyphs, labels, words)
@@ -836,14 +947,19 @@ def _read_vector_outlines(page: fitz.Page, data: dict, dpi: int) -> tuple[dict, 
                 if isinstance(values, list) and name != 'text':
                     values.append(row.get(name, 0))
             new_texts.append(text)
+    # Printed lines still under no word after every reading above: kept so a reader of the page knows
+    # where its text is incomplete (``lines_checked`` marks a reading that looked).
+    final_words = [(t, box) for t, (_, box) in zip(new_texts, words)] + [(t, box) for t, box, _ in added]
+    lines_unread = [[round(v * 1000) for v in box] for box, _ in unread_lines(glyphs, final_words)]
     record = dict(field='vector_glyph_reading', method=METHOD,
-                  decision='read' if changed or dropped or added else 'unchanged',
+                  decision='read' if changed or dropped or added or lines_read else 'unchanged',
                   characters=len(glyphs), shapes=len({g.shape for g in glyphs}), labelled_shapes=len(labels),
                   characters_labelled=sum(g.shape in labels for g in glyphs),
                   words_read=sum(r is not None for r in readings), words_changed=changed, words_dropped=dropped,
                   words_added=[dict(text=t, rect=[round(v * 1000) for v in box]) for t, box, _ in added],
+                  lines_read=lines_read, lines_checked=True, lines_unread=lines_unread,
                   labels=[[shape, label, votes, total] for shape, (label, votes, total) in sorted(labels.items())])
-    return (dict(data, text=new_texts) if changed or dropped or added else data), record
+    return (dict(data, text=new_texts) if changed or dropped or added or lines_read else data), record
 
 
 def _ocr_page(page: fitz.Page, *, drop_inkless_words: bool = False,
@@ -972,8 +1088,9 @@ def _ocr_page(page: fitz.Page, *, drop_inkless_words: bool = False,
                 text, confidence = _text_and_confidence_from_tesseract(best_data)
         if vector_text and best_rotation == 0 and not page.rotation:
             try:
-                best_data, outlines = _read_vector_outlines(page, best_data, dpi)
-                if outlines and (outlines['words_changed'] or outlines['words_dropped'] or outlines['words_added']):
+                best_data, outlines = _read_vector_outlines(page, best_data, dpi, image=image, deadline=deadline)
+                if outlines and (outlines['words_changed'] or outlines['words_dropped'] or outlines['words_added']
+                                 or outlines['lines_read']):
                     text, confidence = _text_and_confidence_from_tesseract(best_data)
             except Exception:
                 logger.warning('Vector outline reading unavailable; retaining the OCR reading', exc_info=True)

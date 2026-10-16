@@ -377,3 +377,84 @@ def test_a_column_rule_read_after_every_amount_still_labels_and_is_dropped():
     assert G._without_added_marks('(1.00)', [None] * 6) == '(1.00)'
     assert G._without_added_marks('1.00)', [None] * 4) == '1.00'
     assert G._without_added_marks('1.00))', [None] * 5) == '1.00))'
+
+
+def _wide_one_date_page(gap_share=0.4):
+    """LINES plus, at y=320, the date '11/05/2021' whose two 1s stand ``gap_share`` of the height apart."""
+    doc, page, _ = _page(LINES)
+    draw_outlined(page, [(300, 320, '1')])
+    left = max(g.x1 for g in G.page_glyphs(page) if g.y1 > 310)
+    height = max(g.y1 - g.y0 for g in G.page_glyphs(page) if g.y1 > 310)
+    probe = fitz.open().new_page()
+    draw_outlined(probe, [(0, 320, '1/05/2021')])
+    bearing = min(g.x0 for g in G.page_glyphs(probe))
+    draw_outlined(page, [(left + gap_share * height - bearing, 320, '1/05/2021')])
+    return page
+
+
+def test_a_figure_token_whose_ones_stand_a_space_wide_bearing_apart_is_reread_from_its_outlines():
+    # Measured on a real statement: OCR read every '11/05/2021' of a date column as '41/05/2021'; the
+    # first 1 is the page's 1 shape, but the gap between the two 1s is wider than a space share.
+    page = _wide_one_date_page()
+    glyphs = G.page_glyphs(page)
+    date = sorted((g for g in glyphs if g.y1 > 310), key=lambda g: g.x0)
+    assert G._has_space(date)
+    box = (date[0].x0 - .3, date[0].y0 - .5, date[-1].x1 + .3, max(g.y1 for g in date) + .3)
+    words = _word_boxes(page, LINES)
+    labels = G.shape_labels(glyphs, words + [('41/05/2021', box)])
+    assert labels[date[0].shape][0] == '1'
+    assert G.read_words(glyphs, labels, [('41/05/2021', box)]) == ['11/05/2021']
+    # A word with letters keeps its reading, and so does a token whose pieces stand an amount gap apart.
+    assert G.read_words(glyphs, labels, [('A1/05/2021X', box)]) == [None]
+    wide = _wide_one_date_page(0.6)
+    glyphs = G.page_glyphs(wide)
+    date = sorted((g for g in glyphs if g.y1 > 310), key=lambda g: g.x0)
+    box = (date[0].x0 - .3, date[0].y0 - .5, date[-1].x1 + .3, max(g.y1 for g in date) + .3)
+    assert G.read_words(glyphs, G.shape_labels(glyphs, _word_boxes(wide, LINES)), [('41/05/2021', box)]) == [None]
+
+
+def test_a_printed_line_no_word_covers_is_returned_and_a_line_read_in_part_is_not():
+    lines = LINES + [(40, 300, 'EXAMPLE N HOLDER JR'), (300, 314, 'OPENING BALANCE  1,234.56')]
+    doc, page, _ = _page(lines)
+    glyphs = G.page_glyphs(page)
+    words = _word_boxes(page, lines)
+    assert G.unread_lines(glyphs, words) == []
+    missing = [(t, b) for t, b in words if not (b[1] > 290 and b[0] < 200)]
+    found = G.unread_lines(glyphs, missing)
+    assert len(found) == 1
+    (x0, y0, x1, y1), run = found[0]
+    assert len(run) == len('EXAMPLENHOLDERJR') and 35 < x0 < 45 and x1 < 200 and 290 < y0 < y1 < 302
+    # One word of the line read: the rest of it is not offered as a line of its own.
+    partial = [(t, b) for t, b in words if not (b[1] > 290 and b[0] < 200 and t != 'EXAMPLE')]
+    assert G.unread_lines(glyphs, partial) == []
+
+
+def test_a_line_page_ocr_skipped_is_read_from_its_own_crop_and_recorded():
+    # Real rendering and Tesseract on the line's crop; the page OCR is simulated by dropping the line.
+    import time
+    from PIL import Image
+    lines = LINES + [(40, 300, 'EXAMPLE N HOLDER JR')]
+    doc, page, _ = _page(lines)
+    dpi = 300
+    pixmap = page.get_pixmap(dpi=dpi, colorspace=fitz.csRGB, alpha=False)
+    image = Image.frombytes('RGB', (pixmap.width, pixmap.height), pixmap.samples)
+    scale = 72.0 / dpi
+    words = [(t, b) for t, b in _word_boxes(page, lines) if b[1] < 290]
+    data = dict(text=[t for t, _ in words], conf=[95] * len(words), block_num=[1] * len(words),
+                par_num=[1] * len(words), line_num=list(range(len(words))), word_num=[1] * len(words),
+                level=[5] * len(words), page_num=[1] * len(words),
+                left=[round(b[0] / scale) for _, b in words], top=[round(b[1] / scale) for _, b in words],
+                width=[round((b[2] - b[0]) / scale) for _, b in words],
+                height=[round((b[3] - b[1]) / scale) for _, b in words])
+    glyphs = G.page_glyphs(page)
+    read, record = pdf._read_unread_lines(image, data, words, glyphs, dpi, time.monotonic() + 60)
+    assert [r['text'] for r in record] == ['EXAMPLE N HOLDER JR']
+    assert read['text'][len(words):] == ['EXAMPLE', 'N', 'HOLDER', 'JR']
+    assert all(len(values) == len(read['text']) for values in read.values() if isinstance(values, list))
+    # Through the outline reading: the line is recorded as read and no printed line is left unread.
+    full, outlines = pdf._read_vector_outlines(page, data, dpi, image=image, deadline=time.monotonic() + 60)
+    assert [r['text'] for r in outlines['lines_read']] == ['EXAMPLE N HOLDER JR']
+    assert outlines['lines_checked'] is True and outlines['lines_unread'] == []
+    # Without the image (no crop to read) the line stays unread and is recorded so.
+    plain, outlines = pdf._read_vector_outlines(page, data, dpi)
+    assert outlines['lines_read'] == [] and len(outlines['lines_unread']) == 1

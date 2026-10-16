@@ -360,18 +360,33 @@ def _reconciled(text, reading):
     return dropped is not None and dropped <= MAX_DROPPED
 
 
+def _aligned_reading(text, under, labels):
+    """``text`` read one character per outline: a character changes only where its outline's label is a
+    figure or money mark (``FIGURE_CHARACTERS``)."""
+    characters = []
+    for glyph, character in zip(under, text):
+        label = labels.get(glyph.shape, (None,))[0]
+        characters.append(label if label is not None and label in FIGURE_CHARACTERS else character)
+    return ''.join(characters)
+
+
 def _word_reading(text, under, labels):
     if _has_space(under):
         # A narrow figure's side bearing can be as wide as a space: one amount
         # stays one word when every gap is within the amount limit.
         reading = read_glyphs(under, labels) if _amount_gaps(under) else None
-        return reading if reading is not None and _AMOUNT.fullmatch(reading) and _reconciled(text, reading) else None
+        if reading is not None and _AMOUNT.fullmatch(reading) and _reconciled(text, reading):
+            return reading
+        # The same holds for any token of figures OCR read as one word: a date
+        # whose two 1s stand a space-wide side bearing apart ('11/05/2021', OCR
+        # '41/05/2021'). One character per outline (a mark OCR added at an end
+        # dropped), each changed only where its outline's label is a figure.
+        trimmed = text if len(text) <= len(under) else re.sub(r'^[^0-9A-Za-z$]+|[^0-9A-Za-z$]+$', '', text)
+        if _amount_gaps(under) and len(under) == len(trimmed) and all(c in FIGURE_CHARACTERS for c in trimmed):
+            return _aligned_reading(trimmed, under, labels)
+        return None
     if len(under) == len(text):
-        characters = []
-        for glyph, character in zip(under, text):
-            label = labels.get(glyph.shape, (None,))[0]
-            characters.append(label if label is not None and label in FIGURE_CHARACTERS else character)
-        return ''.join(characters)
+        return _aligned_reading(text, under, labels)
     reading = read_glyphs(under, labels)
     return reading if reading is not None and _reconciled(text, reading) else None
 
@@ -466,6 +481,58 @@ def unread_words(glyphs, labels, words):
             found.append((text, (min(g.x0 for g in run), min(g.y0 for g in run),
                                  max(g.x1 for g in run), max(g.y1 for g in run))))
     return found
+
+
+# A printed line OCR skipped is read again only when it has at least this many characters (a lone
+# outline is a rule piece or a mark), and its words split into column runs at gaps this many line heights wide.
+MIN_UNREAD_LINE_CHARACTERS = 3
+UNREAD_LINE_COLUMN_GAP = 1.5
+# Characters of one printed line have centres within this share of the line's height.
+LINE_CENTRE_SHARE = 0.35
+
+
+def unread_lines(glyphs, words):
+    """``[(box, glyphs)]``: runs of printed characters along one line, none of them under any OCR word.
+
+    Page OCR can skip a whole printed line (measured: an addressee's first name
+    line and two summary lines between a shaded box and a mailing block). The
+    outlines show where it is printed. Characters are grouped into lines by
+    their centres (``LINE_CENTRE_SHARE``) and split into column runs at gaps
+    wider than ``UNREAD_LINE_COLUMN_GAP`` line heights; a run is returned when
+    it has at least ``MIN_UNREAD_LINE_CHARACTERS`` characters and no character
+    of it lies under an OCR word, so a line OCR read even in part is never
+    returned. Nothing is read here: the caller reads each run's own image.
+    """
+    covered = set()
+    index = _Index(glyphs)
+    for text, box in words:
+        if (text or '').strip():
+            covered.update(id(g) for g in index.within(*box))
+    lines = []
+    for glyph in sorted(glyphs, key=lambda g: (g.centre[1], g.x0)):
+        height = glyph.y1 - glyph.y0
+        for line in lines:
+            if abs(line['centre'] - glyph.centre[1]) <= LINE_CENTRE_SHARE * max(line['height'], height):
+                line['glyphs'].append(glyph)
+                line['height'] = max(line['height'], height)
+                break
+        else:
+            lines.append(dict(centre=glyph.centre[1], height=height, glyphs=[glyph]))
+    found = []
+    for line in lines:
+        ordered = sorted(line['glyphs'], key=lambda g: g.x0)
+        runs, current = [], [ordered[0]]
+        for previous, glyph in zip(ordered, ordered[1:]):
+            if glyph.x0 - previous.x1 > UNREAD_LINE_COLUMN_GAP * line['height']:
+                runs.append(current)
+                current = []
+            current.append(glyph)
+        runs.append(current)
+        for run in runs:
+            if len(run) >= MIN_UNREAD_LINE_CHARACTERS and not any(id(g) in covered for g in run):
+                found.append(((min(g.x0 for g in run), min(g.y0 for g in run),
+                               max(g.x1 for g in run), max(g.y1 for g in run)), run))
+    return sorted(found, key=lambda item: (item[0][1], item[0][0]))
 
 
 def read_words(glyphs, labels, words):
