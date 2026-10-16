@@ -1872,7 +1872,7 @@ def _r(text, x1):
 
 
 def credit_union_statement(*, redacted=False, quiet_line='No Transactions This Period', appendix=True,
-                           dividend=True, loc_credit_limit=True):
+                           dividend=True, loc_credit_limit=True, check_line=None, voucher=None):
     """An invented US credit-union 'statement of account': several account sections, each headed
     '<product> - <last digits>', a summary page, a check list after each table, a production's running page
     stamp on every page, and an appended record page after the statement's last numbered page."""
@@ -1891,7 +1891,7 @@ def credit_union_statement(*, redacted=False, quiet_line='No Transactions This P
     rows += [[('01-20', 14000, 35000), ('Deposit', 43000, 74000), _r('50.00', 471000), _r('150.00', 594000)],
              [('01-25', 14000, 35000), ('POS Debit - Debit Card 9999 Transaction 01-24-24 EXAMPLE STORE', 43000, 330000)],
              [('Somewhere ST', 43000, 100000), _r('25.00-', 475000), _r('125.00', 594000)],
-             [('02-01', 14000, 35000), ('Check 101', 43000, 85000), _r('5.00-', 475000), _r('120.00', 594000)],
+             check_line or [('02-01', 14000, 35000), ('Check 101', 43000, 85000), _r('5.00-', 475000), _r('120.00', 594000)],
              [('02-16', 14000, 35000), ('Ending Balance', 43000, 102000), _r('120.00', 594000)]]
     if dividend:
         rows.append([('Your account earned $0.00 for the dividend period from 01-01-2024 through 01-31-2024', 14000, 560000)])
@@ -1905,6 +1905,7 @@ def credit_union_statement(*, redacted=False, quiet_line='No Transactions This P
     rows += [[('Date', 14000, 31000), ('Transaction Detail', 43000, 111000), ('Amount($)', 248000, 287000),
               ('Balance ($)', 555000, 597000)],
              [('01-17', 14000, 35000), ('Beginning Balance', 43000, 110000), _r('0.00', 594000)],
+             [('TOTAL', 241000, 331000), (voucher, 331000, 413000)] if voucher else [],
              [(quiet_line, 200000, 400000)] if quiet_line else [],
              [('02-16', 14000, 35000), ('Ending Balance', 43000, 102000), _r('0.00', 594000)],
              [('Membership Savings - 2222', 14000, 200000)], money_head,
@@ -1975,6 +1976,31 @@ class MultiAccountStatementTests(unittest.TestCase):
         self.assertEqual(line['engine']['reason'], 'account_shared')
         self.assertTrue(any(r.get('engine_hold') == 'account_shared' for r in line['_rows']))
         self.assertNotIn('account_reference_kind', line)
+
+    def test_an_amount_merged_into_its_balance_cell_is_proved_by_the_running_balance(self):
+        # (E10) The text table delivered the amount and the balance as one cell, or the whole line as one.
+        for line in ([('02-01', 14000, 35000), ('Check 101', 43000, 85000), ('5.00 - 120.00', 431000, 594000)],
+                     [('02-01 Check 101 5.00 - 120.00', 14000, 594000)]):
+            checking = self.sections(credit_union_statement(check_line=line))[0]
+            self.assertTrue(checking['engine']['proved'], (line, checking['engine']))
+            self.assertEqual(checking['engine']['basis'], 'running_balance')
+            self.assertEqual(self.moves(checking)[-1], ('2024-02-01', 'debit', '500', '12000'))
+
+    def test_a_merged_amount_whose_printed_balance_does_not_chain_is_held(self):
+        # The period still reconciles (100 + 50 - 25 - 5 = 120), but the balance printed beside the merged
+        # amount does not follow from it: nothing proves the amount read from the merged cell.
+        line = [('02-01', 14000, 35000), ('Check 101', 43000, 85000), ('5.00 - 121.00', 431000, 594000)]
+        checking = self.sections(credit_union_statement(check_line=line))[0]
+        self.assertFalse(checking['engine']['proved'])
+        self.assertEqual(checking['engine']['reason'], 'no_independent_control')
+
+    def test_a_zero_voucher_total_between_the_balances_keeps_a_quiet_section_proved(self):
+        # A payment voucher printed inside the quiet credit line's section ('TOTAL $0.00') moves nothing.
+        _, line, _ = self.sections(credit_union_statement(voucher='$0.00'))
+        self.assertTrue(line['engine']['proved'], line['engine'])
+        self.assertEqual(line['engine']['basis'], 'printed_no_transactions')
+        _, line, _ = self.sections(credit_union_statement(voucher='$5.00'))
+        self.assertFalse(line['engine']['proved'])
 
     def test_redacted_rows_never_prove(self):
         checking = self.sections(credit_union_statement(redacted=True))[0]

@@ -3077,7 +3077,9 @@ def _two_line_entry(rows, index, style, exponent, columns, width):
     if any(_role_of(text, False) for text, values in label_pairs(following, style, exponent) if values):
         return None
     money_tokens = [t for t in later if _value_kind(t, style, exponent) == 'money']
-    if not money_tokens or not columns or any(_band(t, columns, width) is None for t in money_tokens):
+    placed = lambda t: _band(t, columns, width) is not None or (
+        _merged_partner(t, money_tokens) is not None and _band(_merged_partner(t, money_tokens), columns, width) is not None)
+    if not money_tokens or not columns or not all(placed(t) for t in money_tokens):
         return None
     height = max(t['y1'] - t['y0'] for t in row['tokens'])
     gap = following['y0'] - max(t['y1'] for t in row['tokens'])
@@ -3104,9 +3106,11 @@ def _printed_no_transactions(rows, controls, style, exponent):
     start, end = opening['row']['_index'], closing['row']['_index']
     found = [row for row in rows[start + 1:end] if row['tokens'] and ' '.join(fold(row['text']).split()) in NO_TRANSACTIONS]
     # Between the two balances only the no-activity line and lines that cannot be movements may stand (the
-    # page heading repeated where the section crosses a page break): no amount and no leading date.
+    # page heading repeated where the section crosses a page break, a payment voucher printing a zero
+    # total): no amount other than zero and no leading date.
     others = [row for row in rows[start + 1:end] if row['tokens'] and row not in found
-              and (any(_value_kind(t, style, exponent) == 'money' for t in row['tokens'])
+              and (any(_value_kind(t, style, exponent) == 'money' and money(t['t'], style, exponent) != 0
+                       for t in row['tokens'])
                    or _leading_date(merged_dates(row['tokens'])[0]['t'].rstrip('.,')))]
     if len(found) != 1 or others:
         return None
@@ -3212,14 +3216,35 @@ def _valid(assignment):
     return bool({'credit', 'debit', 'amount'} & set(roles))
 
 
+def _merged_partner(token, tokens):
+    """(E10) The balance printed after ``token`` in the same merged cell, or None.
+
+    A text table can deliver a movement's amount and balance (or its whole line) as one cell; each word's
+    position inside it is then interpolated, so an amount that is neither alone in its cell nor its last
+    word cannot be placed in a column. It is the line's amount when the line prints exactly two amounts and
+    the other is the last word of the same cell line (the balance, placed by the cell's own right edge)."""
+    if token['exact'] or token['last'] or len(tokens) != 2:
+        return None
+    other = next(t for t in tokens if t is not token)
+    if other['cell'] is token['cell'] and other['line'] == token['line'] and other['last'] and other['x0'] > token['x0']:
+        return other
+    return None
+
+
 def _movement_value(move, assignment, columns, width, style, exponent, liability):
     """Signed effect of one movement line on the printed balance under ``assignment``, or None."""
-    amounts, balance, balance_token, zero = [], None, None, False
+    amounts, balance, balance_token, zero, partner = [], None, None, False, None
     for token in move['money']:
         band = _band(token, columns, width)
         if band is None:
-            return None
-        role = assignment[band]
+            # (E10) An amount merged into its balance's cell takes the reading's one signed amount column;
+            # the reading proves only through the printed running balance (_search).
+            partner = _merged_partner(token, move['money']) if 'amount' in assignment else None
+            if partner is None:
+                return None
+            role = 'amount'
+        else:
+            role = assignment[band]
         value = money(token['t'], style, exponent)
         if role == 'ignore' or value is None:
             continue
@@ -3231,7 +3256,7 @@ def _movement_value(move, assignment, columns, width, style, exponent, liability
             zero = True
         else:
             amounts.append((role, value, token))
-    if len(amounts) > 1:
+    if len(amounts) > 1 or (partner is not None and balance_token is not partner):
         return None
     if not amounts:
         return dict(zero=True, balance=balance, balance_token=balance_token) if zero else None
@@ -3246,7 +3271,7 @@ def _movement_value(move, assignment, columns, width, style, exponent, liability
     size = abs(value)
     effect = (size if direction == 'debit' else -size) if liability else (size if direction == 'credit' else -size)
     return dict(zero=False, effect=effect, direction=direction, amount=size, balance=balance,
-                balance_token=balance_token, amount_token=token)
+                balance_token=balance_token, amount_token=token, merged=partner is not None)
 
 
 def _search(moves, columns, hints, controls, column_totals, style, exponent, liability):
@@ -3353,7 +3378,10 @@ def _search(moves, columns, hints, controls, column_totals, style, exponent, lia
             # A column read as the running balance that does not chain contradicts this reading: printed
             # totals cannot prove it (the same reading without that column still can).
             contradicted = any(v['balance'] is not None for v in values) and not chain_ok
-            proved = closing_ok and totals_ok and (chain_ok or (totals_found > 0 and totals_ok and not contradicted))
+            # (E10) An amount placed from a merged cell is proved only by the running balance printed beside it.
+            merged = any(v.get('merged') for v in values)
+            proved = closing_ok and totals_ok and (chain_ok or (not merged and totals_found > 0 and totals_ok
+                                                                and not contradicted))
             basis = 'running_balance' if chain_ok else 'printed_totals'
             key = (opening, closing, tuple((m['row']['_index'], v.get('direction'), v.get('amount')) for m, v in zip(moves, values)))
             results.append(dict(proved=proved, closing_ok=closing_ok, totals_failed=totals_failed, chain_ok=chain_ok,
