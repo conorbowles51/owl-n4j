@@ -103,6 +103,8 @@ export const reviewQueue = z.object({
         file_id: z.string().nullish(),
         filename: z.string(),
         message: z.string(),
+        /** Set when the retained PDF can be read afresh by an explicit request (its restart copy is gone). */
+        read_afresh_revision: z.string().nullish(),
       })
     )
     .default([]),
@@ -511,4 +513,38 @@ export async function fillAndSaveReady(
       ? `${result.message} (details filled automatically on ${filled} as System; change any in its statement)`
       : result.message,
   }
+}
+
+const readAfreshResponse = z.object({
+  requested: z.number(),
+  queued: z.number(),
+  already: z.number(),
+  refused: z.array(z.object({ batch_id: z.string(), source_id: z.string(), message: z.string() })),
+})
+
+/**
+ * Explicitly reads the queue's retained PDFs afresh whose restart copy is gone.
+ * Each file is checked and byte-verified on the server exactly as a single request.
+ */
+export async function readRetainedAfresh(caseId: string, data: ReviewQueue): Promise<string> {
+  const files = data.unreadable_files
+    .filter((file) => file.read_afresh_revision && file.source_id)
+    .map((file) => ({
+      batch_id: file.batch_id,
+      source_id: file.source_id as string,
+      expected_revision: file.read_afresh_revision as string,
+    }))
+  if (!files.length) return "No removed PDF is waiting to be read afresh"
+  const result = readAfreshResponse.parse(
+    await fetchAPI(`/api/financial/statement-import/review/read-afresh?case_id=${caseId}`, {
+      method: "POST",
+      body: { files },
+      timeout: 300000,
+    })
+  )
+  const parts = [`${result.queued} ${result.queued === 1 ? "PDF is" : "PDFs are"} being read afresh`]
+  if (result.already) parts.push(`${result.already} already being read`)
+  if (result.refused.length)
+    parts.push(`${result.refused.length} not started: ${result.refused[0].message}`)
+  return parts.join("; ")
 }

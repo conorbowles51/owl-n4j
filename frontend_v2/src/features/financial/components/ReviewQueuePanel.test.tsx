@@ -385,3 +385,29 @@ it("lists failed readings of a file that another upload read as copies of that u
   fireEvent.click(screen.getAllByRole("button", { name: "Open its batch" })[0])
   expect(onOpenBatch).toHaveBeenCalledWith("b2")
 })
+
+it("reads removed PDFs whose restart copy is gone afresh with one explicit request", async () => {
+  const files = [
+    { batch_id: "b3", source_id: "s1", file_id: "s1", filename: "A.pdf", message: "The source recorded…", read_afresh_revision: "r1" },
+    { batch_id: "b3", source_id: "s2", file_id: "s2", filename: "B.pdf", message: "The source recorded…", read_afresh_revision: "r2" },
+    { batch_id: "b3", source_id: "s3", file_id: "s3", filename: "C.pdf", message: "PDF source preparation failed" },
+  ]
+  vi.mocked(fetchAPI).mockImplementation(async (url: string) => {
+    if (url.includes("/review/queue"))
+      return { ...queue, counts: { ...queue.counts, unreadable_files: 3 }, unreadable_files: files } as never
+    if (url.includes("/review/read-afresh"))
+      return { requested: 2, queued: 1, already: 0, refused: [{ batch_id: "b3", source_id: "s2", message: "The source changed." }] } as never
+    throw Error(`unexpected ${url}`)
+  })
+  mount("/cases/case/financial?view=statements&queue=1&queueList=unreadable")
+  fireEvent.click(await screen.findByRole("button", { name: "Read 2 PDFs afresh" }))
+  expect(await screen.findByText("1 PDF is being read afresh; 1 not started: The source changed.")).toBeVisible()
+  const call = vi.mocked(fetchAPI).mock.calls.find(([url]) => String(url).includes("/review/read-afresh"))
+  expect(call?.[1]).toMatchObject({
+    method: "POST",
+    body: { files: [
+      { batch_id: "b3", source_id: "s1", expected_revision: "r1" },
+      { batch_id: "b3", source_id: "s2", expected_revision: "r2" },
+    ] },
+  })
+})

@@ -606,6 +606,33 @@ def _set_aside_read_copies(session, case_id, entries, failed):
     return entries, kept, copies
 
 
+def _mark_read_afresh(session, case_id, failed):
+    """Mark failed files whose retained PDF the investigator can explicitly read afresh.
+
+    The removal they would restart from is gone from Evidence. Only the
+    explicit, byte-verified recovery may read them again; this marks each with
+    the revision that recovery requires, nothing more.
+    """
+    from services.financial.reading_recovery import retry_reference_problem
+    candidates = [f for f in failed if (f.get('message') or '').startswith(RESTART_UNAVAILABLE)]
+    ids = {UUID(i) for f in candidates for i in (f.get('source_id'), f.get('file_id')) if i and _uuid(i)}
+    if not ids:
+        return
+    files = {str(file.id): file for file in session.scalars(select(EvidenceFile).where(
+        EvidenceFile.case_id == case_id, EvidenceFile.id.in_(ids)))}
+    for entry in candidates:
+        source = files.get(entry.get('source_id'))
+        if source is None:
+            continue
+        problem = retry_reference_problem(session, case_id=case_id, source_id=source.id, source=source,
+            prepared=files.get(entry.get('file_id')))
+        if problem and problem.get('retained_source_revision'):
+            entry['read_afresh_revision'] = problem['retained_source_revision']
+
+
+RESTART_UNAVAILABLE = 'The source recorded for restarting this removed import is unavailable'
+
+
 def _uuid(value):
     try:
         UUID(str(value))
@@ -628,6 +655,7 @@ def case_review_queue(session, *, case_id, file_ids=None, use_cache=True):
         entries = [e for e in entries if file_filter & set(e['file_ids'])]
         within = lambda f: bool({f.get('file_id'), f.get('source_id')} & file_filter)
         failed, copy_files = [f for f in failed if within(f)], [f for f in copy_files if within(f)]
+    _mark_read_afresh(session, case_id, failed)
     counts = _counts(entries)
     counts['unreadable_files'] = len(failed)
     counts['copies'] += len(copy_files)
