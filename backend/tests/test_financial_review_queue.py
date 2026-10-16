@@ -62,6 +62,26 @@ class QueueRulesTests(TestCase):
             sentence = issue_sentence(reason, [dict(message='x', row_id='1:0:1', page=1)], {})
             self.assertTrue(sentence and '—' not in sentence, reason)
 
+    def test_a_principal_only_credit_line_says_which_page_and_why(self):
+        # The engine's hold on a credit line printing only its principal balance (C5), with the generic
+        # balance problem and the unread rows it brings: the queue names the page and the missing fact.
+        hold = dict(message='The general statement reader did not prove this period: This credit line prints only '
+                            'its principal balance.', row_id='16:1:24:engine_hold', page=16,
+                    engine_hold='principal_only_balance')
+        missing = dict(kind='arithmetic', check='closing_balance',
+                       message='Enter one opening and one closing balance from the statement, and complete every selected payment, to reconcile.')
+        detail = describe(item(READING, missing, hold).summary)
+        self.assertEqual(detail['reason'], 'principal_only')
+        self.assertEqual(detail['sentence'], 'The statement prints only the principal balance; the opening amount '
+                                             'owed is not printed on page 16')
+        self.assertEqual(detail['page'], 16)
+        self.assertEqual(detail['reasons'], ['principal_only', 'balance', 'reading'])
+        # It leads ahead of a detail a person could fill: filling it would not make the period checkable.
+        holder = dict(kind='statement_detail', field='holder', message='Holder missing', row_id=None)
+        self.assertEqual(describe(item(holder, hold).summary)['reasons'], ['principal_only', 'holder'])
+        # Any other engine hold keeps the generic reading reason.
+        self.assertEqual(describe(item(dict(hold, engine_hold='not_reconciled')).summary)['reason'], 'reading')
+
     def test_notes_and_background_updates_are_not_actionable(self):
         self.assertEqual(actionable_problems(item(OVERLAP, UNAVAILABLE, BACKGROUND, COPY).summary), [])
         self.assertEqual([p['review_reason'] for p in actionable_problems(item(OVERLAP, READING).summary)], ['reading'])

@@ -81,7 +81,16 @@ HOLD_MESSAGES = {
     'library_disagrees': 'The general reader and the bank-specific reader both reconcile this period but read it differently.',
     'line_without_content': 'A dated line in the movement table prints nothing else, so its amount is missing (it may have been blacked out).',
     'account_shared': 'This credit line prints the same account number as a deposit account in the same statement, so its records could be mixed with that account. Check it against the PDF before importing it.',
+    'principal_only_balance': ('This credit line prints only its principal balance: the amount owed at the opening (principal '
+                               'with interest and fees) is not printed, so the movement lines cannot be checked against it.'),
 }
+# A credit line's movement table that prints the principal, the interest and a balance column side by side
+# keeps its balance column as the principal only (C5).
+_PRINCIPAL_ONLY_WORDS = ('PRINCIPAL', 'INTEREST', 'BALANCE')
+# Hold reasons a principal-only balance explains: the money could not be proved from the printed balances.
+_PRINCIPAL_ONLY_EXPLAINS = frozenset({'not_reconciled', 'no_independent_control', 'no_geometry', 'no_opening',
+                                      'no_closing', 'unplaced_money_line', 'printed_total_differs', 'two_readings',
+                                      'too_many_interpretations'})
 # (B7) A line a statement prints inside an account section when nothing moved in the period.
 NO_TRANSACTIONS = ('NO TRANSACTIONS THIS PERIOD',)
 
@@ -2990,6 +2999,12 @@ def _reading(rows, statement, style, exponent, liability, period):
             else:
                 proof['reason'] = ('printed_total_differs' if any(c['totals_failed'] for c in near)
                                    else 'no_independent_control' if near else 'not_reconciled')
+    if (not proof['proved'] and liability and proof['reason'] in _PRINCIPAL_ONLY_EXPLAINS
+            and any(all(re.search(r'\b' + word + r'\b', fold(h['text']).upper()) for word in _PRINCIPAL_ONLY_WORDS)
+                    for h in headers)):
+        # (C5) The section's balance is the principal alone; the amount owed it would have to reconcile is not
+        # printed. Only the reason changes: the period stays held, and a person supplies the amount owed.
+        proof['reason'] = 'principal_only_balance'
     if chosen is None:
         chosen = _best_effort(candidates, hints)
         # A held period keeps a column reading as its prefill only when that reading reconciles the

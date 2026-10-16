@@ -38,8 +38,10 @@ NOTE_REASONS = frozenset({'overlap', 'balance_unavailable', 'readiness_update', 
 # to fix; the statement is counted as being rechecked.
 SYSTEM_KINDS = frozenset({'readiness_pending', 'coverage_load'})
 # Most important first: the reason a statement is opened for.
-REASON_ORDER = ('import_failed', 'saved_review', 'reprint', 'assignment', 'currency', 'institution', 'holder',
-                'account', 'dates', 'balance', 'incomplete', 'count', 'no_activity', 'reading')
+# A credit line printing only its principal balance (principal_only) cannot be checked whatever details are
+# filled in, so its missing amount owed leads, ahead of the details a person can fill for it.
+REASON_ORDER = ('import_failed', 'saved_review', 'reprint', 'assignment', 'principal_only', 'currency', 'institution',
+                'holder', 'account', 'dates', 'balance', 'incomplete', 'count', 'no_activity', 'reading')
 # The one control a single-field issue opens on (the field its sentence names).
 DETAIL_FIELDS = {'holder': 'holder', 'account': 'account_number', 'dates': 'period', 'currency': 'currency',
                  'institution': 'institution'}
@@ -118,6 +120,10 @@ def issue_sentence(reason, problems, summary):
         return 'Account number not found: enter it'
     if reason == 'dates':
         return 'Statement dates not found: enter them'
+    if reason == 'principal_only':
+        page = next((p['page'] for p in problems if isinstance(p.get('page'), int)), None)
+        return ('The statement prints only the principal balance; the opening amount owed is not printed'
+                + (f' on page {page}' if page else ''))
     if reason == 'balance':
         currency = summary.get('currency') or ''
         closing = next((p for p in problems if p.get('check') == 'closing_balance'), None)

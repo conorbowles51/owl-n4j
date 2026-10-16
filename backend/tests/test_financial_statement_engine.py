@@ -1872,7 +1872,7 @@ def _r(text, x1):
 
 
 def credit_union_statement(*, redacted=False, quiet_line='No Transactions This Period', appendix=True,
-                           dividend=True, loc_credit_limit=True, check_line=None, voucher=None):
+                           dividend=True, loc_credit_limit=True, check_line=None, voucher=None, principal=None):
     """An invented US credit-union 'statement of account': several account sections, each headed
     '<product> - <last digits>', a summary page, a check list after each table, a production's running page
     stamp on every page, and an appended record page after the statement's last numbered page."""
@@ -1902,13 +1902,27 @@ def credit_union_statement(*, redacted=False, quiet_line='No Transactions This P
              [('Checking Line of Credit - 1111', 14000, 200000)]]
     if loc_credit_limit:
         rows.append([('Credit Limit', 14000, 54000), ('$1,000.00', 137000, 172000)])
-    rows += [[('Date', 14000, 31000), ('Transaction Detail', 43000, 111000), ('Amount($)', 248000, 287000),
-              ('Balance ($)', 555000, 597000)],
-             [('01-17', 14000, 35000), ('Beginning Balance', 43000, 110000), _r('0.00', 594000)],
-             [('TOTAL', 241000, 331000), (voucher, 331000, 413000)] if voucher else [],
-             [(quiet_line, 200000, 400000)] if quiet_line else [],
-             [('02-16', 14000, 35000), ('Ending Balance', 43000, 102000), _r('0.00', 594000)],
-             [('Membership Savings - 2222', 14000, 200000)], money_head,
+    if principal:
+        # A credit line whose movement table prints the principal, the interest and a balance column: the
+        # balance is the principal alone ('active': interest charged and a payment split across the columns).
+        rows.append([('Date', 14000, 31000), ('Transaction Detail', 43000, 111000), ('Amount($)', 248000, 287000),
+                     ('Fee(s) ($)', 310000, 345000), ('Interest($)', 365000, 403000), ('Principal ($)', 440000, 489000),
+                     ('Balance ($)', 555000, 597000)])
+    else:
+        rows.append([('Date', 14000, 31000), ('Transaction Detail', 43000, 111000), ('Amount($)', 248000, 287000),
+                     ('Balance ($)', 555000, 597000)])
+    if principal == 'active':
+        rows += [[('01-17', 14000, 35000), ('Beginning Balance', 43000, 110000), _r('1,000.00', 594000)],
+                 [('01-31', 14000, 35000), ('Interest Charge', 43000, 100000), _r('10.00', 403000), _r('1,000.00', 594000)],
+                 [('02-05', 14000, 35000), ('Payment', 43000, 80000), _r('60.00', 287000), _r('10.00-', 405000),
+                  _r('50.00-', 491000), _r('950.00', 594000)],
+                 [('02-16', 14000, 35000), ('Ending Balance', 43000, 102000), _r('950.00', 594000)]]
+    else:
+        rows += [[('01-17', 14000, 35000), ('Beginning Balance', 43000, 110000), _r('0.00', 594000)],
+                 [('TOTAL', 241000, 331000), (voucher, 331000, 413000)] if voucher else [],
+                 [(quiet_line, 200000, 400000)] if quiet_line else [],
+                 [('02-16', 14000, 35000), ('Ending Balance', 43000, 102000), _r('0.00', 594000)]]
+    rows += [[('Membership Savings - 2222', 14000, 200000)], money_head,
              [('01-17', 14000, 35000), ('Beginning Balance', 43000, 110000), _r('500.00', 594000)],
              [(quiet_line, 200000, 400000)] if quiet_line else [],
              [('02-16', 14000, 35000), ('Ending Balance', 43000, 102000), _r('500.00', 594000)]]
@@ -2001,6 +2015,19 @@ class MultiAccountStatementTests(unittest.TestCase):
         self.assertEqual(line['engine']['basis'], 'printed_no_transactions')
         _, line, _ = self.sections(credit_union_statement(voucher='$5.00'))
         self.assertFalse(line['engine']['proved'])
+
+    def test_a_credit_line_printing_only_its_principal_balance_is_held_with_that_reason(self):
+        # (C5) The balance column is the principal alone: the amount owed is not printed, nothing can prove it.
+        _, line, _ = self.sections(credit_union_statement(principal='active'))
+        self.assertEqual(line['balance_convention'], 'liability_owed')
+        self.assertFalse(line['engine']['proved'])
+        self.assertEqual(line['engine']['reason'], 'principal_only_balance')
+        hold = next(r for r in line['_rows'] if r.get('engine_hold'))
+        self.assertEqual(hold['engine_hold'], 'principal_only_balance')
+        self.assertIn('prints only its principal balance', hold['issues'][0])
+        # The same table with nothing owed and nothing moved is still proved by its printed no-activity line.
+        _, quiet, _ = self.sections(credit_union_statement(principal='quiet'))
+        self.assertTrue(quiet['engine']['proved'], quiet['engine'])
 
     def test_redacted_rows_never_prove(self):
         checking = self.sections(credit_union_statement(redacted=True))[0]

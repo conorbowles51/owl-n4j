@@ -179,7 +179,8 @@ def assess(proposal, request=None):
     for row in rows:
         edit = reviewed.get(row['id'],{})
         if row['issues'] and not edit.get('excluded', row['excluded']) and not row_reviewed(row, edit):
-            problems.append(dict(message=' '.join(row['issues']),row_id=row['id'],page=row['page_number']))
+            problems.append(dict(message=' '.join(row['issues']),row_id=row['id'],page=row['page_number'],
+                                 **({'engine_hold': row['engine_hold']} if row.get('engine_hold') else {})))
     balance = check_proposed_rows(proposal, raw['rows'])
     if can_import:
         from services.financial.import_issues import retained_issues

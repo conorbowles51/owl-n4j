@@ -20,6 +20,7 @@ REASONS = {
     'assignment': ('Payments need an account', 'Open the review to assign these payments to the correct account and period.'),
     'import_failed': ('Import needs recovery', 'Open the statement to check the saved import result and retry without duplicating payments.'),
     'balance_unavailable': ('Balance comparison unavailable', 'An automatic comparison could not be made. This does not establish a balance difference; inspect the printed controls if needed.'),
+    'principal_only': ('Opening amount owed not printed', 'These credit-line statements print only the principal balance. The amount owed at the opening (principal with interest and fees) is not printed, so the payments cannot be checked against the printed balances. Open each statement to enter the amounts owed from another record, or leave it unimported with a reason.'),
     'no_activity': ('Confirm no activity', 'No payments were read in these periods and their pages do not establish that none occurred. Check every page of each period, then confirm the periods without activity together.'),
     'reading': ('Check a source reading', 'The reason is shown on each matching statement. Open the indicated row or statement to compare it with the original.'),
     'additional': ('Additional checks in statement review', 'More checks are retained than fit in the batch preview. Open these statements to see the remaining reasons.'),
@@ -30,6 +31,8 @@ REASONS = {
 def reason(problem):
     kind, field, check = (problem.get(key) for key in ('kind', 'field', 'check'))
     message = problem.get('message', '').lower()
+    if problem.get('engine_hold') == 'principal_only_balance':
+        return 'principal_only'
     if kind == 'statement_detail':
         return {'holder': 'holder', 'account_number': 'account', 'institution': 'institution',
             'currency': 'currency', 'period': 'dates', 'period_start': 'dates', 'period_end': 'dates'}.get(field, 'reading')
