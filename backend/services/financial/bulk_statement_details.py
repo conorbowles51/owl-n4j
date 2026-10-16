@@ -98,7 +98,7 @@ def _key(target):
 def _file(session, case_id, file_id):
     file = session.get(EvidenceFile, file_id)
     if file is None or str(file.case_id) != str(case_id):
-        raise PdfMappingError('A selected file is not in this case.', 404)
+        raise PdfMappingError('A selected file is no longer in this case. Refresh the statements and select again.', 404)
     from services.financial.file_visibility import require_financial_file
     require_financial_file(file)
     return file
@@ -152,11 +152,11 @@ def _saved_records(session, case_id, source_ids, cache):
     for sid in wanted:
         row = found.get(sid)
         if row is None:
-            cache[('saved_record', sid)] = PdfMappingError('Statement not found in this case.', 404)
+            cache[('saved_record', sid)] = PdfMappingError('This statement is no longer in this case. Refresh the statements and select again.', 404)
             continue
         _, file_id, kind, status, review, history, account_ref, *_rest = row
         if kind != 'statement_review' or status != 'admitted':
-            cache[('saved_record', sid)] = PdfMappingError('Only a current imported statement can be edited here.', 409)
+            cache[('saved_record', sid)] = PdfMappingError('This imported statement was replaced or removed. Refresh the statements to edit the current one.', 409)
             continue
         found_periods = periods.get(sid, [])
         if len(found_periods) > 1:
@@ -165,7 +165,7 @@ def _saved_records(session, case_id, source_ids, cache):
         try:
             account_id = found_periods[0].account_id if found_periods else UUID(account_ref)
         except (TypeError, ValueError):
-            cache[('saved_record', sid)] = PdfMappingError('The statement account is unavailable.', 409)
+            cache[('saved_record', sid)] = PdfMappingError('This statement\'s account was changed elsewhere. Refresh the statements and select it again.', 409)
             continue
         account_ids.add(account_id)
         cache[('saved_record', sid)] = (row, found_periods[0] if found_periods else None, account_id)
@@ -178,7 +178,7 @@ def _saved_records(session, case_id, source_ids, cache):
         row, period, account_id = entry
         account = accounts.get(account_id)
         if account is None:
-            cache[('saved_record', sid)] = PdfMappingError('The statement account is unavailable.', 409)
+            cache[('saved_record', sid)] = PdfMappingError('This statement\'s account was changed elsewhere. Refresh the statements and select it again.', 409)
             continue
         _, file_id, _kind, _status, review, history, _ref, original_sha, request_sha, review_sha, request_currency, *values = row
         review = review or {}
@@ -326,7 +326,7 @@ def _load(session, case_id, target, cache, *, stored=False):
         if isinstance(record, PdfMappingError):
             raise record
         if record['evidence_file_id'] != str(file.id):
-            raise PdfMappingError('The selected statement does not belong to this PDF.', 409)
+            raise PdfMappingError('The selected statement does not belong to this PDF. Refresh the statements and select again.', 409)
         values, revision = dict(record['values']), record['revision']
         state = dict(account_id=record['account_id'])
     else:
@@ -352,7 +352,7 @@ def _load(session, case_id, target, cache, *, stored=False):
             drafts.append(shared['request'])
         currencies = {raw.get('currency') for raw in drafts}
         if len(currencies) > 1:
-            raise PdfMappingError('This statement has conflicting saved reviews. Open it to compare them first.', 409)
+            raise PdfMappingError('This statement has two saved reviews that disagree. Open it on its own and keep one.', 409)
         # Identity values only: the duplicate verdict re-reads the retained
         # statement of every earlier decision and is attached at save time,
         # where it decides the saved review's status (see _with_duplicate).
@@ -370,13 +370,13 @@ def _load(session, case_id, target, cache, *, stored=False):
         drafts = [upgrade_request(raw, proposal) or raw for raw in drafts]
         resolved = [resolve_review(raw, saved, baseline=import_batches.initial_request(proposal)) for raw in drafts]
         if any(conflict for _, conflict in resolved):
-            raise PdfMappingError('This statement has different corrections saved in its batch and PDF review. Compare them individually first.', 409)
+            raise PdfMappingError('This statement has two saved reviews that disagree. Open it on its own and keep one.', 409)
         drafts = [raw for raw, _ in resolved]
         if len({request_signature(raw) for raw in drafts}) > 1:
-            raise PdfMappingError('This statement has different corrections saved in its batch and PDF review. Compare them individually first.', 409)
+            raise PdfMappingError('This statement has two saved reviews that disagree. Open it on its own and keep one.', 409)
         raw = deepcopy(drafts[0] if drafts else import_batches.initial_request(proposal))
         if raw['expected_revision'] != proposal['revision']:
-            raise PdfMappingError('The reading changed since its corrections were saved. Review this statement individually first.', 409)
+            raise PdfMappingError('This statement was read again since its corrections were saved. Open it on its own to check them against the new reading.', 409)
         values = {key: raw.get(key, '') for key in FIELDS}
         revision = _digest(dict(proposal=proposal['revision'], raw=raw, saved=saved,
             items=[(str(item.id), item.status, item.review_request) for item in items]))
@@ -646,7 +646,7 @@ def save(session, *, case_id, request, actor, owned_batch_id=None):
         files = list(session.scalars(select(EvidenceFile).where(EvidenceFile.case_id == case_id,
             EvidenceFile.id.in_(file_ids)).order_by(EvidenceFile.id).with_for_update().execution_options(populate_existing=True)))
         if len(files) != len(file_ids):
-            raise PdfMappingError('A selected file is not in this case.', 404)
+            raise PdfMappingError('A selected file is no longer in this case. Refresh the statements and select again.', 404)
         payload = request.model_dump(mode='json')
         signature = _digest(dict(request=payload, actor=str(actor.user_id)))
         anchor = files[0]
