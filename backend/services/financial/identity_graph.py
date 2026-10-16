@@ -162,6 +162,14 @@ def apply_identity_graph(graph_session, plan, *, is_current=None):
         marker = tx.run('''MERGE (m:FinancialIdentitySync {case_id:$case})
             SET m.system_node=true, m.projection_lock=coalesce(m.projection_lock,0)+1
             RETURN m.revision AS revision''', case=case_id).single()
+        # The ledger projection MERGEs the same FinancialAccount keys under its
+        # own marker, and (case_id, key) is indexed, not unique. Two writers
+        # creating one account at once committed two nodes, every later
+        # projection drew each payment onto both, and validate_graph_targets
+        # then refused the case for good. Take the projection's lock too, after
+        # this one; the projection never takes this marker, so the order holds.
+        from services.financial.graph_followup import _LOCK_MARKER
+        tx.run(_LOCK_MARKER, case_id=case_id).consume()
         # Revalidate only after acquiring the graph marker lock. Otherwise an
         # older snapshot could wait behind a newer writer and overwrite it.
         # The callback closes its short SQL snapshot before graph work resumes.
