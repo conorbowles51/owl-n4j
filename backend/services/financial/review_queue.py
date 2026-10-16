@@ -772,8 +772,6 @@ def status_line(counts, reading=None):
         parts.append(f"Left out by you {counts['left_unimported']}")
     if counts.get('removed_files'):
         parts.append(f"Files removed from Financial {counts['removed_files']}")
-    if counts.get('copy_files'):
-        parts.append(f"Files already read from a copy {counts['copy_files']}")
     sentence = reading_sentence(reading)
     if sentence:
         parts.insert(0, sentence)
