@@ -327,3 +327,27 @@ it("collapses a file the reader cannot handle yet into one line outside the wait
   expect(await screen.findByText(/Loupe can't read this file reliably yet \(2 statements\)/)).toBeVisible()
   expect(screen.getByText("Show their 2 statements")).toBeVisible()
 })
+
+it("never counts files removed from Financial as couldn't read, and says what they are", async () => {
+  const removed = {
+    ...queue,
+    counts: { ...queue.counts, unreadable: 0, unreadable_files: 1, removed_files: 2, copy_files: 0 },
+    unreadable_files: [{ batch_id: "b1", source_id: "f5", file_id: "f5", filename: "Scan.pdf", message: "PDF source preparation failed." }],
+    set_aside_files: ["f6", "f7"].map((id) => ({
+      batch_id: "b3", source_id: id, file_id: id, filename: `Removed ${id}.pdf`, reason: "removed",
+      message: "You removed this file from Financial, so it is not read. If it should be read, restore it under Removed files in Statements & accounts.",
+    })),
+  }
+  vi.mocked(fetchAPI).mockImplementation(async (url: string) => {
+    if (url.includes("/review/queue")) return removed as never
+    throw Error(`unexpected ${url}`)
+  })
+  mount("/cases/case/financial?view=statements&queue=1&queueList=unreadable")
+  const status = await screen.findByLabelText("Statement status")
+  expect(status).toHaveTextContent("Couldn't read 1")
+  expect(status).toHaveTextContent("Files removed from Financial 2")
+  expect(await screen.findByText(/Scan.pdf: PDF source preparation failed/)).toBeVisible()
+  expect(screen.getByText(/2 files are not counted as couldn't read/)).toBeVisible()
+  fireEvent.click(screen.getByText(/2 files are not counted as couldn't read/))
+  expect(screen.getByText(/Removed f6.pdf: You removed this file from Financial/)).toBeVisible()
+})

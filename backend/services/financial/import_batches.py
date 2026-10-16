@@ -97,11 +97,34 @@ def initial_request(proposal):
             balance_minor=r['fields'].get('balance'), reason=r.get('assignment_reason', '')) for r in proposal['rows']])
 
 
+# Statement details kept from corrections saved on an earlier reading; rows
+# are never carried over, their ids belong to the earlier reading.
+EARLIER_READING_FIELDS = ('holder', 'account_number', 'institution', 'period_start', 'period_end')
+EARLIER_READING_MESSAGE = ('Your saved corrections were made on an earlier reading of this statement, and it has been '
+                           'read again since. They are not applied to the new reading. Check its rows against the PDF '
+                           'and save the statement again.')
+
+
 def assess(proposal, request=None):
     """Preparation remains saveable; ledger admission requires reconciliation."""
     problems = []
     can_import = True
     raw = request or initial_request(proposal)
+    earlier_reading = False
+    if request and request.get('expected_revision') and request['expected_revision'] != proposal['revision']:
+        # Corrections saved on an earlier reading whose rows the new reading no
+        # longer has. Checking them against the new rows used to fail with a
+        # misleading message ('A manually added transaction needs a page'):
+        # the new reading is checked as read, with the saved statement
+        # details, and held until the investigator saves a review of it.
+        from services.financial.review_upgrade import upgrade_request
+        upgraded = upgrade_request(request, proposal)
+        if upgraded is not None:
+            raw = upgraded
+        else:
+            earlier_reading = True
+            raw = {**initial_request(proposal), **{key: request[key] for key in EARLIER_READING_FIELDS
+                                                   if str(request.get(key) or '').strip()}}
     rows = proposal['rows']
     current = proposal.get('current_import')
     if proposal.get('document_review'):
@@ -159,6 +182,9 @@ def assess(proposal, request=None):
             if not any(p.get('row_id') == issue.get('row_id') and p['message'] == issue['message'] for p in problems):
                 problems.append(issue)
     problems.extend(arithmetic_problems(balance))
+    if earlier_reading:
+        can_import = False
+        problems.insert(0, dict(kind='earlier_reading_review', row_id=None, message=EARLIER_READING_MESSAGE))
     admission = None
     if can_import:
         from services.financial.statement_admission import assess_admission

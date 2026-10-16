@@ -367,6 +367,29 @@ def _stacked_readings(page, rects, *, rotation, deadline, language, whitelist=WH
     return results
 
 
+# A cell printed on a shaded band (a grey 'saldo anterior' strip) has paper
+# darker than the lighter ink thresholds: at 190 or 220 the whole crop turns
+# black and reads nothing. On paper darker than GREY_PAPER every threshold is
+# scaled to the cell's own paper tone (its 90th-percentile luminance), so the
+# six crops measure the same ink-to-paper contrast as on white paper. White
+# and off-white cells are unchanged.
+GREY_PAPER = 230
+
+
+def _paper_threshold(image, threshold):
+    histogram = image.histogram()[:256]
+    total = sum(histogram)
+    if not total:
+        return threshold
+    seen, paper = 0, 255
+    for value, count in enumerate(histogram):
+        seen += count
+        if seen >= 0.9 * total:
+            paper = value
+            break
+    return threshold if paper >= GREY_PAPER else max(1, round(threshold * paper / 255))
+
+
 def _read_stack(images, dpi, threshold, language, timeout, whitelist=WHITELIST):
     gap = max(20, int(dpi / 72 * 8))
     pad = 30
@@ -376,7 +399,8 @@ def _read_stack(images, dpi, threshold, language, timeout, whitelist=WHITELIST):
     with Image.new('L', (width, height), 255) as canvas:
         y = gap
         for image in images:
-            with image.point(lambda value: 255 if value >= threshold else 0) as ink:
+            cut = _paper_threshold(image, threshold)
+            with image.point(lambda value: 255 if value >= cut else 0) as ink:
                 canvas.paste(ink, (pad, y))
             spans.append((y, y + image.height))
             y += image.height + gap

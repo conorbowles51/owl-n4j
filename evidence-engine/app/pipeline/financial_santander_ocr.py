@@ -61,6 +61,10 @@ def _observation(data, rect, dpi, threshold):
     # Ignore only isolated line-border glyphs outside the complete label/value.
     while words and re.fullmatch(r"[|‘’'`]+", words[0][1]):
         words.pop(0)
+    # The mailing marks printed at the page's right edge fall inside the crop
+    # and read as one trailing mark ('*', '|', '-'): ignore it there too.
+    while words and re.fullmatch(r"[|*‘’'`_\-—–~]+", words[-1][1]):
+        words.pop()
     if words:
         index, word = words[0]
         words[0] = (index, re.sub(r"^[|‘’'`]+(?=SALDO$)", '', word))

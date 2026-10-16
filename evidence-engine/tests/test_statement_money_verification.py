@@ -177,3 +177,18 @@ def test_held_cells_store_their_printed_readings_for_the_statements_other_pages(
     assert cells['28.11']['printed_readings'] == [['25.11', 'crop_reading']]
     assert cells['-40.00']['printed_readings'] == [['-40.00', 'page_reading']]
     assert 'printed_readings' not in cells['15.79']
+
+
+def test_ink_thresholds_follow_a_shaded_cells_paper_and_leave_white_paper_alone():
+    """Live (Santander): an opening printed on a grey band (paper 164) read only at threshold 150."""
+    from PIL import Image
+    from app.pipeline.statement_money_verification import _paper_threshold
+    white = Image.new('L', (40, 10), 255)
+    off_white = Image.new('L', (40, 10), 240)
+    grey = Image.new('L', (40, 10), 164)
+    for image in (white, off_white):
+        assert [_paper_threshold(image, t) for t in (150, 190, 220)] == [150, 190, 220]
+    scaled = [_paper_threshold(grey, t) for t in (150, 190, 220)]
+    assert scaled == [96, 122, 141]
+    # Ink (black figures) stays below every scaled threshold, the band above it.
+    assert all(0 < t < 164 for t in scaled)

@@ -181,6 +181,42 @@ def vector_segments(drawings):
     return sum(len(path.get('items') or ()) for path in drawings)
 
 
+# A page whose characters are drawn left to right reads upright. Its
+# character outlines are drawn in reading order, so consecutive outlines
+# step to the right along each printed line. Characters made of several
+# outlines (i, j, colons) add as many up as down steps; text drawn
+# sideways or upside down steps mostly up, down or left instead.
+UPRIGHT_MIN_STEPS = 50
+UPRIGHT_VERTICAL_RATIO = 2
+UPRIGHT_REVERSE_RATIO = 10
+
+
+def drawing_directions(drawings):
+    """{0: right, 90: down, 180: left, 270: up}: steps between consecutive character outlines."""
+    boxes = [b for b in map(_bounds, _contours(drawings))
+             if b[2] - b[0] <= MAX_GLYPH_SIZE and b[3] - b[1] <= MAX_GLYPH_SIZE]
+    votes = {0: 0, 90: 0, 180: 0, 270: 0}
+    for a, b in zip(boxes, boxes[1:]):
+        size = max(a[2] - a[0], a[3] - a[1], b[2] - b[0], b[3] - b[1], 0.5)
+        dx = (b[0] + b[2] - a[0] - a[2]) / 2
+        dy = (b[1] + b[3] - a[1] - a[3]) / 2
+        if abs(dx) + abs(dy) > 3 * size or abs(dx) + abs(dy) < 0.05 * size:
+            continue  # a new line or a repeated outline, not the next character
+        if abs(dx) > 3 * abs(dy):
+            votes[0 if dx > 0 else 180] += 1
+        elif abs(dy) > 3 * abs(dx):
+            votes[90 if dy > 0 else 270] += 1
+    return votes
+
+
+def drawn_upright(drawings):
+    """True when the page's character outlines clearly run left to right (no rotation needed)."""
+    votes = drawing_directions(drawings)
+    return (votes[0] >= UPRIGHT_MIN_STEPS
+            and votes[0] >= UPRIGHT_VERTICAL_RATIO * max(votes[90], votes[270])
+            and votes[0] >= UPRIGHT_REVERSE_RATIO * votes[180])
+
+
 def page_glyphs(page, drawings=None):
     """The page's printed characters drawn as filled outlines, left to right."""
     if drawings is None:
@@ -235,6 +271,21 @@ def _has_space(glyphs):
     return any(b.x0 - a.x1 > SPACE_GAP_SHARE * height for a, b in zip(glyphs, glyphs[1:]))
 
 
+def _amount_gaps(glyphs):
+    """Every gap between the characters is narrow enough to lie inside one amount (``AMOUNT_JOIN_GAP``)."""
+    height = max(g.y1 - g.y0 for g in glyphs)
+    return all(b.x0 - a.x1 <= AMOUNT_JOIN_GAP * height for a, b in zip(glyphs, glyphs[1:]))
+
+
+def _without_added_marks(text, under):
+    """``text`` without the marks at its ends OCR read where no character is printed (a column rule
+    read as ``)`` or ``|``), when that leaves exactly one character per outline; else ``text``."""
+    if len(text) <= len(under):
+        return text
+    trimmed = re.sub(r'^[^0-9A-Za-z$]+|[^0-9A-Za-z.]+$', '', text)
+    return trimmed if len(trimmed) == len(under) else text
+
+
 def shape_labels(glyphs, words):
     """``{shape: (label, votes, total)}`` for every shape the page's OCR reads consistently.
 
@@ -247,7 +298,10 @@ def shape_labels(glyphs, words):
         if not text or any(c.isspace() for c in text):
             continue
         under = index.within(*box)
-        if len(under) != len(text) or _has_space(under):
+        if not under:
+            continue
+        text = _without_added_marks(text, under)
+        if len(under) != len(text) or (_has_space(under) and not (_AMOUNT.fullmatch(text) and _amount_gaps(under))):
             continue
         for glyph, character in zip(under, text):
             votes[glyph.shape][character] += 1
@@ -308,7 +362,10 @@ def _reconciled(text, reading):
 
 def _word_reading(text, under, labels):
     if _has_space(under):
-        return None
+        # A narrow figure's side bearing can be as wide as a space: one amount
+        # stays one word when every gap is within the amount limit.
+        reading = read_glyphs(under, labels) if _amount_gaps(under) else None
+        return reading if reading is not None and _AMOUNT.fullmatch(reading) and _reconciled(text, reading) else None
     if len(under) == len(text):
         characters = []
         for glyph, character in zip(under, text):

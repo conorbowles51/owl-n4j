@@ -1010,6 +1010,12 @@ class QualifiedDollarTests(unittest.TestCase):
                                   [('DOLAR AMERICANO SOBRE CUENTAS', 20000, 200000)], [('DOLARES', 20000, 200000)]])])[1]
         self.assertEqual([E._heading_currencies([row], 'dot') for row in rows], [set(), set(), {'USD'}, {'USD'}])
 
+    def test_a_bare_currency_code_counts_only_when_printed_in_capitals(self):
+        # Live: OCR of 'Ciudad de Mexico' as 'Ci cad de Mexico' proposed CAD for a peso statement.
+        rows = E._pages([page(1, [[('Cad de Mexico', 20000, 200000)], [('EMPRESA SA DE mn', 20000, 200000)],
+                                  [('CAD', 20000, 200000)], [('SALDOS EN MN', 20000, 200000)]])])[1]
+        self.assertEqual([E._heading_currencies([row], 'dot') for row in rows], [set(), set(), {'CAD'}, {'MXN'}])
+
 
 class SettlementDateTests(unittest.TestCase):
     def test_a_settlement_date_after_the_period_keeps_the_row_dated_inside_it(self):

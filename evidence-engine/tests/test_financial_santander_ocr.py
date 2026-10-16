@@ -90,3 +90,12 @@ def test_border_glyph_is_not_an_amount_or_label_correction():
     assert reading and reading['amount']=='$130.00'
     data['text'][1]='5ALDO'
     assert retry._observation(data,[350,310,590,330],300,None) is None
+
+
+def test_a_trailing_mailing_mark_is_ignored_but_not_a_trailing_figure():
+    # Live: the page-edge mailing mark inside the crop read as '*' after the amount on every crop.
+    data=crop('$654,321.09');data={key:values+(["*"] if key=='text' else [60] if key=='conf' else [0]) for key,values in data.items()}
+    reading=retry._observation(data,[350,310,590,330],300,None)
+    assert reading and reading['amount']=='$654,321.09'
+    data['text'][-1]='7'
+    assert retry._observation(data,[350,310,590,330],300,None) is None

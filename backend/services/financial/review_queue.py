@@ -530,8 +530,42 @@ def _counts(entries):
     return counts
 
 
-def _failed_files(session, case_id, file_filter):
-    """Files a batch could not prepare and that have no statement at all."""
+REMOVED_FILE_MESSAGE = ('You removed this file from Financial, so it is not read. If it should be read, restore it '
+                        'under Removed files in Statements & accounts.')
+GONE_FILE_MESSAGE = 'This file is no longer in the case, so there is nothing to read.'
+COPY_FILE_MESSAGE = 'An identical copy of this file has already been read, so nothing is missing.'
+
+
+def _set_aside_reason(session, case_id, record, read_shas):
+    """Why a failed preparation is not a reading problem: 'removed', 'gone' or 'copy'; None when it is one.
+
+    A batch can hold a file the investigator later removed from Financial
+    (or a selection can sweep removed files in): its preparation then fails
+    ('Statement not found in this case', 'The source recorded for restarting
+    this removed import is unavailable'). Nothing can be read until she
+    restores it, so it is counted as removed, never as "Couldn't read".
+    """
+    from services.financial.file_visibility import financial_file_visibility
+    ids = [UUID(i) for i in (record.get('source_id'), record.get('file_id')) if i and _uuid(i)]
+    files = [session.get(EvidenceFile, i) for i in ids]
+    files = [f for f in files if f is not None]
+    if not files or all(f.case_id != case_id for f in files):
+        return 'gone'
+    own = [f for f in files if f.case_id == case_id]
+    if any(financial_file_visibility(f)['financial_removed'] for f in own):
+        return 'removed'
+    if any(f.sha256 and f.sha256 in read_shas for f in own):
+        return 'copy'
+    return None
+
+
+def _failed_files(session, case_id, file_filter, set_aside=None):
+    """Files a batch could not prepare and that have no statement at all.
+
+    Failures that are not reading problems (the file was removed from
+    Financial, is no longer in the case, or its identical bytes were read from
+    another upload) are moved to ``set_aside`` with their reason instead.
+    """
     prepared = set(session.scalars(select(Item.file_id).join(Batch, Batch.id == Item.batch_id).where(
         Batch.case_id == case_id, Batch.status != 'removed', Item.status != 'removed')))
     failed = {}
@@ -550,7 +584,19 @@ def _failed_files(session, case_id, file_filter):
                     message=file.get('error') or 'This file could not be prepared.')
             else:
                 failed.pop(file.get('source_id'), None)
-    return list(failed.values())
+    if not failed:
+        return []
+    read_shas = set(session.scalars(select(EvidenceFile.sha256).where(EvidenceFile.case_id == case_id,
+        EvidenceFile.id.in_(prepared)))) if prepared else set()
+    result = []
+    for record in failed.values():
+        why = _set_aside_reason(session, case_id, record, read_shas)
+        if why is None:
+            result.append(record)
+        elif set_aside is not None:
+            set_aside.append(dict(record, reason=why, message={'removed': REMOVED_FILE_MESSAGE,
+                'gone': GONE_FILE_MESSAGE, 'copy': COPY_FILE_MESSAGE}[why], error=record['message']))
+    return result
 
 
 def _uuid(value):
@@ -571,9 +617,12 @@ def case_review_queue(session, *, case_id, file_ids=None, use_cache=True):
     file_filter = {str(i) for i in file_ids or []}
     if file_filter:
         entries = [e for e in entries if file_filter & set(e['file_ids'])]
-    failed = _failed_files(session, case_id, file_filter)
+    set_aside = []
+    failed = _failed_files(session, case_id, file_filter, set_aside)
     counts = _counts(entries)
     counts['unreadable_files'] = len(failed)
+    counts['removed_files'] = sum(1 for f in set_aside if f['reason'] in ('removed', 'gone'))
+    counts['copy_files'] = sum(1 for f in set_aside if f['reason'] == 'copy')
     waiting_for_reader = reader_files(entries)
     for entry in entries:
         entry.pop('root', None)
@@ -583,7 +632,8 @@ def case_review_queue(session, *, case_id, file_ids=None, use_cache=True):
         ready_batches[entry['batch_id']] = ready_batches.get(entry['batch_id'], 0) + 1
     return dict(case_id=str(case_id), file_ids=sorted(file_filter), counts=counts,
         status_line=status_line(counts, reading), reading=reading, items=pick('waiting'), copies=pick('copies'),
-        unreadable=pick('unreadable'), unreadable_files=failed, rechecking=pick('rechecking'),
+        unreadable=pick('unreadable'), unreadable_files=failed, set_aside_files=set_aside,
+        rechecking=pick('rechecking'),
         unexplained=pick('unexplained'), ready=pick('ready'), filled=pick('filled'),
         reader_fix=pick('reader_fix'), reader_files=waiting_for_reader,
         ready_batches=[dict(batch_id=key, statements=value) for key, value in
@@ -620,6 +670,10 @@ def status_line(counts, reading=None):
         parts.append(f"Being rechecked {counts['rechecking']}")
     if counts['left_unimported']:
         parts.append(f"Left out by you {counts['left_unimported']}")
+    if counts.get('removed_files'):
+        parts.append(f"Files removed from Financial {counts['removed_files']}")
+    if counts.get('copy_files'):
+        parts.append(f"Files already read from a copy {counts['copy_files']}")
     sentence = reading_sentence(reading)
     if sentence:
         parts.insert(0, sentence)
