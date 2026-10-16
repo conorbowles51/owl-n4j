@@ -220,8 +220,20 @@ def _saved_scopes(session, case_id):
     columns = (Source.id, Source.sha256_at_ingestion, Source.metadata_['statement_import_statement_id'].as_string(),
                Source.metadata_['statement_recovery_parent_id'].as_string(),
                Source.metadata_['financial_import_removal'].as_string(), Source.evidence_file_id)
-    rows = session.execute(select(*columns).where(Source.case_id == case_id, Source.status == 'admitted',
-        Source.document_type == 'statement_review')).all()
+    postgres = session.get_bind().dialect.name == 'postgresql'
+
+    def read(*conditions):
+        if not postgres:
+            return session.execute(select(*columns).where(*conditions)).all()
+        # The three metadata fields sit inside each record's large saved
+        # reading; read them again only for records changed since last time.
+        from sqlalchemy import func
+        from services.financial.pending_duplicate_projection import _digested
+        return [(identifier, sha, *fields, file_id) for (identifier,), (sha, file_id), fields in _digested(session, Source,
+            (Source.id,), (Source.sha256_at_ingestion, Source.evidence_file_id), func.jsonb_build_array(*columns[2:5]),
+            *conditions, kind='saved_scopes')]
+
+    rows = read(Source.case_id == case_id, Source.status == 'admitted', Source.document_type == 'statement_review')
     current = {}
     for _, sha, key, _, removed, file_id in rows:
         if not removed:
@@ -238,7 +250,7 @@ def _saved_scopes(session, case_id):
                 ids.append(UUID(value))
             except ValueError:
                 continue
-        for _, sha, key, parent, _, _ in session.execute(select(*columns).where(Source.case_id == case_id, Source.id.in_(ids))):
+        for _, sha, key, parent, _, _ in read(Source.case_id == case_id, Source.id.in_(ids)):
             scopes.add((sha, key or ''))
             if parent:
                 parents.add(parent)

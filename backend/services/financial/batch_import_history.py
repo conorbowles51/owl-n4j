@@ -1,7 +1,10 @@
 """Read-only current receipts for batch items and later replacement readings."""
-from collections import defaultdict
+from collections import OrderedDict, defaultdict
+from copy import deepcopy
+from threading import Lock
+from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import literal_column, select
 
 from postgres.models.financial import (
     FinancialSourceDocument as Source,
@@ -9,6 +12,7 @@ from postgres.models.financial import (
     FinancialTransaction as Row,
 )
 from services.financial.saved_statement_admission import current_saved_assessment
+from services.financial.pdf_candidates import _digest
 from services.financial.statement_details import saved_currency, saved_details
 
 
@@ -53,7 +57,96 @@ def project_individual_receipts(session, case_id, items):
     return result
 
 
+# Per process: source document id -> (row versions, receipt). A receipt is a
+# pure function of the source record, its period rows and its current
+# payments; it is reused while none of those rows has a new version (xmin).
+# Re-assessing every imported statement was ~9 s of each queue rebuild.
+_RECEIPTS = OrderedDict()
+_RECEIPTS_LOCK = Lock()
+RECEIPTS_KEPT = 20_000
+
+
+def _row_version(session, model):
+    """SQL for a row's version, or None where the database has none (SQLite)."""
+    if session.get_bind().dialect.name != 'postgresql':
+        return None
+    return literal_column(f'{model.__tablename__}.xmin::text')
+
+
 def current_imports(session, case_id, source_ids):
+    """current receipts, reusing a statement's receipt while its rows are unchanged."""
+    source_ids = list(dict.fromkeys(source_ids))
+    if not source_ids:
+        return {}
+    version = _row_version(session, Source)
+    # Unflushed edits live only in this session's identity map; read them.
+    if version is None or any(isinstance(obj, (Source, Period, Row))
+                              for obj in (*session.new, *session.dirty, *session.deleted)):
+        return _current_imports(session, case_id, source_ids)
+    replaces = Source.metadata_['statement_import_request']['replaces_source_document_id'].as_string()
+
+    def fetch(ids):
+        return {str(row.id): row for row in session.execute(select(Source.id, Source.superseded_by_id,
+            replaces.label('replaces'), version.label('row_version')).where(Source.case_id == case_id, Source.id.in_(ids)))}
+
+    # The same replacement chain as _current_imports, from identity columns only.
+    found = fetch(source_ids)
+    pending = {row.superseded_by_id for row in found.values()
+               if row.superseded_by_id and str(row.superseded_by_id) not in found}
+    while pending:
+        following = fetch(pending)
+        found.update(following)
+        pending = {row.superseded_by_id for row in following.values()
+                   if row.superseded_by_id and str(row.superseded_by_id) not in found}
+    current = {}
+    for identifier in source_ids:
+        row = found.get(str(identifier))
+        seen = set()
+        while row and row.superseded_by_id and row.id not in seen:
+            seen.add(row.id)
+            child = found.get(str(row.superseded_by_id))
+            if child is None or child.replaces != str(row.id):
+                break
+            row = child
+        if row:
+            current[str(identifier)] = row
+    ids = {row.id for row in current.values()}
+    parts = defaultdict(lambda: ([], []))
+    for document_id, identifier, row_version in session.execute(select(Period.source_document_id, Period.id,
+            _row_version(session, Period)).where(Period.case_id == case_id, Period.source_document_id.in_(ids))):
+        parts[document_id][0].append((str(identifier), row_version))
+    for document_id, identifier, row_version in session.execute(select(Row.source_document_id, Row.id,
+            _row_version(session, Row)).where(Row.case_id == case_id, Row.source_document_id.in_(ids),
+            Row.superseded_by_id.is_(None))):
+        parts[document_id][1].append((str(identifier), row_version))
+    keys = {document_id: _digest(dict(source=found[str(document_id)].row_version,
+        periods=sorted(parts[document_id][0]), rows=sorted(parts[document_id][1]))) for document_id in ids}
+    receipts, missing = {}, []
+    with _RECEIPTS_LOCK:
+        for document_id in ids:
+            entry = _RECEIPTS.get(document_id)
+            if entry is not None and entry[0] == keys[document_id]:
+                _RECEIPTS.move_to_end(document_id)
+                receipts[document_id] = entry[1]
+            else:
+                missing.append(document_id)
+    if missing:
+        # A row changed between these reads gets a new version, so a receipt
+        # computed from newer rows is stored under an older key at worst; the
+        # next read sees the newer version and computes it again.
+        fresh = {UUID(identifier): receipt for identifier, receipt in _current_imports(session, case_id, missing).items()}
+        receipts.update(fresh)
+        with _RECEIPTS_LOCK:
+            for document_id, receipt in fresh.items():
+                # A private copy: the receipt can share lists with this session's objects.
+                _RECEIPTS[document_id] = (keys[document_id], deepcopy(receipt))
+                _RECEIPTS.move_to_end(document_id)
+            while len(_RECEIPTS) > RECEIPTS_KEPT:
+                _RECEIPTS.popitem(last=False)
+    return {identifier: deepcopy(receipts[row.id]) for identifier, row in current.items() if row.id in receipts}
+
+
+def _current_imports(session, case_id, source_ids):
     """Load shared source data once, then assess the current saved values.
 
     Stored import issues and admission results describe an earlier revision.

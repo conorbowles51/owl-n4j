@@ -5,6 +5,7 @@ the row's own content in for its version: any change to it is a new version.
 """
 import hashlib
 from datetime import date
+from uuid import uuid4
 from unittest import TestCase
 from unittest.mock import patch
 from sqlalchemy import String, cast, event, select
@@ -149,3 +150,75 @@ class ComparisonCacheTests(TestCase):
         self.assertEqual(len(first), 1)
         self.assertNotEqual(third[0][2], first[0][2])
         self.assertIn('changed', third[0][2])
+
+
+def all_columns_version(session, model):
+    """Stand-in for xmin in SQLite: the row's whole content."""
+    from sqlalchemy import func
+    return func.json_array(*(cast(column, String) for column in model.__table__.columns))
+
+
+from services.financial import batch_import_history
+from tests import test_financial_batch_import_history as history_tests
+
+
+class CachedReceiptHistoryTests(history_tests.CurrentBatchImportHistoryTests):
+    """Every saved-receipt behaviour holds with receipts reused per row version."""
+
+    def setUp(self):
+        batch_import_history._RECEIPTS.clear()
+        self._versions = patch.object(batch_import_history, '_row_version', all_columns_version)
+        self._versions.start()
+        super().setUp()
+
+    def tearDown(self):
+        self._versions.stop()
+        batch_import_history._RECEIPTS.clear()
+        super().tearDown()
+
+    def test_an_unchanged_statement_is_not_assessed_again_and_a_changed_one_is(self):
+        with self.f.SessionLocal() as db:
+            first = batch_import_history.current_imports(db, self.f.case.id, [self.source_id])
+        with patch.object(batch_import_history, '_current_imports', side_effect=AssertionError('assessed again')), \
+                self.f.SessionLocal() as db:
+            self.assertEqual(batch_import_history.current_imports(db, self.f.case.id, [self.source_id]), first)
+        with self.f.SessionLocal() as db:
+            row = db.scalar(select(history_tests.FinancialTransaction).where(
+                history_tests.FinancialTransaction.source_document_id == self.source_id))
+            row.amount_minor += 10000
+            db.commit()
+        with self.f.SessionLocal() as db:
+            changed = batch_import_history.current_imports(db, self.f.case.id, [self.source_id])
+        with patch.object(batch_import_history, '_row_version', lambda session, model: None), self.f.SessionLocal() as db:
+            self.assertEqual(changed, batch_import_history.current_imports(db, self.f.case.id, [self.source_id]))
+        self.assertNotEqual(changed, first)
+
+    def test_returned_receipts_are_private_copies(self):
+        with self.f.SessionLocal() as db:
+            first = batch_import_history.current_imports(db, self.f.case.id, [self.source_id])
+            first[str(self.source_id)]['issues'].append('changed by a caller')
+            again = batch_import_history.current_imports(db, self.f.case.id, [self.source_id])
+        self.assertNotIn('changed by a caller', again[str(self.source_id)]['issues'])
+
+    def test_repeated_source_receipts_share_bulk_queries_and_assessment(self):
+        # Overrides the uncached count of 3: a miss adds three light version
+        # reads; a hit reads versions only. Neither grows with repetitions.
+        def run():
+            statements = []
+            with self.f.SessionLocal() as db:
+                connection = db.connection()
+                collect = lambda _conn, _cursor, statement, *_: statements.append(statement)
+                event.listen(connection, 'before_cursor_execute', collect)
+                try:
+                    with patch.object(batch_import_history, 'current_saved_assessment',
+                            wraps=batch_import_history.current_saved_assessment) as assess:
+                        result = batch_import_history.current_imports(db, self.f.case.id, [self.source_id] * 143)
+                finally:
+                    event.remove(connection, 'before_cursor_execute', collect)
+            self.assertTrue(all(sql.lstrip().upper().startswith('SELECT') for sql in statements))
+            self.assertEqual(result[str(self.source_id)]['transaction_count'], 12)
+            return len(statements), assess.call_count
+        self.assertEqual(run(), (6, 1))
+        self.assertEqual(run(), (3, 0))
+        with self.f.SessionLocal() as db:
+            self.assertEqual(batch_import_history.current_imports(db, uuid4(), [self.source_id]), {})
