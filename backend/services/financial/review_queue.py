@@ -270,6 +270,12 @@ def _entry(item, batch_id, describe_result=None):
     return entry
 
 
+def _preparing_again(batches):
+    """(batch id, file id) of prepared files a running batch is preparing again."""
+    return {(batch.id, file['file_id']) for batch in batches if batch.status in ('preparing', 'pausing')
+            for file in batch.files or [] if file.get('file_id') and file.get('status') == 'processing'}
+
+
 def _build(session, case_id):
     batches = {batch.id: batch for batch in session.scalars(select(Batch).where(
         Batch.case_id == case_id, Batch.status != 'removed'))}
@@ -321,11 +327,16 @@ def _build(session, case_id):
             rows.append((identity, bucket, full[item.id], None, None))
     from services.financial import field_proposals
     knowledge = []  # loaded once, only when a waiting statement lacks a detail
+    preparing_again = _preparing_again(batches.values())
     for identity, item in representatives.items():
         current = projected.get(item.id)
         if current is None:
             continue
         bucket = classify(current)
+        if bucket in ('waiting', 'ready', 'filled', 'unreadable') and (item.batch_id, str(item.file_id)) in preparing_again:
+            # Its file is being prepared again (after a release, or a retry):
+            # what it shows now may change in a moment.
+            bucket = 'rechecking'
         detail = describe(current.summary) if bucket in ('waiting', 'unreadable') else None
         if bucket == 'unreadable':
             page = current.summary.get('page_number')

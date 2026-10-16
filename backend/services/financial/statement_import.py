@@ -379,6 +379,15 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
         excluded_duplicates=True, memo=memo)
     if excluded_copy is not None:
         current = excluded_copy
+    elif current is not None and current.evidence_file_id != file.id:
+        # Equal bytes alone do not make another upload's import this file's
+        # own: only a reading of the same original (its lineage) is. A copy
+        # uploaded separately is compared as a duplicate and set aside, linked
+        # to the saved statement, exactly as the import writer decides it.
+        from services.financial.source_lineage import lineage_id
+        current_file = session.get(EvidenceFile, current.evidence_file_id)
+        if current_file is None or lineage_id(current_file) != lineage_id(file):
+            current = None
     current_import = None
     if current is not None:
         current_file = session.get(EvidenceFile, current.evidence_file_id)

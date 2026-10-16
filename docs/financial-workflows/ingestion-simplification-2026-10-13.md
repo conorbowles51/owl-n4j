@@ -39,6 +39,13 @@ it differently, so the investigator can be sent to the same statement from two d
 | 7 | **Run "check for additional statement periods" and refreshes automatically** after preparation and after each correction. | Two buttons the investigator must know to press. | Cheap. |
 | 8 | **Fewer reading and balance checks** by fixing the readers (the real-document programme). | Step 7 for most statements. | Expensive; already under way. |
 
+Rank 7 done (r7-autosave, 2026-10-15): both buttons are gone from the batch view. After a release whose statement
+readers read a prepared file differently, the batch loop prepares that file again from its saved reading
+(services/financial/reader_release.py, switch FINANCIAL_RECHECK_AFTER_RELEASE, default on), keeping every edit,
+draft, import and decision; the queue shows those statements as being rechecked, and the batch view and queue read
+themselves again while anything is rechecked, prepared or saved. The server route for the old button remains for
+diagnosis.
+
 Already in place: copies are announced before opening (step 9), and starting a batch over files already in an
 unfinished batch offers to continue it, with a fresh batch as a separate, explicit choice. In the example, a new
 selection of the same 109 files would have been offered the unfinished batch from 6 Oct that already holds all 109.

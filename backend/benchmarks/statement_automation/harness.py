@@ -26,6 +26,13 @@ What runs, in order, all against a disposable SQLite database in DIR:
    worker turns until the queue drains. Every saved transaction is compared
    with the ground truth for amount, direction, currency, account and date.
 
+The automatic save of fully reconciled statements runs as in the product
+(``FINANCIAL_AUTO_SAVE_READY=0`` turns it off, for comparison with older runs):
+a period the system saved by itself counts as ready without any edit, and is
+judged exactly like one offered for the group import. The run exits 1 on a
+wrong admission, a printed period saved twice, or an exact copy offered or
+saved instead of set aside (``safety_failures``).
+
 No cached readings, saved corrections or prior admissions exist: this is the
 plan's fresh-upload track. Nothing outside DIR is written.
 """
@@ -54,7 +61,19 @@ HERE = Path(__file__).resolve().parent
 BACKEND = HERE.parents[1]
 REPO = BACKEND.parent
 CORPUS = HERE / 'corpus'
-MAX_WORKER_TURNS = 400
+# A drain ends when the batch leaves 'preparing', or when this many consecutive
+# worker turns, lasting at least STALL_SECONDS together, changed nothing (no item
+# or file moved). Bounded by progress rather than a turn count: a real corpus
+# needs thousands of turns, and a stuck one is reported, not waited on forever.
+# STALL_SECONDS outlasts the worker's 5-minute batch lease: on SQLite (no row
+# locks) a lease renewal still in flight when a turn releases the batch can
+# commit after the release, and every turn until it expires does nothing
+# (bench/wave6: ~1,660 of its 2,711 import turns). PostgreSQL serialises the
+# two on the batch row, so the product is not affected. A quiet turn pauses
+# for QUIET_PAUSE_SECONDS instead of spinning.
+STALL_TURNS = 40
+STALL_SECONDS = 420.0
+QUIET_PAUSE_SECONDS = 1.0
 
 
 def _load_models():
@@ -125,6 +144,47 @@ def read_corpus(python, files, out, concurrency, readings=None):
         raise RuntimeError('Engine reading failed; see ' + str(out / 'engine-read.log'))
     data = json.loads(target.read_text())
     return data['readings'], wall, data.get('child_cpu_seconds', 0.0)
+
+
+def drain_batch(turn, progress, label, *, stall_turns=None, stall_seconds=None, clock=time.monotonic,
+                pause=lambda: time.sleep(QUIET_PAUSE_SECONDS)):
+    """Run worker turns until the batch leaves 'preparing' or stops making progress.
+
+    ``progress()`` returns ``(batch status, signature)``; the signature changes
+    whenever an item or file moves. A stall is ``stall_turns`` consecutive turns
+    lasting ``stall_seconds`` together with the same signature (an import
+    retry waiting out its backoff is not a stall until that time has passed).
+    """
+    stall_turns = STALL_TURNS if stall_turns is None else stall_turns
+    stall_seconds = STALL_SECONDS if stall_seconds is None else stall_seconds
+    started = clock()
+    turns, quiet, quiet_since, stalled, quiet_turns = 0, 0, clock(), False, 0
+    state, signature = progress()
+    while True:
+        turn()
+        turns += 1
+        state, now = progress()
+        if state != 'preparing':
+            break
+        if now != signature:
+            signature, quiet, quiet_since = now, 0, clock()
+            continue
+        quiet += 1
+        quiet_turns += 1
+        if quiet >= stall_turns and clock() - quiet_since >= stall_seconds:
+            stalled = True
+            break
+        pause()
+    return dict(stage=label, turns=turns, seconds=clock() - started, final_status=state, stalled=stalled,
+                quiet_turns=quiet_turns)
+
+
+def saved_by_system(db, batch_id, Item, actor):
+    """Ids of the batch's statements claimed by the automatic save (actor System), saved or saving."""
+    from sqlalchemy import select
+    return {str(item.id) for item in db.scalars(select(Item).where(
+        Item.batch_id == batch_id, Item.status.in_(('imported', 'pending_import'))))
+        if ((item.summary or {}).get('import_actor') or {}).get('email') == actor.email}
 
 
 def repair_summary(locations):
@@ -437,6 +497,8 @@ def run(out, python, concurrency, corpus=CORPUS, readings=None, compare=None):
     from services.financial.batch_review_summary import reason as review_reason
     from services.financial.decisions import Actor
     from services.financial.statement_import import read_statement_import
+    from services.financial import queue_save
+    from postgres.models.financial_import_batches import FinancialImportBatchItem as Item
 
     engine, factory, skipped_tables = _database(out / 'benchmark.db')
     with factory() as db:
@@ -488,20 +550,16 @@ def run(out, python, concurrency, corpus=CORPUS, readings=None, compare=None):
         batch_id = batches.create_batch(db, case_id=case_id, request_id=uuid.uuid4(), file_ids=[],
                                         folder_ids=[folder_id], actor=actor)
 
-    # A worker turn checks or imports a handful of items; a large real corpus
-    # needs more turns than the synthetic one (whose limit stays 400).
-    turn_limit = max(MAX_WORKER_TURNS, 2 * len(manifest['files']) + sum(len(f['periods']) for f in manifest['files']))
+    def progress():
+        with factory() as db:
+            batch = batches.batch_for(db, case_id, batch_id)
+            items = Counter(db.scalars(select(Item.status).where(Item.batch_id == batch_id)))
+            return batch.status, (tuple(sorted(items.items())),
+                                  tuple((f['status'], (f.get('progress') or {}).get('stage')) for f in batch.files))
 
     def drain(label):
-        started, turns = time.monotonic(), 0
-        while turns < turn_limit:
-            asyncio.run(batches.advance_batch(factory, batch_id, Path, process_files))
-            turns += 1
-            with factory() as db:
-                state = batches.batch_for(db, case_id, batch_id).status
-            if state not in ('preparing',):
-                break
-        return dict(stage=label, turns=turns, seconds=time.monotonic() - started, final_status=state)
+        return drain_batch(lambda: asyncio.run(batches.advance_batch(factory, batch_id, Path, process_files)),
+                           progress, label)
 
     preparation = drain('preparation')
     started = time.monotonic()
@@ -518,6 +576,7 @@ def run(out, python, concurrency, corpus=CORPUS, readings=None, compare=None):
     used = set()
     views = {}  # item id -> what its proposal offers, for the per-statement comparison
     with factory() as db:
+        system_saved = saved_by_system(db, batch_id, Item, queue_save.SYSTEM_ACTOR)
         read = []
         for item in status['items']:
             filename = file_names.get(uuid.UUID(item['file_id'])) or item.get('filename')
@@ -541,9 +600,14 @@ def run(out, python, concurrency, corpus=CORPUS, readings=None, compare=None):
             reasons = Counter(review_reason(p) for p in item.get('problems', []))
             if item.get('problem_count', 0) > len(item.get('problems', [])):
                 reasons['additional'] += item['problem_count'] - len(item['problems'])
+            # A statement the system saved by itself at the end of preparation
+            # (AUTO_SAVE_READY) is the best case, ready with no click at all:
+            # it counts as ready, and every safety check below applies to it
+            # exactly as to a statement offered for the group import.
+            auto_saved = item['id'] in system_saved
             entry = dict(item_id=item['id'], filename=filename, statement_id=item.get('statement_id'),
-                         scored=_scored(truth),
-                         status=item['status'], can_import=bool(item.get('can_import')),
+                         scored=_scored(truth), auto_saved=auto_saved,
+                         status=item['status'], can_import=bool(item.get('can_import')) or auto_saved,
                          truth_id=truth['id'] if truth else None, family=truth['family'] if truth else 'unmatched',
                          expected=truth['expected'] if truth else None, defects=truth['defects'] if truth else [],
                          added_in=truth.get('added_in', 'v1-v3') if truth else None,
@@ -590,6 +654,7 @@ def run(out, python, concurrency, corpus=CORPUS, readings=None, compare=None):
         corpus=dict(version=manifest['version'], files=len(manifest['files']), periods=len(truths), path=str(corpus)),
         code=dict(commit=_git('rev-parse', 'HEAD'), dirty=bool(_git('status', '--porcelain', '--', 'backend', 'evidence-engine'))),
         environment=dict(cpus=os.cpu_count(), load_average_before=load_before, load_average_after=os.getloadavg(),
+                         auto_save_ready=queue_save.AUTO_SAVE_READY,
                          python=sys.version.split()[0], engine_python=python, tesseract=_tesseract(),
                          database='sqlite (disposable, ' + str(out / 'benchmark.db') + ')',
                          skipped_non_financial_tables=skipped_tables),
@@ -823,24 +888,65 @@ def proposal_field_errors(proposal, truth):
     return {k: v for k, v in errors.items() if v}
 
 
+def printed_statement(truth, truths):
+    """The truth period a copy repeats, else the period itself: what "the same printed statement" means.
+
+    The truth decides it, not equal values: two quiet sections of one member
+    with the same account, dates and zero balances are two statements (bench
+    r7-autosave: 16 such pairs). Real truth names the original period
+    (``duplicate_of`` = its id); the synthetic corpus names the original file,
+    whose period with the same dates and money is the original.
+    """
+    original = truth.get('duplicate_of')
+    if not original:
+        return truth['id']
+    if original in truths:
+        return original
+    for other in truths.values():
+        if (other.get('filename') == original and not other.get('duplicate_of')
+                and (other['period_start'], other['period_end']) == (truth['period_start'], truth['period_end'])
+                and _same_money(other, truth)):
+            return other['id']
+    return truth['id']
+
+
 def verify_ledger(db, periods, final_items, truths, Transaction, Account, select, incomplete_files=()):
     """Compare every saved transaction with the period it was admitted from.
 
     ``incomplete_files``: real documents whose truth did not find or verify every
     statement; an admitted item there that matches no truth period is counted
     as admitted-unscored, not as a wrong admission.
+
+    Each saved statement (source document) is counted once. A second item
+    pointing at a statement already counted (a copy shown as saved through the
+    original's import) adds no rows; it is counted in ``items_sharing_a_saved_statement``
+    and judged by the copy check in :func:`safety_failures`. ``duplicate_contributions``
+    are the rows written through a second saved statement of the same printed
+    statement, as the truth judges it (:func:`printed_statement`: a copy is its original).
+    ``repeated_amount_date_rows`` is the older, coarse figure (rows sharing family,
+    account, amount, direction and date), kept for comparison with earlier runs:
+    on real statements it also counts genuine repeated payments.
     """
     report = dict(admitted_periods=0, transactions=0, critical_errors=Counter(), wrongly_admitted=[],
-                  duplicate_contributions=0, by_period={})
+                  duplicate_contributions=0, items_sharing_a_saved_statement=0, by_period={})
     seen = Counter()
+    counted = set()
+    printed_periods = defaultdict(dict)  # printed period -> {source document: saved rows}
     for period in periods:
         item = final_items.get(period['item_id']) if period['item_id'] else None
         period['final_status'] = item['status'] if item else period['status']
         if not item or item['status'] != 'imported' or not item.get('source_document_id'):
             continue
+        if item['source_document_id'] in counted:
+            report['items_sharing_a_saved_statement'] += 1
+            continue
+        counted.add(item['source_document_id'])
         report['admitted_periods'] += 1
         rows = list(db.scalars(select(Transaction).where(
             Transaction.source_document_id == uuid.UUID(item['source_document_id']))))
+        identity = truths.get(period['truth_id'])
+        printed = printed_statement(identity, truths) if identity else ('saved statement', item['source_document_id'])
+        printed_periods[printed][item['source_document_id']] = len(rows)
         truth = truths.get(period['truth_id'])
         if truth is None and period.get('filename') in incomplete_files:
             report['admitted_unscored'] = report.get('admitted_unscored', 0) + 1
@@ -898,7 +1004,10 @@ def verify_ledger(db, periods, final_items, truths, Transaction, Account, select
         if errors or (truth and truth['expected'] in HELD):
             report['wrongly_admitted'].append(dict(period=period['truth_id'], expected=truth['expected'] if truth else None,
                                                    errors=dict(errors)))
-    report['duplicate_contributions'] = sum(count - 1 for count in seen.values() if count > 1)
+    report['repeated_amount_date_rows'] = sum(count - 1 for count in seen.values() if count > 1)
+    report['duplicate_contributions'] = sum(sum(saved.values()) - max(saved.values())
+                                            for saved in printed_periods.values() if len(saved) > 1)
+    report['printed_periods_saved_twice'] = sum(len(saved) > 1 for saved in printed_periods.values())
     report['critical_errors'] = dict(report['critical_errors'])
     return report
 
@@ -978,6 +1087,7 @@ def metrics(result):
             wrong_values.update({k: v for k, v in (p.get('proposal_checks') or {}).items() if k.endswith('_wrong')})
         return dict(periods=total, ready_without_edits=len(ready),
                     ready_without_edits_pct=round(100 * len(ready) / total, 1) if total else None,
+                    saved_automatically=sum(bool(p.get('auto_saved')) for p in unique),
                     clean_ready=sum(p['status'] == 'ready' and p['can_import'] for p in unique),
                     recoverable_periods=len(auto), recoverable_ready=len(auto_ready),
                     recoverable_ready_pct=round(100 * len(auto_ready) / len(auto), 1) if auto else None,
@@ -987,6 +1097,8 @@ def metrics(result):
                     duplicate_copies=len(copies),
                     duplicate_copies_held_automatically=sum(p['status'] == 'duplicate_ignored' for p in copies),
                     duplicate_copies_offered_for_import=sum(p['can_import'] for p in copies),
+                    duplicate_copies_saved=sum(p.get('final_status', p['status']) in ('imported', 'pending_import')
+                                               for p in copies),
                     blocked=total - len(ready), blocking_reasons=dict(histogram.most_common()),
                     human_actions_per_period=actions, human_actions_grouped=grouped + len(keys),
                     shared_decisions=sorted('/'.join(k) for k in keys),
@@ -1011,6 +1123,26 @@ def metrics(result):
                              for e in sorted({p['expected'] or 'unmatched' for p in periods})})
 
 
+def safety_failures(result):
+    """Why this run must fail (exit 1); empty when it may pass.
+
+    A wrong admission; a printed period saved through two statements (rows or
+    not); an exact copy offered for import, saved, or shown as saved through
+    the original's import instead of being set aside.
+    """
+    ledger, overall = result['ledger'], result['metrics']['overall']
+    failures = []
+    if ledger['wrongly_admitted']:
+        failures.append(f"{len(ledger['wrongly_admitted'])} wrongly admitted period(s)")
+    if ledger.get('duplicate_contributions') or ledger.get('printed_periods_saved_twice'):
+        failures.append(f"{ledger.get('printed_periods_saved_twice', 0)} printed period(s) saved twice "
+                        f"({ledger.get('duplicate_contributions', 0)} duplicate ledger contributions)")
+    copies = overall.get('duplicate_copies_offered_for_import', 0) + overall.get('duplicate_copies_saved', 0)
+    if copies:
+        failures.append(f"{copies} exact cop{'y' if copies == 1 else 'ies'} offered or saved instead of set aside")
+    return failures
+
+
 def render_summary(result):
     m = result['metrics']
     o = m['overall']
@@ -1023,6 +1155,12 @@ def render_summary(result):
              f"({o['ready_without_edits_pct']}%).** Recoverable periods (source establishes every fact) ready: "
              f"{o['recoverable_ready']} of {o['recoverable_periods']} ({o['recoverable_ready_pct']}%). "
              f"The other {o['decision_periods']} need a genuine decision and {o['hold_periods']} must stay held.", '',
+             *([f"Saved automatically by the system (no click; counted as ready): {o['saved_automatically']} of "
+                f"{o['ready_without_edits']} ready periods.", '']
+               if result.get('environment', {}).get('auto_save_ready') else
+               ['Automatic save of ready statements was off (FINANCIAL_AUTO_SAVE_READY=0).', '']),
+             *([f"**SAFETY FAILURE (exit 1): {'; '.join(safety_failures(result))}.**", '']
+               if safety_failures(result) else []),
              f"Safety: wrongly admitted periods {len(ledger['wrongly_admitted'])}; critical-field errors in saved "
              f"transactions {sum(ledger['critical_errors'].values())} ({ledger['transactions']} saved from "
              f"{ledger['admitted_periods']} periods); duplicate ledger contributions {ledger['duplicate_contributions']}; "
@@ -1123,14 +1261,14 @@ def main(argv=None):
             parser.error('--rescore needs --out (the finished run directory)')
         result = rescore(Path(args.out), Path(args.corpus), Path(args.compare) if args.compare else None)
         print((Path(args.out) / 'summary-rescored.md').read_text())
-        return 0 if not result['ledger']['wrongly_admitted'] else 1
+        return 1 if safety_failures(result) else 0
     out = Path(args.out) if args.out else Path(os.environ.get('TMPDIR', '/tmp')) / (
         f"loupe-statement-benchmark-{os.environ.get('USER') or os.getuid()}-{datetime.now():%Y%m%d-%H%M%S}")
     result = run(out, args.engine_python, args.concurrency, Path(args.corpus), args.readings,
                  Path(args.compare) if args.compare else None)
     print((out / 'summary.md').read_text())
     print(f'Full results: {out / "results.json"}')
-    return 0 if not result['ledger']['wrongly_admitted'] else 1
+    return 1 if safety_failures(result) else 0
 
 
 if __name__ == '__main__':
