@@ -547,7 +547,8 @@ class _ProjectionInputs:
 
     def __init__(self, session, case_id, items):
         self.session, self.case_id = session, case_id
-        self.files = {file.id: file for file in session.scalars(select(EvidenceFile).where(
+        from services.financial.source_lineage import case_wide_files
+        self.files = {file.id: file for file in session.scalars(case_wide_files().where(
             EvidenceFile.case_id == case_id, EvidenceFile.id.in_({item.file_id for item in items})))}
         self.admitted = _admitted_sources(session, case_id, {item.file_id for item in items})
         self._guards = None

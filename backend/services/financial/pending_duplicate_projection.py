@@ -31,19 +31,23 @@ def _row_version(model):
     return literal_column(f'{model.__tablename__}.xmin::text')
 
 
-def _digested(session, model, keys, columns, digest, *conditions):
-    """[(key tuple, column tuple, digest)] for matching rows, hashing only changed rows."""
-    table = model.__tablename__
+def _digested(session, model, keys, columns, digest, *conditions, kind=None):
+    """[(key tuple, column tuple, digest)] for matching rows, hashing only changed rows.
+
+    ``digest`` is any expression that is costly for the database (it reads a
+    large value); ``kind`` names it when one table is digested more than one way.
+    """
+    table = kind or model.__tablename__
     version = _row_version(model).label('row_version')
     width = len(keys)
     rows = session.execute(select(*keys, *columns, version).where(*conditions)).all()
-    result, missing = [], []
+    found, missing = {}, []
     with _DIGESTS_LOCK:
         for row in rows:
             key, values, row_version = tuple(row[:width]), tuple(row[width:-1]), row[-1]
             known = _DIGESTS.get((table, key))
             if known is not None and known[0] == row_version:
-                result.append((key, values, known[1]))
+                found[key] = (key, values, known[1])
             else:
                 missing.append((key, values))
     if missing:
@@ -62,8 +66,9 @@ def _digested(session, model, keys, columns, digest, *conditions):
                 _DIGESTS.move_to_end((table, key))
             while len(_DIGESTS) > DIGESTS_KEPT:
                 _DIGESTS.popitem(last=False)
-        result.extend((key, values, value) for key, (values, _, value) in hashed.items())
-    return result
+        found.update({key: (key, values, value) for key, (values, _, value) in hashed.items()})
+    # In the order the database returned the rows, as a single query would.
+    return [found[key] for key in (tuple(row[:width]) for row in rows) if key in found]
 
 
 def load_projection_context(session, case_id, files):
