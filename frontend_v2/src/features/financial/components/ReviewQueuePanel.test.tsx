@@ -430,3 +430,24 @@ it("reads removed PDFs whose restart copy is gone afresh with one explicit reque
     ] },
   })
 })
+
+it("checks the unreadable statements' files again with the current reader in one request", async () => {
+  const unreadable = [
+    { ...base, id: "u1", batch_id: "b1", file_id: "f1", filename: "A.pdf", bucket: "unreadable", status: "attention" },
+    { ...base, id: "u2", batch_id: "b2", file_id: "f2", filename: "B.pdf", bucket: "unreadable", status: "attention" },
+  ]
+  vi.mocked(fetchAPI).mockImplementation(async (url: string) => {
+    if (url.includes("/review/queue"))
+      return { ...queue, counts: { ...queue.counts, unreadable: 2 }, unreadable } as never
+    if (url.includes("/review/check-again")) return { requested: 2, queued: 2, skipped: [] } as never
+    throw Error(`unexpected ${url}`)
+  })
+  mount("/cases/case/financial?view=statements&queue=1&queueList=unreadable")
+  fireEvent.click(await screen.findByRole("button", { name: "Check 2 statements again" }))
+  expect(await screen.findByText("2 files are being checked again")).toBeVisible()
+  const call = vi.mocked(fetchAPI).mock.calls.find(([url]) => String(url).includes("/review/check-again"))
+  expect(call?.[1]).toMatchObject({
+    method: "POST",
+    body: { files: [{ batch_id: "b1", file_id: "f1" }, { batch_id: "b2", file_id: "f2" }] },
+  })
+})

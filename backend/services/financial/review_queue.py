@@ -347,11 +347,17 @@ def _build(session, case_id):
     from services.financial import field_proposals
     knowledge = []  # loaded once, only when a waiting statement lacks a detail
     preparing_again = _preparing_again(batches.values())
+    # A file-level preparation that found nothing does not stand for a file
+    # that a preparation (another batch, a later reader) split into named
+    # statements: those statements are the file's entries, wherever they stand.
+    named = {root for root, key in identities if key}
     for identity, item in representatives.items():
         current = projected.get(item.id)
         if current is None:
             continue
         bucket = classify(current)
+        if bucket == 'unreadable' and not identity[1] and identity[0] in named:
+            continue
         if bucket in ('waiting', 'ready', 'filled', 'unreadable') and (item.batch_id, str(item.file_id)) in preparing_again:
             # Its file is being prepared again (after a release, or a retry):
             # what it shows now may change in a moment.

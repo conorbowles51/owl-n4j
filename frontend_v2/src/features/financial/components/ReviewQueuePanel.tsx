@@ -10,6 +10,7 @@ import {
   savedOutcome,
   fillAndSaveReady,
   readRetainedAfresh,
+  checkUnreadableAgain,
   useReviewQueue,
   type QueueEntry,
   type QueueSaveResult,
@@ -190,6 +191,22 @@ export function ReviewQueuePanel({
       setAfreshResult(error instanceof Error ? error.message : "Reading afresh could not start.")
     } finally {
       setReadingAfresh(false)
+      void client.invalidateQueries({ queryKey: ["financial-review-queue", caseId] })
+      void client.invalidateQueries({ queryKey: ["financial-review-status", caseId] })
+    }
+  }
+  const [checkingAgain, setCheckingAgain] = useState(false)
+  const [checkAgainResult, setCheckAgainResult] = useState("")
+  const checkAgain = async () => {
+    if (!query.data || checkingAgain) return
+    setCheckingAgain(true)
+    setCheckAgainResult("")
+    try {
+      setCheckAgainResult(await checkUnreadableAgain(caseId, query.data))
+    } catch (error) {
+      setCheckAgainResult(error instanceof Error ? error.message : "Checking again could not start.")
+    } finally {
+      setCheckingAgain(false)
       void client.invalidateQueries({ queryKey: ["financial-review-queue", caseId] })
       void client.invalidateQueries({ queryKey: ["financial-review-status", caseId] })
     }
@@ -637,6 +654,20 @@ export function ReviewQueuePanel({
                 </li>
               ))}
             </ol>
+          )}
+          {list === "unreadable" && query.data.unreadable.length > 0 && canEdit && (
+            <div className="space-y-2 rounded border p-3 text-sm" aria-label="Check unreadable statements again">
+              <p>
+                The reader has improved since some of these files were prepared. Checking them again uses each file's
+                saved reading with the current reader; reviews and imports are kept and nothing is imported.
+              </p>
+              <Button size="sm" variant="outline" disabled={checkingAgain} onClick={() => void checkAgain()}>
+                {checkingAgain
+                  ? "Starting…"
+                  : `Check ${query.data.unreadable.length} ${query.data.unreadable.length === 1 ? "statement" : "statements"} again`}
+              </Button>
+              {checkAgainResult && <p role="status">{checkAgainResult}</p>}
+            </div>
           )}
           {list === "unreadable" && query.data.unreadable_files.length > 0 && (
             <div className="space-y-2">
