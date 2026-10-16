@@ -11,7 +11,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import TestCase
 from unittest.mock import AsyncMock, patch
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from postgres.base import Base
 from postgres.models.financial_candidates import FinancialCandidateMapping, FinancialStatementReviewDraft
@@ -324,3 +324,40 @@ class ReaderCollapseTests(TestCase):
         counts = dict(imported=5, saving=0, waiting=2, reader_fix=7, filled=0, ready=0, copies=0, unreadable=0,
                       rechecking=0, left_unimported=0, assigned=0, unexplained=0, unreadable_files=0)
         self.assertIn('Waiting for you 2 · Waiting for a reader fix 7', status_line(counts))
+
+
+class ReadCopyTests(TestCase):
+    """An unreadable statement of a file whose bytes another upload read is a copy set aside, not "Couldn't read".
+    A file that could not be prepared at all is set aside by _failed_files (QueueReadTests)."""
+
+    class Session:
+        def __init__(self, files):
+            self.files = files
+
+        def execute(self, query):
+            return [(UUID(i), sha, name) for i, (sha, name) in self.files.items()]
+
+    def run_rule(self, files, entries):
+        from services.financial.review_queue import _set_aside_read_copies
+        return _set_aside_read_copies(self.Session(files), uuid4(), entries)
+
+    def test_failed_readings_follow_the_upload_that_was_read(self):
+        read, old, unique = (str(uuid4()) for _ in range(3))
+        files = {read: ('a' * 64, 'MONTH.pdf'), old: ('a' * 64, 'MONTH.pdf'), unique: ('b' * 64, 'ONLY.pdf')}
+        entries = [dict(file_id=read, bucket='waiting'), dict(file_id=old, bucket='unreadable'),
+                   dict(file_id=unique, bucket='unreadable')]
+        by_file = {e['file_id']: e for e in self.run_rule(files, entries)}
+        self.assertEqual((by_file[old]['bucket'], by_file[old]['copy_reason'], by_file[old]['copy_file_id'],
+                          by_file[old]['copy_of'], by_file[old]['set_aside']), ('copies', 'same_file_read', read, 'MONTH.pdf', True))
+        self.assertEqual(by_file[unique]['bucket'], 'unreadable')
+        self.assertEqual(by_file[read]['bucket'], 'waiting')
+
+    def test_without_a_read_twin_every_failure_stays_visible(self):
+        one, two = str(uuid4()), str(uuid4())
+        files = {one: ('a' * 64, 'A.pdf'), two: ('a' * 64, 'A.pdf')}
+        # Two uploads of the same bytes, both unread: neither stands for the other.
+        entries = self.run_rule(files, [dict(file_id=one, bucket='unreadable'), dict(file_id=two, bucket='unreadable')])
+        self.assertEqual([e['bucket'] for e in entries], ['unreadable', 'unreadable'])
+        # A file is never its own copy: its readable statement does not hide its unread one.
+        entries = self.run_rule(files, [dict(file_id=one, bucket='waiting'), dict(file_id=one, bucket='unreadable')])
+        self.assertEqual([e['bucket'] for e in entries], ['waiting', 'unreadable'])

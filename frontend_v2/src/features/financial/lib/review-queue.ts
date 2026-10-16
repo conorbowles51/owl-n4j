@@ -40,6 +40,8 @@ const entry = z.object({
   reader_file: z.boolean().optional(),
   copy_of: z.string().nullish(),
   set_aside: z.boolean().optional(),
+  /** "same_file_read": this upload's reading failed; the same bytes were read through another upload. */
+  copy_reason: z.string().nullish(),
   /** Proposed values for missing details (value, its source, whether it is certain). */
   proposals: z
     .record(

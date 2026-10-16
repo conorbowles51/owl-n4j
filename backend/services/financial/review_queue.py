@@ -618,6 +618,45 @@ def _failed_files(session, case_id, file_filter, set_aside=None):
     return result
 
 
+def _set_aside_read_copies(session, case_id, entries):
+    """Move unreadable statements of a file that another upload of the same bytes read into copies.
+
+    A second upload of the same bytes reaches the copy review only through its
+    own statements. When its reading failed (an older reader, a removed import's
+    lost source) it would stay under "Couldn't read" for good although the same
+    PDF was read through another upload. Such entries are set aside, linked to
+    the upload that was read. Nothing is written; if that upload also could not
+    read a statement, its own entry still says so. A file that could not be
+    prepared at all is set aside by _failed_files (one rule per failed file:
+    removed, gone or a copy of a file that was read).
+    """
+    read = {e['file_id'] for e in entries if e['bucket'] not in ('unreadable', 'unexplained')}
+    wanted = {e['file_id'] for e in entries if e['bucket'] == 'unreadable'}
+    if not read or not wanted:
+        return entries
+    ids = {UUID(i) for i in read | wanted if i and _uuid(i)}
+    files = {str(row[0]): (row[1], row[2]) for row in session.execute(select(
+        EvidenceFile.id, EvidenceFile.sha256, EvidenceFile.original_filename).where(
+        EvidenceFile.case_id == case_id, EvidenceFile.id.in_(ids)))}
+    read_by_sha = {}
+    for file_id in sorted(read):
+        sha, name = files.get(file_id, (None, None))
+        if sha:
+            read_by_sha.setdefault(sha, (file_id, name))
+
+    def copy_of(file_id):
+        sha = files.get(file_id, (None, None))[0]
+        match = read_by_sha.get(sha) if sha else None
+        return match if match and match[0] != file_id else None
+
+    for entry in entries:
+        match = copy_of(entry['file_id']) if entry['bucket'] == 'unreadable' else None
+        if match:
+            entry.update(bucket='copies', set_aside=True, copy_of=match[1] or None,
+                         copy_reason='same_file_read', copy_file_id=match[0])
+    return entries
+
+
 def _uuid(value):
     try:
         UUID(str(value))
@@ -634,6 +673,8 @@ def case_review_queue(session, *, case_id, file_ids=None, use_cache=True):
     # Live (not cached): files being read or prepared, for "Reading 12 of 40 files".
     reading = dict(reading_progress(session, case_id=case_id), unread_statement_files=unread)
     file_filter = {str(i) for i in file_ids or []}
+    # Decided over the whole case: the upload that was read may be outside the filter.
+    entries = _set_aside_read_copies(session, case_id, entries)
     if file_filter:
         entries = [e for e in entries if file_filter & set(e['file_ids'])]
     set_aside = []

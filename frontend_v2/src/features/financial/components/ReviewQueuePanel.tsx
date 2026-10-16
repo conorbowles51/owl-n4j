@@ -596,7 +596,9 @@ export function ReviewQueuePanel({
                     )}
                     {list === "copies" && (
                       <p className="mt-1">
-                        {entry.set_aside
+                        {entry.copy_reason === "same_file_read"
+                          ? `Same file as ${entry.copy_of ?? "another upload"}, which was read. This upload's own reading is not used. It counts nothing.`
+                          : entry.set_aside
                           ? `Set aside as a copy${entry.copy_of ? ` of ${entry.copy_of}` : ""}. It counts nothing.`
                           : "Possible copy of another statement: compare it with the original."}
                       </p>

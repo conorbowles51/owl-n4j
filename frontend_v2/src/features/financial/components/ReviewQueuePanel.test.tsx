@@ -385,3 +385,22 @@ it("loads the next statement in the background so Next shows it without waiting 
   )
   expect(itemCalls("i2")).toBe(1)
 })
+
+it("lists an unreadable statement of a file that another upload read as a copy of that upload", async () => {
+  vi.mocked(fetchAPI).mockImplementation(async (url: string) => {
+    if (url.includes("/review/queue"))
+      return {
+        ...queue,
+        counts: { ...queue.counts, copies: 2 },
+        copies: [
+          ...queue.copies,
+          { ...queue.copies[0], id: "c2", filename: "Month.pdf", status: "attention", copy_of: "Month.pdf",
+            copy_reason: "same_file_read" },
+        ],
+      } as never
+    throw Error(`unexpected ${url}`)
+  })
+  mount("/cases/case/financial?view=statements&queue=1")
+  fireEvent.click(await screen.findByRole("button", { name: "Review copies (2)" }))
+  expect(await screen.findByText(/Same file as Month.pdf, which was read. This upload's own reading is not used/)).toBeVisible()
+})
