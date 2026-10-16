@@ -11,7 +11,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import TestCase
 from unittest.mock import AsyncMock, patch
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from postgres.base import Base
 from postgres.models.financial_candidates import FinancialCandidateMapping, FinancialStatementReviewDraft
@@ -324,3 +324,91 @@ class ReaderCollapseTests(TestCase):
         counts = dict(imported=5, saving=0, waiting=2, reader_fix=7, filled=0, ready=0, copies=0, unreadable=0,
                       rechecking=0, left_unimported=0, assigned=0, unexplained=0, unreadable_files=0)
         self.assertIn('Waiting for you 2 · Waiting for a reader fix 7', status_line(counts))
+
+
+class ReadCopyTests(TestCase):
+    """A failed reading of a file whose bytes another upload read is a copy set aside, not "Couldn't read"."""
+
+    class Session:
+        def __init__(self, files):
+            self.files = files
+
+        def execute(self, query):
+            return [(UUID(i), sha, name) for i, (sha, name) in self.files.items()]
+
+    def run_rule(self, files, entries, failed):
+        from services.financial.review_queue import _set_aside_read_copies
+        return _set_aside_read_copies(self.Session(files), uuid4(), entries, failed)
+
+    def test_failed_readings_follow_the_upload_that_was_read(self):
+        read, old, unique, other_old = (str(uuid4()) for _ in range(4))
+        files = {read: ('a' * 64, 'MONTH.pdf'), old: ('a' * 64, 'MONTH.pdf'), unique: ('b' * 64, 'ONLY.pdf'),
+                 other_old: ('a' * 64, 'MONTH copy.pdf')}
+        entries = [dict(file_id=read, bucket='waiting'), dict(file_id=old, bucket='unreadable'),
+                   dict(file_id=unique, bucket='unreadable')]
+        failed = [dict(batch_id='b1', source_id=other_old, file_id=other_old, filename='MONTH copy.pdf', message='x'),
+                  dict(batch_id='b1', source_id=unique, file_id=unique, filename='ONLY.pdf', message='y')]
+        entries, kept, copies = self.run_rule(files, entries, failed)
+        by_file = {e['file_id']: e for e in entries}
+        self.assertEqual((by_file[old]['bucket'], by_file[old]['copy_reason'], by_file[old]['copy_file_id'],
+                          by_file[old]['copy_of'], by_file[old]['set_aside']), ('copies', 'same_file_read', read, 'MONTH.pdf', True))
+        self.assertEqual(by_file[unique]['bucket'], 'unreadable')
+        self.assertEqual(by_file[read]['bucket'], 'waiting')
+        self.assertEqual([c['file_id'] for c in copies], [other_old])
+        self.assertEqual(copies[0]['copy_of'], 'MONTH.pdf')
+        self.assertEqual([k['file_id'] for k in kept], [unique])
+
+    def test_without_a_read_twin_every_failure_stays_visible(self):
+        one, two = str(uuid4()), str(uuid4())
+        files = {one: ('a' * 64, 'A.pdf'), two: ('a' * 64, 'A.pdf')}
+        # Two uploads of the same bytes, both unread: neither stands for the other.
+        entries, kept, copies = self.run_rule(files, [dict(file_id=one, bucket='unreadable')],
+            [dict(batch_id='b', source_id=two, file_id=two, filename='A.pdf', message='x')])
+        self.assertEqual((entries[0]['bucket'], len(kept), copies), ('unreadable', 1, []))
+        # A file is never its own copy: its readable statement does not hide its unread one.
+        entries, kept, copies = self.run_rule(files, [dict(file_id=one, bucket='waiting'),
+            dict(file_id=one, bucket='unreadable')], [])
+        self.assertEqual([e['bucket'] for e in entries], ['waiting', 'unreadable'])
+
+
+class SupersededFileReadingTests(QueueReadTests):
+    """An empty whole-file preparation does not stand once the file is split into named statements."""
+
+    def make_unreadable(self, batch):
+        with self.f.SessionLocal() as db:
+            record = db.query(Item).filter(Item.batch_id == batch).one()
+            summary = {k: v for k, v in dict(record.summary).items() if k != 'readiness'}
+            summary.update(can_import=False, problems=[CURRENCY], problem_count=1, currency='', transaction_count=0,
+                           record_count=0, incomplete_count=0, unclassified_count=0, period_start='', period_end='')
+            record.summary, record.status = summary, 'attention'
+            db.commit()
+            return SimpleNamespace(file_id=record.file_id, summary=summary, review_request=record.review_request)
+
+    def test_a_named_statement_of_the_file_replaces_its_empty_whole_file_entry(self):
+        batch = self.create(); self.advance(batch)
+        record = self.make_unreadable(batch)
+        self.assertEqual(self.queue()['counts']['unreadable'], 1)
+        with self.f.SessionLocal() as db:
+            named = dict(record.summary, period_start='2020-01-01', period_end='2020-01-31', transaction_count=3)
+            db.add(Item(id=uuid4(), batch_id=batch, file_id=record.file_id, statement_key='a' * 64, status='attention',
+                        summary=named, review_request=record.review_request))
+            db.commit()
+        counts = self.queue()['counts']
+        self.assertEqual((counts['unreadable'], counts['waiting']), (0, 1), counts)
+
+    def test_check_again_prepares_only_the_listed_files_from_their_saved_reading(self):
+        batch = self.create(); self.advance(batch)
+        self.make_unreadable(batch)
+        with self.f.SessionLocal() as db:
+            result = service.refresh_files(db, case_id=self.f.case.id, files=[dict(batch_id=batch, file_id=self.f.file.id),
+                dict(batch_id=batch, file_id=uuid4())])
+            self.assertEqual((result['requested'], result['queued'], result['skipped']), (2, 1, []))
+            record = db.get(Batch, batch)
+            self.assertEqual((record.status, record.files[0]['status']), ('preparing', 'processing'))
+            again = service.refresh_files(db, case_id=self.f.case.id, files=[dict(batch_id=batch, file_id=self.f.file.id)])
+            self.assertEqual((again['queued'], len(again['skipped'])), (0, 1))
+        # The worker reuses the saved reading (advance asserts no engine reading) and prepares it again.
+        self.advance(batch)
+        with self.f.SessionLocal() as db:
+            self.assertEqual(db.get(Batch, batch).files[0]['status'], 'checked')
+        self.assertEqual(self.queue()['counts']['ready'], 1)

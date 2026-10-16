@@ -72,7 +72,9 @@ def read_candidate_source(session, *, case_id, evidence_file_id, page_number, ta
         if not text:
             continue
         if len(text) > 4096:
-            raise PdfMappingError("A stored cell is too long for candidate review; no text was truncated.", 422)
+            raise PdfMappingError(f"Page {page_number} has a column of text the reader has not split into rows yet, so this "
+                                  "copy cannot be edited here. It is waiting for a reader fix; nothing was changed. If another "
+                                  "copy of this PDF is listed, edit that one.", 422)
         columns.add(column)
         rows.setdefault(row, []).append(dict(column_index=column, expected_text=text,
                                              locator=cell_locator.to_json()))

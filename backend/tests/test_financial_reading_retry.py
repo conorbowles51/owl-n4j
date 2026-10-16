@@ -653,3 +653,40 @@ def test_explicit_retained_source_recovery_verifies_bytes_and_preserves_old_work
             scope, reopening = current_scope(db, [source, version])
             assert [record.id for record in scope] == [version.id]
             assert reopening['request_id'] == accepted['attempt_id']
+
+
+def test_removed_pdfs_without_their_restart_copy_are_read_afresh_only_by_one_explicit_request(fixture):
+    """The queue offers the explicit recovery for every such file; the request checks each one as a single would."""
+    from uuid import UUID, uuid4
+    from services.financial.review_queue import case_review_queue, _mark_read_afresh
+    f = fixture.f
+    batch = fixture.create()
+    fixture.advance(batch)
+    with f.SessionLocal() as db:
+        source = db.get(EvidenceFile, f.file.id)
+        source.metadata_ = {**source.metadata_, 'financial_import_removal': {
+            'id': 'synthetic-removal', 'restart_file_id': str(uuid4())}}
+        record = db.get(Batch, batch)
+        record.files = [{**record.files[0], 'status': 'error'}]
+        db.commit()
+        # The preparation recorded the problem without a recovery receipt (the live shape).
+        problem = service.retry_file(db, case_id=f.case.id, batch_id=batch, source_id=f.file.id)
+        failed = [dict(batch_id=str(batch), source_id=str(f.file.id), file_id=str(f.file.id),
+                       filename='A.pdf', message=problem['message'])]
+        _mark_read_afresh(db, f.case.id, failed)
+        assert failed[0]['read_afresh_revision'] == problem['retained_source_revision']
+        # Nothing was queued by marking it.
+        assert db.get(Batch, batch).files[0]['status'] == 'error'
+        stale = service.recover_retained_sources(db, case_id=f.case.id, actor=f.actor, files=[
+            dict(batch_id=batch, source_id=f.file.id, expected_revision='stale')])
+        assert (stale['queued'], len(stale['refused'])) == (0, 1)
+        assert 'source changed' in stale['refused'][0]['message']
+        files = [dict(batch_id=batch, source_id=f.file.id, expected_revision=failed[0]['read_afresh_revision']),
+                 dict(batch_id=batch, source_id=uuid4(), expected_revision='x')]
+        result = service.recover_retained_sources(db, case_id=f.case.id, actor=f.actor, files=files)
+        assert (result['requested'], result['queued'], len(result['refused'])) == (2, 1, 1)
+        entry = db.get(Batch, batch).files[0]
+        assert entry['status'] == 'waiting' and entry['recovery']['action'] == 'recover_retained_source'
+        assert entry['recovery']['reset_revision'] == 'synthetic-removal'
+        again = service.recover_retained_sources(db, case_id=f.case.id, actor=f.actor, files=files[:1])
+        assert (again['queued'], again['already']) == (0, 1)

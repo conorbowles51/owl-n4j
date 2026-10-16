@@ -79,7 +79,11 @@ HOLD_MESSAGES = {
                                   'follow the previous statement for this card in the same file.'),
     'route_library_first': 'This layout is routed to the bank-specific reader library first.',
     'library_disagrees': 'The general reader and the bank-specific reader both reconcile this period but read it differently.',
+    'line_without_content': 'A dated line in the movement table prints nothing else, so its amount is missing (it may have been blacked out).',
+    'account_shared': 'This credit line prints the same account number as a deposit account in the same statement, so its records could be mixed with that account. Check it against the PDF before importing it.',
 }
+# (B7) A line a statement prints inside an account section when nothing moved in the period.
+NO_TRANSACTIONS = ('NO TRANSACTIONS THIS PERIOD',)
 
 
 # ---------------------------------------------------------------------------
@@ -936,7 +940,9 @@ def page_facts(rows, style, exponent=2):
         folded = fold(text)
         movement = _row_is_movement(row, style, exponent)
         if not movement:
-            ranges = period_ranges(text)
+            # (B1) A range printed for an interest or dividend accrual ('for the dividend period from ...
+            # through ...') dates that accrual, not the statement.
+            ranges = [] if _ACCRUAL_PERIOD.search(folded) else period_ranges(text)
             if ranges:
                 facts['periods'].update(ranges)
                 if any(word in folded.split() or folded.startswith(word) for word in PERIOD_WORDS):
@@ -955,8 +961,32 @@ def page_facts(rows, style, exponent=2):
                 facts['legal'].add(folded)
             _holder_label(row, facts['holders'])
     _two_line_period(rows, facts)
+    _stacked_period_label(rows, facts)
     _derived_period(rows, style, exponent, facts)
     return facts
+
+
+_ACCRUAL_PERIOD = re.compile(r'\b(?:DIVIDEND|INTEREST)S?\s+(?:PERIOD|CYCLE)\b')
+
+
+def _stacked_period_label(rows, facts):
+    """(B1) A period label printed alone in a cell ('Statement Period') with the cell directly below it,
+    horizontally overlapping, printing exactly one range: that range is the labelled period."""
+    located = [r for r in rows if r['tokens'] and r['y0'] is not None]
+    labels = {fold(word) for word in PERIOD_WORDS if len(word.split()) > 1}
+    for upper, lower in zip(located, located[1:]):
+        for top in upper['raw']['cells']:
+            rect = (top.get('locator') or {}).get('rect')
+            if not rect or ' '.join(fold(top['expected_text']).split()) not in labels:
+                continue
+            for bottom in lower['raw']['cells']:
+                other = (bottom.get('locator') or {}).get('rect')
+                if not other or not (other[0] < rect[2] and rect[0] < other[2]):
+                    continue
+                found = period_ranges(bottom['expected_text'])
+                if len(found) == 1 and not _ACCRUAL_PERIOD.search(fold(bottom['expected_text'])):
+                    facts['periods'].add(found[0])
+                    facts['labelled_periods'].add(found[0])
 
 
 _PERIOD_FROM = re.compile(r'^(?:PERIODO\s*:?\s*)?DEL\s+(\S+)$')
@@ -1749,7 +1779,8 @@ def _segments(pages, facts):
     """[(period or None, [page numbers])]: a new printed period, or numbering restarting at 1, starts a segment."""
     _drop_contradicted_derived(pages, facts)
     segments = []
-    for page in sorted(pages):
+    ordered = sorted(pages)
+    for page in ordered:
         f = facts[page]
         period = None
         candidates = f['labelled_periods'] or f['periods']
@@ -1757,7 +1788,23 @@ def _segments(pages, facts):
             period = next(iter(candidates))
         restart = any(n == 1 for n, _ in f['numbering'])
         current = segments[-1] if segments else None
-        if (current is None or (period and current['period'] and period != current['period'])
+        # (A2, A3) A printed run that reached its last page ('Page 5 of 5') is complete: a following page that
+        # carries only the production's own page stamp (no period, no statement page number: a record or
+        # image the production appended) does not continue that statement.
+        # A page whose next numbered page continues a run (number above 1) is that run's unnumbered first
+        # page, not an appendix.
+        following = next((facts[q]['numbering'] for q in ordered[ordered.index(page) + 1:] if facts[q]['numbering']), set())
+        finished = (current is not None and not period and not f['numbering'] and f.get('file_numbered')
+                    and current['pages'] and any(n == m for n, m in facts[current['pages'][-1]]['numbering'])
+                    and not current.get('appendix') and not any(n > 1 for n, _ in following))
+        if finished:
+            current = dict(period=None, pages=[], conflict=False, appendix=True)
+            segments.append(current)
+        elif current is not None and current.get('appendix') and (period or f['numbering']):
+            # A page printing a period or a statement page number never belongs to appended records.
+            current = dict(period=period, pages=[], conflict=len(candidates) > 1)
+            segments.append(current)
+        elif (current is None or (period and current['period'] and period != current['period'])
                 or (restart and current['pages'] and any(facts[p]['numbering'] for p in current['pages']))):
             current = dict(period=period, pages=[], conflict=len(candidates) > 1)
             segments.append(current)
@@ -1788,6 +1835,29 @@ def _drop_contradicted_derived(pages, facts):
                 facts[page]['labelled_periods'] -= derived
                 facts[page]['periods'] -= derived
                 facts[page]['derived_periods'] = set()
+
+
+def _drop_file_numbering(facts):
+    """(A3) A production stamps its own running page numbers on every page it carries ('Page 9 of 339'
+    beside the statement's own 'Page 2 of 5'): a numbering whose count is one for the whole file, whose
+    number advances with the physical page everywhere it is printed, and which is printed beside another
+    numbering on at least two pages numbers the file, not a statement. It is set aside on every page, so
+    it neither breaks, restarts nor extends a statement's run. A numbering that is not in step with the
+    physical pages, or that is never printed beside another one, is never set aside."""
+    by_count = {}
+    for page, f in facts.items():
+        for number, count in f['numbering']:
+            by_count.setdefault(count, []).append((page, number))
+    for count, printed in by_count.items():
+        offsets = {page - number for page, number in printed}
+        pages = [page for page, _ in printed]
+        beside = sum(1 for page in pages if len(facts[page]['numbering']) > 1)
+        if (len(offsets) != 1 or len(pages) != len(set(pages)) or len(pages) < 3
+                or count < len(pages) or beside < 2):
+            continue
+        for page, number in printed:
+            facts[page]['numbering'].discard((number, count))
+            facts[page]['file_numbered'] = True
 
 
 def _numbering_complete(pages, facts, after=None):
@@ -1943,6 +2013,7 @@ def _lost_day_heading(pages):
 def _read_statements_in(pages, sources, profile):
     style = separator_style(pages)
     facts = {page: page_facts(rows, style or 'dot') for page, rows in pages.items()}
+    _drop_file_numbering(facts)
     by_source = {}
     for source in sources:
         by_source.setdefault(source['page_number'], []).append(source)
@@ -1983,11 +2054,13 @@ def _read_statements_in(pages, sources, profile):
         read = []
         for section in sections:
             shared = any(page_use[row['page']] > 1 for row in section)
-            read.append(_read_section(section, segment, pages, facts, style, sources, profile, shared=shared))
+            read.append(_read_section(section, segment, pages, facts, style, sources, profile, shared=shared,
+                                      several=len(sections) > 1))
         if len(read) > 1:
             # A section with no movement, zero balances and no currency or account of its own is not a
             # period anyone could act on (annex and reference pages print zero lines too).
             read = [st for st in read if not _empty_section(st)] or read[:1]
+        _hold_shared_account_credit_lines(read)
         statements.extend(read)
     _check_derived_starts(statements)
     return statements
@@ -2012,6 +2085,31 @@ def _check_derived_starts(statements):
                 rows.append(_hold_row(rows, 'period_start_contradicted'))
 
 
+#: (A6, A7) A credit line sharing its deposit account's number is its own ledger account
+#: (accounts.TIER_CREDIT_LINE). Off: such a section is held, as before the ledger could keep them apart.
+SHARED_NUMBER_CREDIT_LINES_SEPARATE = True
+
+
+def _hold_shared_account_credit_lines(read):
+    """(A6, A7) Two sections of one statement printing the same account number in the same currency under
+    different balance conventions: a deposit account and the credit line attached to it. The ledger knows an
+    account by its institution and number, so the amounts-owed section is marked a credit line and kept as
+    an account of its own (its key carries the product); the deposit account is read as usual. With the
+    switch off the credit line is held, with a named reason."""
+    deposits = {(re.sub(r'\D', '', st['account_reference']), st['currency']) for st in read
+                if st['account_reference'] and st['balance_convention'] == 'asset_balance'}
+    for st in read:
+        key = (re.sub(r'\D', '', st['account_reference'] or ''), st['currency'])
+        if st['balance_convention'] == 'liability_owed' and key[0] and key in deposits:
+            if SHARED_NUMBER_CREDIT_LINES_SEPARATE:
+                st['account_reference_kind'] = 'credit_line'
+            elif st['engine']['proved']:
+                st['engine'] = dict(st['engine'], proved=False, reason='account_shared')
+                st['_rows'] = [r for r in st['_rows'] if r['kind'] != 'unresolved'] + [_hold_row(st['_rows'], 'account_shared')]
+            else:
+                st['engine'] = dict(st['engine'], reason=st['engine'].get('reason') or 'account_shared')
+
+
 def _empty_section(statement):
     rows = statement['_rows']
     if any(r['kind'] == 'transaction' for r in rows) or statement['engine']['proved']:
@@ -2027,9 +2125,32 @@ def _sections(segment, pages, style):
     """Split a segment at an opening balance that follows a closing balance and movement lines (A7)."""
     rows = [row for page in segment['pages'] for row in pages[page]]
     sections, current, closed, moved, after_close, reopened = [], [], False, False, None, False
+    # (E9) After a section's closing balance, a heading printing another set of amount columns than the
+    # section's own movement heading opens another table (a list of the checks and items paid, already
+    # among the movements): its dated amount lines belong to no section, up to a heading with the
+    # movement table's columns again or a balance line. Its other lines stay where they are.
+    main_roles, other_table = None, False
     for row in rows:
         pairs = [(text, values) for text, values in label_pairs(row, style, 2) if values]
         roles = {_role_of(text, False) for text, values in pairs}
+        if row['tokens'] and _is_header(row):
+            header_roles = _money_roles(row)
+            if main_roles is None or not moved:
+                # The movement table's heading is the one its movements are printed under; a summary printed
+                # (and closed) before the movement table has no movements of its own.
+                main_roles, other_table = header_roles, False
+            elif closed and after_close is not None and header_roles != main_roles:
+                # Only after a closing balance that ended the movements (none printed since it): a summary's
+                # closing printed above the movement table does not end that table.
+                other_table = True
+                continue
+            else:
+                other_table = False
+        if other_table:
+            if roles & {'opening', 'closing'}:
+                other_table = False
+            elif _row_is_movement(row, style, 2):
+                continue
         new_opening = {money(_control_value([t for kind, t in values if kind == 'money'])['t'], style)
                        for text, values in pairs if _role_of(text, False) == 'opening'
                        and any(kind == 'money' for kind, _ in values)}
@@ -2042,13 +2163,17 @@ def _sections(segment, pages, style):
             carried = current[after_close:] if after_close is not None else []
             sections.append(current[:after_close] if after_close is not None else current)
             current, closed, moved, after_close, reopened = list(carried), False, False, None, False
+            main_roles = next((_money_roles(r) for r in current if r['tokens'] and _is_header(r)), None)
         elif 'opening' in roles and closed and current and new_opening and not repeated and 'closing' not in roles:
             # The section's own opening printed again after its summary's closing opens its movement
             # table (D6: table endpoints repeat the summary): the lines that follow are still this
             # section's, even where no movement line in them is read; the table's total line ends it.
             after_close, reopened = None, True
         current.append(row)
-        if 'closing' in roles or ('column_total' in roles and (moved or reopened)):
+        if 'closing' in roles or ('column_total' in roles and (moved or reopened)
+                                  # A total printed after the section's closing balance, with no movement
+                                  # between them, totals another table (a payment slip), not this one.
+                                  and (not closed or after_close is None or reopened)):
             # A table's own total line after its movements closes it as its closing balance does: lines
             # printed after it are the next section's heading.
             closed = True
@@ -2096,6 +2221,39 @@ def _fingerprint(header_words, columns, labels_seen, convention):
 _HEADING_ACCOUNT = re.compile(r'^([A-Z][A-Z .]{2,60}?)\s+(\d{2,4}(?:-\d{1,8}){1,3})$')
 _HEADING_ACCOUNT_NOT = ('TEL', 'TELEFONO', 'FAX', 'RFC', 'R.F.C', 'CLIENTE', 'CODIGO', 'FOLIO', 'SUCURSAL', 'PLAZA',
                         'REFERENCIA', 'PERIODO', 'CP', 'C.P')
+
+
+_SUFFIX_HEADING = re.compile(r'^([A-Z][A-Z .]{2,60}?)\s*-\s*(\d{3,6})(?:\s+\(CONTINUED[A-Z ]*\))?$')
+
+
+def _suffix_heading_account(row):
+    """'<product name> 1234' from a whole heading line '<product name> - 1234' (a section's account, printed
+    as its last digits after the product name), or ''."""
+    m = _SUFFIX_HEADING.match(' '.join(_dnorm(row['text']).split()))
+    if not m or any(w.strip('.:') in _HEADING_ACCOUNT_NOT for w in m[1].split()):
+        return ''
+    # The product name stays with the digits, as printed: two accounts of one statement can print the same
+    # last digits (a checking account and its line of credit), and the name is what tells them apart.
+    printed = re.match(r'^(.*?)\s*-\s*\d', ' '.join(row['text'].split()))
+    return (printed[1].strip() + ' ' + m[2]) if printed and printed[1].strip() else m[2]
+
+
+def _titled_holder(segment_pages, pages, rule):
+    """Library profile (data): the holder printed under the statement's title on its pages ('Statement of
+    Account' then 'For <name>'). Every page printing the pair must name the same person, or none."""
+    titles = {fold(t) for t in rule['title']}
+    prefix = fold(rule['prefix']) + ' '
+    names = set()
+    for page in segment_pages:
+        located = [r for r in pages[page] if r['tokens']]
+        for upper, lower in zip(located, located[1:]):
+            text = ' '.join(fold(upper['text']).split())
+            below = ' '.join(lower['text'].split())
+            if text in titles and fold(below).startswith(prefix):
+                name = below[len(prefix):].strip()
+                if _name_like(name):
+                    names.add(name)
+    return names.pop() if len(names) == 1 else ''
 
 
 def _heading_account(row):
@@ -2157,7 +2315,12 @@ def layout_key(header_words, convention):
     return _digest(dict(layout='statement-engine-layout-v1', header=sorted(header_words), convention=convention))[:16]
 
 
-def _read_section(rows, segment, pages, facts, style, sources, profile, shared=False):
+def _prints_liability(rows):
+    phrases = [fold(p) for p in LIABILITY_EVIDENCE]
+    return any(phrase in fold(row['text']) for row in rows if row['tokens'] for phrase in phrases)
+
+
+def _read_section(rows, segment, pages, facts, style, sources, profile, shared=False, several=False):
     """One account section. ``shared``: another section is printed on one of its pages, so
     page-level facts (account, currency) cannot be attributed to it; only facts printed
     inside its own rows count (A6, A7, C2)."""
@@ -2215,7 +2378,15 @@ def _read_section(rows, segment, pages, facts, style, sources, profile, shared=F
         found = {_heading_account(row) for row in scope if row['tokens']} - {''}
         account = found.pop() if len(found) == 1 else ''
     account_basis = ''
-    if account:
+    if profile and profile.get('account_suffix_heading'):
+        # Library profile (data): each section names its own account in its heading, after the product
+        # name ('<product name> - 1234'); numbers on the statement's other pages (a deposit slip listing
+        # every account) never name a section. One distinct heading number in the section's own heading
+        # lines, or none.
+        found = {_suffix_heading_account(row) for row in own_head if row['tokens']} - {''}
+        account = found.pop() if len(found) == 1 else ''
+        account_basis = 'section_heading_suffix' if account else ''
+    elif account:
         scope = head if shared else [row for page in _heading_pages(segment['pages'], facts) for row in pages[page]]
         account, account_basis = _printed_over_interbank(account, scope)
     own_currencies = set()
@@ -2241,9 +2412,23 @@ def _read_section(rows, segment, pages, facts, style, sources, profile, shared=F
     except MoneyError:
         exponent = 2
     liability = any(item['liability'] for item in f)
+    if several:
+        # A statement of several sections (C5, A7): card vocabulary counts only where this section prints it,
+        # up to its own closing balance. A deposit account printed beside a credit line, or before the
+        # statement's closing disclosures about credit lines, does not take their 'credit limit' as its own.
+        own = []
+        for row in rows:
+            own.append(row)
+            if row['tokens'] and any(_role_of(text, False) == 'closing'
+                                     for text, values in label_pairs(row, style or 'dot', 2) if values):
+                break
+        liability = _prints_liability(own)
     if profile and profile.get('convention'):
         liability = profile['convention'] == 'liability_owed'
-    if profile and profile.get('currency') and not currency and not shared:
+    if profile and profile.get('currency') and not currency and (
+            not shared or (profile.get('account_suffix_heading') and not segment.get('currency_mentions'))):
+        # A section sharing its pages takes the profile's currency only in a layout whose sections each
+        # name their own account (account_suffix_heading), and only when the statement names no currency.
         currency, currency_basis = profile['currency'], 'library_profile'
         try:
             exponent = get_currency(currency).exponent
@@ -2251,6 +2436,12 @@ def _read_section(rows, segment, pages, facts, style, sources, profile, shared=F
             exponent = 2
     # The holder belongs to the statement, printed on its first pages, for every one of its sections.
     holder = _section_holder(segment['pages'], pages, facts, style)
+    if profile and profile.get('holder_heading'):
+        titled = _titled_holder(segment['pages'], pages, profile['holder_heading'])
+        if titled and (not holder or fold(holder) == fold(titled)):
+            holder = titled
+        elif not titled or holder:
+            holder = holder if not titled else ''
     institution = (_institution([item['legal'] for item in f],
                                 {line for page in set(_heading_pages(segment['pages'], facts)) | set(segment['pages'][:2])
                                  for line in facts[page]['legal']})
@@ -2565,8 +2756,9 @@ def _reading(rows, statement, style, exponent, liability, period):
     # a heading printing another set of amount columns opens another table (pending charges, a schedule):
     # its lines are not this period's movements, up to a heading of the movement table again or a balance.
     main_roles, totalled, other_table = None, False, False
+    consumed, blank_dated = set(), []
     for index, row in enumerate(rows):
-        if not row['tokens'] or row.get('payment_box'):
+        if not row['tokens'] or row.get('payment_box') or index in consumed:
             continue
         if other_table:
             if _is_header(row) and _money_roles(row) == main_roles:
@@ -2688,6 +2880,23 @@ def _reading(rows, statement, style, exponent, liability, period):
             # A card interest/fee line without a date (B6), ordered at the period end only.
             undated_rows.append((row, section))
             continue
+        if not has_money and region and len(row['tokens']) == 1 and _leading_date(row['tokens'][0]['t'].rstrip('.,')):
+            # A movement date printed with nothing beside it: the line's content is missing (blacked out by
+            # a redaction, or not read). Its amount cannot be known, so the period cannot be proved.
+            blank_dated.append(row)
+            continue
+        if not has_money and region:
+            two_line = _two_line_entry(rows, index, style or 'dot', exponent, early_columns, width or 1)
+            if two_line is not None:
+                # (E4) A dated line without an amount whose next line prints the amount is one movement.
+                following, date_tokens, words_only, money_tokens = two_line
+                move = dict(row=row, date_tokens=date_tokens, money=money_tokens, description=words_only,
+                            stray=[], continuation=[following])
+                movements.append(move)
+                continuation_of[following['_index']] = move
+                consumed.add(following['_index'])
+                last_move = move
+                continue
         if not has_money:
             if last_move is not None and region and _continues(row, last_move):
                 last_move['continuation'].append(row)
@@ -2717,6 +2926,14 @@ def _reading(rows, statement, style, exponent, liability, period):
         spans.setdefault(move['row']['page'], []).append(move['row']['_index'])
     unplaced = [row for row in unplaced if row['page'] in spans
                 and min(spans[row['page']]) < row['_index'] < max(spans[row['page']])]
+    # A dated line printing nothing else counts only where movement lines of the table follow it on its page
+    # (rows blacked out inside the table); a stray date after the table's last movement, or printed in
+    # another form than the movement dates (a column of authorisation dates read apart), is not one.
+    # Only a date printed in the form the table's movement lines use is a blacked-out movement line.
+    shape = lambda text: re.sub(r'[A-Za-z]', 'A', re.sub(r'\d', '9', text))
+    forms = {shape(move['date_tokens'][0]['t']) for move in movements if move['date_tokens']}
+    blank_dated = [row for row in blank_dated if row['page'] in spans and row['_index'] < max(spans[row['page']])
+                   and shape(row['tokens'][0]['t']) in forms]
     # Undated card charges (B6) inside the region are movements ordered at the period end.
     undated = []
     for row, undated_section in undated_rows:
@@ -2752,6 +2969,8 @@ def _reading(rows, statement, style, exponent, liability, period):
             proof['reason'] = date_problem
         elif unplaced:
             proof['reason'] = 'unplaced_money_line'
+        elif blank_dated:
+            proof['reason'] = 'line_without_content'
         elif candidates and candidates[0].get('overflow'):
             proof['reason'] = 'too_many_interpretations'
         elif len(readings) > 1:
@@ -2761,8 +2980,16 @@ def _reading(rows, statement, style, exponent, liability, period):
             proof.update(proved=True, reason='proved', basis=chosen['basis'])
         else:
             near = [c for c in candidates if c['closing_ok']]
-            proof['reason'] = ('printed_total_differs' if any(c['totals_failed'] for c in near)
-                               else 'no_independent_control' if near else 'not_reconciled')
+            quiet = _printed_no_transactions(rows, controls, style or 'dot', exponent) if not all_moves else None
+            if quiet is not None and len(near) == 1 and not near[0]['totals_failed']:
+                # (B7) The section prints, between its equal opening and closing balances, that nothing
+                # moved: the source's own statement of no activity is the independent control.
+                chosen = near[0]
+                proof.update(proved=True, reason='proved', basis='printed_no_transactions',
+                             no_transactions_row=quiet)
+            else:
+                proof['reason'] = ('printed_total_differs' if any(c['totals_failed'] for c in near)
+                                   else 'no_independent_control' if near else 'not_reconciled')
     if chosen is None:
         chosen = _best_effort(candidates, hints)
         # A held period keeps a column reading as its prefill only when that reading reconciles the
@@ -2824,6 +3051,67 @@ def _not_description(row):
     return (_is_header(row) or text in _SECTION_WORDS or text in {label(n) for n in CONTINUATION_NOTICES}
             or bool(YEAR_TO_DATE.fullmatch(text)) or text in INDEX['section_total']
             or any(_role_of(name, True) for name, _ in label_pairs(row, 'dot', 2)))
+
+
+def _two_line_entry(rows, index, style, exponent, columns, width):
+    """(E4) ``(next row, date tokens, description tokens, money tokens)`` when rows[index] is a dated line
+    printing no amount and the next line on the page, directly below it and starting in its description
+    band, prints no date of its own and only amounts in the movement columns; otherwise None."""
+    row = rows[index]
+    tokens = merged_dates(row['tokens'])
+    if not tokens or not _leading_date(tokens[0]['t'].rstrip('.,')) or row['y0'] is None:
+        return None
+    if any(_role_of(text, False) for text, _ in label_pairs(row, style, exponent)) or _is_header(row):
+        return None
+    date_tokens, rest = [tokens[0]], tokens[1:]
+    while rest and is_date_token(rest[0]['t']) and len(date_tokens) < 2:
+        date_tokens.append(rest.pop(0))
+    if not rest or any(_value_kind(t, style, exponent) == 'money' for t in rest):
+        return None
+    following = next((r for r in rows[index + 1:] if r['tokens']), None)
+    if following is None or following['page'] != row['page'] or following['y0'] is None:
+        return None
+    later = merged_dates(following['tokens'])
+    if _leading_date(later[0]['t'].rstrip('.,')) or _is_header(following):
+        return None
+    if any(_role_of(text, False) for text, values in label_pairs(following, style, exponent) if values):
+        return None
+    money_tokens = [t for t in later if _value_kind(t, style, exponent) == 'money']
+    if not money_tokens or not columns or any(_band(t, columns, width) is None for t in money_tokens):
+        return None
+    height = max(t['y1'] - t['y0'] for t in row['tokens'])
+    gap = following['y0'] - max(t['y1'] for t in row['tokens'])
+    if gap > height * 1.2 or gap < -height:
+        return None
+    start = min(t['x0'] for t in rest)
+    words = [t for t in later if t not in money_tokens]
+    first_money = min(t['x0'] for t in money_tokens)
+    if words and min(t['x0'] for t in words) < start - 0.02 * width or any(t['x0'] > first_money for t in words):
+        return None
+    return following, date_tokens, rest + words, money_tokens
+
+
+def _printed_no_transactions(rows, controls, style, exponent):
+    """(page, table, row) of the one line printing only a no-activity phrase between the section's single
+    opening and single closing balance lines, both read and equal, with no other line between them that
+    prints an amount or opens with a date; otherwise None."""
+    if len(controls['opening']) != 1 or len(controls['closing']) != 1:
+        return None
+    opening, closing = controls['opening'][0], controls['closing'][0]
+    values = {money(item['value_token']['t'], style, exponent) for item in (opening, closing)}
+    if len(values) != 1 or None in values:
+        return None
+    start, end = opening['row']['_index'], closing['row']['_index']
+    found = [row for row in rows[start + 1:end] if row['tokens'] and ' '.join(fold(row['text']).split()) in NO_TRANSACTIONS]
+    # Between the two balances only the no-activity line and lines that cannot be movements may stand (the
+    # page heading repeated where the section crosses a page break): no amount and no leading date.
+    others = [row for row in rows[start + 1:end] if row['tokens'] and row not in found
+              and (any(_value_kind(t, style, exponent) == 'money' for t in row['tokens'])
+                   or _leading_date(merged_dates(row['tokens'])[0]['t'].rstrip('.,')))]
+    if len(found) != 1 or others:
+        return None
+    row = found[0]
+    return (row['page'], row['source']['table_index'], row['raw']['row_index'])
 
 
 def _undated_charge(row, style, exponent):

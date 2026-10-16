@@ -269,3 +269,40 @@ it("offers one shared proposal for a missing detail, with its source", async () 
   expect(commonProposal([statement("", usd), statement("", { ...usd, value: "EUR" })], "currency")).toBeNull()
   expect(commonProposal([statement("MXN")], "currency")).toBeNull()
 })
+it("when a save finds a statement read again, previews it as it reads now and asks only about a moved field", async () => {
+  let saves = 0
+  const base = vi.mocked(fetchAPI).getMockImplementation()!
+  vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
+    const body = options?.body as Body & { read_current?: boolean }
+    if (url.includes("/save?") && !saves++) {
+      sent.push({ url, body })
+      throw Object.assign(Error("A selected statement was read again since this preview."), { status: 409 })
+    }
+    if (url.includes("/preview?") && body.read_current) {
+      sent.push({ url, body })
+      const first = { ...items[1], after: { ...items[1].values, holder: "Reading Co" } }
+      return {
+        case_id: "case", preview_revision: "c".repeat(64), updated: 0,
+        items: [{ ...first, changes: {}, refreshed: { holder: { listed: "", current: "Reading Co" } }, conflicts: ["holder"] }],
+      } as never
+    }
+    return base(url, options)
+  })
+  mount()
+  await choose()
+  fireEvent.click(screen.getByRole("button", { name: "Review changes for 52 statements" }))
+  fireEvent.click(await screen.findByRole("button", { name: "Save changes to 52 statements" }))
+  // No refusal: the current preview comes back with the one field to choose.
+  expect(await screen.findByText(/Updated to the latest reading/)).toBeVisible()
+  expect(screen.getByRole("group", { name: "Choose Account holder" })).toHaveTextContent(
+    "the statement now reads Reading Co. You entered Example Company."
+  )
+  expect(screen.getByRole("button", { name: "Choose a value above to save" })).toBeDisabled()
+  expect(screen.queryByText(/Open it individually|check its batch again/)).toBeNull()
+  fireEvent.click(screen.getByRole("button", { name: "Use Example Company" }))
+  await waitFor(() => {
+    const last = sent.filter((call) => call.url.includes("/preview?")).at(-1)!.body
+    expect(last.mode).toBe("replace")
+    expect((last as { read_current?: boolean }).read_current).toBe(true)
+  })
+})

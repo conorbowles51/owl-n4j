@@ -2,6 +2,7 @@ import asyncio
 from copy import deepcopy
 from pathlib import Path
 from unittest import TestCase
+from unittest import mock
 from unittest.mock import AsyncMock
 from uuid import uuid4, UUID
 from sqlalchemy import select
@@ -659,6 +660,63 @@ class BatchImportTests(TestCase):
         self.assertEqual(self.status(batch)['counts']['imported'], 1)
         with self.f.SessionLocal() as db:
             self.assertEqual(len(list(db.scalars(select(FinancialTransaction)))), 12)
+
+    def test_refresh_retires_untouched_items_of_periods_the_reader_no_longer_finds(self):
+        batch = self.create(); self.advance(batch)
+        item = self.status(batch)['items'][0]
+        with self.f.SessionLocal() as db:
+            current = db.get(Item, UUID(item['id']))
+            summary = dict(current.summary, can_import=False)
+            gone = Item(id=uuid4(), batch_id=current.batch_id, file_id=current.file_id, statement_key='an-earlier-period',
+                        status='attention', summary=summary)
+            kept = Item(id=uuid4(), batch_id=current.batch_id, file_id=current.file_id, statement_key='an-edited-period',
+                        status='attention', summary=summary, review_request={'holder': 'Saved reviewer wording'})
+            db.add_all([gone, kept]); db.commit()
+            gone_id, kept_id = gone.id, kept.id
+            service.refresh_statement_list(db, case_id=self.f.case.id, batch_id=batch)
+        self.advance(batch)
+        with self.f.SessionLocal() as db:
+            self.assertEqual(db.get(Item, gone_id).status, 'superseded_reading')
+            self.assertEqual(db.get(Item, gone_id).summary['recovery_message'], service.VANISHED_PERIOD_MESSAGE)
+            self.assertEqual(db.get(Item, kept_id).status, 'attention')
+            self.assertEqual(db.get(Item, UUID(item['id'])).status, item['status'])
+        with mock.patch.object(service, 'RETIRE_VANISHED_PERIODS', False), self.f.SessionLocal() as db:
+            again = Item(id=uuid4(), batch_id=db.get(Item, kept_id).batch_id, file_id=db.get(Item, kept_id).file_id,
+                         statement_key='another-earlier-period', status='attention', summary=summary)
+            db.add(again); db.commit()
+            again_id = again.id
+            service.refresh_statement_list(db, case_id=self.f.case.id, batch_id=batch)
+            self.advance(batch)
+            self.assertEqual(db.get(Item, again_id).status, 'attention')
+
+    def test_reread_file_command_dry_run_writes_nothing_and_apply_refreshes_every_batch(self):
+        from scripts import financial_reread_file as command
+        first = self.create(); self.advance(first)
+        report = command.dry_run(self.f.SessionLocal, self.f.case.id, self.f.file.id)
+        self.assertEqual([b['file_status'] for b in report['batches']], ['checked'])
+        self.assertEqual(sum(report['items'].values()), 1)
+        self.assertIn('general_reader', report['current_reader'])
+        with self.f.SessionLocal() as db:
+            self.assertEqual(db.get(Batch, first).files[0]['status'], 'checked')
+            held_status = db.get(Batch, first).status
+            db.get(Batch, first).status = 'paused'
+            db.commit()
+        with self.assertRaises(SystemExit):
+            command.apply(self.f.SessionLocal, self.f.case.id, self.f.file.id)
+        with self.f.SessionLocal() as db:
+            self.assertEqual(db.get(Batch, first).files[0]['status'], 'checked')
+            db.get(Batch, first).status = held_status
+            db.commit()
+        self.assertEqual(command.apply(self.f.SessionLocal, self.f.case.id, self.f.file.id), [str(first)[:8]])
+        with self.f.SessionLocal() as db:
+            entry = db.get(Batch, first).files[0]
+            self.assertEqual((entry['status'], entry['reread_requests'][0]['actor']), ('processing', command.ACTOR))
+        with self.assertRaises(SystemExit):  # already being read: refused, nothing written
+            command.apply(self.f.SessionLocal, self.f.case.id, self.f.file.id)
+        self.advance(first)
+        with self.f.SessionLocal() as db:
+            self.assertEqual(db.get(Batch, first).files[0]['status'], 'checked')
+        self.assertEqual(self.status(first)['total'], 1)
 
     def test_legacy_saved_review_upgrades_and_imports_without_losing_edits(self):
         from unittest.mock import patch

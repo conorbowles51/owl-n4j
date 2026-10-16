@@ -82,6 +82,8 @@ ISSUER_MARKS = (
     ('wells-fargo', r'Wells\s+Fargo'),
     # Last: a payment to the card named on a bank statement must not outrank that bank's own marks.
     ('synchrony-card', r'SYNCHRONY\s+BANK|\bsynchrony\.com|\bsyf\.com'),
+    # Printed in the footer of every page of the credit union's statements (and its record productions).
+    ('navy-federal', r'^Navy\s+Federal\s+Credit\s+Union\b'),
 )
 
 
@@ -1821,6 +1823,239 @@ def _andrews_statement(statement):
     return periods
 
 
+# ---------------------------------------------------------------------------
+# Navy Federal Credit Union ("Statement of Account": several accounts per statement, each its own period)
+# ---------------------------------------------------------------------------
+
+NFCU_PAGE = r'(?m)^Page\s+(\d+)\s+of\s+(\d+)$'
+NFCU_PERIOD = re.compile(r'(\d{2})/(\d{2})/(\d{2})\s+-\s+(\d{2})/(\d{2})/(\d{2})')
+NFCU_HEADING = re.compile(r'^(.*?(?:Checking|Savings|Market|Credit|Certificate|Loan|IRA|Share)s?)\s+-\s+(\d{4})'
+                          r'(\s+\(Continued from previous page\))?$')
+NFCU_DATE = re.compile(r'^(\d{2})-(\d{2})$')
+NFCU_LOC_OPENING = 'line of credit: the balance column is the principal only; the outstanding total is not printed ' \
+                   'as an opening'
+
+
+def _nfcu_tokens(words):
+    """Words with a detached trailing minus joined to the amount on its left ('91.96' '-' -> '91.96-')."""
+    out = []
+    for word in words:
+        if word['text'] == '-' and out and is_money(out[-1]['text']) and not out[-1]['text'].endswith('-') \
+                and word['x0'] - out[-1]['x1'] <= 4:
+            out[-1] = dict(out[-1], text=out[-1]['text'] + '-', x1=word['x1'])
+            continue
+        out.append(word)
+    return out
+
+
+def _nfcu_values(words, columns, section):
+    """(amount, balance, description words) of one printed line, money assigned by column."""
+    amount = balance = None
+    text_words = []
+    for word in _nfcu_tokens(words):
+        if is_money(word['text']):
+            name = column_of(word, {k: v for k, v in columns.items() if k in ('amount', 'balance')})
+            if name == 'amount' and amount is None:
+                amount = money_minor(word['text'])
+                continue
+            if name == 'balance' and balance is None:
+                balance = money_minor(word['text'])
+                continue
+            if not section['loc']:  # a line of credit also prints fee, interest and principal columns
+                section['problems'].append('amount outside the amount and balance columns')
+            continue
+        text_words.append(word['text'])
+    return amount, balance, text_words
+
+
+def parse_navy_federal(pages):
+    statement_pages = [p for p in pages if re.search(NFCU_PAGE, p.text) and 'Statement Period' in p.text]
+    return [period for run in split_runs(statement_pages, NFCU_PAGE) for period in _nfcu_run(run)]
+
+
+def _nfcu_summary(page):
+    """{last4: {'previous', 'credits', 'debits', 'ending'}} from 'Summary of your deposit accounts'."""
+    summary, columns, inside = {}, None, False
+    for line in page.lines:
+        texts = [w['text'] for w in line.words]
+        if line.text.startswith('Summary of your deposit accounts'):
+            inside = True
+            continue
+        if not inside:
+            continue
+        if 'Credits' in texts and 'Debits' in texts:
+            balances = [w for w in line.words if w['text'] == 'Balance']
+            credits, debits = line.words[texts.index('Credits')], line.words[texts.index('Debits')]
+            if len(balances) == 2:
+                columns = dict(previous=balances[0]['x1'], credits=credits['x1'], debits=debits['x1'],
+                               ending=balances[1]['x1'])
+            continue
+        if texts and texts[0] == 'Totals':
+            break
+        if columns and texts and re.fullmatch(r'\d{4}', texts[0]):
+            values = {}
+            for word in line.words[1:]:
+                name = column_of(word, columns)
+                if name and is_money(word['text']):
+                    values[name] = money_minor(word['text'])
+            summary[texts[0]] = values
+    return summary
+
+
+def _nfcu_run(run):
+    pages = run['pages']
+    first = pages[0]
+    found = NFCU_PERIOD.search(first.text)
+    start = end = None
+    if found:
+        m1, d1, y1, m2, d2, y2 = map(int, found.groups())
+        start, end = iso(2000 + y1, m1, d1), iso(2000 + y2, m2, d2)
+    holders = set()
+    for page in pages:
+        for a, b in zip(page.lines, page.lines[1:]):
+            if a.text == 'Statement of Account' and b.text.startswith('For '):
+                holders.add(b.text[4:].strip())
+    holder = holders.pop() if len(holders) == 1 else None
+    summary = {}
+    for page in pages:
+        summary.update(_nfcu_summary(page))
+    sections, current, columns, follows = [], None, {}, False
+    for page in pages:
+        lines = page.lines
+        top_end = next((i for i, (a, b) in enumerate(zip(lines, lines[1:]))
+                        if a.text == 'Statement of Account' and b.text.startswith('For ')), None)
+        body = lines[top_end + 2:] if top_end is not None else lines
+        for line in body:
+            t = line.text
+            if t.startswith('Navy Federal Credit Union Page') or re.match(NFCU_PAGE, t):
+                continue
+            heading = NFCU_HEADING.match(t)
+            if heading and not NFCU_DATE.match(line.words[0]['text']):
+                if heading.group(3) and current is not None and current['account'] == heading.group(2):
+                    continue  # the same section continues on this page
+                current = dict(product=heading.group(1).strip(), account=heading.group(2), rows=[], problems=[],
+                               opening=None, closing=None, closed=False, pages=[page.number],
+                               loc='Line of Credit' in heading.group(1), outstanding=None, no_activity=False)
+                sections.append(current)
+                columns, follows = {}, False
+                continue
+            if current is None or current['closed']:
+                continue
+            if page.number not in current['pages']:
+                current['pages'].append(page.number)
+            texts = [w['text'] for w in line.words]
+            if t.startswith('(Continued from previous page)'):
+                continue
+            if current['loc'] and texts[:3] == ['Total', 'Outstanding', 'Balance'] and is_money(texts[-1]):
+                current['outstanding'] = money_minor(texts[-1])
+                continue
+            if texts and texts[0] == 'Date' and any(x.startswith('Amount') for x in texts):
+                columns = {}
+                for word in line.words:
+                    if word['text'].startswith('Amount'):
+                        columns['amount'] = word['x1']
+                    elif word['text'].startswith('Balance'):
+                        columns['balance'] = word['x1']
+                    elif word['text'] == '($)' and 'balance' in columns:
+                        columns['balance'] = word['x1']
+                if 'Balance' in texts and '($)' in texts[texts.index('Balance'):]:
+                    columns['balance'] = line.words[len(texts) - 1 - texts[::-1].index('($)')]['x1']
+                if 'Detail' in texts:
+                    columns['description'] = line.words[1]['x0']
+                follows = False
+                continue
+            if t == 'No Transactions This Period':
+                current['no_activity'] = True
+                continue
+            date = NFCU_DATE.match(texts[0]) if texts else None
+            if date is None:
+                money = any(is_money(x) for x in texts)
+                pending = current['rows'] and current['rows'][-1]['amount_minor'] is None
+                if follows and columns.get('description') is not None \
+                        and line.words[0]['x0'] >= columns['description'] - 2 and (not money or pending):
+                    last = current['rows'][-1]
+                    if pending and money:  # a two-line entry: the amount is printed on the second line
+                        amount, balance, text_words = _nfcu_values(line.words, columns, current)
+                        last['description'] += ' ' + ' '.join(text_words)
+                        if amount is not None:
+                            last.update(amount_minor=abs(amount), direction='debit' if amount < 0 else 'credit',
+                                        balance_after=balance)
+                        follows = False
+                        continue
+                    last['description'] += ' ' + t
+                continue
+            if current['rows'] and current['rows'][-1]['amount_minor'] is None:
+                current['problems'].append('dated row without an amount')
+                current['rows'].pop()
+            follows = False
+            words = line.words[1:]
+            if not words:
+                current['problems'].append('row redacted in the production')
+                continue
+            if not columns:
+                current['problems'].append('dated line before the column headings')
+                continue
+            amount, balance, text_words = _nfcu_values(words, columns, current)
+            description = ' '.join(text_words)
+            month, day = int(date.group(1)), int(date.group(2))
+            when = iso(year_for(month, start, end), month, day) if start and end else None
+            if description == 'Beginning Balance':
+                current['opening'] = balance
+                continue
+            if description.replace(' ', '') == 'EndingBalance':
+                current['closing'], current['closed'] = balance, True
+                continue
+            if amount is None and current['loc']:
+                current['problems'].append('line of credit row without an amount column value')
+                continue
+            current['rows'].append(dict(date=when, description=description,
+                                        amount_minor=abs(amount) if amount is not None else None,
+                                        direction=('debit' if amount < 0 else 'credit') if amount is not None else None,
+                                        balance_after=balance))
+            follows = True
+    periods = []
+    for section in sections:
+        if section['rows'] and section['rows'][-1]['amount_minor'] is None:
+            section['problems'].append('dated row without an amount')
+            section['rows'].pop()
+        period = Period(family='navy-federal', institution='Navy Federal Credit Union', currency='USD',
+                        holder=holder, account=section['account'], period_start=start, period_end=end,
+                        opening_minor=section['opening'], closing_minor=section['closing'], rows=section['rows'],
+                        pages=section['pages'], page_sequence=run['seq'], page_total=run['total'],
+                        problems=list(dict.fromkeys(section['problems'])), share=section['product'])
+        if not section['closed']:
+            period.problems.append('no ending balance line')
+        if section['loc']:
+            period.kind = 'card'  # amounts owed
+            if section['rows'] or section['opening'] != section['closing'] \
+                    or section['outstanding'] != section['closing']:
+                period.problems.append(NFCU_LOC_OPENING)
+            period.rows = [] if not section['rows'] else period.rows
+        else:
+            printed = summary.get(section['account'])
+            checks = []
+            if printed is None or any(printed.get(k) is None for k in ('previous', 'credits', 'debits', 'ending')):
+                period.problems.append('account summary line not fully read')
+            else:
+                period.controls['credits_total'] = printed['credits']
+                period.controls['debits_total'] = printed['debits']
+                checks = [dict(ok=printed['previous'] == section['opening'],
+                               reason='opening differs from the summary previous balance'),
+                          dict(ok=printed['ending'] == section['closing'],
+                               reason='closing differs from the summary ending balance')]
+            if section['no_activity'] and section['rows']:
+                checks.append(dict(ok=False, reason='rows under a no-transactions line'))
+            period.controls['other_checks'] = checks
+        periods.append(period)
+    if not periods:
+        empty = Period(family='navy-federal', institution='Navy Federal Credit Union', currency='USD', holder=holder,
+                       period_start=start, period_end=end, pages=[p.number for p in pages],
+                       page_sequence=run['seq'], page_total=run['total'])
+        empty.problems.append('no account section read')
+        periods.append(empty)
+    return periods
+
+
 PARSERS = {
     'bbva-mexico': parse_bbva,
     'monex-mexico': parse_monex,
@@ -1831,6 +2066,7 @@ PARSERS = {
     'citibank': parse_citi,
     'andrews-share': parse_andrews,
     'synchrony-card': parse_synchrony,
+    'navy-federal': parse_navy_federal,
 }
 
 

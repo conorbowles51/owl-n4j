@@ -5,6 +5,7 @@ differ from every family reader: English and Spanish, signed and split amount
 columns, with and without running balances, multi-page, multi-currency, and
 adversarial near-ties that must hold.
 """
+from collections import OrderedDict
 import os
 import unittest
 from unittest import mock
@@ -1864,3 +1865,239 @@ class BoxedCardTests(unittest.TestCase):
         st = read_statements(sources)[0]
         self.assertFalse(st['engine']['proved'])
         self.assertEqual(st['engine']['reason'], 'no_geometry')
+
+
+def _r(text, x1):
+    """A right-aligned amount cell ending at ``x1``."""
+    return (text, x1 - 6000 * len(text), x1)
+
+
+def credit_union_statement(*, redacted=False, quiet_line='No Transactions This Period', appendix=True,
+                           dividend=True, loc_credit_limit=True):
+    """An invented US credit-union 'statement of account': several account sections, each headed
+    '<product> - <last digits>', a summary page, a check list after each table, a production's running page
+    stamp on every page, and an appended record page after the statement's last numbered page."""
+    head = lambda n: [[('Page %d of 2' % n, 480000, 560000)],
+                      [('Example Credit Union', 20000, 150000), ('Statement Period', 400000, 480000)],
+                      [('PO Box 1 * Sometown, ST 00000', 20000, 200000), ('01/17/24 - 02/16/24', 400000, 490000)]]
+    footer = lambda n: [[('Example Federal Credit Union', 70000, 170000), ('Page %d of 9' % n, 300000, 350000)]]
+    money_head = [('Date', 14000, 31000), ('Transaction Detail', 43000, 111000), ('Amount($)', 431000, 471000),
+                  ('Balance($)', 557000, 597000)]
+    first = head(1) + [[('Statement of Account', 250000, 360000)], [('JANE Q SAMPLE', 68000, 176000)],
+                       [('Summary of your deposit accounts', 14000, 213000)],
+                       [('Totals', 14000, 37000), _r('$620.00', 176000)]] + footer(3)
+    rows = [[('01-17', 14000, 35000), ('Beginning Balance', 43000, 110000), _r('100.00', 594000)]]
+    if redacted:
+        rows += [[('01-18', 14000, 35000)], [('01-19', 14000, 35000)]]
+    rows += [[('01-20', 14000, 35000), ('Deposit', 43000, 74000), _r('50.00', 471000), _r('150.00', 594000)],
+             [('01-25', 14000, 35000), ('POS Debit - Debit Card 9999 Transaction 01-24-24 EXAMPLE STORE', 43000, 330000)],
+             [('Somewhere ST', 43000, 100000), _r('25.00-', 475000), _r('125.00', 594000)],
+             [('02-01', 14000, 35000), ('Check 101', 43000, 85000), _r('5.00-', 475000), _r('120.00', 594000)],
+             [('02-16', 14000, 35000), ('Ending Balance', 43000, 102000), _r('120.00', 594000)]]
+    if dividend:
+        rows.append([('Your account earned $0.00 for the dividend period from 01-01-2024 through 01-31-2024', 14000, 560000)])
+    rows += [[('Items Paid', 14000, 59000)],
+             [('Date', 17000, 35000), ('Item', 140000, 156000), ('Amount($)', 226000, 266000),
+              ('Date', 316000, 334000), ('Item', 439000, 455000), ('Amount($)', 525000, 565000)],
+             [('02-01', 17000, 38000), ('000101 - Check', 116000, 177000), _r('5.00', 266000)],
+             [('Checking Line of Credit - 1111', 14000, 200000)]]
+    if loc_credit_limit:
+        rows.append([('Credit Limit', 14000, 54000), ('$1,000.00', 137000, 172000)])
+    rows += [[('Date', 14000, 31000), ('Transaction Detail', 43000, 111000), ('Amount($)', 248000, 287000),
+              ('Balance ($)', 555000, 597000)],
+             [('01-17', 14000, 35000), ('Beginning Balance', 43000, 110000), _r('0.00', 594000)],
+             [(quiet_line, 200000, 400000)] if quiet_line else [],
+             [('02-16', 14000, 35000), ('Ending Balance', 43000, 102000), _r('0.00', 594000)],
+             [('Membership Savings - 2222', 14000, 200000)], money_head,
+             [('01-17', 14000, 35000), ('Beginning Balance', 43000, 110000), _r('500.00', 594000)],
+             [(quiet_line, 200000, 400000)] if quiet_line else [],
+             [('02-16', 14000, 35000), ('Ending Balance', 43000, 102000), _r('500.00', 594000)]]
+    second = head(2) + [[('Statement of Account', 32000, 125000)], [('For JANE Q SAMPLE', 32000, 137000)],
+                        [('Everyday Checking - 1111', 14000, 200000)], money_head] + [r for r in rows if r] + footer(4)
+    pages = [page(1, first), page(2, second)]
+    if appendix:
+        pages.append(page(3, [[('Teller record', 20000, 120000)],
+                              [('01/20/2024', 20000, 80000), ('Deposit', 100000, 150000), _r('12.00', 300000)]] + footer(5)))
+    return pages
+
+
+CREDIT_UNION_PROFILE = dict(name='invented-credit-union', match=dict(all=['example federal credit union', 'statement of account']),
+                            institution='Example Credit Union', currency='USD', account_suffix_heading=True,
+                            holder_heading=dict(title=['STATEMENT OF ACCOUNT'], prefix='FOR'))
+
+
+class MultiAccountStatementTests(unittest.TestCase):
+    """Several accounts in one printed statement (A3, A7, B1, B7, C5, E4, E9)."""
+
+    def sections(self, sources, profile=CREDIT_UNION_PROFILE):
+        return [st for st in read_statements(sources, profile=profile) if st['period_start']]
+
+    def moves(self, statement):
+        return [(r['fields'].get('date'), r['fields']['direction'], r['fields']['amount_minor'], r['fields'].get('balance'))
+                for r in statement['_rows'] if r['kind'] == 'transaction' and not r['excluded']]
+
+    def test_each_account_section_is_read_with_its_own_identity(self):
+        checking, line, savings = self.sections(credit_union_statement())
+        self.assertEqual((checking['period_start'], checking['period_end']), ('2024-01-17', '2024-02-16'))
+        self.assertTrue(checking['engine']['proved'], checking['engine'])
+        self.assertEqual(checking['balance_convention'], 'asset_balance')  # the credit line's limit is not its own
+        self.assertEqual(self.moves(checking), [('2024-01-20', 'credit', '5000', '15000'),
+                                                ('2024-01-25', 'debit', '2500', '12500'),
+                                                ('2024-02-01', 'debit', '500', '12000')])
+        self.assertEqual([(s['account_reference'], s['holder'], s['currency']) for s in (checking, savings)],
+                         [('Everyday Checking 1111', 'JANE Q SAMPLE', 'USD'), ('Membership Savings 2222', 'JANE Q SAMPLE', 'USD')])
+        # The appended record page after the statement's last numbered page is not part of it.
+        self.assertNotIn(3, savings['page_numbers'])
+
+    def test_a_printed_no_transactions_line_proves_a_quiet_section(self):
+        _, _, savings = self.sections(credit_union_statement())
+        self.assertTrue(savings['engine']['proved'], savings['engine'])
+        self.assertEqual(savings['engine']['basis'], 'printed_no_transactions')
+        _, _, unprinted = self.sections(credit_union_statement(quiet_line=None))
+        self.assertFalse(unprinted['engine']['proved'])
+
+    def test_a_credit_line_sharing_the_deposit_accounts_number_is_its_own_account(self):
+        checking, line, _ = self.sections(credit_union_statement())
+        self.assertEqual((line['account_reference'], line['balance_convention']), ('Checking Line of Credit 1111', 'liability_owed'))
+        self.assertTrue(line['engine']['proved'], line['engine'])
+        self.assertEqual(line['account_reference_kind'], 'credit_line')
+        self.assertNotIn('account_reference_kind', checking)
+        from services.financial.accounts import AccountDraft
+        key = lambda st: AccountDraft.observed(institution_name='Example Federal Credit Union',
+            identifier_as_printed=st['account_reference'], metadata=dict(account_reference_kind=st.get('account_reference_kind'))).identity()
+        self.assertNotEqual(key(line).key, key(checking).key)
+
+    def test_switched_off_a_credit_line_sharing_the_deposit_accounts_number_is_held(self):
+        # The switch is process-wide; the reading cache is keyed on the sources only.
+        with mock.patch.object(E, 'SHARED_NUMBER_CREDIT_LINES_SEPARATE', False), mock.patch.object(E, '_READINGS', OrderedDict()), \
+                mock.patch.object(E, '_LIVE_READINGS', OrderedDict()):
+            _, line, _ = self.sections(credit_union_statement())
+        self.assertFalse(line['engine']['proved'])
+        self.assertEqual(line['engine']['reason'], 'account_shared')
+        self.assertTrue(any(r.get('engine_hold') == 'account_shared' for r in line['_rows']))
+        self.assertNotIn('account_reference_kind', line)
+
+    def test_redacted_rows_never_prove(self):
+        checking = self.sections(credit_union_statement(redacted=True))[0]
+        self.assertFalse(checking['engine']['proved'])
+        self.assertEqual(checking['engine']['reason'], 'line_without_content')
+
+    def test_an_accrual_period_is_not_the_statement_period(self):
+        self.assertEqual(E.period_ranges('for the dividend period from 01-01-2024 through 01-31-2024'),
+                         [(E.date(2024, 1, 1), E.date(2024, 1, 31))])
+        facts = E.page_facts(E._pages(credit_union_statement())[2], 'dot')
+        self.assertEqual(facts['periods'], {(E.date(2024, 1, 17), E.date(2024, 2, 16))})
+        self.assertEqual(facts['labelled_periods'], {(E.date(2024, 1, 17), E.date(2024, 2, 16))})
+
+    def test_the_productions_page_stamp_is_set_aside_only_beside_the_statements_own_numbering(self):
+        pages = E._pages(credit_union_statement())
+        facts = {p: E.page_facts(rows, 'dot') for p, rows in pages.items()}
+        E._drop_file_numbering(facts)
+        self.assertEqual([facts[p]['numbering'] for p in (1, 2, 3)], [{(1, 2)}, {(2, 2)}, set()])
+        # A file numbering printed alone (no statement numbering beside it) is kept.
+        alone = {p: dict(numbering={(p, 9)}) for p in (1, 2, 3)}
+        E._drop_file_numbering(alone)
+        self.assertEqual([alone[p]['numbering'] for p in (1, 2, 3)], [{(1, 9)}, {(2, 9)}, {(3, 9)}])
+
+    def test_without_the_profile_no_section_takes_another_sections_account(self):
+        for st in self.sections(credit_union_statement(), profile=None):
+            self.assertIn(st['account_reference'], ('',), st['account_reference'])
+
+    def test_two_line_entries_need_the_amount_directly_below_in_the_description_band(self):
+        sources = credit_union_statement()
+        rows = sources[1]['rows']
+        index = next(i for i, r in enumerate(rows) if r['cells'][0]['expected_text'] == 'Somewhere ST')
+        rows[index]['cells'][0]['locator']['rect'][0] = 2000  # starts left of the description band
+        checking = self.sections(sources)[0]
+        self.assertFalse(checking['engine']['proved'])
+
+    def test_the_printed_no_transactions_line_is_source_proof_bound_to_the_balances(self):
+        from services.financial.statement_engine import propose_engine_statement
+        from services.financial.statement_printed_no_activity import printed_line_evidence
+        from services.financial.statement_admission import source_proves_no_activity
+        sources = credit_union_statement()
+        savings = self.sections(sources)[2]
+        public = {k: v for k, v in savings.items() if k != '_rows'}
+        public['engine'] = dict(public['engine'], no_transactions_row=list(public['engine']['no_transactions_row']))
+        with mock.patch('services.financial.statement_engine_profiles.PROFILES', (CREDIT_UNION_PROFILE,)):
+            rows = propose_engine_statement(sources, 'USD', public)['rows']
+        evidence = printed_line_evidence(rows, public, 'USD', sources, family='generic')
+        self.assertTrue(evidence['verified'], evidence)
+        self.assertEqual((evidence['basis'], evidence['zero_total_row_ids'], evidence['balance_minor']),
+                         ('printed_no_transactions', [], '50000'))
+        raw = dict(rows=[dict(id=r['id'], excluded=r['excluded'], balance_minor=r['fields'].get('balance')) for r in rows],
+                   currency='USD', period_start=public['period_start'], period_end=public['period_end'])
+        self.assertTrue(source_proves_no_activity(evidence, raw))
+        edited = dict(raw, rows=[dict(r, balance_minor='1') if r['id'] == evidence['closing_row_id'] else r for r in raw['rows']])
+        self.assertFalse(source_proves_no_activity(evidence, edited))
+        self.assertEqual(printed_line_evidence(rows, public, 'MXN', sources, family='generic')['reason'], 'currency_differs')
+        # Another reader's proof basis is not this proof's question.
+        self.assertIsNone(printed_line_evidence(rows, dict(public, engine=dict(public['engine'], basis='running_balance')),
+                                                'USD', sources, family='generic'))
+
+    def test_a_profile_matched_by_all_its_phrases_outranks_single_phrase_matches(self):
+        from services.financial import statement_engine_profiles as P
+        loose = dict(name='loose', match=dict(any=['example card']))
+        with mock.patch.object(P, 'PROFILES', (loose, CREDIT_UNION_PROFILE)):
+            text = 'Example Federal Credit Union Statement of Account Payment to Example Card'
+            self.assertEqual(P.matching_profile(text)['name'], 'invented-credit-union')
+            self.assertEqual(P.matching_profile('payment to example card')['name'], 'loose')
+        with mock.patch.object(P, 'PROFILES', (loose, dict(loose, name='loose-twin'))):
+            self.assertIsNone(P.matching_profile('payment to example card'))
+        P.validate(CREDIT_UNION_PROFILE)
+        with self.assertRaises(ValueError):
+            P.validate(dict(CREDIT_UNION_PROFILE, holder_heading=dict(title=[], prefix='FOR')))
+
+    def test_routing_keeps_a_profile_that_only_adds_an_identity_hold(self):
+        from services.financial import statement_engine_profiles as P
+        from services.financial import statement_engine_routing as R
+        sources = credit_union_statement()
+        with mock.patch.object(P, 'PROFILES', (CREDIT_UNION_PROFILE,)), \
+                mock.patch.dict(os.environ, {'LOUPE_FINANCIAL_GENERIC_READER': '1'}):
+            catalog = R.route_catalog(sources, lambda s: dict(statements=[], unclassified_sources=[],
+                                                               information_sources=[], complete_coverage=True))
+        self.assertEqual(catalog['engine_routing']['profile'], 'invented-credit-union')
+        served = {(st['account_reference'][-4:], st['balance_convention']): st['engine'] for st in catalog['statements']}
+        self.assertTrue(served[('1111', 'asset_balance')]['proved'])
+        self.assertTrue(served[('1111', 'liability_owed')]['proved'])
+
+    def test_a_summary_closed_before_the_movement_table_does_not_make_it_another_table(self):
+        sources = mx_statement(MOVES, closing='1,250.00')
+        rows = sources[0]['rows']
+        # A summary heading (date and amount words) printed above the summary's closing balance.
+        rows.insert(1, dict(row_index=900, cells=[cell('FECHA', 20000, 60000, 33000, 0), cell('IMPORTE', 500000, 560000, 33000, 1)]))
+        st = read_statements(sources)[0]
+        self.assertTrue(st['engine']['proved'], st['engine'])
+        self.assertEqual(len(self.moves(st)), 3)
+
+    def test_a_stray_date_in_another_form_after_the_movements_does_not_hold(self):
+        sources = credit_union_statement()
+        rows = sources[1]['rows']
+        index = next(i for i, r in enumerate(rows) if r['cells'][0]['expected_text'] == '02-01')
+        y = rows[index]['cells'][0]['locator']['rect'][1] + 5000
+        rows.insert(index + 1, dict(row_index=901, cells=[cell('01-Feb', 14000, 50000, y, 0)]))
+        checking = self.sections(sources)[0]
+        self.assertTrue(checking['engine']['proved'], checking['engine'])
+
+    def test_a_heading_repeated_with_fewer_columns_after_a_summary_closing_continues_the_table(self):
+        sources = mx_statement(MOVES, closing='1,250.00')
+        rows = sources[0]['rows']
+        index = next(i for i, r in enumerate(rows) if r['cells'][0]['expected_text'] == '10/MAR')
+        y = rows[index]['cells'][0]['locator']['rect'][1] - 4000
+        # The summary's closing is printed above the table: a heading reprinted inside the table with only
+        # some of its column words read is not another table.
+        rows.insert(index, dict(row_index=902, cells=[cell('FECHA', 20000, 60000, y, 0), cell('ABONOS', 330000, 380000, y, 1)]))
+        st = read_statements(sources)[0]
+        self.assertTrue(st['engine']['proved'], st['engine'])
+        self.assertEqual(len(self.moves(st)), 3)
+
+    def test_an_unnumbered_first_page_of_the_next_run_is_not_an_appendix(self):
+        stamped = lambda numbering: dict(numbering=numbering, periods=set(), labelled_periods=set(), file_numbered=True)
+        facts = {1: stamped({(1, 2)}), 2: stamped({(2, 2)}), 3: stamped(set()), 4: stamped({(2, 2)}), 5: stamped(set())}
+        segments = E._segments({p: [] for p in facts}, facts)
+        self.assertEqual([s['pages'] for s in segments], [[1, 2, 3, 4], [5]])
+        self.assertTrue(segments[1].get('appendix'))
+        # Without the production's stamp an unnumbered page after a complete run continues it, as before.
+        for page in facts.values():
+            page.pop('file_numbered')
+        self.assertEqual([s['pages'] for s in E._segments({p: [] for p in facts}, facts)], [[1, 2, 3, 4, 5]])
