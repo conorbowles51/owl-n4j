@@ -548,3 +548,27 @@ export async function readRetainedAfresh(caseId: string, data: ReviewQueue): Pro
     parts.push(`${result.refused.length} not started: ${result.refused[0].message}`)
   return parts.join("; ")
 }
+
+const checkAgainResponse = z.object({
+  requested: z.number(),
+  queued: z.number(),
+  skipped: z.array(z.object({ batch_id: z.string(), message: z.string() })),
+})
+
+/** Prepares the queue's unreadable statements' files again from their saved readings with the current reader. */
+export async function checkUnreadableAgain(caseId: string, data: ReviewQueue): Promise<string> {
+  const files = data.unreadable
+    .filter((entry) => entry.batch_id)
+    .map((entry) => ({ batch_id: entry.batch_id as string, file_id: entry.file_id }))
+  if (!files.length) return "Nothing to check again"
+  const result = checkAgainResponse.parse(
+    await fetchAPI(`/api/financial/statement-import/review/check-again?case_id=${caseId}`, {
+      method: "POST",
+      body: { files },
+      timeout: 120000,
+    })
+  )
+  const parts = [`${result.queued} ${result.queued === 1 ? "file is" : "files are"} being checked again`]
+  if (result.skipped.length) parts.push(`${result.skipped.length} ${result.skipped.length === 1 ? "batch" : "batches"} not started: ${result.skipped[0].message}`)
+  return parts.join("; ")
+}

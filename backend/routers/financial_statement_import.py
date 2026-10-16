@@ -1080,6 +1080,23 @@ def read_retained_sources_afresh(body: ReadAfreshRequest, case_id: UUID=Query(..
         files=[file.model_dump() for file in body.files], actor=actor_from_user(user))
 
 
+class CheckAgainFile(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    batch_id: UUID
+    file_id: UUID
+
+
+class CheckAgainRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    files: list[CheckAgainFile] = Field(min_length=1, max_length=2000)
+
+
+@router.post('/review/check-again', dependencies=[Depends(case_access_dependency(lambda request,payload: ('case','edit')))])
+def check_files_again(body: CheckAgainRequest, case_id: UUID=Query(...), db: Session=Depends(get_db)):
+    """Prepare the listed files again from their saved readings with the current reader; reviews are kept."""
+    return import_batches.refresh_files(db, case_id=case_id, files=[file.model_dump() for file in body.files])
+
+
 @router.post('/batches/{batch_id}/files/{source_id}/recover-source', dependencies=[
     Depends(case_access_dependency(lambda request,payload: ('case','edit'))),
     Depends(case_access_dependency(lambda request,payload: ('evidence','upload')))])

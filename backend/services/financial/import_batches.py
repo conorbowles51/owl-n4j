@@ -2321,6 +2321,45 @@ def recover_retained_source(session, *, case_id, batch_id, source_id, expected_r
     return dict(queued=True, status='waiting', **result)
 
 
+def refresh_files(session, *, case_id, files):
+    """Check the listed files again from their saved readings, keeping reviews.
+
+    The narrow form of refresh_statement_list: only these files, in their own
+    batches, are prepared again with the current reader. Nothing is re-read by
+    the engine and nothing is imported; edited and imported items are kept.
+    """
+    wanted = {}
+    for file in files:
+        wanted.setdefault(str(file['batch_id']), set()).add(str(file['file_id']))
+    queued, skipped = 0, []
+    for batch_id, ids in sorted(wanted.items()):
+        try:
+            batch = batch_for(session, case_id, UUID(batch_id), True)
+            require_running(batch)
+        except PdfMappingError as error:
+            session.rollback()
+            skipped.append(dict(batch_id=batch_id, message=str(error)))
+            continue
+        if batch.status == 'preparing':
+            session.rollback()
+            skipped.append(dict(batch_id=batch_id, message='This batch is already being prepared; check again when it finishes.'))
+            continue
+        changed = deepcopy(batch.files)
+        count = 0
+        for file in changed:
+            if file['status'] == 'checked' and ({file.get('file_id'), file.get('source_id')} & ids):
+                file['status'] = 'processing'
+                count += 1
+        if count:
+            batch.files = changed
+            batch.status = 'preparing'
+            session.commit()
+            queued += count
+        else:
+            session.rollback()
+    return dict(requested=len(files), queued=queued, skipped=skipped)
+
+
 def refresh_statement_list(session, *, case_id, batch_id):
     """Discover newly supported periods from saved geometry, keeping reviews."""
     batch = batch_for(session, case_id, batch_id, True)

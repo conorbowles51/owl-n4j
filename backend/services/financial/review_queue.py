@@ -340,11 +340,17 @@ def _build(session, case_id):
             rows.append((identity, bucket, full[item.id], None, None))
     from services.financial import field_proposals
     knowledge = []  # loaded once, only when a waiting statement lacks a detail
+    # A file-level preparation that found nothing does not stand for a file
+    # that a preparation (another batch, a later reader) split into named
+    # statements: those statements are the file's entries, wherever they stand.
+    named = {root for root, key in identities if key}
     for identity, item in representatives.items():
         current = projected.get(item.id)
         if current is None:
             continue
         bucket = classify(current)
+        if bucket == 'unreadable' and not identity[1] and identity[0] in named:
+            continue
         detail = describe(current.summary) if bucket in ('waiting', 'unreadable') else None
         if bucket == 'unreadable':
             page = current.summary.get('page_number')

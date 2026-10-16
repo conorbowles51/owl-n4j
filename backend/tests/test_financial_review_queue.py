@@ -321,3 +321,46 @@ class ReadCopyTests(TestCase):
         entries, kept, copies = self.run_rule(files, [dict(file_id=one, bucket='waiting'),
             dict(file_id=one, bucket='unreadable')], [])
         self.assertEqual([e['bucket'] for e in entries], ['waiting', 'unreadable'])
+
+
+class SupersededFileReadingTests(QueueReadTests):
+    """An empty whole-file preparation does not stand once the file is split into named statements."""
+
+    def make_unreadable(self, batch):
+        with self.f.SessionLocal() as db:
+            record = db.query(Item).filter(Item.batch_id == batch).one()
+            summary = {k: v for k, v in dict(record.summary).items() if k != 'readiness'}
+            summary.update(can_import=False, problems=[CURRENCY], problem_count=1, currency='', transaction_count=0,
+                           record_count=0, incomplete_count=0, unclassified_count=0, period_start='', period_end='')
+            record.summary, record.status = summary, 'attention'
+            db.commit()
+            return SimpleNamespace(file_id=record.file_id, summary=summary, review_request=record.review_request)
+
+    def test_a_named_statement_of_the_file_replaces_its_empty_whole_file_entry(self):
+        batch = self.create(); self.advance(batch)
+        record = self.make_unreadable(batch)
+        self.assertEqual(self.queue()['counts']['unreadable'], 1)
+        with self.f.SessionLocal() as db:
+            named = dict(record.summary, period_start='2020-01-01', period_end='2020-01-31', transaction_count=3)
+            db.add(Item(id=uuid4(), batch_id=batch, file_id=record.file_id, statement_key='a' * 64, status='attention',
+                        summary=named, review_request=record.review_request))
+            db.commit()
+        counts = self.queue()['counts']
+        self.assertEqual((counts['unreadable'], counts['waiting']), (0, 1), counts)
+
+    def test_check_again_prepares_only_the_listed_files_from_their_saved_reading(self):
+        batch = self.create(); self.advance(batch)
+        self.make_unreadable(batch)
+        with self.f.SessionLocal() as db:
+            result = service.refresh_files(db, case_id=self.f.case.id, files=[dict(batch_id=batch, file_id=self.f.file.id),
+                dict(batch_id=batch, file_id=uuid4())])
+            self.assertEqual((result['requested'], result['queued'], result['skipped']), (2, 1, []))
+            record = db.get(Batch, batch)
+            self.assertEqual((record.status, record.files[0]['status']), ('preparing', 'processing'))
+            again = service.refresh_files(db, case_id=self.f.case.id, files=[dict(batch_id=batch, file_id=self.f.file.id)])
+            self.assertEqual((again['queued'], len(again['skipped'])), (0, 1))
+        # The worker reuses the saved reading (advance asserts no engine reading) and prepares it again.
+        self.advance(batch)
+        with self.f.SessionLocal() as db:
+            self.assertEqual(db.get(Batch, batch).files[0]['status'], 'checked')
+        self.assertEqual(self.queue()['counts']['ready'], 1)
