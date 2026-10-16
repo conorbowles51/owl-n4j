@@ -46,6 +46,22 @@ def original_layer_holder(locations, page_number):
     return {}
 
 
+def printed_lines(locations, page_number):
+    """``{'checked': True, 'unread': [rect, ...]}`` when the engine checked a page's printed lines against
+    its reading (vector-text pages: ``vector_glyph_reading`` with ``lines_checked``), each rect a printed
+    line still under no read word (page points x1000, displayed page space); ``{}`` otherwise, and for
+    every reading made before the check existed."""
+    for location in locations if isinstance(locations, list) else []:
+        if isinstance(location, dict) and location.get('kind') == 'page' and location.get('page_number') == page_number:
+            for refinement in location.get('ocr_refinements') or []:
+                if (isinstance(refinement, dict) and refinement.get('field') == 'vector_glyph_reading'
+                        and refinement.get('lines_checked') is True):
+                    unread = [rect for rect in refinement.get('lines_unread') or []
+                              if isinstance(rect, list) and len(rect) == 4 and all(type(v) is int for v in rect)]
+                    return dict(checked=True, unread=unread)
+    return {}
+
+
 def list_candidate_sources(session, *, case_id, limit=25, offset=0):
     if type(limit) is not int or not 1 <= limit <= 100 or type(offset) is not int or offset < 0:
         raise PdfMappingError("Invalid source page limits.", 422)
@@ -82,9 +98,11 @@ def read_candidate_source(session, *, case_id, evidence_file_id, page_number, ta
     source_rows = [dict(row_index=row, cells=values) for row, values in rows.items()]
     rotation = reading_rotation(locations, page_number)
     carried = original_layer_holder(locations, page_number)
+    checked = printed_lines(locations, page_number)
     return dict(case_id=str(case_id), evidence_file_id=str(evidence_file_id), page_number=page_number,
         **(dict(reading_rotation=rotation) if rotation else {}),
         **(dict(original_layer_holder=carried) if carried else {}),
+        **(dict(printed_lines=checked) if checked else {}),
         table_index=table_index, table_count=len(payload), source_revision=revision,
         table_source=source.value, geometry_source=geometry.value, locator=locator.to_json(),
         text_origin=_page_origin(content, locations, page_number).value,

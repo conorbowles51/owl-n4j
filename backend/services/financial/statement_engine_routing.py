@@ -230,8 +230,8 @@ def disagreement_row(rows, choice):
 def _profiled(sources, engine):
     """(reading, profile name): a library profile (data) that matches the document replaces the plain
     reading only if it keeps every period the plain engine proves, with the identical money reading."""
-    from services.financial.statement_engine_profiles import matching_profile, profile_text
-    profile = matching_profile(profile_text(sources))
+    from services.financial.statement_engine_profiles import furniture_text, matching_profile, profile_text
+    profile = matching_profile(profile_text(sources), furniture_text(sources))
     if profile is None:
         return engine, None
     profiled = read_statements(sources, profile=profile)
