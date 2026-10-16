@@ -177,6 +177,24 @@ class DrainTests(TestCase):
         self.assertGreater(turns, 5)
 
 
+class ReadinessDrainTests(TestCase):
+    """Scoring waits for the background readiness refresh, as the service's worker sweep would run it."""
+
+    def drain(self, counts):
+        counts, calls = iter(counts), []
+        result = harness.drain_readiness(lambda: calls.append(1), lambda: next(counts), clock=lambda: 0.0)
+        return result, len(calls)
+
+    def test_refreshes_run_while_the_pending_count_falls(self):
+        self.assertEqual(self.drain([35, 20, 3, 0]), (dict(before=35, after=0, rounds=3, seconds=0.0), 3))
+
+    def test_a_round_that_removes_nothing_ends_the_drain_and_reports_what_is_left(self):
+        self.assertEqual(self.drain([5, 2, 2]), (dict(before=5, after=2, rounds=2, seconds=0.0), 2))
+
+    def test_nothing_pending_runs_no_refresh(self):
+        self.assertEqual(self.drain([0]), (dict(before=0, after=0, rounds=0, seconds=0.0), 0))
+
+
 class SavedBySystemTests(TestCase):
     def test_only_items_claimed_by_the_system_actor(self):
         from postgres.models.financial_import_batches import FinancialImportBatchItem as Item
