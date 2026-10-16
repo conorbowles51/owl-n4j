@@ -15,13 +15,18 @@ def assess_saved_additions(session, document, period, metadata, currency, *, no_
     additions outside it are left out. ``None`` includes every record not
     held with a reason.
     """
-    proposal = deepcopy(metadata['statement_import_original'])
+    # The sealed reading is only read here: a shallow copy is enough for the
+    # one key replaced below. Deep-copying every statement's full reading was
+    # most of each queue rebuild on a case with hundreds of imports.
+    proposal = dict(metadata['statement_import_original'])
     from services.financial.statement_details import CONVENTION_REVIEW, effective_convention
     if metadata.get(CONVENTION_REVIEW):
         # A reviewed account type decides how the printed balances read.
         proposal['metadata'] = {**proposal['metadata'], 'balance_convention': effective_convention(metadata),
             'account_type': metadata[CONVENTION_REVIEW]['account_type']}
-    raw = {**deepcopy(metadata['statement_import_request']), **saved_details(document), 'currency':currency}
+    raw = {**metadata['statement_import_request'], **saved_details(document), 'currency':currency}
+    # Rows are changed below one key at a time; copy each row, never the stored one.
+    raw['rows'] = [dict(row) for row in raw['rows']]
     from services.financial.currency_correction import rescale_minor
     original_currency = metadata['statement_import_request'].get('currency')
     if original_currency and original_currency != currency:
@@ -84,6 +89,9 @@ def assess_saved_additions(session, document, period, metadata, currency, *, no_
     if no_activity_confirmed:
         request = request.model_copy(update=dict(no_activity_confirmed=True, no_activity_revision=result['revision']))
         result = assess_admission(proposal, request)
+    if 'no_activity_evidence' in result:
+        # assess_admission returns the reading's own evidence object.
+        result['no_activity_evidence'] = deepcopy(result['no_activity_evidence'])
     # Rows not represented in the old statement request cannot be silently
     # ignored when deciding whether newly repaired readings may enter totals.
     ids={r['id'] for r in raw['rows']}
