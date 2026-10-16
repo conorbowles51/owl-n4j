@@ -52,6 +52,18 @@ is_compiled_frontend() {
         ! echo "${html}" | grep -Eq '/@vite/client|/src/main\.(js|jsx|ts|tsx)'
 }
 
+# The release health check: backend ok with its graph and engine reachable, the
+# compiled frontend served, both units active. Sets RESPONSE/FRONTEND_RESPONSE.
+release_is_healthy() {
+    RESPONSE="$(curl -fsS --max-time 5 "${HEALTH_URL}" 2>/dev/null || true)"
+    FRONTEND_RESPONSE="$(curl -fsS --max-time 5 "${FRONTEND_URL}" 2>/dev/null || true)"
+    echo "${RESPONSE}" | grep -q '"status":"ok"' &&
+        ! echo "${RESPONSE}" | grep -Eq '"neo4j":"error:|"evidence_engine":"(error:|unavailable)"' &&
+        is_compiled_frontend "${FRONTEND_RESPONSE}" &&
+        $SYSTEMCTL is-active --quiet owl-backend-v2 &&
+        $SYSTEMCTL is-active --quiet owl-frontend-v2
+}
+
 mkdir -p "${LOG_DIR}"
 
 # Single-instance guard: an auto-deploy racing a manual build in the same tree
@@ -184,6 +196,20 @@ fi
 # on success below). PREV_COMMIT is NOT safe: the docket agent pulls the tree
 # before running this script, so on auto-deploys PREV == the commit under test.
 LAST_GOOD_FILE="${LOG_DIR}/.last-good-commit"
+# A backend restarted outside this script (systemctl, or a pull and restart by
+# hand) never passed a deploy's health check, so it was never recorded and a
+# failed deploy rolled back past it. When the running release passes the same
+# health check now and reports the commit its backend was started from, with
+# no local changes to tracked files, that commit is recorded as known good.
+if release_is_healthy; then
+    RUNNING_COMMIT="$(echo "${RESPONSE}" | sed -n 's/.*"commit":"\([0-9a-f]\{40\}\)".*/\1/p')"
+    if [ -n "${RUNNING_COMMIT}" ] && echo "${RESPONSE}" | grep -q '"commit_clean":true' &&
+        git cat-file -e "${RUNNING_COMMIT}^{commit}" 2>/dev/null &&
+        [ "$(cat "${LAST_GOOD_FILE}" 2>/dev/null || true)" != "${RUNNING_COMMIT}" ]; then
+        echo "${RUNNING_COMMIT}" > "${LAST_GOOD_FILE}"
+        success "Running release ${RUNNING_COMMIT:0:12} is healthy (started outside a deploy): recorded as last known-good"
+    fi
+fi
 ROLLBACK_TARGET=""
 if [ -f "${LAST_GOOD_FILE}" ]; then
     CANDIDATE="$(cat "${LAST_GOOD_FILE}")"
@@ -299,13 +325,7 @@ sleep 10
 HEALTHY=false
 for i in $(seq 1 ${HEALTH_RETRIES}); do
     sleep "${HEALTH_DELAY}"
-    RESPONSE="$(curl -fsS --max-time 5 "${HEALTH_URL}" 2>/dev/null || true)"
-    FRONTEND_RESPONSE="$(curl -fsS --max-time 5 "${FRONTEND_URL}" 2>/dev/null || true)"
-    if echo "${RESPONSE}" | grep -q '"status":"ok"' &&
-        ! echo "${RESPONSE}" | grep -Eq '"neo4j":"error:|"evidence_engine":"(error:|unavailable)"' &&
-        is_compiled_frontend "${FRONTEND_RESPONSE}" &&
-        $SYSTEMCTL is-active --quiet owl-backend-v2 &&
-        $SYSTEMCTL is-active --quiet owl-frontend-v2; then
+    if release_is_healthy; then
         success "Health check passed (owl-backend-v2 + owl-frontend-v2 units active)"
         echo "  Backend: ${RESPONSE}"
         echo "  Frontend: compiled assets served on port ${FRONTEND_PORT}"

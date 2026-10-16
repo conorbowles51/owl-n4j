@@ -468,7 +468,10 @@ class BbvaImportTests(TestCase):
         from services.financial.statement_import import read_statement_import
         from services.financial.imported_records import imported_records
         from postgres.models.financial import FinancialSourceDocument, FinancialTransaction
+        from services.financial.statement_import import forget_shared_readings
         f = self.fixture
+        # The older reader runs only inside this block: no file reading is shared across it.
+        forget_shared_readings()
         with patch('services.financial.statement_import_bbva.bbva_catalog', return_value=([], set())):
             _, request = self.prepare()
             for row in request['rows']:
@@ -477,6 +480,7 @@ class BbvaImportTests(TestCase):
             # the real policy in the recovery steps below.
             with patch('services.financial.statement_admission.require_admission', return_value={}):
                 old = f.confirm(request)
+        forget_shared_readings()
         proposal = read_statement_import(f.db, case_id=f.case.id, evidence_file_id=f.file.id)
         self.assertTrue(proposal['current_import']['refresh_available'])
         args = dict(session_factory=f.SessionLocal, case_id=f.case.id, source_id=UUID(old['source_document_id']),

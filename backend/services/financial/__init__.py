@@ -2223,3 +2223,5 @@ from services.financial.reader_release import (
     RECHECK_AFTER_RELEASE, reader_stamp, reading_changed, sweep as recheck_after_release,
 )
 __all__ += ["RECHECK_AFTER_RELEASE", "reader_stamp", "reading_changed", "recheck_after_release"]
+from services.financial.statement_catalogue import compact_original, full_original, saved_catalogue
+__all__ += ["compact_original", "full_original", "saved_catalogue"]

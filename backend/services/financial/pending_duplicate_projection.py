@@ -18,8 +18,13 @@ def _uuid(value):
         return None
 
 
-def load_projection_context(session, case_id, files):
-    """Bulk scalar fingerprints; PostgreSQL hashes geometry inside the database."""
+def load_projection_context(session, case_id, files, *, periods=None, source_ids=None):
+    """Bulk scalar fingerprints; PostgreSQL hashes geometry inside the database.
+
+    ``periods`` ({(file id, statement key)}) and ``source_ids`` limit the batch
+    drafts and saved sources fingerprinted to those one guard reads; the values
+    are the same as in a whole-file context.
+    """
     from services.financial.statement_import import VERSION
     files = {str(file.id): file for file in files}
     ids = [file.id for file in files.values()]
@@ -39,14 +44,17 @@ def load_projection_context(session, case_id, files):
             geometry[str(file_id)].append([page, str(job), str(extracted), value if postgres else _digest(value)])
     drafts = defaultdict(list)
     if ids:
-        for file_id, key, request in session.execute(select(FinancialImportBatchItem.file_id,
+        query = (select(FinancialImportBatchItem.file_id,
                 FinancialImportBatchItem.statement_key, FinancialImportBatchItem.review_request)
                 .join(FinancialImportBatch, FinancialImportBatch.id == FinancialImportBatchItem.batch_id)
                 .where(FinancialImportBatch.case_id == case_id, FinancialImportBatch.status != 'removed',
                     FinancialImportBatchItem.file_id.in_(ids),
                     FinancialImportBatchItem.status.notin_(('removed', 'superseded_reading')),
-                    FinancialImportBatchItem.review_request.is_not(None))):
-            if request is not None:
+                    FinancialImportBatchItem.review_request.is_not(None)))
+        if periods is not None:
+            query = query.where(FinancialImportBatchItem.statement_key.in_({key for _, key in periods}))
+        for file_id, key, request in session.execute(query):
+            if request is not None and (periods is None or (str(file_id), key) in periods):
                 drafts[(str(file_id), key)].append(_digest(request))
     guards = {}
     for identifier, file in files.items():
@@ -57,12 +65,15 @@ def load_projection_context(session, case_id, files):
                 if key.startswith('statement_')}))
     sources = {}
     source_fingerprint = func.md5(cast(FinancialSourceDocument.metadata_, String)) if postgres else FinancialSourceDocument.metadata_
-    if ids:
-        for identifier, status, value, removed in session.execute(select(FinancialSourceDocument.id,
+    query = (select(FinancialSourceDocument.id,
                 FinancialSourceDocument.status, source_fingerprint,
                 FinancialSourceDocument.metadata_['financial_import_removal'].as_string())
                 .where(FinancialSourceDocument.case_id == case_id,
-                    FinancialSourceDocument.evidence_file_id.in_(ids))):
+                    FinancialSourceDocument.evidence_file_id.in_(ids)))
+    if source_ids is not None:
+        query = query.where(FinancialSourceDocument.id.in_([value for value in map(_uuid, source_ids) if value]))
+    if ids and source_ids != set():
+        for identifier, status, value, removed in session.execute(query):
             sources[str(identifier)] = dict(status=status, fingerprint=value if postgres else _digest(value), removed=bool(removed))
     return dict(files=files, guards=guards, drafts=drafts, sources=sources)
 
@@ -86,11 +97,18 @@ def projection_guard(context, file, statement_id, decision):
 
 
 def capture_projection_guard(session, file, statement_id, decision):
-    retained_id = _uuid((decision.get('retained') or {}).get('evidence_file_id'))
+    retained = decision.get('retained') or {}
+    retained_id = _uuid(retained.get('evidence_file_id'))
     ids = {file.id} | ({retained_id} if retained_id else set())
     files = list(session.scalars(select(EvidenceFile).where(EvidenceFile.case_id == file.case_id,
         EvidenceFile.id.in_(ids))))
-    return projection_guard(load_projection_context(session, file.case_id, files), file, statement_id, decision)
+    # Only what projection_guard reads: this period, the retained period and
+    # the retained saved source (a whole-file context fingerprinted every saved
+    # period and batch draft of the file, on every import).
+    periods = {(str(file.id), statement_id or '')} | ({(str(retained_id), retained.get('statement_id') or '')} if retained_id else set())
+    sources = {str(retained['source_document_id'])} if retained.get('source_document_id') else set()
+    return projection_guard(load_projection_context(session, file.case_id, files, periods=periods, source_ids=sources),
+                            file, statement_id, decision)
 
 
 def cached_disposition(context, file, statement_id, *, reading_revision=None):

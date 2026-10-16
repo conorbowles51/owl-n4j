@@ -1,4 +1,4 @@
-"""Release must defer for both engine work and accepted financial imports."""
+"""Release must defer for engine work and running financial work; queued imports resume after a restart."""
 import importlib.util
 from pathlib import Path
 import pytest
@@ -21,7 +21,7 @@ def test_empty_install_and_paused_or_finished_work_are_idle():
     assert gate.active_work(engine) == 2
 
 
-def test_legacy_worker_and_financial_import_cannot_be_missed():
+def test_legacy_worker_and_running_financial_turn_cannot_be_missed():
     engine = create_engine('sqlite://')
     with engine.begin() as db:
         db.execute(text('CREATE TABLE jobs (status TEXT)'))
@@ -30,7 +30,10 @@ def test_legacy_worker_and_financial_import_cannot_be_missed():
         db.execute(text("INSERT INTO financial_import_batch_items VALUES ('pending_import'),('imported'),('attention')"))
         db.execute(text('CREATE TABLE financial_import_batches (worker_token TEXT, lease_until TIMESTAMP)'))
         db.execute(text("INSERT INTO financial_import_batches VALUES ('active','2099-01-01'),('expired','2000-01-01')"))
-    assert gate.active_work(engine) == 3
+    # The engine job and the live batch turn block; the queued import is reported, not blocking.
+    assert gate.active_work(engine) == 2
+    report = gate.active_work_report(engine)
+    assert (report['total'], report['queued']) == (2, 1)
 
 
 def test_unknown_schema_does_not_assert_idle():

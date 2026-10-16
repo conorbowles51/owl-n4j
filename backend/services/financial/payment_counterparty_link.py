@@ -68,13 +68,26 @@ def display_link(row):
     if not link or link['kind'] != 'account':
         return link
     from sqlalchemy.orm import object_session
+    return resolved_link(object_session(row), row.case_id, link)
+
+
+def stored_link(labels, reviewed):
+    """effective_link from a row's stored `investigation_labels` and `provenance.reviewed_counterparty` alone."""
+    if isinstance(labels, dict) and 'counterparty_link' in labels:
+        return labels['counterparty_link']
+    return reviewed
+
+
+def resolved_link(db, case_id, link):
+    """display_link for a link read from a row of `case_id` (db None: as recorded)."""
+    if not link or link['kind'] != 'account':
+        return link
     from postgres.models.financial import FinancialAccount
-    db = object_session(row)
     if db is None:
         return link
     original_id = UUID(link['id'])
     original = db.get(FinancialAccount, original_id)
-    if original is None or original.case_id != row.case_id:
+    if original is None or original.case_id != case_id:
         return link
     canonical_id = UUID((original.metadata_ or {}).get('canonical_account_id') or str(original_id))
     if canonical_id == original_id:

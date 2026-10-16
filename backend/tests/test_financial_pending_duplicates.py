@@ -127,6 +127,13 @@ class PendingDuplicateTests(TestCase):
         self.assertEqual(again['duplicate_disposition']['revision'], receipt['duplicate_disposition']['revision'])
         self.assertEqual(self.f.preview()['duplicate_disposition']['status'], 'ignored')
         with self.f.SessionLocal() as db:
+            # The guard captured for one statement equals the one read from a whole-case context.
+            from services.financial.pending_duplicate_projection import capture_projection_guard, load_projection_context, projection_guard
+            copy_file = db.get(EvidenceFile, other.id)
+            decision = copy_file.metadata_[METADATA_KEY]['']
+            whole = load_projection_context(db, self.f.case.id, list(db.scalars(select(EvidenceFile).where(EvidenceFile.case_id == self.f.case.id))))
+            self.assertEqual(capture_projection_guard(db, copy_file, None, decision), projection_guard(whole, copy_file, None, decision))
+            self.assertEqual(decision['projection_guard'], projection_guard(whole, copy_file, None, decision))
             self.assertEqual(len(list(db.scalars(select(FinancialTransaction)))), 12)
             stored = db.get(EvidenceFile, other.id).metadata_[METADATA_KEY]['']
             self.assertEqual(stored['history'], [])

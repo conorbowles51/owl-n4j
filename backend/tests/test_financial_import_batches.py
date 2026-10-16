@@ -341,6 +341,151 @@ class BatchImportTests(TestCase):
         self.assertEqual(shown['status'], 'preparing')
         self.assertEqual(sum('last_checked_at' in f for f in shown['files']), service.FILES_PER_TURN)
 
+    def test_a_long_import_queue_does_not_starve_file_preparation(self):
+        from unittest.mock import patch
+        batch = self.create(); self.advance(batch)
+        with self.f.SessionLocal() as db:
+            service.queue_import(db, case_id=self.f.case.id, batch_id=batch,
+                expected_revision=self.status(batch)['ready_revision'], actor=self.f.actor)
+            record = db.get(Batch, batch)
+            record.files = [{**{k: v for k, v in record.files[0].items() if not k.startswith('last_')}, 'status': 'waiting', 'source_id': str(uuid4())} for _ in range(3)]
+            db.commit()
+        events = []
+        actual_import = service._import_item
+        def importing(*args):
+            events.append('import')
+            return actual_import(*args)
+        async def preparing(*args, **kwargs):
+            events.append('prepare')
+            return dict(outcome='processing', evidence_file_id=str(self.f.file.id))
+        # A turn already spent by its first import still looks at one file.
+        with patch.object(service, 'TURN_SECONDS', 0), patch.object(service, '_import_item', side_effect=importing), \
+                patch.object(service, 'prepare_existing_financial_file', side_effect=preparing):
+            self.advance(batch)
+        self.assertEqual(events, ['import', 'prepare'])
+
+    def two_batches_holding_the_file(self):
+        """An investigator's batch and a newer batch listing the same file, both queued to prepare it again."""
+        from datetime import timedelta
+        older = self.create(); self.advance(older)
+        with self.f.SessionLocal() as db:
+            record = db.get(Batch, older)
+            entry = {k: v for k, v in record.files[0].items() if not k.startswith('last_') and k not in ('stage', 'progress')}
+            record.files = [{**entry, 'status': 'waiting'}]
+            record.status = 'preparing'
+            newer = uuid4()
+            db.add(Batch(id=newer, case_id=self.f.case.id, created_by=record.created_by, status='preparing',
+                actor=deepcopy(record.actor), files=[{**entry, 'status': 'waiting'}],
+                created_at=record.created_at + timedelta(seconds=5)))
+            db.commit()
+        return older, newer
+
+    def test_a_file_held_by_several_batches_is_prepared_once(self):
+        from unittest.mock import patch
+        older, newer = self.two_batches_holding_the_file()
+        prepared = []
+        actual = service.prepare_reviews
+        def spy(session, batch, file, **kwargs):
+            prepared.append(batch.id)
+            return actual(session, batch, file, **kwargs)
+        with patch.object(service, 'prepare_reviews', side_effect=spy):
+            self.advance(older)  # the newer batch has not prepared it yet: wait
+            self.assertEqual(prepared, [])
+            self.assertEqual(self.status(older)['status'], 'preparing')
+            self.advance(newer)
+            self.assertEqual(prepared, [newer])
+            self.advance(older)  # adopts the newer batch's preparation
+            self.assertEqual(prepared, [newer])
+        with self.f.SessionLocal() as db:
+            self.assertEqual(db.get(Batch, older).status, 'review')
+            self.assertEqual(db.get(Batch, older).files[0]['status'], 'checked')
+            old_items = list(db.scalars(select(Item).where(Item.batch_id == older)))
+            new_items = list(db.scalars(select(Item).where(Item.batch_id == newer)))
+        self.assertEqual({i.status for i in old_items}, {'superseded_reading'})
+        self.assertEqual({i.summary['prepared_in_batch'] for i in old_items}, {str(newer)})
+        self.assertEqual({i.status for i in new_items}, {'ready'})
+        # The review queue still lists each statement once, from the newer batch.
+        from services.financial.review_queue import _build
+        with self.f.SessionLocal() as db:
+            built = _build(db, self.f.case.id)
+        self.assertEqual([e['batch_id'] for e in built], [str(newer)])
+
+    def test_shared_preparation_falls_back_to_preparing_where_it_cannot_be_proved(self):
+        from unittest.mock import patch
+        # Switched off: every batch prepares the file, as before.
+        older, newer = self.two_batches_holding_the_file()
+        prepared = []
+        actual = service.prepare_reviews
+        def spy(session, batch, file, **kwargs):
+            prepared.append(batch.id)
+            return actual(session, batch, file, **kwargs)
+        with patch.object(service, 'SHARED_PREPARATION', False), patch.object(service, 'prepare_reviews', side_effect=spy):
+            self.advance(older); self.advance(newer)
+        self.assertEqual(sorted(map(str, prepared)), sorted([str(older), str(newer)]))
+        # A reading changed after the newer batch prepared it: the older batch prepares it itself.
+        with self.f.SessionLocal() as db:
+            for identity in (older, newer):
+                record = db.get(Batch, identity)
+                record.files = [{**record.files[0], 'status': 'waiting'}]; record.status = 'preparing'
+            db.commit()
+        prepared.clear()
+        with patch.object(service, 'prepare_reviews', side_effect=spy):
+            self.advance(newer)
+            with self.f.SessionLocal() as db:
+                text = db.get(service.EvidenceFile, self.f.file.id)
+                text.metadata_ = {**(text.metadata_ or {}), 'statement_reading_note': 'changed'}
+                db.commit()
+            self.advance(older)
+        self.assertEqual(prepared, [newer, older])
+        # Saved review work in the older batch is resolved by its own preparation.
+        with self.f.SessionLocal() as db:
+            for identity in (older, newer):
+                record = db.get(Batch, identity)
+                record.files = [{**record.files[0], 'status': 'waiting'}]; record.status = 'preparing'
+            item = db.scalar(select(Item).where(Item.batch_id == older))
+            item.status = 'attention'
+            item.review_request = {'expected_revision': item.summary['revision']}
+            db.commit()
+        prepared.clear()
+        with patch.object(service, 'prepare_reviews', side_effect=spy):
+            self.advance(newer); self.advance(older)
+        self.assertEqual(prepared, [newer, older])
+
+    def test_an_import_leaves_the_readiness_of_its_files_unrelated_periods_current(self):
+        from unittest.mock import patch
+        choices = self.f.install_two_card_periods()
+        batch = self.create(); self.advance(batch)
+        with self.f.SessionLocal() as db:
+            items = {i.statement_key: i for i in db.scalars(select(Item).where(Item.batch_id == batch))}
+        self.assertEqual(set(items), {c['id'] for c in choices})
+        first, second = choices
+        self.assertEqual(items[second['id']].summary['source_pages'], [2])
+        self.f.confirm_legacy(self.f.card_period_request(first)[1])
+        def current(switch=True):
+            with self.f.SessionLocal() as db, patch.object(service, 'RELEVANT_ADMISSIONS_ONLY', switch):
+                item = db.get(Item, items[second['id']].id)
+                return service._ProjectionInputs(db, self.f.case.id, [item]).stored_readiness(item) is not None
+        # The other period is read from another page: its readiness is still current.
+        self.assertTrue(current())
+        # Switched off, every admission in the file makes it stale (the earlier rule).
+        self.assertFalse(current(False))
+        # An item prepared before its pages were recorded keeps the whole-file dependency.
+        with self.f.SessionLocal() as db:
+            item = db.get(Item, items[second['id']].id)
+            item.summary = {k: v for k, v in item.summary.items() if k != 'source_pages'}
+            db.commit()
+        self.assertFalse(current())
+
+    def test_relevant_admissions_are_the_same_statement_a_shared_page_a_recovery_or_a_retained_copy(self):
+        from types import SimpleNamespace as S
+        entry = lambda identity, statement='other', pages=frozenset({9}), recovery=False: S(id=identity, statement_id=statement, pages=pages, recovery=recovery)
+        entries = [entry('a', statement='mine'), entry('b', statement=''), entry('c', pages=frozenset({2, 3})),
+                   entry('d'), entry('e', recovery=True), entry('f', pages=None), entry('g')]
+        item = S(statement_key='mine')
+        decision = dict(retained=dict(source_document_id='g'))
+        self.assertEqual(service._relevant_admitted(entries, item, dict(source_pages=[3]), decision), ['a', 'b', 'c', 'e', 'f', 'g'])
+        self.assertEqual(service._relevant_admitted(entries, item, dict(), None), list('abcdefg'))
+
     def test_import_receipt_survives_response_loss_and_reopening_without_duplicates(self):
         from services.financial.batch_transaction_scope import imported_batch_scope
         from postgres.models.financial_import_batches import FinancialImportOperation
@@ -729,6 +874,39 @@ class BatchImportTests(TestCase):
         self.advance(batch)
         self.assertEqual(self.status(batch)['status'], 'paused')
         self.assertEqual(self.status(batch)['total'], 0)
+
+    def test_a_killed_worker_leaves_work_that_resumes_when_its_lease_runs_out(self):
+        from datetime import datetime, timedelta, timezone
+        # A worker killed mid-turn (uvicorn's health check) runs no release:
+        # its token and lease stay, the file it was preparing reads
+        # "processing", and an accepted import is still queued.
+        batch = self.create(); self.advance(batch)
+        with self.f.SessionLocal() as db:
+            service.queue_import(db, case_id=self.f.case.id, batch_id=batch,
+                expected_revision=self.status(batch)['ready_revision'], actor=self.f.actor)
+            record = db.get(Batch, batch)
+            record.files = [{**record.files[0], 'status': 'processing'}]
+            record.status = 'preparing'; record.worker_token = str(uuid4())
+            record.lease_until = datetime.now(timezone.utc) + timedelta(minutes=4)
+            db.commit()
+        # While the dead worker's lease runs, no other worker takes the batch.
+        self.advance(batch)
+        shown = self.status(batch)
+        self.assertEqual((shown['files'][0]['status'], shown['counts'].get('imported', 0)), ('processing', 0))
+        # Once it has run out (5 minutes after the last renewal), the next turn
+        # resumes both: the import is saved once and the file is prepared.
+        with self.f.SessionLocal() as db:
+            db.get(Batch, batch).lease_until = datetime.now(timezone.utc) - timedelta(seconds=1)
+            db.commit()
+        self.advance(batch)
+        shown = self.status(batch)
+        self.assertEqual(shown['files'][0]['status'], 'checked')
+        self.assertEqual(shown['counts']['imported'], 1)
+        self.assertEqual(shown['status'], 'review')
+        with self.f.SessionLocal() as db:
+            record = db.get(Batch, batch)
+            self.assertIsNone(record.worker_token)
+            self.assertEqual(len(list(db.scalars(select(FinancialTransaction)))), 12)
 
     def test_shutdown_waits_for_atomic_statement_thread_before_acknowledgement(self):
         from threading import Event

@@ -4,6 +4,7 @@ A matching account reference and overlapping period are a reason to compare
 sources, not a determination that the payments or account holders are identical.
 """
 import re
+from functools import lru_cache
 from datetime import date
 from sqlalchemy import select
 from postgres.models.evidence import EvidenceFile
@@ -42,21 +43,39 @@ def needs_hydration(item):
     return (not item.review_request and 'institution' not in item.summary) or 'account_type' not in item.summary
 
 
+@lru_cache(maxsize=65536)
+def _account_identity(institution, account_number, currency):
+    """(identity key, provisional) of a printed account, or None. A pure function of its three
+    inputs; a case comparison derives it for every statement in the case (thousands) per import."""
+    try:
+        identity = AccountDraft.observed(institution_name=institution or None,
+            identifier_as_printed=account_number, currency=currency).identity()
+    except (ValueError, TypeError, AccountError):
+        return None
+    return identity.key, identity.is_provisional
+
+
 def scope(raw):
     try:
         start, end = date.fromisoformat(raw.get('period_start', '')), date.fromisoformat(raw.get('period_end', ''))
         if start > end:
             return None
-        identity = AccountDraft.observed(institution_name=raw.get('institution') or None,
-            identifier_as_printed=raw.get('account_number'), currency=raw.get('currency')).identity()
-    except (ValueError, TypeError, AccountError):
+    except (ValueError, TypeError):
         return None
+    institution, account_number, currency = raw.get('institution'), raw.get('account_number'), raw.get('currency')
+    try:
+        identity = _account_identity(institution, account_number, currency)
+    except TypeError:  # an unhashable stored value: derive it without the cache
+        identity = _account_identity.__wrapped__(institution, account_number, currency)
+    if identity is None:
+        return None
+    key, provisional = identity
     holder = _fold(raw.get('holder'))
-    return dict(identity=identity.key, currency=raw.get('currency'), start=start.isoformat(), end=end.isoformat(),
+    return dict(identity=key, currency=currency, start=start.isoformat(), end=end.isoformat(),
                 holder=holder if holder not in NON_VALUES else '', account_type=_fold(raw.get('account_type')),
-                account_reference=re.sub(r'[\s-]+', '', _fold(raw.get('account_number'))),
-                full_reference=not identity.is_provisional and bool(_fold(raw.get('institution')))
-                    and _fold(raw.get('institution')) not in NON_VALUES)
+                account_reference=re.sub(r'[\s-]+', '', _fold(account_number)),
+                full_reference=not provisional and bool(_fold(institution))
+                    and _fold(institution) not in NON_VALUES)
 
 
 def same_statement(left, right):
@@ -100,14 +119,38 @@ def summary_request(summary):
         period_start=summary.get('period_start', ''), period_end=summary.get('period_end', ''))
 
 
+# A saved period's statement id and first printed page never change once the
+# record is written (both are set when it is created; nothing rewrites them).
+# Reading them makes PostgreSQL detoast the record's whole metadata, which made
+# every comparison (one per import, and per batch check) read every saved
+# reading of the case. They are remembered per record id, so a comparison
+# reads them only for records saved since the last one.
+_SAVED_KEYS = {}
+SAVED_KEYS_LIMIT = 200_000
+
+
+def _saved_keys(session, source_ids):
+    """{source id: (statement id, first page)} for these saved records."""
+    missing = [identity for identity in source_ids if identity not in _SAVED_KEYS]
+    for start in range(0, len(missing), 2000):
+        chunk = missing[start:start + 2000]
+        found = {identity: (statement_id, page) for identity, statement_id, page in session.execute(select(
+            FinancialSourceDocument.id,
+            FinancialSourceDocument.metadata_['statement_import_statement_id'].as_string(),
+            FinancialSourceDocument.metadata_['statement_import_original']['rows'][0]['page_number'].as_integer())
+            .where(FinancialSourceDocument.id.in_(chunk)))}
+        if len(_SAVED_KEYS) + len(found) > SAVED_KEYS_LIMIT:
+            _SAVED_KEYS.clear()
+        _SAVED_KEYS.update(found)
+    return {identity: _SAVED_KEYS.get(identity, (None, None)) for identity in source_ids}
+
+
 def comparison_sources(session, case_id, pending=None, *, read_pending=None, duplicate_context=None):
     """Load a case once per batch check, without loading imported PDF readings."""
-    imported = session.execute(select(
+    periods = session.execute(select(
         FinancialAccount.identity_key, FinancialStatementPeriod.currency,
         FinancialStatementPeriod.period_start, FinancialStatementPeriod.period_end,
         FinancialSourceDocument.id,
-        FinancialSourceDocument.metadata_['statement_import_statement_id'].as_string(),
-        FinancialSourceDocument.metadata_['statement_import_original']['rows'][0]['page_number'].as_integer(),
         EvidenceFile.id, EvidenceFile.original_filename,
         EvidenceFile.metadata_['statement_root_evidence_id'].as_string(),
         FinancialAccount.institution_name, FinancialAccount.identifier_as_printed,
@@ -119,6 +162,8 @@ def comparison_sources(session, case_id, pending=None, *, read_pending=None, dup
         .where(FinancialStatementPeriod.case_id == case_id, FinancialSourceDocument.case_id == case_id,
                FinancialAccount.case_id == case_id, EvidenceFile.case_id == case_id,
                FinancialSourceDocument.status == 'admitted')).all()
+    keys = _saved_keys(session, [row[4] for row in periods])
+    imported = [(*row[:5], *keys[row[4]], *row[5:]) for row in periods]
     if pending is None:
         items = session.scalars(select(Item).join(Batch, Batch.id == Item.batch_id)
             .join(EvidenceFile, EvidenceFile.id == Item.file_id)
@@ -269,7 +314,8 @@ def coverage_review(session, *, case_id, file_id, request, sources=None):
     if own is None:
         return dict(available=False, candidates=[], revision=None,
                     reason='A bank, account reference and complete statement dates are needed to compare coverage.')
-    sources = sources if sources is not None else comparison_sources(session, case_id)[0]
+    # `sources` may be a callable giving the case snapshot, built only when needed.
+    sources = sources() if callable(sources) else sources if sources is not None else comparison_sources(session, case_id)[0]
     families = getattr(sources, 'families', None)
     if families is None:
         from services.financial.source_lineage import case_lineage

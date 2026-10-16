@@ -115,10 +115,14 @@ def _index(session, case_id):
             value['readers'].add(reader)
         if batch_status != 'removed' and item_status == 'pending_import':
             value['active_work'] = True
-    for identifier, source_id, status, parser, statement, choices in session.execute(select(Source.evidence_file_id,
+    # A saved period keeps its own statement choice; its file's whole catalogue
+    # is stored once, on one saved record (services.financial.statement_catalogue).
+    from services.financial.statement_catalogue import CATALOGUE
+    for identifier, source_id, status, parser, statement, choices, catalogue in session.execute(select(Source.evidence_file_id,
             Source.id, Source.status, Source.parser_name,
             Source.metadata_['statement_import_statement_id'].as_string(),
-            Source.metadata_['statement_import_original']['statement_choices']).where(Source.case_id == case_id)):
+            Source.metadata_['statement_import_original']['statement_choices'],
+            Source.metadata_[CATALOGUE]['choices']).where(Source.case_id == case_id)):
         if (value := fact(identifier)) is None:
             continue
         value['member'] = True
@@ -126,7 +130,7 @@ def _index(session, case_id):
         value['imported_source_count'] += int(status == 'admitted')
         if statement is not None:
             value['scopes'].add(statement)
-        for choice in choices or []:
+        for choice in [*(choices or []), *(catalogue or [])]:
             if isinstance(choice, dict) and isinstance(choice.get('layout_id'), str):
                 value['readers'].add(choice['layout_id'][:160])
         if parser:

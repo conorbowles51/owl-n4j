@@ -81,8 +81,11 @@ def active_engine():
 ])
 def test_each_category_has_only_blocking_references(active_engine, category, record_id, status, extra):
     report = gate.active_work_report(active_engine)
-    assert report['total'] == gate.active_work(active_engine) == 6
+    # Five blocking categories; the accepted import is queued (it resumes after a restart).
+    assert report['total'] == gate.active_work(active_engine) == 5
+    assert report['queued'] == 1
     result = next(item for item in report['categories'] if item['category'] == category)
+    assert result['blocking'] is (category != 'pending_financial_imports')
     assert result['count'] == 1
     assert result['omitted'] == 0
     assert result['records'] == [dict(record_id=identifier(record_id), case_id=CASE_ID,
@@ -90,12 +93,12 @@ def test_each_category_has_only_blocking_references(active_engine, category, rec
     assert PRIVATE not in json.dumps(report)
 
 
-def test_orphan_pending_import_still_blocks_and_keeps_its_reference(active_engine):
+def test_orphan_pending_import_is_still_counted_and_keeps_its_reference(active_engine):
     with active_engine.begin() as db:
         db.execute(text("INSERT INTO financial_import_batch_items (id,batch_id,status) VALUES (:id,:batch,'pending_import')"),
             {'id': identifier(80), 'batch': identifier(81)})
     report = gate.active_work_report(active_engine)
-    assert report['total'] == 7
+    assert (report['total'], report['queued']) == (5, 2)
     result = next(item for item in report['categories'] if item['category'] == 'pending_financial_imports')
     orphan = next(item for item in result['records'] if item['record_id'] == identifier(80))
     assert orphan['batch_id'] == identifier(81)
@@ -168,9 +171,10 @@ def test_cli_reports_category_counts_safe_references_and_no_evidence(active_engi
     assert gate.main() == 75
     result = capsys.readouterr()
     assert not result.out
-    assert 'Release deferred: 6 ingestion, recovery or upload records are queued or running.' in result.err
+    assert 'Release deferred: 5 ingestion, recovery or upload records are queued or running.' in result.err
     assert 'at most 10 references per category' in result.err
-    assert result.err.count('1 blocking records; 1 shown; 0 not shown.') == 6
+    assert result.err.count('1 blocking records; 1 shown; 0 not shown.') == 5
+    assert result.err.count('1 queued (resume after restart, not blocking) records; 1 shown; 0 not shown.') == 1
     assert CASE_ID in result.err
     assert UPDATED in result.err
     assert PRIVATE not in result.err
@@ -198,11 +202,62 @@ def test_report_performs_only_reads_and_count_api_does_not_fetch_samples(active_
 
     event.listen(active_engine, 'before_cursor_execute', observe)
     try:
-        assert gate.active_work_report(active_engine)['total'] == 6
+        assert gate.active_work_report(active_engine)['total'] == 5
         assert all(sql.lstrip().upper().startswith(('SELECT', 'PRAGMA')) for sql in statements)
         assert not any(name in sql for sql in statements for name in ('filename', 'error_message'))
         statements.clear()
-        assert gate.active_work(active_engine) == 6
+        assert gate.active_work(active_engine) == 5
         assert not any(' AS record_id' in sql for sql in statements)
     finally:
         event.remove(active_engine, 'before_cursor_execute', observe)
+
+
+def turn_engine(lease_until='2099-01-01T00:00:00', pending=0):
+    engine = create_engine('sqlite://')
+    with engine.begin() as db:
+        db.execute(text('CREATE TABLE financial_import_batches (id TEXT, worker_token TEXT, lease_until TEXT)'))
+        db.execute(text('CREATE TABLE financial_import_batch_items (id TEXT, batch_id TEXT, status TEXT)'))
+        if lease_until:
+            db.execute(text("INSERT INTO financial_import_batches VALUES (:id, 'worker', :lease)"), {'id': identifier(1), 'lease': lease_until})
+        for index in range(pending):
+            db.execute(text("INSERT INTO financial_import_batch_items VALUES (:id, :batch, 'pending_import')"),
+                       {'id': identifier(100 + index), 'batch': identifier(1)})
+    return engine
+
+
+def test_queued_imports_alone_do_not_defer_a_release(monkeypatch, capsys):
+    engine = turn_engine(lease_until=None, pending=3)
+    monkeypatch.setattr(gate, '_get_engine', lambda: engine)
+    assert gate.main() == 0
+    assert capsys.readouterr().out == ('Ingestion gate: no running ingestion, recovery or uploads. '
+                                       '3 accepted financial imports are queued; they resume after the restart.\n')
+
+
+def test_a_running_batch_turn_is_waited_for_until_it_ends(monkeypatch, capsys):
+    engine = turn_engine(pending=3)
+    monkeypatch.setattr(gate, '_get_engine', lambda: engine)
+    sleeps = []
+    def turn_ends(seconds):
+        sleeps.append(seconds)
+        with engine.begin() as db:  # the worker finishes its turn and releases the lease
+            db.execute(text('UPDATE financial_import_batches SET worker_token = NULL, lease_until = NULL'))
+    monkeypatch.setattr(gate.time, 'sleep', turn_ends)
+    assert gate.main() == 0
+    assert sleeps == [gate.TURN_POLL_SECONDS]
+    out = capsys.readouterr().out
+    assert 'batch turns are running now; waiting up to 120s' in out
+    assert '3 accepted financial imports are queued' in out
+
+
+def test_a_turn_that_does_not_end_in_time_defers_and_other_work_defers_at_once(monkeypatch, capsys):
+    engine = turn_engine()
+    monkeypatch.setattr(gate, '_get_engine', lambda: engine)
+    monkeypatch.setenv('INGESTION_GATE_TURN_WAIT_SECONDS', '0')
+    assert gate.main() == 75
+    assert 'financial_batch_leases: 1 blocking records' in capsys.readouterr().err
+    with engine.begin() as db:
+        db.execute(text('CREATE TABLE jobs (id TEXT, status TEXT)'))
+        db.execute(text("INSERT INTO jobs VALUES (:id, 'processing')"), {'id': identifier(9)})
+    monkeypatch.delenv('INGESTION_GATE_TURN_WAIT_SECONDS')
+    monkeypatch.setattr(gate.time, 'sleep', lambda seconds: (_ for _ in ()).throw(AssertionError('waited')))
+    assert gate.main() == 75

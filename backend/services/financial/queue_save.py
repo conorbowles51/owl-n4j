@@ -27,11 +27,14 @@ import removal.
 """
 import logging
 import os
+import random
+import time
 from collections import Counter
 from uuid import UUID, uuid4, uuid5
 
 from sqlalchemy import select
 
+from postgres.models.case import Case
 from postgres.models.evidence import EvidenceFile
 from postgres.models.financial_import_batches import (FinancialImportBatch as Batch, FinancialImportBatchItem as Item,
                                                       FinancialImportOperation as Operation)
@@ -172,7 +175,13 @@ def save_statements(session, *, case_id, item_ids, actor, request_id=None, only_
     # A repeated request (a retry after a lost response) returns its receipts.
     done = {op.batch_id: op for op in session.scalars(select(Operation).where(Operation.case_id == case_id,
             Operation.id.in_([operation_id_for(request_id, b) for b in batch_ids])))} if batch_ids else {}
-    # Lock order as the batch save: batch rows, then items, then evidence rows.
+    # The case row first, as every case-level writer takes it (the strict
+    # import writer holds it while it locks the evidence rows). A share lock:
+    # saves still run side by side, but none can hold an evidence row while
+    # waiting for the case behind an import, which deadlocked them.
+    if session.scalar(select(Case.id).where(Case.id == case_id).with_for_update(key_share=True)) is None:
+        raise PdfMappingError('Case not found.', 404)
+    # Then as the batch save: batch rows, then items, then evidence rows.
     batches = {batch.id: batch for batch in session.scalars(select(Batch).where(Batch.case_id == case_id,
                Batch.id.in_(batch_ids)).order_by(Batch.id).with_for_update())} if batch_ids else {}
     candidates = []
@@ -278,30 +287,53 @@ def held_summary(held):
     return ', '.join(f'{n} {reason[0].lower() + reason[1:]}' for reason, n in counts.most_common())
 
 
+AUTO_SAVE_ATTEMPTS = 3
+
+
 def auto_save_prepared(session, *, case_id, batch_id, file_id):
-    """After a file's preparation: save its fully reconciled statements as System. Never raises."""
+    """After a file's preparation: save its fully reconciled statements as System. Never raises.
+
+    A save that loses a lock conflict (deadlock or serialization failure, when
+    the same file is prepared in several batches at once) is tried again;
+    statements left ready after the last attempt stay in the queue.
+    """
     if not AUTO_SAVE_READY:
         return None
-    try:
-        # Details the system can fill with certainty (confirmed proposals) are
-        # filled first, as System; the statement then saves only when it
-        # checks out completely like any other.
-        entries = _prepared_entries(session, case_id, batch_id, file_id)
-        if entries:
-            fill_confirmed(session, case_id=case_id, entries=entries, owned_batch_id=batch_id)
-        file = session.get(EvidenceFile, file_id)
-        ids = [item.id for item in session.scalars(select(Item).where(Item.batch_id == batch_id,
-               Item.file_id == file_id, Item.status == 'ready'))
-               if not item.review_request or system_filled_only(item, file)]
-        if not ids:
+    from sqlalchemy.exc import OperationalError
+    for attempt in range(1, AUTO_SAVE_ATTEMPTS + 1):
+        try:
+            return _auto_save_once(session, case_id=case_id, batch_id=batch_id, file_id=file_id)
+        except OperationalError as error:
+            session.rollback()
+            if attempt < AUTO_SAVE_ATTEMPTS and getattr(error.orig, 'sqlstate', None) in ('40P01', '40001'):
+                log.warning('Automatic save of file %s lost a lock conflict; trying again (%s of %s)',
+                            str(file_id)[:8], attempt + 1, AUTO_SAVE_ATTEMPTS)
+                time.sleep(attempt + random.random())
+                continue
+            log.exception('Automatic save of ready statements failed; they stay ready in the queue')
             return None
-        result = save_statements(session, case_id=case_id, item_ids=ids, actor=SYSTEM_ACTOR,
-                                 only_reconciled=True)
-        if result['queued']:
-            log.info('Automatic save: %s statement(s) of file %s queued for import (actor System)',
-                     result['queued'], str(file_id)[:8])
-        return result
-    except Exception:
-        session.rollback()
-        log.exception('Automatic save of ready statements failed; they stay ready in the queue')
+        except Exception:
+            session.rollback()
+            log.exception('Automatic save of ready statements failed; they stay ready in the queue')
+            return None
+
+
+def _auto_save_once(session, *, case_id, batch_id, file_id):
+    # Details the system can fill with certainty (confirmed proposals) are
+    # filled first, as System; the statement then saves only when it
+    # checks out completely like any other.
+    entries = _prepared_entries(session, case_id, batch_id, file_id)
+    if entries:
+        fill_confirmed(session, case_id=case_id, entries=entries, owned_batch_id=batch_id)
+    file = session.get(EvidenceFile, file_id)
+    ids = [item.id for item in session.scalars(select(Item).where(Item.batch_id == batch_id,
+           Item.file_id == file_id, Item.status == 'ready'))
+           if not item.review_request or system_filled_only(item, file)]
+    if not ids:
         return None
+    result = save_statements(session, case_id=case_id, item_ids=ids, actor=SYSTEM_ACTOR,
+                             only_reconciled=True)
+    if result['queued']:
+        log.info('Automatic save: %s statement(s) of file %s queued for import (actor System)',
+                 result['queued'], str(file_id)[:8])
+    return result

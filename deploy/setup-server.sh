@@ -70,7 +70,7 @@ Group=${DEPLOY_GROUP}
 WorkingDirectory=${PROJECT_DIR}/backend
 Environment="PATH=${VENV_DIR}/bin:/usr/local/bin:/usr/bin:/bin"
 EnvironmentFile=${ENV_FILE}
-ExecStart=/bin/bash -lc 'exec ${VENV_DIR}/bin/uvicorn main:app --host 0.0.0.0 --port \${API_PORT:-8002} --workers 2 --timeout-graceful-shutdown 20'
+ExecStart=/bin/bash -lc 'exec ${VENV_DIR}/bin/uvicorn main:app --host 0.0.0.0 --port \${API_PORT:-8002} --workers 2 --timeout-graceful-shutdown 20 --timeout-worker-healthcheck 120'
 Restart=on-failure
 RestartSec=5
 # The app ends itself within 45s of SIGTERM (see backend/services/process_shutdown.py);

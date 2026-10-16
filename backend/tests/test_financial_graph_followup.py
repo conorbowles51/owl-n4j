@@ -260,6 +260,20 @@ class FailureIsolationTests(GraphFollowUpTestCase):
         self.clock.now += graph_followup.STALE_RETRY_SECONDS
         self.assertEqual(self.run_due()[0]['outcome'], 'projected')
 
+    def test_stale_during_a_running_import_waits_for_quiet_or_the_deferral(self):
+        self.f.confirm()
+        graph_followup.request_follow_up(self.case, now=self.clock.now, immediate=True)
+        def moved(*args, **kwargs):
+            graph_followup.request_follow_up(self.case, now=self.clock.now)
+            return next(prints)
+        prints = iter(['before', 'after', 'after'])
+        with patch.object(graph_followup, 'ledger_fingerprint', side_effect=moved):
+            self.assertEqual(self.run_due(), [dict(case_id=self.case, outcome='stale')])
+        self.clock.now += graph_followup.STALE_RETRY_SECONDS
+        self.assertEqual(self.run_due(), [])
+        self.clock.now += graph_followup.QUIET_SECONDS
+        self.assertEqual(self.run_due()[0]['outcome'], 'projected')
+
     def test_refuses_a_plan_that_would_erase_an_admitted_ledger(self):
         from services.financial import projection
         self.f.confirm()

@@ -3,9 +3,11 @@
 Run with the backend's configured database. Failure to inspect is a failure to
 release; this script never pauses, retries, clears or changes ingestion records.
 """
+import os
 import sys
 import json
 import re
+import time
 from itertools import islice
 from datetime import datetime, timezone
 from pathlib import Path
@@ -18,7 +20,21 @@ from sqlalchemy import bindparam, inspect, text
 from postgres.session import _get_engine
 
 
-SAMPLE_LIMIT = 10  # At most 60 references across the six blocking categories.
+SAMPLE_LIMIT = 10  # At most 60 references across the six categories.
+# Accepted financial imports waiting for a worker turn are durable queued work:
+# the batch loop claims, writes and commits each one in a single transaction,
+# and after a restart the next turn resumes the queue where it stopped (a
+# graceful stop releases the batch lease; a killed worker's lease runs out in
+# 5 minutes). They are reported, but no longer defer a release: a long import
+# queue used to hold every deploy back until it drained. What is running right
+# now still blocks. A worker turn holds its batch lease, so a live lease is a
+# turn in progress; turns are bounded (~30 s plus the item in hand), so the gate
+# waits for a turn boundary (up to TURN_WAIT_SECONDS, INGESTION_GATE_TURN_WAIT_SECONDS
+# overrides) before it defers. Every other category defers at once, as before.
+QUEUED_CATEGORIES = frozenset({'pending_financial_imports'})
+TURN_CATEGORIES = frozenset({'financial_batch_leases'})
+TURN_WAIT_SECONDS = 120
+TURN_POLL_SECONDS = 2
 LOCK_SAMPLE_LIMIT = 10
 ACTIVITY_STATES = frozenset({'active', 'idle', 'idle in transaction',
     'idle in transaction (aborted)', 'fastpath function call', 'disabled'})
@@ -142,15 +158,30 @@ def active_work_report(engine, *, sample_limit=SAMPLE_LIMIT):
                     'ORDER BY updated_at ASC, record_id ASC LIMIT :sample_limit'),
                     {'sample_limit': sample_limit}).mappings()]
             categories.append(dict(category=category, count=count, records=records,
-                                   omitted=max(0, count - len(records))))
+                                   omitted=max(0, count - len(records)),
+                                   blocking=category not in QUEUED_CATEGORIES))
     return dict(observed_at=datetime.now(timezone.utc).isoformat(),
-                total=sum(category['count'] for category in categories),
+                total=sum(category['count'] for category in categories if category['blocking']),
+                queued=sum(category['count'] for category in categories if not category['blocking']),
                 sample_limit=sample_limit, categories=categories)
 
 
 def active_work(engine):
-    """Keep the original count-only API for existing release checks/tests."""
+    """Keep the original count-only API for existing release checks/tests (blocking records only)."""
     return active_work_report(engine, sample_limit=0)['total']
+
+
+def _turn_wait_seconds():
+    try:
+        value = float(os.environ.get('INGESTION_GATE_TURN_WAIT_SECONDS', TURN_WAIT_SECONDS))
+    except ValueError:
+        return TURN_WAIT_SECONDS
+    return min(max(value, 0.0), 900.0)
+
+
+def _only_turns_running(report):
+    blocking = [category for category in report['categories'] if category['blocking'] and category['count']]
+    return bool(blocking) and all(category['category'] in TURN_CATEGORIES for category in blocking)
 
 
 def _safe_activity(record):
@@ -246,19 +277,31 @@ def _print_lock_waits(engine):
 def main():
     try:
         engine = _get_engine()
+        deadline = time.monotonic() + _turn_wait_seconds()
         report = active_work_report(engine)
+        waited = False
+        while report['total'] and _only_turns_running(report) and time.monotonic() < deadline:
+            if not waited:
+                print(f"Ingestion gate: {report['total']} batch turns are running now; waiting up to {int(_turn_wait_seconds())}s for them to end.")
+                waited = True
+            time.sleep(TURN_POLL_SECONDS)
+            report = active_work_report(engine)
         if report['total']:
             print(f"Release deferred: {report['total']} ingestion, recovery or upload records are queued or running. No further services will be replaced by this release attempt.", file=sys.stderr)
             print(f"Ingestion gate diagnostics at {report['observed_at']}: at most {report['sample_limit']} references per category; counts and samples may change while work runs.", file=sys.stderr)
             for category in report['categories']:
                 if not category['count']:
                     continue
-                print(f"  {category['category']}: {category['count']} blocking records; {len(category['records'])} shown; {category['omitted']} not shown.", file=sys.stderr)
+                kind = 'blocking' if category['blocking'] else 'queued (resume after restart, not blocking)'
+                print(f"  {category['category']}: {category['count']} {kind} records; {len(category['records'])} shown; {category['omitted']} not shown.", file=sys.stderr)
                 for record in category['records']:
                     print('    ' + json.dumps(record, default=str, sort_keys=True), file=sys.stderr)
             _print_lock_waits(engine)
             return 75
-        print('Ingestion gate: no queued or running ingestion, recovery or uploads.')
+        if report['queued']:
+            print(f"Ingestion gate: no running ingestion, recovery or uploads. {report['queued']} accepted financial imports are queued; they resume after the restart.")
+        else:
+            print('Ingestion gate: no queued or running ingestion, recovery or uploads.')
         return 0
     except Exception as error:
         # Database errors can contain connection URLs, SQL parameters or other

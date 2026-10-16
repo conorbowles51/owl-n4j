@@ -1,6 +1,9 @@
 """Case-scoped automatic statement review assembled from stored source tables."""
+import pickle
 import re
-from sqlalchemy import select
+import threading
+from collections import OrderedDict
+from sqlalchemy import Text, cast, func, select
 from postgres.models.evidence import EvidenceFile, EvidenceDocumentText, EvidenceTableGeometry
 from services.financial.candidate_sources import read_candidate_source
 from services.financial.pdf_candidates import PdfMappingError, _digest
@@ -64,7 +67,21 @@ READ_ONLY_LISTING = 'read_only_listing'
 
 def _existing_statement(session, case_id, file, statement_id, addresses=(), row_addresses=None, source_regions=None, *, excluded_duplicates=False, memo=None):
     from postgres.models.financial import FinancialSourceDocument
-    query = select(FinancialSourceDocument).where(
+    # Only the keys compared below are loaded. Every saved period of a
+    # multi-statement file carries the file's whole statement catalogue
+    # (~0.6 MB each for a 217-period production), so loading whole rows made
+    # each import and each preparation read the catalogue once per saved
+    # period: 120 MB of JSON per check, growing with every import.
+    metadata = FinancialSourceDocument.metadata_
+    original = metadata['statement_import_original']
+    query = select(FinancialSourceDocument.id, FinancialSourceDocument.evidence_file_id,
+                   FinancialSourceDocument.superseded_by_id,
+                   metadata['financial_import_removal'].label('removal'),
+                   metadata['statement_import_statement_id'].label('statement_id'),
+                   original['assigned_period_ids'].label('assigned_period_ids'),
+                   original['sources'].label('sources'),
+                   original['statement_row_addresses'].label('statement_row_addresses'),
+                   original['statement_source_regions'].label('statement_source_regions')).where(
         FinancialSourceDocument.case_id == case_id,
         FinancialSourceDocument.sha256_at_ingestion == file.sha256)
     if excluded_duplicates:
@@ -88,15 +105,15 @@ def _existing_statement(session, case_id, file, statement_id, addresses=(), row_
     if memo is not None:
         memo_key = ('existing_sources', str(case_id), file.sha256, excluded_duplicates, str(file.id) if excluded_duplicates else '')
         if memo_key not in memo:
-            memo[memo_key] = list(session.scalars(query.order_by(FinancialSourceDocument.id)))
+            memo[memo_key] = list(session.execute(query.order_by(FinancialSourceDocument.id)))
         candidates = memo[memo_key]
     else:
-        candidates = session.scalars(query.order_by(FinancialSourceDocument.id))
+        candidates = session.execute(query.order_by(FinancialSourceDocument.id))
     addresses = set(addresses)
     row_addresses = {tuple(value) for value in row_addresses} if row_addresses is not None else None
     matches = []
     for item in candidates:
-        if (item.metadata_ or {}).get('financial_import_removal'):
+        if item.removal:
             continue
         if excluded_duplicates:
             retained = session.get(FinancialSourceDocument, item.superseded_by_id)
@@ -106,22 +123,19 @@ def _existing_statement(session, case_id, file, statement_id, addresses=(), row_
                 # A confirmed reread replaces this reading within the same PDF
                 # history. That is not an investigator's duplicate exclusion.
                 continue
-        metadata = item.metadata_ or {}
-        if metadata.get('statement_import_statement_id') in (None, statement_id):
+        if item.statement_id in (None, statement_id):
             matches.append(item)
             continue
-        if (item.evidence_file_id == file.id and statement_id in
-                metadata.get('statement_import_original', {}).get('assigned_period_ids', [])):
+        if item.evidence_file_id == file.id and statement_id in (item.assigned_period_ids or []):
             # Explicitly assigned periods in this same reading may share a PDF
             # table. A neighbouring period is not a duplicate of this one.
             continue
-        previous = metadata.get('statement_import_original', {}).get('sources', [])
+        previous = item.sources or []
         previous_addresses = {(source['page_number'], source['table_index']) for source in previous}
-        previous_rows = metadata.get('statement_import_original', {}).get('statement_row_addresses')
+        previous_rows = item.statement_row_addresses
         if row_addresses is not None and previous_rows is not None:
             from services.financial.statement_import_andrews import source_regions_overlap
-            overlap = source_regions_overlap(source_regions,
-                metadata.get('statement_import_original', {}).get('statement_source_regions'))
+            overlap = source_regions_overlap(source_regions, item.statement_source_regions)
             if overlap is not None:
                 if overlap:
                     matches.append(item)
@@ -139,7 +153,7 @@ def _existing_statement(session, case_id, file, statement_id, addresses=(), row_
         raise PdfMappingError(
             'This reading overlaps more than one imported statement. No imports were changed. '
             'Review the statement periods and existing imports before replacing them.', 409)
-    return matches[0] if matches else None
+    return session.get(FinancialSourceDocument, matches[0].id) if matches else None
 
 
 def _printed_header(content):
@@ -157,6 +171,62 @@ def _printed_header(content):
     return header, metadata
 
 
+# One file's reading (printed header, table sources, statement catalog,
+# currencies and period checks) depends only on its stored extraction. A
+# multi-statement file used to be read whole again for every statement it
+# prints: each batch import of one period re-read every period of the file,
+# once to check and once more inside the strict writer under the case lock
+# (minutes per period for a 345-page production, and the long-held case lock
+# deadlocked concurrent saves). These parts are now shared across requests,
+# keyed on the stored extraction, and every request gets its own copy.
+SHARED_READING_FILES = 4
+_shared_readings = OrderedDict()
+_shared_readings_lock = threading.Lock()
+
+
+def _shared_reading(session, file, text):
+    """The shared parts for this file's current extraction (a dict of pickled values)."""
+    # Every stored input is in the key, the page tables by content (hashed in
+    # the database: about 0.1 s for 345 pages), so no edit can be served stale.
+    postgres = session.get_bind().dialect.name == 'postgresql'
+    content = func.md5(cast(EvidenceTableGeometry.payload, Text)) if postgres else EvidenceTableGeometry.payload
+    pages = tuple((number, str(job), fingerprint if postgres else _digest(fingerprint)) for number, job, fingerprint
+        in session.execute(select(EvidenceTableGeometry.page_number, EvidenceTableGeometry.engine_job_id, content)
+            .where(EvidenceTableGeometry.evidence_file_id == file.id).order_by(EvidenceTableGeometry.page_number)))
+    stamp = (str(file.id), file.sha256, str(text.engine_job_id), text.content_sha256, pages,
+        _digest(dict(manifest=text.processing_manifest, locations=text.source_locations)))
+    with _shared_readings_lock:
+        for key in [key for key in _shared_readings if key[0] == stamp[0] and key != stamp]:
+            del _shared_readings[key]
+        entry = _shared_readings.setdefault(stamp, {})
+        _shared_readings.move_to_end(stamp)
+        while len(_shared_readings) > SHARED_READING_FILES:
+            _shared_readings.popitem(last=False)
+    return entry
+
+
+def forget_shared_readings():
+    """Drop every shared file reading.
+
+    Every stored input is in the key, so production never needs this: reader
+    code changes only with a restart. A test that swaps a reader function
+    inside one process (to seed an import made by an older reader) does.
+    """
+    with _shared_readings_lock:
+        _shared_readings.clear()
+
+
+def _shared_value(cache, shared, key, compute):
+    if key not in cache:
+        stored = shared.get(key)
+        if stored is not None:
+            cache[key] = pickle.loads(stored)
+        else:
+            cache[key] = compute()
+            shared[key] = pickle.dumps(cache[key], pickle.HIGHEST_PROTOCOL)
+    return cache[key]
+
+
 def read_statement_import(session, *, case_id, evidence_file_id, currency=None, statement_id=None, _cache=None, _include_period_checks=True, _apply_assignments=True, _include_duplicate_disposition=True, _compare_printings=True):
     # The identity map already holds the row after the first read in a request;
     # re-querying decoded its whole metadata again for every statement.
@@ -169,12 +239,11 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
     if text is None:
         raise PdfMappingError('Prepare this PDF before opening its statement review.', 409)
     cache = _cache if _cache is not None else {}
+    shared = _shared_reading(session, file, text)
     # The printed header depends only on the extracted text; parse it once per
     # request (one cache) rather than once per statement the file prints.
     header_key = ('printed_header', str(evidence_file_id), text.content_sha256)
-    if header_key not in cache:
-        cache[header_key] = _printed_header(text.content)
-    header, printed = cache[header_key]
+    header, printed = _shared_value(cache, shared, header_key, lambda: _printed_header(text.content))
     metadata = dict(printed)
     issues = []
     if not metadata['holder']:
@@ -185,21 +254,18 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
     # Page numbers and table counts only. Within one request (one cache) a
     # file's geometry is loaded once, not once per statement it prints.
     pages_key = ('geometry_pages', *source_key)
-    if pages_key not in cache:
-        cache[pages_key] = [(page.page_number, len(page.payload or [])) for page in session.scalars(
+    _shared_value(cache, shared, pages_key, lambda: [(page.page_number, len(page.payload or [])) for page in session.scalars(
             select(EvidenceTableGeometry).where(EvidenceTableGeometry.evidence_file_id == evidence_file_id)
-            .order_by(EvidenceTableGeometry.page_number))]
+            .order_by(EvidenceTableGeometry.page_number))])
     pages = [SimpleNamespace(page_number=number, tables=tables) for number, tables in cache[pages_key]]
     if not pages:
         raise PdfMappingError('No readable tables were prepared. Reprocess this PDF or inspect its extraction errors.', 409)
     if len(pages) > 500:
         raise PdfMappingError('This statement exceeds the 500-page review limit. No pages were omitted.', 422)
     from services.financial.statement_import_catalog import statement_catalog
-    if source_key not in cache:
-        cache[source_key] = [read_candidate_source(session, case_id=case_id, evidence_file_id=evidence_file_id,
-                        page_number=page.page_number, table_index=index)
-                       for page in pages for index in range(page.tables)]
-    all_sources = cache[source_key]
+    all_sources = _shared_value(cache, shared, source_key, lambda: [read_candidate_source(session, case_id=case_id,
+        evidence_file_id=evidence_file_id, page_number=page.page_number, table_index=index)
+        for page in pages for index in range(page.tables)])
     from services.financial.payment_document_review import payment_document_response
     payment_document = payment_document_response(file, all_sources, case_id=case_id)
     if payment_document is not None:
@@ -208,27 +274,26 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
             needs_attention=0, revision=payment_document['revision'], applied=False,
             document_review=payment_document, page_numbers=payment_document['page_numbers'])
     catalog_key = ('catalog', source_key)
-    if catalog_key not in cache:
-        cache[catalog_key] = statement_catalog(all_sources)
-    catalog = cache[catalog_key]
+    catalog = _shared_value(cache, shared, catalog_key, lambda: statement_catalog(all_sources))
     from services.financial.deposit_receipt_proposal import deposit_receipt_choices
     from services.financial.statement_currency import currencies_by_statement, detect_statement_currency
     currencies_key = ('currencies', source_key)
-    if currencies_key not in cache:
-        cache[currencies_key] = currencies_by_statement(
-            catalog['statements'] + deposit_receipt_choices(all_sources), all_sources)
-    choices = cache[currencies_key]
+    choices = _shared_value(cache, shared, currencies_key, lambda: currencies_by_statement(
+        catalog['statements'] + deposit_receipt_choices(all_sources), all_sources))
     detected = {choice.get('currency', '') for choice in choices if not choice.get('document_kind')}
     detected_currency = (next(iter(detected)) if len(detected) == 1 else '') if choices else detect_statement_currency(all_sources, header_text=header)
     saved_currency = ((file.metadata_ or {}).get('financial_review_progress', {}).get(statement_id or '', {}).get('request') or {}).get('currency')
     chosen_currency = currency or saved_currency or detected_currency
     from services.financial.review_recovery import recovery_state
     from services.financial.statement_review_checks import add_period_checks
-    checks_key = ('checks', source_key, chosen_currency)
+    # Keyed on the currency the checks are computed with (the request's own
+    # choice; each statement's printed currency when none). Keyed on the
+    # resolved currency, a request naming a currency and one relying on a saved
+    # one shared an entry computed for the other, once the reading was shared.
+    checks_key = ('checks', source_key, currency or '')
     if _include_period_checks:
-        if checks_key not in cache:
-            cache[checks_key] = add_period_checks(choices, all_sources, currency, text.source_locations)
-        choices = cache[checks_key]
+        choices = _shared_value(cache, shared, checks_key,
+            lambda: add_period_checks(choices, all_sources, currency, text.source_locations))
         if _apply_assignments:
             from services.financial.statement_row_assignment import assignment_choices
             choices = assignment_choices(session, file, choices, chosen_currency, cache)
@@ -922,8 +987,13 @@ def confirm_statement_import(*, session_factory, case_id, evidence_file_id, requ
     projection itself runs later in the worker loop, so a graph failure can
     never fail or roll back the ledger write.
 
-    Afterwards, pending batch periods of the same file are brought current:
-    batch list reads reuse stored readiness and an admitted period changes it.
+    Afterwards, the batch periods of this statement are brought current (they
+    now read as saved), as every other per-statement write does. The file's
+    other periods are left to the readiness sweep: each admission changes all
+    their fingerprints, and re-checking every period of a many-period file
+    inside every import made a 217-period production take ~7 min per import.
+    Stale readiness never admits anything (the writer re-checks under its
+    locks); until the sweep reaches them those periods show as rechecking.
     """
     receipt = _write_statement_import(session_factory=session_factory, case_id=case_id,
         evidence_file_id=evidence_file_id, request=request, actor=actor, resolve_path=resolve_path)
@@ -932,7 +1002,9 @@ def confirm_statement_import(*, session_factory, case_id, evidence_file_id, requ
         request_follow_up(case_id)
     from services.financial.import_batches import refresh_file_readiness
     with session_factory() as session:
-        refresh_file_readiness(session, case_id=case_id, file_id=UUID(str(evidence_file_id)))
+        statement_id = request.get('statement_id') if isinstance(request, dict) else request.statement_id
+        refresh_file_readiness(session, case_id=case_id, file_id=UUID(str(evidence_file_id)),
+                               statement_key=statement_id or '')
     return receipt
 
 
@@ -1032,11 +1104,22 @@ def _write_statement_import_once(*, session_factory, case_id, evidence_file_id, 
                         raise PdfMappingError('The current statement changed. Reload the review.', 409)
                 replacing = None
                 from services.financial.pending_statement_duplicates import apply_duplicate_disposition, ignored_receipt
+                # One snapshot of the case's statements for this write (it costs
+                # seconds on a large case and was built twice per import). Under
+                # the case lock the only input that changes between its uses is
+                # this statement's own copy decision, and the coverage check
+                # skips this statement's own entries.
+                comparison = {}
+                def case_comparison():
+                    if 'sources' not in comparison:
+                        from services.financial.statement_import_overlap import comparison_sources
+                        comparison['sources'] = comparison_sources(session, case_id)[0]
+                    return comparison['sources']
                 if existing is not None and existing.evidence_file_id != file.id and not request.replaces_source_document_id:
                     if request.expected_revision != proposal['revision'] or request.statement_id != proposal.get('statement_id'):
                         raise PdfMappingError('The statement reading changed. Reopen it before comparing copies.', 409)
                     disposition = apply_duplicate_disposition(session, case_id=case_id, file=file,
-                        proposal=proposal, request=request.model_dump(mode='json'), actor=actor)
+                        proposal=proposal, request=request.model_dump(mode='json'), actor=actor, sources=case_comparison)
                     if request.period_start_unprinted and disposition['status'] == 'needs_comparison':
                         raise PdfMappingError(disposition['reason'], 409)
                     if disposition['status'] == 'ignored':
@@ -1077,7 +1160,7 @@ def _write_statement_import_once(*, session_factory, case_id, evidence_file_id, 
                 originals = check_import_request(proposal, request)
                 if replacing is None:
                     disposition = apply_duplicate_disposition(session, case_id=case_id, file=file,
-                        proposal=proposal, request=request.model_dump(mode='json'), actor=actor)
+                        proposal=proposal, request=request.model_dump(mode='json'), actor=actor, sources=case_comparison)
                     if request.period_start_unprinted and disposition['status'] == 'needs_comparison':
                         raise PdfMappingError(disposition['reason'], 409)
                     if disposition['status'] == 'ignored':
@@ -1087,9 +1170,10 @@ def _write_statement_import_once(*, session_factory, case_id, evidence_file_id, 
                 if printed_copies and not printed_copies['identical'] and not request.coverage_review_reason.strip():
                     raise PdfMappingError('This statement period is printed more than once in this PDF and the printed copies read differently. Compare the copies, then record why this printing should be imported.', 409)
                 from services.financial.statement_import_overlap import coverage_review, requires_decision, duplicate_hold
-                coverage_request = {**request.model_dump(mode='json'), 'account_type': proposal['metadata'].get('account_type') or ''}
+                coverage_request = {**request.model_dump(mode='json'), 'account_type': proposal['metadata'].get('account_type') or '',
+                                    'account_reference_kind': proposal['metadata'].get('account_reference_kind') or ''}
                 coverage = coverage_review(session, case_id=case_id, file_id=evidence_file_id,
-                                           request=coverage_request)
+                                           request=coverage_request, sources=case_comparison)
                 if duplicate_hold(coverage, coverage_request):
                     raise PdfMappingError('A separate file matches this bank, full account, holder, currency and statement period. Compare the existing statement, then leave this copy unimported or record why both are needed.', 409)
                 coverage['requires_review'] = requires_decision(coverage, request.model_dump(mode='json'))
@@ -1130,6 +1214,7 @@ def _write_statement_import_once(*, session_factory, case_id, evidence_file_id, 
                     account_draft = AccountDraft.unidentified(distinguisher='statement:' + str(evidence_file_id) + ':' + request.currency
                         + (':' + request.statement_id if request.statement_id else ''), **account_fields)
                 account = record_account(session, run, account_draft)
+                from services.financial.statement_catalogue import stored_reading
                 shares_source_references = session.scalar(select(FinancialSourceDocument.id).where(
                     FinancialSourceDocument.case_id == case_id, FinancialSourceDocument.sha256_at_ingestion == file.sha256).limit(1)) is not None
                 document = record_source_document(session, run, SourceDocumentDraft(
@@ -1139,7 +1224,8 @@ def _write_statement_import_once(*, session_factory, case_id, evidence_file_id, 
                     parser_name=VERSION, parser_version='1', metadata=dict(
                         statement_import_statement_id=request.statement_id,
                         statement_import_request_sha256=request_hash, statement_import_request=request.model_dump(mode='json'),
-                        statement_import_original=proposal, statement_import_original_sha256=_digest(proposal), coverage='all_prepared_rows_imported',
+                        **stored_reading(session, case_id=case_id, evidence_file_id=evidence_file_id,
+                            proposal=proposal, statement_id=request.statement_id), coverage='all_prepared_rows_imported',
                         statement_account_id=str(account.id), statement_import_issues=issues,
                         statement_incomplete_records=incomplete, statement_import_checks=arithmetic, statement_admission=admission,
                         whole_document_extraction_verified=False)))
