@@ -13,35 +13,34 @@ sets it itself only when it is genuinely blocked on Neil; see "Halt rules".)
 
 ## ▶ NEXT
 
-**(2026-10-15 12:00) REAL-DOCUMENT wave 6 integrated into fin/release-1 (headless integrate-6). Regular merges
-t-visual-v15 9a9a9fcb, r6-synchrony b64a75ee, r6-vector-text f234fa56 (WIP-NOTES.md dropped), on top of 9a503652 (which
-carries the interactive alex-1013 / s-inference / s-autostart / s-queue-actions work). NOT pushed or deployed by this
-session. The real-document driver owns the next waves; running state, counts and history in
-/mnt/owl-data/fin-wt/headless/real/STATE.md (counts only).**
-Real headline (bench/wave6, frozen copy of f234fa56, fresh engine read of all 623 truth documents at reading revision v18,
-exit 0, scored with FINANCIAL_AUTO_SAVE_READY=0): **1,146/1,294 ready without edits (88.6%)**; on wave 5's 583 documents
-**1,146/1,253 (91.5%, was 1,118)**; **0 wrong admissions**, 0 critical-field errors (17,940 rows, every ready period
-imported), must-hold 4/4, copies 148/151, 0 lost, 28 gained (Synchrony 16/16, BBVA 7, Intercam 4, Kapital 1). M&T (new
-truth, 41 periods) 0/41, 0 wrong. Engine-served 104, library-served 1,042. Actions per 100 statements 293 / 268 grouped
-(211 / 197 on wave 5's 583, was 649 / 624). Truth final 643/832, compared 623/827. Live (read-only): the same 5 periods
-disagree; the merged code reads all 5 equal to truth (re-reads are live writes). Synthetic 105/125, 0 wrong.
-**Safety finding: automatic save (AUTO_SAVE_READY, default ON, in the live checkout) saved an exact copy on the synthetic
-corpus** (copies 0/1, 5 duplicate rows; off: 1/1, 0). Recommend FINANCIAL_AUTO_SAVE_READY=0 live until r7-autosave lands.
-Suites: financial 6,234 with the CLAUDE.md command 63 failures + 60 errors (unittest never loads tests/conftest.py, so
-auto-save is ON in tests; pre-existing); with FINANCIAL_AUTO_SAVE_READY=0 only 10 (2 known unassigned_statement + 8
-package-export failures for interactive modules); tsc 0; vitest unit 2,117/2,119 (route-check limit test; one load
-timeout that passes alone).
-**Wave 7 (headless/real/wave7.units, prompts headless/real/units/):** `r7-autosave` (fix first: no copy ever saved
-automatically, import refuses a second contribution; harness counts System saves as ready and fails on any copy; remove
-the "Refresh batch" / "Check for additional statement periods" steps by re-preparing after reader releases; test runner
-and exports), `t-visual-v16` (the other 45 M&T documents), and Neil's directive units `r7-import-ops` and
-`r7-alex-queue` (his prompts, unchanged). `r7-mt-engine` (M&T 0/41 -> 41/41, general engine) is ready for wave 8.
-Acceptance for every unit: 0 wrong admissions real and synthetic (including 0 copies saved), synthetic >= 105/125, no
-ready period lost against bench/wave6.
-**fin/release-1 lacks the live branch** (`integration/evidence-main-reunion` e47c25c5: r-subpoena engine rules, the
-import-speed fixes, the queue filter; 19 commits). Merging it conflicts in statement_engine.py,
-statement_engine_profiles.py and test_financial_statement_engine.py (r-subpoena vs r6-synchrony); integrate-6 was not
-permitted to resolve it and aborted. Neil's decision (STATE.md open decision 0).
+**(2026-10-16 15:40) REAL-DOCUMENT wave 7 integrated into fin/release-1 (headless integrate-7). Regular merges
+t-visual-v16 acb4873d, r7-autosave 4124f12a, r7-import-ops f0bf00f4 (conflicts resolved: package exports kept from both;
+advance_batch keeps r7-import-ops' shared preparation and records r7-autosave's reader stamp wherever a file becomes
+checked, including adoption), r7-alex-queue 3a043d56, WIP-NOTES.md dropped; merge-breakage fix 0c112612 (unread_pages
+exported). NOT pushed or deployed by this session. The real-document driver owns the next waves; running state, counts
+and history in /mnt/owl-data/fin-wt/headless/real/STATE.md (counts only).**
+Real headline (bench/wave7, frozen copy of 0c112612, fresh engine read of all 668 truth documents at reading revision v19,
+product default: automatic save ON, exit 0): **1,147/1,343 ready without edits (85.4%), every one saved by the system
+with no click**; on wave 6's 623 documents **1,147/1,294 (88.6%, was 1,146)**; **0 wrong admissions, 0 copies saved,
+0 duplicate ledger contributions**, 0 critical-field errors (17,948 rows), must-hold 4/4, copies 148/153, 0 lost,
+1 gained (BBVA, r7-alex-queue). M&T (v15+v16 truth, 90 distinct periods) 0/90, 0 wrong: 65 held for the holder alone.
+Engine-served 110, library-served 1,037; generic-only 749/1,343, 0 wrong (wave 5: 717/1,237). Actions per 100 statements
+313 / 275 grouped (254 / 228 on wave 6's 623, was 293 / 268). Truth final 688/832, compared 668/827. Live (read-only
+audit-wave7): the same 5 periods disagree; 0 printed periods admitted twice. Preparation + import took 5 h 35 min
+(wave 6: 11.6 h). Synthetic 105/125, 0 wrong, all saved by the system (a first run under load read 104: the engine's
+time-budgeted money-cell consensus skipped one repair; held, not wrong; bisected, same code and readings give 105 at
+low load). Suites: financial Ran 6,348, 2 known unassigned_statement failures + 6 load-timeout errors in
+extraction_release (4/4 alone); tsc 0; vitest unit 2,121/2,122 (route-check limit test).
+integrate-6's auto-save finding is closed by r7-autosave (a byte copy uploaded separately was shown as saved through its
+original's import; the ledger held it once; now set aside as a linked copy).
+**Wave 8 (headless/real/wave8.units, prompts headless/real/units/):** `r8-import-ops` (Neil's continuation rule: items 3
+and 7 unfinished; carries the live branch's commits it depends on by cherry-pick, the 2 provable Navy Federal periods,
+exact page reasons for the 12 that need a person, live < 3 s per import, harness waits for background readiness
+refreshes), `r8-mt-engine` (M&T 0/90 -> 90/90 with the general engine; also the wave's step-removal unit, rank 8), and
+`t-visual-v05` (Santander, 40 documents). Acceptance for every unit: 0 wrong admissions real and synthetic, 0 copies
+saved, synthetic >= 105/125, no ready period lost against bench/wave7.
+**fin/release-1 and the live branch are drifting apart:** 30 live commits not on fin/release-1 (r-subpoena, Neil's 15-16
+Oct queue/import work); a trial merge now conflicts in 13 files (was 3). Neil's decision (STATE.md open decision 0).
 **Everything below in this section is the synthetic track (wave 5 state), parked behind the real waves.**
 Release-1 now (corpus v4, 124 distinct periods, bench-runs/release-1-w5, exit 0): **102/124 ready without edits (82.3%)**,
 102/107 recoverable (95.3%), 0 wrong admissions, 0 critical-field errors (347 saved), 0 valid-looking wrong values
@@ -726,3 +725,37 @@ brief (briefs = Queue entries above + the 2026-10-02 log lines). Automation is t
 - Wave 7 planned: r7-autosave, t-visual-v16, plus Neil's directive units r7-import-ops and r7-alex-queue (prompts his);
   r7-mt-engine ready for wave 8. A merge of the live branch into fin/release-1 conflicted in three engine files and was
   aborted (not permitted to resolve here). STATE.md and STATUS-FOR-NEIL.md rewritten.
+
+### 2026-10-16 15:40 — REAL-DOCUMENT wave 7 merged into fin/release-1 (headless integrate-7)
+- All four notes say complete with 0 wrong on real and synthetic; none refused. Private scan of the net diffs, every
+  intermediate commit and every message against truth holders, words, accounts, inventory file names and non-round
+  amounts: clean (0 hits); r7-alex-queue's pre-rewrite history is unreachable. Regular merges, WIP-NOTES.md dropped,
+  notes archived /mnt/owl-data/fin-wt/notes/{t-visual-v16,r7-autosave,r7-import-ops,r7-alex-queue}.md:
+  `fin/t-visual-v16` (acb4873d), `fin/r7-autosave` (4124f12a), `fin/r7-import-ops` (f0bf00f4), `fin/r7-alex-queue`
+  (3a043d56).
+- Conflicts (r7-import-ops over r7-autosave): services/financial/__init__.py keeps both export blocks;
+  import_batches.advance_batch keeps the shared-preparation branches and records the reader stamp on both paths that mark
+  a file checked (own preparation and adoption). 209 targeted tests OK. Merge breakage 0c112612: unread_pages (new in
+  r7-alex-queue, masked there by the 8 export failures r7-autosave fixed) exported; 14 OK.
+- **Real benchmark, full fresh read** (bench/wave7, frozen 0c112612; read 3 h 07 min at v19, 0 reading errors;
+  preparation + import 5 h 35 min; product default auto-save ON; REAL_EXIT=0): **1,147/1,343** (1,147/1,294 on wave 6's
+  documents), recoverable 1,147/1,339, all 1,147 saved by the system, 0 wrong, 0 copies saved, 0 duplicate
+  contributions, holds 4/4, copies 148/153, 0 lost, 1 gained; 5 valid-looking wrong values, none in a ready period;
+  16 unmatched items, 0 offered. Compare 668/827 statements (1,291 of 1,532 without disagreement; in ready periods only
+  BBVA holder punctuation 26). 35 held periods were scored while their readiness refresh was still pending (none held by
+  that alone): handed to r8-import-ops.
+- Generic-only (bench/wave7-generic-only, same readings): 749/1,343, 0 wrong.
+- Live ledger audit (read-only, audit-wave7): 826 admitted periods on truth documents, 5 disagree (same as waves 5-6),
+  0 printed periods admitted twice.
+- Census not re-run (census-r5: 1,165 ready of 3,154 raw periods).
+- Synthetic (bench-runs/real-wave7, product default, BENCH_EXIT=0): 105/125, 105/108, 0 wrong, copies 1/1, all saved by
+  the system. The first run (beside the suite and vitest, load ~13) read 104/125: bisected over every merge commit on the
+  same readings (all 104), engine code identical to r7-alex-queue's; the loaded engine reading lacked one
+  tesseract_native_statement_cell_consensus refinement, whose six crop reads run under a 5 s / 60 s wall-clock budget.
+  Fails closed; recorded in STATE.md as a finding.
+- Suites (live .venv, CHROMADB_PORT=1 CHROMA_PORT=1): financial Ran 6,348, failures=2 (known unassigned_statement),
+  errors=6 (extraction_release subprocess timeout under load; 4/4 alone), skipped 20; tsc -b 0; vitest unit 304 files
+  2,121/2,122 (route-check limit test). Logs bench-runs/real-wave7{,-loaded,-rerun}/ and real-wave7{,-suite,-tsc,-vitest}.log.
+- Live branch: 30 commits not on fin/release-1, a read-only trial merge conflicts in 13 files (integrate-6: 3). Not merged.
+- Wave 8 planned: r8-import-ops (mandatory continuation), r8-mt-engine, t-visual-v05. STATE.md and STATUS-FOR-NEIL.md
+  rewritten.
