@@ -2083,6 +2083,20 @@ class MailedCreditLineTests(unittest.TestCase):
             self.assertEqual(moves, [('2024-03-10', 'debit', '4000'), ('2024-03-10', 'debit', '800'),
                                      ('2024-03-18', 'credit', '2500'), ('2024-03-31', 'debit', '150')])
 
+    def test_a_second_period_inside_one_numbered_statement_of_the_same_account_stays_held(self):
+        # Pages 3-4 print another period but no other account: they continue the same statement, whose
+        # printed numbering then lacks pages 1-2 for them (A3); only another account's statement is mailed.
+        sources = mailed_credit_line(same_period=False)
+        for row in sources[2]['rows']:
+            for c in row['cells']:
+                c['expected_text'] = c['expected_text'].replace('5678', '1234')
+        E._READINGS.clear()
+        E._LIVE_READINGS.clear()
+        later = [st for st in read_statements(sources) if 3 in st['page_numbers']]
+        self.assertEqual(len(later), 1)
+        self.assertFalse(later[0]['engine']['proved'])
+        self.assertEqual(later[0]['engine']['reason'], 'pages_missing')
+
     def test_a_dated_line_under_its_own_section_heading_is_a_movement_and_the_date_order_is_the_documents(self):
         # The one movement's date (03/31 reads only month first) and the period (both orders valid once
         # the deposit is gone) take the document's order.

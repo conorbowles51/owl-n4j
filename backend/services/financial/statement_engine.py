@@ -1914,11 +1914,7 @@ def _segments(pages, facts):
         other = current is not None and _other_account_statement(f, current, facts)
         if (current is None or (period and current['period'] and period != current['period'])
                 or (restart and current['pages'] and any(facts[p]['numbering'] for p in current['pages'])) or other):
-            # A statement whose first page's printed number continues the previous statement's numbering (same
-            # page count, not page 1) is mailed with it, whatever starts it.
-            counts = {count for p in (current or {}).get('pages', []) for _, count in facts[p]['numbering']}
-            continues = bool(f['numbering']) and not restart and all(count in counts for _, count in f['numbering'])
-            current = dict(period=period, pages=[], conflict=len(candidates) > 1, mailed_with_previous=other or continues)
+            current = dict(period=period, pages=[], conflict=len(candidates) > 1, mailed_with_previous=other)
             segments.append(current)
         elif period and not current['period']:
             current['period'] = period
