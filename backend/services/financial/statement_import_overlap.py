@@ -66,6 +66,7 @@ def scope(raw):
     except (ValueError, TypeError):
         return None
     institution, account_number, currency = raw.get('institution'), raw.get('account_number'), raw.get('currency')
+    # The same reference kind as the ledger key (a credit line sharing its deposit account's number).
     kind = raw.get('account_reference_kind') or None
     try:
         identity = _account_identity(institution, account_number, currency, kind)

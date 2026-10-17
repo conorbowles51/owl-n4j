@@ -68,7 +68,7 @@ export const queueCounts = z.object({
   unreadable_files: z.number().default(0),
   /** Failed files that are not reading problems: removed from Financial or no longer in the case. */
   removed_files: z.number().default(0),
-  /** Failed uploads whose identical bytes were read from another file. */
+  /** Failed files set aside as copies; already included in `copies`. */
   copy_files: z.number().default(0),
   rechecking: z.number().default(0),
   left_unimported: z.number().default(0),
@@ -107,6 +107,19 @@ export const reviewQueue = z.object({
         message: z.string(),
         /** Set when the retained PDF can be read afresh by an explicit request (its restart copy is gone). */
         read_afresh_revision: z.string().nullish(),
+      })
+    )
+    .default([]),
+  /** Files that could not be prepared, set aside because the same file was read through another upload. */
+  copy_files: z
+    .array(
+      z.object({
+        batch_id: z.string(),
+        source_id: z.string().nullish(),
+        file_id: z.string().nullish(),
+        filename: z.string(),
+        message: z.string(),
+        copy_of: z.string().nullish(),
       })
     )
     .default([]),

@@ -124,18 +124,17 @@ def load_projection_context(session, case_id, files, *, periods=None, source_ids
                 if key.startswith('statement_')}))
     sources = {}
     source_fingerprint = func.md5(cast(FinancialSourceDocument.metadata_, String)) if postgres else FinancialSourceDocument.metadata_
+    removal = FinancialSourceDocument.metadata_['financial_import_removal'].as_string()
     conditions = [FinancialSourceDocument.case_id == case_id, FinancialSourceDocument.evidence_file_id.in_(ids)]
     if source_ids is not None:
         conditions.append(FinancialSourceDocument.id.in_([value for value in map(_uuid, source_ids) if value]))
     if ids and source_ids != set() and postgres:
-        for (identifier,), (status, removed), value in _digested(session, FinancialSourceDocument, (FinancialSourceDocument.id,),
-                (FinancialSourceDocument.status, FinancialSourceDocument.metadata_['financial_import_removal'].as_string()),
-                source_fingerprint, *conditions):
+        for (identifier,), (status, removed), value in _digested(session, FinancialSourceDocument,
+                (FinancialSourceDocument.id,), (FinancialSourceDocument.status, removal), source_fingerprint, *conditions):
             sources[str(identifier)] = dict(status=status, fingerprint=value, removed=bool(removed))
     elif ids and source_ids != set():
         for identifier, status, value, removed in session.execute(select(FinancialSourceDocument.id,
-                FinancialSourceDocument.status, source_fingerprint,
-                FinancialSourceDocument.metadata_['financial_import_removal'].as_string()).where(*conditions)):
+                FinancialSourceDocument.status, source_fingerprint, removal).where(*conditions)):
             sources[str(identifier)] = dict(status=status, fingerprint=_digest(value), removed=bool(removed))
     return dict(files=files, guards=guards, drafts=drafts, sources=sources)
 

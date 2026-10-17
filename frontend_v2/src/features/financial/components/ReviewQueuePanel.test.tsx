@@ -386,23 +386,28 @@ it("loads the next statement in the background so Next shows it without waiting 
   expect(itemCalls("i2")).toBe(1)
 })
 
-it("lists an unreadable statement of a file that another upload read as a copy of that upload", async () => {
+it("lists failed readings of a file that another upload read as copies of that upload", async () => {
   vi.mocked(fetchAPI).mockImplementation(async (url: string) => {
     if (url.includes("/review/queue"))
       return {
         ...queue,
-        counts: { ...queue.counts, copies: 2 },
+        counts: { ...queue.counts, copies: 3, copy_files: 1 },
         copies: [
           ...queue.copies,
           { ...queue.copies[0], id: "c2", filename: "Month.pdf", status: "attention", copy_of: "Month.pdf",
             copy_reason: "same_file_read" },
         ],
+        copy_files: [{ batch_id: "b2", source_id: "f9", file_id: "f9", filename: "Month (2).pdf", message: "x", copy_of: "Month.pdf" }],
       } as never
     throw Error(`unexpected ${url}`)
   })
-  mount("/cases/case/financial?view=statements&queue=1")
+  const onOpenBatch = mount("/cases/case/financial?view=statements&queue=1")
   fireEvent.click(await screen.findByRole("button", { name: "Review copies (2)" }))
   expect(await screen.findByText(/Same file as Month.pdf, which was read. This upload's own reading is not used/)).toBeVisible()
+  expect(screen.getByText("Files set aside as copies")).toBeVisible()
+  expect(screen.getByText(/Month \(2\).pdf: same file as Month.pdf, which was read/)).toBeVisible()
+  fireEvent.click(screen.getAllByRole("button", { name: "Open its batch" })[0])
+  expect(onOpenBatch).toHaveBeenCalledWith("b2")
 })
 
 it("reads removed PDFs whose restart copy is gone afresh with one explicit request", async () => {
