@@ -88,6 +88,49 @@ def install(fixture, periods):
 PROFILE_IMPORTS = False
 
 
+class SqlCounter:
+    """SQL statements one step sends: reads, and per table the writes, rows and bytes of bound values."""
+
+    def __init__(self, engine):
+        from sqlalchemy import event
+        self.engine, self.event = engine, event
+        self.reset()
+
+    def reset(self):
+        self.statements, self.reads, self.writes = 0, 0, {}
+
+    def _after(self, conn, cursor, statement, parameters, context, executemany):
+        import re
+        self.statements += 1
+        verb = statement.lstrip().split(None, 1)[0].upper()
+        if verb not in ('INSERT', 'UPDATE', 'DELETE'):
+            self.reads += verb == 'SELECT'
+            return
+        match = re.search(r'(?:INTO|UPDATE|FROM)\s+"?(\w+)"?', statement, re.I)
+        table = f"{verb.lower()} {match.group(1) if match else '?'}"
+        entry = self.writes.setdefault(table, dict(statements=0, rows=0, bytes=0))
+        entry['statements'] += 1
+        batches = parameters if executemany else [parameters]
+        # SQLite reports no row count for inserts: one row per bound value set.
+        entry['rows'] += len(batches) if verb == 'INSERT' else max(cursor.rowcount or 0, 0)
+        entry['bytes'] += sum(len(str(value)) for values in batches for value in
+                              (values.values() if isinstance(values, dict) else values or ()))
+
+    def __enter__(self):
+        self.reset()
+        self.event.listen(self.engine, 'after_cursor_execute', self._after)
+        return self
+
+    def __exit__(self, *_):
+        self.event.remove(self.engine, 'after_cursor_execute', self._after)
+
+    def report(self):
+        return dict(statements=self.statements, reads=self.reads,
+                    written_rows=sum(entry['rows'] for entry in self.writes.values()),
+                    written_bytes=sum(entry['bytes'] for entry in self.writes.values()),
+                    writes=dict(sorted(self.writes.items())))
+
+
 def run(periods, imports):
     import asyncio
     from unittest.mock import AsyncMock
@@ -128,6 +171,16 @@ def run(periods, imports):
             timings['items'] = len(items)
             timings['items_ready'] = sum(item.status == 'ready' for item in items)
             timings['first_problems'] = [p.get('message') for p in items[0].summary.get('problems', [])][:5]
+        # One receipt for every period, as the automatic save claims a file's
+        # ready statements together: each import records its own outcome on it.
+        from postgres.models.financial_import_batches import FinancialImportOperation as Operation
+        operation_id = __import__('uuid').uuid4()
+        with fixture.SessionLocal() as db:
+            db.add(Operation(id=operation_id, case_id=fixture.case.id, batch_id=batch, expected_revision='benchmark',
+                actor=dict(name='System', user_id=None), outcomes=[dict(item_id=str(i.id), file_id=str(i.file_id),
+                    filename=i.summary.get('filename', ''), period_start=i.summary.get('period_start', ''),
+                    period_end=i.summary.get('period_end', ''), status='queued') for i in items]))
+            db.commit()
         steps = []
         # The synthetic periods print no account summary, so they never reconcile:
         # they are imported through the same writer with the admission policy
@@ -148,16 +201,32 @@ def run(periods, imports):
                         row['direction'] = 'debit'
                 record.status = 'pending_import'
                 record.review_request = request
-                record.summary = {**record.summary, 'revision': proposal['revision'], 'import_actor': dict(name=fixture.actor.name,
+                record.summary = {**record.summary, 'revision': proposal['revision'], 'import_operation_id': str(operation_id),
+                    'import_actor': dict(name=fixture.actor.name,
                     email=fixture.actor.email, user_id=str(fixture.actor.user_id))}
                 db.commit()
             started = time.perf_counter()
             if PROFILE_IMPORTS:
                 import cProfile
                 profiler = cProfile.Profile(); profiler.enable()
-            with patch('services.financial.statement_admission.require_admission', side_effect=assess_admission):
-                service._import_item(fixture.SessionLocal, fixture.case.id, batch, item.id, Path)
+            import logging
+            lines = []
+            handler = logging.Handler()
+            handler.emit = lambda record: lines.append(record.getMessage())
+            logger = logging.getLogger(service.__name__)
+            logger.addHandler(handler)
+            level = logger.level
+            logger.setLevel(logging.INFO)
+            try:
+                with patch('services.financial.statement_admission.require_admission', side_effect=assess_admission), \
+                        SqlCounter(fixture.db.get_bind()) as sql:
+                    service._import_item(fixture.SessionLocal, fixture.case.id, batch, item.id, Path)
+            finally:
+                logger.removeHandler(handler)
+                logger.setLevel(level)
             step['import'] = time.perf_counter() - started
+            step['sql'] = sql.report()
+            step['timing_line'] = [line for line in lines if line.startswith('Financial import timing')]
             if PROFILE_IMPORTS:
                 profiler.disable()
                 import io, pstats

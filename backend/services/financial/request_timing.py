@@ -26,6 +26,12 @@ class Recorder:
     def add(self, name, seconds):
         self.stages[name] = self.stages.get(name, 0.0) + seconds
 
+    def lap(self, name):
+        """Time since the previous lap (or the start) is added to `name`."""
+        now = time.perf_counter()
+        self.add(name, now - getattr(self, 'last', self.started))
+        self.last = now
+
     def count(self, name, value=1):
         self.counts[name] = self.counts.get(name, 0) + value
 
@@ -59,6 +65,45 @@ def stage(name):
         yield
     finally:
         recorder.add(name, time.perf_counter() - started)
+
+
+def lap(name):
+    """Close a step of a sequential operation (see Recorder.lap); free outside a recorder."""
+    recorder = _current.get()
+    if recorder is not None:
+        recorder.lap(name)
+
+
+def summary(recorder):
+    """'total 2.31 s: claim 0.010, ...' with fixed step names only (no case or financial values)."""
+    steps = ', '.join(f'{name} {seconds:.3f}' for name, seconds in recorder.stages.items())
+    counts = ', '.join(f'{name} {value}' for name, value in recorder.counts.items())
+    return f'total {recorder.total():.2f} s: {steps}' + (f'; {counts}' if counts else '')
+
+
+_SQL_COUNTED = []
+
+
+def count_sql():
+    """Count, inside a recorder, the SQL statements sent (``sql``) and the writes among them (``sql_writes``).
+
+    One listener for every engine, registered once; outside a recorder it
+    costs one context-variable lookup per statement.
+    """
+    if _SQL_COUNTED:
+        return
+    from sqlalchemy import event
+    from sqlalchemy.engine import Engine
+
+    def counted(conn, cursor, statement, parameters, context, executemany):
+        recorder = _current.get()
+        if recorder is None:
+            return
+        recorder.count('sql')
+        if statement.lstrip()[:6].upper() in ('INSERT', 'UPDATE', 'DELETE'):
+            recorder.count('sql_writes')
+    event.listen(Engine, 'after_cursor_execute', counted)
+    _SQL_COUNTED.append(counted)
 
 
 def count(name, value=1):

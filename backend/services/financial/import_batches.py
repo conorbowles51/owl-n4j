@@ -2214,7 +2214,24 @@ def _same_failed_import(item, accepted):
 
 
 def _import_item(factory,case_id,batch_id,item_id,resolve_path):
+    """Import one claimed statement; logs one line with the time of each step (IMPORT_TIMING)."""
+    from services.financial.request_timing import count_sql, recording, summary
+    count_sql()
+    with recording() as recorder:
+        outcome = _import_item_steps(factory, case_id, batch_id, item_id, resolve_path)
+    if outcome and IMPORT_TIMING:
+        log.info('Financial import timing (item %s, %s): %s', str(item_id)[:8], outcome, summary(recorder))
+    return None
+
+
+# One log line per import with the seconds of each step (fixed step names,
+# no case or financial values), so a live import reports its end-to-end time.
+IMPORT_TIMING = True
+
+
+def _import_item_steps(factory,case_id,batch_id,item_id,resolve_path):
     from services.financial.import_operations import record_outcome
+    from services.financial.request_timing import lap
     from sqlalchemy.exc import OperationalError, TimeoutError as DatabaseTimeout
     # Never retain an Item lock while a second session confirms the import.
     # Save/removal can own Evidence/Case before waiting for this Item, forming
@@ -2222,12 +2239,13 @@ def _import_item(factory,case_id,batch_id,item_id,resolve_path):
     with factory() as db:
         item=db.scalar(select(Item).join(Batch, Item.batch_id == Batch.id).where(Item.id==item_id,Item.batch_id==batch_id,
             Batch.case_id == case_id).with_for_update(of=Item, skip_locked=True))
-        if not item or item.status!='pending_import': return
+        if not item or item.status!='pending_import': return None
         retry_after = item.summary.get('automatic_import_retry_after')
         if retry_after and datetime.fromisoformat(retry_after) > datetime.now(timezone.utc):
-            return
+            return None
         accepted = _accepted_import_snapshot(item)
         db.commit()
+    lap('claim')
     receipt, error_message, transient_failure = None, None, False
     try:
         with factory() as db:
@@ -2238,6 +2256,7 @@ def _import_item(factory,case_id,batch_id,item_id,resolve_path):
                 raise PdfMappingError('The statement changed after the batch was checked. Open it and review the new reading.',409)
             request=StatementImportRequest.model_validate(raw)
             actor=accepted['summary']['import_actor'];actor=Actor(**{**actor,'user_id':UUID(actor['user_id']) if actor.get('user_id') else None})
+        lap('accept_read')
         # The strict writer rechecks the current source, removal, reading,
         # duplicate and reconciliation state under its Case/Evidence locks.
         # Concurrent retries of this same accepted request reuse its receipt.
@@ -2249,16 +2268,17 @@ def _import_item(factory,case_id,batch_id,item_id,resolve_path):
         # The same immutable request reaches the idempotent strict writer.
         transient_failure = isinstance(error, (OperationalError, DatabaseTimeout, TimeoutError, ConnectionError))
         error_message = str(error) if isinstance(error,PdfMappingError) else 'Import could not be confirmed. Open this statement to check its current import before retrying.'
+    lap('writer_rest' if receipt else 'writer_failed')
     with factory() as db:
         batch = db.scalar(select(Batch).where(Batch.id == batch_id, Batch.case_id == case_id).with_for_update())
         item = db.scalar(select(Item).where(Item.id == item_id, Item.batch_id == batch_id).with_for_update())
         # A later removal, review, accepted request or completed receipt wins.
         # In particular a late failure must not reset another worker's success.
         if batch is None or batch.status == 'removed' or item is None:
-            return
+            return 'superseded'
         same_pending = item.status == 'pending_import' and _accepted_import_snapshot(item) == accepted
         if not same_pending and not (receipt and _same_failed_import(item, accepted)):
-            return
+            return 'superseded'
         if receipt:
             item.summary = deepcopy(accepted['summary'])
             item.summary.pop('automatic_import_retry_after', None)
@@ -2290,7 +2310,10 @@ def _import_item(factory,case_id,batch_id,item_id,resolve_path):
             else:
                 item.status='attention';item.summary=_failed_import_summary(item.summary, error_message)
                 record_outcome(db, case_id, item, 'failed', message=item.summary['problems'][0]['message'])
+        final = item.status if receipt or item.status != 'pending_import' else 'retry'
         db.commit()
+    lap('record_outcome')
+    return final
 
 
 READINESS_SWEEP_SECONDS = 60
