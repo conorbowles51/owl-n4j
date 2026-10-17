@@ -44,6 +44,8 @@ M&T, Scotiabank and Kapital supply only their institution. Facts a person confir
 are not profiles: they are case data (``layout_memory``).
 """
 
+import re
+
 PROFILES = (
     dict(
         name='capital-one-card',
@@ -149,14 +151,29 @@ for _profile in PROFILES:
     validate(_profile)
 
 
-def matching_profile(text):
-    """The one profile whose printed phrases occur in ``text``; None if none or several match."""
+def _matching(text):
     lowered = ' '.join(text.lower().split())
     found = []
     for profile in PROFILES:
         rule = profile['match']
         if all(p in lowered for p in rule.get('all', [])) and (not rule.get('any') or any(p in lowered for p in rule['any'])):
             found.append(profile)
+    return found
+
+
+def matching_profile(text, furniture=None):
+    """The one profile whose printed phrases occur in ``text``; None if none or several match.
+
+    When several match and ``furniture`` (the same document without its dated lines, see
+    ``furniture_text``) is given and exactly one matches there, that one is used: a statement paying
+    another issuer names that issuer in a movement line ('<date> | CAPITAL ONE ...'), never in its
+    printed furniture.
+    """
+    found = _matching(text)
+    if len(found) > 1 and furniture is not None:
+        printed = _matching(furniture)
+        if len(printed) == 1:
+            found = printed
     if len(found) > 1:
         # A profile matched only by phrases that must all occur (no 'any' list) is specific to one layout:
         # it outranks profiles matched by a single phrase, which a transaction line can print (a payment
@@ -168,4 +185,15 @@ def matching_profile(text):
 
 def profile_text(sources):
     return '\n'.join(c['expected_text'] for s in sources for r in s['rows'] for c in r['cells'])
+
+
+# A stored row opening with a numeric date (its digits possibly misread: '41/19/2021') is a dated line.
+_DATED_LINE = re.compile(r'^\W{0,2}\d{1,2}[/.-]\d{1,2}(?:[/.-]\d{2,4})?\b')
+
+
+def furniture_text(sources):
+    """``profile_text`` without the stored rows that open with a numeric date (movement lines)."""
+    return '\n'.join(c['expected_text'] for s in sources for r in s['rows']
+                     if not (r['cells'] and _DATED_LINE.match(r['cells'][0]['expected_text']))
+                     for c in r['cells'])
 

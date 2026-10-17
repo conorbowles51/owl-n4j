@@ -74,12 +74,13 @@ LIABILITY_EVIDENCE = (
 )
 # Card account summaries print components per direction between the
 # previous and the new balance (D7): their sum must equal what was read.
-LIABILITY_CREDIT_COMPONENTS = ('PAYMENTS', 'OTHER CREDITS', 'CREDITS', 'PAYMENTS AND CREDITS', 'PAYMENTS AND OTHER CREDITS',
+LIABILITY_CREDIT_COMPONENTS = ('PAYMENTS', 'OTHER CREDITS', 'CREDITS', 'PAYMENTS AND CREDITS', 'PAYMENTS & CREDITS',
+                               'PAYMENTS AND OTHER CREDITS',
                                'PAYMENTS, CREDITS AND ADJUSTMENTS', 'PAGOS', 'PAGOS Y ABONOS', 'ABONOS')
 LIABILITY_DEBIT_COMPONENTS = ('TRANSACTIONS', 'PURCHASES', 'CASH ADVANCES', 'FEES CHARGED', 'INTEREST CHARGED',
                               'FEES', 'INTEREST', 'BALANCE TRANSFERS', 'PURCHASES AND ADJUSTMENTS',
                               'PURCHASES AND OTHER CHARGES', 'CARGOS', 'COMPRAS', 'COMISIONES', 'INTERESES',
-                              'NEW PURCHASES')
+                              'NEW PURCHASES', 'LOANS & DEBITS', 'LOANS AND DEBITS')
 # Summary lines printed as a NET of charges and credits ("+/- Interest Charge (net)"): signed as printed
 # (a credit balance in parentheses), they join the debit components' sum (D7). The printed '+/-' before
 # the label is a sign mark, not part of it.
@@ -111,11 +112,11 @@ COLUMN_WORDS = {
     'date': ('FECHA', 'FECHAS', 'FECHA OPER', 'OPER', 'DIA', 'DATE', 'TRANS', 'TRANS DATE', 'POST', 'POST DATE',
              'POSTING DATE', 'TRANSACTION DATE', 'DATE POSTED'),
     'description': ('DESCRIPCION', 'COD DESCRIPCION', 'CONCEPTO', 'DETALLE', 'DESCRIPTION', 'DETAILS',
-                    'TRANSACTION', 'TRANSACTION DESCRIPTION'),
+                    'TRANSACTION', 'TRANSACTION DESCRIPTION', 'DESCRIPTIONS'),
     'credit': ('ABONOS', 'ABONO', 'DEPOSITOS', 'DEPOSITO', 'CREDITOS', 'CREDITO', 'ENTRADAS', 'INGRESOS',
                'CREDITS', 'CREDIT', 'DEPOSITS', 'DEPOSIT', 'ADDITIONS', 'MONEY IN', 'PAID IN'),
     'debit': ('CARGOS', 'CARGO', 'RETIROS', 'RETIRO', 'SALIDAS', 'EGRESOS', 'DEBITS', 'DEBIT', 'WITHDRAWALS',
-              'WITHDRAWAL', 'SUBTRACTIONS', 'MONEY OUT', 'PAID OUT', 'CHARGES'),
+              'WITHDRAWAL', 'SUBTRACTIONS', 'MONEY OUT', 'PAID OUT', 'CHARGES', 'LOANS'),
     'balance': ('SALDO', 'SALDOS', 'BALANCE', 'RUNNING BALANCE', 'DAILY BALANCE'),
     'amount': ('IMPORTE', 'MONTO', 'AMOUNT', 'CANTIDAD'),
 }

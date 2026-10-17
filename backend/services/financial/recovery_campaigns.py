@@ -80,6 +80,10 @@ READER_RECOVERY_FLAG = 'LOUPE_FINANCIAL_READER_RECOVERY'
 # statement-wide control could pin a cell its own page could not (first and
 # last payments of a page), offered no page reading whose minus the crops
 # read as 2 or +, and pinned no cell whose neighbour was itself only pinned.
+# r8-mt-engine (revision v20) added r7-alex-queue's file 8f3539f3 (v19): on vector-text pages its
+# readings lost every printed line page OCR skipped (an addressee's name line, summary lines), kept
+# dates whose two 1s stand a space-wide bearing apart as OCR misread them ('41/05/2021'), and did not
+# record which printed lines stayed unread, so no addressless name block could be checked.
 # If a later change edits pdf_extraction.py, add the
 # digest of the current file here.
 AFFECTED_EXTRACTION_SHA256 = (
@@ -105,6 +109,7 @@ AFFECTED_EXTRACTION_SHA256 = (
     '3e2343916ad66c94b85230947d48841235f8c4ff22963adb1f7c3a58c6591149',  # bffe7375 r3-andrews (v15)
     'b9248b807d535565e21969c81fcc59adb148cf1d6f185232958afb181bc129a1',  # r4-cards (v16)
     '015bd1d2a28867ae8771cb7a69b67fca4e30302468e394b93d572fcef6e8800a',  # r5-andrews-cards (v17)
+    '8f3539f3afca7d9e4d613967aff51000e1c0fd93688f2e35a6534cb1628f0b37',  # 7b877d0b r7-alex-queue (v19)
 )
 READER_RECOVERY = RecoveryCampaign(READER_RECOVERY_RELEASE, {'pdf_extraction.py': AFFECTED_EXTRACTION_SHA256},
     batch_reread=True)
