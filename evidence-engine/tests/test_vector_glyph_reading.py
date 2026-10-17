@@ -458,3 +458,70 @@ def test_a_line_page_ocr_skipped_is_read_from_its_own_crop_and_recorded():
     # Without the image (no crop to read) the line stays unread and is recorded so.
     plain, outlines = pdf._read_vector_outlines(page, data, dpi)
     assert outlines['lines_read'] == [] and len(outlines['lines_unread']) == 1
+
+
+def _tess(words):
+    """Tesseract-shaped data for (text, block, (left, top, width, height)) words."""
+    return dict(text=[t for t, _, _ in words], conf=[95] * len(words), block_num=[b for _, b, _ in words],
+                par_num=[1] * len(words), line_num=[1] * len(words), word_num=list(range(1, len(words) + 1)),
+                level=[5] * len(words), page_num=[1] * len(words),
+                left=[r[0] for _, _, r in words], top=[r[1] for _, _, r in words],
+                width=[r[2] for _, _, r in words], height=[r[3] for _, _, r in words], note='kept')
+
+
+def test_the_skipped_line_layer_is_held_aside_and_put_back_whole():
+    page = _tess([('MOVEMENTS', 1, (10, 10, 80, 10)), ('TOTAL', 1, (10, 200, 40, 10)),
+                  # The layer: two lines read from their own crops.
+                  ('SALDO', 7, (10, 300, 40, 10)), ('FINAL:', 7, (55, 300, 40, 10)),
+                  ('JANE', 8, (10, 50, 40, 10)), ('EXAMPLE', 8, (55, 50, 60, 10))])
+    base, layer = pdf._withhold_layer(page, [2, 3, 4, 5])
+    assert base['text'] == ['MOVEMENTS', 'TOTAL'] and base['note'] == 'kept'
+    assert all(len(v) == 2 for v in base.values() if isinstance(v, list))
+    assert [row['text'] for row in layer] == ['SALDO', 'FINAL:', 'JANE', 'EXAMPLE']
+    # No targeted re-read added anything: every layer line comes back, each its own block.
+    restored, left_out = pdf._restore_layer(base, layer, base)
+    assert restored['text'] == ['MOVEMENTS', 'TOTAL', 'SALDO', 'FINAL:', 'JANE', 'EXAMPLE'] and left_out == []
+    assert all(len(v) == 6 for v in restored.values() if isinstance(v, list))
+    assert len(set(restored['block_num'][2:4])) == 1 and restored['block_num'][2] != restored['block_num'][4]
+
+
+def test_a_layer_line_never_replaces_what_a_targeted_reread_recovered():
+    # v20 read the closing label alone (its amount refused); with the layer held aside the Santander
+    # closing-strip re-read runs and recovers label and amount. The partial layer line is left out
+    # whole; the holder line elsewhere on the page still comes back.
+    page = _tess([('TOTAL', 1, (10, 200, 40, 10)),
+                  ('SALDO', 7, (10, 300, 40, 10)), ('FINAL:', 7, (55, 300, 40, 10)),
+                  ('JANE', 8, (10, 50, 40, 10)), ('EXAMPLE', 8, (55, 50, 60, 10))])
+    base, layer = pdf._withhold_layer(page, [1, 2, 3, 4])
+    reread = _tess([('TOTAL', 1, (10, 200, 40, 10)), ('SALDO FINAL DEL PERIODO:', 9, (10, 299, 150, 12)),
+                    ('1,234.56', 9, (200, 299, 60, 12))])
+    restored, left_out = pdf._restore_layer(reread, layer, base)
+    assert restored['text'] == ['TOTAL', 'SALDO FINAL DEL PERIODO:', '1,234.56', 'JANE', 'EXAMPLE']
+    assert left_out == [dict(text='SALDO FINAL:', rect=[10, 300, 95, 310])]
+
+
+def test_the_layer_guard_lets_the_targeted_rereads_see_the_page_without_the_layer(monkeypatch):
+    # Through _ocr_page: the re-reads are handed the page without the layer's words, and the
+    # layer comes back afterwards where they added nothing.
+    lines = LINES + [(40, 300, 'EXAMPLE N HOLDER JR')]
+    doc, page, _ = _page(lines)
+    seen = []
+    import app.pipeline.financial_santander_ocr as santander
+    def reread(page_, data, **kwargs):
+        seen.append(list(data['text']))
+        return data, []
+    monkeypatch.setattr(santander, 'reread_santander_closing', reread)
+    real = pdf._read_vector_outlines
+    def outlines(page_, data, dpi, **kwargs):
+        # The page OCR reads everything except the holder line, which the layer then reads.
+        texts = data['text']
+        keep = [i for i, t in enumerate(texts) if str(t).strip() not in ('EXAMPLE', 'N', 'HOLDER', 'JR')]
+        data = {k: ([v[i] for i in keep] if isinstance(v, list) and len(v) == len(texts) else v) for k, v in data.items()}
+        return real(page_, data, dpi, **kwargs)
+    monkeypatch.setattr(pdf, '_read_vector_outlines', outlines)
+    text, _, _, _, refinements = pdf._ocr_page(page, vector_text=True)
+    assert seen and not any(word in ('HOLDER', 'JR') for word in seen[0])
+    record = next(r for r in refinements if r.get('field') == 'vector_glyph_reading')
+    assert [r['text'] for r in record['lines_read']] == ['EXAMPLE N HOLDER JR']
+    assert pdf.LAYER_ROWS not in record and 'lines_left_to_rereads' not in record
+    assert 'HOLDER' in text

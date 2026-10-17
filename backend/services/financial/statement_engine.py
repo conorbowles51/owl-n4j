@@ -2104,7 +2104,8 @@ def _keep_live(key, result):
 def _printed_lines_key(source):
     checked = source.get('printed_lines') or {}
     return (checked.get('checked') is True,
-            tuple(tuple(rect) for rect in checked.get('unread') or () if isinstance(rect, (list, tuple))))
+            tuple(tuple(rect) for rect in checked.get('unread') or () if isinstance(rect, (list, tuple))),
+            tuple(tuple(rect) for rect in checked.get('layer') or () if isinstance(rect, (list, tuple))))
 
 
 def _source_signature(sources):
@@ -2114,6 +2115,78 @@ def _source_signature(sources):
                    hash(tuple((c['expected_text'], tuple((c.get('locator') or {}).get('rect') or ()))
                               for r in s['rows'] for c in r['cells'])), _printed_lines_key(s)) for s in sources)
     return parts if all(part[2] for part in parts) else None
+
+
+# The layer guard (backend half). A reading step that only adds to a page (the skipped-line layer,
+# reading revision v20 on) must never cost a period the page proved without it: a document whose pages
+# carry layer lines is read with and without them, and each group of statements sharing pages keeps the
+# reading that proves more of its periods (the layered one when both prove as many). The evidence
+# engine's half keeps the layer from switching off its targeted re-reads (pdf_extraction._withhold_layer).
+def _inside(rect, area):
+    x, y = (rect[0] + rect[2]) / 2, (rect[1] + rect[3]) / 2
+    return area[0] <= x <= area[2] and area[1] <= y <= area[3]
+
+
+def _without_layer(sources):
+    """The sources without the cells the skipped-line layer read, or None when no page carries any."""
+    if not any((s.get('printed_lines') or {}).get('layer') for s in sources):
+        return None
+    stripped = []
+    for source in sources:
+        checked = source.get('printed_lines') or {}
+        layer = [r for r in checked.get('layer') or () if isinstance(r, (list, tuple)) and len(r) == 4]
+        if not layer:
+            stripped.append(source)
+            continue
+        rows = []
+        for row in source['rows']:
+            cells = [c for c in row['cells'] if not (isinstance((c.get('locator') or {}).get('rect'), list)
+                     and len(c['locator']['rect']) == 4 and any(_inside(c['locator']['rect'], area) for area in layer))]
+            if cells:
+                rows.append(dict(row, cells=cells))
+        # Without the layer those lines are unread again, as the page OCR left them.
+        stripped.append(dict(source, rows=rows, printed_lines=dict(checked=checked.get('checked'),
+                             unread=list(checked.get('unread') or []) + [list(r) for r in layer])))
+    return stripped
+
+
+def _keep_proved(layered, base):
+    """Per group of statements sharing a page (across both readings), the reading proving more periods."""
+    items = [('layered', i, st) for i, st in enumerate(layered)] + [('base', i, st) for i, st in enumerate(base)]
+    parent = list(range(len(items)))
+    def find(i):
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+    pages = [set(st.get('page_numbers') or ()) for _, _, st in items]
+    for a in range(len(items)):
+        for b in range(a + 1, len(items)):
+            if pages[a] & pages[b]:
+                parent[find(a)] = find(b)
+    groups = {}
+    for index, item in enumerate(items):
+        groups.setdefault(find(index), []).append(item)
+    kept, any_base = [], False
+    for members in groups.values():
+        proved = {kind: sum(1 for k, _, st in members if k == kind and st['engine']['proved']) for kind in ('layered', 'base')}
+        kind = 'base' if proved['base'] > proved['layered'] else 'layered'
+        any_base = any_base or kind == 'base'
+        for k, i, st in members:
+            if k == kind:
+                kept.append((min(st.get('page_numbers') or [0]), i,
+                             dict(st, reading_layer='without_skipped_lines') if kind == 'base' else st))
+    if not any_base:
+        return layered
+    return [st for _, _, st in sorted(kept, key=lambda item: (item[0], item[1]))]
+
+
+def _guarded_reading(sources, profile):
+    layered = _read_statements(sources, profile=profile)
+    base_sources = _without_layer(sources)
+    if base_sources is None:
+        return layered
+    return _keep_proved(layered, _read_statements(base_sources, profile=profile))
 
 
 def read_statements(sources, *, profile=None):
@@ -2140,7 +2213,7 @@ def read_statements(sources, *, profile=None):
             return result
     token = _PROFILE.set(profile)
     try:
-        result = _read_statements(sources, profile=profile)
+        result = _guarded_reading(sources, profile)
     finally:
         _PROFILE.reset(token)
     if signature is not None:
