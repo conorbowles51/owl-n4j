@@ -358,6 +358,32 @@ SWEEP_BATCH_STATES = ('removed',) + PAUSED
 _SWEPT = {}
 
 
+_OPEN_VALUES = None
+
+
+def _checks(values):
+    summary = values['summary'] if isinstance(values['summary'], dict) else {}
+    return dict(checks=(len(summary.get('problems') or ()), summary.get('problem_count') or 0,
+                        bool(summary.get('readiness_pending')), (summary.get('readiness') or {}).get('inputs')))
+
+
+def _open_statements(db):
+    """Ready and held statements of batches that can still save, with what the sweep compares.
+
+    The stored summaries are reused per PostgreSQL row version (row_versions):
+    each round reads ids and versions, and decodes only the summaries that
+    changed, not every open statement's summary every minute.
+    """
+    global _OPEN_VALUES
+    from services.financial.row_versions import RowValues
+    if _OPEN_VALUES is None:
+        _OPEN_VALUES = RowValues(Item, kept=100_000)
+    return _OPEN_VALUES.rows(db, (Item.id, Item.batch_id, Item.file_id, Item.status, Item.updated_at,
+        Item.review_request.is_(None).label('untouched'), Batch.case_id), (Item.summary.label('summary'),),
+        (Batch.id == Item.batch_id, Batch.status.notin_(SWEEP_BATCH_STATES), Item.status.in_(('ready', 'attention'))),
+        order_by=Item.id, transform=_checks)
+
+
 def _stored_check(item):
     """The stored readiness already shows a check, so a save would hold it (the sweep's cheap filter)."""
     summary = item.summary or {}
@@ -391,16 +417,10 @@ def sweep_save(factory, *, budget_seconds=20.0):
     started = time.monotonic()
     try:
         with factory() as db:
-            rows = list(db.execute(select(Item.id, Item.batch_id, Item.file_id, Item.status, Item.review_request,
-                Item.updated_at, Item.summary, Batch.case_id).join(Batch, Batch.id == Item.batch_id).where(
-                Batch.status.notin_(SWEEP_BATCH_STATES), Item.status.in_(('ready', 'attention')))))
             groups = {}
-            for identity, batch_id, file_id, status, request, updated, summary, case_id in rows:
-                summary = summary or {}
-                problems = (len(summary.get('problems') or ()), summary.get('problem_count') or 0,
-                            bool(summary.get('readiness_pending')), (summary.get('readiness') or {}).get('inputs'))
-                groups.setdefault((batch_id, file_id, case_id), []).append(
-                    (identity, status, request is None, updated, problems))
+            for row in _open_statements(db):
+                groups.setdefault((row.batch_id, row.file_id, row.case_id), []).append(
+                    (row.id, row.status, row.untouched, row.updated_at, row.checks))
             changed = {key: _signature(members) for key, members in groups.items()
                        if _SWEPT.get(key[:2]) != _signature(members)}
             marked = {}
