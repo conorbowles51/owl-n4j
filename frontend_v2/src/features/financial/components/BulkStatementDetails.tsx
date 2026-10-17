@@ -76,7 +76,7 @@ const listing = z.object({
 })
 const changes = z.record(
   z.string(),
-  z.object({ before: z.string(), after: z.string() })
+  z.object({ before: z.string(), after: z.string(), confirmed: z.boolean().optional() })
 )
 const previewSchema = z.object({
   case_id: z.string(),
@@ -88,6 +88,12 @@ const previewSchema = z.object({
       changes,
       excluded_reason: z.string().nullable().optional(),
       source_check: z.string().nullable().optional(),
+      // Read again since it was listed: each detail that moved, as listed and as it reads now.
+      refreshed: z
+        .record(z.string(), z.object({ listed: z.string(), current: z.string() }))
+        .nullish(),
+      // Edited fields the reading now fills with another value: the edit is not applied until chosen.
+      conflicts: z.array(z.string()).nullish(),
     })
   ),
 })
@@ -188,6 +194,9 @@ function Editor({
     null
   )
   const [refreshNotice, setRefreshNotice] = useState("")
+  // After a save found a statement read again since it was listed, preview
+  // from each statement's current reading, as the save does.
+  const [readCurrent, setReadCurrent] = useState(false)
   const endpoint = `/api/financial/statement-import/account-details`
   const query = useQuery({
     queryKey: ["bulk-statement-details", caseId, scopeKey],
@@ -236,6 +245,7 @@ function Editor({
         : draft.values,
     mode: draft.mode,
     request_id: draft.requestId,
+    ...(readCurrent ? { read_current: true } : {}),
   })
   const review = useMutation({
     retry: false,
@@ -251,7 +261,18 @@ function Editor({
       return result
     },
     onSuccess: setPreview,
+    onError: (error) => {
+      // A selected statement was read again since it was listed: list it
+      // again (edits kept) and prepare the preview on its current reading.
+      if (statusOf(error) !== 409 || readCurrent) return
+      setReadCurrent(true)
+      void refreshSelection().then(() => setTimeout(() => review.mutate(), 0))
+    },
   })
+  const statusOf = (error: unknown) =>
+    error && typeof (error as { status?: unknown }).status === "number"
+      ? (error as { status: number }).status
+      : 0
   const save = useMutation({
     retry: false,
     mutationFn: async () => {
@@ -264,6 +285,18 @@ function Editor({
       if (result.case_id !== caseId)
         throw Error("The save response belongs to another case.")
       return result
+    },
+    onError: (error) => {
+      // A statement was read again since this preview: show it as it reads
+      // now, with her edits applied, instead of a refusal.
+      if (statusOf(error) !== 409) return
+      setReadCurrent(true)
+      setPreview(null)
+      save.reset()
+      setRefreshNotice(
+        "A statement was read again while you were editing. The preview below shows it as it reads now, with your changes applied. Check it, then save."
+      )
+      setTimeout(() => review.mutate(), 0)
     },
     onSuccess: (result) => {
       setReceipt(result)
@@ -304,6 +337,21 @@ function Editor({
     review.reset()
     save.reset()
   }
+  // One choice for a field the reading now fills differently; the preview is
+  // then prepared again on the current reading.
+  const resolveConflict = (field: string, keep: "mine" | "reading") => {
+    const values = { ...draft.values }
+    if (keep === "reading") delete values[field as Field]
+    setDraft({
+      ...draft,
+      values,
+      mode: keep === "mine" ? "replace" : draft.mode,
+      requestId: newReviewId(),
+    })
+    setPreview(null)
+    setTimeout(() => review.mutate(), 0)
+  }
+  const unresolved = (preview?.items || []).some((item) => item.conflicts?.length)
   const refreshSelection = async () => {
     const result = await query.refetch()
     if (!result.data || result.isError) return
@@ -464,14 +512,53 @@ function Editor({
                     {item.source_check && (
                       <p>Why its pages did not settle this automatically: {item.source_check}</p>
                     )}
+                    {item.refreshed && (
+                      <p>
+                        Updated to the latest reading:{" "}
+                        {Object.entries(item.refreshed)
+                          .map(([field, value]) => `${labels[field]} ${value.listed || "missing"} is now ${value.current || "missing"}`)
+                          .join("; ")}
+                        .
+                      </p>
+                    )}
+                    {item.conflicts?.map((field) => (
+                      <div key={field} role="group" aria-label={`Choose ${labels[field]}`}
+                        className="rounded border border-amber-500/60 p-2 space-y-2">
+                        <p>
+                          {labels[field]}: the statement now reads{" "}
+                          <strong>{item.refreshed?.[field]?.current}</strong>. You entered{" "}
+                          <strong>{draft.values[field as Field]}</strong>. Choose which is right.
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          <Button size="sm" variant="outline" disabled={busy}
+                            onClick={() => resolveConflict(field, "reading")}>
+                            Keep {item.refreshed?.[field]?.current}
+                          </Button>
+                          <Button size="sm" variant="outline" disabled={busy}
+                            onClick={() => resolveConflict(field, "mine")}>
+                            Use {draft.values[field as Field]}
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
                     {!Object.keys(item.changes).length ? (
-                      <p>{item.excluded_reason || "No changes — existing details kept."}</p>
+                      !item.conflicts?.length && (
+                        <p>{item.excluded_reason || "No changes. Existing details kept."}</p>
+                      )
                     ) : (
                       <ul className="list-disc pl-5">
                         {Object.entries(item.changes).map(([field, value]) => (
                           <li key={field}>
-                            {labels[field]}: {value.before || "Missing"} →{" "}
-                            <strong>{value.after || "Clear value"}</strong>
+                            {value.confirmed ? (
+                              <>
+                                {labels[field]}: <strong>{value.after}</strong> confirmed
+                              </>
+                            ) : (
+                              <>
+                                {labels[field]}: {value.before || "Missing"} →{" "}
+                                <strong>{value.after || "Clear value"}</strong>
+                              </>
+                            )}
                           </li>
                         ))}
                       </ul>
@@ -846,13 +933,15 @@ function Editor({
                     Try again
                   </Button>
                 )}
-                <Button
-                  variant="outline"
-                  disabled={busy || query.isFetching}
-                  onClick={() => void refreshSelection()}
-                >
-                  Load latest details and keep my changes
-                </Button>
+                {statusOf(save.error || review.error) !== 409 && (
+                  <Button
+                    variant="outline"
+                    disabled={busy || query.isFetching}
+                    onClick={() => void refreshSelection()}
+                  >
+                    Load latest details and keep my changes
+                  </Button>
+                )}
               </div>
             )}
             {refreshNotice && (
@@ -865,12 +954,14 @@ function Editor({
             {preview ? (
               <>
                 <Button
-                  disabled={busy || !preview.updated}
+                  disabled={busy || !preview.updated || unresolved}
                   onClick={() => save.mutate()}
                 >
                   {save.isPending
                     ? `Saving account details… ${workingFor} s`
-                    : `Save changes to ${preview.updated} statements`}
+                    : unresolved
+                      ? "Choose a value above to save"
+                      : `Save changes to ${preview.updated} statements`}
                 </Button>
                 <Button
                   variant="outline"

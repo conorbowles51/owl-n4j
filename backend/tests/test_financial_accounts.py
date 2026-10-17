@@ -45,6 +45,7 @@ from postgres.models.financial import (
     FinancialTransaction,
 )
 from postgres.models.user import User
+from services.financial import accounts
 from services.financial.accounts import (
     NON_VALUES,
     TIER_IBAN,
@@ -323,6 +324,34 @@ class IdentityTierTests(unittest.TestCase):
             institution_name="Chase", identifier_as_printed="****7890"
         ).identity()
         self.assertNotEqual(full.key, masked.key)
+
+
+class CreditLineIdentityTests(unittest.TestCase):
+    """A credit line printed under its deposit account's number is a separate account."""
+
+    def draft(self, kind=None, **fields):
+        fields.setdefault('institution_name', 'Example Federal Credit Union')
+        fields.setdefault('identifier_as_printed', '1111')
+        return AccountDraft.observed(metadata=dict(account_reference_kind=kind) if kind else None, **fields)
+
+    def test_the_credit_line_key_differs_from_the_deposit_accounts(self):
+        deposit, line = self.draft().identity(), self.draft('credit_line').identity()
+        self.assertEqual(line.tier, accounts.TIER_CREDIT_LINE)
+        self.assertNotEqual(deposit.key, line.key)
+        self.assertEqual(deposit.tier, accounts.TIER_INSTITUTION_ACCOUNT)  # unchanged for every other account
+
+    def test_a_shared_routing_number_does_not_merge_them(self):
+        deposit = self.draft(routing_number='256074974').identity()
+        line = self.draft('credit_line', routing_number='256074974').identity()
+        self.assertEqual(deposit.tier, accounts.TIER_ROUTING_ACCOUNT)
+        self.assertNotEqual(deposit.key, line.key)
+
+    def test_a_masked_number_stays_provisional(self):
+        line = self.draft('credit_line', identifier_as_printed='****1111').identity()
+        self.assertEqual(line.tier, accounts.TIER_INSTITUTION_MASKED)
+
+    def test_two_statements_of_one_credit_line_share_its_key(self):
+        self.assertEqual(self.draft('credit_line').identity().key, self.draft('credit_line').identity().key)
 
 
 class IdentityStabilityTests(unittest.TestCase):

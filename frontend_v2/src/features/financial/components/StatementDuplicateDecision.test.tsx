@@ -386,3 +386,19 @@ it("names the details a re-produced card statement copy shares", () => {
     )
   ).toBeTruthy()
 })
+it("says in one plain line that a statement matching nothing is not a copy, with no warning or buttons", () => {
+  mount({
+    decision: {
+      ...ignored,
+      status: "retained",
+      label: "Retained statement",
+      reason: "No separate statement with the same full identity and period was found.",
+      matched_fields: [],
+      basis: null,
+      retained: { ...ignored.retained!, evidence_file_id: fileId, filename: "Own statement.pdf" },
+    } as StatementDuplicateDisposition,
+  })
+  expect(screen.getByText("Not a copy of any other statement in this case. Nothing to do here.")).toBeVisible()
+  expect(screen.queryByRole("button", { name: "Open retained original" })).toBeNull()
+  expect(screen.queryByText("Retained statement", { exact: false })).toBeNull()
+})

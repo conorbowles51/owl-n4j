@@ -676,10 +676,10 @@ class StatementImportTests(TransactionPersistenceTestCase):
         candidates = [SimpleNamespace(id=index, evidence_file_id=self.file.id, superseded_by_id=None, removal=None,
             statement_id=str(index), assigned_period_ids=None, sources=[source],
             statement_row_addresses=None, statement_source_regions=None) for index in range(2)]
-        session = Mock()
-        session.execute.return_value = candidates
-        with self.assertRaisesRegex(PdfMappingError, 'more than one imported statement'):
-            _existing_statement(session, self.case.id, self.file, 'new-period', [(1, 0)])
+        from unittest.mock import patch
+        with patch('services.financial.statement_import._existing_values', return_value=candidates), \
+                self.assertRaisesRegex(PdfMappingError, 'more than one imported statement'):
+            _existing_statement(Mock(), self.case.id, self.file, 'new-period', [(1, 0)])
 
     def test_printed_closing_control_is_retained_without_becoming_a_payment(self):
         from copy import deepcopy

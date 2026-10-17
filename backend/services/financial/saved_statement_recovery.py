@@ -219,11 +219,16 @@ def recovery_catalog(session, file, choices, selected_id):
     again from page-level overlap.
     """
     from services.financial.statement_details import saved_details, saved_currency
+    from services.financial.import_batches import _admitted_sources
+    # Which saved periods are recovered sections, from the per-row cached admitted keys: filtering on the
+    # metadata key in the database detoasted every saved period's whole metadata on each statement read.
+    recovered = [UUID(entry.id) for entry in _admitted_sources(session, file.case_id, {file.id}).get(file.id, [])
+                 if entry.recovery]
     documents = list(session.scalars(select(FinancialSourceDocument).where(
         FinancialSourceDocument.case_id == file.case_id, FinancialSourceDocument.evidence_file_id == file.id,
-        FinancialSourceDocument.status == 'admitted',
+        FinancialSourceDocument.status == 'admitted', FinancialSourceDocument.id.in_(recovered),
         FinancialSourceDocument.metadata_['statement_recovery_parent_id'].as_string().is_not(None))
-        .order_by(FinancialSourceDocument.id)))
+        .order_by(FinancialSourceDocument.id))) if recovered else []
     if not documents:
         return choices, None, False
     removed_ids = set()

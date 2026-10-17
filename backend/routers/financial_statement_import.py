@@ -1058,6 +1058,45 @@ async def retry_financial_batch_file(batch_id: UUID,source_id: UUID,case_id: UUI
         db.rollback();raise HTTPException(status_code=exc.status_code,detail=str(exc)) from exc
 
 
+class ReadAfreshFile(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    batch_id: UUID
+    source_id: UUID
+    expected_revision: str = Field(min_length=1, max_length=64)
+
+
+class ReadAfreshRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    files: list[ReadAfreshFile] = Field(min_length=1, max_length=1000)
+
+
+@router.post('/review/read-afresh', dependencies=[
+    Depends(case_access_dependency(lambda request,payload: ('case','edit'))),
+    Depends(case_access_dependency(lambda request,payload: ('evidence','upload')))])
+def read_retained_sources_afresh(body: ReadAfreshRequest, case_id: UUID=Query(...),
+        user=Depends(get_current_db_user), db: Session=Depends(get_db)):
+    """Explicitly read the listed retained PDFs afresh; each is verified as a single request would be."""
+    return import_batches.recover_retained_sources(db, case_id=case_id,
+        files=[file.model_dump() for file in body.files], actor=actor_from_user(user))
+
+
+class CheckAgainFile(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    batch_id: UUID
+    file_id: UUID
+
+
+class CheckAgainRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    files: list[CheckAgainFile] = Field(min_length=1, max_length=2000)
+
+
+@router.post('/review/check-again', dependencies=[Depends(case_access_dependency(lambda request,payload: ('case','edit')))])
+def check_files_again(body: CheckAgainRequest, case_id: UUID=Query(...), db: Session=Depends(get_db)):
+    """Prepare the listed files again from their saved readings with the current reader; reviews are kept."""
+    return import_batches.refresh_files(db, case_id=case_id, files=[file.model_dump() for file in body.files])
+
+
 @router.post('/batches/{batch_id}/files/{source_id}/recover-source', dependencies=[
     Depends(case_access_dependency(lambda request,payload: ('case','edit'))),
     Depends(case_access_dependency(lambda request,payload: ('evidence','upload')))])

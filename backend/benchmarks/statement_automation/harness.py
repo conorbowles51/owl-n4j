@@ -179,6 +179,30 @@ def drain_batch(turn, progress, label, *, stall_turns=None, stall_seconds=None, 
                 quiet_turns=quiet_turns)
 
 
+def drain_readiness(refresh, backlog, *, clock=time.monotonic):
+    """Let the service's background readiness refresh finish before scoring, bounded by progress.
+
+    In the product the batch worker's readiness sweep (refresh_stale_readiness,
+    every READINESS_SWEEP_SECONDS) brings statements whose stored readiness
+    went stale during preparation up to date with no click; the harness has no
+    such worker. ``backlog()`` counts what a list read would still show as
+    being updated; rounds of ``refresh()`` run while that count falls, and the
+    first round that removes nothing ends the drain (what is left is reported).
+    """
+    started = clock()
+    before = pending = backlog()
+    rounds = 0
+    while pending:
+        refresh()
+        rounds += 1
+        now = backlog()
+        if now >= pending:
+            pending = now
+            break
+        pending = now
+    return dict(before=before, after=pending, rounds=rounds, seconds=clock() - started)
+
+
 def saved_by_system(db, batch_id, Item, actor):
     """Ids of the batch's statements claimed by the automatic save (actor System), saved or saving."""
     from sqlalchemy import select
@@ -562,6 +586,14 @@ def run(out, python, concurrency, corpus=CORPUS, readings=None, compare=None):
                            progress, label)
 
     preparation = drain('preparation')
+
+    def readiness_backlog():
+        with factory() as db:
+            stale, unhydrated = batches.readiness_backlog(db, case_id)
+            return len(stale) + len(unhydrated)
+
+    # The same sweep the batch worker runs every minute in the service.
+    readiness = drain_readiness(lambda: batches.refresh_stale_readiness(factory), readiness_backlog)
     started = time.monotonic()
     with factory() as db:
         status = batches.batch_status(db, case_id=case_id, batch_id=batch_id, limit=10_000)
@@ -661,7 +693,8 @@ def run(out, python, concurrency, corpus=CORPUS, readings=None, compare=None):
         upload=dict(duplicates_flagged=duplicates_flagged),
         timing=dict(engine_read_wall_seconds=read_wall, engine_read_cpu_seconds=read_cpu,
                     engine_read_seconds_per_file={k: v.get('seconds') for k, v in readings.items()},
-                    preparation=preparation, batch_status_seconds=status_seconds, group_import=import_result,
+                    preparation=preparation, readiness_refresh=readiness, batch_status_seconds=status_seconds,
+                    group_import=import_result,
                     total_wall_seconds=time.monotonic() - run_started),
         reading_errors={k: v['error'] for k, v in readings.items() if 'error' in v},
         repairs={k: dict(v, detection_reasons=dict(v['detection_reasons']), refinements=dict(v['refinements']))
@@ -1215,7 +1248,11 @@ def render_summary(result):
         for k, v in reread.items()) or 'none triggered') + '.', '',
         f"Timing: engine reading {t['engine_read_wall_seconds']:.1f}s wall ({t['engine_read_cpu_seconds']:.1f}s CPU "
         f"incl. children); batch preparation {t['preparation']['seconds']:.1f}s over {t['preparation']['turns']} "
-        f"worker turns; batch status read {t['batch_status_seconds']:.2f}s; group import "
+        f"worker turns; background readiness refresh "
+        + (f"{t['readiness_refresh']['before']} statement(s) pending -> {t['readiness_refresh']['after']} in "
+           f"{t['readiness_refresh']['rounds']} round(s), {t['readiness_refresh']['seconds']:.1f}s"
+           if t.get('readiness_refresh') else 'not run') +
+        f"; batch status read {t['batch_status_seconds']:.2f}s; group import "
         f"{t['group_import']['seconds']:.1f}s; total {t['total_wall_seconds']:.1f}s. Host: "
         f"{result['environment']['cpus']} CPUs, 1-minute load {result['environment']['load_average_before'][0]:.1f} "
         f"before reading and {result['environment']['load_average_after'][0]:.1f} after (timings are not comparable "

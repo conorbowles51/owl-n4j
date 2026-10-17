@@ -2,12 +2,15 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { useSearchParams } from "react-router-dom"
 import { useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
-import { BatchStatementReview } from "./FinancialBatchPanel"
+import { BatchStatementReview, batchItemQuery } from "./FinancialBatchPanel"
 import { useFinancialAccess } from "../hooks/use-financial-access"
 import {
   entryPeriod,
   importOutcome,
+  savedOutcome,
   fillAndSaveReady,
+  readRetainedAfresh,
+  checkUnreadableAgain,
   useReviewQueue,
   type QueueEntry,
   type QueueSaveResult,
@@ -175,7 +178,39 @@ export function ReviewQueuePanel({
   const issue = params.get("queueIssue") || ""
   const query = useReviewQueue(caseId, fileIds)
   const client = useQueryClient()
-  const { canEdit } = useFinancialAccess()
+  const { canEdit, canUpload } = useFinancialAccess()
+  const [readingAfresh, setReadingAfresh] = useState(false)
+  const [afreshResult, setAfreshResult] = useState("")
+  const readAfresh = async () => {
+    if (!query.data || readingAfresh) return
+    setReadingAfresh(true)
+    setAfreshResult("")
+    try {
+      setAfreshResult(await readRetainedAfresh(caseId, query.data))
+    } catch (error) {
+      setAfreshResult(error instanceof Error ? error.message : "Reading afresh could not start.")
+    } finally {
+      setReadingAfresh(false)
+      void client.invalidateQueries({ queryKey: ["financial-review-queue", caseId] })
+      void client.invalidateQueries({ queryKey: ["financial-review-status", caseId] })
+    }
+  }
+  const [checkingAgain, setCheckingAgain] = useState(false)
+  const [checkAgainResult, setCheckAgainResult] = useState("")
+  const checkAgain = async () => {
+    if (!query.data || checkingAgain) return
+    setCheckingAgain(true)
+    setCheckAgainResult("")
+    try {
+      setCheckAgainResult(await checkUnreadableAgain(caseId, query.data))
+    } catch (error) {
+      setCheckAgainResult(error instanceof Error ? error.message : "Checking again could not start.")
+    } finally {
+      setCheckingAgain(false)
+      void client.invalidateQueries({ queryKey: ["financial-review-queue", caseId] })
+      void client.invalidateQueries({ queryKey: ["financial-review-status", caseId] })
+    }
+  }
   const [saving, setSaving] = useState("")
   const [saveResult, setSaveResult] = useState<QueueSaveResult | null>(null)
   const [saveError, setSaveError] = useState("")
@@ -250,8 +285,31 @@ export function ReviewQueuePanel({
       return next
     })
   }
+  const [bulkOutcome, setBulkOutcome] = useState("")
+  // The statement Next will open, loaded in the background while the current
+  // one is reviewed, so moving on does not wait for it to be checked.
+  const prefetchNext = (from: QueueEntry | undefined, list: QueueEntry[]) => {
+    if (!from) return
+    const position = list.findIndex((entry) => entry.id === from.id)
+    const following = list.slice(position + 1).find((entry) => entry.batch_id)
+    if (position < 0 || !following) return
+    void client.prefetchQuery(batchItemQuery(caseId, following.batch_id!, following.id))
+  }
+  // Every save, fix and bulk save brings the queue and its totals up to date,
+  // so the screen never needs reloading; with an entry, it says where that
+  // statement now stands.
+  const refresh = async (entry?: QueueEntry, keepOutcome = false) => {
+    void client.invalidateQueries({ queryKey: ["financial-review-status", caseId] })
+    // A save can change other statements' checks: copies loaded earlier are
+    // reloaded when opened, and the next one is loaded again now.
+    void client.invalidateQueries({ queryKey: ["financial-batch-item", caseId], refetchType: "none" })
+    if (entry) prefetchNext(entry, entries)
+    const result = await query.refetch()
+    if (entry && result.data && !keepOutcome) setOutcome({ entry, ...savedOutcome(result.data, entry) })
+    return result.data
+  }
   const back = () => {
-    void client.invalidateQueries({ queryKey: ["financial-review-queue", caseId] })
+    void refresh()
     open(undefined)
   }
   const showList = (name: ListName) => {
@@ -286,6 +344,8 @@ export function ReviewQueuePanel({
 
   if (itemId && active?.batch_id)
     return (
+      <>
+      <PrefetchNext entry={active} list={entries} prefetch={prefetchNext} />
       <div className="space-y-3">
         {outcome && (
           <OutcomeNote outcome={outcome} onDismiss={() => setOutcome(null)} />
@@ -309,14 +369,14 @@ export function ReviewQueuePanel({
             onPrevious: () => step(-1),
             onImported: (receipt) => {
               setOutcome({ entry: active, ...importOutcome(receipt) })
-              void client.invalidateQueries({
-                queryKey: ["financial-review-queue", caseId],
-              })
+              void refresh(active, true)
               step(1)
             },
+            onChanged: () => void refresh(active),
           }}
         />
       </div>
+      </>
     )
 
   return (
@@ -466,10 +526,23 @@ export function ReviewQueuePanel({
                 datesOnly={issue === "dates"}
                 buttonLabel={`Fix all ${current.length} together`}
                 onSaved={() => {
-                  void client.invalidateQueries({ queryKey: ["financial-review-queue", caseId] })
-                  void client.invalidateQueries({ queryKey: ["financial-review-status", caseId] })
+                  const chosen = new Set(current.map((entry) => entry.id))
+                  void refresh().then((data) => {
+                    if (!data) return
+                    const left = data.items.filter((entry) => chosen.has(entry.id)).length
+                    setBulkOutcome(
+                      left
+                        ? `Saved. ${left} of ${chosen.size} still need something; they stay listed below with what is left.`
+                        : `Saved. None of the ${chosen.size} statements need anything more for this.`
+                    )
+                  })
                 }}
               />
+              {bulkOutcome && (
+                <p role="status" aria-label="Result of the shared fix" className="basis-full font-medium">
+                  {bulkOutcome}
+                </p>
+              )}
               <span>
                 Every statement listed below waits for the same detail. Choose them, enter the value once and check the
                 preview before saving. Nothing is imported until each statement checks out.
@@ -557,7 +630,9 @@ export function ReviewQueuePanel({
                     )}
                     {list === "copies" && (
                       <p className="mt-1">
-                        {entry.set_aside
+                        {entry.copy_reason === "same_file_read"
+                          ? `Same file as ${entry.copy_of ?? "another upload"}, which was read. This upload's own reading is not used. It counts nothing.`
+                          : entry.set_aside
                           ? `Set aside as a copy${entry.copy_of ? ` of ${entry.copy_of}` : ""}. It counts nothing.`
                           : "Possible copy of another statement: compare it with the original."}
                       </p>
@@ -580,9 +655,42 @@ export function ReviewQueuePanel({
               ))}
             </ol>
           )}
+          {list === "unreadable" && query.data.unreadable.length > 0 && canEdit && (
+            <div className="space-y-2 rounded border p-3 text-sm" aria-label="Check unreadable statements again">
+              <p>
+                The reader has improved since some of these files were prepared. Checking them again uses each file's
+                saved reading with the current reader; reviews and imports are kept and nothing is imported.
+              </p>
+              <Button size="sm" variant="outline" disabled={checkingAgain} onClick={() => void checkAgain()}>
+                {checkingAgain
+                  ? "Starting…"
+                  : `Check ${query.data.unreadable.length} ${query.data.unreadable.length === 1 ? "statement" : "statements"} again`}
+              </Button>
+              {checkAgainResult && <p role="status">{checkAgainResult}</p>}
+            </div>
+          )}
           {list === "unreadable" && query.data.unreadable_files.length > 0 && (
             <div className="space-y-2">
               <p className="text-sm font-medium">Files that could not be prepared</p>
+              {(() => {
+                const afresh = query.data.unreadable_files.filter((file) => file.read_afresh_revision).length
+                if (!afresh) return null
+                return (
+                  <div className="space-y-2 rounded border p-3 text-sm" aria-label="Read removed PDFs afresh">
+                    <p>
+                      {afresh} {afresh === 1 ? "PDF's" : "PDFs'"} earlier imports were removed, and the copy they were to
+                      be read again from is no longer in Evidence. Reading them afresh checks each PDF's bytes first;
+                      the removals and earlier reviews stay in history.
+                    </p>
+                    {canEdit && canUpload && (
+                      <Button size="sm" disabled={readingAfresh} onClick={() => void readAfresh()}>
+                        {readingAfresh ? "Starting…" : `Read ${afresh} ${afresh === 1 ? "PDF" : "PDFs"} afresh`}
+                      </Button>
+                    )}
+                    {afreshResult && <p role="status">{afreshResult}</p>}
+                  </div>
+                )
+              })()}
               <ul className="divide-y rounded border">
                 {query.data.unreadable_files.map((file) => (
                   <li
@@ -621,6 +729,24 @@ export function ReviewQueuePanel({
       )}
     </section>
   )
+}
+
+/** Loads the statement after the open one once per opened statement. */
+function PrefetchNext({
+  entry,
+  list,
+  prefetch,
+}: {
+  entry: QueueEntry
+  list: QueueEntry[]
+  prefetch: (from: QueueEntry, list: QueueEntry[]) => void
+}) {
+  useEffect(() => {
+    prefetch(entry, list)
+    // Once per opened statement; a save prefetches again through refresh.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entry.id])
+  return null
 }
 
 function OutcomeNote({

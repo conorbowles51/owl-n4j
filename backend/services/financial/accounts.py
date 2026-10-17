@@ -333,6 +333,14 @@ TIER_INSTITUTION_MASKED = "institution_masked"
 # two readings disagree on currency. The printed contract remains unchanged.
 TIER_CONTRACT_CURRENCY = "institution_contract_currency"
 
+# A credit line printed under the same number as the deposit account it is
+# attached to (one statement, two sections, opposite balance conventions) is a
+# separate account. Opt-in source evidence (the reader marks the section),
+# never inferred from a convention disagreement between two documents. The
+# printed number is unchanged; only the key carries the product.
+TIER_CREDIT_LINE = "institution_account_credit_line"
+CREDIT_LINE = 'credit_line'
+
 #: Nothing on the document identified the account.  The key is built from a
 #: caller-supplied distinguisher, so each such document gets its own account
 #: rather than all of them sharing one.  Merging them is an adjudication.
@@ -343,6 +351,7 @@ IDENTITY_TIERS: tuple[str, ...] = (
     TIER_IBAN,
     TIER_ROUTING_ACCOUNT,
     TIER_CONTRACT_CURRENCY,
+    TIER_CREDIT_LINE,
     TIER_INSTITUTION_ACCOUNT,
     TIER_INSTITUTION_MASKED,
     TIER_UNIDENTIFIED,
@@ -551,6 +560,11 @@ class AccountDraft:
             # A descriptive placeholder is stored as printed but cannot join.
             institution = ""
 
+        if self.metadata.get('account_reference_kind') == CREDIT_LINE and digits and not masked and (institution or routing):
+            # Before the routing tier: a routing number is shared by both accounts too.
+            return AccountIdentity(
+                key=_build_key(TIER_CREDIT_LINE, institution or routing, digits, CREDIT_LINE),
+                tier=TIER_CREDIT_LINE, verdicts=verdicts)
         if routing is not None and digits and not masked:
             return AccountIdentity(
                 key=_build_key(TIER_ROUTING_ACCOUNT, routing, digits),

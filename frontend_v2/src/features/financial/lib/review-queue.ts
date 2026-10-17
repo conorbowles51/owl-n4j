@@ -40,6 +40,8 @@ const entry = z.object({
   reader_file: z.boolean().optional(),
   copy_of: z.string().nullish(),
   set_aside: z.boolean().optional(),
+  /** "same_file_read": this upload's reading failed; the same bytes were read through another upload. */
+  copy_reason: z.string().nullish(),
   /** Proposed values for missing details (value, its source, whether it is certain). */
   proposals: z
     .record(
@@ -103,6 +105,8 @@ export const reviewQueue = z.object({
         file_id: z.string().nullish(),
         filename: z.string(),
         message: z.string(),
+        /** Set when the retained PDF can be read afresh by an explicit request (its restart copy is gone). */
+        read_afresh_revision: z.string().nullish(),
       })
     )
     .default([]),
@@ -319,6 +323,19 @@ export function importOutcome(receipt?: StatementImportReceipt) {
   }
 }
 
+/** Where a statement stands after a save, from the refreshed queue: one short line. */
+export function savedOutcome(data: ReviewQueue, entry: QueueEntry) {
+  const same = (candidate: QueueEntry) => candidate.id === entry.id
+  const waiting = data.items.find(same)
+  if (waiting)
+    return { held: true, message: `Saved. Still needs: ${waiting.issue || "a check"}.` }
+  if (data.ready.some(same) || data.filled.some(same))
+    return { held: false, message: "Saved. Ready to import: use Import at the top of the queue." }
+  if (data.unreadable.some(same))
+    return { held: true, message: "Saved. Nothing could be read from it yet: open it to check its pages." }
+  return { held: false, message: "Saved. Nothing more is needed from you here." }
+}
+
 export function entryPeriod(entry: QueueEntry) {
   if (!entry.period_start && !entry.period_end) return "dates not read"
   return `${entry.period_start || "?"} to ${entry.period_end || "?"}`
@@ -505,4 +522,62 @@ export async function fillAndSaveReady(
       ? `${result.message} (details filled automatically on ${filled} as System; change any in its statement)`
       : result.message,
   }
+}
+
+const readAfreshResponse = z.object({
+  requested: z.number(),
+  queued: z.number(),
+  already: z.number(),
+  refused: z.array(z.object({ batch_id: z.string(), source_id: z.string(), message: z.string() })),
+})
+
+/**
+ * Explicitly reads the queue's retained PDFs afresh whose restart copy is gone.
+ * Each file is checked and byte-verified on the server exactly as a single request.
+ */
+export async function readRetainedAfresh(caseId: string, data: ReviewQueue): Promise<string> {
+  const files = data.unreadable_files
+    .filter((file) => file.read_afresh_revision && file.source_id)
+    .map((file) => ({
+      batch_id: file.batch_id,
+      source_id: file.source_id as string,
+      expected_revision: file.read_afresh_revision as string,
+    }))
+  if (!files.length) return "No removed PDF is waiting to be read afresh"
+  const result = readAfreshResponse.parse(
+    await fetchAPI(`/api/financial/statement-import/review/read-afresh?case_id=${caseId}`, {
+      method: "POST",
+      body: { files },
+      timeout: 300000,
+    })
+  )
+  const parts = [`${result.queued} ${result.queued === 1 ? "PDF is" : "PDFs are"} being read afresh`]
+  if (result.already) parts.push(`${result.already} already being read`)
+  if (result.refused.length)
+    parts.push(`${result.refused.length} not started: ${result.refused[0].message}`)
+  return parts.join("; ")
+}
+
+const checkAgainResponse = z.object({
+  requested: z.number(),
+  queued: z.number(),
+  skipped: z.array(z.object({ batch_id: z.string(), message: z.string() })),
+})
+
+/** Prepares the queue's unreadable statements' files again from their saved readings with the current reader. */
+export async function checkUnreadableAgain(caseId: string, data: ReviewQueue): Promise<string> {
+  const files = data.unreadable
+    .filter((entry) => entry.batch_id)
+    .map((entry) => ({ batch_id: entry.batch_id as string, file_id: entry.file_id }))
+  if (!files.length) return "Nothing to check again"
+  const result = checkAgainResponse.parse(
+    await fetchAPI(`/api/financial/statement-import/review/check-again?case_id=${caseId}`, {
+      method: "POST",
+      body: { files },
+      timeout: 120000,
+    })
+  )
+  const parts = [`${result.queued} ${result.queued === 1 ? "file is" : "files are"} being checked again`]
+  if (result.skipped.length) parts.push(`${result.skipped.length} ${result.skipped.length === 1 ? "batch" : "batches"} not started: ${result.skipped[0].message}`)
+  return parts.join("; ")
 }

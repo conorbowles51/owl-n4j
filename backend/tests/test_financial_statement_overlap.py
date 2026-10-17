@@ -31,6 +31,16 @@ class StatementOverlapTests(TestCase):
     def tearDown(self):
         self.b.tearDown()
 
+    def test_a_credit_line_does_not_overlap_the_deposit_account_sharing_its_number(self):
+        raw = dict(institution='Example Federal Credit Union', account_number='1111', currency='USD', holder='Jane',
+                   account_type='checking', period_start='2024-01-17', period_end='2024-02-16')
+        deposit = overlap.scope(raw)
+        line = overlap.scope({**raw, 'account_type': 'credit_card', 'account_reference_kind': 'credit_line'})
+        self.assertFalse(overlap.overlaps(deposit, line))
+        self.assertTrue(overlap.overlaps(line, overlap.scope({**raw, 'account_reference_kind': 'credit_line'})))
+        self.assertEqual(overlap.summary_request(dict(account_reference_kind='credit_line'))['account_reference_kind'],
+                         'credit_line')
+
     def test_coverage_reuses_case_files_without_per_period_queries(self):
         request = dict(institution='Synthetic Bank', account_number='123456789',
             holder='Synthetic business', currency='USD', period_start='2023-01-01',

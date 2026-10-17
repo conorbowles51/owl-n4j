@@ -1660,6 +1660,24 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
   )
 }
 
+/** One batch statement as its review opens it. Shared so the review queue can
+ * load the next statement in the background: Next then shows it at once. */
+export const BATCH_ITEM_FRESH_MS = 120_000
+export function batchItemQuery(caseId: string, batchId: string, itemId: string) {
+  return {
+    queryKey: ["financial-batch-item", caseId, batchId, itemId],
+    queryFn: async () =>
+      itemSchema
+        .extend({ review_revision: z.string() })
+        .parse(
+          await fetchAPI(
+            `/api/financial/statement-import/batches/${batchId}/items/${itemId}?case_id=${caseId}`
+          )
+        ),
+    staleTime: BATCH_ITEM_FRESH_MS,
+  }
+}
+
 /** Navigation supplied by the case review queue instead of the batch's own lists. */
 export type QueueNavigation = {
   /** The plain sentence naming the problem, shown before anything else. */
@@ -1674,6 +1692,8 @@ export type QueueNavigation = {
   onNext: () => void
   onPrevious: () => void
   onImported: (receipt?: StatementImportReceipt) => void
+  /** A review save landed: the queue refreshes and says where the statement stands. */
+  onChanged?: () => void
 }
 
 export function BatchStatementReview({
@@ -1702,16 +1722,8 @@ export function BatchStatementReview({
   const user = useAuthStore((state) => state.user),
     owner = user?.id || user?.username || "anonymous"
   const query = useQuery({
-    queryKey: ["financial-batch-item", caseId, batchId, itemId],
+    ...batchItemQuery(caseId, batchId, itemId),
     refetchOnWindowFocus: false,
-    queryFn: async () =>
-      itemSchema
-        .extend({ review_revision: z.string() })
-        .parse(
-          await fetchAPI(
-            `/api/financial/statement-import/batches/${batchId}/items/${itemId}?case_id=${caseId}`
-          )
-        ),
   })
   const item = query.data
   const [savedBalances, setSavedBalances] = useState(false)
@@ -1883,6 +1895,9 @@ export function BatchStatementReview({
       )
     reviewRevision.current = result.review_revision
     void client.invalidateQueries({ queryKey: ["financial-batch", caseId] })
+    // A reopened statement must show this save, not a copy loaded before it.
+    void client.invalidateQueries({ queryKey: ["financial-batch-item", caseId], refetchType: "none" })
+    queue?.onChanged?.()
     return result
   }
   const raw = item?.review_request
