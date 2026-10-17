@@ -53,6 +53,9 @@ def create_batch(session, *, case_id, request_id, file_ids, folder_ids, actor, s
             raise PdfMappingError('The selection changed. Start a new batch for these files.', 409)
         return existing.id
     if not selection['files']:
+        if selection['skipped_removed']:
+            raise PdfMappingError('Every PDF in this selection was removed from Financial. Restore them, or choose the '
+                                  'files themselves, to read them again.', 422)
         raise PdfMappingError('No PDF files were found in this selection.', 422)
     selected_ids = {f['id'] for f in selection['files']}
     if not any(f.get('financial_removed') for f in selection['files']):

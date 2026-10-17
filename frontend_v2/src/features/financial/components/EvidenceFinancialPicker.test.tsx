@@ -303,3 +303,52 @@ it("says before sending that the files are already in an open batch and names co
       .mock.calls.some(([url]) => url.endsWith("/batches?case_id=case"))
   ).toBe(false)
 })
+
+it("says how many files in the selected folders were left out because they were removed from Financial", async () => {
+  const files = [
+    {
+      id: "0",
+      original_filename: "kept.pdf",
+      status: "processed",
+      financial_removed: false,
+      financial_visibility_revision: "initial",
+    },
+  ]
+  vi.mocked(foldersAPI.getContents).mockResolvedValue({
+    breadcrumbs: [],
+    folders: [],
+    files,
+    file_total: files.length,
+  } as never)
+  vi.mocked(fetchAPI).mockImplementation(async (url) => {
+    if (url.includes("/batches/preview")) return noOpenBatch as never
+    if (url.includes("/selection/resolve"))
+      return {
+        case_id: "case",
+        skipped_non_pdf: 0,
+        skipped_removed: 3,
+        files,
+      } as never
+    return { case_id: "case", id: "batch" } as never
+  })
+  render(
+    <QueryClientProvider
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
+    >
+      <MemoryRouter>
+        <EvidenceFinancialPicker caseId="case" initialFileIds={["0"]} />
+      </MemoryRouter>
+    </QueryClientProvider>
+  )
+  fireEvent.click(screen.getByRole("button", { name: "Choose from Evidence" }))
+  await screen.findByLabelText("Select file kept.pdf")
+  fireEvent.click(screen.getByRole("button", { name: "Review selected files" }))
+  await screen.findByRole("heading", { name: "1 files to send to Financial" })
+  expect(
+    screen.getByText(
+      /3 files in the selected folders were removed from Financial and are left out/
+    )
+  ).toBeVisible()
+})

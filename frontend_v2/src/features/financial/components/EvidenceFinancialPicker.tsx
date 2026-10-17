@@ -407,10 +407,19 @@ function EvidenceBrowser({
             {review.files.length} files to send to Financial
           </h3>
           <p className="text-sm">
-            Files selected more than once are included once. Previously removed
-            sources will be restored to Financial. Remove any unrelated files
-            from this preview before sending.
+            Files selected more than once are included once. A removed source
+            you chose by name will be restored to Financial. Remove any
+            unrelated files from this preview before sending.
           </p>
+          {review.skipped_removed > 0 && (
+            <p className="text-sm" role="status">
+              {review.skipped_removed}{" "}
+              {review.skipped_removed === 1 ? "file" : "files"} in the selected
+              folders {review.skipped_removed === 1 ? "was" : "were"} removed
+              from Financial and {review.skipped_removed === 1 ? "is" : "are"}{" "}
+              left out. Choose a file by name, or restore it, to read it again.
+            </p>
+          )}
           <ul className="max-h-[35dvh] overflow-auto divide-y rounded border">
             {review.files.map((file) => (
               <li className="p-2 text-sm break-words" key={file.id}>

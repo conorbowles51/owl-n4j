@@ -28,10 +28,17 @@ def resolve_financial_selection(session, *, case_id, file_ids, folder_ids, inclu
     from services.financial.source_lineage import select_current_files, lineage_id
     eligible = files if include_other_formats else pdfs
     current = select_current_files(session, case_id, eligible)
+    # A file the investigator removed from Financial is not swept back in by a
+    # folder: only choosing that file itself restores it. Counted, never silent.
+    chosen = {lineage_id(file) for file in files if file.id in file_ids}
+    removed = [file for file in current if lineage_id(file) not in chosen
+               and financial_file_visibility(file)['financial_removed']]
+    current = [file for file in current if file not in removed]
     return dict(case_id=str(case_id), skipped_non_pdf=0 if include_other_formats else len(files)-len(pdfs), files=[dict(
         id=str(file.id), original_filename=file.original_filename, status=file.status,
         root_file_id=lineage_id(file),
-        **financial_file_visibility(file)) for file in current], grouped_readings=len(eligible)-len(current))
+        **financial_file_visibility(file)) for file in current], grouped_readings=len(eligible)-len(current)-len(removed),
+        skipped_removed=len(removed))
 
 
 def include_financial_sources(session, *, case_id, selections, actor):
