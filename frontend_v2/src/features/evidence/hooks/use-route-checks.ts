@@ -23,11 +23,11 @@
  * Why it chunks
  * -------------
  *
- * `/api/evidence/route-check` refuses more than {@link ROUTE_CHECK_BATCH_LIMIT}
- * ids, and a page of this list holds 250.  Without chunking the badge would
- * simply never appear on a full page -- the request would fail with "Too many
- * files" and the column would be silently empty, which looks exactly like a
- * page with nothing interesting on it.
+ * A page of this list holds 250 ids.  `/api/evidence/route-check` accepts any
+ * number, but asking in chunks of {@link ROUTE_CHECK_BATCH_LIMIT} keeps each
+ * request small, and keeps a full page working should the server ever refuse
+ * large selections again: a failed check leaves the column silently empty,
+ * which looks exactly like a page with nothing interesting on it.
  */
 
 import { useMemo } from "react"
@@ -40,9 +40,9 @@ import type { FileRouteCheck } from "@/types/evidence.types"
 /**
  * The most ids one request may carry.
  *
- * Mirrors `MAX_BATCH_SIZE` in `backend/routers/evidence.py`.  Lowering the
- * server's value without lowering this one turns every full page into a failed
- * check, so the two are pinned together in `use-route-checks.test.tsx`.
+ * The server accepts any number of ids per request; should it refuse by count
+ * again, this must stay at or under that limit, which `use-route-checks.test.tsx`
+ * checks against `backend/routers/evidence.py`.
  */
 export const ROUTE_CHECK_BATCH_LIMIT = 50
 

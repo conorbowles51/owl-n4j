@@ -240,32 +240,30 @@ describe("useRouteChecks", () => {
 })
 
 describe("the batch limit", () => {
-  it("matches the limit the server actually enforces", () => {
-    // Two numbers in two languages that have to agree. If the server's limit
-    // were lowered and this one were not, every full page would fail the check
-    // and the column would go quiet -- which looks like a page of ordinary
-    // documents rather than like a broken request.
+  it("never exceeds what the server accepts", () => {
+    // The server stopped refusing large selections (4309cb5f): route-check takes
+    // any number of ids, so the chunk size here only keeps each request small.
+    // Should the server start refusing by count again, the chunk size has to
+    // fit under it, or every full page fails the check and the column goes
+    // quiet -- which looks like a page of ordinary documents.
     const here = dirname(fileURLToPath(import.meta.url))
     const router = resolve(here, "../../../../../backend/routers/evidence.py")
     const source = readFileSync(router, "utf8")
 
-    const declared = source.match(/^MAX_BATCH_SIZE\s*=\s*(\d+)/m)
-    expect(declared, "MAX_BATCH_SIZE is no longer declared in backend/routers/evidence.py").toBeTruthy()
-    expect(Number(declared![1])).toBe(ROUTE_CHECK_BATCH_LIMIT)
-
-    // And that the route-check endpoint is still what it guards, rather than a
-    // constant that has drifted to meaning something else.
-    //
-    // Scoped to that endpoint's own body rather than searched for anywhere in
-    // the file. A whole-file search passes on the copy of this guard inside
-    // `/process/background`, so it would stay green while route-check stopped
-    // enforcing anything -- which a mutant proved by doing exactly that.
+    // Scoped to the route-check endpoint's own body: `/process/background` keeps
+    // its own count guard, which says nothing about this endpoint.
     const decorator = '@router.post("/route-check")'
     const opens = source.indexOf(decorator)
     expect(opens, "the route-check endpoint is no longer declared").toBeGreaterThan(-1)
 
     const next = source.indexOf("@router.", opens + decorator.length)
     const body = next === -1 ? source.slice(opens) : source.slice(opens, next)
-    expect(body).toMatch(/len\(request\.file_ids\)\s*>\s*MAX_BATCH_SIZE/)
+    const guard = body.match(/len\(request\.file_ids\)\s*>\s*(\w+)/)
+    if (guard) {
+      const limit = /^\d+$/.test(guard[1]) ? guard[1] : source.match(new RegExp(`^${guard[1]}\\s*=\\s*(\\d+)`, "m"))?.[1]
+      expect(limit, `route-check refuses by ${guard[1]}, whose value was not found`).toBeTruthy()
+      expect(ROUTE_CHECK_BATCH_LIMIT).toBeLessThanOrEqual(Number(limit))
+    }
+    expect(ROUTE_CHECK_BATCH_LIMIT).toBeGreaterThan(0)
   })
 })
