@@ -13,34 +13,36 @@ sets it itself only when it is genuinely blocked on Neil; see "Halt rules".)
 
 ## ▶ NEXT
 
-**(2026-10-16 15:40) REAL-DOCUMENT wave 7 integrated into fin/release-1 (headless integrate-7). Regular merges
-t-visual-v16 acb4873d, r7-autosave 4124f12a, r7-import-ops f0bf00f4 (conflicts resolved: package exports kept from both;
-advance_batch keeps r7-import-ops' shared preparation and records r7-autosave's reader stamp wherever a file becomes
-checked, including adoption), r7-alex-queue 3a043d56, WIP-NOTES.md dropped; merge-breakage fix 0c112612 (unread_pages
-exported). NOT pushed or deployed by this session. The real-document driver owns the next waves; running state, counts
-and history in /mnt/owl-data/fin-wt/headless/real/STATE.md (counts only).**
-Real headline (bench/wave7, frozen copy of 0c112612, fresh engine read of all 668 truth documents at reading revision v19,
-product default: automatic save ON, exit 0): **1,147/1,343 ready without edits (85.4%), every one saved by the system
-with no click**; on wave 6's 623 documents **1,147/1,294 (88.6%, was 1,146)**; **0 wrong admissions, 0 copies saved,
-0 duplicate ledger contributions**, 0 critical-field errors (17,948 rows), must-hold 4/4, copies 148/153, 0 lost,
-1 gained (BBVA, r7-alex-queue). M&T (v15+v16 truth, 90 distinct periods) 0/90, 0 wrong: 65 held for the holder alone.
-Engine-served 110, library-served 1,037; generic-only 749/1,343, 0 wrong (wave 5: 717/1,237). Actions per 100 statements
-313 / 275 grouped (254 / 228 on wave 6's 623, was 293 / 268). Truth final 688/832, compared 668/827. Live (read-only
-audit-wave7): the same 5 periods disagree; 0 printed periods admitted twice. Preparation + import took 5 h 35 min
-(wave 6: 11.6 h). Synthetic 105/125, 0 wrong, all saved by the system (a first run under load read 104: the engine's
-time-budgeted money-cell consensus skipped one repair; held, not wrong; bisected, same code and readings give 105 at
-low load). Suites: financial Ran 6,348, 2 known unassigned_statement failures + 6 load-timeout errors in
-extraction_release (4/4 alone); tsc 0; vitest unit 2,121/2,122 (route-check limit test).
-integrate-6's auto-save finding is closed by r7-autosave (a byte copy uploaded separately was shown as saved through its
-original's import; the ledger held it once; now set aside as a linked copy).
-**Wave 8 (headless/real/wave8.units, prompts headless/real/units/):** `r8-import-ops` (Neil's continuation rule: items 3
-and 7 unfinished; carries the live branch's commits it depends on by cherry-pick, the 2 provable Navy Federal periods,
-exact page reasons for the 12 that need a person, live < 3 s per import, harness waits for background readiness
-refreshes), `r8-mt-engine` (M&T 0/90 -> 90/90 with the general engine; also the wave's step-removal unit, rank 8), and
-`t-visual-v05` (Santander, 40 documents). Acceptance for every unit: 0 wrong admissions real and synthetic, 0 copies
-saved, synthetic >= 105/125, no ready period lost against bench/wave7.
-**fin/release-1 and the live branch are drifting apart:** 30 live commits not on fin/release-1 (r-subpoena, Neil's 15-16
-Oct queue/import work); a trial merge now conflicts in 13 files (was 3). Neil's decision (STATE.md open decision 0).
+**(2026-10-17 13:40) REAL-DOCUMENT wave 8 integrated into fin/release-1 (headless integrate-8). Regular merges
+r8-import-ops 6972fbc6, r8-mt-engine e5396bee (engine conflicts with r8-import-ops' carried live rules resolved keeping
+both), t-visual-v05 3648e776 (notes only), WIP-NOTES.md dropped. NOT pushed or deployed by this session. The
+real-document driver owns the next waves; running state, counts and history in /mnt/owl-data/fin-wt/headless/real/STATE.md
+(counts only).**
+Real headline (bench/wave8, frozen copy of 3648e776, fresh engine read of all 703 truth documents at reading revision v20,
+product default: automatic save ON, exit 0): **1,252/1,397 ready without edits (89.6%)**, 1,250 saved by the system with
+no click (2 automatic saves hit a database lock and are not retried); on wave 7's 668 documents **1,236/1,343 (92.0%,
+was 1,147)**; **0 wrong admissions, 0 copies saved, 0 duplicate ledger contributions**, 0 critical-field errors (19,074
+rows), must-hold 4/4, copies 159/165, 0 lost against wave 7, 105 gained (M&T 0 -> 87 by the general engine, Santander +16,
+Intercam +2). Engine-served 197, library-served 1,055. Actions per 100 statements 205 / 191 grouped (177 / 164 on wave 7's
+668, was 313 / 275). Truth final 723/832, compared 703/827. Live (read-only audit-wave8): the same 5 periods disagree;
+0 printed periods admitted twice. Synthetic 105/125, 0 wrong, all saved by the system. Suites: financial Ran 6,435, only
+the 2 known unassigned_statement failures; tsc 0; vitest unit 2,127/2,129 (route-check limit test; FinancialPage under
+load, 39/39 alone).
+**Two findings, both fail safe in the product:** (1) generic-only (every library reader off) admitted 2 Citi cycles
+without their printed posting dates (868/1,397, REAL_EXIT=1); the general engine never emits a posting date; the product
+admits the Citi library reading with posting dates. (2) 18 Santander v05 periods ready in the blind pre-wave-8 run are
+held for an unread closing balance; A/B proves the v20 reading causes it (merged code on v19 readings: all 18 ready).
+Kept merged (net +105, 0 wrong); both are items 0 and 1 of wave 9's engine unit.
+**Wave 9 (headless/real/wave9.units, prompts headless/real/units/):** `r9-import-ops` (Neil's continuation rule: item
+3's end-to-end live time unmeasured; also the step-removal unit: statements that become ready after preparation, or
+whose automatic save failed, are saved with no click; writes proportional to one period; per-step import timings for
+the first live import), `r9-engine-santander` (engine posting dates, the 18-period v20 regression, Santander holder /
+rows / currency; santander 52/114 -> >= 70), `t-visual-v06` (Santander v06 + v09, v14, v18; 25 documents). Acceptance
+for every unit: 0 wrong admissions real (product and generic-only) and synthetic, 0 copies saved, synthetic >= 105/125,
+no ready period lost against bench/wave8.
+**fin/release-1 and the live branch:** the live head 0600e3f7 has not moved; every live commit but one notes commit and
+one deploy-config hunk is on fin/release-1 as a cherry-pick (two with real identifiers redacted). Neil's decision
+(STATE.md open decision 0): recommend fin/release-1 as the base going forward.
 **Everything below in this section is the synthetic track (wave 5 state), parked behind the real waves.**
 Release-1 now (corpus v4, 124 distinct periods, bench-runs/release-1-w5, exit 0): **102/124 ready without edits (82.3%)**,
 102/107 recoverable (95.3%), 0 wrong admissions, 0 critical-field errors (347 saved), 0 valid-looking wrong values
@@ -759,3 +761,37 @@ brief (briefs = Queue entries above + the 2026-10-02 log lines). Automation is t
 - Live branch: 30 commits not on fin/release-1, a read-only trial merge conflicts in 13 files (integrate-6: 3). Not merged.
 - Wave 8 planned: r8-import-ops (mandatory continuation), r8-mt-engine, t-visual-v05. STATE.md and STATUS-FOR-NEIL.md
   rewritten.
+
+### 2026-10-17 13:40 — REAL-DOCUMENT wave 8 merged into fin/release-1 (headless integrate-8)
+- All three notes say complete with 0 wrong on real and synthetic; none refused. Private scan of the net diffs, all 33
+  intermediate commits and every message against truth holders, words, accounts, inventory file names and non-round
+  amounts: clean (0 hits). Regular merges, WIP-NOTES.md dropped, notes archived
+  /mnt/owl-data/fin-wt/notes/{r8-import-ops,r8-mt-engine,t-visual-v05}.md: `fin/r8-import-ops` (6972fbc6),
+  `fin/r8-mt-engine` (e5396bee), `fin/t-visual-v05` (3648e776).
+- Conflicts (r8-mt-engine over r8-import-ops' carried live engine rules) in statement_engine.py (4 hunks),
+  statement_engine_profiles.py and the engine test file, each resolved keeping both behaviours (accrual ranges + day-month
+  order; appendix + mailed-statement segments, mailed flag read with .get; file-numbering drop after ordered page facts;
+  holder heading before the stricter institution rule; profile tie-break: furniture when it names exactly one profile,
+  else the must-all specificity rule). 187 engine/exports/recovery/cache tests OK; no separate breakage fix.
+- **Real benchmark, full fresh read** (bench/wave8, frozen 3648e776; read 4 h 10 min at v20, 0 reading errors;
+  preparation + import 6 h 50 min; product default; REAL_EXIT=0): **1,252/1,397** (1,236/1,343 on wave 7's documents),
+  recoverable 1,252/1,393, 1,250 saved by the system, 0 wrong, 0 copies saved, 0 duplicate contributions, holds 4/4,
+  copies 159/165, 0 lost against wave 7, 105 gained; 4 valid-looking wrong values, none in a ready period; 16 unmatched
+  items, 0 offered; 0 periods scored while a readiness refresh was pending. Compare 703/827 statements (1,393 of 1,598
+  without disagreement; in ready periods BBVA holder punctuation 26 and 5 holders supplied by the detail proposal).
+- Against t-visual-v05's blind run (pre-wave-8 code, v19): 18 Santander v05 periods lost to an unread closing balance.
+  A/B on truth-mini-v05: merged code + v19 readings 28/54; pre-wave-8 code + v20 readings 12/54. Cause: the v20 reading
+  (r8-mt-engine 7c215ef1), measured by that unit on documents that did not include v05. Kept; wave 9.
+- Generic-only (bench/wave8-generic-only, same readings): 868/1,397, **2 wrong** (Citi d9b89251845be#5, #9: printed
+  posting date missing on 7 rows; the engine emits no posting date). Product unaffected (Citi library reader admitted with
+  posting dates). Wave 9.
+- Live ledger audit (read-only, audit-wave8): 842 admitted periods on truth documents, 5 disagree (same as waves 5-7),
+  0 printed periods admitted twice.
+- Census not re-run (census-r5: 1,165 ready of 3,154 raw periods).
+- Synthetic (bench-runs/real-wave8, product default, BENCH_EXIT=0): 105/125, 105/108, 0 wrong, copies 1/1, all saved by
+  the system.
+- Suites (live .venv, CHROMADB_PORT=1 CHROMA_PORT=1): financial Ran 6,435, failures=2 (known unassigned_statement),
+  errors=0, skipped 20; tsc -b 0; vitest unit 304 files 2,127/2,129 (route-check limit test; FinancialPage under load,
+  39/39 alone). Logs bench-runs/real-wave8{,-suite,-tsc,-vitest,-vitest-fp}.log.
+- Wave 9 planned: r9-import-ops (mandatory continuation + step removal), r9-engine-santander, t-visual-v06. STATE.md and
+  STATUS-FOR-NEIL.md rewritten.
