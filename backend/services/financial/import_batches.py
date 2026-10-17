@@ -1996,6 +1996,13 @@ async def advance_batch(factory,batch_id,resolve_path,process_files):
                     else:
                         await _finish_atomic(_review_file,factory,batch_id,case_id,deepcopy(file))
                         file['status']='checked'
+                        # Prepared with automatic save on: statements of this file
+                        # that become ready later are saved by the sweep (queue_save).
+                        from services.financial import queue_save
+                        if queue_save.AUTO_SAVE_READY:
+                            file[queue_save.AUTO_SAVE_MARK] = True
+                        else:
+                            file.pop(queue_save.AUTO_SAVE_MARK, None)
                         # The statement-reading code this preparation used (reader_release).
                         from services.financial.reader_release import reader_stamp
                         file['reader_stamp']=reader_stamp(); file.pop('recheck', None)
@@ -2357,6 +2364,10 @@ async def run_batches_forever():
                 refreshed = await _finish_atomic(refresh_stale_readiness, factory)
                 if refreshed:
                     log.info('Stored batch readiness refreshed: %s', refreshed)
+                # Statements that became ready since their file was prepared,
+                # or whose automatic save failed, are saved as at preparation.
+                from services.financial.queue_save import sweep_save
+                await _finish_atomic(sweep_save, factory)
                 # Precompute the review queue of recently opened cases whose
                 # inputs changed, so the next open reads it from the cache.
                 try:
