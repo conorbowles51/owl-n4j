@@ -86,18 +86,21 @@ Still not proportional (single JSON columns; splitting them is a schema change =
   Proven on SQLite (tests) and on the stub PostgreSQL session of the row-version tests (reuse counts reach the line).
 - Live read path, READ ONLY probe on case 49494305 (opaque truth id dfc15d7fbdc2c), warm, a different period each round:
 
-| | r8 (load ~10.5) | this unit, load 12.8 | load 9.5-11.7 |
-|---|---|---|---|
-| read path of one import (2 period reads + existing check + case comparison + own readiness) | 2.3-3.7 s | 2.6-4.0 s | 1.6-3.4 s |
-| case comparison | 0.8-1.0 s | 0.8-2.2 s | 0.6-2.2 s (0.6 s when no full GC pass runs) |
-| one period read | 0.5-0.8 s | 0.5-1.2 s | 0.4-1.0 s |
+| | r8 (load ~10.5) | this unit, load 12.8 | load 9.5-11.7 | **load 3.9-4.0 (quiet)** |
+|---|---|---|---|---|
+| read path of one import (2 period reads + existing check + case comparison + own readiness) | 2.3-3.7 s | 2.6-4.0 s | 1.6-3.4 s | **1.23-2.54 s** (1.2-1.4 s without a full GC pass) |
+| case comparison | 0.8-1.0 s | 0.8-2.2 s | 0.6-2.2 s | 0.43-1.39 s (1.39 s = 0.98 s full GC pass) |
+| one period read | 0.5-0.8 s | 0.5-1.2 s | 0.4-1.0 s | 0.37-0.54 s |
+| existing check / own readiness | 0.04-0.1 / 0.08-0.2 s | 0.05-0.07 / 0.03-0.15 s | 0.05-0.11 / 0.03-0.17 s | 0.04-0.05 / 0.03 s |
 
   The case comparison reuses all 2,418 prepared rows warm (`rows_reused 2418, rows_reread 0`); its slow rounds carry a
   full cyclic-GC pass of ~1.07 s over ~0.93 M tracked objects (probe process, measured with gc.callbacks). Not changed
   here (see next unit).
-- **Is < 3 s warm shown? Not shown end to end.** Read path measured 1.6-4.0 s under load 9.5-12.8 (never below 4 while
-  this unit ran); synthetic writes 0.03-0.17 s; projected warm import on live roughly read path + ~0.2 s, so < 3 s only
-  in rounds without a full GC pass. The first live import after a deploy will print the true figure in its timing line.
+- **Is < 3 s warm shown? Projected, not shown end to end.** Quiet box (load ~4): warm read path 1.23-2.54 s. The writes
+  were measured on SQLite only (write steps 0.03-0.17 s, plus claim, run record and outcome ~0.03-0.1 s); a live write
+  was not made. Projected warm import of one period of the 217-period file: ~1.4-2.8 s, under 3 s in every measured
+  round; under load 9-13 the read path alone reached 4.0 s. The first live import after a deploy prints the true
+  end-to-end figure in its timing line.
 
 ## Item 4 — not done (finding only)
 
