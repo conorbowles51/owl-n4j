@@ -217,26 +217,42 @@ def save_statements(session, *, case_id, item_ids, actor, request_id=None, only_
     # through another batch, or requested twice.
     saved, _ = _saved_scopes(session, case_id)
     identity = lambda item: (files[item.file_id].sha256 if item.file_id in files else None, item.statement_key or '')
+    # Files whose pages render identically are one document too (page_identity):
+    # each statement also carries its page key, checked beside its bytes key.
+    from services.financial import page_identity
+    def pages_of(file):
+        value = page_identity.stored(file)
+        return ('pages', value['renderer'], value['identity']) if value else None
+    page_key = lambda item: (pages_of(files[item.file_id]) if item.file_id in files else None, item.statement_key or '')
     shas = {identity(i)[0] for i in candidates} - {None}
+    identities = {page_identity.stored(f)['identity'] for f in files.values() if page_identity.stored(f)}
     busy = set()
-    if shas:
-        for file_sha, key in session.execute(select(EvidenceFile.sha256, Item.statement_key)
+    if shas or identities:
+        from sqlalchemy import or_
+        matching = ([EvidenceFile.sha256.in_(shas)] if shas else []) + ([EvidenceFile.metadata_[
+            page_identity.METADATA_KEY]['identity'].as_string().in_(identities)] if identities else [])
+        for file, key in session.execute(select(EvidenceFile, Item.statement_key)
                 .join(Item, Item.file_id == EvidenceFile.id).join(Batch, Batch.id == Item.batch_id)
-                .where(Batch.case_id == case_id, Batch.status != 'removed', EvidenceFile.sha256.in_(shas),
+                .where(Batch.case_id == case_id, Batch.status != 'removed', or_(*matching),
                        Item.status.in_(('pending_import', 'imported')))):
-            busy.add((file_sha, key or ''))
+            busy.add((file.sha256, key or ''))
+            if pages_of(file):
+                busy.add((pages_of(file), key or ''))
     unique, seen = [], set()
     for item in candidates:
         scope = identity(item)
+        pages = page_key(item) if page_key(item)[0] else None
         if item.status not in ('ready', 'attention'):
             held.append(_held(item, 'Already saved' if item.status in ('imported', 'pending_import')
                               else 'No longer ready: open it in the queue'))
-        elif scope in saved or scope in busy:
+        elif scope in saved or scope in busy or pages in busy:
             held.append(_held(item, 'Already saved through another batch'))
-        elif scope in seen:
+        elif scope in seen or (pages and pages in seen):
             held.append(_held(item, 'The same statement is already in this save'))
         else:
             seen.add(scope)
+            if pages:
+                seen.add(pages)
             unique.append(item)
     checked = {p.id: p for p in checked_batch_items(session, case_id, unique, validate_reviews=True,
                                                     reading='all')} if unique else {}
