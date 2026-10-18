@@ -2617,3 +2617,188 @@ class MergedTotalLineTests(unittest.TestCase):
         st, moves = self.read(merged_total_statement(description='COMISION\nIVA'))
         self.assertFalse(st['engine']['proved'])
         self.assertEqual(moves, [])
+
+
+def boxes_statement(a_deposits='500.00'):
+    """r10: an invented two-account layout printing each account's summary box on page 1 (opening, deposits,
+    withdrawals, closing) and each account's movement table on page 2, so each account reads as two sections
+    of one period: the box and the table."""
+    head = [[('BANCO EJEMPLO DEL NORTE, S.A., INSTITUCION DE BANCA MULTIPLE', 20000, 400000)],
+            [('EMPRESA DE PRUEBA SA DE CV', 20000, 200000), ('PERIODO', 330000, 380000),
+             ('DEL 01/03/2024 AL 31/03/2024', 390000, 590000)],
+            [('CALLE FALSA 123', 20000, 150000), ('MONEDA', 330000, 380000), ('PESOS', 390000, 450000)],
+            [('CIUDAD DE MEXICO C.P. 06000', 20000, 220000)]]
+
+    def box(account, opening, deposits, withdrawals, closing):
+        return [[('CUENTA EJEMPLO', 20000, 120000), ('NO. DE CUENTA', 330000, 400000), (account, 410000, 500000)],
+                [('SALDO ANTERIOR', 330000, 430000), (opening, 500000, 560000)],
+                [('DEPOSITOS', 330000, 400000), (deposits, 500000, 560000)],
+                [('RETIROS', 330000, 400000), (withdrawals, 500000, 560000)],
+                [('SALDO FINAL', 330000, 400000), (closing, 500000, 560000)]]
+
+    def table(account, opening, move, closing):
+        day, text, credit, debit, balance = move
+        line = [(day, 20000, 60000), (text, 80000, 300000)]
+        if credit:
+            line.append((credit, 380000 - 6000 * len(credit), 380000))
+        if debit:
+            line.append((debit, 460000 - 6000 * len(debit), 460000))
+        line.append((balance, 560000 - 6000 * len(balance), 560000))
+        return [[('DETALLE CUENTA EJEMPLO', 20000, 160000), ('NO. DE CUENTA', 330000, 400000), (account, 410000, 500000)],
+                [('SALDO ANTERIOR', 330000, 430000), (opening, 500000, 560000)],
+                [('FECHA', 20000, 60000), ('CONCEPTO', 80000, 160000), ('ABONOS', 330000, 380000),
+                 ('CARGOS', 410000, 460000), ('SALDO', 520000, 560000)],
+                line, [('SALDO FINAL', 330000, 400000), (closing, 500000, 560000)]]
+
+    first = head + box('0012345678', '1,000.00', a_deposits, '0.00', '1,500.00') + box(
+        '0099887766', '2,000.00', '0.00', '100.00', '1,900.00')
+    second = table('0012345678', '1,000.00', ('05/03/2024', 'TRANSFERENCIA RECIBIDA', '500.00', None, '1,500.00'),
+                   '1,500.00') + table('0099887766', '2,000.00', ('10/03/2024', 'PAGO DE SERVICIO', None, '100.00',
+                                                                 '1,900.00'), '1,900.00')
+    return [page(1, first), page(2, second)]
+
+
+class SummaryBoxMergeTests(unittest.TestCase):
+    """r10: an account's summary box printed apart from its movement table joins the proved table's period when
+    every fact the box prints is the table's own; otherwise both stay listed and the box stays held."""
+
+    def read(self, sources, merge=True):
+        E._READINGS.clear()
+        E._LIVE_READINGS.clear()
+        with mock.patch.object(E, 'SUMMARY_BOX_MERGE', merge):
+            return read_statements(sources)
+
+    def test_each_box_joins_its_own_accounts_proved_table(self):
+        statements = self.read(boxes_statement())
+        self.assertEqual([(s['account_reference'], s['page_numbers'], s['engine']['proved']) for s in statements],
+                         [('0012345678', [1, 2], True), ('0099887766', [1, 2], True)])
+        first = statements[0]
+        self.assertEqual(first['engine']['summary_box'] != '', True)
+        # The box's rows are in the period's scope, as furniture: one opening and one closing balance remain.
+        self.assertEqual({s['page_number'] for s in first['section_sources']}, {1, 2})
+        balances = [r['fields']['description'] for r in first['_rows'] if r['kind'] == 'balance']
+        self.assertEqual(sorted(balances), ['Closing Balance', 'Opening Balance'])
+        self.assertFalse(any(r['kind'] == 'unresolved' for r in first['_rows']))
+
+    def test_a_box_whose_printed_total_differs_from_the_movements_stays_apart_and_held(self):
+        statements = self.read(boxes_statement(a_deposits='400.00'))
+        first = [(s['page_numbers'], s['engine']['proved']) for s in statements
+                 if s['account_reference'] == '0012345678']
+        self.assertEqual(sorted(first), [([1], False), ([2], True)])
+
+    def test_the_switch_keeps_every_section_apart(self):
+        statements = self.read(boxes_statement(), merge=False)
+        self.assertEqual(len(statements), 4)
+        self.assertEqual(sum(1 for s in statements if s['engine']['proved']), 2)
+
+
+FIVE_MOVES = [('05/03/2024', 'TRANSFERENCIA RECIBIDA', '500.00', None, '1,500.00'),
+              ('06/03/2024', 'PAGO DE SERVICIO', None, '200.00', '1,300.00'),
+              ('07/03/2024', 'PAGO DE SERVICIO', None, '100.00', '1,200.00'),
+              ('08/03/2024', 'TRANSFERENCIA RECIBIDA', '300.00', None, '1,500.00'),
+              ('20/03/2024', 'COMISION', None, '50.00', '1,450.00')]
+
+
+class MarginMarkTests(unittest.TestCase):
+    """r10: marks printed in the margin beside an amount (a dash or a rule joined into its box, or read as
+    dashes after it), and a date glued to the next word, do not cost the line its values."""
+
+    def read(self, sources, **switches):
+        E._READINGS.clear()
+        E._LIVE_READINGS.clear()
+        with mock.patch.multiple(E, **switches) if switches else mock.patch.object(E, 'WIDE_AMOUNT_BOXES', True):
+            statement = read_statements(sources)[0]
+        rows = [(r['fields'].get('date'), r['fields'].get('amount_minor'), r['fields'].get('balance'))
+                for r in statement['_rows'] if r['kind'] == 'transaction']
+        return statement['engine'], rows
+
+    @staticmethod
+    def edit(sources, text, new_text=None, widen=0):
+        for row in sources[0]['rows']:
+            for c in row['cells']:
+                if c['expected_text'] == text:
+                    c['expected_text'] = new_text or text
+                    c['locator']['rect'][2] += widen
+        return sources
+
+    def test_an_amount_box_widened_by_a_margin_mark_keeps_its_column(self):
+        sources = self.edit(mx_statement(FIVE_MOVES, closing='1,450.00'), '1,200.00', widen=30000)
+        engine, rows = self.read(sources)
+        self.assertEqual(engine['assignment'], ('credit', 'debit', 'balance'))
+        self.assertEqual(rows[2], ('2024-03-07', '10000', '120000'))
+        sources = self.edit(mx_statement(FIVE_MOVES, closing='1,450.00'), '1,200.00', widen=30000)
+        engine, rows = self.read(sources, WIDE_AMOUNT_BOXES=False)
+        self.assertEqual(rows[2], ('2024-03-07', '10000', None))  # as before: the box formed a column of its own
+
+    def test_dashes_read_after_an_amount_are_not_part_of_it(self):
+        sources = self.edit(mx_statement(FIVE_MOVES, closing='1,450.00'), '1,200.00', '1,200.00———', widen=18000)
+        engine, rows = self.read(sources)
+        self.assertTrue(engine['proved'])
+        self.assertEqual(rows[2], ('2024-03-07', '10000', '120000'))
+        # One dash after an amount may be its printed minus sign: never dropped as a mark.
+        self.assertEqual(E._rejoin_amounts([(0, 9, '1,200.00—')]), [(0, 9, '1,200.00—')])
+
+    def test_a_date_glued_to_the_next_word_is_read_apart(self):
+        named = [(move[0].replace('/03/2024', '-MAR-2024'),) + move[1:] for move in FIVE_MOVES]
+        for mark in ("'", ')/', ''):
+            sources = mx_statement(named, closing='1,450.00')
+            for row in sources[0]['rows']:
+                cells = row['cells']
+                if cells and cells[0]['expected_text'] == '07-MAR-2024':
+                    cells[0]['expected_text'] = '07-MAR-2024' + mark + '1234567 ' + cells[1]['expected_text']
+                    cells[0]['locator']['rect'][2] = cells[1]['locator']['rect'][2]
+                    del cells[1]
+                    for index, c in enumerate(cells):
+                        c['column_index'] = index
+            engine, rows = self.read(sources)
+            self.assertTrue(engine['proved'], mark)
+            self.assertEqual(rows[2], ('2024-03-07', '10000', '120000'))
+            self.assertFalse(self.read(sources, UNGLUE_LEADING_DATE=False)[0]['proved'])
+
+    def test_only_a_full_date_with_a_plausible_year_is_split(self):
+        split = lambda word: [w for _, _, w in E._unglue_leading_date([(0, len(word), word)])]
+        self.assertEqual(split("01-MAR-2026'X1"), ['01-MAR-2026', 'X1'])
+        self.assertEqual(split('01/03/2026,ABC'), ['01/03/2026', 'ABC'])
+        self.assertEqual(split('01-MAR-20261234567'), ['01-MAR-2026', '1234567'])
+        for word in ('01-MAR-260000000', '01/03/20261234', '01-MAR-2026AB', '45-MAR-2026)/1', '01-MAR-2026'):
+            self.assertEqual(split(word), [word])
+
+
+class IssuerAndCompanyHolderTests(unittest.TestCase):
+    """r10: the issuer's own name block is never an addressee; a company name may print a letter-and-figure
+    word."""
+
+    def holder(self, sources):
+        E._READINGS.clear()
+        E._LIVE_READINGS.clear()
+        return read_statements(sources)[0]['holder']
+
+    def test_a_line_under_the_issuers_name_line_is_not_an_addressee_top(self):
+        names = ('EJEMPLO BANCO, S.A.', 'GRUPO EJEMPLO DEL NORTE')
+        self.assertEqual(self.holder(redacted_statement(names=names, mailing=None, reprint='GRUPO EJEMPLO DEL NORTE')), '')
+        self.assertEqual(self.holder(redacted_statement(names=('GRUPO EJEMPLO DEL NORTE',), mailing=None,
+                                                        reprint='GRUPO EJEMPLO DEL NORTE')), 'GRUPO EJEMPLO DEL NORTE')
+
+    def test_a_company_name_with_a_letter_and_figure_word_is_confirmed_by_its_reprint(self):
+        sources = barcoded_statement(reprint='EMPRESA K7 SA DE CV')
+        for source in sources:
+            for row in source['rows']:
+                for c in row['cells']:
+                    if c['expected_text'] == 'EMPRESA DE PRUEBA SA DE CV':
+                        c['expected_text'] = 'EMPRESA K7 SA DE CV'
+        self.assertEqual(self.holder(sources), 'EMPRESA K7 SA DE CV')
+
+
+class FurnitureCoverTests(unittest.TestCase):
+    """r10: a library period's page footer that the engine attributes to the next section does not stop the
+    engine section from covering it."""
+
+    def test_rows_the_engine_section_does_not_read_may_only_be_furniture(self):
+        from services.financial.statement_engine_routing import _covers
+        scoped = RoutingScopeTests.scoped
+        texts = ['SALDO FINAL 1,000.00', 'PAGINA 1 DE 2', 'ABONO 05/03/2024', 'NOTA']
+        by_address = RoutingScopeTests().by_address(texts)
+        engine = scoped([(1, [0, 2])])
+        self.assertTrue(_covers(engine, scoped([(1, [0, 1, 3])]), by_address))
+        self.assertFalse(_covers(scoped([(1, [0])]), scoped([(1, [0, 2])]), by_address))
+        self.assertFalse(_covers(engine, scoped([(1, [0, 1])])))  # without the stored rows: every row, as before

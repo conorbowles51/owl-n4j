@@ -184,35 +184,39 @@ def _own_scope(engine_statement, others, sources):
     return scope
 
 
-def _covers(engine_statement, library_period):
+def _covers(engine_statement, library_period, by_address=None):
     """The engine section read everything the library period claims: every row of its recorded row scope
-    when both readers record one, else every page of it."""
+    when both readers record one, else every page of it. With the stored rows (``by_address``), a library row
+    the engine section does not read may only be page furniture: a line printing no amount and no date (a page
+    footer the engine attributes to the next section on the page)."""
     ours, theirs = _scope_rows(engine_statement), _scope_rows(library_period)
     if ours is not None and theirs is not None:
-        return theirs <= ours
+        if by_address is None:
+            return theirs <= ours
+        rows = {(s['page_number'], s['table_index'], r['row_index']): r for s in by_address.values() for r in s['rows']}
+        return all(key in rows and _furniture(rows[key]) for key in theirs - ours)
     return _pages(library_period) <= _pages(engine_statement)
 
 
 _VALUE = re.compile(r'\d[.,]\d{2}(?!\d)')
 
 
+def _furniture(row):
+    """A stored row printing neither an amount nor a date."""
+    from services.financial.statement_engine import is_date_token
+    text = ' '.join(c['expected_text'] for c in row['cells'])
+    return not _VALUE.search(text) and not any(is_date_token(word) for word in text.split())
+
+
 def _rows_apart(engine_statement, library_period, by_address):
     """Both readers record row scopes and no row printing an amount or a date belongs to both: the library
     period is another section on a shared page, not part of what the engine section read (page furniture,
     a page number or a footer line, may be counted by both)."""
-    from services.financial.statement_engine import is_date_token
     ours, theirs = _scope_rows(engine_statement), _scope_rows(library_period)
     if ours is None or theirs is None:
         return False
     rows = {(s['page_number'], s['table_index'], r['row_index']): r for s in by_address.values() for r in s['rows']}
-    for key in ours & theirs:
-        row = rows.get(key)
-        if row is None:
-            return False
-        text = ' '.join(c['expected_text'] for c in row['cells'])
-        if _VALUE.search(text) or any(is_date_token(word) for word in text.split()):
-            return False
-    return True
+    return all(key in rows and _furniture(rows[key]) for key in ours & theirs)
 
 
 def disagreement_row(rows, choice):
@@ -365,7 +369,7 @@ def route_catalog(sources, library_catalog):
             if not exact:
                 routing['scoped_unchecked'] = routing.get('scoped_unchecked', 0) + 1
             continue
-        if not exact and (not _covers(statement, group) or any(other is not group and _pages(other) & pages
+        if not exact and (not _covers(statement, group, by_address) or any(other is not group and _pages(other) & pages
                                                               and not _rows_apart(statement, other, by_address)
                                                               for other in groups if not other.get('document_kind'))):
             # Row-level scope: the library period claims a page the engine section does not read, or the
